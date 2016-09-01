@@ -1,0 +1,7 @@
+*.log
+*.trs
+*.o
+.libs
+*_test
+*.la
+*.lo
