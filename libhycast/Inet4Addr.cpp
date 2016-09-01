@@ -15,6 +15,10 @@
 
 namespace hycast {
 
+/**
+ * Constructs from a string representation of an IPv4 address.
+ * @param[in] ipAddr  A string representation of an IPv4 address
+ */
 Inet4Addr::Inet4Addr(const std::string ipAddr)
     : addr{inet_addr(ipAddr.data())}
 {
@@ -23,6 +27,13 @@ Inet4Addr::Inet4Addr(const std::string ipAddr)
 
 }
 
+/**
+ * Compares this instance with another.
+ * @param that  Another instance
+ * @retval <0  This instance is less than the other
+ * @retval  0  This instance is equal to the other
+ * @retval >0  This instance is greater than the other
+ */
 int Inet4Addr::compare(const Inet4Addr& that) const
 {
     in_addr_t a1 = ntohl(addr);
@@ -34,6 +45,10 @@ int Inet4Addr::compare(const Inet4Addr& that) const
               : 1;
 }
 
+/**
+ * Returns a string representation of the IPv4 address.
+ * @return A string representation of the IPv4 address.
+ */
 std::string Inet4Addr::to_string() const
 {
     char buf[INET_ADDRSTRLEN];

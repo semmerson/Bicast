@@ -16,6 +16,11 @@
 
 namespace hycast {
 
+/**
+ * Constructs from a peer identifier.
+ * @param[in] id    Peer identifier
+ * @param[in] size  Size of `id` in bytes
+ */
 PeerId::PeerId(
         const uint8_t* id,
         const size_t   size)
@@ -29,6 +34,10 @@ PeerId::PeerId(
     (void)memcpy(id_, id, size);
 }
 
+/**
+ * Copy constructs.
+ * @param[in] that  Other instance
+ */
 PeerId::PeerId(const PeerId& that)
     : id_(new uint8_t[that.size_]),
       size_(that.size_)
@@ -36,11 +45,19 @@ PeerId::PeerId(const PeerId& that)
     (void)memcpy(id_, that.id_, size_);
 }
 
+/**
+ * Destroys this instance.
+ */
 PeerId::~PeerId()
 {
     delete[] id_;
 }
 
+/**
+ * Copy assigns.
+ * @param[in] rhs  Other instance
+ * @return This instance
+ */
 PeerId& PeerId::operator =(const PeerId& rhs)
 {
     // Self-assignment and exception safe
@@ -52,6 +69,10 @@ PeerId& PeerId::operator =(const PeerId& rhs)
     return *this;
 }
 
+/**
+ * Returns the hash code of this instance.
+ * @return Hash code of this instance
+ */
 size_t PeerId::hash() const
 {
     const uint8_t* bp = id_;
@@ -71,6 +92,13 @@ size_t PeerId::hash() const
     return code;
 }
 
+/**
+ * Compares this instance with another.
+ * @param[in] that  Other instance
+ * @retval <0 This instance is less than the other
+ * @retval  0 This instance is equal to the other
+ * @retval >0 This instance is greater than the other
+ */
 int PeerId::compare(const PeerId& that) const
 {
     if (size_ < that.size_)
@@ -80,11 +108,21 @@ int PeerId::compare(const PeerId& that) const
     return memcmp(id_, that.id_, size_);
 }
 
+/**
+ * Indicates if this instance is equal to another.
+ * @param[in] that  Other instance
+ * @retval `true`  This instance equals the other
+ * @retval `false` This instance doesn't equal the other
+ */
 bool PeerId::equals(const PeerId& that) const
 {
     return (size_ == that.size_) && (memcmp(id_, that.id_, size_) == 0);
 }
 
+/**
+ * Returns the string representation of a peer identifier.
+ * @return String representation of a peer identifier
+ */
 std::string PeerId::to_string() const
 {
     char   buf[2+2*size_];

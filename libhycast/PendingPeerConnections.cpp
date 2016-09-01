@@ -19,6 +19,10 @@
 
 namespace hycast {
 
+/**
+ * Constructs from the maximum number of pending connections.
+ * @param[in] maxPending  Maximum number of pending connections.
+ */
 PendingPeerConnections::PendingPeerConnections(unsigned maxPending)
         : map(1, &hash, &areEqual),
           maxPending{maxPending}

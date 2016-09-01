@@ -10,8 +10,8 @@ lib_LTLIBRARIES = libhycast.la
 # Sources for libhycast
 libhycast_la_SOURCES 	= \
 	PortNumber.h \
-	Inet4Addr.cpp \
-	Inet6Addr.cpp \
+	Inet4Addr.cpp Inet4Addr.h \
+	Inet6Addr.cpp Inet6Addr.h \
 	InetAddrImpl.cpp InetAddrImpl.h \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddrImpl.cpp InetSockAddrImpl.h \

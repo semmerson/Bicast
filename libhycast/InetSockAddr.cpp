@@ -124,6 +124,13 @@ std::string InetSockAddr::to_string() const
     return pImpl->to_string();
 }
 
+/**
+ * Compares this instance with another.
+ * @param[in] that  Other instance
+ * @retval <0 This instance is less than the other
+ * @retval  0 This instance is eaual to the other
+ * @retval >0 This instance is greater than the other
+ */
 int InetSockAddr::compare(const InetSockAddr& that) const
 {
     return pImpl->compare(*that.pImpl);

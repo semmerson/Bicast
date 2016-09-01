@@ -14,6 +14,9 @@
 
 namespace hycast {
 
+/**
+ * Constructs from nothing.
+ */
 PeerConnection::PeerConnection()
     : num_sockets{0}
 {

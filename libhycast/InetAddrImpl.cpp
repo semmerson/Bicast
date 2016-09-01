@@ -17,11 +17,21 @@
 
 namespace hycast {
 
+/**
+ * Factory method that returns a default instance.
+ * @return A default instance
+ */
 std::shared_ptr<InetAddrImpl> InetAddrImpl::create()
 {
     return std::shared_ptr<InetAddrImpl>(new Inet4Addr());
 }
 
+/**
+ * Factory method that returns a new instance based on the string representation
+ * of an Internet address.
+ * @param[in] ip_addr  The string representation of an Internet address.
+ * @return A new instance
+ */
 std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const std::string ip_addr)
 {
     in_addr_t ipv4_addr;
@@ -40,6 +50,13 @@ std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const std::string ip_addr)
     }
 }
 
+/**
+ * Compares this instance with another.
+ * @param[in] that  Other instance
+ * @retval <0 This instance is less than the other
+ * @retval  0 This instance is equal to the other
+ * @retval >0 This instance is greater than the other
+ */
 int InetAddrImpl::compare(const InetAddrImpl& that) const
 {
     if (get_family() == AF_INET) {
