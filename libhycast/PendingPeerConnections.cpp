@@ -28,29 +28,13 @@ PendingPeerConnections::PendingPeerConnections(unsigned maxPending)
 }
 
 /**
- * Destroys an instance.
- */
-PendingPeerConnections::~PendingPeerConnections()
-{
-    for (auto entry : map) {
-        PtrPeerId const pPeerId = entry.first;
-        PtrConn const   pConn = entry.second;
-        delete pPeerId;
-        delete pConn;
-    }
-    map.clear();
-    list.clear();
-}
-
-/**
  * Deletes the least-recently-used entry.
  */
 void PendingPeerConnections::deleteLru()
 {
-    PeerId* const pPeerId = list.front();
+    PtrPeerId pPeerId = list.front();
     map.erase(pPeerId);
     list.pop_front();
-    delete pPeerId;
 }
 
 /**
@@ -59,11 +43,12 @@ void PendingPeerConnections::deleteLru()
  * @param[in] peer_id  Peer identifier
  * @return The corresponding entry
  */
-const PendingPeerConnections::Entry* PendingPeerConnections::findOrCreate(
-        const PeerId* peer_id)
+const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
+        const PeerId& peer_id)
 {
-    Entry* entry;
-    auto iter = map.find(const_cast<PeerId*>(peer_id));
+    Entry*    entry;
+    PtrPeerId pPeerId{new PeerId(peer_id)};
+    auto iter = map.find(pPeerId);
     if (iter != map.end()) {
         // Existing entry
         entry = &*iter;
@@ -72,15 +57,14 @@ const PendingPeerConnections::Entry* PendingPeerConnections::findOrCreate(
     }
     else {
         // New entry
-        PtrPeerId pPeerId = new PeerId(*peer_id);
-        PtrConn   pConn = new ServerPeerConnection();
-        auto insertion = map.emplace(pPeerId, pConn);
+        PtrConn pConn{new ServerPeerConnection()};
+        auto    insertion = map.emplace(pPeerId, pConn);
         entry = &*insertion.first;
         list.push_back(pPeerId);
         if (map.size() > maxPending)
             deleteLru();
     }
-    return entry;
+    return *entry;
 }
 
 /**
@@ -95,16 +79,16 @@ std::shared_ptr<ServerPeerConnection> PendingPeerConnections::addSocket(
         const PeerId& peer_id,
         const Socket& socket)
 {
-    const Entry* entry = findOrCreate(&peer_id);
-    PtrConn      pConn = entry->second;
+    static std::shared_ptr<ServerPeerConnection> incomplete{};
+    const Entry& entry = findOrCreate(peer_id);
+    PtrConn      pConn = entry.second;
     if (pConn->add_socket(socket)) {
-        PtrPeerId pPeerId = entry->first;
+        PtrPeerId pPeerId = entry.first;
         map.erase(pPeerId);
         list.remove(pPeerId);
-        delete pPeerId;
-        return std::shared_ptr<ServerPeerConnection>(pConn);
+        return pConn;
     }
-    return std::shared_ptr<ServerPeerConnection>();
+    return incomplete;
 }
 
 } // namespace

@@ -22,16 +22,16 @@
 namespace hycast {
 
 class PendingPeerConnections final {
-    typedef PeerId*                               PtrPeerId;
-    typedef ServerPeerConnection*                 PtrConn;
+    typedef std::shared_ptr<PeerId>               PtrPeerId;
+    typedef std::shared_ptr<ServerPeerConnection> PtrConn;
     typedef std::pair<const PtrPeerId, PtrConn>   Entry;
 
-    static size_t hash(const PtrPeerId pPeerId) {
+    static size_t hash(const PtrPeerId& pPeerId) {
         return pPeerId->hash();
     }
     static bool areEqual(
-            const PtrPeerId pPeerId1,
-            const PtrPeerId pPeerId2) {
+            const PtrPeerId& pPeerId1,
+            const PtrPeerId& pPeerId2) {
         return pPeerId1->equals(*pPeerId2);
     };
 
@@ -43,11 +43,10 @@ class PendingPeerConnections final {
     unsigned             maxPending;
 
     void deleteLru();
-    const Entry* findOrCreate(const PeerId* pPeerId);
+    const Entry& findOrCreate(const PeerId& pPeerId);
 
 public:
     explicit PendingPeerConnections(unsigned maxPending = 32);
-    ~PendingPeerConnections();
     unsigned numPending() const {return list.size();}
     std::shared_ptr<ServerPeerConnection> addSocket(
             const PeerId&       peerId,
