@@ -22,6 +22,8 @@ namespace hycast {
  * @retval `true`  Connection is complete
  * @throws std::invalid_argument if this instance already has the socket
  * @throws std::length_error if this instance is already complete
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 bool ServerPeerConnection::add_socket(const Socket& socket)
 {

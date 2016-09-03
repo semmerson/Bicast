@@ -18,8 +18,10 @@
 namespace hycast {
 
 /**
- * Constructs from nothing. The Internet address will be "0.0.0.0" (INET_ANY)
- * and the port number will be 0.
+ * Constructs from nothing. The Internet address will correspond to "0.0.0.0"
+ * (INET_ANY) and the port number will be 0.
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl()
     : inetAddr(),
@@ -32,6 +34,9 @@ InetSockAddrImpl::InetSockAddrImpl()
  * number.
  * @param[in] ipAddr  String representation of Internet address
  * @param[in] port    Port number in host byte-order
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @throws std::invalid_argument if the string representation is invalid
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl(
         const std::string ipAddr,
@@ -45,6 +50,8 @@ InetSockAddrImpl::InetSockAddrImpl(
  * Constructs from an IPV4 address and a port number.
  * @param[in] addr  IPv4 address
  * @param[in] port  Port number in host byte-order
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl(
         const in_addr_t  addr,
@@ -58,6 +65,8 @@ InetSockAddrImpl::InetSockAddrImpl(
  * Constructs from an IPV6 address and a port number.
  * @param[in] addr  IPv6 address
  * @param[in] port  Port number in host byte-order
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl(
         const struct in6_addr& addr,
@@ -70,6 +79,8 @@ InetSockAddrImpl::InetSockAddrImpl(
 /**
  * Constructs from an IPv4 socket address.
  * @param[in] addr  IPv4 socket address
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl(const struct sockaddr_in& addr)
     : inetAddr(addr.sin_addr),
@@ -80,6 +91,8 @@ InetSockAddrImpl::InetSockAddrImpl(const struct sockaddr_in& addr)
 /**
  * Constructs from an IPv6 socket address.
  * @param[in] addr  IPv6 socket address
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddrImpl::InetSockAddrImpl(const struct sockaddr_in6& sockaddr)
     : inetAddr(sockaddr.sin6_addr),
@@ -90,8 +103,9 @@ InetSockAddrImpl::InetSockAddrImpl(const struct sockaddr_in6& sockaddr)
 /**
  * Returns the hash code of this instance.
  * @return The hash code of this instance
+ * @exceptionsafety Nothrow
  */
-size_t InetSockAddrImpl::hash() const
+size_t InetSockAddrImpl::hash() const noexcept
 {
     return inetAddr.hash() ^ std::hash<in_port_t>()(port);
 }
@@ -102,8 +116,9 @@ size_t InetSockAddrImpl::hash() const
  * @retval <0  This instance is less than the other
  * @retval  0  This instance is equal to the other
  * @retval >0  This instance is greater than the other
+ * @exceptionsafety Nothrow
  */
-int InetSockAddrImpl::compare(const InetSockAddrImpl& that) const
+int InetSockAddrImpl::compare(const InetSockAddrImpl& that) const noexcept
 {
     int cmp = inetAddr.compare(that.inetAddr);
     if (cmp)
@@ -118,12 +133,15 @@ int InetSockAddrImpl::compare(const InetSockAddrImpl& that) const
 /**
  * Returns the string representation of the Internet socket address.
  * @return String representation of the Internet socket address
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 std::string InetSockAddrImpl::to_string() const
 {
     return (inetAddr.get_family() == AF_INET)
             ? inetAddr.to_string() + ":" + std::to_string(port)
-            : std::string("[") + inetAddr.to_string() + "]:" + std::to_string(port);
+            : std::string("[") + inetAddr.to_string() + "]:" +
+              std::to_string(port);
 }
 
 } // namespace

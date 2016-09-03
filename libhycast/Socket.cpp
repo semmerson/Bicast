@@ -17,6 +17,8 @@ namespace hycast {
 
 /**
  * Constructs from nothing.
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 Socket::Socket()
     : sock(-1),
@@ -31,6 +33,8 @@ Socket::Socket()
  * @see Socket::operator=(Socket& socket)
  * @see Socket::operator=(Socket&& socket)
  * @param[in] sock  The socket
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @throws std::invalid_argument if `sock < 0`
  */
 Socket::Socket(const int sock)
     : sock(sock),
@@ -47,8 +51,9 @@ Socket::Socket(const int sock)
  * @see Socket::operator=(Socket& socket)
  * @see Socket::operator=(Socket&& socket)
  * @param[in] socket  The other instance.
+ * @exceptionsafety Nothrow
  */
-Socket::Socket(const Socket& socket)
+Socket::Socket(const Socket& socket) noexcept
     : sock(socket.sock),
       sptr(socket.sptr)
 {
@@ -62,8 +67,9 @@ Socket::Socket(const Socket& socket)
  * @see Socket::operator=(Socket& socket)
  * @see Socket::operator=(Socket&& socket)
  * @param[in] socket  The other instance.
+ * @exceptionsafety Nothrow
  */
-Socket::Socket(const Socket&& socket)
+Socket::Socket(const Socket&& socket) noexcept
     : sock(socket.sock),
       sptr(socket.sptr)
 {
@@ -72,13 +78,14 @@ Socket::Socket(const Socket&& socket)
 /**
  * Destroys an instance. Closes the underlying socket if this is the last
  * instance that references it.
+ * @exceptionsafety Nothrow
  * @see Socket::Socket(int sock)
  * @see Socket::Socket(Socket& socket)
  * @see Socket::Socket(Socket&& socket)
  * @see Socket::operator=(Socket& socket)
  * @see Socket::operator=(Socket&& socket)
  */
-Socket::~Socket()
+Socket::~Socket() noexcept
 {
     if (sptr.unique())
         (void)close(sock);
@@ -89,8 +96,9 @@ Socket::~Socket()
  * instance's socket before the assignment if this instance holds the last
  * reference to it.
  * @param[in] that  The other instance
+ * @exceptionsafety Nothrow
  */
-void Socket::copy_assign(const Socket& that)
+void Socket::copy_assign(const Socket& that) noexcept
 {
     if (sptr.unique())
         close(sock);
@@ -107,8 +115,9 @@ void Socket::copy_assign(const Socket& that)
  * @see Socket::~Socket()
  * @param[in] that  The other instance
  * @return This instance
+ * @exceptionsafety Nothrow
  */
-Socket& Socket::operator =(const Socket& that)
+Socket& Socket::operator =(const Socket& that) noexcept
 {
     if (this != &that)
         copy_assign(that);
@@ -116,17 +125,17 @@ Socket& Socket::operator =(const Socket& that)
 }
 
 /**
- * Assigns from a temporary instance. Move assignment operator. The returned
- * instance will close the socket upon destruction if it's the last one that
- * references the socket.
+ * Assigns from another instance. The returned instance will close the socket
+ * upon destruction if it's the last one that references the socket.
  * @see Socket::Socket(int sock)
  * @see Socket::Socket(Socket& socket)
  * @see Socket::Socket(Socket&& socket)
  * @see Socket::~Socket()
  * @param[in] that  The other instance
  * @return This instance
+ * @exceptionsafety Nothrow
  */
-Socket& Socket::operator =(const Socket&& that)
+Socket& Socket::operator =(const Socket&& that) noexcept
 {
     copy_assign(that);
     return *this;

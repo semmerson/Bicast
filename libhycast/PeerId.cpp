@@ -20,6 +20,9 @@ namespace hycast {
  * Constructs from a peer identifier.
  * @param[in] id    Peer identifier
  * @param[in] size  Size of `id` in bytes
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @throws std::invalid_argument if `size == 0`
+ * @exceptionsafety Strong
  */
 PeerId::PeerId(
         const uint8_t* id,
@@ -37,6 +40,8 @@ PeerId::PeerId(
 /**
  * Copy constructs.
  * @param[in] that  Other instance
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 PeerId::PeerId(const PeerId& that)
     : id_(new uint8_t[that.size_]),
@@ -47,8 +52,9 @@ PeerId::PeerId(const PeerId& that)
 
 /**
  * Destroys this instance.
+ * @exceptionsafety Nothrow
  */
-PeerId::~PeerId()
+PeerId::~PeerId() noexcept
 {
     delete[] id_;
 }
@@ -57,6 +63,8 @@ PeerId::~PeerId()
  * Copy assigns.
  * @param[in] rhs  Other instance
  * @return This instance
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 PeerId& PeerId::operator =(const PeerId& rhs)
 {
@@ -72,8 +80,9 @@ PeerId& PeerId::operator =(const PeerId& rhs)
 /**
  * Returns the hash code of this instance.
  * @return Hash code of this instance
+ * @exceptionsafety Nothrow
  */
-size_t PeerId::hash() const
+size_t PeerId::hash() const noexcept
 {
     const uint8_t* bp = id_;
     size_t  code = 0;
@@ -98,8 +107,9 @@ size_t PeerId::hash() const
  * @retval <0 This instance is less than the other
  * @retval  0 This instance is equal to the other
  * @retval >0 This instance is greater than the other
+ * @exceptionsafety Nothrow
  */
-int PeerId::compare(const PeerId& that) const
+int PeerId::compare(const PeerId& that) const noexcept
 {
     if (size_ < that.size_)
         return -1;
@@ -113,8 +123,9 @@ int PeerId::compare(const PeerId& that) const
  * @param[in] that  Other instance
  * @retval `true`  This instance equals the other
  * @retval `false` This instance doesn't equal the other
+ * @exceptionsafety Nothrow
  */
-bool PeerId::equals(const PeerId& that) const
+bool PeerId::equals(const PeerId& that) const noexcept
 {
     return (size_ == that.size_) && (memcmp(id_, that.id_, size_) == 0);
 }
@@ -122,6 +133,8 @@ bool PeerId::equals(const PeerId& that) const
 /**
  * Returns the string representation of a peer identifier.
  * @return String representation of a peer identifier
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 std::string PeerId::to_string() const
 {

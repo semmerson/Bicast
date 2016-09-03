@@ -17,9 +17,10 @@
 namespace hycast {
 
 /**
- * Constructs from nothing. The IPv6 address will be "::".
+ * Constructs from nothing. The IPv6 address will correspond to "::".
+ * @exceptionsafety Nothrow
  */
-Inet6Addr::Inet6Addr()
+Inet6Addr::Inet6Addr() noexcept
 {
     (void)memset(&addr, 0, sizeof(addr));
 }
@@ -27,6 +28,8 @@ Inet6Addr::Inet6Addr()
 /**
  * Constructs from a string representation of an IPv6 address.
  * @param[in] ipAddr  A string representation of an IPv6 address
+ * @throws std::invalid_argument if the string representation is invalid
+ * @exceptionsafety Strong
  */
 Inet6Addr::Inet6Addr(const std::string ipAddr)
 {
@@ -37,9 +40,10 @@ Inet6Addr::Inet6Addr(const std::string ipAddr)
 
 /**
  * Constructs from an IPv6 address.
- * @param[in] ipAddr  An IPv6 address
+ * @param[in] ipAddr  IPv6 address
+ * @exceptionsafety Nothrow
  */
-Inet6Addr::Inet6Addr(const struct in6_addr& ipAddr)
+Inet6Addr::Inet6Addr(const struct in6_addr& ipAddr) noexcept
      : addr(ipAddr)
 {
 }
@@ -47,8 +51,9 @@ Inet6Addr::Inet6Addr(const struct in6_addr& ipAddr)
 /**
  * Returns this instance's hash code.
  * @return This instance's hash code.
+ * @exceptionsafety Nothrow
  */
-size_t Inet6Addr::hash() const
+size_t Inet6Addr::hash() const noexcept
 {
     size_t hashcode = 0;
     for (const size_t* chunk = (const size_t*)(addr.s6_addr);
@@ -64,8 +69,9 @@ size_t Inet6Addr::hash() const
  * @retval <0  This instance is less than the other
  * @retval  0  This instance is equal to the other
  * @retval >0  This instance is greater than the other
+ * @exceptionsafety Nothrow
  */
-int Inet6Addr::compare(const Inet6Addr& that) const
+int Inet6Addr::compare(const Inet6Addr& that) const noexcept
 {
     return memcmp(&addr, &that.addr, sizeof(addr));
 }
@@ -73,6 +79,8 @@ int Inet6Addr::compare(const Inet6Addr& that) const
 /**
  * Returns a string representation of the IPv6 address.
  * @return A string representation of the IPv6 address.
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 std::string Inet6Addr::to_string() const
 {

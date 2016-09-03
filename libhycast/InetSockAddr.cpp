@@ -20,6 +20,7 @@ namespace hycast {
  * Constructs from nothing. The resulting object will be the default IPv4 socket
  * address.
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr()
     : pImpl{new InetSockAddrImpl()}
@@ -32,6 +33,7 @@ InetSockAddr::InetSockAddr()
  * @param[in] port     Port number
  * @throws std::invalid_argument if the IP address is invalid
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr(
         const std::string ip_addr,
@@ -45,6 +47,7 @@ InetSockAddr::InetSockAddr(
  * @param[in] addr  IPv4 address in _network_ byte order
  * @param[in] port  Port number in _host_ bytes order
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr(
         const in_addr_t  addr,
@@ -58,6 +61,7 @@ InetSockAddr::InetSockAddr(
  * @param[in] addr  IPv6 address in _network_ byte order
  * @param[in] port  Port number in _host_ bytes order
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr(
         const struct in6_addr& addr,
@@ -70,6 +74,7 @@ InetSockAddr::InetSockAddr(
  * Constructs from an IPv4 socket address.
  * @param[in] addr  IPv4 socket address
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr(const struct sockaddr_in& addr)
     : pImpl{new InetSockAddrImpl(addr)}
@@ -80,6 +85,7 @@ InetSockAddr::InetSockAddr(const struct sockaddr_in& addr)
  * Constructs from an IPv6 socket address.
  * @param[in] addr  IPv6 socket address
  * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Strong
  */
 InetSockAddr::InetSockAddr(const struct sockaddr_in6& sockaddr)
     : pImpl{new InetSockAddrImpl(sockaddr)}
@@ -89,9 +95,9 @@ InetSockAddr::InetSockAddr(const struct sockaddr_in6& sockaddr)
 /**
  * Copy constructs from another instance.
  * @param[in] that  Other instance
- * @throws std::bad_alloc if necessary memory can't be allocated
+ * @exceptionsafety Nothrow
  */
-InetSockAddr::InetSockAddr(const InetSockAddr& that)
+InetSockAddr::InetSockAddr(const InetSockAddr& that) noexcept
     : pImpl(that.pImpl)
 {
 }
@@ -99,8 +105,9 @@ InetSockAddr::InetSockAddr(const InetSockAddr& that)
 /**
  * Copy assigns from an instance.
  * @param[in] rhs  An instance
+ * @exceptionsafety Nothrow
  */
-InetSockAddr& InetSockAddr::operator =(const InetSockAddr& rhs)
+InetSockAddr& InetSockAddr::operator =(const InetSockAddr& rhs) noexcept
 {
     pImpl = rhs.pImpl; // InetSockAddrImpl is an immutable class
     return *this;
@@ -109,8 +116,9 @@ InetSockAddr& InetSockAddr::operator =(const InetSockAddr& rhs)
 /**
  * Returns the hash code of this instance.
  * @return This instance's hash code
+ * @exceptionsafety Nothrow
  */
-size_t InetSockAddr::hash() const
+size_t InetSockAddr::hash() const noexcept
 {
     return pImpl->hash();
 }
@@ -118,6 +126,8 @@ size_t InetSockAddr::hash() const
 /**
  * Returns a string representation of this instance.
  * @return A string representation of this instance
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 std::string InetSockAddr::to_string() const
 {
@@ -130,8 +140,9 @@ std::string InetSockAddr::to_string() const
  * @retval <0 This instance is less than the other
  * @retval  0 This instance is eaual to the other
  * @retval >0 This instance is greater than the other
+ * @exceptionsafety Nothrow
  */
-int InetSockAddr::compare(const InetSockAddr& that) const
+int InetSockAddr::compare(const InetSockAddr& that) const noexcept
 {
     return pImpl->compare(*that.pImpl);
 }

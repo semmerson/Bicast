@@ -16,8 +16,9 @@ namespace hycast {
 
 /**
  * Constructs from nothing.
+ * @exceptionsafety Nothrow
  */
-PeerConnection::PeerConnection()
+PeerConnection::PeerConnection() noexcept
     : num_sockets{0}
 {
 }
@@ -26,8 +27,9 @@ PeerConnection::PeerConnection()
  * Destroys a `PeerConnection`. The sockets will be closed if this instance
  * contains the last references to them. This definition is necessary in order
  * to make this class an abstract base class.
+ * @exceptionsafety Nothrow
  */
-PeerConnection::~PeerConnection()
+PeerConnection::~PeerConnection() noexcept
 {
 }
 

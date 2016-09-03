@@ -22,6 +22,9 @@ namespace hycast {
 /**
  * Constructs from the maximum number of pending connections.
  * @param[in] maxPending  Maximum number of pending connections.
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @throws std::invalid_argument if `maxPending == 0`
+ * @exceptionsafety Strong
  */
 PendingPeerConnections::PendingPeerConnections(unsigned maxPending)
         : map(1, &hash, &areEqual),
@@ -46,6 +49,8 @@ void PendingPeerConnections::deleteLru()
  * necessary.
  * @param[in] peer_id  Peer identifier
  * @return The corresponding entry
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @exceptionsafety Strong
  */
 const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
         const PeerId& peer_id)
@@ -78,6 +83,10 @@ const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
  * @param[in] socket    Socket to be added
  * @return Shared pointer to the completed server-side peer connection or an
  *         empty shared pointer if the connection is incomplete.
+ * @throws std::bad_alloc if required memory can't be allocated
+ * @throws std::invalid_argument if the `PeerConnection` associated with
+ *                               `peer_id` already has the socket
+ * @exceptionsafety Strong
  */
 std::shared_ptr<ServerPeerConnection> PendingPeerConnections::addSocket(
         const PeerId& peer_id,
