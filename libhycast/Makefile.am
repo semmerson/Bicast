@@ -19,8 +19,8 @@ libhycast_la_SOURCES 	= \
 	PeerId.cpp PeerId.h \
         Socket.cpp Socket.h \
         PeerConnection.cpp PeerConnection.h \
-        ServerPeerConnection.cpp ServerPeerConnection.h \
-        PendingPeerConnections.cpp PendingPeerConnections.h
+        PendingPeerConnections.cpp PendingPeerConnections.h \
+        PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram
 libhycast_la_LDFLAGS = 
@@ -36,7 +36,6 @@ check_PROGRAMS		= \
 	InetSockAddr_test \
 	PeerId_test \
 	Socket_test \
-        ServerPeerConnection_test \
 	PendingPeerConnections_test \
 	#Di_test
 
@@ -61,9 +60,6 @@ PeerId_test_LDFLAGS = libhycast.la -lgtest
 Socket_test_SOURCES = Socket_test.cpp
 Socket_test_LDFLAGS = libhycast.la -lgtest
 
-ServerPeerConnection_test_SOURCES = ServerPeerConnection_test.cpp
-ServerPeerConnection_test_LDFLAGS = libhycast.la -lgtest
-
 PendingPeerConnections_test_SOURCES = PendingPeerConnections_test.cpp
 PendingPeerConnections_test_LDFLAGS = libhycast.la -lgtest
 
@@ -74,6 +70,5 @@ TESTS			= \
 	InetSockAddr_test \
 	PeerId_test \
 	Socket_test \
-	ServerPeerConnection_test \
         PendingPeerConnections_test \
         #Di_test

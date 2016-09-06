@@ -10,6 +10,7 @@
  * isn't complete until it has all three sockets.
  */
 
+#include "PeerConnection.h"
 #include "PendingPeerConnections.h"
 
 #include <cstring>
@@ -66,8 +67,9 @@ const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
     }
     else {
         // New entry
-        PtrConn pConn{new ServerPeerConnection()};
-        auto    insertion = map.emplace(pPeerId, pConn);
+        PtrConn pConn{new SockArray(PeerConnection::max_sockets)};
+        pConn->clear();
+        auto insertion = map.emplace(pPeerId, pConn);
         entry = &*insertion.first;
         list.push_back(pPeerId);
         if (map.size() > maxPending)
@@ -76,8 +78,25 @@ const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
     return *entry;
 }
 
+bool PendingPeerConnections::add_socket(
+            PtrConn&      pConn,
+            const Socket& socket)
+{
+    size_t size = pConn->size();
+    if (size == PeerConnection::max_sockets)
+        throw std::length_error("Already have " +
+                std::to_string(PeerConnection::max_sockets) + " sockets");
+    for (size_t i = 0; i < size; i++) {
+        if (socket == pConn->at(i))
+            throw std::invalid_argument("sockets[" + std::to_string(i) +
+                    "] is already socket " + socket.to_string());
+    }
+    pConn->push_back(socket);
+    return pConn->size() == PeerConnection::max_sockets;
+}
+
 /**
- * Adds a socket. If a `PeerConnectionServer` is returned, then this instance
+ * Adds a socket. If a `PeerConnection` is returned, then this instance
  * will no longer contain it.
  * @param[in] peer_id   Unique identifier of remote peer
  * @param[in] socket    Socket to be added
@@ -86,20 +105,22 @@ const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
  * @throws std::bad_alloc if required memory can't be allocated
  * @throws std::invalid_argument if the `PeerConnection` associated with
  *                               `peer_id` already has the socket
+ * @throws std::length_error     if the connection is already complete
  * @exceptionsafety Strong
  */
-std::shared_ptr<ServerPeerConnection> PendingPeerConnections::addSocket(
+std::shared_ptr<PeerConnection> PendingPeerConnections::addSocket(
         const PeerId& peer_id,
         const Socket& socket)
 {
-    static std::shared_ptr<ServerPeerConnection> incomplete{};
+    static std::shared_ptr<PeerConnection> incomplete{};
     const Entry& entry = findOrCreate(peer_id);
     PtrConn      pConn = entry.second;
-    if (pConn->add_socket(socket)) {
+    if (add_socket(pConn, socket)) {
         PtrPeerId pPeerId = entry.first;
         map.erase(pPeerId);
         list.remove(pPeerId);
-        return pConn;
+        return std::shared_ptr<PeerConnection>(
+                new PeerConnection(*pConn.get()));
     }
     return incomplete;
 }

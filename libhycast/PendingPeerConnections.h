@@ -12,19 +12,22 @@
 #ifndef PENDINGPEERCONNECTIONS_H_
 #define PENDINGPEERCONNECTIONS_H_
 
+#include "PeerConnection.h"
 #include "PeerId.h"
-#include "ServerPeerConnection.h"
+#include "Socket.h"
 
 #include <list>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace hycast {
 
 class PendingPeerConnections final {
-    typedef std::shared_ptr<PeerId>               PtrPeerId;
-    typedef std::shared_ptr<ServerPeerConnection> PtrConn;
-    typedef std::pair<const PtrPeerId, PtrConn>   Entry;
+    typedef std::shared_ptr<PeerId>             PtrPeerId;
+    typedef std::vector<Socket>                 SockArray;
+    typedef std::shared_ptr<SockArray>          PtrConn;
+    typedef std::pair<const PtrPeerId, PtrConn> Entry;
 
     static size_t hash(const PtrPeerId& pPeerId) {
         return pPeerId->hash();
@@ -44,6 +47,19 @@ class PendingPeerConnections final {
 
     void deleteLru();
     const Entry& findOrCreate(const PeerId& pPeerId);
+    /**
+     * Adds a socket to a connection.
+     * @param[in,out] pConn   The connection
+     * @param[in]     socket  The socket to be added
+     * @throws std::length_error     if the connection is already complete
+     * @throws std::invalid_argument if the connection already has the socket
+     * @retval `true`  if the connection is complete
+     * @retval `false` if the connection is not complete
+     * @exceptionsafety Strong
+     */
+    static bool add_socket(
+            PtrConn&      pConn,
+            const Socket& socket);
 
 public:
     /**
@@ -60,8 +76,8 @@ public:
      */
     unsigned numPending() const noexcept {return list.size();}
     /**
-     * Adds a socket. If a `PeerConnectionServer` is returned, then this
-     * instance will no longer contain it.
+     * Adds a socket. If a `PeerConnection` is returned, then this instance will
+     * no longer contain it.
      * @param[in] peer_id            Unique identifier of remote peer
      * @param[in] socket             Socket to be added
      * @return                       Shared pointer to the completed server-side
@@ -72,7 +88,7 @@ public:
      *                               `peer_id` already has the socket
      * @exceptionsafety              Strong
      */
-    std::shared_ptr<ServerPeerConnection> addSocket(
+    std::shared_ptr<PeerConnection> addSocket(
             const PeerId&       peerId,
             const Socket&       socket);
 };

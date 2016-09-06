@@ -14,26 +14,22 @@
 
 #include "Socket.h"
 
+#include <vector>
+
 namespace hycast {
 
-class PeerConnection {
-protected:
+class PeerConnection final {
+friend class PendingPeerConnections;
     static const int max_sockets = 3;
-    int              num_sockets;
     Socket           sockets[max_sockets];
 public:
     /**
-     * Constructs from nothing.
-     * @exceptionsafety Nothrow
+     * Constructs from a vector of sockets.
+     * @param[in] socks  Vector of sockets
+     * @throws std::invalid_argument if `socks.size() != max_sockets`
+     * @exceptionsafety Strong
      */
-    PeerConnection() noexcept;
-    /**
-     * Destroys a `PeerConnection`. The sockets will be closed if this instance
-     * contains the last references to them. This definition is necessary in
-     * order to make this class an abstract base class.
-     * @exceptionsafety Nothrow
-     */
-    virtual ~PeerConnection() noexcept = 0; // "= 0" => Abstract base class
+    PeerConnection(std::vector<Socket>& socks);
 };
 
 }
