@@ -1,6 +1,6 @@
 /**
- * This file declares a peer. A peer exchanges data with a remote peer over a
- * `PeerConnection`.
+ * This file declares the implementation of a peer. A peer exchanges data with a
+ * remote peer over a `PeerConnection`.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -18,14 +18,16 @@
 namespace hycast {
 
 class PeerImpl final {
-    PeerConnection conn;
+    PeerConnection& conn;
+    PeerImpl(const PeerImpl& that);
+    PeerImpl& operator=(const PeerImpl& rhs);
 public:
     /**
      * Constructs from a `PeerConnection`. Starts executing immediately.
      * @param[in] conn  Connection to remote peer
      * @exceptionsafety Nothrow
      */
-    PeerImpl(const PeerConnection& conn) noexcept;
+    PeerImpl(PeerConnection& conn) noexcept;
 };
 
 } // namespace
