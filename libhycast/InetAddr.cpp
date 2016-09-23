@@ -138,4 +138,18 @@ std::string InetAddr::to_string() const
     return pImpl->to_string();
 }
 
+void InetAddr::connect(
+        int       sd,
+        in_port_t port) const
+{
+    pImpl->connect(sd, port);
+}
+
+void InetAddr::bind(
+        int       sd,
+        in_port_t port) const
+{
+    pImpl->bind(sd, port);
+}
+
 } // namespace

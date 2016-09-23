@@ -147,4 +147,14 @@ int InetSockAddr::compare(const InetSockAddr& that) const noexcept
     return pImpl->compare(*that.pImpl);
 }
 
+void InetSockAddr::connect(int sd) const
+{
+    pImpl->connect(sd);
+}
+
+void InetSockAddr::bind(int sd) const
+{
+    pImpl->bind(sd);
+}
+
 } // namespace

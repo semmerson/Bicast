@@ -26,14 +26,15 @@ class InetSockAddr final {
     std::shared_ptr<InetSockAddrImpl> pImpl;
 public:
     /**
-     * Constructs from nothing. The resulting object will be the default IPv4 socket
-     * address.
+     * Constructs from nothing. The resulting object will be the default IPv4
+     * socket address.
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
      */
     InetSockAddr();
     /**
-     * Constructs from a string representation of an IP address and a port number.
+     * Constructs from a string representation of an IP address and a port
+     * number.
      * @param[in] ip_addr  IP address (either IPv4 or IPv6)
      * @param[in] port     Port number
      * @throws std::invalid_argument if the IP address is invalid
@@ -122,6 +123,22 @@ public:
      * @exceptionsafety Strong
      */
     std::string to_string() const;
+    /**
+     * Connects a socket to this instance's endpoint.
+     * @param[in] sd  Socket descriptor
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void connect(int sd) const;
+    /**
+     * Binds this instance's endpoint to a socket.
+     * @param[in] sd  Socket descriptor
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void bind(int sd) const;
 };
 
 } // namespace

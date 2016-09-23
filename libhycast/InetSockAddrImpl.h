@@ -27,8 +27,8 @@ class InetSockAddrImpl final {
     in_port_t port;  // In host byte-order
 public:
     /**
-     * Constructs from nothing. The Internet address will correspond to "0.0.0.0"
-     * (INET_ANY) and the port number will be 0.
+     * Constructs from nothing. The Internet address will correspond to
+     * "0.0.0.0" (INET_ANY) and the port number will be 0.
      * @throws std::bad_alloc if required memory can't be allocated
      * @exceptionsafety Strong
      */
@@ -111,6 +111,26 @@ public:
      * @exceptionsafety Strong
      */
     std::string to_string() const;
+    /**
+     * Connects a socket to this instance's endpoint.
+     * @param[in] sd  Socket descriptor
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void connect(int sd) const {
+        inetAddr.connect(sd, port);
+    }
+    /**
+     * Binds this instance's endpoint to a socket.
+     * @param[in] sd  Socket descriptor
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void bind(int sd) const {
+        inetAddr.bind(sd, port);
+    }
 };
 
 } // namespace

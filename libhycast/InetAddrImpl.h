@@ -83,6 +83,28 @@ public:
      * @exceptionsafety Strong
      */
     virtual std::string to_string() const = 0;
+    /**
+     * Connects a socket to the given port of this instance's endpoint.
+     * @param[in] sd    Socket descriptor
+     * @param[in] port  Port number in host byte order
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    virtual void connect(
+            int       sd,
+            in_port_t port) const = 0;
+    /**
+     * Binds a socket to the given port of this instance's endpoint.
+     * @param[in] sd    Socket descriptor
+     * @param[in] port  Port number in host byte order
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    virtual void bind(
+            int       sd,
+            in_port_t port) const = 0;
 };
 
 } // namespace
