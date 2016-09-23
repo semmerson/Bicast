@@ -17,9 +17,15 @@ libhycast_la_SOURCES 	= \
 	InetSockAddrImpl.cpp InetSockAddrImpl.h \
 	InetSockAddr.cpp InetSockAddr.h \
 	PeerId.cpp PeerId.h \
+        ClientSocketImpl.cpp ClientSocketImpl.h \
+        ClientSocket.cpp ClientSocket.h \
+        ServerSocketImpl.cpp ServerSocketImpl.h \
+        ServerSocket.cpp ServerSocket.h \
+        SocketImpl.cpp SocketImpl.h \
         Socket.cpp Socket.h \
         PeerConnection.cpp PeerConnection.h \
-        PendingPeerConnections.cpp PendingPeerConnections.h \
+        Serializable.h \
+        ProdInfo.cpp ProdInfo.h \
         PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram
@@ -36,32 +42,32 @@ check_PROGRAMS		= \
 	InetSockAddr_test \
 	PeerId_test \
 	Socket_test \
-	PendingPeerConnections_test \
+	ProdInfo_test \
 	#Di_test
 
 #Di_test_SOURCES	= Di_test.cpp
 #Di_test_LDFLAGS	= -lgtest
 
 Inet4Addr_test_SOURCES = Inet4Addr_test.cpp
-Inet4Addr_test_LDFLAGS = libhycast.la -lgtest
+Inet4Addr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 Inet6Addr_test_SOURCES = Inet6Addr_test.cpp
-Inet6Addr_test_LDFLAGS = libhycast.la -lgtest
+Inet6Addr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 InetAddr_test_SOURCES = InetAddr_test.cpp
-InetAddr_test_LDFLAGS = libhycast.la -lgtest
+InetAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 InetSockAddr_test_SOURCES = InetSockAddr_test.cpp
-InetSockAddr_test_LDFLAGS = libhycast.la -lgtest
+InetSockAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 PeerId_test_SOURCES = PeerId_test.cpp
-PeerId_test_LDFLAGS = libhycast.la -lgtest
+PeerId_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 Socket_test_SOURCES = Socket_test.cpp
-Socket_test_LDFLAGS = libhycast.la -lgtest
+Socket_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
-PendingPeerConnections_test_SOURCES = PendingPeerConnections_test.cpp
-PendingPeerConnections_test_LDFLAGS = libhycast.la -lgtest
+ProdInfo_test_SOURCES = ProdInfo_test.cpp
+ProdInfo_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 TESTS			= \
 	Inet4Addr_test \
@@ -70,5 +76,5 @@ TESTS			= \
 	InetSockAddr_test \
 	PeerId_test \
 	Socket_test \
-        PendingPeerConnections_test \
+	ProdInfo_test \
         #Di_test

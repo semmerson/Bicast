@@ -12,24 +12,32 @@
 #ifndef PEERCONNECTION_H_
 #define PEERCONNECTION_H_
 
+#include "ProdInfo.h"
 #include "Socket.h"
-
-#include <vector>
 
 namespace hycast {
 
 class PeerConnection final {
-friend class PendingPeerConnections;
-    static const int max_sockets = 3;
-    Socket           sockets[max_sockets];
+    Socket           sock;
 public:
+    typedef enum {
+        PROD_INFO_STREAM_ID = 0,
+        CHUNK_INFO_STREAM_ID,
+        PROD_INFO_REQ_STREAM_ID,
+        CHUNK_REQ_STREAM_ID,
+        CHUNK_STREAM_ID,
+        NUM_STREAM_IDS
+    } SctpStreamId;
     /**
-     * Constructs from a vector of sockets.
-     * @param[in] socks  Vector of sockets
-     * @throws std::invalid_argument if `socks.size() != max_sockets`
+     * Constructs from a socket.
+     * @param[in] sock  Socket
      * @exceptionsafety Strong
      */
-    PeerConnection(std::vector<Socket>& socks);
+    PeerConnection(Socket& sock);
+    /**
+     * Sends information about a product to the remote peer.
+     */
+    void sendProdInfo(const ProdInfo& prodInfo);
 };
 
 }

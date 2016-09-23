@@ -9,13 +9,81 @@
  * This file tests class `Socket`.
  */
 
+#include "ClientSocket.h"
+#include "InetSockAddr.h"
+#include "ServerSocket.h"
 #include "Socket.h"
 
+#include <arpa/inet.h>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
+#include <thread>
 
 namespace {
+
+static const unsigned numStreams = 5;
+
+void runServer(hycast::ServerSocket serverSock)
+{
+    hycast::Socket connSock(serverSock.accept());
+    for (;;) {
+        uint32_t size = connSock.getSize();
+        if (size == 0)
+            break;
+        unsigned streamId = connSock.getStreamId();
+        char buf[size];
+        connSock.recv(buf, size);
+        connSock.send(streamId, buf, size);
+    }
+}
+
+void runClient(const int port)
+{
+    // Test Socket::send() and Socket::recv()
+    hycast::InetSockAddr sockAddr("127.0.0.1", port);
+    hycast::ClientSocket sock(sockAddr, numStreams);
+    for (int i = 0; i < 100; ++i) {
+        unsigned outStream = i % numStreams;
+        uint8_t outBuf[1+i];
+        (void)memset(outBuf, 0, sizeof(outBuf));
+        sock.send(outStream, outBuf, sizeof(outBuf));
+        uint32_t size = sock.getSize();
+        EXPECT_EQ(sizeof(outBuf), size);
+        unsigned inStream = sock.getStreamId();
+        EXPECT_EQ(inStream, outStream);
+        char inBuf[size];
+        sock.recv(inBuf, size);
+        EXPECT_TRUE(memcmp(inBuf, outBuf, size) == 0);
+    }
+
+    // Test Socket::sendv() and Socket::recvv()
+    uint8_t outBuf[100];
+    for (unsigned i = 0; i < sizeof(outBuf); ++i)
+        outBuf[i] = i;
+    struct iovec iov[5];
+    for (int i = 0; i < 5; ++i) {
+        iov[i].iov_base = outBuf + i*20;
+        iov[i].iov_len = 20;
+    }
+    sock.sendv(0, iov, sizeof(iov)/sizeof(iov[0]));
+    uint32_t size = sock.getSize();
+    EXPECT_EQ(sizeof(outBuf), size);
+    unsigned inStream = sock.getStreamId();
+    EXPECT_EQ(0, inStream);
+    char inBuf[size];
+    for (int i = 0; i < 5; ++i) {
+        iov[i].iov_base = inBuf + i*20;
+        iov[i].iov_len = 20;
+    }
+    sock.recvv(iov, sizeof(iov)/sizeof(iov[0]), 0);
+    for (unsigned i = 0; i < sizeof(outBuf); ++i)
+        EXPECT_EQ(outBuf[i], inBuf[i]);
+}
 
 // The fixture for testing class Socket.
 class SocketTest : public ::testing::Test {
@@ -25,8 +93,8 @@ class SocketTest : public ::testing::Test {
 
   SocketTest() {
     // You can do set-up work for each test here.
-      sock1 = open("/dev/null", 0);
-      sock2 = open("/dev/null", 0);
+    sock1 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    sock2 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
   }
 
   virtual ~SocketTest() {
@@ -48,13 +116,39 @@ class SocketTest : public ::testing::Test {
     // before the destructor).
   }
 
-  // Objects declared here can be used by all tests in the test case for Socket.
-  int sock1, sock2;
+    // Objects declared here can be used by all tests in the test case for Socket.
+    int sock1, sock2;
+    const int MY_PORT_NUM = 38800;
+    std::thread recvThread;
+    std::thread sendThread;
 
     bool is_open(int sock)
     {
         struct stat statbuf;
         return fstat(sock, &statbuf) == 0;
+    }
+
+    void startServer()
+    {
+        // Work done here so that socket is being listened to when client starts
+        hycast::InetSockAddr sockAddr("127.0.0.1", MY_PORT_NUM);
+        hycast::ServerSocket sock(sockAddr, numStreams);
+        recvThread = std::thread(runServer, sock);
+    }
+
+    void startClient()
+    {
+        sendThread = std::thread(runClient, MY_PORT_NUM);
+    }
+
+    void stopClient()
+    {
+        sendThread.join();
+    }
+
+    void stopServer()
+    {
+        recvThread.join();
     }
 };
 
@@ -140,6 +234,14 @@ TEST_F(SocketTest, ToString) {
     EXPECT_EQ(true, s1.to_string() == std::to_string(sock1));
     hycast::Socket s2(sock2);
     EXPECT_EQ(true, s1.to_string() != s2.to_string());
+}
+
+// Tests send() and recv()
+TEST_F(SocketTest, SendRecv) {
+    startServer();
+    startClient();
+    stopClient();
+    stopServer();
 }
 
 }  // namespace

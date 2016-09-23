@@ -12,18 +12,35 @@
 
 #include "PeerConnection.h"
 
+#include <netinet/sctp.h>
 #include <string>
 
 namespace hycast {
 
-PeerConnection::PeerConnection(std::vector<Socket>& socks)
+PeerConnection::PeerConnection(Socket& sock)
+    : sock(sock)
+      // , prodInfoOstream(sock, PROD_INFO_STREAM_ID)
 {
-    if (socks.size() != max_sockets)
-        throw std::invalid_argument("Expected " +
-                std::to_string(max_sockets) + " sockets; got " +
-                std::to_string(socks.size()));
-    for (int i = 0; i < max_sockets; ++i)
-        sockets[i] = socks[i];
 }
 
+void PeerConnection::sendProdInfo(const ProdInfo& prodInfo)
+{
+    // prodInfo.serialize(prodInfoOstream, version);
 }
+
+#if 0
+void PeerConnection::run()
+{
+    for (;;) {
+        uint32_t size = sock.getSize();
+        if (size == 0)
+            break; // EOF
+        switch (sock.getStreamId()) {
+            case PROD_INFO_STREAM_ID:
+                prodInfoQueue.add(ProdInfo(prodInfoIstream, version));
+        }
+    }
+}
+#endif
+
+} // namespace

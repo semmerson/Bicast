@@ -6,139 +6,97 @@
  *   @file: Socket.cpp
  * @author: Steven R. Emmerson
  *
- * This file defines a RAII object for a socket.
+ * This file defines a socket.
  */
 
 #include "Socket.h"
+#include "SocketImpl.h"
 
+#include <errno.h>
+#include <netinet/sctp.h>
+#include <sys/socket.h>
+#include <system_error>
 #include <unistd.h>
 
 namespace hycast {
 
-/**
- * Constructs from nothing.
- * @throws std::bad_alloc if required memory can't be allocated
- * @exceptionsafety Strong
- */
 Socket::Socket()
-    : sock(-1),
-      sptr(new int)
+    : pImpl()
 {
 }
 
-/**
- * Constructs from a socket. Only do this once per socket because the destructor
- * might close the socket.
- * @see Socket::~Socket()
- * @see Socket::operator=(Socket& socket)
- * @see Socket::operator=(Socket&& socket)
- * @param[in] sock  The socket
- * @throws std::bad_alloc if required memory can't be allocated
- * @throws std::invalid_argument if `sock < 0`
- */
-Socket::Socket(const int sock)
-    : sock(sock),
-      sptr(new int)
-{
-    if (sock < 0)
-        throw std::invalid_argument("Invalid socket: " + std::to_string(sock));
-}
-
-/**
- * Constructs from another instance. The returned instance will close the socket
- * upon destruction if it's the last one that references the socket.
- * @see Socket::~Socket()
- * @see Socket::operator=(Socket& socket)
- * @see Socket::operator=(Socket&& socket)
- * @param[in] socket  The other instance.
- * @exceptionsafety Nothrow
- */
-Socket::Socket(const Socket& socket) noexcept
-    : sock(socket.sock),
-      sptr(socket.sptr)
+Socket::Socket(
+        const int      sock,
+        const uint16_t numStreams)
+    : pImpl(new SocketImpl(sock, numStreams))
 {
 }
 
-/**
- * Constructs from a temporary instance. Move constructor. The returned instance
- * will close the socket upon destruction if it's the last one that references
- * the socket.
- * @see Socket::~Socket()
- * @see Socket::operator=(Socket& socket)
- * @see Socket::operator=(Socket&& socket)
- * @param[in] socket  The other instance.
- * @exceptionsafety Nothrow
- */
-Socket::Socket(const Socket&& socket) noexcept
-    : sock(socket.sock),
-      sptr(socket.sptr)
+Socket::Socket(SocketImpl* impl)
+    : pImpl(impl)
 {
 }
 
-/**
- * Destroys an instance. Closes the underlying socket if this is the last
- * instance that references it.
- * @exceptionsafety Nothrow
- * @see Socket::Socket(int sock)
- * @see Socket::Socket(Socket& socket)
- * @see Socket::Socket(Socket&& socket)
- * @see Socket::operator=(Socket& socket)
- * @see Socket::operator=(Socket&& socket)
- */
-Socket::~Socket() noexcept
+Socket::Socket(std::shared_ptr<SocketImpl> sp)
+    : pImpl(sp)
 {
-    if (sptr.unique())
-        (void)close(sock);
 }
 
-/**
- * Unconditionally assigns another instance to this instance. Closes this
- * instance's socket before the assignment if this instance holds the last
- * reference to it.
- * @param[in] that  The other instance
- * @exceptionsafety Nothrow
- */
-void Socket::copy_assign(const Socket& that) noexcept
+uint16_t Socket::getNumStreams() const
 {
-    if (sptr.unique())
-        close(sock);
-    sock = that.sock;
-    sptr = that.sptr;
+    return pImpl->getNumStreams();
 }
 
-/**
- * Assigns from another instance. The returned instance will close the socket
- * upon destruction if it's the last one that references the socket.
- * @see Socket::Socket(int sock)
- * @see Socket::Socket(Socket& socket)
- * @see Socket::Socket(Socket&& socket)
- * @see Socket::~Socket()
- * @param[in] that  The other instance
- * @return This instance
- * @exceptionsafety Nothrow
- */
-Socket& Socket::operator =(const Socket& that) noexcept
+bool Socket::operator ==(const Socket& that) const noexcept
 {
-    if (this != &that)
-        copy_assign(that);
-    return *this;
+    return *pImpl.get() == *that.pImpl.get();
 }
 
-/**
- * Assigns from another instance. The returned instance will close the socket
- * upon destruction if it's the last one that references the socket.
- * @see Socket::Socket(int sock)
- * @see Socket::Socket(Socket& socket)
- * @see Socket::Socket(Socket&& socket)
- * @see Socket::~Socket()
- * @param[in] that  The other instance
- * @return This instance
- * @exceptionsafety Nothrow
- */
-Socket& Socket::operator =(const Socket&& that) noexcept
+unsigned Socket::getStreamId()
 {
-    copy_assign(that);
-    return *this;
+    return pImpl->getStreamId();
+}
+
+uint32_t Socket::getSize()
+{
+    return pImpl->getSize();
+}
+
+std::string Socket::to_string() const
+{
+    return pImpl->to_string();
+}
+
+void Socket::send(
+        const unsigned streamId,
+        const void*    msg,
+        const size_t   len)
+{
+    pImpl->send(streamId, msg, len);
+}
+
+void Socket::sendv(
+        const unsigned streamId,
+        struct iovec*  iovec,
+        const int      iovcnt)
+{
+    pImpl->sendv(streamId, iovec, iovcnt);
+}
+
+void Socket::recv(
+        void*        msg,
+        const size_t len,
+        const int    flags)
+{
+    pImpl->recv(msg, len, flags);
+}
+
+void Socket::recvv(
+        struct iovec* iovec,
+        const int     iovcnt,
+        const int     flags)
+{
+    pImpl->recvv(iovec, iovcnt, flags);
 }
 
 } // namespace
