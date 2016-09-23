@@ -12,6 +12,10 @@
 #include "Inet4Addr.h"
 
 #include <arpa/inet.h>
+#include <cstring>
+#include <errno.h>
+#include <system_error>
+#include <sys/socket.h>
 
 namespace hycast {
 
@@ -58,6 +62,38 @@ std::string Inet4Addr::to_string() const
 {
     char buf[INET_ADDRSTRLEN];
     return std::string(inet_ntop(AF_INET, &addr, buf, sizeof(buf)));
+}
+
+void Inet4Addr::connect(
+        const int       sd,
+        const in_port_t port) const
+{
+    struct sockaddr_in sockAddr;
+    (void)memset((void*)&sockAddr, 0, sizeof(sockAddr));
+    sockAddr.sin_family = AF_INET;
+    sockAddr.sin_port = htons(port);
+    sockAddr.sin_addr.s_addr = addr;
+    int status = ::connect(sd, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+    if (status)
+        throw std::system_error(errno, std::system_category(),
+                "connect() failure: socket=" + std::to_string(sd) +
+                ", addr=" + to_string());
+}
+
+void Inet4Addr::bind(
+        const int       sd,
+        const in_port_t port) const
+{
+    struct sockaddr_in sockAddr;
+    (void)memset((void*)&sockAddr, 0, sizeof(sockAddr));
+    sockAddr.sin_family = AF_INET;
+    sockAddr.sin_port = htons(port);
+    sockAddr.sin_addr.s_addr = addr;
+    int status = ::bind(sd, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+    if (status)
+        throw std::system_error(errno, std::system_category(),
+                "bind() failure: socket=" + std::to_string(sd) +
+                ", addr=" + to_string());
 }
 
 } // namespace

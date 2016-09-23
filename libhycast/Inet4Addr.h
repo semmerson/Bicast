@@ -85,6 +85,28 @@ public:
      * @exceptionsafety Strong
      */
     std::string to_string() const;
+    /**
+     * Connects a socket to the given port of this instance's endpoint.
+     * @param[in] sd    Socket descriptor
+     * @param[in] port  Port number
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void connect(
+            int       sd,
+            in_port_t port) const;
+    /**
+     * Binds a socket to the given port of this instance's endpoint.
+     * @param[in] sd    Socket descriptor
+     * @param[in] port  Port number in host byte order
+     * @throws std::system_error
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void bind(
+            int       sd,
+            in_port_t port) const;
 };
 
 } // namespace
