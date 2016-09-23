@@ -13,6 +13,7 @@
 
 #include <arpa/inet.h>
 #include <cstring>
+#include <system_error>
 
 namespace hycast {
 
@@ -86,6 +87,38 @@ std::string Inet6Addr::to_string() const
 {
     char buf[INET6_ADDRSTRLEN];
     return std::string(inet_ntop(AF_INET6, &addr.s6_addr, buf, sizeof(buf)));
+}
+
+void Inet6Addr::connect(
+        int       sd,
+        in_port_t port) const
+{
+    struct sockaddr_in6 sockAddr;
+    (void)memset((void*)&sockAddr, 0, sizeof(sockAddr));
+    sockAddr.sin6_family = AF_INET6;
+    sockAddr.sin6_port = htons(port);
+    sockAddr.sin6_addr = addr;
+    int status = ::connect(sd, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+    if (status)
+        throw std::system_error(errno, std::system_category(),
+                "connect() failure: socket=" + std::to_string(sd) +
+                ", addr=" + to_string());
+}
+
+void Inet6Addr::bind(
+        int       sd,
+        in_port_t port) const
+{
+    struct sockaddr_in6 sockAddr;
+    (void)memset((void*)&sockAddr, 0, sizeof(sockAddr));
+    sockAddr.sin6_family = AF_INET6;
+    sockAddr.sin6_port = htons(port);
+    sockAddr.sin6_addr = addr;
+    int status = ::bind(sd, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+    if (status)
+        throw std::system_error(errno, std::system_category(),
+                "bind() failure: socket=" + std::to_string(sd) +
+                ", addr=" + to_string());
 }
 
 } // namespace
