@@ -26,6 +26,7 @@ libhycast_la_SOURCES 	= \
         PeerConnection.cpp PeerConnection.h \
         Serializable.h \
         ProdInfo.cpp ProdInfo.h \
+        IncomingChunk.cpp IncomingChunk.h \
         PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram

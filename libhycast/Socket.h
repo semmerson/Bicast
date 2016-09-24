@@ -137,6 +137,9 @@ public:
      *                      more of
      *                      - `MSG_OOB`  Requests out-of-band data
      *                      - `MSG_PEEK` Peeks at the incoming message
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety Safe
      */
     void recvv(
             struct iovec*  iovec,

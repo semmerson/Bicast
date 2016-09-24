@@ -12,6 +12,7 @@
 #ifndef PRODINFO_H_
 #define PRODINFO_H_
 
+#include "HycastTypes.h"
 #include "Serializable.h"
 
 #include <cstdint>
@@ -23,9 +24,9 @@ namespace hycast {
 
 class ProdInfo : public Serializable {
     std::string name;
-    uint32_t    index;
-    uint32_t    size;
-    uint16_t    chunkSize;
+    ProdIndex   index;
+    ProdSize    size;
+    ChunkSize   chunkSize;
     static const int    IOVCNT = 4;
 
 public:
@@ -42,9 +43,9 @@ public:
      */
     ProdInfo(
             const std::string& name,
-            const uint32_t     index,
-            const uint32_t     size,
-            const uint16_t     chunkSize);
+            const ProdIndex    index,
+            const ProdSize     size,
+            const ChunkSize    chunkSize);
     /**
      * Constructs by deserializing a serialized representation from an SCTP
      * socket.
@@ -70,21 +71,21 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    uint32_t getIndex() const {return index;}
+    ProdIndex getIndex() const {return index;}
     /**
      * Returns the size of the product in bytes.
      * @return Size of the product in bytes
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    uint32_t getSize() const {return size;}
+    ProdSize getSize() const {return size;}
     /**
      * Returns the size of the product's data chunks in bytes.
      * @return Size of the product's data chunks in bytes
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    uint16_t getChunkSize() const {return chunkSize;}
+    ChunkSize getChunkSize() const {return chunkSize;}
     /**
      * Serializes this instance to an SCTP socket.
      * @param[in] sock      SCTP socket

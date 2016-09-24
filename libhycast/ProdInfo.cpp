@@ -26,9 +26,9 @@ ProdInfo::ProdInfo()
 
 ProdInfo::ProdInfo(
         const std::string& name,
-        const uint32_t     index,
-        const uint32_t     size,
-        const uint16_t     chunkSize)
+        const ProdIndex    index,
+        const ProdSize     size,
+        const ChunkSize    chunkSize)
     : name(name),
       index(index),
       size(size),
