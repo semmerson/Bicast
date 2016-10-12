@@ -26,8 +26,11 @@ libhycast_la_SOURCES 	= \
         PeerConnection.cpp PeerConnection.h \
         Serializable.h \
         ProdInfo.cpp ProdInfo.h \
-        IncomingChunk.cpp IncomingChunk.h \
-        PeerImpl.cpp PeerImpl.h
+        ChunkInfo.cpp ChunkInfo.h \
+        Chunk.cpp Chunk.h \
+	Channel.cpp Channel.h \
+	ChannelImpl.cpp ChannelImpl.h \
+        #PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram
 libhycast_la_LDFLAGS = 
@@ -44,6 +47,8 @@ check_PROGRAMS		= \
 	PeerId_test \
 	Socket_test \
 	ProdInfo_test \
+	ChunkInfo_test \
+	Channel_test \
 	#Di_test
 
 #Di_test_SOURCES	= Di_test.cpp
@@ -70,6 +75,12 @@ Socket_test_LDFLAGS = libhycast.la -lgtest -lsctp
 ProdInfo_test_SOURCES = ProdInfo_test.cpp
 ProdInfo_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
+ChunkInfo_test_SOURCES = ChunkInfo_test.cpp
+ChunkInfo_test_LDFLAGS = libhycast.la -lgtest -lsctp
+
+Channel_test_SOURCES = Channel_test.cpp
+Channel_test_LDFLAGS = libhycast.la -lgtest -lsctp
+
 TESTS			= \
 	Inet4Addr_test \
 	Inet6Addr_test \
@@ -78,4 +89,6 @@ TESTS			= \
 	PeerId_test \
 	Socket_test \
 	ProdInfo_test \
+	ChunkInfo_test \
+	Channel_test \
         #Di_test

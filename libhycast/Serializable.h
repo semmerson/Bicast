@@ -1,5 +1,5 @@
 /**
- * This file defines an interface for classes that can be serialized.
+ * This file declares an interface for classes that can be serialized.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -17,21 +17,27 @@
 namespace hycast {
 
 class Serializable {
-    Serializable(const Serializable& that);
-    Serializable& operator=(const Serializable& rhs);
 public:
-    Serializable() {};
-    virtual ~Serializable() {};
+    Serializable() {}
+    virtual ~Serializable() {}
     /**
-     * Serializes this instance to an SCTP socket.
-     * @param[in] sock      SCTP socket
-     * @param[in] streamId  SCTP stream number to use
-     * @param[in] version   Serialization version
+     * Serializes this instance to a buffer
+     * @param[out] buf      Output buffer. Shall be maximally aligned.
+     * @param[in]  bufLen   Size of buffer in bytes
+     * @param[in]  version  Protocol version
      */
     virtual void serialize(
-            Socket&        sock,
-            const unsigned streamId,
+            void*          buf,
+            const size_t   bufLen,
             const unsigned version) const =0;
+    /**
+     * Returns the size, in bytes, of a serialized representation of this
+     * instance.
+     * @param[in] version  Protocol version
+     * @return the size, in bytes, of a serialized representation of this
+     *         instance
+     */
+    virtual size_t getSerialSize(unsigned version) const =0;
 };
 
 } // namespace

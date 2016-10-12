@@ -33,9 +33,9 @@ SocketImpl::SocketImpl()
 }
 
 SocketImpl::SocketImpl(
-        const int      sock,
+        const int      sd,
         const unsigned numStreams)
-    : sock(sock),
+    : sock(sd),
       streamId(0),
       size(0),
       needMsg(true),

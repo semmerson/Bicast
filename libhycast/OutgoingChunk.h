@@ -1,23 +1,23 @@
 /**
- * This file declares a chunk of data that must be read from an SCTP socket.
+ * This file declares a chunk of data that is pointed to.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: IncomingChunk.h
+ *   @file: OutgoingChunk.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef INCOMINGCHUNK_H_
-#define INCOMINGCHUNK_H_
+#ifndef OUTGOINGCHUNK_H_
+#define OUTGOINGCHUNK_H_
 
 #include "HycastTypes.h"
 #include "Socket.h"
 
 namespace hycast {
 
-class IncomingChunk {
+class OutgoingChunk {
     ProdIndex  prodIndex;
     ChunkIndex chunkIndex;
     Socket&    sock;
@@ -27,7 +27,7 @@ public:
      * @param[in] sock  SCTP socket
      * @throws std::invalid_argument if the current message is invalid
      */
-    IncomingChunk(Socket& sock);
+    OutgoingChunk(Socket& sock);
     /**
      * Returns the product index.
      * @return the product index
@@ -56,4 +56,4 @@ public:
 
 } // namespace
 
-#endif /* INCOMINGCHUNK_H_ */
+#endif /* OUTGOINGCHUNK_H_ */

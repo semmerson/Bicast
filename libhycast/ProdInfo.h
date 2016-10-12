@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <istream>
 #include <memory>
+#include <ostream>
 #include <string>
 
 namespace hycast {
@@ -40,6 +41,7 @@ public:
      * @param[in] index      Product index
      * @param[in] size       Size of product in bytes
      * @param[in] chunkSize  Size of data chunks in bytes
+     * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
      */
     ProdInfo(
             const std::string& name,
@@ -47,17 +49,28 @@ public:
             const ProdSize     size,
             const ChunkSize    chunkSize);
     /**
-     * Constructs by deserializing a serialized representation from an SCTP
-     * socket.
-     * @param[in] sock     SCTP socket
+     * Constructs by deserializing a serialized representation from an input
+     * stream.
+     * @param[in] istream  Input stream
      * @param[in] version  Serialization version
-     * @throws std::underflow_error Serialized form is too small
+     * @throws `istream` exceptions only
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
     ProdInfo(
-            Socket&        sock,
+            std::istream&  istream,
             const unsigned version);
+    /**
+     * Constructs by deserializing a serialized representation from a buffer.
+     * @param[in] buf      Buffer
+     * @param[in] version  Serialization version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    ProdInfo(
+            const void* const buf,
+            const size_t      size,
+            const unsigned    version);
     /**
      * Returns the name of the product.
      * @return Name of the product
@@ -87,14 +100,41 @@ public:
      */
     ChunkSize getChunkSize() const {return chunkSize;}
     /**
-     * Serializes this instance to an SCTP socket.
-     * @param[in] sock      SCTP socket
-     * @param[in] streamId  SCTP stream number to use
+     * Indicates if this instance is equal to another.
+     * @param[in] that  The other instance
+     * @retval true   This instance is equal to the other
+     * @retval false  This instance is not equal to the other
+     */
+    bool equals(const ProdInfo& that) const;
+    /**
+     * Returns the number of bytes in the serial representation of this
+     * instance.
+     * @param[in] version  Protocol version
+     * @return the number of bytes in the serial representation
+     */
+    size_t getSerialSize(unsigned version) const;
+    /**
+     * Serializes this instance to an output stream.
+     * @param[in] ostream   Output stream
      * @param[in] version   Serialization version
+     * @throws `ostream` exceptions only
+     * @execptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
      */
     void serialize(
-            Socket&        sock,
-            const unsigned streamId,
+            std::ostream&  ostream,
+            const unsigned version) const;
+    /**
+     * Serializes this instance to a buffer.
+     * @param[in] buf       Buffer
+     * @param[in] size      Buffer size in bytes
+     * @param[in] version   Serialization version
+     * @execptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    void serialize(
+            void*          buf,
+            const size_t   size,
             const unsigned version) const;
 };
 

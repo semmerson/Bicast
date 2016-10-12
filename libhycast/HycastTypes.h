@@ -16,15 +16,17 @@
 
 namespace hycast {
 
-typedef uint_fast32_t ProdIndex;
-typedef uint_fast32_t ProdSize;
-typedef uint_fast32_t ChunkIndex;
-typedef uint_fast16_t ChunkSize;
+typedef uint32_t ProdIndex;
+typedef uint32_t ProdSize;
+typedef uint32_t ChunkIndex;
+typedef uint16_t ChunkSize;
+typedef uint16_t ProdNameSize;
 
-static const ProdIndex  prodIndexMax  = UINT32_MAX;
-static const ProdSize   prodSizeMax   = UINT32_MAX;
-static const ChunkIndex chunkIndexMax = UINT32_MAX;
-static const ChunkSize  chunkSizeMax  = UINT16_MAX;
+static const ProdIndex     prodIndexMax    = UINT32_MAX;
+static const ProdSize      prodSizeMax     = UINT32_MAX;
+static const ChunkIndex    chunkIndexMax   = UINT32_MAX;
+static const ChunkSize     chunkSizeMax    = UINT16_MAX;
+static const ProdNameSize  prodNameSizeMax = UINT16_MAX;
 
 }
 

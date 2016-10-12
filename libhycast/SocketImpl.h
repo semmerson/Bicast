@@ -96,13 +96,13 @@ public:
     SocketImpl();
     /**
      * Constructs from a socket and the number of SCTP streams.
-     * @param[in] sock        Socket descriptor
+     * @param[in] sd          Socket descriptor
      * @param[in] numStreams  Number of SCTP streams
      * @throws std::invalid_argument if `sock < 0 || numStreams > UINT16_MAX`
      * @throws std::system_error if the socket couldn't be configured
      */
     SocketImpl(
-            const int      sock,
+            const int      sd,
             const unsigned numStreams);
     /**
      * Destroys an instance. Closes the underlying socket.

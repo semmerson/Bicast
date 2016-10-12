@@ -9,10 +9,13 @@
  * @author: Steven R. Emmerson
  */
 
+#include "HycastTypes.h"
 #include "ProdInfo.h"
 
 #include <arpa/inet.h>
 #include <stdexcept>
+#include <cstdint>
+#include <cstring>
 
 namespace hycast {
 
@@ -34,60 +37,110 @@ ProdInfo::ProdInfo(
       size(size),
       chunkSize(chunkSize)
 {
+    if (name.size() > UINT16_MAX)
+        throw std::invalid_argument("Name too long: " +
+                std::to_string(name.size()) + " bytes");
 }
 
 ProdInfo::ProdInfo(
-        Socket&        sock,
+        std::istream&  istream,
         const unsigned version)
     : name(),
       index(0),
       size(0),
       chunkSize(0)
 {
-    static const size_t FIXED_LEN = sizeof(index) + sizeof(size) +
-            sizeof(chunkSize);
-    size_t nbytes = sock.getSize();
-    if (nbytes < FIXED_LEN)
-        throw std::underflow_error("Serialized product-info less than " +
-                std::to_string(FIXED_LEN) + " bytes: size=" +
-                std::to_string(nbytes));
-    const size_t nameLen = nbytes - FIXED_LEN;
-    struct iovec iovec[IOVCNT];
-    iovec[0].iov_base = &index;
-    iovec[0].iov_len = sizeof(index);
-    iovec[1].iov_base = &size;
-    iovec[1].iov_len = sizeof(size);
-    iovec[2].iov_base = &chunkSize;
-    iovec[2].iov_len = sizeof(chunkSize);
-    char nam[nameLen];
-    iovec[3].iov_base = nam;
-    iovec[3].iov_len = nameLen;
-    sock.recvv(iovec, IOVCNT, 0);
-    index = ntohl(index);
-    size = ntohl(size);
-    chunkSize = ntohs(chunkSize);
-    name.assign(nam, nameLen);
+    uint32_t uint32;
+    istream.read(reinterpret_cast<char*>(&uint32), sizeof(uint32));
+    index = ntohl(uint32);
+    istream.read(reinterpret_cast<char*>(&uint32), sizeof(uint32));
+    size = ntohl(uint32);
+    uint16_t uint16;
+    istream.read(reinterpret_cast<char*>(&uint16), sizeof(uint16));
+    chunkSize = ntohs(uint16);
+    istream.read(reinterpret_cast<char*>(&uint16), sizeof(uint16));
+    const size_t nameLen = ntohs(uint16);
+    char nameBuf[nameLen];
+    istream.read(nameBuf, nameLen);
+    name.assign(nameBuf, nameLen);
+}
+
+ProdInfo::ProdInfo(
+        const void* const buf,
+        const size_t      bufLen,
+        const unsigned    version)
+    : name(),
+      index(0),
+      size(0),
+      chunkSize(0)
+{
+    size_t nbytes = getSerialSize(version);
+    if (bufLen < nbytes)
+        throw std::invalid_argument("Buffer too small for serialized product "
+                "information: need=" + std::to_string(nbytes) + " bytes, bufLen="
+                + std::to_string(bufLen));
+    // Keep consonant with ProdInfo::serialize()
+    const uint8_t* const bytes = reinterpret_cast<const uint8_t*>(buf);
+    index = ntohl(*reinterpret_cast<const uint32_t*>(bytes));
+    size = ntohl(*reinterpret_cast<const uint32_t*>(bytes+4));
+    chunkSize = ntohs(*reinterpret_cast<const uint16_t*>(bytes+8));
+    const size_t nameLen = ntohs(*reinterpret_cast<const uint16_t*>(bytes+10));
+    if (nameLen > bufLen - nbytes)
+        throw std::invalid_argument("Buffer too small for product name: need=" +
+                std::to_string(nameLen) + " bytes, remaining=" +
+                std::to_string(bufLen-nbytes));
+    char nameBuf[nameLen];
+    (void)memcpy(nameBuf, bytes+12, nameLen);
+    name.assign(nameBuf, nameLen);
+}
+
+bool ProdInfo::equals(const ProdInfo& that) const
+{
+    return (index == that.index) &&
+            (size == that.size) &&
+            (chunkSize == that.chunkSize) &&
+            (name.compare(that.name) == 0);
+}
+
+size_t ProdInfo::getSerialSize(unsigned version) const
+{
+    // Keep consonant with serialize()
+    return 2*sizeof(uint32_t) + 2*sizeof(uint16_t) + name.size();
 }
 
 void ProdInfo::serialize(
-        Socket&        sock,
-        const unsigned streamId,
+        std::ostream&  ostream,
         const unsigned version) const
 {
-    struct iovec                  iovec[IOVCNT];
-    decltype(ProdInfo::index)     netIndex = htonl(index);
-    decltype(ProdInfo::size)      netSize = htonl(size);
-    decltype(ProdInfo::chunkSize) netChunkSize = htons(chunkSize);
-    iovec[0].iov_base = &netIndex;
-    iovec[0].iov_len = sizeof(netIndex);
-    iovec[1].iov_base = &netSize;
-    iovec[1].iov_len = sizeof(netSize);
-    iovec[2].iov_base = &netChunkSize;
-    iovec[2].iov_len = sizeof(netChunkSize);
-    // The following cast is safe since the data is only being read
-    iovec[3].iov_base = const_cast<char*>(name.data());
-    iovec[3].iov_len = name.size();
-    sock.sendv(streamId, iovec, IOVCNT);
+    uint32_t uint32 = htonl(index);
+    ostream.write(reinterpret_cast<const char*>(&uint32), sizeof(uint32));
+    uint32 = htonl(size);
+    ostream.write(reinterpret_cast<const char*>(&uint32), sizeof(uint32));
+    uint16_t uint16 = htons(chunkSize);
+    ostream.write(reinterpret_cast<const char*>(&uint16), sizeof(uint16));
+    uint16 = htons(static_cast<uint16_t>(name.size()));
+    ostream.write(reinterpret_cast<const char*>(&uint16), sizeof(uint16));
+    ostream.write(name.data(), name.size());
+}
+
+void ProdInfo::serialize(
+        void* const    buf,
+        const size_t   bufLen,
+        const unsigned version) const
+{
+    size_t nbytes = getSerialSize(version);
+    if (bufLen < nbytes)
+        throw std::invalid_argument("Buffer too small for serialized product "
+                "information: need=" + std::to_string(nbytes) + " bytes, bufLen="
+                + std::to_string(bufLen));
+    // Keep consonant with ProdInfo::ProdInfo()
+    uint8_t* const bytes = reinterpret_cast<uint8_t*>(buf);
+    *reinterpret_cast<uint32_t*>(bytes) = htonl(index);
+    *reinterpret_cast<uint32_t*>(bytes+4) = htonl(size);
+    *reinterpret_cast<uint16_t*>(bytes+8) = htons(chunkSize);
+    *reinterpret_cast<uint16_t*>(bytes+10) =
+            htons(static_cast<uint16_t>(name.size()));
+    (void)memcpy(bytes+12, name.data(), name.size());
 }
 
 } // namespace

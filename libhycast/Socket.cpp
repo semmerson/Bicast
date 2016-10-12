@@ -26,9 +26,9 @@ Socket::Socket()
 }
 
 Socket::Socket(
-        const int      sock,
+        const int      sd,
         const uint16_t numStreams)
-    : pImpl(new SocketImpl(sock, numStreams))
+    : pImpl(new SocketImpl(sd, numStreams))
 {
 }
 
@@ -37,8 +37,8 @@ Socket::Socket(SocketImpl* impl)
 {
 }
 
-Socket::Socket(std::shared_ptr<SocketImpl> sp)
-    : pImpl(sp)
+Socket::Socket(std::shared_ptr<SocketImpl> sptr)
+    : pImpl(sptr)
 {
 }
 

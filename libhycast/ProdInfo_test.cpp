@@ -20,50 +20,10 @@
 #include <cstring>
 #include <gtest/gtest.h>
 #include <netinet/in.h>
+#include <sstream>
 #include <thread>
 
 namespace {
-
-static const int MY_PORT_NUM = 38800;
-static const int numStreams = 1;
-static const int version = 0;
-
-void runServer(hycast::ServerSocket serverSock)
-{
-    hycast::Socket sock(serverSock.accept());
-    for (;;) {
-#if 0
-        hycast::ProdInfo info(sock, version);
-        EXPECT_STREQ("name", info.getName().data());
-        EXPECT_EQ(1, info.getIndex());
-        EXPECT_EQ(2, info.getSize());
-        EXPECT_EQ(3, info.getChunkSize());
-        info.serialize(sock, 0, version);
-        break;
-#else
-        uint32_t size = sock.getSize();
-        if (size == 0)
-            break;
-        unsigned streamId = sock.getStreamId();
-        char buf[size];
-        sock.recv(buf, size);
-        sock.send(streamId, buf, size);
-#endif
-    }
-}
-
-void runClient()
-{
-    hycast::InetSockAddr sockAddr("127.0.0.1", MY_PORT_NUM);
-    hycast::ClientSocket sock(sockAddr, numStreams);
-    hycast::ProdInfo info1("name", 1, 2, 3);
-    info1.serialize(sock, 0, version);
-    hycast::ProdInfo info2(sock, version);
-    EXPECT_STREQ(info1.getName().data(), info2.getName().data());
-    EXPECT_EQ(info1.getIndex(), info2.getIndex());
-    EXPECT_EQ(info1.getSize(), info2.getSize());
-    EXPECT_EQ(info1.getChunkSize(), info2.getChunkSize());
-}
 
 // The fixture for testing class ProdInfo.
 class ProdInfoTest : public ::testing::Test {
@@ -91,33 +51,6 @@ class ProdInfoTest : public ::testing::Test {
     // Code here will be called immediately after each test (right
     // before the destructor).
   }
-
-    void startServer()
-    {
-        // Work done here so that socket is being listened to when client starts
-        hycast::InetSockAddr sockAddr("127.0.0.1", MY_PORT_NUM);
-        hycast::ServerSocket sock(sockAddr, numStreams);
-        recvThread = std::thread(runServer, sock);
-    }
-
-  // Objects declared here can be used by all tests in the test case for ProdInfo.
-    std::thread recvThread;
-    std::thread sendThread;
-
-    void startClient()
-    {
-        sendThread = std::thread(runClient);
-    }
-
-    void stopClient()
-    {
-        sendThread.join();
-    }
-
-    void stopServer()
-    {
-        recvThread.join();
-    }
 };
 
 // Tests default construction
@@ -138,12 +71,34 @@ TEST_F(ProdInfoTest, Construction) {
     EXPECT_EQ(3, info.getChunkSize());
 }
 
-// Tests serialization/deserialization
+// Tests equals()
+TEST_F(ProdInfoTest, Equals) {
+    hycast::ProdInfo info1("name", 1, 2, 3);
+    EXPECT_TRUE(info1.equals(info1));
+    hycast::ProdInfo info2("name", 1, 2, 2);
+    EXPECT_FALSE(info1.equals(info2));
+    hycast::ProdInfo info3("name", 1, 1, 3);
+    EXPECT_FALSE(info1.equals(info3));
+    hycast::ProdInfo info4("name", 2, 2, 3);
+    EXPECT_FALSE(info1.equals(info4));
+    hycast::ProdInfo info5("names", 1, 2, 3);
+    EXPECT_FALSE(info1.equals(info5));
+}
+
+// Tests getSerialSize()
+TEST_F(ProdInfoTest, GetSerialSize) {
+    hycast::ProdInfo info1("name", 1, 2, 3);
+    EXPECT_EQ(16, info1.getSerialSize(0));
+}
+
+// Tests serialization/de-serialization
 TEST_F(ProdInfoTest, Serialization) {
-    startServer();
-    startClient();
-    stopClient();
-    stopServer();
+    hycast::ProdInfo info1("name", 1, 2, 3);
+    const size_t nbytes = info1.getSerialSize(0);
+    alignas(alignof(size_t)) uint8_t bytes[nbytes];
+    info1.serialize(bytes, nbytes, 0);
+    hycast::ProdInfo info2(bytes, nbytes, 0);
+    EXPECT_TRUE(info1.equals(info2));
 }
 
 }  // namespace

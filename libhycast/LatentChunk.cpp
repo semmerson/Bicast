@@ -1,28 +1,27 @@
 /**
- * This file defines a chunk of data that must be read from an SCTP socket.
+ * This file defines a chunk of data that is not yet realized.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: IncomingChunk.cpp
+ *   @file: LatentChunk.cpp
  * @author: Steven R. Emmerson
  */
 
-#include "arpa/inet.h"
-#include "IncomingChunk.h"
+#include <arpa/inet.h>
+#include <Chunk.h>
 
 namespace hycast {
 
-IncomingChunk::IncomingChunk(
-        Socket&          sock)
-    : prodIndex(0),
-      chunkIndex(0),
-      sock(sock)
+LatentChunk::LatentChunk(
+        Channel& channel)
+    : info(),
+      channel(channel)
 {
-    if (sock.getSize() < 8)
-        throw std::invalid_argument("Invalid message: msgSize=" +
-                std::to_string(sock.getSize()));
+    if (channel.getSize() < 8)
+        throw std::invalid_argument("Too little input: " +
+                std::to_string(channel.getSize()) + " bytes");
     uint32_t pi;
     uint32_t ci;
     struct iovec iov[2];
@@ -39,22 +38,22 @@ IncomingChunk::IncomingChunk(
                 std::to_string(chunkIndex));
 }
 
-ProdIndex IncomingChunk::getProdIndex() const
+ProdIndex LatentChunk::getProdIndex() const
 {
     return prodIndex;
 }
 
-ChunkIndex IncomingChunk::getChunkIndex() const
+ChunkIndex LatentChunk::getChunkIndex() const
 {
     return chunkIndex;
 }
 
-ChunkSize IncomingChunk::getSize() const
+ChunkSize LatentChunk::getSize() const
 {
     return sock.getSize() - 8;
 }
 
-void IncomingChunk::drainData(void* buf)
+void LatentChunk::drainData(void* buf)
 {
     uint8_t tmp[8];
     struct iovec iov[2];

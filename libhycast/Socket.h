@@ -38,9 +38,9 @@ public:
      */
     explicit Socket();
     /**
-     * Constructs from a socket. Only do this once per socket because the
+     * Constructs from a BSD socket. Only do this once per socket because the
      * destructor might close the socket.
-     * @param[in] sock        Socket descriptor
+     * @param[in] sd          Socket descriptor
      * @param[in] numStreams  Number of SCTP streams
      * @throws std::bad_alloc if required memory can't be allocated
      * @throws std::invalid_argument if `sock < 0`
@@ -49,13 +49,13 @@ public:
      * @see Socket::operator=(Socket&& socket)
      */
     Socket(
-            const int      sock,
+            const int      sd,
             const uint16_t numStreams = 1);
     /**
      * Constructs from a shared pointer to a socket implementation.
-     * @param[in] sp  Shared pointer to implementation
+     * @param[in] sptr  Shared pointer to implementation
      */
-    explicit Socket(std::shared_ptr<SocketImpl> sp);
+    explicit Socket(std::shared_ptr<SocketImpl> sptr);
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
