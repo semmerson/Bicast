@@ -6,3 +6,5 @@
 *.la
 *.lo
 html
+core.*
+*.svg
