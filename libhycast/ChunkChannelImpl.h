@@ -1,38 +1,33 @@
 /**
- * This file declares an implementation of an I/O channel.
+ * This file declares implements an object channel for chunks-of-data.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: ChannelImpl.h
+ *   @file: ChunkChannelImpl.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef CHANNELIMPL_H_
-#define CHANNELIMPL_H_
+#ifndef CHUNK_CHANNEL_IMPL_H_
+#define CHUNK_CHANNEL_IMPL_H_
 
-#include "ChunkInfo.h"
-#include "ProdInfo.h"
-#include "Serializable.h"
+#include "Chunk.h"
 #include "Socket.h"
 
-#include <cstdint>
 #include <memory>
-#include <mutex>
 
 namespace hycast {
 
-template <class T>
-class ChannelImpl final {
-    Socket             sock;
-    unsigned           streamId;
-    unsigned           version;
+class ChunkChannelImpl final {
+    Socket   sock;
+    unsigned streamId;
+    unsigned version;
 public:
-    ChannelImpl(
-            Socket&            sock,
-            const unsigned     streamId,
-            const unsigned     version);
+    ChunkChannelImpl(
+            Socket&        sock,
+            const unsigned streamId,
+            const unsigned version);
     /**
      * Returns the associated SCTP socket.
      * @returns the associated SCTP socket
@@ -49,15 +44,15 @@ public:
         return sock.getStreamId();
     }
     /**
-     * Sends a serializable object.
-     * @param[in] obj  Serializable object.
+     * Sends a chunk-of-data.
+     * @param[in] chunk  Chunk of data
      */
-    void send(const Serializable& obj);
+    void send(const ActualChunk& chunk);
     /**
-     * Returns the object in the current message.
-     * @return the object in the current message
+     * Returns the chunk-of-data in the current message.
+     * @return the chunk-of-data in the current message
      */
-    std::shared_ptr<T> recv();
+    std::shared_ptr<LatentChunk> recv();
     /**
      * Returns the amount of available input in bytes.
      * @return The amount of available input in bytes
@@ -69,4 +64,4 @@ public:
 
 } // namespace
 
-#endif /* CHANNELIMPL_H_ */
+#endif

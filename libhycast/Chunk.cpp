@@ -20,23 +20,24 @@
 namespace hycast {
 
 LatentChunk::LatentChunk(
-        Channel<ChunkInfo>& channel,
-        const unsigned      version)
+        Socket&        sock,
+        const unsigned version)
     : info(),
-      channel(channel),
+      sock(sock),
       size(0)
 {
     // Keep consistent with ActualChunk::serialize()
     unsigned nbytes = info.getSerialSize(version);
     alignas(alignof(max_align_t)) uint8_t buf[nbytes];
-    channel.getSocket().recv(buf, nbytes, MSG_PEEK);
+    sock.recv(buf, nbytes, MSG_PEEK);
     info = ChunkInfo(buf, nbytes, version);
-    size = channel.getSize() - nbytes;
+    size = sock.getSize() - nbytes;
 }
 
 void ActualChunk::serialize(
-        Channel<ChunkInfo>& channel,
-        const unsigned      version)
+        Socket&        sock,
+        const unsigned streamId,
+        const unsigned version) const
 {
     // Keep consistent with LatentChunk::LatentChunk()
     unsigned nbytes = info.getSerialSize(version);
@@ -47,7 +48,7 @@ void ActualChunk::serialize(
     iovec[0].iov_len = nbytes;
     iovec[1].iov_base = const_cast<void*>(data);
     iovec[1].iov_len = size;
-    channel.getSocket().sendv(channel.getStreamId(), iovec, 2);
+    sock.sendv(streamId, iovec, 2);
 }
 
 } // namespace

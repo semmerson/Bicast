@@ -28,8 +28,10 @@ libhycast_la_SOURCES 	= \
         ProdInfo.cpp ProdInfo.h \
         ChunkInfo.cpp ChunkInfo.h \
         Chunk.cpp Chunk.h \
-	Channel.cpp Channel.h \
 	ChannelImpl.cpp ChannelImpl.h \
+	Channel.cpp Channel.h \
+	ChunkChannelImpl.cpp ChunkChannelImpl.h \
+	ChunkChannel.cpp ChunkChannel.h \
         #PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram

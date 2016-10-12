@@ -45,24 +45,6 @@ std::shared_ptr<T> ChannelImpl<T>::recv()
     return std::shared_ptr<T>(new T(buf, nbytes, version));
 }
 
-template <class T>
-std::shared_ptr<ProdInfo> ChannelImpl<T>::recvProdInfo()
-{
-    size_t nbytes = getSize();
-    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
-    sock.recv(buf, nbytes);
-    return std::shared_ptr<ProdInfo>(new ProdInfo(buf, nbytes, version));
-}
-
-template <class T>
-std::shared_ptr<ChunkInfo> ChannelImpl<T>::recvChunkInfo()
-{
-    size_t nbytes = getSize();
-    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
-    sock.recv(buf, nbytes);
-    return std::shared_ptr<ChunkInfo>(new ChunkInfo(buf, nbytes, version));
-}
-
 template class ChannelImpl<ProdInfo>;
 template class ChannelImpl<ChunkInfo>;
 

@@ -9,22 +9,21 @@
  * @author: Steven R. Emmerson
  */
 
-#ifndef CHANNEL_H_
-#define CHANNEL_H_
+#ifndef CHUNK_CHANNEL_H_
+#define CHUNK_CHANNEL_H_
 
-#include "ChunkInfo.h"
-#include "ProdInfo.h"
-#include "Serializable.h"
+#include "Chunk.h"
+#include "Socket.h"
 
 #include <memory>
+#include <cstddef>
 
 namespace hycast {
 
-template <class U> class ChannelImpl; // Forward declaration of implementation
+class ChunkChannelImpl; // Forward declaration of implementation
 
-template <class T>
-class Channel {
-    std::shared_ptr<ChannelImpl<T>> pImpl;
+class ChunkChannel final {
+    std::shared_ptr<ChunkChannelImpl> pImpl;
 public:
     /**
      * Constructs from an SCTP socket, a stream identifier, and a protocol
@@ -33,7 +32,7 @@ public:
      * @param[in] streamId  Stream identifier
      * @param[in] version   Protocol version
      */
-    Channel(
+    ChunkChannel(
             Socket&            sock,
             const unsigned     streamId,
             const unsigned     version);
@@ -49,15 +48,15 @@ public:
      */
     unsigned getStreamId() const;
     /**
-     * Sends a serializable object.
-     * @param[in] obj  Serializable object
+     * Sends a chunk-of-data.
+     * @param[in] chunk  Chunk of data
      */
-    void send(const Serializable& obj) const;
+    void send(const ActualChunk& chunk) const;
     /**
-     * Returns the object contained in the current message.
-     * @return the object contained in the current message
+     * Returns the chunk-of-data in the current message.
+     * @return the chunk-of-data in the current message
      */
-    std::shared_ptr<T> recv();
+    std::shared_ptr<LatentChunk> recv();
     /**
      * Returns the size of the current message in bytes.
      * @return The size of the current message in bytes
@@ -67,4 +66,4 @@ public:
 
 } // namespace
 
-#endif /* CHANNEL_H_ */
+#endif /* CHUNK_CHANNEL_H_ */

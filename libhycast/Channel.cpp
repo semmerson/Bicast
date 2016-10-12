@@ -47,18 +47,6 @@ std::shared_ptr<T> Channel<T>::recv()
 }
 
 template <class T>
-std::shared_ptr<ProdInfo> Channel<T>::recvProdInfo()
-{
-    return pImpl->recvProdInfo();
-}
-
-template <class T>
-std::shared_ptr<ChunkInfo> Channel<T>::recvChunkInfo()
-{
-    return pImpl->recvChunkInfo();
-}
-
-template <class T>
 size_t Channel<T>::getSize() const
 {
     return pImpl->getSize();

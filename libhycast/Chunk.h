@@ -22,21 +22,21 @@
 
 namespace hycast {
 
-class LatentChunk {
-    ChunkInfo          info;
-    Channel<ChunkInfo> channel;
-    ChunkSize          size;
+class LatentChunk final {
+    ChunkInfo info;
+    Socket    sock;
+    ChunkSize size;
 public:
     /**
-     * Constructs from an object channel whose current message is a chunk of
+     * Constructs from an SCTP socket whose current message is a chunk of
      * data and a protocol version. NB: This method reads the current message.
-     * @param[in] channel  Object channel
+     * @param[in] sock     SCTP socket
      * @param[in] version  Protocol version
      * @throws std::invalid_argument if the current message is invalid
      */
     LatentChunk(
-            Channel<ChunkInfo>& channel,
-            const unsigned      version);
+            Socket&        sock,
+            const unsigned version);
     /**
      * Returns information on the chunk.
      * @return information on the chunk
@@ -66,7 +66,7 @@ public:
     void drainData(void* buf);
 };
 
-class ActualChunk {
+class ActualChunk final {
     ChunkInfo   info;
     const void* data;
     ChunkSize   size;
@@ -112,16 +112,18 @@ public:
         return data;
     }
     /**
-     * Serializes this instance to an object channel. NB: This is the only thing
-     * that goes out on the channel.
-     * @param[in,out] channel  Object channel
-     * @param[in]     version  Protocol version
+     * Serializes this instance to an SCTP socket. NB: This is the only thing
+     * that's written to the socket.
+     * @param[in,out] sock      SCTP socket
+     * @param[in]     streamId  SCTP stream ID
+     * @param[in]     version   Protocol version
      * @exceptionsafety Basic
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            Channel<ChunkInfo>& channel,
-            const unsigned      version);
+            Socket&        sock,
+            const unsigned streamId,
+            const unsigned version) const;
 };
 
 } // namespace
