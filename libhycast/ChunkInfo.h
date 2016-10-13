@@ -15,8 +15,6 @@
 #include "HycastTypes.h"
 #include "Serializable.h"
 
-#include <istream>
-
 namespace hycast {
 
 class ChunkInfo final : public Serializable {
@@ -50,12 +48,16 @@ public:
             const size_t   size,
             const unsigned version);
     /**
-     * Constructs by de-serializing from an input stream.
-     * @param[in] istream  Input stream
+     * Returns a new instance based on de-serializing a serialized
+     * representation in a buffer.
+     * @param[in] buf      Buffer
+     * @param[in] size     Size of buffer in bytes
      * @param[in] version  Protocol version
+     * @return A new instance
      */
-    ChunkInfo(
-            std::istream&  istream,
+    static std::shared_ptr<ChunkInfo> create(
+            const void*    buf,
+            const size_t   size,
             const unsigned version);
     /**
      * Returns the size of a serialized instance in bytes.
@@ -91,6 +93,19 @@ public:
             void*          buf,
             const size_t   nbytes,
             const unsigned version) const;
+    /**
+     * Returns a new instance corresponding to a serialized representation in a
+     * buffer.
+     * @param[in] buf      Buffer
+     * @param[in] size     Size of buffer in bytes
+     * @param[in] version  Protocol version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    static std::shared_ptr<ChunkInfo> deserialize(
+            const void* const buf,
+            const size_t      size,
+            const unsigned    version);
 };
 
 } // namespace

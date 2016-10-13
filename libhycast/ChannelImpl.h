@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <type_traits>
+#include <utility>
 
 namespace hycast {
 
@@ -57,7 +59,8 @@ public:
      * Returns the object in the current message.
      * @return the object in the current message
      */
-    std::shared_ptr<T> recv();
+    typename std::result_of<decltype(&T::deserialize)
+            (const void*, size_t, unsigned)>::type recv();
     /**
      * Returns the amount of available input in bytes.
      * @return The amount of available input in bytes

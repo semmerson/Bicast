@@ -12,6 +12,8 @@
 #include "Channel.h"
 #include <ChannelImpl.h>
 
+#include <memory>
+
 namespace hycast {
 
 template <class T>
@@ -41,7 +43,8 @@ void Channel<T>::send(const Serializable& obj) const
 }
 
 template <class T>
-std::shared_ptr<T> Channel<T>::recv()
+typename std::result_of<decltype(&T::deserialize)
+        (void*, size_t, unsigned)>::type Channel<T>::recv()
 {
     return pImpl->recv();
 }

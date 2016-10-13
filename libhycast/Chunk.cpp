@@ -24,7 +24,8 @@ LatentChunk::LatentChunk(
         const unsigned version)
     : info(),
       sock(sock),
-      size(0)
+      size(0),
+      version(version)
 {
     // Keep consistent with ActualChunk::serialize()
     unsigned nbytes = info.getSerialSize(version);
@@ -32,6 +33,18 @@ LatentChunk::LatentChunk(
     sock.recv(buf, nbytes, MSG_PEEK);
     info = ChunkInfo(buf, nbytes, version);
     size = sock.getSize() - nbytes;
+}
+
+void LatentChunk::drainData(void* data)
+{
+    unsigned nbytes = info.getSerialSize(version);
+    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
+    struct iovec iovec[2];
+    iovec[0].iov_base = buf;
+    iovec[0].iov_len = nbytes;
+    iovec[1].iov_base = const_cast<void*>(data);
+    iovec[1].iov_len = size;
+    sock.recvv(iovec, 2);
 }
 
 void ActualChunk::serialize(

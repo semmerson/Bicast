@@ -16,9 +16,7 @@
 #include "Serializable.h"
 
 #include <cstdint>
-#include <istream>
 #include <memory>
-#include <ostream>
 #include <string>
 
 namespace hycast {
@@ -28,7 +26,6 @@ class ProdInfo : public Serializable {
     ProdIndex   index;
     ProdSize    size;
     ChunkSize   chunkSize;
-    static const int    IOVCNT = 4;
 
 public:
     /**
@@ -68,6 +65,18 @@ public:
      * @threadsafety    Compatible but not thread-safe
      */
     ProdInfo(
+            const void* const buf,
+            const size_t      size,
+            const unsigned    version);
+    /**
+     * Returns a new instance by deserializing a serialized representation from
+     * a buffer.
+     * @param[in] buf      Buffer
+     * @param[in] version  Protocol version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    static std::shared_ptr<ProdInfo> create(
             const void* const buf,
             const size_t      size,
             const unsigned    version);
@@ -114,17 +123,6 @@ public:
      */
     size_t getSerialSize(unsigned version) const;
     /**
-     * Serializes this instance to an output stream.
-     * @param[in] ostream   Output stream
-     * @param[in] version   Serialization version
-     * @throws `ostream` exceptions only
-     * @execptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    void serialize(
-            std::ostream&  ostream,
-            const unsigned version) const;
-    /**
      * Serializes this instance to a buffer.
      * @param[in] buf       Buffer
      * @param[in] size      Buffer size in bytes
@@ -136,6 +134,19 @@ public:
             void*          buf,
             const size_t   size,
             const unsigned version) const;
+    /**
+     * Returns a new instance corresponding to a serialized representation in a
+     * buffer.
+     * @param[in] buf      Buffer
+     * @param[in] size     Size of buffer in bytes
+     * @param[in] version  Protocol version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    static std::shared_ptr<ProdInfo> deserialize(
+            const void* const buf,
+            const size_t      size,
+            const unsigned    version);
 };
 
 } // namespace

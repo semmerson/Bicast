@@ -31,14 +31,12 @@ ChunkInfo::ChunkInfo(
     chunkIndex = ntohl(uint32s[1]);
 }
 
-ChunkInfo::ChunkInfo(
-        std::istream&  istream,
+std::shared_ptr<ChunkInfo> ChunkInfo::create(
+        const void*    buf,
+        const size_t   size,
         const unsigned version)
 {
-    uint32_t uint32s[2];
-    istream.read(reinterpret_cast<char*>(&uint32s), sizeof(uint32s));
-    prodIndex = ntohl(uint32s[0]);
-    chunkIndex = ntohl(uint32s[1]);
+    return std::shared_ptr<ChunkInfo>(new ChunkInfo(buf, size, version));
 }
 
 bool ChunkInfo::equals(const ChunkInfo& that) const
@@ -62,4 +60,12 @@ void ChunkInfo::serialize(
     uint32s[1] = htonl(chunkIndex);
 }
 
+std::shared_ptr<ChunkInfo> ChunkInfo::deserialize(
+        const void* const buf,
+        const size_t      size,
+        const unsigned    version)
+{
+    return std::shared_ptr<ChunkInfo>(new ChunkInfo(buf, size, version));
 }
+
+} // namespace

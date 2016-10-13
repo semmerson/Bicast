@@ -43,29 +43,6 @@ ProdInfo::ProdInfo(
 }
 
 ProdInfo::ProdInfo(
-        std::istream&  istream,
-        const unsigned version)
-    : name(),
-      index(0),
-      size(0),
-      chunkSize(0)
-{
-    uint32_t uint32;
-    istream.read(reinterpret_cast<char*>(&uint32), sizeof(uint32));
-    index = ntohl(uint32);
-    istream.read(reinterpret_cast<char*>(&uint32), sizeof(uint32));
-    size = ntohl(uint32);
-    uint16_t uint16;
-    istream.read(reinterpret_cast<char*>(&uint16), sizeof(uint16));
-    chunkSize = ntohs(uint16);
-    istream.read(reinterpret_cast<char*>(&uint16), sizeof(uint16));
-    const size_t nameLen = ntohs(uint16);
-    char nameBuf[nameLen];
-    istream.read(nameBuf, nameLen);
-    name.assign(nameBuf, nameLen);
-}
-
-ProdInfo::ProdInfo(
         const void* const buf,
         const size_t      bufLen,
         const unsigned    version)
@@ -94,6 +71,14 @@ ProdInfo::ProdInfo(
     name.assign(nameBuf, nameLen);
 }
 
+std::shared_ptr<ProdInfo> ProdInfo::create(
+        const void* const buf,
+        const size_t      size,
+        const unsigned    version)
+{
+    return std::shared_ptr<ProdInfo>(new ProdInfo(buf, size, version));
+}
+
 bool ProdInfo::equals(const ProdInfo& that) const
 {
     return (index == that.index) &&
@@ -106,21 +91,6 @@ size_t ProdInfo::getSerialSize(unsigned version) const
 {
     // Keep consonant with serialize()
     return 2*sizeof(uint32_t) + 2*sizeof(uint16_t) + name.size();
-}
-
-void ProdInfo::serialize(
-        std::ostream&  ostream,
-        const unsigned version) const
-{
-    uint32_t uint32 = htonl(index);
-    ostream.write(reinterpret_cast<const char*>(&uint32), sizeof(uint32));
-    uint32 = htonl(size);
-    ostream.write(reinterpret_cast<const char*>(&uint32), sizeof(uint32));
-    uint16_t uint16 = htons(chunkSize);
-    ostream.write(reinterpret_cast<const char*>(&uint16), sizeof(uint16));
-    uint16 = htons(static_cast<uint16_t>(name.size()));
-    ostream.write(reinterpret_cast<const char*>(&uint16), sizeof(uint16));
-    ostream.write(name.data(), name.size());
 }
 
 void ProdInfo::serialize(
@@ -141,6 +111,14 @@ void ProdInfo::serialize(
     *reinterpret_cast<uint16_t*>(bytes+10) =
             htons(static_cast<uint16_t>(name.size()));
     (void)memcpy(bytes+12, name.data(), name.size());
+}
+
+std::shared_ptr<ProdInfo> ProdInfo::deserialize(
+        const void* const buf,
+        const size_t      size,
+        const unsigned    version)
+{
+    return std::shared_ptr<ProdInfo>(new ProdInfo(buf, size, version));
 }
 
 } // namespace

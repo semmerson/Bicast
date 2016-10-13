@@ -13,6 +13,7 @@
 #include "ChannelImpl.h"
 
 #include <cstddef>
+#include <memory>
 
 namespace hycast {
 
@@ -37,12 +38,13 @@ void ChannelImpl<T>::send(const Serializable& obj)
 }
 
 template <class T>
-std::shared_ptr<T> ChannelImpl<T>::recv()
+typename std::result_of<decltype(&T::deserialize)
+        (const void*, size_t, unsigned)>::type ChannelImpl<T>::recv()
 {
     size_t nbytes = getSize();
     alignas(alignof(max_align_t)) uint8_t buf[nbytes];
     sock.recv(buf, nbytes);
-    return std::shared_ptr<T>(new T(buf, nbytes, version));
+    return T::deserialize(buf, nbytes, version);
 }
 
 template class ChannelImpl<ProdInfo>;

@@ -17,10 +17,11 @@
 #include "Serializable.h"
 
 #include <memory>
+#include <type_traits>
 
 namespace hycast {
 
-template <class U> class ChannelImpl; // Forward declaration of implementation
+template <class V> class ChannelImpl; // Forward declaration of implementation
 
 template <class T>
 class Channel {
@@ -57,7 +58,8 @@ public:
      * Returns the object contained in the current message.
      * @return the object contained in the current message
      */
-    std::shared_ptr<T> recv();
+    typename std::result_of<decltype(&T::deserialize)
+            (void*, size_t, unsigned)>::type recv();
     /**
      * Returns the size of the current message in bytes.
      * @return The size of the current message in bytes

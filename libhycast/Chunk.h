@@ -26,6 +26,7 @@ class LatentChunk final {
     ChunkInfo info;
     Socket    sock;
     ChunkSize size;
+    unsigned  version;
 public:
     /**
      * Constructs from an SCTP socket whose current message is a chunk of
@@ -58,12 +59,12 @@ public:
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
      * be available.
-     * @param[in] buf  Buffer to drain the chunk of data into
+     * @param[in] data  Buffer to drain the chunk of data into
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      * @threadsafety Safe
      */
-    void drainData(void* buf);
+    void drainData(void* data);
 };
 
 class ActualChunk final {

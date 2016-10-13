@@ -51,6 +51,7 @@ check_PROGRAMS		= \
 	ProdInfo_test \
 	ChunkInfo_test \
 	Channel_test \
+	ChunkChannel_test \
 	#Di_test
 
 #Di_test_SOURCES	= Di_test.cpp
@@ -83,6 +84,9 @@ ChunkInfo_test_LDFLAGS = libhycast.la -lgtest -lsctp
 Channel_test_SOURCES = Channel_test.cpp
 Channel_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
+ChunkChannel_test_SOURCES = ChunkChannel_test.cpp
+ChunkChannel_test_LDFLAGS = libhycast.la -lgtest -lsctp
+
 TESTS			= \
 	Inet4Addr_test \
 	Inet6Addr_test \
@@ -93,4 +97,5 @@ TESTS			= \
 	ProdInfo_test \
 	ChunkInfo_test \
 	Channel_test \
+	ChunkChannel_test \
         #Di_test
