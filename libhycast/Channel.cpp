@@ -44,7 +44,7 @@ void Channel<T>::send(const Serializable& obj) const
 
 template <class T>
 typename std::result_of<decltype(&T::deserialize)
-        (void*, size_t, unsigned)>::type Channel<T>::recv()
+        (const char*, size_t, unsigned)>::type Channel<T>::recv()
 {
     return pImpl->recv();
 }

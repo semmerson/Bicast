@@ -70,7 +70,7 @@ TEST_F(ChunkInfoTest, Equals) {
 TEST_F(ChunkInfoTest, Serialization) {
     hycast::ChunkInfo info1(1, 2);
     const size_t nbytes = info1.getSerialSize(0);
-    alignas(alignof(max_align_t)) uint8_t bytes[nbytes];
+    alignas(alignof(max_align_t)) char bytes[nbytes];
     info1.serialize(bytes, nbytes, 0);
     hycast::ChunkInfo info2(bytes, nbytes, 0);
     EXPECT_TRUE(info1.equals(info2));

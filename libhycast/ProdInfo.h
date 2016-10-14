@@ -13,6 +13,7 @@
 #define PRODINFO_H_
 
 #include "HycastTypes.h"
+#include "ProdIndex.h"
 #include "Serializable.h"
 
 #include <cstdint>
@@ -46,18 +47,6 @@ public:
             const ProdSize     size,
             const ChunkSize    chunkSize);
     /**
-     * Constructs by deserializing a serialized representation from an input
-     * stream.
-     * @param[in] istream  Input stream
-     * @param[in] version  Serialization version
-     * @throws `istream` exceptions only
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    ProdInfo(
-            std::istream&  istream,
-            const unsigned version);
-    /**
      * Constructs by deserializing a serialized representation from a buffer.
      * @param[in] buf      Buffer
      * @param[in] version  Serialization version
@@ -65,18 +54,6 @@ public:
      * @threadsafety    Compatible but not thread-safe
      */
     ProdInfo(
-            const void* const buf,
-            const size_t      size,
-            const unsigned    version);
-    /**
-     * Returns a new instance by deserializing a serialized representation from
-     * a buffer.
-     * @param[in] buf      Buffer
-     * @param[in] version  Protocol version
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    static std::shared_ptr<ProdInfo> create(
             const void* const buf,
             const size_t      size,
             const unsigned    version);
@@ -127,11 +104,12 @@ public:
      * @param[in] buf       Buffer
      * @param[in] size      Buffer size in bytes
      * @param[in] version   Serialization version
+     * @return Address of next byte
      * @execptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
-    void serialize(
-            void*          buf,
+    char* serialize(
+            char*          buf,
             const size_t   size,
             const unsigned version) const;
     /**
@@ -144,7 +122,7 @@ public:
      * @threadsafety    Compatible but not thread-safe
      */
     static std::shared_ptr<ProdInfo> deserialize(
-            const void* const buf,
+            const char* const buf,
             const size_t      size,
             const unsigned    version);
 };

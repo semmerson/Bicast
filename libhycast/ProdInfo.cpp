@@ -71,14 +71,6 @@ ProdInfo::ProdInfo(
     name.assign(nameBuf, nameLen);
 }
 
-std::shared_ptr<ProdInfo> ProdInfo::create(
-        const void* const buf,
-        const size_t      size,
-        const unsigned    version)
-{
-    return std::shared_ptr<ProdInfo>(new ProdInfo(buf, size, version));
-}
-
 bool ProdInfo::equals(const ProdInfo& that) const
 {
     return (index == that.index) &&
@@ -93,8 +85,8 @@ size_t ProdInfo::getSerialSize(unsigned version) const
     return 2*sizeof(uint32_t) + 2*sizeof(uint16_t) + name.size();
 }
 
-void ProdInfo::serialize(
-        void* const    buf,
+char* ProdInfo::serialize(
+        char*          buf,
         const size_t   bufLen,
         const unsigned version) const
 {
@@ -104,17 +96,20 @@ void ProdInfo::serialize(
                 "information: need=" + std::to_string(nbytes) + " bytes, bufLen="
                 + std::to_string(bufLen));
     // Keep consonant with ProdInfo::ProdInfo()
-    uint8_t* const bytes = reinterpret_cast<uint8_t*>(buf);
-    *reinterpret_cast<uint32_t*>(bytes) = htonl(index);
-    *reinterpret_cast<uint32_t*>(bytes+4) = htonl(size);
-    *reinterpret_cast<uint16_t*>(bytes+8) = htons(chunkSize);
-    *reinterpret_cast<uint16_t*>(bytes+10) =
+    buf = index.serialize(buf, bufLen, version);
+    *reinterpret_cast<uint32_t*>(buf) = htonl(size);
+    buf += 4;
+    *reinterpret_cast<uint16_t*>(buf) = htons(chunkSize);
+    buf += 2;
+    *reinterpret_cast<uint16_t*>(buf) =
             htons(static_cast<uint16_t>(name.size()));
-    (void)memcpy(bytes+12, name.data(), name.size());
+    buf += 2;
+    (void)memcpy(buf, name.data(), name.size());
+    return buf + name.size();
 }
 
 std::shared_ptr<ProdInfo> ProdInfo::deserialize(
-        const void* const buf,
+        const char* const buf,
         const size_t      size,
         const unsigned    version)
 {

@@ -13,6 +13,7 @@
 #define CHUNKINFO_H_
 
 #include "HycastTypes.h"
+#include "ProdIndex.h"
 #include "Serializable.h"
 
 namespace hycast {
@@ -44,19 +45,7 @@ public:
      * @param[in] version  Protocol version
      */
     ChunkInfo(
-            const void*    buf,
-            const size_t   size,
-            const unsigned version);
-    /**
-     * Returns a new instance based on de-serializing a serialized
-     * representation in a buffer.
-     * @param[in] buf      Buffer
-     * @param[in] size     Size of buffer in bytes
-     * @param[in] version  Protocol version
-     * @return A new instance
-     */
-    static std::shared_ptr<ChunkInfo> create(
-            const void*    buf,
+            const char*    buf,
             const size_t   size,
             const unsigned version);
     /**
@@ -88,9 +77,10 @@ public:
      * @param[out] buf      Buffer
      * @param[in]  size     Size of buffer in bytes
      * @param[in]  version  Protocol version
+     * @return Address of next byte
      */
-    void serialize(
-            void*          buf,
+    char* serialize(
+            char*          buf,
             const size_t   nbytes,
             const unsigned version) const;
     /**
@@ -103,7 +93,7 @@ public:
      * @threadsafety    Compatible but not thread-safe
      */
     static std::shared_ptr<ChunkInfo> deserialize(
-            const void* const buf,
+            const char* const buf,
             const size_t      size,
             const unsigned    version);
 };

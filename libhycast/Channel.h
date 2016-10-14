@@ -59,7 +59,7 @@ public:
      * @return the object contained in the current message
      */
     typename std::result_of<decltype(&T::deserialize)
-            (void*, size_t, unsigned)>::type recv();
+            (const char*, size_t, unsigned)>::type recv();
     /**
      * Returns the size of the current message in bytes.
      * @return The size of the current message in bytes

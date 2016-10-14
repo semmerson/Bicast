@@ -32,17 +32,17 @@ template <class T>
 void ChannelImpl<T>::send(const Serializable& obj)
 {
     size_t nbytes = obj.getSerialSize(version);
-    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
+    alignas(alignof(max_align_t)) char buf[nbytes];
     obj.serialize(buf, nbytes, version);
     sock.send(streamId, buf, nbytes);
 }
 
 template <class T>
 typename std::result_of<decltype(&T::deserialize)
-        (const void*, size_t, unsigned)>::type ChannelImpl<T>::recv()
+        (const char*, size_t, unsigned)>::type ChannelImpl<T>::recv()
 {
     size_t nbytes = getSize();
-    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
+    alignas(alignof(max_align_t)) char buf[nbytes];
     sock.recv(buf, nbytes);
     return T::deserialize(buf, nbytes, version);
 }

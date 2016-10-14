@@ -60,7 +60,7 @@ public:
      * @return the object in the current message
      */
     typename std::result_of<decltype(&T::deserialize)
-            (const void*, size_t, unsigned)>::type recv();
+            (const char*, size_t, unsigned)>::type recv();
     /**
      * Returns the amount of available input in bytes.
      * @return The amount of available input in bytes

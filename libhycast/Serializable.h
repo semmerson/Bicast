@@ -14,6 +14,8 @@
 
 #include "Socket.h"
 
+#include <cstddef>
+
 namespace hycast {
 
 class Serializable {
@@ -25,9 +27,10 @@ public:
      * @param[out] buf      Output buffer. Shall be maximally aligned.
      * @param[in]  bufLen   Size of buffer in bytes
      * @param[in]  version  Protocol version
+     * @return Address of next byte
      */
-    virtual void serialize(
-            void*          buf,
+    virtual char* serialize(
+            char*          buf,
             const size_t   bufLen,
             const unsigned version) const =0;
     /**

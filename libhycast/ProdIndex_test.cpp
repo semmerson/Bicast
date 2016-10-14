@@ -1,5 +1,5 @@
 /**
- * This file ...
+ * This file tests the class `ProdIndex`
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -9,8 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-
-#include "ProdInfo.h"
+#include "ProdIndex.h"
 #include "ClientSocket.h"
 #include "InetSockAddr.h"
 #include "ServerSocket.h"
@@ -55,50 +54,57 @@ class ProdInfoTest : public ::testing::Test {
 
 // Tests default construction
 TEST_F(ProdInfoTest, DefaultConstruction) {
-    hycast::ProdInfo info;
-    EXPECT_STREQ("", info.getName().data());
-    EXPECT_EQ(0, info.getIndex());
-    EXPECT_EQ(0, info.getSize());
-    EXPECT_EQ(0, info.getChunkSize());
+    hycast::ProdIndex index;
+    EXPECT_EQ(0, (uint32_t)index);
 }
 
 // Tests construction
 TEST_F(ProdInfoTest, Construction) {
-    hycast::ProdInfo info("name", 1, 2, 3);
-    EXPECT_STREQ("name", info.getName().data());
-    EXPECT_EQ(1, info.getIndex());
-    EXPECT_EQ(2, info.getSize());
-    EXPECT_EQ(3, info.getChunkSize());
+    hycast::ProdIndex index(1);
+    EXPECT_EQ(1, (uint32_t)index);
 }
 
-// Tests equals()
-TEST_F(ProdInfoTest, Equals) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_TRUE(info1.equals(info1));
-    hycast::ProdInfo info2("name", 1, 2, 2);
-    EXPECT_FALSE(info1.equals(info2));
-    hycast::ProdInfo info3("name", 1, 1, 3);
-    EXPECT_FALSE(info1.equals(info3));
-    hycast::ProdInfo info4("name", 2, 2, 3);
-    EXPECT_FALSE(info1.equals(info4));
-    hycast::ProdInfo info5("names", 1, 2, 3);
-    EXPECT_FALSE(info1.equals(info5));
+// Tests comparison
+TEST_F(ProdInfoTest, Comparison) {
+    hycast::ProdIndex index1(1);
+    EXPECT_TRUE(index1 == index1);
+    hycast::ProdIndex index2(2);
+    EXPECT_FALSE(index1 == index2);
+    EXPECT_TRUE(index1 != index2);
+    EXPECT_TRUE(index1 <= index1);
+    EXPECT_TRUE(index1 >= index1);
+    EXPECT_TRUE(index1 < index2);
+    EXPECT_TRUE(index1 <= index2);
+    EXPECT_TRUE(index2 > index1);
+    EXPECT_TRUE(index2 >= index1);
+}
+
+// Tests increment
+TEST_F(ProdInfoTest, Increment) {
+    hycast::ProdIndex index(0);
+    EXPECT_EQ(1, ++index);
+}
+
+// Tests decrement
+TEST_F(ProdInfoTest, Decrement) {
+    hycast::ProdIndex index(1);
+    EXPECT_EQ(0, --index);
 }
 
 // Tests getSerialSize()
 TEST_F(ProdInfoTest, GetSerialSize) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_EQ(16, info1.getSerialSize(0));
+    hycast::ProdIndex index(1);
+    EXPECT_EQ(4, index.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization
 TEST_F(ProdInfoTest, Serialization) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
-    const size_t nbytes = info1.getSerialSize(0);
+    hycast::ProdIndex index1(1);
+    const size_t nbytes = index1.getSerialSize(0);
     alignas(alignof(size_t)) char bytes[nbytes];
-    info1.serialize(bytes, nbytes, 0);
-    hycast::ProdInfo info2(bytes, nbytes, 0);
-    EXPECT_TRUE(info1.equals(info2));
+    index1.serialize(bytes, nbytes, 0);
+    hycast::ProdIndex index2(bytes, nbytes, 0);
+    EXPECT_TRUE(index1 == index2);
 }
 
 }  // namespace

@@ -16,9 +16,11 @@
 namespace hycast {
 
 ChunkInfo::ChunkInfo(
-        const void*    buf,
+        const char*    buf,
         const size_t   size,
         const unsigned version)
+    : prodIndex(buf, size, version),
+      chunkIndex(0)
 {
     // Keep consonant with serialize()
     unsigned expect = ChunkInfo::getSerialSize(version);
@@ -26,17 +28,8 @@ ChunkInfo::ChunkInfo(
         throw std::invalid_argument("Serialized chunk-information has too few "
                 "bytes: expected " + std::to_string(expect) + ", actual="
                 + std::to_string(size));
-    const uint32_t* uint32s = reinterpret_cast<const uint32_t*>(buf);
-    prodIndex = ntohl(uint32s[0]);
-    chunkIndex = ntohl(uint32s[1]);
-}
-
-std::shared_ptr<ChunkInfo> ChunkInfo::create(
-        const void*    buf,
-        const size_t   size,
-        const unsigned version)
-{
-    return std::shared_ptr<ChunkInfo>(new ChunkInfo(buf, size, version));
+    buf += prodIndex.getSerialSize(version);
+    chunkIndex = ntohl(*reinterpret_cast<const uint32_t*>(buf));
 }
 
 bool ChunkInfo::equals(const ChunkInfo& that) const
@@ -44,8 +37,8 @@ bool ChunkInfo::equals(const ChunkInfo& that) const
     return prodIndex == that.prodIndex && chunkIndex == that.chunkIndex;
 }
 
-void ChunkInfo::serialize(
-            void* const    buf,
+char* ChunkInfo::serialize(
+            char*          buf,
             const size_t   size,
             const unsigned version) const
 {
@@ -55,13 +48,13 @@ void ChunkInfo::serialize(
         throw std::invalid_argument("Serialized chunk-information buffer is "
                 "too small: need " + std::to_string(expect) + " bytes, actual="
                 + std::to_string(size));
-    uint32_t* uint32s = reinterpret_cast<uint32_t*>(buf);
-    uint32s[0] = htonl(prodIndex);
-    uint32s[1] = htonl(chunkIndex);
+    buf = prodIndex.serialize(buf, size, version);
+    *reinterpret_cast<ChunkIndex*>(buf) = htonl(chunkIndex);
+    return buf + sizeof(ChunkIndex);
 }
 
 std::shared_ptr<ChunkInfo> ChunkInfo::deserialize(
-        const void* const buf,
+        const char* const buf,
         const size_t      size,
         const unsigned    version)
 {
