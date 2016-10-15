@@ -9,26 +9,30 @@
  * @author: Steven R. Emmerson
  */
 
-#ifndef PEERCONNECTION_H_
-#define PEERCONNECTION_H_
+#ifndef PEERCONNECTIONIMPL_H_
+#define PEERCONNECTIONIMPL_H_
 
 #include "ProdInfo.h"
 #include "Socket.h"
 
-#include <memory>
-
 namespace hycast {
 
-class PeerConnectionImpl; // Forward declaration
-
-class PeerConnection final {
-    std::shared_ptr<PeerConnectionImpl> pImpl;
+class PeerConnectionImpl final {
+    typedef enum {
+        PROD_INFO_STREAM_ID = 0,
+        CHUNK_INFO_STREAM_ID,
+        PROD_INFO_REQ_STREAM_ID,
+        CHUNK_REQ_STREAM_ID,
+        CHUNK_STREAM_ID,
+        NUM_STREAM_IDS
+    } SctpStreamId;
+    Socket           sock;
 public:
     /**
      * Constructs from a socket.
      * @param[in] sock  Socket
      */
-    PeerConnection(Socket& sock);
+    explicit PeerConnectionImpl(Socket& sock);
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -38,4 +42,4 @@ public:
 
 } // namespace
 
-#endif /* PEERCONNECTION_H_ */
+#endif /* PEERCONNECTIONIMPL_H_ */
