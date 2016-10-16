@@ -20,11 +20,11 @@ class Peer {
 public:
     ~Peer() =0;
 
-    void sendProdInfo(std::shared_ptr<ProdInfo>& info) =0;
-    void recvProdInfo(std::shared_ptr<ProdInfo>& info) =0;
+    void sendProdInfo(ProdInfo& info) =0;
+    void recvProdInfo(std::shared_ptr<ProdInfo> info) =0;
 
-    void sendChunkInfo(std::shared_ptr<ChunkInfo>& info) =0;
-    void recvChunkInfo(std::shared_ptr<ChunkInfo>& info) =0;
+    void sendChunkInfo(ChunkInfo& info) =0;
+    void recvChunkInfo(ChunkInfo& info) =0;
 
     void sendProdRequest(ProdIndex& index) =0;
     void recvProdRequest(ProdIndex& index) =0;
@@ -33,7 +33,7 @@ public:
     void recvChunkRequest(ChunkInfo& info) =0;
 
     void sendChunk(ActualChunk& chunk) =0;
-    void recvChunk(LatentChunk& chunk) =0;
+    void recvChunk(std::shared_ptr<LatentChunk> chunk) =0;
 };
 
 } // namespace
