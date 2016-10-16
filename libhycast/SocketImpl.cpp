@@ -118,7 +118,7 @@ void SocketImpl::send(
     sndrcvinfoInit(sinfo, streamId, len);
     int sendStatus;
     {
-        std::unique_lock<std::mutex> lock(writeMutex);
+        std::lock_guard<std::mutex> lock(writeMutex);
         sendStatus = sctp_send(sock, msg, len, &sinfo, MSG_EOR);
     }
     checkIoStatus("sctp_send()", len, sendStatus);
@@ -145,7 +145,7 @@ void SocketImpl::sendv(
     msghdr.msg_controllen = sizeof(msg_control);
     ssize_t sendStatus;
     {
-        std::unique_lock<std::mutex> lock(writeMutex);
+        std::lock_guard<std::mutex> lock(writeMutex);
         sendStatus = sendmsg(sock, &msghdr, MSG_EOR);
     }
     checkIoStatus("sendmsg()", numExpected, sendStatus);
@@ -159,7 +159,7 @@ void SocketImpl::getNextMsgInfo()
     int                     numRead;
     socklen_t               socklen = 0;
     {
-        std::unique_lock<std::mutex> lock(readMutex);
+        std::lock_guard<std::mutex> lock(readMutex);
         numRead = sctp_recvmsg(sock, &msg, sizeof(msg), nullptr, &socklen,
                 &sinfo, &flags);
     }
@@ -201,7 +201,7 @@ void SocketImpl::recv(
     int                     numRead;
     socklen_t               socklen = 0;
     {
-        std::unique_lock<std::mutex> lock(readMutex);
+        std::lock_guard<std::mutex> lock(readMutex);
         numRead = sctp_recvmsg(sock, msg, len, (struct sockaddr*)nullptr,
                 &socklen, &sinfo, &flags);
     }
@@ -220,7 +220,7 @@ void SocketImpl::recvv(
     msghdr.msg_iovlen = iovcnt;
     ssize_t numRead;
     {
-        std::unique_lock<std::mutex> lock(readMutex);
+        std::lock_guard<std::mutex> lock(readMutex);
         numRead = recvmsg(sock, &msghdr, flags);
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
