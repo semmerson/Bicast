@@ -12,17 +12,15 @@
 #ifndef PRODINDEX_H_
 #define PRODINDEX_H_
 
+#include "HycastTypes.h"
 #include "Serializable.h"
 
 #include <cstdint>
-
-typedef uint32_t ProdIndex_t;
 
 namespace hycast {
 
 class ProdIndex final : public Serializable {
     ProdIndex_t              index;
-    static const ProdIndex_t maxIndex = UINT32_MAX;
 public:
     /**
      * Constructs from a numeric product-index. The constuctor isn't explicit to
