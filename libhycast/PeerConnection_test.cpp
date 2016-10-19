@@ -42,7 +42,7 @@ public:
           compared(true),
           conn(*this, sock, version) {}
 
-    void sendProdInfo(const hycast::ProdInfo& info) {
+    void sendNotice(const hycast::ProdInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         prodInfo = info;
         compared = false;
@@ -50,14 +50,14 @@ public:
         while (!compared)
             cond.wait(mutex);
     }
-    void recvProdInfo(const hycast::ProdInfo& info) {
+    void recvNotice(const hycast::ProdInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         EXPECT_TRUE(info.equals(prodInfo));
         compared = true;
         cond.notify_one();
     }
 
-    void sendChunkInfo(const hycast::ChunkInfo& info) {
+    void sendInfo(const hycast::ChunkInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         chunkInfo = info;
         compared = false;
@@ -65,14 +65,14 @@ public:
         while (!compared)
             cond.wait(mutex);
     }
-    void recvChunkInfo(const hycast::ChunkInfo& info) {
+    void recvInfo(const hycast::ChunkInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         EXPECT_TRUE(info.equals(chunkInfo));
         compared = true;
         cond.notify_one();
     }
 
-    void sendProdRequest(const hycast::ProdIndex& index) {
+    void sendRequest(const hycast::ProdIndex& index) {
         std::lock_guard<std::mutex> guard(mutex);
         prodIndex = index;
         compared = false;
@@ -80,21 +80,21 @@ public:
         while (!compared)
             cond.wait(mutex);
     }
-    void recvProdRequest(const hycast::ProdIndex& index) {
+    void recvRequest(const hycast::ProdIndex& index) {
         std::lock_guard<std::mutex> guard(mutex);
         EXPECT_TRUE(index.equals(prodIndex));
         compared = true;
         cond.notify_one();
     }
 
-    void sendChunkRequest(const hycast::ChunkInfo& info) {
+    void sendRequest(const hycast::ChunkInfo& info) {
     }
-    void recvChunkRequest(const hycast::ChunkInfo& index) {
+    void recvRequest(const hycast::ChunkInfo& index) {
     }
 
-    void sendChunk(const hycast::ActualChunk& chunk) {
+    void sendData(const hycast::ActualChunk& chunk) {
     }
-    void recvChunk(hycast::LatentChunk& chunk) {
+    void recvData(hycast::LatentChunk& chunk) {
     }
 
     void recvEof() {
@@ -114,13 +114,13 @@ void runClient()
     ClientPeer peer(sock, version);
 
     hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
-    peer.sendProdInfo(prodInfo);
+    peer.sendNotice(prodInfo);
 
     hycast::ChunkInfo chunkInfo(2, 3);
-    peer.sendChunkInfo(chunkInfo);
+    peer.sendInfo(chunkInfo);
 
     hycast::ProdIndex prodIndex(2);
-    peer.sendProdRequest(prodIndex);
+    peer.sendRequest(prodIndex);
 }
 
 void runServer(hycast::ServerSocket serverSock)

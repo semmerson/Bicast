@@ -26,20 +26,20 @@ class Peer {
 public:
     virtual ~Peer() {};
 
-    virtual void sendProdInfo(const ProdInfo& info) =0;
-    virtual void recvProdInfo(const ProdInfo& info) =0;
+    virtual void sendNotice(const ProdInfo& info) =0;
+    virtual void recvNotice(const ProdInfo& info) =0;
 
-    virtual void sendChunkInfo(const ChunkInfo& info) =0;
-    virtual void recvChunkInfo(const ChunkInfo& info) =0;
+    virtual void sendInfo(const ChunkInfo& info) =0;
+    virtual void recvInfo(const ChunkInfo& info) =0;
 
-    virtual void sendProdRequest(const ProdIndex& index) =0;
-    virtual void recvProdRequest(const ProdIndex& index) =0;
+    virtual void sendRequest(const ProdIndex& index) =0;
+    virtual void recvRequest(const ProdIndex& index) =0;
 
-    virtual void sendChunkRequest(const ChunkInfo& info) =0;
-    virtual void recvChunkRequest(const ChunkInfo& info) =0;
+    virtual void sendRequest(const ChunkInfo& info) =0;
+    virtual void recvRequest(const ChunkInfo& info) =0;
 
-    virtual void sendChunk(const ActualChunk& chunk) =0;
-    virtual void recvChunk(LatentChunk& chunk) =0;
+    virtual void sendData(const ActualChunk& chunk) =0;
+    virtual void recvData(LatentChunk& chunk) =0;
 
     virtual void recvEof() = 0;
     virtual void recvException(const std::exception& e) =0;

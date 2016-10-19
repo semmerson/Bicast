@@ -72,13 +72,13 @@ void hycast::PeerConnectionImpl::runReceiver()
             }
             switch (sock.getStreamId()) {
                 case PROD_INFO_STREAM_ID:
-                    peer->recvProdInfo(prodInfoChan.recv());
+                    peer->recvNotice(prodInfoChan.recv());
                     break;
                 case CHUNK_INFO_STREAM_ID:
-                    peer->recvChunkInfo(chunkInfoChan.recv());
+                    peer->recvInfo(chunkInfoChan.recv());
                     break;
                 case PROD_INFO_REQ_STREAM_ID:
-                    peer->recvProdRequest(prodIndexChan.recv());
+                    peer->recvRequest(prodIndexChan.recv());
                     break;
                 default:
                     sock.discard();
