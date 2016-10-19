@@ -35,6 +35,7 @@ class PeerConnectionImpl final {
     Channel<ProdInfo>  prodInfoChan;
     Channel<ChunkInfo> chunkInfoChan;
     Channel<ProdIndex> prodIndexChan;
+    Channel<ChunkInfo> chunkReqChan;
     Peer*              peer;
     Socket             sock;
     unsigned           version;
@@ -84,6 +85,11 @@ public:
      * @param[in] prodIndex  Product-index
      */
     void sendProdRequest(const ProdIndex& prodIndex);
+    /**
+     * Sends a request for a chunk-of-data to the remote peer.
+     * @param[in] info  Chunk specification
+     */
+    void sendRequest(const ChunkInfo& info);
 };
 
 } // namespace

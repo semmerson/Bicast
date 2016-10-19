@@ -88,8 +88,18 @@ public:
     }
 
     void sendRequest(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        chunkInfo = info;
+        compared = false;
+        conn.sendRequest(info);
+        while (!compared)
+            cond.wait(mutex);
     }
-    void recvRequest(const hycast::ChunkInfo& index) {
+    void recvRequest(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_TRUE(info.equals(chunkInfo));
+        compared = true;
+        cond.notify_one();
     }
 
     void sendData(const hycast::ActualChunk& chunk) {
@@ -121,6 +131,14 @@ void runClient()
 
     hycast::ProdIndex prodIndex(2);
     peer.sendRequest(prodIndex);
+
+    peer.sendRequest(chunkInfo);
+
+    /*
+    const char data[2000];
+    hycast::ActualChunk chunk(chunkInfo, data, sizeof(data));
+    peer.sendData(chunk);
+    */
 }
 
 void runServer(hycast::ServerSocket serverSock)

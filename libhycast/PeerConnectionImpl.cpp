@@ -23,6 +23,7 @@ PeerConnectionImpl::PeerConnectionImpl(
     : prodInfoChan(sock, PROD_INFO_STREAM_ID, version),
       chunkInfoChan(sock, CHUNK_INFO_STREAM_ID, version),
       prodIndexChan(sock, PROD_INFO_REQ_STREAM_ID, version),
+      chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
       peer(&peer),
       sock(sock),
       version(version),
@@ -58,6 +59,11 @@ void PeerConnectionImpl::sendProdRequest(const ProdIndex& prodIndex)
     prodIndexChan.send(prodIndex);
 }
 
+void PeerConnectionImpl::sendRequest(const ChunkInfo& info)
+{
+    chunkReqChan.send(info);
+}
+
 void hycast::PeerConnectionImpl::runReceiver()
 {
     try {
@@ -79,6 +85,9 @@ void hycast::PeerConnectionImpl::runReceiver()
                     break;
                 case PROD_INFO_REQ_STREAM_ID:
                     peer->recvRequest(prodIndexChan.recv());
+                    break;
+                case CHUNK_REQ_STREAM_ID:
+                    peer->recvRequest(chunkReqChan.recv());
                     break;
                 default:
                     sock.discard();

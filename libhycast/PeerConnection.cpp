@@ -37,4 +37,9 @@ void PeerConnection::sendProdRequest(const ProdIndex& prodIndex)
     pImpl->sendProdRequest(prodIndex);
 }
 
+void PeerConnection::sendRequest(const ChunkInfo& info)
+{
+    pImpl->sendRequest(info);
+}
+
 } // namespace

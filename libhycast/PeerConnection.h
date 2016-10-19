@@ -54,6 +54,11 @@ public:
      * @param[in] prodIndex  Product-index
      */
     void sendProdRequest(const ProdIndex& prodIndex);
+    /**
+     * Sends a chunk specification to the remote peer.
+     * @param[in] prodIndex  Product-index
+     */
+    void sendRequest(const ChunkInfo& info);
 };
 
 } // namespace
