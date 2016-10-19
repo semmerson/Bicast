@@ -53,12 +53,12 @@ char* ChunkInfo::serialize(
     return buf + sizeof(ChunkIndex);
 }
 
-std::shared_ptr<ChunkInfo> ChunkInfo::deserialize(
+ChunkInfo ChunkInfo::deserialize(
         const char* const buf,
         const size_t      size,
         const unsigned    version)
 {
-    return std::shared_ptr<ChunkInfo>(new ChunkInfo(buf, size, version));
+    return ChunkInfo(buf, size, version);
 }
 
 } // namespace

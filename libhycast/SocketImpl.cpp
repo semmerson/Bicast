@@ -69,7 +69,7 @@ SocketImpl::SocketImpl(
 
 SocketImpl::~SocketImpl() noexcept
 {
-    (void)close(sock);
+    (void)::close(sock);
 }
 
 void SocketImpl::sndrcvinfoInit(
@@ -224,6 +224,11 @@ void SocketImpl::recvv(
         numRead = recvmsg(sock, &msghdr, flags);
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
+    needMsg = true;
+}
+
+void SocketImpl::discard()
+{
     needMsg = true;
 }
 

@@ -9,52 +9,123 @@
  * @author: Steven R. Emmerson
  */
 
+#include "ClientSocket.h"
+#include "InetSockAddr.h"
 #include "Peer.h"
 #include "PeerConnection.h"
+#include "ServerSocket.h"
 
 #include <condition_variable>
+#include <functional>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
 
 namespace {
 
+static const unsigned version = 0;
+
 class ClientPeer final : public hycast::Peer {
-    std::mutex              mutex;
-    std::condition_variable cond;
-    hycast::PeerConnection  conn;
-    hycast::ProdInfo        prodInfo;
+    std::mutex                   mutex;
+    std::condition_variable_any  cond;
+    bool                         compared;
+    hycast::PeerConnection       conn;
+    hycast::ProdInfo             prodInfo;
+    hycast::ChunkInfo            chunkInfo;
+    hycast::ProdIndex            prodIndex;
 public:
-    ClientPeer(hycast::Socket& sock)
+    ClientPeer(
+            hycast::Socket& sock,
+            const unsigned  version)
         : mutex(),
           cond(),
-          conn(sock) {}
+          compared(true),
+          conn(*this, sock, version) {}
 
-    void sendProdInfo(hycast::ProdInfo& info) {
+    void sendProdInfo(const hycast::ProdInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        prodInfo = info;
+        compared = false;
         conn.sendProdInfo(info);
+        while (!compared)
+            cond.wait(mutex);
     }
-    void recvProdInfo(std::shared_ptr<hycast::ProdInfo> info) {
-        EXPECT_TRUE(info->equals(prodInfo));
+    void recvProdInfo(const hycast::ProdInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_TRUE(info.equals(prodInfo));
+        compared = true;
+        cond.notify_one();
     }
 
-    void sendChunkInfo(std::shared_ptr<hycast::ChunkInfo>& info) =0;
-    void recvChunkInfo(std::shared_ptr<hycast::ChunkInfo>& info) =0;
+    void sendChunkInfo(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        chunkInfo = info;
+        compared = false;
+        conn.sendChunkInfo(info);
+        while (!compared)
+            cond.wait(mutex);
+    }
+    void recvChunkInfo(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_TRUE(info.equals(chunkInfo));
+        compared = true;
+        cond.notify_one();
+    }
 
-    void sendProdRequest(hycast::ProdIndex& index) =0;
-    void recvProdRequest(hycast::ProdIndex& index) =0;
+    void sendProdRequest(const hycast::ProdIndex& index) {
+        std::lock_guard<std::mutex> guard(mutex);
+        prodIndex = index;
+        compared = false;
+        conn.sendProdRequest(index);
+        while (!compared)
+            cond.wait(mutex);
+    }
+    void recvProdRequest(const hycast::ProdIndex& index) {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_TRUE(index.equals(prodIndex));
+        compared = true;
+        cond.notify_one();
+    }
 
-    void sendChunkRequest(hycast::ChunkInfo& info) =0;
-    void recvChunkRequest(hycast::ChunkInfo& info) =0;
+    void sendChunkRequest(const hycast::ChunkInfo& info) {
+    }
+    void recvChunkRequest(const hycast::ChunkInfo& index) {
+    }
 
-    void sendChunk(hycast::ActualChunk& chunk) =0;
-    void recvChunk(hycast::LatentChunk& chunk) =0;
+    void sendChunk(const hycast::ActualChunk& chunk) {
+    }
+    void recvChunk(hycast::LatentChunk& chunk) {
+    }
+
+    void recvEof() {
+    }
+
+    void recvException(const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
 };
 
 static const unsigned             numStreams = 5;
 static const hycast::InetSockAddr serverSockAddr("127.0.0.1", 38800);
 
+void runClient()
+{
+    hycast::ClientSocket sock(serverSockAddr, numStreams);
+    ClientPeer peer(sock, version);
+
+    hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
+    peer.sendProdInfo(prodInfo);
+
+    hycast::ChunkInfo chunkInfo(2, 3);
+    peer.sendChunkInfo(chunkInfo);
+
+    hycast::ProdIndex prodIndex(2);
+    peer.sendProdRequest(prodIndex);
+}
+
 void runServer(hycast::ServerSocket serverSock)
 {
+    // Just echo the incoming objects back to the client
     hycast::Socket connSock(serverSock.accept());
     for (;;) {
         uint32_t size = connSock.getSize();
@@ -65,27 +136,6 @@ void runServer(hycast::ServerSocket serverSock)
         connSock.recv(buf, size);
         connSock.send(streamId, buf, size);
     }
-}
-
-void runClient()
-{
-    hycast::ClientSocket sock(serverSockAddr, numStreams);
-
-    hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
-    EXPECT_EQ(sock, prodInfoChannel.getSocket());
-    hycast::ProdInfo prodInfo1("product", 1, 2, 3);
-    prodInfoChannel.send(prodInfo1);
-    EXPECT_EQ(0, prodInfoChannel.getStreamId());
-    std::shared_ptr<hycast::ProdInfo> prodInfoPtr(prodInfoChannel.recv());
-    EXPECT_TRUE(prodInfo1.equals(*prodInfoPtr.get()));
-
-    hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
-    EXPECT_EQ(sock, chunkInfoChannel.getSocket());
-    hycast::ChunkInfo chunkInfo1(4, 5);
-    chunkInfoChannel.send(chunkInfo1);
-    EXPECT_EQ(1, chunkInfoChannel.getStreamId());
-    std::shared_ptr<hycast::ChunkInfo> chunkInfoPtr(chunkInfoChannel.recv());
-    EXPECT_TRUE(chunkInfo1.equals(*chunkInfoPtr.get()));
 }
 
 // The fixture for testing class PeerConnection.
@@ -127,22 +177,27 @@ protected:
         clientThread = std::thread(runClient);
     }
 
-    // Objects declared here can be used by all tests in the test case for PeerConnection.
-    std::thread             clientThread;
-    std::thread             serverThread;
-};
+    void waitServer()
+    {
+        serverThread.join();
+    }
 
-// Tests Construction
-TEST_F(PeerConnectionTest, Construction) {
-    hycast::Socket         sock;
-    hycast::PeerConnection conn{sock};
-}
+    void waitClient()
+    {
+        clientThread.join();
+    }
+
+    // Objects declared here can be used by all tests in the test case for PeerConnection.
+    std::thread clientThread;
+    std::thread serverThread;
+};
 
 // Tests transmission
 TEST_F(PeerConnectionTest, Transmission) {
     startServer();
     startClient();
-    ASSERT_TRUE(false);
+    waitClient();
+    waitServer();
 }
 
 }  // namespace

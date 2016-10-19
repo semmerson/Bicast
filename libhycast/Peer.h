@@ -12,28 +12,37 @@
 #ifndef PEER_H_
 #define PEER_H_
 
+#include "Chunk.h"
+#include "ChunkInfo.h"
+#include "ProdIndex.h"
+#include "ProdInfo.h"
+
+#include <exception>
 #include <memory>
 
 namespace hycast {
 
 class Peer {
 public:
-    ~Peer() =0;
+    virtual ~Peer() {};
 
-    void sendProdInfo(ProdInfo& info) =0;
-    void recvProdInfo(std::shared_ptr<ProdInfo> info) =0;
+    virtual void sendProdInfo(const ProdInfo& info) =0;
+    virtual void recvProdInfo(const ProdInfo& info) =0;
 
-    void sendChunkInfo(ChunkInfo& info) =0;
-    void recvChunkInfo(ChunkInfo& info) =0;
+    virtual void sendChunkInfo(const ChunkInfo& info) =0;
+    virtual void recvChunkInfo(const ChunkInfo& info) =0;
 
-    void sendProdRequest(ProdIndex& index) =0;
-    void recvProdRequest(ProdIndex& index) =0;
+    virtual void sendProdRequest(const ProdIndex& index) =0;
+    virtual void recvProdRequest(const ProdIndex& index) =0;
 
-    void sendChunkRequest(ChunkInfo& info) =0;
-    void recvChunkRequest(ChunkInfo& info) =0;
+    virtual void sendChunkRequest(const ChunkInfo& info) =0;
+    virtual void recvChunkRequest(const ChunkInfo& info) =0;
 
-    void sendChunk(ActualChunk& chunk) =0;
-    void recvChunk(std::shared_ptr<LatentChunk> chunk) =0;
+    virtual void sendChunk(const ActualChunk& chunk) =0;
+    virtual void recvChunk(LatentChunk& chunk) =0;
+
+    virtual void recvEof() = 0;
+    virtual void recvException(const std::exception& e) =0;
 };
 
 } // namespace

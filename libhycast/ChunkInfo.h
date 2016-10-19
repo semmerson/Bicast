@@ -54,7 +54,7 @@ public:
      * @return the size of a serialized instance in bytes
      */
     size_t getSerialSize(unsigned version) const {
-        return sizeof(prodIndex) + sizeof(chunkIndex);
+        return prodIndex.getSerialSize(version) + sizeof(chunkIndex);
     }
     /**
      * Returns the product index.
@@ -92,7 +92,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
-    static std::shared_ptr<ChunkInfo> deserialize(
+    static ChunkInfo deserialize(
             const char* const buf,
             const size_t      size,
             const unsigned    version);

@@ -11,30 +11,84 @@
 
 #include "PeerConnectionImpl.h"
 
+#include <iostream>
+#include <pthread.h>
+
 namespace hycast {
 
-PeerConnectionImpl::PeerConnectionImpl(Socket& sock)
-    : sock(sock)
+PeerConnectionImpl::PeerConnectionImpl(
+        Peer&          peer,
+        Socket&        sock,
+        const unsigned version)
+    : prodInfoChan(sock, PROD_INFO_STREAM_ID, version),
+      chunkInfoChan(sock, CHUNK_INFO_STREAM_ID, version),
+      prodIndexChan(sock, PROD_INFO_REQ_STREAM_ID, version),
+      peer(&peer),
+      sock(sock),
+      version(version),
+      recvThread(std::thread(&PeerConnectionImpl::runReceiver, std::ref(*this)))
 {
+}
+
+PeerConnectionImpl::~PeerConnectionImpl()
+{
+    try {
+        (void)pthread_cancel(recvThread.native_handle());
+        recvThread.join();
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+    catch (...) {
+    }
 }
 
 void PeerConnectionImpl::sendProdInfo(const ProdInfo& prodInfo)
 {
+    prodInfoChan.send(prodInfo);
 }
 
-#if 0
-void PeerConnection::run()
+void PeerConnectionImpl::sendChunkInfo(const ChunkInfo& chunkInfo)
 {
-    for (;;) {
-        uint32_t size = sock.getSize();
-        if (size == 0)
-            break; // EOF
-        switch (sock.getStreamId()) {
-            case PROD_INFO_STREAM_ID:
-                prodInfoQueue.add(ProdInfo(prodInfoIstream, version));
+    chunkInfoChan.send(chunkInfo);
+}
+
+void PeerConnectionImpl::sendProdRequest(const ProdIndex& prodIndex)
+{
+    prodIndexChan.send(prodIndex);
+}
+
+void hycast::PeerConnectionImpl::runReceiver()
+{
+    try {
+        for (;;) {
+            int cancelState;
+            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
+            uint32_t size = sock.getSize();
+            (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
+            if (size == 0) {
+                peer->recvEof();
+                break; // remote peer closed connection
+            }
+            switch (sock.getStreamId()) {
+                case PROD_INFO_STREAM_ID:
+                    peer->recvProdInfo(prodInfoChan.recv());
+                    break;
+                case CHUNK_INFO_STREAM_ID:
+                    peer->recvChunkInfo(chunkInfoChan.recv());
+                    break;
+                case PROD_INFO_REQ_STREAM_ID:
+                    peer->recvProdRequest(prodIndexChan.recv());
+                    break;
+                default:
+                    sock.discard();
+            }
         }
     }
+    catch (const std::exception& e) {
+        peer->recvException(e);
+    }
 }
-#endif
 
-} // namespace
+}
+ // namespace

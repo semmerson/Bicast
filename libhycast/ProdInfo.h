@@ -1,5 +1,5 @@
 /**
- * This file defines information about a product.
+ * This file declares information about a product.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -16,17 +16,16 @@
 #include "ProdIndex.h"
 #include "Serializable.h"
 
-#include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <string>
 
 namespace hycast {
 
+class ProdInfoImpl; // Forward declaration
+
 class ProdInfo : public Serializable {
-    std::string name;
-    ProdIndex   index;
-    ProdSize    size;
-    ChunkSize   chunkSize;
+    std::shared_ptr<ProdInfoImpl> pImpl;
 
 public:
     /**
@@ -54,7 +53,7 @@ public:
      * @threadsafety    Compatible but not thread-safe
      */
     ProdInfo(
-            const void* const buf,
+            const char* const buf,
             const size_t      size,
             const unsigned    version);
     /**
@@ -63,28 +62,28 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    const std::string& getName() const {return name;}
+    const std::string& getName() const;
     /**
      * Returns the index of the product.
      * @return index of the product
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdIndex getIndex() const {return index;}
+    ProdIndex getIndex() const;
     /**
      * Returns the size of the product in bytes.
      * @return Size of the product in bytes
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdSize getSize() const {return size;}
+    ProdSize getSize() const;
     /**
      * Returns the size of the product's data chunks in bytes.
      * @return Size of the product's data chunks in bytes
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkSize getChunkSize() const {return chunkSize;}
+    ChunkSize getChunkSize() const;
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
@@ -121,7 +120,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
-    static std::shared_ptr<ProdInfo> deserialize(
+    static ProdInfo deserialize(
             const char* const buf,
             const size_t      size,
             const unsigned    version);

@@ -31,7 +31,7 @@ ChannelImpl<T>::ChannelImpl(
 template <class T>
 void ChannelImpl<T>::send(const Serializable& obj)
 {
-    size_t nbytes = obj.getSerialSize(version);
+    const size_t nbytes = obj.getSerialSize(version);
     alignas(alignof(max_align_t)) char buf[nbytes];
     obj.serialize(buf, nbytes, version);
     sock.send(streamId, buf, nbytes);
@@ -47,6 +47,7 @@ typename std::result_of<decltype(&T::deserialize)
     return T::deserialize(buf, nbytes, version);
 }
 
+template class ChannelImpl<ProdIndex>;
 template class ChannelImpl<ProdInfo>;
 template class ChannelImpl<ChunkInfo>;
 

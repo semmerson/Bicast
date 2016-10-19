@@ -172,6 +172,7 @@ public:
      * Returns the SCTP stream number of the current SCTP message. Waits for the
      * next message if necessary.
      * @return SCTP stream number of current message.
+     * @throws std::system_error if an I/O error occurs
      */
     unsigned getStreamId();
     /**
@@ -207,6 +208,10 @@ public:
             struct iovec*  iovec,
             const int      iovcnt,
             const int      flags = 0);
+    /**
+     * Discards the current message.
+     */
+    void discard();
 };
 
 } // namespace

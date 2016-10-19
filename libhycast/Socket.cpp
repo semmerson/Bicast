@@ -99,4 +99,9 @@ void Socket::recvv(
     pImpl->recvv(iovec, iovcnt, flags);
 }
 
+void hycast::Socket::discard()
+{
+    pImpl->discard();
+}
+
 } // namespace

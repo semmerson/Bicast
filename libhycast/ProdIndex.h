@@ -45,6 +45,9 @@ public:
     bool operator ==(const ProdIndex& that) const {
         return index == that.index;
     }
+    bool equals(const ProdIndex& that) const {
+        return index == that.index;
+    }
     bool operator !=(const ProdIndex& that) const {
         return index != that.index;
     }
@@ -91,7 +94,7 @@ public:
             const size_t   size,
             const unsigned version) const;
     /**
-     * Initializes this instance based on a serialized representation in a
+     * Returns the instance corresponding to a serialized representation in a
      * buffer.
      * @param[in] buf      Buffer
      * @param[in] size     Size of buffer in bytes
@@ -100,7 +103,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
-    ProdIndex deserialize(
+    static ProdIndex deserialize(
             const char* const buf,
             const size_t      size,
             const unsigned    version);

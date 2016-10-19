@@ -48,16 +48,16 @@ void runClient()
     hycast::ProdInfo prodInfo1("product", 1, 2, 3);
     prodInfoChannel.send(prodInfo1);
     EXPECT_EQ(0, prodInfoChannel.getStreamId());
-    std::shared_ptr<hycast::ProdInfo> prodInfoPtr(prodInfoChannel.recv());
-    EXPECT_TRUE(prodInfo1.equals(*prodInfoPtr.get()));
+    hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
+    EXPECT_TRUE(prodInfo1.equals(prodInfo2));
 
     hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
     EXPECT_EQ(sock, chunkInfoChannel.getSocket());
     hycast::ChunkInfo chunkInfo1(4, 5);
     chunkInfoChannel.send(chunkInfo1);
     EXPECT_EQ(1, chunkInfoChannel.getStreamId());
-    std::shared_ptr<hycast::ChunkInfo> chunkInfoPtr(chunkInfoChannel.recv());
-    EXPECT_TRUE(chunkInfo1.equals(*chunkInfoPtr.get()));
+    hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
+    EXPECT_TRUE(chunkInfo1.equals(chunkInfo2));
 }
 
 // The fixture for testing class Channel.

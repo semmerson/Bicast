@@ -57,5 +57,6 @@ size_t Channel<T>::getSize() const
 
 template class Channel<ProdInfo>;
 template class Channel<ChunkInfo>;
+template class Channel<ProdIndex>;
 
 } // namespace

@@ -25,6 +25,7 @@ libhycast_la_SOURCES 	= \
         Socket.cpp Socket.h \
         Serializable.h \
         ProdIndex.cpp ProdIndex.h \
+        ProdInfoImpl.cpp ProdInfoImpl.h \
         ProdInfo.cpp ProdInfo.h \
         ChunkInfo.cpp ChunkInfo.h \
         Chunk.cpp Chunk.h \
@@ -34,6 +35,7 @@ libhycast_la_SOURCES 	= \
 	ChunkChannel.cpp ChunkChannel.h \
 	PeerConnectionImpl.cpp PeerConnectionImpl.h \
 	PeerConnection.cpp PeerConnection.h \
+	Peer.h \
         #PeerImpl.cpp PeerImpl.h
 
 # Linker options libTestProgram

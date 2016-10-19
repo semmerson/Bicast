@@ -145,6 +145,10 @@ public:
             struct iovec*  iovec,
             const int      iovcnt,
             const int      flags = 0);
+    /**
+     * Discards the current message.
+     */
+    void discard();
 };
 
 } // namespace

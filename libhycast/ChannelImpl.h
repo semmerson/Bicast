@@ -13,6 +13,7 @@
 #define CHANNELIMPL_H_
 
 #include "ChunkInfo.h"
+#include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "Serializable.h"
 #include "Socket.h"
