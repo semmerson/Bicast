@@ -57,7 +57,7 @@ public:
         cond.notify_one();
     }
 
-    void sendInfo(const hycast::ChunkInfo& info) {
+    void sendNotice(const hycast::ChunkInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         chunkInfo = info;
         compared = false;
@@ -65,7 +65,7 @@ public:
         while (!compared)
             cond.wait(mutex);
     }
-    void recvInfo(const hycast::ChunkInfo& info) {
+    void recvNotice(const hycast::ChunkInfo& info) {
         std::lock_guard<std::mutex> guard(mutex);
         EXPECT_TRUE(info.equals(chunkInfo));
         compared = true;
@@ -117,7 +117,7 @@ void runClient()
     peer.sendNotice(prodInfo);
 
     hycast::ChunkInfo chunkInfo(2, 3);
-    peer.sendInfo(chunkInfo);
+    peer.sendNotice(chunkInfo);
 
     hycast::ProdIndex prodIndex(2);
     peer.sendRequest(prodIndex);

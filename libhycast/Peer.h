@@ -29,8 +29,8 @@ public:
     virtual void sendNotice(const ProdInfo& info) =0;
     virtual void recvNotice(const ProdInfo& info) =0;
 
-    virtual void sendInfo(const ChunkInfo& info) =0;
-    virtual void recvInfo(const ChunkInfo& info) =0;
+    virtual void sendNotice(const ChunkInfo& info) =0;
+    virtual void recvNotice(const ChunkInfo& info) =0;
 
     virtual void sendRequest(const ProdIndex& index) =0;
     virtual void recvRequest(const ProdIndex& index) =0;

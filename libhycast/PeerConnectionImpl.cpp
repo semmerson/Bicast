@@ -75,7 +75,7 @@ void hycast::PeerConnectionImpl::runReceiver()
                     peer->recvNotice(prodInfoChan.recv());
                     break;
                 case CHUNK_INFO_STREAM_ID:
-                    peer->recvInfo(chunkInfoChan.recv());
+                    peer->recvNotice(chunkInfoChan.recv());
                     break;
                 case PROD_INFO_REQ_STREAM_ID:
                     peer->recvRequest(prodIndexChan.recv());
