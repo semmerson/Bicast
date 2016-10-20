@@ -22,17 +22,17 @@ PeerConnection::PeerConnection(
 {
 }
 
-void PeerConnection::sendProdInfo(const ProdInfo& prodInfo)
+void PeerConnection::sendNotice(const ProdInfo& prodInfo)
 {
     pImpl->sendProdInfo(prodInfo);
 }
 
-void PeerConnection::sendChunkInfo(const ChunkInfo& chunkInfo)
+void PeerConnection::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendChunkInfo(chunkInfo);
 }
 
-void PeerConnection::sendProdRequest(const ProdIndex& prodIndex)
+void PeerConnection::sendRequest(const ProdIndex& prodIndex)
 {
     pImpl->sendProdRequest(prodIndex);
 }
@@ -40,6 +40,11 @@ void PeerConnection::sendProdRequest(const ProdIndex& prodIndex)
 void PeerConnection::sendRequest(const ChunkInfo& info)
 {
     pImpl->sendRequest(info);
+}
+
+void PeerConnection::sendData(const ActualChunk& chunk)
+{
+    pImpl->sendData(chunk);
 }
 
 } // namespace

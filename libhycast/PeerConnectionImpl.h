@@ -12,11 +12,12 @@
 #ifndef PEERCONNECTIONIMPL_H_
 #define PEERCONNECTIONIMPL_H_
 
-#include "Channel.h"
+#include "ChunkChannel.h"
 #include "ChunkInfo.h"
 #include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
+#include "RegChannel.h"
 #include "Socket.h"
 
 #include <thread>
@@ -25,21 +26,22 @@ namespace hycast {
 
 class PeerConnectionImpl final {
     typedef enum {
-        PROD_INFO_STREAM_ID = 0,
-        CHUNK_INFO_STREAM_ID,
-        PROD_INFO_REQ_STREAM_ID,
+        PROD_NOTICE_STREAM_ID = 0,
+        CHUNK_NOTICE_STREAM_ID,
+        PROD_REQ_STREAM_ID,
         CHUNK_REQ_STREAM_ID,
         CHUNK_STREAM_ID,
         NUM_STREAM_IDS
     }      SctpStreamId;
-    Channel<ProdInfo>  prodInfoChan;
-    Channel<ChunkInfo> chunkInfoChan;
-    Channel<ProdIndex> prodIndexChan;
-    Channel<ChunkInfo> chunkReqChan;
-    Peer*              peer;
-    Socket             sock;
-    unsigned           version;
-    std::thread        recvThread;
+    RegChannel<ProdInfo>  prodNoticeChan;
+    RegChannel<ChunkInfo> chunkNoticeChan;
+    RegChannel<ProdIndex> prodReqChan;
+    RegChannel<ChunkInfo> chunkReqChan;
+    ChunkChannel          chunkChan;
+    Peer*                 peer;
+    Socket                sock;
+    unsigned              version;
+    std::thread           recvThread;
 
     /**
      * Receives objects and calls the appropriate methods of the associated
@@ -90,6 +92,11 @@ public:
      * @param[in] info  Chunk specification
      */
     void sendRequest(const ChunkInfo& info);
+    /**
+     * Sends a chunk-of-data to the remote peer.
+     * @param[in] chunk  Chunk-of-data
+     */
+    void sendData(const ActualChunk& chunk);
 };
 
 } // namespace

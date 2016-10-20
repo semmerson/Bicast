@@ -13,38 +13,36 @@
  */
 
 #include "Chunk.h"
-
-#include <cstddef>
-#include <cstdint>
+#include "ChunkImpl.h"
 
 namespace hycast {
 
-LatentChunk::LatentChunk(
-        Socket&        sock,
-        const unsigned version)
-    : info(),
-      sock(sock),
-      size(0),
-      version(version)
+ActualChunk::ActualChunk()
+    : pImpl(new ActualChunkImpl())
 {
-    // Keep consistent with ActualChunk::serialize()
-    unsigned nbytes = info.getSerialSize(version);
-    alignas(alignof(max_align_t)) char buf[nbytes];
-    sock.recv(buf, nbytes, MSG_PEEK);
-    info = ChunkInfo(buf, nbytes, version);
-    size = sock.getSize() - nbytes;
 }
 
-void LatentChunk::drainData(void* data)
+ActualChunk::ActualChunk(
+        const ChunkInfo& info,
+        const void*      data,
+        const ChunkSize  size)
+    : pImpl(new ActualChunkImpl(info, data, size))
 {
-    unsigned nbytes = info.getSerialSize(version);
-    alignas(alignof(max_align_t)) uint8_t buf[nbytes];
-    struct iovec iovec[2];
-    iovec[0].iov_base = buf;
-    iovec[0].iov_len = nbytes;
-    iovec[1].iov_base = const_cast<void*>(data);
-    iovec[1].iov_len = size;
-    sock.recvv(iovec, 2);
+}
+
+const ChunkInfo& ActualChunk::getInfo() const noexcept
+{
+    return pImpl->getInfo();
+}
+
+ChunkSize ActualChunk::getSize() const noexcept
+{
+    return pImpl->getSize();
+}
+
+const void* ActualChunk::getData() const noexcept
+{
+    return pImpl->getData();
 }
 
 void ActualChunk::serialize(
@@ -52,16 +50,29 @@ void ActualChunk::serialize(
         const unsigned streamId,
         const unsigned version) const
 {
-    // Keep consistent with LatentChunk::LatentChunk()
-    unsigned nbytes = info.getSerialSize(version);
-    alignas(alignof(max_align_t)) char buf[nbytes];
-    info.serialize(buf, nbytes, version);
-    struct iovec iovec[2];
-    iovec[0].iov_base = buf;
-    iovec[0].iov_len = nbytes;
-    iovec[1].iov_base = const_cast<void*>(data);
-    iovec[1].iov_len = size;
-    sock.sendv(streamId, iovec, 2);
+    pImpl->serialize(sock, streamId, version);
+}
+
+LatentChunk::LatentChunk(
+        Socket&        sock,
+        const unsigned version)
+    : pImpl(new LatentChunkImpl(sock, version))
+{
+}
+
+const ChunkInfo& LatentChunk::getInfo() const noexcept
+{
+    return pImpl->getInfo();
+}
+
+ChunkSize LatentChunk::getSize() const noexcept
+{
+    return pImpl->getSize();
+}
+
+void LatentChunk::drainData(void* data)
+{
+    pImpl->drainData(data);
 }
 
 } // namespace

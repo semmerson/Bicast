@@ -10,7 +10,7 @@
  */
 
 
-#include "Channel.h"
+#include "RegChannel.h"
 #include "ChunkInfo.h"
 #include "ClientSocket.h"
 #include "ProdInfo.h"
@@ -43,7 +43,7 @@ void runClient()
 {
     hycast::ClientSocket sock(serverSockAddr, numStreams);
 
-    hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
+    hycast::RegChannel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
     EXPECT_EQ(sock, prodInfoChannel.getSocket());
     hycast::ProdInfo prodInfo1("product", 1, 2, 3);
     prodInfoChannel.send(prodInfo1);
@@ -51,7 +51,7 @@ void runClient()
     hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
     EXPECT_TRUE(prodInfo1.equals(prodInfo2));
 
-    hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
+    hycast::RegChannel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
     EXPECT_EQ(sock, chunkInfoChannel.getSocket());
     hycast::ChunkInfo chunkInfo1(4, 5);
     chunkInfoChannel.send(chunkInfo1);

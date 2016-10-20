@@ -11,18 +11,13 @@
 
 #include "ChunkChannelImpl.h"
 
-#include <cstddef>
-#include <sys/uio.h>
-
 namespace hycast {
 
 ChunkChannelImpl::ChunkChannelImpl(
         Socket&        sock,
         const unsigned streamId,
         const unsigned version)
-    : sock(sock),
-      streamId(streamId),
-      version(version)
+    : ChannelImpl::ChannelImpl(sock, streamId, version)
 {
 }
 
@@ -31,9 +26,9 @@ void ChunkChannelImpl::send(const ActualChunk& chunk)
     chunk.serialize(sock, streamId, version);
 }
 
-std::shared_ptr<LatentChunk> ChunkChannelImpl::recv()
+LatentChunk ChunkChannelImpl::recv()
 {
-    return std::shared_ptr<LatentChunk>(new LatentChunk(sock, version));
+    return LatentChunk(sock, version);
 }
 
 } // namespace

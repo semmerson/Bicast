@@ -32,19 +32,19 @@ unsigned ChunkChannel::getStreamId() const
     return pImpl->getStreamId();
 }
 
+size_t ChunkChannel::getSize() const
+{
+    return pImpl->getSize();
+}
+
 void ChunkChannel::send(const ActualChunk& chunk) const
 {
     pImpl->send(chunk);
 }
 
-std::shared_ptr<LatentChunk> ChunkChannel::recv()
+LatentChunk ChunkChannel::recv()
 {
     return pImpl->recv();
-}
-
-size_t ChunkChannel::getSize() const
-{
-    return pImpl->getSize();
 }
 
 } // namespace

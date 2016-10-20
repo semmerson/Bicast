@@ -1,30 +1,29 @@
 /**
- * This file declares an interface for an I/O channel.
+ * This file declares an I/O channel for `Serializable` objects.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Channel.h
+ *   @file: RegChannel.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef CHUNK_CHANNEL_H_
-#define CHUNK_CHANNEL_H_
+#ifndef REGCHANNEL_H_
+#define REGCHANNEL_H_
 
-#include "Chunk.h"
-#include "Socket.h"
+#include "Channel.h"
+#include "Serializable.h"
 
 #include <memory>
-#include <cstddef>
 
 namespace hycast {
 
-class ChannelImpl; // Forward declaration of implementation
-class ChunkChannelImpl; // Forward declaration of implementation
+template <class V> class RegChannelImpl; // Forward declaration of implementation
 
-class ChunkChannel final : public Channel {
-    std::shared_ptr<ChunkChannelImpl> pImpl;
+template <class T>
+class RegChannel final : public Channel {
+    std::shared_ptr<RegChannelImpl<T>> pImpl;
 public:
     /**
      * Constructs from an SCTP socket, a stream identifier, and a protocol
@@ -33,7 +32,7 @@ public:
      * @param[in] streamId  Stream identifier
      * @param[in] version   Protocol version
      */
-    ChunkChannel(
+    RegChannel(
             Socket&            sock,
             const unsigned     streamId,
             const unsigned     version);
@@ -54,17 +53,18 @@ public:
      */
     size_t getSize() const;
     /**
-     * Sends a chunk-of-data.
-     * @param[in] chunk  Chunk of data
+     * Sends a serializable object.
+     * @param[in] obj  Serializable object
      */
-    void send(const ActualChunk& chunk) const;
+    void send(const Serializable& obj) const;
     /**
-     * Returns the chunk-of-data in the current message.
-     * @return the chunk-of-data in the current message
+     * Returns the serialized object in the current message.
+     * @return the serialized object in the current message
      */
-    LatentChunk recv();
+    typename std::result_of<decltype(&T::deserialize)
+            (const char*, size_t, unsigned)>::type recv();
 };
 
 } // namespace
 
-#endif /* CHUNK_CHANNEL_H_ */
+#endif /* REGCHANNEL_H_ */

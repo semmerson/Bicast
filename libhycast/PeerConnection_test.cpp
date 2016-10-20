@@ -33,6 +33,7 @@ class ClientPeer final : public hycast::Peer {
     hycast::ProdInfo             prodInfo;
     hycast::ChunkInfo            chunkInfo;
     hycast::ProdIndex            prodIndex;
+    hycast::ActualChunk          actualChunk;
 public:
     ClientPeer(
             hycast::Socket& sock,
@@ -46,7 +47,7 @@ public:
         std::lock_guard<std::mutex> guard(mutex);
         prodInfo = info;
         compared = false;
-        conn.sendProdInfo(info);
+        conn.sendNotice(info);
         while (!compared)
             cond.wait(mutex);
     }
@@ -61,7 +62,7 @@ public:
         std::lock_guard<std::mutex> guard(mutex);
         chunkInfo = info;
         compared = false;
-        conn.sendChunkInfo(info);
+        conn.sendNotice(info);
         while (!compared)
             cond.wait(mutex);
     }
@@ -76,7 +77,7 @@ public:
         std::lock_guard<std::mutex> guard(mutex);
         prodIndex = index;
         compared = false;
-        conn.sendProdRequest(index);
+        conn.sendRequest(index);
         while (!compared)
             cond.wait(mutex);
     }
@@ -103,8 +104,20 @@ public:
     }
 
     void sendData(const hycast::ActualChunk& chunk) {
+        std::lock_guard<std::mutex> guard(mutex);
+        actualChunk = chunk;
+        compared = false;
+        conn.sendData(chunk);
+        while (!compared)
+            cond.wait(mutex);
     }
-    void recvData(hycast::LatentChunk& chunk) {
+    void recvData(hycast::LatentChunk chunk) {
+        std::lock_guard<std::mutex> guard(mutex);
+        char data[chunk.getSize()];
+        chunk.drainData(data);
+        EXPECT_EQ(0, memcmp(data, actualChunk.getData(), sizeof(data)));
+        compared = true;
+        cond.notify_one();
     }
 
     void recvEof() {
@@ -134,11 +147,10 @@ void runClient()
 
     peer.sendRequest(chunkInfo);
 
-    /*
-    const char data[2000];
+    char data[2000];
+    (void)memset(data, 0xbd, sizeof(data));
     hycast::ActualChunk chunk(chunkInfo, data, sizeof(data));
     peer.sendData(chunk);
-    */
 }
 
 void runServer(hycast::ServerSocket serverSock)

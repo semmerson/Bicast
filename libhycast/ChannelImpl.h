@@ -26,8 +26,8 @@
 
 namespace hycast {
 
-template <class T>
-class ChannelImpl final {
+class ChannelImpl {
+protected:
     Socket             sock;
     unsigned           streamId;
     unsigned           version;
@@ -51,17 +51,6 @@ public:
     unsigned getStreamId() {
         return sock.getStreamId();
     }
-    /**
-     * Sends a serializable object.
-     * @param[in] obj  Serializable object.
-     */
-    void send(const Serializable& obj);
-    /**
-     * Returns the object in the current message.
-     * @return the object in the current message
-     */
-    typename std::result_of<decltype(&T::deserialize)
-            (const char*, size_t, unsigned)>::type recv();
     /**
      * Returns the amount of available input in bytes.
      * @return The amount of available input in bytes

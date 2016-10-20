@@ -28,10 +28,13 @@ libhycast_la_SOURCES 	= \
         ProdInfoImpl.cpp ProdInfoImpl.h \
         ProdInfo.cpp ProdInfo.h \
         ChunkInfo.cpp ChunkInfo.h \
+        ChunkImpl.cpp ChunkImpl.h \
         Chunk.cpp Chunk.h \
 	ChannelImpl.cpp ChannelImpl.h \
-	Channel.cpp Channel.h \
+	RegChannelImpl.cpp RegChannelImpl.h \
 	ChunkChannelImpl.cpp ChunkChannelImpl.h \
+	Channel.h \
+	RegChannel.cpp RegChannel.h \
 	ChunkChannel.cpp ChunkChannel.h \
 	PeerConnectionImpl.cpp PeerConnectionImpl.h \
 	PeerConnection.cpp PeerConnection.h \

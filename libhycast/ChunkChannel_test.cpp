@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "Chunk.h"
 #include "ChunkChannel.h"
 #include "ClientSocket.h"
 #include "InetSockAddr.h"
@@ -45,14 +46,14 @@ void runClient()
     hycast::ChunkInfo chunkInfo(4, 5);
     uint8_t data1[10000] = {};
     (void)memset(data1, 0xbd, sizeof(data1));
-    hycast::ActualChunk chunk(chunkInfo, data1, sizeof(data1));
-    chunkChannel.send(chunk);
+    hycast::ActualChunk actualChunk(chunkInfo, data1, sizeof(data1));
+    chunkChannel.send(actualChunk);
 
     ASSERT_EQ(0, chunkChannel.getStreamId());
-    std::shared_ptr<hycast::LatentChunk> chunkPtr(chunkChannel.recv());
-    ASSERT_EQ(sizeof(data1), chunkPtr->getSize());
+    hycast::LatentChunk latentChunk = chunkChannel.recv();
+    ASSERT_EQ(sizeof(data1), latentChunk.getSize());
     uint8_t data2[sizeof(data1)];
-    chunkPtr->drainData(data2);
+    latentChunk.drainData(data2);
     EXPECT_EQ(0, memcmp(data1, data2, sizeof(data1)));
 }
 

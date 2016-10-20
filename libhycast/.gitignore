@@ -8,3 +8,5 @@
 html
 core.*
 *.svg
+/.base.h.swp
+/DerivedTemplateOfABC.cpp

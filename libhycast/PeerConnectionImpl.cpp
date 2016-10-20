@@ -20,10 +20,11 @@ PeerConnectionImpl::PeerConnectionImpl(
         Peer&          peer,
         Socket&        sock,
         const unsigned version)
-    : prodInfoChan(sock, PROD_INFO_STREAM_ID, version),
-      chunkInfoChan(sock, CHUNK_INFO_STREAM_ID, version),
-      prodIndexChan(sock, PROD_INFO_REQ_STREAM_ID, version),
+    : prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
+      chunkNoticeChan(sock, CHUNK_NOTICE_STREAM_ID, version),
+      prodReqChan(sock, PROD_REQ_STREAM_ID, version),
       chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
+      chunkChan(sock, CHUNK_STREAM_ID, version),
       peer(&peer),
       sock(sock),
       version(version),
@@ -46,22 +47,27 @@ PeerConnectionImpl::~PeerConnectionImpl()
 
 void PeerConnectionImpl::sendProdInfo(const ProdInfo& prodInfo)
 {
-    prodInfoChan.send(prodInfo);
+    prodNoticeChan.send(prodInfo);
 }
 
 void PeerConnectionImpl::sendChunkInfo(const ChunkInfo& chunkInfo)
 {
-    chunkInfoChan.send(chunkInfo);
+    chunkNoticeChan.send(chunkInfo);
 }
 
 void PeerConnectionImpl::sendProdRequest(const ProdIndex& prodIndex)
 {
-    prodIndexChan.send(prodIndex);
+    prodReqChan.send(prodIndex);
 }
 
 void PeerConnectionImpl::sendRequest(const ChunkInfo& info)
 {
     chunkReqChan.send(info);
+}
+
+void PeerConnectionImpl::sendData(const ActualChunk& chunk)
+{
+    chunkChan.send(chunk);
 }
 
 void hycast::PeerConnectionImpl::runReceiver()
@@ -77,17 +83,20 @@ void hycast::PeerConnectionImpl::runReceiver()
                 break; // remote peer closed connection
             }
             switch (sock.getStreamId()) {
-                case PROD_INFO_STREAM_ID:
-                    peer->recvNotice(prodInfoChan.recv());
+                case PROD_NOTICE_STREAM_ID:
+                    peer->recvNotice(prodNoticeChan.recv());
                     break;
-                case CHUNK_INFO_STREAM_ID:
-                    peer->recvNotice(chunkInfoChan.recv());
+                case CHUNK_NOTICE_STREAM_ID:
+                    peer->recvNotice(chunkNoticeChan.recv());
                     break;
-                case PROD_INFO_REQ_STREAM_ID:
-                    peer->recvRequest(prodIndexChan.recv());
+                case PROD_REQ_STREAM_ID:
+                    peer->recvRequest(prodReqChan.recv());
                     break;
                 case CHUNK_REQ_STREAM_ID:
                     peer->recvRequest(chunkReqChan.recv());
+                    break;
+                case CHUNK_STREAM_ID:
+                    peer->recvData(chunkChan.recv());
                     break;
                 default:
                     sock.discard();

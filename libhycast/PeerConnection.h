@@ -43,22 +43,27 @@ public:
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
      */
-    void sendProdInfo(const ProdInfo& prodInfo);
+    void sendNotice(const ProdInfo& prodInfo);
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
      */
-    void sendChunkInfo(const ChunkInfo& chunkInfo);
+    void sendNotice(const ChunkInfo& chunkInfo);
     /**
      * Sends a product-index to the remote peer.
      * @param[in] prodIndex  Product-index
      */
-    void sendProdRequest(const ProdIndex& prodIndex);
+    void sendRequest(const ProdIndex& prodIndex);
     /**
      * Sends a chunk specification to the remote peer.
      * @param[in] prodIndex  Product-index
      */
     void sendRequest(const ChunkInfo& info);
+    /**
+     * Sends a chunk-of-data to the remote peer.
+     * @param[in] chunk  Chunk-of-data
+     */
+    void sendData(const ActualChunk& chunk);
 };
 
 } // namespace

@@ -12,13 +12,9 @@
 
 #include "ChannelImpl.h"
 
-#include <cstddef>
-#include <memory>
-
 namespace hycast {
 
-template <class T>
-ChannelImpl<T>::ChannelImpl(
+ChannelImpl::ChannelImpl(
         Socket&            sock,
         const unsigned     streamId,
         const unsigned     version)
@@ -28,27 +24,4 @@ ChannelImpl<T>::ChannelImpl(
 {
 }
 
-template <class T>
-void ChannelImpl<T>::send(const Serializable& obj)
-{
-    const size_t nbytes = obj.getSerialSize(version);
-    alignas(alignof(max_align_t)) char buf[nbytes];
-    obj.serialize(buf, nbytes, version);
-    sock.send(streamId, buf, nbytes);
-}
-
-template <class T>
-typename std::result_of<decltype(&T::deserialize)
-        (const char*, size_t, unsigned)>::type ChannelImpl<T>::recv()
-{
-    size_t nbytes = getSize();
-    alignas(alignof(max_align_t)) char buf[nbytes];
-    sock.recv(buf, nbytes);
-    return T::deserialize(buf, nbytes, version);
-}
-
-template class ChannelImpl<ProdIndex>;
-template class ChannelImpl<ProdInfo>;
-template class ChannelImpl<ChunkInfo>;
-
-}
+} // namespace

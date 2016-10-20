@@ -39,7 +39,7 @@ public:
     virtual void recvRequest(const ChunkInfo& info) =0;
 
     virtual void sendData(const ActualChunk& chunk) =0;
-    virtual void recvData(LatentChunk& chunk) =0;
+    virtual void recvData(LatentChunk chunk) =0;
 
     virtual void recvEof() = 0;
     virtual void recvException(const std::exception& e) =0;
