@@ -45,7 +45,7 @@ size_t RegChannel<T>::getSize() const
 }
 
 template <class T>
-void RegChannel<T>::send(const Serializable& obj) const
+void RegChannel<T>::send(const T& obj) const
 {
     pImpl->send(obj);
 }

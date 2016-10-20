@@ -56,7 +56,7 @@ public:
      * Sends a serializable object.
      * @param[in] obj  Serializable object
      */
-    void send(const Serializable& obj) const;
+    void send(const T& obj) const;
     /**
      * Returns the serialized object in the current message.
      * @return the serialized object in the current message

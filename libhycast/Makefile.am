@@ -16,7 +16,6 @@ libhycast_la_SOURCES 	= \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddrImpl.cpp InetSockAddrImpl.h \
 	InetSockAddr.cpp InetSockAddr.h \
-	PeerId.cpp PeerId.h \
         ClientSocketImpl.cpp ClientSocketImpl.h \
         ClientSocket.cpp ClientSocket.h \
         ServerSocketImpl.cpp ServerSocketImpl.h \
@@ -36,10 +35,9 @@ libhycast_la_SOURCES 	= \
 	Channel.h \
 	RegChannel.cpp RegChannel.h \
 	ChunkChannel.cpp ChunkChannel.h \
-	PeerConnectionImpl.cpp PeerConnectionImpl.h \
-	PeerConnection.cpp PeerConnection.h \
-	Peer.h \
-        #PeerImpl.cpp PeerImpl.h
+	PeerImpl.cpp PeerImpl.h \
+	Peer.cpp Peer.h \
+	PeerMgr.h
 
 # Linker options libTestProgram
 libhycast_la_LDFLAGS = 
@@ -53,14 +51,13 @@ check_PROGRAMS		= \
 	Inet6Addr_test \
 	InetAddr_test \
 	InetSockAddr_test \
-	PeerId_test \
 	Socket_test \
 	ProdIndex_test \
 	ProdInfo_test \
 	ChunkInfo_test \
 	Channel_test \
 	ChunkChannel_test \
-	PeerConnection_test \
+	Peer_test \
 	#Di_test
 
 #Di_test_SOURCES	= Di_test.cpp
@@ -78,8 +75,8 @@ InetAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 InetSockAddr_test_SOURCES = InetSockAddr_test.cpp
 InetSockAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
-PeerId_test_SOURCES = PeerId_test.cpp
-PeerId_test_LDFLAGS = libhycast.la -lgtest -lsctp
+#PeerId_test_SOURCES = PeerId_test.cpp
+#PeerId_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 Socket_test_SOURCES = Socket_test.cpp
 Socket_test_LDFLAGS = libhycast.la -lgtest -lsctp
@@ -99,20 +96,19 @@ Channel_test_LDFLAGS = libhycast.la -lgtest -lsctp
 ChunkChannel_test_SOURCES = ChunkChannel_test.cpp
 ChunkChannel_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
-PeerConnection_test_SOURCES = PeerConnection_test.cpp
-PeerConnection_test_LDFLAGS = libhycast.la -lgtest -lsctp
+Peer_test_SOURCES = Peer_test.cpp
+Peer_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
 TESTS			= \
 	Inet4Addr_test \
 	Inet6Addr_test \
 	InetAddr_test \
 	InetSockAddr_test \
-	PeerId_test \
 	Socket_test \
 	ProdIndex_test \
 	ProdInfo_test \
 	ChunkInfo_test \
 	Channel_test \
 	ChunkChannel_test \
-	PeerConnection_test \
+	Peer_test \
         #Di_test

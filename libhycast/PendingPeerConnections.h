@@ -12,7 +12,6 @@
 #ifndef PENDINGPEERCONNECTIONS_H_
 #define PENDINGPEERCONNECTIONS_H_
 
-#include "PeerConnection.h"
 #include "PeerId.h"
 #include "Socket.h"
 
@@ -20,6 +19,8 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+
+#include "Peer.h"
 
 namespace hycast {
 
@@ -88,7 +89,7 @@ public:
      *                               `peer_id` already has the socket
      * @exceptionsafety              Strong
      */
-    std::shared_ptr<PeerConnection> addSocket(
+    std::shared_ptr<Peer> addSocket(
             const PeerId&       peerId,
             const Socket&       socket);
 };

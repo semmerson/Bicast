@@ -1,48 +1,69 @@
 /**
- * This file declares an interface for a peer.
+ * This file declares a connection between peers.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Peer.h
+ *   @file: PeerConnection.h
  * @author: Steven R. Emmerson
  */
 
 #ifndef PEER_H_
 #define PEER_H_
 
-#include "Chunk.h"
 #include "ChunkInfo.h"
-#include "ProdIndex.h"
 #include "ProdInfo.h"
+#include "Socket.h"
 
-#include <exception>
 #include <memory>
+#include "PeerMgr.h"
 
 namespace hycast {
 
-class Peer {
+class PeerImpl; // Forward declaration
+
+class Peer final {
+    std::shared_ptr<PeerImpl> pImpl;
 public:
-    virtual ~Peer() {};
-
-    virtual void sendNotice(const ProdInfo& info) =0;
-    virtual void recvNotice(const ProdInfo& info) =0;
-
-    virtual void sendNotice(const ChunkInfo& info) =0;
-    virtual void recvNotice(const ChunkInfo& info) =0;
-
-    virtual void sendRequest(const ProdIndex& index) =0;
-    virtual void recvRequest(const ProdIndex& index) =0;
-
-    virtual void sendRequest(const ChunkInfo& info) =0;
-    virtual void recvRequest(const ChunkInfo& info) =0;
-
-    virtual void sendData(const ActualChunk& chunk) =0;
-    virtual void recvData(LatentChunk chunk) =0;
-
-    virtual void recvEof() = 0;
-    virtual void recvException(const std::exception& e) =0;
+    /**
+     * Constructs from a peer manager, a socket, and a protocol version.
+     * Immediately starts receiving objects from the socket and passing them to
+     * the appropriate peer methods.
+     * @param[in,out] peer     Peer. Must exist for the duration of the
+     *                         constructed instance.
+     * @param[in,out] sock     Socket
+     * @param[in]     version  Protocol version
+     */
+    Peer(
+            PeerMgr&       peer,
+            Socket&        sock,
+            const unsigned version);
+    /**
+     * Sends information about a product to the remote peer.
+     * @param[in] prodInfo  Product information
+     */
+    void sendNotice(const ProdInfo& prodInfo);
+    /**
+     * Sends information about a chunk-of-data to the remote peer.
+     * @param[in] chunkInfo  Chunk information
+     */
+    void sendNotice(const ChunkInfo& chunkInfo);
+    /**
+     * Sends a product-index to the remote peer.
+     * @param[in] prodIndex  Product-index
+     */
+    void sendRequest(const ProdIndex& prodIndex);
+    /**
+     * Sends a chunk specification to the remote peer.
+     * @param[in] prodIndex  Product-index
+     */
+    void sendRequest(const ChunkInfo& info);
+    /**
+     * Sends a chunk-of-data to the remote peer.
+     * @param[in] chunk  Chunk-of-data
+     */
+    void sendData(const ActualChunk& chunk);
 };
 
 } // namespace

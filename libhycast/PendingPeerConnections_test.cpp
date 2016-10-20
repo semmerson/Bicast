@@ -67,7 +67,7 @@ TEST_F(PendingPeerConnectionsTest, AddInvalidSocket) {
     uint8_t bytes[] = {1};
     hycast::PeerId peerId1{bytes, sizeof(bytes)};
     hycast::PendingPeerConnections pending(1);
-    std::shared_ptr<hycast::PeerConnection> conn =
+    std::shared_ptr<hycast::Peer> conn =
             pending.addSocket(peerId1, hycast::Socket(3));
     conn = pending.addSocket(peerId1, hycast::Socket(4));
     EXPECT_THROW(pending.addSocket(peerId1, hycast::Socket(3)),
@@ -81,7 +81,7 @@ TEST_F(PendingPeerConnectionsTest, AddSockets) {
     hycast::PeerId peerId1{bytes, sizeof(bytes)};
     hycast::PendingPeerConnections pending(1);
     EXPECT_EQ(0, pending.numPending());
-    std::shared_ptr<hycast::PeerConnection> conn =
+    std::shared_ptr<hycast::Peer> conn =
             pending.addSocket(peerId1, hycast::Socket(3));
     EXPECT_EQ(nullptr, conn.get());
     EXPECT_EQ(1, pending.numPending());

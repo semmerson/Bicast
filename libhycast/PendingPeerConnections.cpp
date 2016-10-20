@@ -10,11 +10,11 @@
  * isn't complete until it has all three sockets.
  */
 
-#include "PeerConnection.h"
 #include "PendingPeerConnections.h"
 
 #include <cstring>
 #include <netinet/in.h>
+#include <Peer.h>
 #include <stdexcept>
 #include <sys/socket.h>
 
@@ -67,7 +67,7 @@ const PendingPeerConnections::Entry& PendingPeerConnections::findOrCreate(
     }
     else {
         // New entry
-        PtrConn pConn{new SockArray(PeerConnection::max_sockets)};
+        PtrConn pConn{new SockArray(Peer::max_sockets)};
         pConn->clear();
         auto insertion = map.emplace(pPeerId, pConn);
         entry = &*insertion.first;
@@ -83,16 +83,16 @@ bool PendingPeerConnections::add_socket(
             const Socket& socket)
 {
     size_t size = pConn->size();
-    if (size == PeerConnection::max_sockets)
+    if (size == Peer::max_sockets)
         throw std::length_error("Already have " +
-                std::to_string(PeerConnection::max_sockets) + " sockets");
+                std::to_string(Peer::max_sockets) + " sockets");
     for (size_t i = 0; i < size; i++) {
         if (socket == pConn->at(i))
             throw std::invalid_argument("sockets[" + std::to_string(i) +
                     "] is already socket " + socket.to_string());
     }
     pConn->push_back(socket);
-    return pConn->size() == PeerConnection::max_sockets;
+    return pConn->size() == Peer::max_sockets;
 }
 
 /**
@@ -108,19 +108,19 @@ bool PendingPeerConnections::add_socket(
  * @throws std::length_error     if the connection is already complete
  * @exceptionsafety Strong
  */
-std::shared_ptr<PeerConnection> PendingPeerConnections::addSocket(
+std::shared_ptr<Peer> PendingPeerConnections::addSocket(
         const PeerId& peer_id,
         const Socket& socket)
 {
-    static std::shared_ptr<PeerConnection> incomplete{};
+    static std::shared_ptr<Peer> incomplete{};
     const Entry& entry = findOrCreate(peer_id);
     PtrConn      pConn = entry.second;
     if (add_socket(pConn, socket)) {
         PtrPeerId pPeerId = entry.first;
         map.erase(pPeerId);
         list.remove(pPeerId);
-        return std::shared_ptr<PeerConnection>(
-                new PeerConnection(*pConn.get()));
+        return std::shared_ptr<Peer>(
+                new Peer(*pConn.get()));
     }
     return incomplete;
 }

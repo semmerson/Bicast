@@ -9,15 +9,16 @@
  * @author: Steven R. Emmerson
  */
 
+#include "Peer.h"
+
 #include "ClientSocket.h"
 #include "InetSockAddr.h"
-#include "Peer.h"
-#include "PeerConnection.h"
 #include "ServerSocket.h"
 
 #include <condition_variable>
 #include <functional>
 #include <gtest/gtest.h>
+#include <PeerMgr.h>
 #include <mutex>
 #include <thread>
 
@@ -25,17 +26,17 @@ namespace {
 
 static const unsigned version = 0;
 
-class ClientPeer final : public hycast::Peer {
+class ClientPeerMgr final : public hycast::PeerMgr {
     std::mutex                   mutex;
     std::condition_variable_any  cond;
     bool                         compared;
-    hycast::PeerConnection       conn;
+    hycast::Peer       conn;
     hycast::ProdInfo             prodInfo;
     hycast::ChunkInfo            chunkInfo;
     hycast::ProdIndex            prodIndex;
     hycast::ActualChunk          actualChunk;
 public:
-    ClientPeer(
+    ClientPeerMgr(
             hycast::Socket& sock,
             const unsigned  version)
         : mutex(),
@@ -134,7 +135,7 @@ static const hycast::InetSockAddr serverSockAddr("127.0.0.1", 38800);
 void runClient()
 {
     hycast::ClientSocket sock(serverSockAddr, numStreams);
-    ClientPeer peer(sock, version);
+    ClientPeerMgr peer(sock, version);
 
     hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
     peer.sendNotice(prodInfo);
