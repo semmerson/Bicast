@@ -31,6 +31,10 @@ class LatentChunk final {
     std::shared_ptr<LatentChunkImpl> pImpl;
 public:
     /**
+     * Constructs from nothing.
+     */
+    LatentChunk();
+    /**
      * Constructs from an SCTP socket whose current message is a chunk of
      * data and a protocol version. NB: This method reads the current message.
      * @param[in] sock     SCTP socket
@@ -63,6 +67,13 @@ public:
      * @threadsafety Safe
      */
     void drainData(void* data);
+    /**
+     * Indicates if this instance has data (i.e., whether or not `drainData()`
+     * has been called).
+     * @retval true   This instance has data
+     * @retval false  This instance doesn't have data
+     */
+    bool hasData();
 };
 
 class ActualChunk final {

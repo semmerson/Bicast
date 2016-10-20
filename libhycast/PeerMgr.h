@@ -41,7 +41,7 @@ public:
     virtual void sendData(const ActualChunk& chunk) =0;
     /*
      * For an unknown reason, the compiler complains if the `recvData` parameter
-     * is a `LatentChunk` and not a `LatentChunk&`. This is acceptable, however,
+     * is a `LatentChunk&` and not a `LatentChunk`. This is acceptable, however,
      * because `LatentChunk` uses the pImpl idiom. See
      * `PeerConnectionImpl::runReceiver`.
      */

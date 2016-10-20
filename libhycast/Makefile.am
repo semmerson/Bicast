@@ -75,9 +75,6 @@ InetAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 InetSockAddr_test_SOURCES = InetSockAddr_test.cpp
 InetSockAddr_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
-#PeerId_test_SOURCES = PeerId_test.cpp
-#PeerId_test_LDFLAGS = libhycast.la -lgtest -lsctp
-
 Socket_test_SOURCES = Socket_test.cpp
 Socket_test_LDFLAGS = libhycast.la -lgtest -lsctp
 

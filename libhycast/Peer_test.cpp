@@ -1,124 +1,73 @@
 /**
- * This file tests the class `PeerConnection`.
+ * This file tests the class `Peer`.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: PeerConnection_test.cpp
+ *   @file: Peer_test.cpp
  * @author: Steven R. Emmerson
  */
 
 #include "Peer.h"
 
 #include "ClientSocket.h"
+#include "HycastTypes.h"
 #include "InetSockAddr.h"
+#include "PeerMgr.h"
 #include "ServerSocket.h"
 
+#include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <ctime>
 #include <functional>
 #include <gtest/gtest.h>
-#include <PeerMgr.h>
+#include <iostream>
 #include <mutex>
+#include <ratio>
 #include <thread>
 
 namespace {
 
 static const unsigned version = 0;
 
-class ClientPeerMgr final : public hycast::PeerMgr {
-    std::mutex                   mutex;
-    std::condition_variable_any  cond;
-    bool                         compared;
-    hycast::Peer       conn;
-    hycast::ProdInfo             prodInfo;
-    hycast::ChunkInfo            chunkInfo;
-    hycast::ProdIndex            prodIndex;
-    hycast::ActualChunk          actualChunk;
+class AsyncClientPeerMgr final : public hycast::PeerMgr {
+    hycast::Peer       peer;
 public:
-    ClientPeerMgr(
+    AsyncClientPeerMgr(
             hycast::Socket& sock,
             const unsigned  version)
-        : mutex(),
-          cond(),
-          compared(true),
-          conn(*this, sock, version) {}
+        : peer(*this, sock, version) {}
 
     void sendNotice(const hycast::ProdInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        prodInfo = info;
-        compared = false;
-        conn.sendNotice(info);
-        while (!compared)
-            cond.wait(mutex);
+        peer.sendNotice(info);
     }
     void recvNotice(const hycast::ProdInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        EXPECT_TRUE(info.equals(prodInfo));
-        compared = true;
-        cond.notify_one();
     }
 
     void sendNotice(const hycast::ChunkInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        chunkInfo = info;
-        compared = false;
-        conn.sendNotice(info);
-        while (!compared)
-            cond.wait(mutex);
+        peer.sendNotice(info);
     }
     void recvNotice(const hycast::ChunkInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        EXPECT_TRUE(info.equals(chunkInfo));
-        compared = true;
-        cond.notify_one();
     }
 
     void sendRequest(const hycast::ProdIndex& index) {
-        std::lock_guard<std::mutex> guard(mutex);
-        prodIndex = index;
-        compared = false;
-        conn.sendRequest(index);
-        while (!compared)
-            cond.wait(mutex);
+        peer.sendRequest(index);
     }
     void recvRequest(const hycast::ProdIndex& index) {
-        std::lock_guard<std::mutex> guard(mutex);
-        EXPECT_TRUE(index.equals(prodIndex));
-        compared = true;
-        cond.notify_one();
     }
 
     void sendRequest(const hycast::ChunkInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        chunkInfo = info;
-        compared = false;
-        conn.sendRequest(info);
-        while (!compared)
-            cond.wait(mutex);
+        peer.sendRequest(info);
     }
     void recvRequest(const hycast::ChunkInfo& info) {
-        std::lock_guard<std::mutex> guard(mutex);
-        EXPECT_TRUE(info.equals(chunkInfo));
-        compared = true;
-        cond.notify_one();
     }
 
     void sendData(const hycast::ActualChunk& chunk) {
-        std::lock_guard<std::mutex> guard(mutex);
-        actualChunk = chunk;
-        compared = false;
-        conn.sendData(chunk);
-        while (!compared)
-            cond.wait(mutex);
+        peer.sendData(chunk);
     }
     void recvData(hycast::LatentChunk chunk) {
-        std::lock_guard<std::mutex> guard(mutex);
-        char data[chunk.getSize()];
-        chunk.drainData(data);
-        EXPECT_EQ(0, memcmp(data, actualChunk.getData(), sizeof(data)));
-        compared = true;
-        cond.notify_one();
     }
 
     void recvEof() {
@@ -129,57 +78,221 @@ public:
     }
 };
 
-static const unsigned             numStreams = 5;
-static const hycast::InetSockAddr serverSockAddr("127.0.0.1", 38800);
+class SyncClientPeerMgr final : public hycast::PeerMgr {
+    std::mutex                   mutex;
+    std::condition_variable_any  cond;
+    bool                         received;
+    hycast::Peer                 peer;
+    hycast::ProdInfo             prodInfo;
+    hycast::ChunkInfo            chunkInfo;
+    hycast::ProdIndex            prodIndex;
+    hycast::ActualChunk          actualChunk;
+    std::shared_ptr<char>        data;
+public:
+    SyncClientPeerMgr(
+            hycast::Socket& sock,
+            const unsigned  version)
+        : mutex(),
+          cond(),
+          received(false),
+          peer(*this, sock, version),
+          data(nullptr) {}
 
-void runClient()
+    void sendNotice(const hycast::ProdInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        received = false;
+        peer.sendNotice(info);
+        while (!received)
+            cond.wait(mutex);
+    }
+    void recvNotice(const hycast::ProdInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        prodInfo = info;
+        received = true;
+        cond.notify_one();
+    }
+    hycast::ProdInfo getProdInfo() {
+        return prodInfo;
+    }
+
+    void sendNotice(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        received = false;
+        peer.sendNotice(info);
+        while (!received)
+            cond.wait(mutex);
+    }
+    void recvNotice(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        chunkInfo = info;
+        received = true;
+        cond.notify_one();
+    }
+    hycast::ChunkInfo getChunkInfo() {
+        return chunkInfo;
+    }
+
+    void sendRequest(const hycast::ProdIndex& index) {
+        std::lock_guard<std::mutex> guard(mutex);
+        received = false;
+        peer.sendRequest(index);
+        while (!received)
+            cond.wait(mutex);
+    }
+    void recvRequest(const hycast::ProdIndex& index) {
+        std::lock_guard<std::mutex> guard(mutex);
+        prodIndex = index;
+        received = true;
+        cond.notify_one();
+    }
+    hycast::ProdIndex getProdIndex() {
+        return prodIndex;
+    }
+
+    void sendRequest(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        received = false;
+        peer.sendRequest(info);
+        while (!received)
+            cond.wait(mutex);
+    }
+    void recvRequest(const hycast::ChunkInfo& info) {
+        std::lock_guard<std::mutex> guard(mutex);
+        chunkInfo = info;
+        received = true;
+        cond.notify_one();
+    }
+
+    void sendData(const hycast::ActualChunk& chunk) {
+        std::lock_guard<std::mutex> guard(mutex);
+        received = false;
+        peer.sendData(chunk);
+        while (!received)
+            cond.wait(mutex);
+    }
+    void recvData(hycast::LatentChunk chunk) {
+        std::lock_guard<std::mutex> guard(mutex);
+        data = std::shared_ptr<char>(new char[chunk.getSize()]);
+        chunk.drainData(data.get());
+        actualChunk = hycast::ActualChunk(chunk.getInfo(), data.get(),
+                chunk.getSize());
+        received = true;
+        cond.notify_one();
+    }
+    hycast::ActualChunk getActualChunk() {
+        return actualChunk;
+    }
+
+    void recvEof() {
+    }
+
+    void recvException(const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+};
+
+static const unsigned       numStreams = 5;
+static hycast::InetSockAddr serverSockAddr;
+
+void runAsyncClient()
 {
     hycast::ClientSocket sock(serverSockAddr, numStreams);
-    ClientPeerMgr peer(sock, version);
-
-    hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
-    peer.sendNotice(prodInfo);
-
+    AsyncClientPeerMgr peerMgr(sock, version);
+    const size_t dataSize = 1000000;
     hycast::ChunkInfo chunkInfo(2, 3);
-    peer.sendNotice(chunkInfo);
-
-    hycast::ProdIndex prodIndex(2);
-    peer.sendRequest(prodIndex);
-
-    peer.sendRequest(chunkInfo);
-
-    char data[2000];
-    (void)memset(data, 0xbd, sizeof(data));
-    hycast::ActualChunk chunk(chunkInfo, data, sizeof(data));
-    peer.sendData(chunk);
-}
-
-void runServer(hycast::ServerSocket serverSock)
-{
-    // Just echo the incoming objects back to the client
-    hycast::Socket connSock(serverSock.accept());
-    for (;;) {
-        uint32_t size = connSock.getSize();
-        if (size == 0)
-            break;
-        unsigned streamId = connSock.getStreamId();
-        alignas(alignof(max_align_t)) char buf[size];
-        connSock.recv(buf, size);
-        connSock.send(streamId, buf, size);
+    for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;
+            chunkSize > 4000; chunkSize /= 2) {
+        char data[chunkSize];
+        std::chrono::high_resolution_clock::time_point start =
+                std::chrono::high_resolution_clock::now();
+        size_t remaining = dataSize;
+        while (remaining > 0) {
+            size_t nbytes = chunkSize < remaining ? chunkSize : remaining;
+            hycast::ActualChunk chunk(chunkInfo, data, nbytes);
+            peerMgr.sendData(chunk);
+            remaining -= nbytes;
+        }
+        std::chrono::high_resolution_clock::time_point stop =
+                std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> time_span =
+                std::chrono::duration_cast<std::chrono::duration<double>>
+                (stop - start);
+        std::cerr << "Chunk size=" + std::to_string(chunkSize) +
+                " bytes, duration=" + std::to_string(time_span.count()) +
+                " s, byte rate=" + std::to_string(dataSize/time_span.count()) +
+                " Hz" << std::endl;
     }
 }
 
-// The fixture for testing class PeerConnection.
-class PeerConnectionTest : public ::testing::Test {
+void runSyncClient()
+{
+    hycast::ClientSocket sock(serverSockAddr, numStreams);
+    SyncClientPeerMgr peerMgr(sock, version);
+
+    hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
+    peerMgr.sendNotice(prodInfo);
+    EXPECT_TRUE(prodInfo.equals(peerMgr.getProdInfo()));
+
+    hycast::ChunkInfo chunkInfo(2, 3);
+    peerMgr.sendNotice(chunkInfo);
+    EXPECT_TRUE(chunkInfo.equals(peerMgr.getChunkInfo()));
+
+    hycast::ProdIndex prodIndex(2);
+    peerMgr.sendRequest(prodIndex);
+    EXPECT_TRUE(prodIndex.equals(peerMgr.getProdIndex()));
+
+    peerMgr.sendRequest(chunkInfo);
+    EXPECT_TRUE(chunkInfo.equals(peerMgr.getChunkInfo()));
+
+    char actualData[2000];
+    (void)memset(actualData, 0xbd, sizeof(actualData));
+    hycast::ActualChunk actualChunk1(chunkInfo, actualData, sizeof(actualData));
+    peerMgr.sendData(actualChunk1);
+    hycast::ActualChunk actualChunk2 = peerMgr.getActualChunk();
+    ASSERT_EQ(sizeof(actualData), actualChunk2.getSize());
+    EXPECT_EQ(0, memcmp(actualChunk1.getData(), actualChunk2.getData(),
+            sizeof(actualData)));
+}
+
+void runAsyncServer(hycast::ServerSocket serverSock)
+{
+    // Just read and discard the incoming objects
+    hycast::Socket sock(serverSock.accept());
+    for (;;) {
+        uint32_t size = sock.getSize();
+        if (size == 0)
+            break;
+        alignas(alignof(max_align_t)) char buf[size];
+        sock.recv(buf, size);
+    }
+}
+
+void runSyncServer(hycast::ServerSocket serverSock)
+{
+    // Just echo the incoming objects back to the client at the socket level
+    hycast::Socket sock(serverSock.accept());
+    for (;;) {
+        uint32_t size = sock.getSize();
+        if (size == 0)
+            break;
+        unsigned streamId = sock.getStreamId();
+        alignas(alignof(max_align_t)) char buf[size];
+        sock.recv(buf, size);
+        sock.send(streamId, buf, size);
+    }
+}
+
+// The fixture for testing class Peer.
+class PeerTest : public ::testing::Test {
 protected:
     // You can remove any or all of the following functions if its body
     // is empty.
 
-    PeerConnectionTest() {
+    PeerTest() {
         // You can do set-up work for each test here.
     }
 
-    virtual ~PeerConnectionTest() {
+    virtual ~PeerTest() {
         // You can do clean-up work that doesn't throw exceptions here.
     }
 
@@ -196,16 +309,28 @@ protected:
         // before the destructor).
     }
 
-    void startServer()
+    void startSyncServer()
     {
         // Server socket must exist before client connects
         hycast::ServerSocket sock(serverSockAddr, numStreams);
-        serverThread = std::thread(runServer, sock);
+        serverThread = std::thread(runSyncServer, sock);
     }
 
-    void startClient()
+    void startAsyncServer()
     {
-        clientThread = std::thread(runClient);
+        // Server socket must exist before client connects
+        hycast::ServerSocket sock(serverSockAddr, numStreams);
+        serverThread = std::thread(runAsyncServer, sock);
+    }
+
+    void startSyncClient()
+    {
+        clientThread = std::thread(runSyncClient);
+    }
+
+    void startAsyncClient()
+    {
+        clientThread = std::thread(runAsyncClient);
     }
 
     void waitServer()
@@ -218,15 +343,23 @@ protected:
         clientThread.join();
     }
 
-    // Objects declared here can be used by all tests in the test case for PeerConnection.
+    // Objects declared here can be used by all tests in the test case for Peer.
     std::thread clientThread;
     std::thread serverThread;
 };
 
 // Tests transmission
-TEST_F(PeerConnectionTest, Transmission) {
-    startServer();
-    startClient();
+TEST_F(PeerTest, Transmission) {
+    startSyncServer();
+    startSyncClient();
+    waitClient();
+    waitServer();
+}
+
+// Tests performance
+TEST_F(PeerTest, Performance) {
+    startAsyncServer();
+    startAsyncClient();
     waitClient();
     waitServer();
 }
@@ -234,6 +367,10 @@ TEST_F(PeerConnectionTest, Transmission) {
 }  // namespace
 
 int main(int argc, char **argv) {
+    const char* serverIpAddrStr = "127.0.0.1";
+    if (argc > 1)
+        serverIpAddrStr = argv[1];
+    serverSockAddr = hycast::InetSockAddr{serverIpAddrStr, 38800};
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

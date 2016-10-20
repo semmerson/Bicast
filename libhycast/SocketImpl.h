@@ -38,7 +38,7 @@ protected:
 private:
     unsigned   streamId;
     uint32_t   size;
-    bool       needMsg;
+    bool       haveMsg;
     unsigned   numStreams;
     std::mutex readMutex;
     std::mutex writeMutex;
@@ -209,9 +209,15 @@ public:
             const int      iovcnt,
             const int      flags = 0);
     /**
+     * Indicates if this instance has a current message.
+     * @retval true   Yes
+     * @retval false  No
+     */
+    bool hasMessage();
+    /**
      * Discards the current message.
      */
-    void discard();
+    void discard() noexcept;
 };
 
 } // namespace

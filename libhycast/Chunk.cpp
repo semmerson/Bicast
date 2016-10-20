@@ -53,6 +53,11 @@ void ActualChunk::serialize(
     pImpl->serialize(sock, streamId, version);
 }
 
+LatentChunk::LatentChunk()
+    : pImpl(new LatentChunkImpl())
+{
+}
+
 LatentChunk::LatentChunk(
         Socket&        sock,
         const unsigned version)
@@ -73,6 +78,11 @@ ChunkSize LatentChunk::getSize() const noexcept
 void LatentChunk::drainData(void* data)
 {
     pImpl->drainData(data);
+}
+
+bool LatentChunk::hasData()
+{
+    return pImpl->hasData();
 }
 
 } // namespace

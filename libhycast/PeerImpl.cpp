@@ -95,15 +95,20 @@ void hycast::PeerImpl::runReceiver()
                 case CHUNK_REQ_STREAM_ID:
                     peerMgr->recvRequest(chunkReqChan.recv());
                     break;
-                case CHUNK_STREAM_ID:
+                case CHUNK_STREAM_ID: {
                     /*
                      * For an unknown reason, the compiler complains if the
-                     * `peer->recvData` parameter is a `LatentChunk` and not a
-                     * `LatentChunk&`.  This is acceptable, however, because
-                     * `LatentChunk` uses the pImpl idiom. See `Peer::recvData`.
+                     * `peer->recvData` parameter is a `LatentChunk&` and not a
+                     * `LatentChunk`.  This is acceptable, however, because
+                     * `LatentChunk` uses the pImpl idiom. See
+                     * `PeerMgr::recvData`.
                      */
                     peerMgr->recvData(chunkChan.recv());
+                    if (sock.hasMessage())
+                        throw std::logic_error("Data not drained from latent "
+                                "chunk-of-data");
                     break;
+                }
                 default:
                     sock.discard();
             }

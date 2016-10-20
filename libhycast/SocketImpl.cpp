@@ -25,7 +25,7 @@ SocketImpl::SocketImpl()
     : sock(-1),
       streamId(0),
       size(0),
-      needMsg(true),
+      haveMsg(false),
       numStreams(0),
       readMutex(),
       writeMutex()
@@ -38,7 +38,7 @@ SocketImpl::SocketImpl(
     : sock(sd),
       streamId(0),
       size(0),
-      needMsg(true),
+      haveMsg(false),
       numStreams(numStreams),
       readMutex(),
       writeMutex()
@@ -171,12 +171,12 @@ void SocketImpl::getNextMsgInfo()
         streamId = sinfo.sinfo_stream;
         size = ntohl(sinfo.sinfo_ppid);
     }
-    needMsg = false;
+    haveMsg = true;
 }
 
 void SocketImpl::ensureMsg()
 {
-    if (needMsg)
+    if (!haveMsg)
         getNextMsgInfo();
 }
 
@@ -206,7 +206,7 @@ void SocketImpl::recv(
                 &socklen, &sinfo, &flags);
     }
     checkIoStatus("sctp_recvmsg()", len, numRead);
-    needMsg = true;
+    haveMsg = false;
 }
 
 void SocketImpl::recvv(
@@ -215,7 +215,7 @@ void SocketImpl::recvv(
         const int      flags)
 {
     ssize_t numExpected = iovLen(iovec, iovcnt);
-    struct msghdr msghdr = {0};
+    struct msghdr msghdr = {};
     msghdr.msg_iov = iovec;
     msghdr.msg_iovlen = iovcnt;
     ssize_t numRead;
@@ -224,12 +224,17 @@ void SocketImpl::recvv(
         numRead = recvmsg(sock, &msghdr, flags);
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
-    needMsg = true;
+    haveMsg = false;
 }
 
-void SocketImpl::discard()
+bool SocketImpl::hasMessage()
 {
-    needMsg = true;
+    return haveMsg;
+}
+
+void SocketImpl::discard() noexcept
+{
+    haveMsg = false;
 }
 
 } // namespace

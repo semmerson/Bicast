@@ -19,6 +19,14 @@
 
 namespace hycast {
 
+LatentChunkImpl::LatentChunkImpl()
+    : info(),
+      sock(),
+      size(0),
+      version(0)
+{
+}
+
 LatentChunkImpl::LatentChunkImpl(
         Socket&        sock,
         const unsigned version)
@@ -45,6 +53,11 @@ void LatentChunkImpl::drainData(void* data)
     iovec[1].iov_base = const_cast<void*>(data);
     iovec[1].iov_len = size;
     sock.recvv(iovec, 2);
+}
+
+bool LatentChunkImpl::hasData()
+{
+    return sock.hasMessage();
 }
 
 void ActualChunkImpl::serialize(

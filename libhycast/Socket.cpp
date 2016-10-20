@@ -99,7 +99,12 @@ void Socket::recvv(
     pImpl->recvv(iovec, iovcnt, flags);
 }
 
-void hycast::Socket::discard()
+bool Socket::hasMessage()
+{
+    return pImpl->hasMessage();
+}
+
+void Socket::discard() noexcept
 {
     pImpl->discard();
 }
