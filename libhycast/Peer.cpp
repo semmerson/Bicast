@@ -16,9 +16,8 @@ namespace hycast {
 
 Peer::Peer(
         PeerMgr& peerMgr,
-        Socket&  sock,
-        unsigned version)
-    : pImpl(new PeerImpl(peerMgr, sock, version))
+        Socket&  sock)
+    : pImpl(new PeerImpl(peerMgr, sock))
 {
 }
 
@@ -45,6 +44,11 @@ void Peer::sendRequest(const ChunkInfo& info)
 void Peer::sendData(const ActualChunk& chunk)
 {
     pImpl->sendData(chunk);
+}
+
+unsigned Peer::getNumStreams()
+{
+    return PeerImpl::getNumStreams();
 }
 
 } // namespace

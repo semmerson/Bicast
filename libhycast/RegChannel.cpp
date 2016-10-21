@@ -11,7 +11,8 @@
 
 #include "ChannelImpl.h"
 #include "RegChannel.h"
-#include <RegChannelImpl.h>
+#include "RegChannelImpl.h"
+#include "VersionMsg.h"
 
 #include <memory>
 
@@ -57,6 +58,7 @@ typename std::result_of<decltype(&T::deserialize)
     return pImpl->recv();
 }
 
+template class RegChannel<VersionMsg>;
 template class RegChannel<ProdInfo>;
 template class RegChannel<ChunkInfo>;
 template class RegChannel<ProdIndex>;

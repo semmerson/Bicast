@@ -11,6 +11,7 @@
  */
 
 #include "RegChannelImpl.h"
+#include "VersionMsg.h"
 
 #include <cstddef>
 #include <memory>
@@ -45,6 +46,7 @@ typename std::result_of<decltype(&T::deserialize)
     return T::deserialize(buf, nbytes, version);
 }
 
+template class RegChannelImpl<VersionMsg>;
 template class RegChannelImpl<ProdIndex>;
 template class RegChannelImpl<ProdInfo>;
 template class RegChannelImpl<ChunkInfo>;

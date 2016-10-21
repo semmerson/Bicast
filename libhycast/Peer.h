@@ -36,9 +36,8 @@ public:
      * @param[in]     version  Protocol version
      */
     Peer(
-            PeerMgr&       peer,
-            Socket&        sock,
-            const unsigned version);
+            PeerMgr&       peerMgr,
+            Socket&        sock);
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -64,6 +63,10 @@ public:
      * @param[in] chunk  Chunk-of-data
      */
     void sendData(const ActualChunk& chunk);
+    /**
+     * Returns the number of streams.
+     */
+    static unsigned getNumStreams();
 };
 
 } // namespace

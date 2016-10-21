@@ -14,6 +14,7 @@
 
 #include "ChunkChannel.h"
 #include "ChunkInfo.h"
+#include "VersionMsg.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "RegChannel.h"
@@ -26,22 +27,24 @@ namespace hycast {
 
 class PeerImpl final {
     typedef enum {
-        PROD_NOTICE_STREAM_ID = 0,
+        VERSION_STREAM_ID = 0,
+        PROD_NOTICE_STREAM_ID,
         CHUNK_NOTICE_STREAM_ID,
         PROD_REQ_STREAM_ID,
         CHUNK_REQ_STREAM_ID,
         CHUNK_STREAM_ID,
         NUM_STREAM_IDS
     }      SctpStreamId;
-    RegChannel<ProdInfo>  prodNoticeChan;
-    RegChannel<ChunkInfo> chunkNoticeChan;
-    RegChannel<ProdIndex> prodReqChan;
-    RegChannel<ChunkInfo> chunkReqChan;
-    ChunkChannel          chunkChan;
-    PeerMgr*                 peerMgr;
-    Socket                sock;
-    unsigned              version;
-    std::thread           recvThread;
+    unsigned               version;
+    RegChannel<VersionMsg> versionChan;
+    RegChannel<ProdInfo>   prodNoticeChan;
+    RegChannel<ChunkInfo>  chunkNoticeChan;
+    RegChannel<ProdIndex>  prodReqChan;
+    RegChannel<ChunkInfo>  chunkReqChan;
+    ChunkChannel           chunkChan;
+    PeerMgr*               peerMgr;
+    Socket                 sock;
+    std::thread            recvThread;
 
     /**
      * Receives objects and calls the appropriate methods of the associated
@@ -62,12 +65,10 @@ public:
      * @param[in,out] peer     Peer. Must exist for the duration of the
      *                         constructed instance.
      * @param[in,out] sock     Socket
-     * @param[in]     version  Protocol version
      */
     PeerImpl(
-            PeerMgr&    peer,
-            Socket&  sock,
-            unsigned version);
+            PeerMgr& peerMgr,
+            Socket&  sock);
     /**
      * Destroys this instance. Cancels the receiving thread and joins it.
      */
@@ -97,6 +98,10 @@ public:
      * @param[in] chunk  Chunk-of-data
      */
     void sendData(const ActualChunk& chunk);
+    /**
+     * Returns the number of streams.
+     */
+    static unsigned getNumStreams();
 };
 
 } // namespace

@@ -17,16 +17,16 @@ namespace hycast {
 
 PeerImpl::PeerImpl(
         PeerMgr&       peerMgr,
-        Socket&        sock,
-        const unsigned version)
-    : prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
+        Socket&        sock)
+    : version(0),
+      versionChan(sock, VERSION_STREAM_ID, version),
+      prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
       chunkNoticeChan(sock, CHUNK_NOTICE_STREAM_ID, version),
       prodReqChan(sock, PROD_REQ_STREAM_ID, version),
       chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
       chunkChan(sock, CHUNK_STREAM_ID, version),
       peerMgr(&peerMgr),
       sock(sock),
-      version(version),
       recvThread(std::thread(&PeerImpl::runReceiver, std::ref(*this)))
 {
 }
@@ -119,5 +119,9 @@ void hycast::PeerImpl::runReceiver()
     }
 }
 
+unsigned PeerImpl::getNumStreams()
+{
+    return NUM_STREAM_IDS;
 }
- // namespace
+
+} // namespace

@@ -30,15 +30,12 @@
 
 namespace {
 
-static const unsigned version = 0;
-
 class AsyncClientPeerMgr final : public hycast::PeerMgr {
     hycast::Peer       peer;
 public:
     AsyncClientPeerMgr(
-            hycast::Socket& sock,
-            const unsigned  version)
-        : peer(*this, sock, version) {}
+            hycast::Socket& sock)
+        : peer(*this, sock) {}
 
     void sendNotice(const hycast::ProdInfo& info) {
         peer.sendNotice(info);
@@ -90,12 +87,11 @@ class SyncClientPeerMgr final : public hycast::PeerMgr {
     std::shared_ptr<char>        data;
 public:
     SyncClientPeerMgr(
-            hycast::Socket& sock,
-            const unsigned  version)
+            hycast::Socket& sock)
         : mutex(),
           cond(),
           received(false),
-          peer(*this, sock, version),
+          peer(*this, sock),
           data(nullptr) {}
 
     void sendNotice(const hycast::ProdInfo& info) {
@@ -191,13 +187,12 @@ public:
     }
 };
 
-static const unsigned       numStreams = 5;
 static hycast::InetSockAddr serverSockAddr;
 
 void runAsyncClient()
 {
-    hycast::ClientSocket sock(serverSockAddr, numStreams);
-    AsyncClientPeerMgr peerMgr(sock, version);
+    hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+    AsyncClientPeerMgr peerMgr(sock);
     const size_t dataSize = 1000000;
     hycast::ChunkInfo chunkInfo(2, 3);
     for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;
@@ -226,8 +221,8 @@ void runAsyncClient()
 
 void runSyncClient()
 {
-    hycast::ClientSocket sock(serverSockAddr, numStreams);
-    SyncClientPeerMgr peerMgr(sock, version);
+    hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+    SyncClientPeerMgr peerMgr(sock);
 
     hycast::ProdInfo prodInfo("product", 1, 100000, 1400);
     peerMgr.sendNotice(prodInfo);
@@ -312,14 +307,14 @@ protected:
     void startSyncServer()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, numStreams);
+        hycast::ServerSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
         serverThread = std::thread(runSyncServer, sock);
     }
 
     void startAsyncServer()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, numStreams);
+        hycast::ServerSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
         serverThread = std::thread(runAsyncServer, sock);
     }
 
