@@ -42,4 +42,9 @@ VersionMsg VersionMsg::deserialize(
     return VersionMsg(ntohl(*reinterpret_cast<const uint32_t*>(buf)));
 }
 
+unsigned VersionMsg::getVersion() const
+{
+    return version;
+}
+
 } // namespace

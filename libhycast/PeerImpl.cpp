@@ -9,9 +9,11 @@
  * @author: Steven R. Emmerson
  */
 
+#include "PeerImpl.h"
+
 #include <iostream>
 #include <pthread.h>
-#include <PeerImpl.h>
+#include <stdexcept>
 
 namespace hycast {
 
@@ -29,6 +31,7 @@ PeerImpl::PeerImpl(
       sock(sock),
       recvThread(std::thread(&PeerImpl::runReceiver, std::ref(*this)))
 {
+    versionChan.send(VersionMsg(version));
 }
 
 PeerImpl::~PeerImpl()
@@ -83,6 +86,9 @@ void hycast::PeerImpl::runReceiver()
                 break; // remote peer closed connection
             }
             switch (sock.getStreamId()) {
+                case VERSION_STREAM_ID:
+                    recvVersion(versionChan.recv());
+                    break;
                 case PROD_NOTICE_STREAM_ID:
                     peerMgr->recvNotice(prodNoticeChan.recv());
                     break;
@@ -122,6 +128,13 @@ void hycast::PeerImpl::runReceiver()
 unsigned PeerImpl::getNumStreams()
 {
     return NUM_STREAM_IDS;
+}
+
+void PeerImpl::recvVersion(const VersionMsg& vers)
+{
+    if (version != vers.getVersion())
+        throw std::invalid_argument("Unknown protocol version: " +
+                std::to_string(vers.getVersion()));
 }
 
 } // namespace

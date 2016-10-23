@@ -56,6 +56,13 @@ class PeerImpl final {
      * @see ~PeerConnectionImpl()
      */
     void runReceiver();
+    /**
+     * Receives the protocol version of the remote peer.
+     * @throws std::invalid_argument if the version can't be handled
+     * @exceptionsafety  Strong guarantee
+     * @threadsafefy     Thread-compatible but not thread-safe
+     */
+    void recvVersion(const VersionMsg& vers);
 
 public:
     /**

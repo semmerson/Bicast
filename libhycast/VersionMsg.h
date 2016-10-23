@@ -20,12 +20,13 @@ namespace hycast {
 class VersionMsg final : public Serializable {
     unsigned version;
 public:
-    VersionMsg(unsigned version);
+    explicit VersionMsg(unsigned version);
     char* serialize(
             char*          buf,
             const size_t   bufLen,
             const unsigned version) const;
     size_t getSerialSize(unsigned version) const;
+    unsigned getVersion() const;
     static VersionMsg deserialize(
             const char* const buf,
             const size_t      size,
