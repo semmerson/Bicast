@@ -12,13 +12,76 @@
 #include "PeerImpl.h"
 
 #include <iostream>
-#include <pthread.h>
 #include <stdexcept>
 
 namespace hycast {
 
+template<class T>
+PeerImpl::ObjQueue<T>::ObjQueue()
+    : mutex{},
+      cond{},
+      haveObj{false},
+      obj{}
+{}
+
+template<class T>
+void PeerImpl::ObjQueue<T>::put(T& obj)
+{
+    std::unique_lock<std::mutex> lock{mutex};
+    while (haveObj)
+        cond.wait(lock);
+    this->obj = obj;
+    haveObj = true;
+    cond.notify_one();
+}
+
+template<class T>
+T PeerImpl::ObjQueue<T>::get()
+{
+    std::unique_lock<std::mutex> lock{mutex};
+    while (!haveObj)
+        cond.wait(lock);
+    haveObj = false;
+    cond.notify_one();
+    return obj;
+}
+
+PeerImpl::RecvQueue::RecvQueue()
+    : mutex{},
+      cond{},
+      circBuf{},
+      nextPut{0},
+      nextGet{0}
+{}
+
+void PeerImpl::RecvQueue::put(MsgType type)
+{
+    std::unique_lock<std::mutex> lock{mutex};
+    while ((nextPut + 1)%nelt != nextGet)
+        cond.wait(lock);
+    circBuf[nextPut++] = type;
+    nextPut %= nelt;
+    cond.notify_one();
+}
+
+MsgType PeerImpl::RecvQueue::get()
+{
+    std::unique_lock<std::mutex> lock{mutex};
+    while (nextGet == nextPut)
+        cond.wait(lock);
+    MsgType type = circBuf[nextGet++];
+    nextGet %= nelt;
+    cond.notify_one();
+    return type;
+}
+
+bool PeerImpl::RecvQueue::empty() const
+{
+    std::unique_lock<std::mutex> lock{mutex};
+    return nextGet == nextPut;
+}
+
 PeerImpl::PeerImpl(
-        PeerMgr&       peerMgr,
         Socket&        sock)
     : version(0),
       versionChan(sock, VERSION_STREAM_ID, version),
@@ -27,25 +90,24 @@ PeerImpl::PeerImpl(
       prodReqChan(sock, PROD_REQ_STREAM_ID, version),
       chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
       chunkChan(sock, CHUNK_STREAM_ID, version),
-      peerMgr(&peerMgr),
       sock(sock),
-      recvThread(std::thread(&PeerImpl::runReceiver, std::ref(*this)))
+      prodNoticeQ{},
+      chunkNoticeQ{},
+      prodReqQ{},
+      chunkReqQ{},
+      chunkQ{},
+      recvQ{}
 {
     versionChan.send(VersionMsg(version));
+    const unsigned vers = getVersion();
+    if (vers != version)
+        throw std::logic_error("Unknown protocol version: " +
+                std::to_string(vers));
 }
 
-PeerImpl::~PeerImpl()
+unsigned PeerImpl::getNumStreams()
 {
-    try {
-        (void)pthread_cancel(recvThread.native_handle());
-        recvThread.join();
-    }
-    catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-    }
-    catch (...) {
-        // Never throw an exception in a destructor
-    }
+    return NUM_STREAM_IDS;
 }
 
 void PeerImpl::sendProdInfo(const ProdInfo& prodInfo)
@@ -73,68 +135,71 @@ void PeerImpl::sendData(const ActualChunk& chunk)
     chunkChan.send(chunk);
 }
 
-void hycast::PeerImpl::runReceiver()
+MsgType PeerImpl::getMsgType()
 {
-    try {
+    if (recvQ.empty()) {
+        MsgType type;
         for (;;) {
-            int cancelState;
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
-            uint32_t size = sock.getSize();
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            if (size == 0) {
-                peerMgr->recvEof();
-                break; // remote peer closed connection
+            if (sock.getSize() == 0) {
+                return MSGTYPE_EOF;
             }
-            switch (sock.getStreamId()) {
-                case VERSION_STREAM_ID:
-                    recvVersion(versionChan.recv());
-                    break;
+            else switch (sock.getStreamId()) {
                 case PROD_NOTICE_STREAM_ID:
-                    peerMgr->recvNotice(prodNoticeChan.recv());
+                    type = MSGTYPE_PROD_NOTICE;
                     break;
                 case CHUNK_NOTICE_STREAM_ID:
-                    peerMgr->recvNotice(chunkNoticeChan.recv());
+                    type = MSGTYPE_CHUNK_NOTICE;
                     break;
                 case PROD_REQ_STREAM_ID:
-                    peerMgr->recvRequest(prodReqChan.recv());
+                    type = MSGTYPE_PROD_REQUEST;
                     break;
                 case CHUNK_REQ_STREAM_ID:
-                    peerMgr->recvRequest(chunkReqChan.recv());
+                    type = MSGTYPE_CHUNK_REQUEST;
                     break;
-                case CHUNK_STREAM_ID: {
-                    /*
-                     * For an unknown reason, the compiler complains if the
-                     * `peer->recvData` parameter is a `LatentChunk&` and not a
-                     * `LatentChunk`.  This is acceptable, however, because
-                     * `LatentChunk` uses the pImpl idiom. See
-                     * `PeerMgr::recvData`.
-                     */
-                    peerMgr->recvData(chunkChan.recv());
-                    if (sock.hasMessage())
-                        throw std::logic_error("Data not drained from latent "
-                                "chunk-of-data");
+                case CHUNK_STREAM_ID:
+                    type = MSGTYPE_CHUNK;
                     break;
-                }
                 default:
                     sock.discard();
+                    continue;
             }
+            break;
         }
+        recvQ.put(type);
     }
-    catch (const std::exception& e) {
-        peerMgr->recvException(e);
-    }
+    return recvQ.get();
 }
 
-unsigned PeerImpl::getNumStreams()
+unsigned PeerImpl::getVersion()
 {
-    return NUM_STREAM_IDS;
+    if (sock.getStreamId() != VERSION_STREAM_ID)
+        throw std::logic_error("Current message isn't a version message");
+    return versionChan.recv();
 }
 
-void PeerImpl::recvVersion(const VersionMsg& vers)
+ProdInfo PeerImpl::getProdNotice()
 {
-    if (version != vers.getVersion())
-        throw std::invalid_argument("Unknown protocol version: " +
-                std::to_string(vers.getVersion()));
+    return prodNoticeQ.get();
+}
+
+ChunkInfo PeerImpl::getChunkNotice()
+{
+    return chunkNoticeQ.get();
+}
+
+ProdIndex PeerImpl::getProdRequest()
+{
+    return prodReqQ.get();
+}
+
+ChunkInfo PeerImpl::getChunkRequest()
+{
+    return chunkReqQ.get();
+}
+
+LatentChunk PeerImpl::getChunk()
+{
+    return chunkQ.get();
 }
 
 } // namespace

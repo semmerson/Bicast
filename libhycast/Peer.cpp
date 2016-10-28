@@ -15,10 +15,14 @@
 namespace hycast {
 
 Peer::Peer(
-        PeerMgr& peerMgr,
         Socket&  sock)
-    : pImpl(new PeerImpl(peerMgr, sock))
+    : pImpl(new PeerImpl(sock))
 {
+}
+
+unsigned Peer::getNumStreams()
+{
+    return PeerImpl::getNumStreams();
 }
 
 void Peer::sendNotice(const ProdInfo& prodInfo)
@@ -46,9 +50,34 @@ void Peer::sendData(const ActualChunk& chunk)
     pImpl->sendData(chunk);
 }
 
-unsigned Peer::getNumStreams()
+MsgType Peer::getMsgType()
 {
-    return PeerImpl::getNumStreams();
+    return pImpl->getMsgType();
+}
+
+ProdInfo Peer::getProdNotice()
+{
+    return pImpl->getProdNotice();
+}
+
+ChunkInfo Peer::getChunkNotice()
+{
+    return pImpl->getChunkNotice();
+}
+
+ProdIndex Peer::getProdRequest()
+{
+    return pImpl->getProdRequest();
+}
+
+ChunkInfo Peer::getChunkRequest()
+{
+    return pImpl->getChunkRequest();
+}
+
+LatentChunk Peer::getChunk()
+{
+    return pImpl->getChunk();
 }
 
 } // namespace

@@ -23,13 +23,27 @@ namespace hycast {
 class SocketImpl; // Forward declaration of implementation
 
 class Socket {
+friend class LatentChunkImpl;
+private:
+    /**
+     * Locks the socket for reading. All the reading methods (getSize(),
+     * getStreamId(), recv(), and recvv()) will block until readUnlock() is
+     * called.
+     * @see readUnlock()
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Safe
+     */
+    void readLock();
+    /**
+     * Unlocks the socket for reading.
+     * @see readLock()
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Safe
+     */
+    void readUnlock();
 protected:
     std::shared_ptr<SocketImpl> pImpl;
-    /**
-     * Constructs from a socket implementation.
-     * @param[in] impl  The implementation
-     */
-    explicit Socket(SocketImpl* impl);
+    // `Socket(SocketImpl*)` should be here but see below
 public:
     /**
      * Constructs from nothing.
@@ -37,6 +51,15 @@ public:
      * @exceptionsafety Strong
      */
     explicit Socket();
+    /**
+     * Constructs from a socket implementation.
+     * @param[in] impl  The implementation
+     */
+    /*
+     * g++ 4.8.3 mistakenly prevents method `ServerSocket::accept()` from
+     * calling this constructor if it's protected.
+     */
+    explicit Socket(SocketImpl* impl);
     /**
      * Constructs from a BSD socket. Only do this once per socket because the
      * destructor might close the socket.
@@ -51,11 +74,6 @@ public:
     Socket(
             const int      sd,
             const uint16_t numStreams = 1);
-    /**
-     * Constructs from a shared pointer to a socket implementation.
-     * @param[in] sptr  Shared pointer to implementation
-     */
-    explicit Socket(std::shared_ptr<SocketImpl> sptr);
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams

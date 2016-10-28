@@ -37,7 +37,6 @@ libhycast_la_SOURCES 	= \
 	ChunkChannel.cpp ChunkChannel.h \
 	PeerImpl.cpp PeerImpl.h \
 	Peer.cpp Peer.h \
-	PeerMgr.h \
 	VersionMsg.cpp VersionMsg.h
 
 # Linker options libTestProgram

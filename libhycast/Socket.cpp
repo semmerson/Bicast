@@ -37,11 +37,6 @@ Socket::Socket(SocketImpl* impl)
 {
 }
 
-Socket::Socket(std::shared_ptr<SocketImpl> sptr)
-    : pImpl(sptr)
-{
-}
-
 uint16_t Socket::getNumStreams() const
 {
     return pImpl->getNumStreams();
@@ -50,6 +45,16 @@ uint16_t Socket::getNumStreams() const
 bool Socket::operator ==(const Socket& that) const noexcept
 {
     return *pImpl.get() == *that.pImpl.get();
+}
+
+void hycast::Socket::readLock()
+{
+    pImpl->readLock();
+}
+
+void hycast::Socket::readUnlock()
+{
+    pImpl->readUnlock();
 }
 
 unsigned Socket::getStreamId()

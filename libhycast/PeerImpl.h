@@ -14,18 +14,43 @@
 
 #include "ChunkChannel.h"
 #include "ChunkInfo.h"
-#include "VersionMsg.h"
+#include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "RegChannel.h"
 #include "Socket.h"
+#include "VersionMsg.h"
 
+#include <condition_variable>
+#include <mutex>
 #include <thread>
-#include "PeerMgr.h"
 
 namespace hycast {
 
 class PeerImpl final {
+    template<class T> class ObjQueue {
+        std::mutex              mutex;
+        std::condition_variable cond;
+        bool                    haveObj;
+        T                       obj;
+    public:
+        ObjQueue();
+        void put(T& obj);
+        T    get();
+    };
+    class RecvQueue {
+        static const unsigned   nelt = MSGTYPE_NUM_TYPES + 1;
+        mutable std::mutex      mutex;
+        std::condition_variable cond;
+        MsgType                 circBuf[nelt];
+        unsigned                nextPut;
+        unsigned                nextGet;
+    public:
+        RecvQueue();
+        void    put(MsgType type);
+        MsgType get();
+        bool    empty() const;
+    };
     typedef enum {
         VERSION_STREAM_ID = 0,
         PROD_NOTICE_STREAM_ID,
@@ -42,44 +67,36 @@ class PeerImpl final {
     RegChannel<ProdIndex>  prodReqChan;
     RegChannel<ChunkInfo>  chunkReqChan;
     ChunkChannel           chunkChan;
-    PeerMgr*               peerMgr;
     Socket                 sock;
-    std::thread            recvThread;
+    ObjQueue<ProdInfo>     prodNoticeQ;
+    ObjQueue<ChunkInfo>    chunkNoticeQ;
+    ObjQueue<ProdIndex>    prodReqQ;
+    ObjQueue<ChunkInfo>    chunkReqQ;
+    ObjQueue<LatentChunk>  chunkQ;
+    RecvQueue              recvQ;
 
     /**
-     * Receives objects and calls the appropriate methods of the associated
-     * peer. Doesn't return until the destructor is called or an exception is
-     * thrown.
-     * @throws std::runtime_error if an invalid SCTP stream ID is encountered
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     * @see ~PeerConnectionImpl()
+     * Returns the protocol version of the remote peer.
+     * @pre `sock.getStreamId() == VERSION_STREAM_ID`
+     * @return Protocol version of the remote peer
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
      */
-    void runReceiver();
-    /**
-     * Receives the protocol version of the remote peer.
-     * @throws std::invalid_argument if the version can't be handled
-     * @exceptionsafety  Strong guarantee
-     * @threadsafefy     Thread-compatible but not thread-safe
-     */
-    void recvVersion(const VersionMsg& vers);
+     unsigned getVersion();
 
 public:
     /**
-     * Constructs from a peer, a socket, and a protocol version. Immediately
-     * starts receiving objects from the socket and passing them to the
-     * appropriate peer methods.
-     * @param[in,out] peer     Peer. Must exist for the duration of the
-     *                         constructed instance.
+     * Constructs from an SCTP socket.
      * @param[in,out] sock     Socket
+     * @throws std::logic_error if the protocol version of the remote peer can't
+     *                          be handled
      */
     PeerImpl(
-            PeerMgr& peerMgr,
             Socket&  sock);
     /**
-     * Destroys this instance. Cancels the receiving thread and joins it.
+     * Returns the number of streams.
      */
-    ~PeerImpl();
+    static unsigned getNumStreams();
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -106,9 +123,48 @@ public:
      */
     void sendData(const ActualChunk& chunk);
     /**
-     * Returns the number of streams.
+     * Returns the type of the next message. Blocks until one arrives if
+     * necessary.
      */
-    static unsigned getNumStreams();
+    MsgType getMsgType();
+    /**
+     * Returns a notice of a product.
+     * @return Information on a product
+     * @threadsafety Safe
+     */
+    ProdInfo getProdNotice();
+    /**
+     * Returns a notice of a chunk-of-data.
+     * @pre `getMsgType() == MSGTYPE_CHUNK_NOTICE`
+     * @return Chunk-of-data
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
+     */
+    ChunkInfo getChunkNotice();
+    /**
+     * Returns a request for information on a product.
+     * @pre `getMsgType() == MSGTYPE_PROD_REQUEST`
+     * @return Product index
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
+     */
+    ProdIndex getProdRequest();
+    /**
+     * Returns a request for a chunk-of-data.
+     * @pre `getMsgType() == MSGTYPE_CHUNK_REQUEST`
+     * @return Information on the chunk
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
+     */
+    ChunkInfo getChunkRequest();
+    /**
+     * Returns a latent chunk-of-data.
+     * @pre `getMsgType() == MSGTYPE_CHUNK`
+     * @return Latent chunk-of-data
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
+     */
+    LatentChunk getChunk();
 };
 
 } // namespace

@@ -41,15 +41,17 @@ void runServer(hycast::ServerSocket serverSock)
 void runClient()
 {
     hycast::ClientSocket sock(serverSockAddr, numStreams);
+    const unsigned streamId = 0;
+    const unsigned version = 0;
 
-    hycast::ChunkChannel chunkChannel(sock, 0, 0);
+    hycast::ChunkChannel chunkChannel(sock, streamId, version);
     hycast::ChunkInfo chunkInfo(4, 5);
     uint8_t data1[10000] = {};
     (void)memset(data1, 0xbd, sizeof(data1));
     hycast::ActualChunk actualChunk(chunkInfo, data1, sizeof(data1));
     chunkChannel.send(actualChunk);
 
-    ASSERT_EQ(0, chunkChannel.getStreamId());
+    ASSERT_EQ(streamId, chunkChannel.getStreamId());
     hycast::LatentChunk latentChunk = chunkChannel.recv();
     ASSERT_EQ(sizeof(data1), latentChunk.getSize());
     uint8_t data2[sizeof(data1)];
@@ -57,7 +59,7 @@ void runClient()
     EXPECT_EQ(0, memcmp(data1, data2, sizeof(data1)));
 }
 
-// The fixture for testing class Chunk.
+// The fixture for testing class ChunkChannel.
 class ChunkChannelTest : public ::testing::Test {
 protected:
     // You can remove any or all of the following functions if its body

@@ -33,9 +33,11 @@ LatentChunkImpl::LatentChunkImpl(
     : info(),
       sock(sock),
       size(0),
-      version(version)
+      version(version),
+      threadId{std::this_thread::get_id()}
 {
     // Keep consistent with ActualChunkImpl::serialize()
+    sock.readLock();
     unsigned nbytes = info.getSerialSize(version);
     alignas(alignof(max_align_t)) char buf[nbytes];
     sock.recv(buf, nbytes, MSG_PEEK);
@@ -45,6 +47,8 @@ LatentChunkImpl::LatentChunkImpl(
 
 void LatentChunkImpl::drainData(void* data)
 {
+    if (threadId != std::this_thread::get_id())
+        throw std::logic_error("drainData() called on wrong thread");
     unsigned nbytes = info.getSerialSize(version);
     alignas(alignof(max_align_t)) uint8_t buf[nbytes];
     struct iovec iovec[2];
@@ -53,6 +57,7 @@ void LatentChunkImpl::drainData(void* data)
     iovec[1].iov_base = const_cast<void*>(data);
     iovec[1].iov_len = size;
     sock.recvv(iovec, 2);
+    sock.readUnlock();
 }
 
 bool LatentChunkImpl::hasData()

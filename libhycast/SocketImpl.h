@@ -25,23 +25,16 @@
 namespace hycast {
 
 class SocketImpl {
+friend class Socket;
 protected:
-    int        sock;
-    /**
-     * Gets information on the next SCTP message. The message is left in the
-     * socket's input buffer.
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
-     */
-    void getNextMsgInfo();
+    int sock; // Don't move to preserve initialization order
 private:
-    unsigned   streamId;
-    uint32_t   size;
-    bool       haveMsg;
-    unsigned   numStreams;
-    std::mutex readMutex;
-    std::mutex writeMutex;
+    unsigned             streamId;
+    uint32_t             size;
+    bool                 haveMsg;
+    unsigned             numStreams;
+    std::recursive_mutex readMutex;
+    std::mutex           writeMutex;
     /**
      * Prevents copy construction.
      */
@@ -82,12 +75,36 @@ private:
             const unsigned          streamId,
             const size_t            size) noexcept;
     /**
+     * Locks the socket for reading. All the reading methods (getSize(),
+     * getStreamId(), recv(), and recvv()) will block until readUnlock() is
+     * called.
+     * @see readUnlock()
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Safe
+     */
+    void readLock();
+    /**
+     * Unlocks the socket for reading.
+     * @see readLock()
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Safe
+     */
+    void readUnlock();
+    /**
      * Ensures that the current message exists.
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      * @threadsafety Safe
      */
     void ensureMsg();
+    /**
+     * Gets information on the next SCTP message. The message is left in the
+     * socket's input buffer.
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety Safe
+     */
+    void getNextMsgInfo();
 public:
     /**
      * Constructs from nothing.

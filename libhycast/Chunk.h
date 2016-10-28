@@ -36,7 +36,7 @@ public:
     LatentChunk();
     /**
      * Constructs from an SCTP socket whose current message is a chunk of
-     * data and a protocol version. NB: This method reads the current message.
+     * data and a protocol version.
      * @param[in] sock     SCTP socket
      * @param[in] version  Protocol version
      * @throws std::invalid_argument if the current message is invalid
@@ -60,11 +60,14 @@ public:
     ChunkSize getSize() const noexcept;
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
-     * be available.
-     * @param[in] data  Buffer to drain the chunk of data into
+     * be available. Must be called on the same thread that created this
+     * instance.
+     * @param[out] data  Buffer to drain the chunk of data into
+     * @throws std::logic_error  if not called on the thread that created this
+     *                           instance
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
-     * @threadsafety Safe
+     * @threadsafety    Safe
      */
     void drainData(void* data);
     /**

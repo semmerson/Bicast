@@ -28,7 +28,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Unsafe but compatible
      */
-    std::shared_ptr<SocketImpl> accept();
+    SocketImpl* accept();
 };
 
 } // namespace

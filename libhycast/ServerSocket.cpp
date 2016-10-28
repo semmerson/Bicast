@@ -25,7 +25,7 @@ ServerSocket::ServerSocket(
 
 Socket ServerSocket::accept()
 {
-    return Socket((static_cast<ServerSocketImpl*>(pImpl.get()))->accept());
+    return Socket{(static_cast<ServerSocketImpl*>(pImpl.get()))->accept()};
 }
 
 } // namespace

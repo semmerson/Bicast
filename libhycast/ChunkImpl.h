@@ -20,13 +20,16 @@
 #include "Channel.h"
 #include "Socket.h"
 
+#include <thread>
+
 namespace hycast {
 
 class LatentChunkImpl final {
-    ChunkInfo info;
-    Socket    sock;
-    ChunkSize size;
-    unsigned  version;
+    ChunkInfo       info;
+    Socket          sock;
+    ChunkSize       size;
+    unsigned        version;
+    std::thread::id threadId;
 public:
     /**
      * Constructs from nothing.
@@ -62,11 +65,14 @@ public:
     }
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
-     * be available.
-     * @param[in] data  Buffer to drain the chunk of data into
+     * be available. Must be called on the same thread that created this
+     * instance.
+     * @param[out] data  Buffer to drain the chunk of data into
+     * @throws std::logic_error  if not called on the thread that created this
+     *                           instance
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
-     * @threadsafety Safe
+     * @threadsafety    Safe
      */
     void drainData(void* data);
     /**

@@ -31,14 +31,14 @@ ServerSocketImpl::ServerSocketImpl(
                 ", addr=" + to_string());
 }
 
-std::shared_ptr<SocketImpl> ServerSocketImpl::accept()
+SocketImpl* ServerSocketImpl::accept()
 {
     socklen_t len = 0;
-    int sd = ::accept(sock, (struct sockaddr*)nullptr, &len);
+    int sd = ::accept(sock, static_cast<struct sockaddr*>(nullptr), &len);
     if (sd < 0)
         throw std::system_error(errno, std::system_category(),
                 "accept() failure: sock=" + std::to_string(sock));
-    return std::shared_ptr<SocketImpl>(new SocketImpl(sd, getNumStreams()));
+    return new SocketImpl(sd, getNumStreams());
 }
 
 } // namespace
