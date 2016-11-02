@@ -70,6 +70,13 @@ public:
      */
     void drainData(void* data);
     /**
+     * Discards the chunk of data. The latent data will no longer be available.
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety Safe
+     */
+    void discard();
+    /**
      * Indicates if this instance has data (i.e., whether or not `drainData()`
      * has been called).
      * @retval true   This instance has data

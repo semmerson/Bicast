@@ -104,7 +104,7 @@ bool Socket::hasMessage()
     return pImpl->hasMessage();
 }
 
-void Socket::discard() noexcept
+void Socket::discard()
 {
     pImpl->discard();
 }

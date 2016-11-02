@@ -12,6 +12,7 @@
 #include "SocketImpl.h"
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstdint>
 #include <errno.h>
 #include <string>
@@ -25,7 +26,7 @@ SocketImpl::SocketImpl()
     : sock(-1),
       streamId(0),
       size(0),
-      haveMsg(false),
+      haveCurrMsg(false),
       numStreams(0),
       readMutex(),
       writeMutex()
@@ -38,7 +39,7 @@ SocketImpl::SocketImpl(
     : sock(sd),
       streamId(0),
       size(0),
-      haveMsg(false),
+      haveCurrMsg(false),
       numStreams(numStreams),
       readMutex(),
       writeMutex()
@@ -92,7 +93,7 @@ void SocketImpl::checkIoStatus(
         throw std::system_error(errno, std::system_category(),
                 std::string(funcName) + " failure: sock=" + std::to_string(sock)
                 + ", expected=" + std::to_string(expected));
-    if ((size_t)actual != expected)
+    if (expected != 0 && expected != (size_t)actual)
         throw std::system_error(EIO, std::system_category(),
                 std::string(funcName) + " failure: sock=" + std::to_string(sock)
                 + ", expected=" + std::to_string(expected) + ", actual=" +
@@ -153,30 +154,37 @@ void SocketImpl::sendv(
 
 void SocketImpl::getNextMsgInfo()
 {
-    struct sctp_sndrcvinfo  sinfo;
-    uint8_t                 msg;
-    int                     flags = MSG_PEEK;
-    int                     numRead;
-    socklen_t               socklen = 0;
+    int                    numRecvd;
+    struct sctp_sndrcvinfo sinfo;
     {
+        int       flags = MSG_PEEK;
+        char      msg[1];
+        socklen_t socklen = 0;
+        /*
+         * According to `man sctp_recvmsg` and
+         * <https://tools.ietf.org/html/rfc6458>, `sctp_recvmsg()` returns
+         * the number of bytes "received". Empirically, this is *not*
+         * greater than the number of bytes requested (i.e., it is *not* the
+         * number of bytes in the message -- even if MSG_PEEK is specified).
+         */
         std::lock_guard<std::mutex> lock(readMutex);
-        numRead = sctp_recvmsg(sock, &msg, sizeof(msg), nullptr, &socklen,
+        numRecvd = sctp_recvmsg(sock, msg, sizeof(msg), nullptr, &socklen,
                 &sinfo, &flags);
     }
-    if (numRead == 0) {
-        size = 0;
+    checkIoStatus("getNextMsgInfo()->sctp_recvmsg()", 0, numRecvd);
+    if (numRecvd == 0 || (numRecvd == -1 && errno == ECONNRESET)) {
+        size = 0; // EOF
     }
     else {
-        checkIoStatus("sctp_recvmsg()", sizeof(msg), numRead);
         streamId = sinfo.sinfo_stream;
         size = ntohl(sinfo.sinfo_ppid);
     }
-    haveMsg = true;
+    haveCurrMsg = true;
 }
 
-void SocketImpl::ensureMsg()
+inline void SocketImpl::ensureMsg()
 {
-    if (!haveMsg)
+    if (!haveCurrMsg)
         getNextMsgInfo();
 }
 
@@ -195,18 +203,24 @@ uint32_t SocketImpl::getStreamId()
 void SocketImpl::recv(
         void*        msg,
         const size_t len,
-        int          flags)
+        const int    flags)
 {
+    /*
+     * NB: If the current message exists and `len` is less than the size of the
+     * message, then the message will continue to be the current message --
+     * regardless of whether or not MSG_PEEK is specified.
+     */
     struct sctp_sndrcvinfo  sinfo;
     int                     numRead;
     socklen_t               socklen = 0;
     {
+        int tmpFlags = flags;
         std::lock_guard<std::mutex> lock(readMutex);
         numRead = sctp_recvmsg(sock, msg, len, (struct sockaddr*)nullptr,
-                &socklen, &sinfo, &flags);
+                &socklen, &sinfo, &tmpFlags);
     }
     checkIoStatus("sctp_recvmsg()", len, numRead);
-    haveMsg = false;
+    haveCurrMsg = (flags & MSG_PEEK) != 0;
 }
 
 void SocketImpl::recvv(
@@ -224,17 +238,20 @@ void SocketImpl::recvv(
         numRead = recvmsg(sock, &msghdr, flags);
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
-    haveMsg = false;
+    haveCurrMsg = (flags & MSG_PEEK) != 0;
 }
 
 bool SocketImpl::hasMessage()
 {
-    return haveMsg;
+    return haveCurrMsg;
 }
 
-void SocketImpl::discard() noexcept
+void SocketImpl::discard()
 {
-    haveMsg = false;
+    if (haveCurrMsg) {
+        char msg[getSize()]; // Apparently necessary to discard current message
+        recv(msg, sizeof(msg));
+    }
 }
 
 } // namespace

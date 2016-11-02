@@ -27,7 +27,7 @@ public:
             const unsigned version) const;
     size_t getSerialSize(unsigned version) const;
     unsigned getVersion() const;
-    static VersionMsg deserialize(
+    static unsigned deserialize(
             const char* const buf,
             const size_t      size,
             const unsigned    version);

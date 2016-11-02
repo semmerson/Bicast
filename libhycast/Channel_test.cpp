@@ -114,6 +114,11 @@ protected:
     std::thread serverThread;
 };
 
+// Tests default construction
+TEST_F(ChannelTest, DefaultConstruction) {
+    hycast::RegChannel<hycast::ProdInfo> prodInfoChannel();
+}
+
 // Tests end-to-end execution.
 TEST_F(ChannelTest, EndToEnd) {
     startServer();

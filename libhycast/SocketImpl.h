@@ -27,18 +27,10 @@ namespace hycast {
 class SocketImpl {
 protected:
     int        sock;
-    /**
-     * Gets information on the next SCTP message. The message is left in the
-     * socket's input buffer.
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
-     */
-    void getNextMsgInfo();
 private:
     unsigned   streamId;
     uint32_t   size;
-    bool       haveMsg;
+    bool       haveCurrMsg;
     unsigned   numStreams;
     std::mutex readMutex;
     std::mutex writeMutex;
@@ -53,15 +45,25 @@ private:
     /**
      * Checks the return status of an I/O function.
      * @param[in] funcName  Name of the I/O function
-     * @param[in] expected  The expected return status
-     * @param[in] actual  The actual return status
-     * @throws std::system_error if `actual < 0 || actual != expected`
+     * @param[in] expected  The expected return status or 0, which disables the
+     *                      comparison with `actual`
+     * @param[in] actual    The actual return status
+     * @throws std::system_error if `actual < 0 || (expected && actual !=
+     *                           expected)`
      * @exceptionsafety Strong
      */
     void checkIoStatus(
             const char*   funcName,
             const size_t  expected,
             const ssize_t actual) const;
+    /**
+     * Gets information on the next SCTP message. The message is left in the
+     * socket's input buffer.
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety Safe
+     */
+    void getNextMsgInfo();
     /**
      * Computes the total number of bytes in a scatter/gather IO operation.
      * @param[in] iovec   Scatter/gather IO vector
@@ -201,7 +203,7 @@ public:
      *                      - `MSG_OOB`  Requests out-of-band data
      *                      - `MSG_PEEK` Peeks at the incoming message
      * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
+     * @exceptionsafety Basic guarantee
      * @threadsafety Safe
      */
     void recvv(
@@ -216,8 +218,10 @@ public:
     bool hasMessage();
     /**
      * Discards the current message.
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Thread-compatible but not thread-safe
      */
-    void discard() noexcept;
+    void discard();
 };
 
 } // namespace

@@ -34,12 +34,12 @@ char* VersionMsg::serialize(
     return buf + 4;
 }
 
-VersionMsg VersionMsg::deserialize(
+unsigned VersionMsg::deserialize(
         const char* const buf,
         const size_t      size,
         const unsigned    vers)
 {
-    return VersionMsg(ntohl(*reinterpret_cast<const uint32_t*>(buf)));
+    return ntohl(*reinterpret_cast<const uint32_t*>(buf));
 }
 
 unsigned VersionMsg::getVersion() const

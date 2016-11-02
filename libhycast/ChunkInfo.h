@@ -16,6 +16,8 @@
 #include "ProdIndex.h"
 #include "Serializable.h"
 
+#include <cstddef>
+
 namespace hycast {
 
 class ChunkInfo final : public Serializable {
@@ -72,6 +74,26 @@ public:
      * @retval `true` iff this instance equals the other
      */
     bool equals(const ChunkInfo& that) const;
+    /**
+     * Indicates if two instance are equal.
+     * @param[in] obj1  First instance
+     * @param[in] obj2  Second instance
+     * @retval `true` iff the instances are equal
+     */
+    static bool areEqual(
+            const ChunkInfo& obj1,
+            const ChunkInfo& obj2) {
+        return obj1.equals(obj2);
+    }
+    /**
+     * Returns the hash code of an instance.
+     * @param[in] chunk  The instance
+     * @return The instance's hash code
+     */
+    static size_t hash(const ChunkInfo& chunk) {
+        return ProdIndex::hash(chunk.prodIndex) |
+                std::hash<ChunkIndex>()(chunk.chunkIndex);
+    }
     /**
      * Serializes this instance to a buffer.
      * @param[out] buf      Buffer

@@ -55,6 +55,11 @@ void LatentChunkImpl::drainData(void* data)
     sock.recvv(iovec, 2);
 }
 
+void LatentChunkImpl::discard()
+{
+    sock.discard();
+}
+
 bool LatentChunkImpl::hasData()
 {
     return sock.hasMessage();

@@ -50,7 +50,7 @@ void runClient(const int port)
     for (int i = 0; i < 100; ++i) {
         unsigned outStream = i % numStreams;
         uint8_t outBuf[1+i];
-        (void)memset(outBuf, 0, sizeof(outBuf));
+        (void)memset(outBuf, 0xbd, sizeof(outBuf));
         sock.send(outStream, outBuf, sizeof(outBuf));
         uint32_t size = sock.getSize();
         EXPECT_EQ(sizeof(outBuf), size);

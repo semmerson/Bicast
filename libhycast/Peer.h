@@ -27,17 +27,46 @@ class Peer final {
     std::shared_ptr<PeerImpl> pImpl;
 public:
     /**
+     * Constructs from nothing. Any attempt to use the resulting instance will
+     * throw an exception.
+     */
+    Peer() = default;
+    /**
      * Constructs from a peer manager, a socket, and a protocol version.
      * Immediately starts receiving objects from the socket and passing them to
      * the appropriate peer methods.
-     * @param[in,out] peer     Peer. Must exist for the duration of the
+     * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
      *                         constructed instance.
      * @param[in,out] sock     Socket
      * @param[in]     version  Protocol version
      */
     Peer(
-            PeerMgr&       peerMgr,
-            Socket&        sock);
+            PeerMgr& peerMgr,
+            Socket&  sock);
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] that  The other instance
+     * @return `true` iff this instance is equal to the other
+     */
+    bool operator==(const Peer& that) const noexcept;
+    /**
+     * Indicates if two peer are equal.
+     * @param[in] peer1  First peer
+     * @param[in] peer2  Second peer
+     * @return `true` iff the two peers are equal
+     */
+    static bool areEqual(
+            const Peer& peer1,
+            const Peer& peer2);
+    /**
+     * Runs the receiver. Objects are received from the socket and passed to the
+     * appropriate peer-manager methods. Doesn't return until either the socket
+     * is closed or an exception is thrown.
+     * @throws
+     * @exceptionsafety Basic guarantee
+     * @threadsafefy    Thread-compatible but not thread-safe
+     */
+    void runReceiver();
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information

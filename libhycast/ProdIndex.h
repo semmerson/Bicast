@@ -16,11 +16,12 @@
 #include "Serializable.h"
 
 #include <cstdint>
+#include <functional>
 
 namespace hycast {
 
 class ProdIndex final : public Serializable {
-    ProdIndex_t              index;
+    ProdIndex_t index;
 public:
     /**
      * Constructs from a numeric product-index. The constuctor isn't explicit to
@@ -41,6 +42,14 @@ public:
             const unsigned    version);
     operator ProdIndex_t() const {
         return index;
+    }
+    /**
+     * Returns the hash code of an instance.
+     * @param[in] obj  The instance
+     * @return The instance's hash code
+     */
+    static size_t hash(const ProdIndex& obj) {
+        return std::hash<ProdIndex_t>()(obj.index);
     }
     bool operator ==(const ProdIndex& that) const {
         return index == that.index;

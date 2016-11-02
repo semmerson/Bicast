@@ -27,6 +27,18 @@ namespace hycast {
 template <class T>
 class RegChannelImpl final : public ChannelImpl {
 public:
+    /**
+     * Constructs from nothing. Any attempt to use the resulting object will
+     * throw an exception.
+     */
+    RegChannelImpl() = default;
+    /**
+     * Constructs from an SCTP socket, SCTP stream identifier, and protocol
+     * version.
+     * @param[in] sock      SCTP socket
+     * @param[in] streamId  SCTP stream ID
+     * @param[in] version   Protocol version
+     */
     RegChannelImpl(
             Socket&            sock,
             const unsigned     streamId,

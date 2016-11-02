@@ -21,6 +21,11 @@ Peer::Peer(
 {
 }
 
+void Peer::runReceiver()
+{
+    pImpl->runReceiver();
+}
+
 void Peer::sendNotice(const ProdInfo& prodInfo)
 {
     pImpl->sendProdInfo(prodInfo);
@@ -44,6 +49,16 @@ void Peer::sendRequest(const ChunkInfo& info)
 void Peer::sendData(const ActualChunk& chunk)
 {
     pImpl->sendData(chunk);
+}
+
+bool Peer::areEqual(const Peer& peer1, const Peer& peer2)
+{
+    return peer1.pImpl.get() == peer2.pImpl.get();
+}
+
+bool Peer::operator ==(const Peer& that) const noexcept
+{
+    return pImpl.get() == that.pImpl.get();
 }
 
 unsigned Peer::getNumStreams()

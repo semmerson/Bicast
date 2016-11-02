@@ -113,6 +113,11 @@ protected:
     std::thread serverThread;
 };
 
+// Tests default construction
+TEST_F(ChunkChannelTest, DefaultConstruction) {
+    hycast::ChunkChannel chunkChannel();
+}
+
 // Tests end-to-end Chunk transmission
 TEST_F(ChunkChannelTest, EndToEnd) {
     startServer();

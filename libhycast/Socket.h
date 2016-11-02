@@ -153,8 +153,10 @@ public:
     bool hasMessage();
     /**
      * Discards the current message.
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Thread-compatible but not thread-safe
      */
-    void discard() noexcept;
+    void discard();
 };
 
 } // namespace

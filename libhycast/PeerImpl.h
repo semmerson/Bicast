@@ -44,27 +44,22 @@ class PeerImpl final {
     ChunkChannel           chunkChan;
     PeerMgr*               peerMgr;
     Socket                 sock;
-    std::thread            recvThread;
 
     /**
-     * Receives objects and calls the appropriate methods of the associated
-     * peer. Doesn't return until the destructor is called or an exception is
-     * thrown.
-     * @throws std::runtime_error if an invalid SCTP stream ID is encountered
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     * @see ~PeerConnectionImpl()
+     * Returns the protocol version of the remote peer.
+     * @pre `sock.getStreamId() == VERSION_STREAM_ID`
+     * @return Protocol version of the remote peer
+     * @throws std::logic_error if precondition not met
+     * @threadsafety Safe
      */
-    void runReceiver();
-    /**
-     * Receives the protocol version of the remote peer.
-     * @throws std::invalid_argument if the version can't be handled
-     * @exceptionsafety  Strong guarantee
-     * @threadsafefy     Thread-compatible but not thread-safe
-     */
-    void recvVersion(const VersionMsg& vers);
+     unsigned getVersion();
 
 public:
+    /**
+     * Constructs from nothing. Any attempt to use use resulting instance will
+     * throw an exception.
+     */
+    PeerImpl();
     /**
      * Constructs from a peer, a socket, and a protocol version. Immediately
      * starts receiving objects from the socket and passing them to the
@@ -77,9 +72,18 @@ public:
             PeerMgr& peerMgr,
             Socket&  sock);
     /**
-     * Destroys this instance. Cancels the receiving thread and joins it.
+     * Returns the number of streams.
      */
-    ~PeerImpl();
+    static unsigned getNumStreams();
+    /**
+     * Runs the receiver. Objects are received from the socket and passed to the
+     * appropriate peer manager methods. Doesn't return until either the socket
+     * is closed or an exception is thrown.
+     * @throws
+     * @exceptionsafety Basic guarantee
+     * @threadsafefy    Thread-compatible but not thread-safe
+     */
+    void runReceiver();
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -105,10 +109,6 @@ public:
      * @param[in] chunk  Chunk-of-data
      */
     void sendData(const ActualChunk& chunk);
-    /**
-     * Returns the number of streams.
-     */
-    static unsigned getNumStreams();
 };
 
 } // namespace

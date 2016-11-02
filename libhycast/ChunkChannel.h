@@ -27,6 +27,11 @@ class ChunkChannel final : public Channel {
     std::shared_ptr<ChunkChannelImpl> pImpl;
 public:
     /**
+     * Constructs from nothing. Any attempt to use the resulting instance will
+     * throw an exception.
+     */
+    ChunkChannel() =default;
+    /**
      * Constructs from an SCTP socket, a stream identifier, and a protocol
      * version.
      * @param[in] sock      SCTP Socket

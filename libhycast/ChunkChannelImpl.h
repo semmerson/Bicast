@@ -21,6 +21,18 @@ namespace hycast {
 
 class ChunkChannelImpl final : public ChannelImpl {
 public:
+    /**
+     * Constructs from nothing. Any attempt to use the resulting instance will
+     * throw an exception.
+     */
+    ChunkChannelImpl() =default;
+    /**
+     * Constructs from an SCTP socket, SCTP stream identifier, and protocol
+     * version.
+     * @param[in] sock      SCTP socket
+     * @param[in] streamId  SCTP stream ID
+     * @param[in] version   Protocol version
+     */
     ChunkChannelImpl(
             Socket&        sock,
             const unsigned streamId,

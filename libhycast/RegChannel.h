@@ -26,6 +26,11 @@ class RegChannel final : public Channel {
     std::shared_ptr<RegChannelImpl<T>> pImpl;
 public:
     /**
+     * Constructs from nothing. Any attempt to use the resulting object will
+     * throw an exception.
+     */
+    RegChannel() = default;
+    /**
      * Constructs from an SCTP socket, a stream identifier, and a protocol
      * version.
      * @param[in] sock      SCTP Socket

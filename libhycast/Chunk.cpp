@@ -80,6 +80,11 @@ void LatentChunk::drainData(void* data)
     pImpl->drainData(data);
 }
 
+void LatentChunk::discard()
+{
+    pImpl->discard();
+}
+
 bool LatentChunk::hasData()
 {
     return pImpl->hasData();

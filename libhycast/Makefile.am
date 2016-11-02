@@ -38,7 +38,8 @@ libhycast_la_SOURCES 	= \
 	PeerImpl.cpp PeerImpl.h \
 	Peer.cpp Peer.h \
 	PeerMgr.h \
-	VersionMsg.cpp VersionMsg.h
+	VersionMsg.cpp VersionMsg.h \
+	Chunk2Peers.cpp Chunk2Peers.h
 
 # Linker options libTestProgram
 libhycast_la_LDFLAGS = 
@@ -59,6 +60,7 @@ check_PROGRAMS		= \
 	Channel_test \
 	ChunkChannel_test \
 	Peer_test \
+	Chunk2Peers_test \
 	#Di_test
 
 #Di_test_SOURCES	= Di_test.cpp
@@ -97,6 +99,9 @@ ChunkChannel_test_LDFLAGS = libhycast.la -lgtest -lsctp
 Peer_test_SOURCES = Peer_test.cpp
 Peer_test_LDFLAGS = libhycast.la -lgtest -lsctp
 
+Chunk2Peers_test_SOURCES = Chunk2Peers_test.cpp
+Chunk2Peers_test_LDFLAGS = libhycast.la -lgtest -lsctp
+
 TESTS			= \
 	Inet4Addr_test \
 	Inet6Addr_test \
@@ -108,5 +113,6 @@ TESTS			= \
 	ChunkInfo_test \
 	Channel_test \
 	ChunkChannel_test \
-	Peer_test \
+	Chunk2Peers_test \
+	#Peer_test \
         #Di_test

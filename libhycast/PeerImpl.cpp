@@ -17,6 +17,18 @@
 
 namespace hycast {
 
+PeerImpl::PeerImpl()
+    : version(0),
+      versionChan(),
+      prodNoticeChan(),
+      chunkNoticeChan(),
+      prodReqChan(),
+      chunkReqChan(),
+      chunkChan(),
+      peerMgr(),
+      sock()
+{}
+
 PeerImpl::PeerImpl(
         PeerMgr&       peerMgr,
         Socket&        sock)
@@ -28,23 +40,67 @@ PeerImpl::PeerImpl(
       chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
       chunkChan(sock, CHUNK_STREAM_ID, version),
       peerMgr(&peerMgr),
-      sock(sock),
-      recvThread(std::thread(&PeerImpl::runReceiver, std::ref(*this)))
+      sock(sock)
 {
     versionChan.send(VersionMsg(version));
+    const unsigned vers = getVersion();
+    if (vers != version)
+        throw std::logic_error("Unknown protocol version: " +
+                std::to_string(vers));
 }
 
-PeerImpl::~PeerImpl()
+unsigned PeerImpl::getVersion()
 {
-    try {
-        (void)pthread_cancel(recvThread.native_handle());
-        recvThread.join();
-    }
-    catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-    }
-    catch (...) {
-        // Never throw an exception in a destructor
+    if (sock.getStreamId() != VERSION_STREAM_ID)
+        throw std::logic_error("Current message isn't a version message");
+    return versionChan.recv();
+}
+
+unsigned PeerImpl::getNumStreams()
+{
+    return NUM_STREAM_IDS;
+}
+
+void PeerImpl::runReceiver()
+{
+    for (;;) {
+        int cancelState;
+        (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
+        uint32_t size = sock.getSize();
+        (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
+        if (size == 0)
+            return;
+        switch (sock.getStreamId()) {
+            case PROD_NOTICE_STREAM_ID:
+                peerMgr->recvNotice(prodNoticeChan.recv());
+                break;
+            case CHUNK_NOTICE_STREAM_ID:
+                peerMgr->recvNotice(chunkNoticeChan.recv());
+                break;
+            case PROD_REQ_STREAM_ID:
+                peerMgr->recvRequest(prodReqChan.recv());
+                break;
+            case CHUNK_REQ_STREAM_ID:
+                peerMgr->recvRequest(chunkReqChan.recv());
+                break;
+            case CHUNK_STREAM_ID: {
+                /*
+                 * For an unknown reason, the compiler complains if the
+                 * `peer->recvData` parameter is a `LatentChunk&` and not a
+                 * `LatentChunk`.  This is acceptable, however, because
+                 * `LatentChunk` can be trivially copied. See
+                 * `PeerMgr::recvData()`.
+                 */
+                LatentChunk chunk = chunkChan.recv();
+                peerMgr->recvData(chunk);
+                if (chunk.hasData())
+                    throw std::logic_error(
+                            "Latent chunk-of-data still has data");
+                break;
+            }
+            default:
+                sock.discard();
+        }
     }
 }
 
@@ -71,70 +127,6 @@ void PeerImpl::sendRequest(const ChunkInfo& info)
 void PeerImpl::sendData(const ActualChunk& chunk)
 {
     chunkChan.send(chunk);
-}
-
-void hycast::PeerImpl::runReceiver()
-{
-    try {
-        for (;;) {
-            int cancelState;
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
-            uint32_t size = sock.getSize();
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            if (size == 0) {
-                peerMgr->recvEof();
-                break; // remote peer closed connection
-            }
-            switch (sock.getStreamId()) {
-                case VERSION_STREAM_ID:
-                    recvVersion(versionChan.recv());
-                    break;
-                case PROD_NOTICE_STREAM_ID:
-                    peerMgr->recvNotice(prodNoticeChan.recv());
-                    break;
-                case CHUNK_NOTICE_STREAM_ID:
-                    peerMgr->recvNotice(chunkNoticeChan.recv());
-                    break;
-                case PROD_REQ_STREAM_ID:
-                    peerMgr->recvRequest(prodReqChan.recv());
-                    break;
-                case CHUNK_REQ_STREAM_ID:
-                    peerMgr->recvRequest(chunkReqChan.recv());
-                    break;
-                case CHUNK_STREAM_ID: {
-                    /*
-                     * For an unknown reason, the compiler complains if the
-                     * `peer->recvData` parameter is a `LatentChunk&` and not a
-                     * `LatentChunk`.  This is acceptable, however, because
-                     * `LatentChunk` uses the pImpl idiom. See
-                     * `PeerMgr::recvData`.
-                     */
-                    peerMgr->recvData(chunkChan.recv());
-                    if (sock.hasMessage())
-                        throw std::logic_error("Data not drained from latent "
-                                "chunk-of-data");
-                    break;
-                }
-                default:
-                    sock.discard();
-            }
-        }
-    }
-    catch (const std::exception& e) {
-        peerMgr->recvException(e);
-    }
-}
-
-unsigned PeerImpl::getNumStreams()
-{
-    return NUM_STREAM_IDS;
-}
-
-void PeerImpl::recvVersion(const VersionMsg& vers)
-{
-    if (version != vers.getVersion())
-        throw std::invalid_argument("Unknown protocol version: " +
-                std::to_string(vers.getVersion()));
 }
 
 } // namespace
