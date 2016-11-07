@@ -59,7 +59,7 @@ class InetSockAddrTest : public ::testing::Test {
 // Tests default construction
 TEST_F(InetSockAddrTest, DefaultConstruction) {
     hycast::InetSockAddr sockaddr;
-    EXPECT_STREQ("0.0.0.0:0", sockaddr.to_string().data());
+    EXPECT_STREQ("localhost:0", sockaddr.to_string().data());
 }
 
 // Tests construction from IP address string and port number
@@ -113,31 +113,6 @@ TEST_F(InetSockAddrTest, CopyAssignment) {
     hycast::InetSockAddr sockaddr3{"128.117.140.57", 388};
     sockaddr2 = sockaddr3;
     EXPECT_STREQ("128.117.140.56:388", sockaddr1.to_string().data());
-}
-
-// Tests hash
-TEST_F(InetSockAddrTest, hash) {
-    EXPECT_TRUE(ipv4SockAddr.hash() == ipv4SockAddr.hash());
-    EXPECT_TRUE(ipv6SockAddr.hash() == ipv6SockAddr.hash());
-    EXPECT_TRUE(ipv4SockAddr.hash() != ipv6SockAddr.hash());
-}
-
-// Tests compare
-TEST_F(InetSockAddrTest, compare) {
-    EXPECT_EQ(true, ipv4SockAddr.compare(ipv4SockAddr) == 0);
-    EXPECT_EQ(true, ipv6SockAddr.compare(ipv6SockAddr) == 0);
-
-    EXPECT_EQ(false, ipv4SockAddr.compare(ipv6SockAddr) == 0);
-    EXPECT_EQ(false, ipv6SockAddr.compare(ipv4SockAddr) == 0);
-}
-
-// Tests equals
-TEST_F(InetSockAddrTest, equals) {
-    EXPECT_EQ(true, ipv4SockAddr.equals(ipv4SockAddr));
-    EXPECT_EQ(true, ipv6SockAddr.equals(ipv6SockAddr));
-
-    EXPECT_EQ(false, ipv4SockAddr.equals(ipv6SockAddr));
-    EXPECT_EQ(false, ipv6SockAddr.equals(ipv4SockAddr));
 }
 
 }  // namespace

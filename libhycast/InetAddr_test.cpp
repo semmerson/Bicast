@@ -28,8 +28,6 @@ class InetAddrTest : public ::testing::Test {
   // is empty.
 
   InetAddrTest()
-     : ipv4Addr("128.117.140.56"),
-       ipv6Addr("2001:db8::ff00:42:8329")
   {
   }
 
@@ -52,51 +50,38 @@ class InetAddrTest : public ::testing::Test {
 
   // Objects declared here can be used by all tests in the test case for
   // SockAddrInet.
-  hycast::InetAddr ipv4Addr;
-  hycast::InetAddr ipv6Addr;
 };
 
-static const char* IPV4_ADDR0 = "0.0.0.0";
 static const char* IPV4_ADDR1 = "128.117.140.56";
 static const char* IPV4_ADDR2 = "128.117.140.57";
 
 static const char* IPV6_ADDR1 = "2001:db8::ff00:42:8329";
 static const char* IPV6_ADDR2 = "2001:db8::ff00:42:8330";
 
+static const char* HOSTNAME = "zero.unidata.ucar.edu";
+
 // Tests default construction
 TEST_F(InetAddrTest, DefaultConstruction) {
-    hycast::InetAddr addr;
-    EXPECT_STREQ(IPV4_ADDR0, addr.to_string().data());
+    hycast::InetAddr addr1;
+    hycast::InetAddr addr2;
 }
 
-// Tests construction from IP address string
-TEST_F(InetAddrTest, StringIpAndConstruction) {
+// Tests construction from an IPv4 address string
+TEST_F(InetAddrTest, ConstructionFromIPv4String) {
     hycast::InetAddr addr1{IPV4_ADDR1};
     EXPECT_STREQ(IPV4_ADDR1, addr1.to_string().data());
+}
+
+// Tests construction from an IPv6 address string
+TEST_F(InetAddrTest, ConstructionFromIPv6String) {
     hycast::InetAddr addr2{IPV6_ADDR1};
     EXPECT_STREQ(IPV6_ADDR1, addr2.to_string().data());
 }
 
-// Tests construction from an in_addr_t
-TEST_F(InetAddrTest, InAddrTAndConstruction) {
-    hycast::InetAddr addr{inet_addr(IPV4_ADDR1)};
-    EXPECT_STREQ(IPV4_ADDR1, addr.to_string().data());
-}
-
-// Tests construction from a struct in_addr
-TEST_F(InetAddrTest, StructAddrInConstruction) {
-    struct in_addr ipv4Addr;
-    EXPECT_EQ(1, inet_pton(AF_INET, IPV4_ADDR1, &ipv4Addr));
-    hycast::InetAddr addr{ipv4Addr};
-    EXPECT_STREQ(IPV4_ADDR1, addr.to_string().data());
-}
-
-// Tests construction from IPv6 address
-TEST_F(InetAddrTest, Ipv6AddrAndConstruction) {
-    struct in6_addr ipv6Addr;
-    EXPECT_EQ(1, inet_pton(AF_INET6, IPV6_ADDR1, &ipv6Addr));
-    hycast::InetAddr inetAddr{ipv6Addr};
-    EXPECT_STREQ(IPV6_ADDR1, inetAddr.to_string().data());
+// Tests construction from a hostname
+TEST_F(InetAddrTest, ConstructionFromHostname) {
+    hycast::InetAddr addr1{HOSTNAME};
+    EXPECT_STREQ(HOSTNAME, addr1.to_string().data());
 }
 
 // Tests copy construction
@@ -104,63 +89,23 @@ TEST_F(InetAddrTest, CopyConstruction) {
     hycast::InetAddr addr1{IPV4_ADDR1};
     hycast::InetAddr addr2{addr1};
     EXPECT_STREQ(IPV4_ADDR1, addr2.to_string().data());
+
+    hycast::InetAddr addr3{IPV6_ADDR1};
+    hycast::InetAddr addr4{addr3};
+    EXPECT_STREQ(IPV6_ADDR1, addr4.to_string().data());
 }
 
 // Tests copy assignment
 TEST_F(InetAddrTest, CopyAssignment) {
     hycast::InetAddr addr1{IPV4_ADDR1};
-    hycast::InetAddr addr2{};
+    hycast::InetAddr addr2{IPV4_ADDR2};
     addr2 = addr1;
     EXPECT_STREQ(IPV4_ADDR1, addr2.to_string().data());
-    hycast::InetAddr addr3{IPV4_ADDR2};
-    addr1 = addr3;
-    EXPECT_STREQ(IPV4_ADDR1, addr2.to_string().data());
-}
 
-// Tests hash
-TEST_F(InetAddrTest, Hash) {
-    EXPECT_EQ(true, hycast::InetAddr{IPV4_ADDR1}.hash() ==
-            hycast::InetAddr{IPV4_ADDR1}.hash());
-    EXPECT_EQ(true, hycast::InetAddr{IPV6_ADDR1}.hash() ==
-            hycast::InetAddr{IPV6_ADDR1}.hash());
-    EXPECT_EQ(true, hycast::InetAddr{IPV4_ADDR1}.hash() !=
-            hycast::InetAddr{IPV6_ADDR1}.hash());
-}
-
-// Tests compare
-TEST_F(InetAddrTest, Compare) {
-    EXPECT_EQ(0, hycast::InetAddr{IPV4_ADDR1}.compare(
-            hycast::InetAddr{IPV4_ADDR1}));
-    EXPECT_EQ(true, hycast::InetAddr{IPV4_ADDR1}.compare(
-            hycast::InetAddr{IPV4_ADDR2}) < 0);
-
-    EXPECT_EQ(0, hycast::InetAddr{IPV6_ADDR1}.compare(
-            hycast::InetAddr{IPV6_ADDR1}));
-    EXPECT_EQ(true, hycast::InetAddr{IPV6_ADDR1}.compare(
-            hycast::InetAddr{IPV6_ADDR2}) < 0);
-
-    EXPECT_EQ(true, hycast::InetAddr{IPV4_ADDR1}.compare(
-            hycast::InetAddr{IPV6_ADDR1}) < 0);
-}
-
-// Tests equals
-TEST_F(InetAddrTest, Equals) {
-    hycast::InetAddr ipv4Addr1 = hycast::InetAddr(IPV4_ADDR1);
-    EXPECT_TRUE(ipv4Addr1.equals(ipv4Addr1));
-
-    hycast::InetAddr ipv4Addr2 = hycast::InetAddr(IPV4_ADDR2);
-    EXPECT_FALSE(ipv4Addr1.equals(ipv4Addr2));
-    EXPECT_FALSE(ipv4Addr2.equals(ipv4Addr1));
-
-    hycast::InetAddr ipv6Addr1 = hycast::InetAddr(IPV6_ADDR1);
-    EXPECT_TRUE(ipv6Addr1.equals(ipv6Addr1));
-
-    hycast::InetAddr ipv6Addr2 = hycast::InetAddr(IPV6_ADDR2);
-    EXPECT_FALSE(ipv6Addr1.equals(ipv6Addr2));
-    EXPECT_FALSE(ipv6Addr2.equals(ipv6Addr1));
-
-    EXPECT_FALSE(ipv4Addr1.equals(ipv6Addr1));
-    EXPECT_FALSE(ipv6Addr2.equals(ipv4Addr1));
+    hycast::InetAddr addr3{IPV6_ADDR1};
+    hycast::InetAddr addr4{IPV6_ADDR2};
+    addr4 = addr3;
+    EXPECT_STREQ(IPV6_ADDR1, addr4.to_string().data());
 }
 
 }  // namespace

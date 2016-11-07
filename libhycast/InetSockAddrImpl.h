@@ -27,10 +27,9 @@ class InetSockAddrImpl final {
     in_port_t port;  // In host byte-order
 public:
     /**
-     * Constructs from nothing. The Internet address will correspond to
-     * "0.0.0.0" (INET_ANY) and the port number will be 0.
+     * Constructs from nothing. The resulting instance will have the default
+     * Internet address and the port number will be 0.
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl();
     /**
@@ -40,7 +39,6 @@ public:
      * @param[in] port    Port number in host byte-order
      * @throws std::bad_alloc if required memory can't be allocated
      * @throws std::invalid_argument if the string representation is invalid
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl(
             const std::string ipAddr,
@@ -48,9 +46,8 @@ public:
     /**
      * Constructs from an IPV4 address and a port number.
      * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order
+     * @param[in] port  Port number
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl(
             const in_addr_t  addr,
@@ -60,7 +57,6 @@ public:
      * @param[in] addr  IPv6 address
      * @param[in] port  Port number in host byte-order
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl(
         const struct in6_addr& addr,
@@ -69,41 +65,14 @@ public:
      * Constructs from an IPv4 socket address.
      * @param[in] addr  IPv4 socket address
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl(const struct sockaddr_in& addr);
     /**
      * Constructs from an IPv6 socket address.
      * @param[in] addr  IPv6 socket address
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
      */
     InetSockAddrImpl(const struct sockaddr_in6& sockaddr);
-    /**
-     * Returns the hash code of this instance.
-     * @return The hash code of this instance
-     * @exceptionsafety Nothrow
-     */
-    size_t hash() const noexcept;
-    /**
-     * Compares this instance with another.
-     * @param[in] that  Other instance
-     * @retval <0  This instance is less than the other
-     * @retval  0  This instance is equal to the other
-     * @retval >0  This instance is greater than the other
-     * @exceptionsafety Nothrow
-     */
-    int compare(const InetSockAddrImpl& that) const noexcept;
-    /**
-     * Indicates if this instance equals another.
-     * @param[in] that  Other instance
-     * @retval `true`   This instance equals the other
-     * @retval `false`  This instance doesn't equal the other
-     * @exceptionsafety Nothrow
-     */
-    bool equals(const InetSockAddrImpl& that) const noexcept {
-        return compare(that) == 0;
-    }
     /**
      * Returns the string representation of the Internet socket address.
      * @return String representation of the Internet socket address
@@ -118,9 +87,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    void connect(int sd) const {
-        inetAddr.connect(sd, port);
-    }
+    void connect(const int sd) const;
     /**
      * Binds this instance's endpoint to a socket.
      * @param[in] sd  Socket descriptor
@@ -128,9 +95,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    void bind(int sd) const {
-        inetAddr.bind(sd, port);
-    }
+    void bind(int sd) const;
 };
 
 } // namespace

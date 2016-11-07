@@ -26,8 +26,8 @@ class InetSockAddr final {
     std::shared_ptr<InetSockAddrImpl> pImpl;
 public:
     /**
-     * Constructs from nothing. The resulting object will be the default IPv4
-     * socket address.
+     * Constructs from nothing. The resulting object will have the default
+     * Internet address and port number 0.
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
      */

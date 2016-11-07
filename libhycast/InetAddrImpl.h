@@ -12,70 +12,52 @@
 #ifndef INETADDRIMPL_H_
 #define INETADDRIMPL_H_
 
-#include "InetAddr.h"
-
 #include <cstddef>
 #include <memory>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 
 namespace hycast {
 
 class InetAddrImpl {
 public:
     /**
-     * Factory method that returns a default instance.
-     * @return A default instance
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
-     */
-    static std::shared_ptr<InetAddrImpl>
-                        create();
-    /**
-     * Factory method that returns a new instance based on the string representation
-     * of an Internet address.
-     * @param[in] ip_addr  The string representation of an Internet address.
+     * Factory method that returns a new instance based on an IPv4 address.
+     * @param[in] addr  IPv4 address in network byte order
      * @return A new instance
      * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
+     * @throws std::invalid_argument if the string representation is invalid
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Thread-safe
      */
-    static std::shared_ptr<InetAddrImpl>
-                        create(const std::string ipAddr);
+    static std::shared_ptr<InetAddrImpl> create(const in_addr_t addr);
+    /**
+     * Factory method that returns a new instance based on an IPv6 address.
+     * @param[in] addr  IPv6 address
+     * @return A new instance
+     * @throws std::bad_alloc if required memory can't be allocated
+     * @throws std::invalid_argument if the string representation is invalid
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Thread-safe
+     */
+    static std::shared_ptr<InetAddrImpl> create(const struct in6_addr& addr);
+    /**
+     * Factory method that returns a new instance based on the string
+     * representation of an Internet address.
+     * @param[in] addr  The string representation of an Internet address. Can be
+     *                  hostname, IPv4, or IPv6.
+     * @return A new instance
+     * @throws std::bad_alloc if required memory can't be allocated
+     * @throws std::invalid_argument if the string representation is invalid
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Thread-safe
+     */
+    static std::shared_ptr<InetAddrImpl> create(const std::string addr);
     /**
      * Destructor.
      */
     virtual             ~InetAddrImpl() {};
-    /**
-     * Returns the address family.
-     * @retval AF_INET   IPv4
-     * @retval AF_INET6  IPv6
-     * @exceptionsafety Nothrow
-     */
-    virtual int         get_family() const noexcept = 0;
-    /**
-     * Returns the hash code for this instance.
-     * @return Hash code for this instance
-     * @exceptionsafety Nothrow
-     */
-    virtual size_t      hash() const noexcept = 0;
-    /**
-     * Compares this instance with another.
-     * @param[in] that  Other instance
-     * @retval <0  This instance is less than the other
-     * @retval  0  This instance is equal to the other
-     * @retval >0  This instance is greater than the other
-     * @exceptionsafety Nothrow
-     */
-    int                 compare(const InetAddrImpl& that) const noexcept;
-    /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  Other instance
-     * @retval `true`   This instance is equal to the other
-     * @retval `false`  This instance isn't equal to the other
-     * @exceptionsafety Nothrow
-     */
-    int                 equals(const InetAddrImpl& that) const noexcept {
-                            return compare(that) == 0;
-                        }
     /**
      * Returns the string representation of the Internet address.
      * @return The string representation of the Internet address
@@ -84,35 +66,20 @@ public:
      */
     virtual std::string to_string() const = 0;
     /**
-     * Connects a socket to the given port of this instance's endpoint.
-     * @param[in] sd    Socket descriptor
-     * @param[in] port  Port number in host byte order
-     * @throws std::system_error
-     * @exceptionsafety Strong
+     * Gets the socket address corresponding to a port number.
+     * @param[in]  port      Port number
+     * @param[out] sockAddr  Resulting socket address
+     * @param[out] sockLen   Size of socket address in bytes
+     * @throws std::system_error if the IP address couldn't be obtained
+     * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    virtual void connect(
-            int       sd,
-            in_port_t port) const = 0;
-    /**
-     * Binds a socket to the given port of this instance's endpoint.
-     * @param[in] sd    Socket descriptor
-     * @param[in] port  Port number in host byte order
-     * @throws std::system_error
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    virtual void bind(
-            int       sd,
-            in_port_t port) const = 0;
+    virtual void getSockAddr(
+            const in_port_t  port,
+            struct sockaddr& sockAddr,
+            socklen_t&       sockLen) const =0;
 };
 
 } // namespace
-/**
- * Returns a string representation of this instance.
- * @return A string representation of this instance
- * @throws std::bad_alloc if required memory can't be allocated
- * @exceptionsafety Strong
- */
 
 #endif /* INETADDRIMPL_H_ */

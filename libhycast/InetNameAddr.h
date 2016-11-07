@@ -1,59 +1,66 @@
 /**
- * This file declares an immutable IPv6 address.
+ * This file declares an immutable IPv4 address.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Inet6Addr.h
+ *   @file: InetNameAddr.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef INET6ADDR_H_
-#define INET6ADDR_H_
+#ifndef INETNAMEADDR_H_
+#define INETNAMEADDR_H_
 
 #include "InetAddrImpl.h"
 #include "IpAddr.h"
 
 #include <cstddef>
-#include <functional>
+#include <memory>
 #include <netinet/in.h>
-#include <sys/socket.h>
 
 namespace hycast {
 
-class Inet6Addr final : public IpAddr {
-    struct in6_addr addr;
+class InetNameAddr final : public InetAddrImpl {
+    std::string name;
+    /**
+     * Returns a corresponding IP address.
+     * @return a corresponding IP address
+     * @throws std::system_error if the IP address couldn't be obtained
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    std::shared_ptr<IpAddr> getIpAddr() const;
 public:
     /**
-     * Constructs from an IPv6 address.
-     * @param[in] ipAddr  IPv6 address
+     * Constructs from a hostname.
+     * @param[in] name  A hostname
      */
-    explicit Inet6Addr(const struct in6_addr& ipAddr)
-     : addr(ipAddr) {}
+    explicit InetNameAddr(const std::string name);
     /**
-     * Returns a string representation of the IPv6 address.
-     * @return A string representation of the IPv6 address.
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
+     * Returns the hostname.
+     * @return The hostname
+     * @exceptionsafety Nothrow
+     * @threadsafety    Thread-safe
      */
-    std::string to_string() const;
+    std::string to_string() const noexcept;
     /**
      * Gets the socket address corresponding to a port number.
      * @param[in]  port      Port number
      * @param[out] sockAddr  Resulting socket address
      * @param[out] sockLen   Size of socket address in bytes
-     * @exceptionsafety Nothrow
+     * @throws std::system_error if the IP address couldn't be obtained
+     * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
     void getSockAddr(
             const in_port_t  port,
             struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const noexcept;
+            socklen_t&       sockLen) const;
     /**
      * Connects a socket to the given port of this instance's endpoint.
      * @param[in] sd    Socket descriptor
-     * @param[in] port  Port number in host byte order
+     * @param[in] port  Port number
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe
@@ -76,4 +83,4 @@ public:
 
 } // namespace
 
-#endif /* INET6ADDR_H_ */
+#endif /* INETNAMEADDR_H_ */

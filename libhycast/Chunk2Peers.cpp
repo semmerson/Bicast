@@ -14,6 +14,10 @@
 
 namespace hycast {
 
+Chunk2Peers::Chunk2Peers()
+    : map{16, &ChunkInfo::hash, &ChunkInfo::areEqual}
+{}
+
 void Chunk2Peers::add(
         const ChunkInfo& info,
         Peer&            peer)
@@ -21,12 +25,14 @@ void Chunk2Peers::add(
     map[info].push_back(peer);
 }
 
-Peer* Chunk2Peers::getFrontPeer(const ChunkInfo& info)
+Chunk2Peers::PeerBounds Chunk2Peers::getPeers(const ChunkInfo& info) const
 {
-    decltype(map)::iterator iter{map.find(info)};
-    return iter == map.end()
-            ? nullptr
-            : &iter->second.front(); // Safe because empty lists don't exist
+    Map::const_iterator listIter{map.find(info)};
+    if (listIter == map.end()) {
+        Map::mapped_type::const_iterator emptyIter{};
+        return PeerBounds{emptyIter, emptyIter};
+    }
+    return PeerBounds{listIter->second.begin(), listIter->second.end()};
 }
 
 void Chunk2Peers::remove(const ChunkInfo& info)
@@ -38,13 +44,9 @@ void Chunk2Peers::remove(
         const ChunkInfo& info,
         const Peer&      peer)
 {
-    decltype(map)::iterator iter{map.find(info)};
-    if (iter != map.end()) {
-        std::list<Peer> list = iter->second;
-        list.remove(peer);
-        if (list.empty())
-            map.erase(info); // Empty lists must not exist
-    }
+    Map::iterator listIter{map.find(info)};
+    if (listIter != map.end())
+        listIter->second.remove(peer);
 }
 
 } // namespace

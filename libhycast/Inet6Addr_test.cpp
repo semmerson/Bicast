@@ -48,19 +48,8 @@ class Inet6AddrTest : public ::testing::Test {
   // Objects declared here can be used by all tests in the test case for Foo.
 };
 
-static const char* ADDR0 = "::";
 static const char* ADDR1 = "2001:db8::ff00:42:8329";
 static const char* ADDR2 = "2001:db8::ff00:42:8330";
-
-// Tests default construction
-TEST_F(Inet6AddrTest, DefaultConstruction) {
-    EXPECT_STREQ(ADDR0, hycast::Inet6Addr().to_string().data());
-}
-
-// Tests construction from an IPv6 address string
-TEST_F(Inet6AddrTest, IPv6StringConstruction) {
-    EXPECT_STREQ(ADDR1, hycast::Inet6Addr(ADDR1).to_string().data());
-}
 
 // Tests construction from a struct in6_addr
 TEST_F(Inet6AddrTest, in_addr_Construction) {
@@ -71,27 +60,23 @@ TEST_F(Inet6AddrTest, in_addr_Construction) {
 
 // Tests copy construction
 TEST_F(Inet6AddrTest, CopyConstruction) {
-    hycast::Inet6Addr a1{ADDR1};
+    struct in6_addr inAddr;
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
+    hycast::Inet6Addr a1{inAddr};
     hycast::Inet6Addr a2{a1};
     EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
 
 // Tests copy assignment
 TEST_F(Inet6AddrTest, CopyAssignment) {
-    hycast::Inet6Addr a1{ADDR1};
-    hycast::Inet6Addr a2{};
+    struct in6_addr inAddr;
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
+    hycast::Inet6Addr a1{inAddr};
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR2, &inAddr.s6_addr));
+    hycast::Inet6Addr a2{inAddr};;
+    EXPECT_STREQ(ADDR2, a2.to_string().data());
     a2 = a1;
     EXPECT_STREQ(ADDR1, a2.to_string().data());
-    hycast::Inet6Addr a3{ADDR2};
-    a1 = a3;
-    EXPECT_STREQ(ADDR1, a2.to_string().data());
-}
-
-// Tests hash()
-TEST_F(Inet6AddrTest, hash) {
-    hycast::Inet6Addr inAddr1{ADDR1};
-    hycast::Inet6Addr inAddr2{ADDR2};
-    EXPECT_TRUE(inAddr1.hash() != inAddr2.hash());
 }
 
 }  // namespace

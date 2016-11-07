@@ -47,25 +47,29 @@ TEST_F(Chunk2PeersTest, Adding) {
 
 // Tests getting the "front" peer
 TEST_F(Chunk2PeersTest, GetFrontPeer) {
-    EXPECT_EQ(nullptr, map.getFrontPeer(info));
+    auto bounds = map.getPeers(info);
+    EXPECT_EQ(bounds.first, bounds.second);
     map.add(info, peer);
-    hycast::Peer* peerPtr = map.getFrontPeer(info);
-    EXPECT_NE(nullptr, peerPtr);
-    EXPECT_TRUE(peer == *peerPtr);
+    bounds = map.getPeers(info);
+    EXPECT_EQ(peer, *bounds.first);
+    bounds.first++;
+    EXPECT_EQ(bounds.first, bounds.second);
 }
 
 // Tests removing a chunk
 TEST_F(Chunk2PeersTest, RemoveChunk) {
     map.add(info, peer);
     map.remove(info);
-    EXPECT_EQ(nullptr, map.getFrontPeer(info));
+    auto bounds = map.getPeers(info);
+    EXPECT_EQ(bounds.first, bounds.second);
 }
 
 // Tests removing a peer with a chunk
 TEST_F(Chunk2PeersTest, RemovePeer) {
     map.add(info, peer);
     map.remove(info, peer);
-    EXPECT_EQ(nullptr, map.getFrontPeer(info));
+    auto bounds = map.getPeers(info);
+    EXPECT_EQ(bounds.first, bounds.second);
 }
 
 }  // namespace

@@ -10,36 +10,39 @@ lib_LTLIBRARIES = libhycast.la
 # Sources for libhycast
 libhycast_la_SOURCES 	= \
 	PortNumber.h \
+	InetAddrImpl.cpp InetAddrImpl.h \
+	IpAddr.cpp IpAddr.h \
 	Inet4Addr.cpp Inet4Addr.h \
 	Inet6Addr.cpp Inet6Addr.h \
-	InetAddrImpl.cpp InetAddrImpl.h \
+	InetNameAddr.cpp InetNameAddr.h \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddrImpl.cpp InetSockAddrImpl.h \
 	InetSockAddr.cpp InetSockAddr.h \
-        ClientSocketImpl.cpp ClientSocketImpl.h \
-        ClientSocket.cpp ClientSocket.h \
-        ServerSocketImpl.cpp ServerSocketImpl.h \
-        ServerSocket.cpp ServerSocket.h \
-        SocketImpl.cpp SocketImpl.h \
-        Socket.cpp Socket.h \
-        Serializable.h \
-        ProdIndex.cpp ProdIndex.h \
-        ProdInfoImpl.cpp ProdInfoImpl.h \
-        ProdInfo.cpp ProdInfo.h \
-        ChunkInfo.cpp ChunkInfo.h \
-        ChunkImpl.cpp ChunkImpl.h \
-        Chunk.cpp Chunk.h \
+	ClientSocketImpl.cpp ClientSocketImpl.h \
+	ClientSocket.cpp ClientSocket.h \
+	ServerSocketImpl.cpp ServerSocketImpl.h \
+	ServerSocket.cpp ServerSocket.h \
+	SocketImpl.cpp SocketImpl.h \
+	Socket.cpp Socket.h \
+	Serializable.h \
+	ProdIndex.cpp ProdIndex.h \
+	ProdInfoImpl.cpp ProdInfoImpl.h \
+	ProdInfo.cpp ProdInfo.h \
+	ChunkInfo.cpp ChunkInfo.h \
+	ChunkImpl.cpp ChunkImpl.h \
+	Chunk.cpp Chunk.h \
+	VersionMsg.cpp VersionMsg.h \
+	Channel.h \
 	ChannelImpl.cpp ChannelImpl.h \
+	RegChannel.cpp RegChannel.h \
 	RegChannelImpl.cpp RegChannelImpl.h \
 	ChunkChannelImpl.cpp ChunkChannelImpl.h \
-	Channel.h \
-	RegChannel.cpp RegChannel.h \
 	ChunkChannel.cpp ChunkChannel.h \
 	PeerImpl.cpp PeerImpl.h \
 	Peer.cpp Peer.h \
 	PeerMgr.h \
-	VersionMsg.cpp VersionMsg.h \
-	Chunk2Peers.cpp Chunk2Peers.h
+	Chunk2Peers.cpp Chunk2Peers.h \
+	MapOfLists.cpp MapOfLists.h
 
 # Linker options libTestProgram
 libhycast_la_LDFLAGS = 
@@ -113,6 +116,6 @@ TESTS			= \
 	ChunkInfo_test \
 	Channel_test \
 	ChunkChannel_test \
+	Peer_test \
 	Chunk2Peers_test \
-	#Peer_test \
         #Di_test
