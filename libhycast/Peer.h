@@ -18,6 +18,7 @@
 #include "ProdInfo.h"
 #include "Socket.h"
 
+#include <cstddef>
 #include <memory>
 
 namespace hycast {
@@ -51,14 +52,24 @@ public:
      */
     bool operator==(const Peer& that) const noexcept;
     /**
-     * Indicates if two peer are equal.
+     * Indicates if two peers are equal.
      * @param[in] peer1  First peer
      * @param[in] peer2  Second peer
      * @return `true` iff the two peers are equal
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
      */
     static bool areEqual(
             const Peer& peer1,
             const Peer& peer2);
+    /**
+     * Returns the hash code of an instance.
+     * @param[in] peer  The instance
+     * @return The instance's hash code
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
+     */
+    static size_t hash(const Peer& peer);
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket

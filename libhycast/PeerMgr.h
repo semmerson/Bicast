@@ -21,8 +21,7 @@ namespace hycast {
 
 /*
  * `Peer` is forward declared to break the mutual dependence of the `Peer` and
- * `PeerMgr` header-files: `Peer.h` requires that `PeerMgr` be declared and
- * `PeerMgr.h` requires that `Peer` be declared.
+ * `PeerMgr` header-files: each requires that the other be declared.
  */
 class Peer;
 

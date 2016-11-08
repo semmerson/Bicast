@@ -53,7 +53,12 @@ void Peer::sendData(const ActualChunk& chunk)
 
 bool Peer::areEqual(const Peer& peer1, const Peer& peer2)
 {
-    return peer1.pImpl.get() == peer2.pImpl.get();
+    return peer1.pImpl->equals(*peer2.pImpl.get());
+}
+
+size_t Peer::hash(const Peer& peer)
+{
+    return peer.pImpl->hash();
 }
 
 bool Peer::operator ==(const Peer& that) const noexcept

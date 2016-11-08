@@ -15,13 +15,15 @@
 #include "ChunkChannel.h"
 #include "ChunkInfo.h"
 #include "VersionMsg.h"
+#include "PeerMgr.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "RegChannel.h"
 #include "Socket.h"
 
+#include <cstddef>
+#include <functional>
 #include <thread>
-#include "PeerMgr.h"
 
 namespace hycast {
 
@@ -54,6 +56,13 @@ class PeerImpl final {
      * @threadsafety Safe
      */
      unsigned getVersion();
+     /**
+      * Every peer implementation is unique.
+      */
+     PeerImpl(const PeerImpl& impl) =delete;
+     PeerImpl(const PeerImpl&& impl) =delete;
+     PeerImpl& operator=(const PeerImpl& impl) =delete;
+     PeerImpl& operator=(const PeerImpl&& impl) =delete;
 
 public:
     /**
@@ -111,6 +120,25 @@ public:
      * @param[in] chunk  Chunk-of-data
      */
     void sendData(const ActualChunk& chunk);
+    /**
+     * Indicates if this instance equals another.
+     * @param[in] that  Other instance
+     * @return `true` iff this instance equals the other
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
+     */
+    bool equals(const PeerImpl& that) const {
+        return this == &that; // Every instance is unique
+    }
+    /**
+     * Returns the hash code of this instance.
+     * @return the hash code of this instance
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
+     */
+    size_t hash() const noexcept {
+        return std::hash<const PeerImpl*>()(this); // Every instance is unique
+    }
 };
 
 } // namespace
