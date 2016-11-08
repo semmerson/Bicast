@@ -26,8 +26,7 @@ class InetAddr final {
      * Constructs from a shared pointer to an implementation.
      * @param[in] pImpl  Shared pointer to implementation
      */
-    InetAddr(std::shared_ptr<InetAddrImpl> pImpl)
-        : pImpl{pImpl} {}
+    InetAddr(InetAddrImpl* impl);
     /**
      * Factory method that returns a new instance based on an IPv4 address.
      * @param[in] addr  IPv4 address in network byte order

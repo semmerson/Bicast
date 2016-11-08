@@ -16,6 +16,10 @@
 
 namespace hycast {
 
+hycast::InetAddr::InetAddr(InetAddrImpl* impl)
+        : pImpl{impl}
+{}
+
 InetAddr InetAddr::create(const in_addr_t addr)
 {
     return InetAddr(InetAddrImpl::create(addr));

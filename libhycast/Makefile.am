@@ -41,7 +41,6 @@ libhycast_la_SOURCES 	= \
 	PeerImpl.cpp PeerImpl.h \
 	Peer.cpp Peer.h \
 	PeerMgr.h \
-	Chunk2Peers.cpp Chunk2Peers.h \
 	MapOfLists.cpp MapOfLists.h
 
 # Linker options libTestProgram

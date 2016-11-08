@@ -70,19 +70,19 @@ protected:
     public:
         TestPeerMgr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
-        void recvNotice(const hycast::ProdInfo& info) {
+        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodInfo.equals(info));
         }
-        void recvNotice(const hycast::ChunkInfo& info) {
+        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo.equals(info));
         }
-        void recvRequest(const hycast::ProdIndex& index) {
+        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodIndex.equals(index));
         }
-        void recvRequest(const hycast::ChunkInfo& info) {
+        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo.equals(info));
         }
-        void recvData(hycast::LatentChunk chunk) {
+        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
             ASSERT_EQ(sizeof(peerTest->data), chunk.getSize());
             char data2[sizeof(peerTest->data)];
             chunk.drainData(data2);
@@ -128,11 +128,11 @@ protected:
         hycast::Socket sock{serverSock.accept()};
         class PerfPeerMgr final : public hycast::PeerMgr {
         public:
-            void recvNotice(const hycast::ProdInfo& info) {}
-            void recvNotice(const hycast::ChunkInfo& info) {}
-            void recvRequest(const hycast::ProdIndex& index) {}
-            void recvRequest(const hycast::ChunkInfo& info) {}
-            void recvData(hycast::LatentChunk chunk) {
+            void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
+            void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+            void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
+            void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+            void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
                 chunk.discard();
             }
         } peerMgr{};

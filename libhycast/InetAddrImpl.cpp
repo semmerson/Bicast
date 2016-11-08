@@ -17,17 +17,17 @@
 
 namespace hycast {
 
-std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const in_addr_t addr)
+InetAddrImpl* InetAddrImpl::create(const in_addr_t addr)
 {
-    return std::shared_ptr<InetAddrImpl>(new Inet4Addr(addr));
+    return new Inet4Addr(addr);
 }
 
-std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const struct in6_addr& addr)
+InetAddrImpl* InetAddrImpl::create(const struct in6_addr& addr)
 {
-    return std::shared_ptr<InetAddrImpl>(new Inet6Addr(addr));
+    return new Inet6Addr(addr);
 }
 
-std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const std::string addr)
+InetAddrImpl* InetAddrImpl::create(const std::string addr)
 {
     in_addr_t ipv4_addr;
     if (inet_pton(AF_INET, addr.data(), &ipv4_addr) == 1) {
@@ -39,7 +39,7 @@ std::shared_ptr<InetAddrImpl> InetAddrImpl::create(const std::string addr)
             return create(ipv6_addr);
         }
         else {
-            return std::shared_ptr<InetAddrImpl>(new InetNameAddr(addr));
+            return new InetNameAddr(addr);
         }
     }
 }

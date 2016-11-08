@@ -31,7 +31,7 @@ public:
      * @exceptionsafety Strong guarantee
      * @threadsafety    Thread-safe
      */
-    static std::shared_ptr<InetAddrImpl> create(const in_addr_t addr);
+    static InetAddrImpl* create(const in_addr_t addr);
     /**
      * Factory method that returns a new instance based on an IPv6 address.
      * @param[in] addr  IPv6 address
@@ -41,7 +41,7 @@ public:
      * @exceptionsafety Strong guarantee
      * @threadsafety    Thread-safe
      */
-    static std::shared_ptr<InetAddrImpl> create(const struct in6_addr& addr);
+    static InetAddrImpl* create(const struct in6_addr& addr);
     /**
      * Factory method that returns a new instance based on the string
      * representation of an Internet address.
@@ -53,7 +53,7 @@ public:
      * @exceptionsafety Strong guarantee
      * @threadsafety    Thread-safe
      */
-    static std::shared_ptr<InetAddrImpl> create(const std::string addr);
+    static InetAddrImpl* create(const std::string addr);
     /**
      * Destructor.
      */

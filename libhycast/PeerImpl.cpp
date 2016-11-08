@@ -26,12 +26,14 @@ PeerImpl::PeerImpl()
       chunkReqChan(),
       chunkChan(),
       peerMgr(),
-      sock()
+      sock(),
+      peer(nullptr)
 {}
 
 PeerImpl::PeerImpl(
         PeerMgr&       peerMgr,
-        Socket&        sock)
+        Socket&        sock,
+        Peer&          peer)
     : version(0),
       versionChan(sock, VERSION_STREAM_ID, version),
       prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
@@ -40,7 +42,8 @@ PeerImpl::PeerImpl(
       chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
       chunkChan(sock, CHUNK_STREAM_ID, version),
       peerMgr(&peerMgr),
-      sock(sock)
+      sock(sock),
+      peer(&peer)
 {
     versionChan.send(VersionMsg(version));
     const unsigned vers = getVersion();
@@ -72,16 +75,16 @@ void PeerImpl::runReceiver()
             return;
         switch (sock.getStreamId()) {
             case PROD_NOTICE_STREAM_ID:
-                peerMgr->recvNotice(prodNoticeChan.recv());
+                peerMgr->recvNotice(prodNoticeChan.recv(), *peer);
                 break;
             case CHUNK_NOTICE_STREAM_ID:
-                peerMgr->recvNotice(chunkNoticeChan.recv());
+                peerMgr->recvNotice(chunkNoticeChan.recv(), *peer);
                 break;
             case PROD_REQ_STREAM_ID:
-                peerMgr->recvRequest(prodReqChan.recv());
+                peerMgr->recvRequest(prodReqChan.recv(), *peer);
                 break;
             case CHUNK_REQ_STREAM_ID:
-                peerMgr->recvRequest(chunkReqChan.recv());
+                peerMgr->recvRequest(chunkReqChan.recv(), *peer);
                 break;
             case CHUNK_STREAM_ID: {
                 /*
@@ -92,7 +95,7 @@ void PeerImpl::runReceiver()
                  * `PeerMgr::recvData()`.
                  */
                 LatentChunk chunk = chunkChan.recv();
-                peerMgr->recvData(chunk);
+                peerMgr->recvData(chunk, *peer);
                 if (chunk.hasData())
                     throw std::logic_error(
                             "Latent chunk-of-data still has data");

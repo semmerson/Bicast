@@ -33,9 +33,13 @@ template<class K, class V>
 class MapOfLists final {
     typedef std::unordered_map<K, std::list<V>,
             decltype(&K::hash), decltype(&K::areEqual)> Map;
-    Map                     map;
-    std::mutex              mutex;
-    std::condition_variable cond;
+
+    Map                             map;
+    mutable std::mutex              mutex;
+    mutable std::condition_variable cond;
+
+    MapOfLists(const MapOfLists& map);
+    MapOfLists& operator=(const MapOfLists& map);
 public:
     typedef typename Map::mapped_type::const_iterator ValueIterator;
     typedef std::pair<ValueIterator, ValueIterator>   ValueBounds;

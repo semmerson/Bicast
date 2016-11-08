@@ -44,6 +44,7 @@ class PeerImpl final {
     ChunkChannel           chunkChan;
     PeerMgr*               peerMgr;
     Socket                 sock;
+    Peer*                  peer;
 
     /**
      * Returns the protocol version of the remote peer.
@@ -64,13 +65,14 @@ public:
      * Constructs from a peer, a socket, and a protocol version. Immediately
      * starts receiving objects from the socket and passing them to the
      * appropriate peer methods.
-     * @param[in,out] peer     Peer. Must exist for the duration of the
+     * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
      *                         constructed instance.
      * @param[in,out] sock     Socket
      */
     PeerImpl(
             PeerMgr& peerMgr,
-            Socket&  sock);
+            Socket&  sock,
+            Peer&    peer);
     /**
      * Returns the number of streams.
      */

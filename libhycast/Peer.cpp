@@ -17,7 +17,7 @@ namespace hycast {
 Peer::Peer(
         PeerMgr& peerMgr,
         Socket&  sock)
-    : pImpl(new PeerImpl(peerMgr, sock))
+    : pImpl(new PeerImpl(peerMgr, sock, *this))
 {
 }
 

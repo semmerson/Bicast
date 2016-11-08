@@ -11,7 +11,9 @@
  * @author: Steven R. Emmerson
  */
 
+#include "ChunkInfo.h"
 #include "MapOfLists.h"
+#include "Peer.h"
 
 namespace hycast {
 
@@ -27,7 +29,7 @@ void MapOfLists<K, V>::add(
         const K& key,
         V&       value)
 {
-    std::lock_guard<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(mutex);
     map[key].push_back(value);
 }
 
@@ -35,7 +37,7 @@ template<class K, class V>
 typename MapOfLists<K, V>::ValueBounds MapOfLists<K, V>::getValues(const K& key)
         const
 {
-    std::lock_guard<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(mutex);
     typename Map::const_iterator listIter{map.find(key)};
     if (listIter == map.end()) {
         typename Map::mapped_type::const_iterator emptyIter{};
@@ -47,7 +49,7 @@ typename MapOfLists<K, V>::ValueBounds MapOfLists<K, V>::getValues(const K& key)
 template<class K, class V>
 void MapOfLists<K, V>::remove(const K& key)
 {
-    std::lock_guard<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(mutex);
     map.erase(key);
 }
 
@@ -56,10 +58,12 @@ void MapOfLists<K, V>::remove(
         const K& key,
         const V& value)
 {
-    std::lock_guard<std::mutex> lock;
+    std::lock_guard<std::mutex> lock(mutex);
     typename Map::iterator listIter{map.find(key)};
     if (listIter != map.end())
         listIter->second.remove(value);
 }
+
+template class MapOfLists<ChunkInfo, Peer>;
 
 } // namespace

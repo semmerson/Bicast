@@ -12,12 +12,13 @@
 #ifndef PEER_H_
 #define PEER_H_
 
+#include "Chunk.h"
 #include "ChunkInfo.h"
+#include "PeerMgr.h"
 #include "ProdInfo.h"
 #include "Socket.h"
 
 #include <memory>
-#include "PeerMgr.h"
 
 namespace hycast {
 
@@ -32,13 +33,13 @@ public:
      */
     Peer() = default;
     /**
-     * Constructs from a peer manager, a socket, and a protocol version.
-     * Immediately starts receiving objects from the socket and passing them to
-     * the appropriate peer methods.
+     * Constructs from a peer manager and a socket. Doesn't receive anything
+     * until `runReceiver()` is called.
      * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
      *                         constructed instance.
      * @param[in,out] sock     Socket
      * @param[in]     version  Protocol version
+     * @see runReceiver()
      */
     Peer(
             PeerMgr& peerMgr,
