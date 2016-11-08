@@ -74,9 +74,12 @@ public:
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket
      * is closed or an exception is thrown.
-     * @throws
+     * @throws std::logic_error  If the peer-manager didn't drain or discard the
+     *                           data of a latent chunk-of-data.
+     * @throws std::system_error If an I/O error occurred
+     * @throws Exceptions from the peer manager
      * @exceptionsafety Basic guarantee
-     * @threadsafefy    Thread-compatible but not thread-safe
+     * @threadsafety    Thread-compatible but not thread-safe
      */
     void runReceiver();
     /**
