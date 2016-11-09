@@ -28,6 +28,9 @@ public:
      * @param[in]  bufLen   Size of buffer in bytes
      * @param[in]  version  Protocol version
      * @return Address of next byte
+     * @throws std::invalid_argument if the buffer is too small
+     * @exceptionsafety Basic. `buf` might be modified.
+     * @threadsafety    Safe
      */
     virtual char* serialize(
             char*          buf,
@@ -39,8 +42,10 @@ public:
      * @param[in] version  Protocol version
      * @return the size, in bytes, of a serialized representation of this
      *         instance
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    virtual size_t getSerialSize(unsigned version) const =0;
+    virtual size_t getSerialSize(unsigned version) const noexcept =0;
 };
 
 } // namespace

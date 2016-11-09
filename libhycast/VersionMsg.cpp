@@ -20,7 +20,7 @@ VersionMsg::VersionMsg(unsigned version)
     : version(version)
 {}
 
-size_t VersionMsg::getSerialSize(unsigned version) const
+size_t VersionMsg::getSerialSize(unsigned version) const noexcept
 {
     return 4;
 }

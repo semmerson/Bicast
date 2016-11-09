@@ -107,7 +107,7 @@ void PeerImpl::runReceiver()
     }
 }
 
-void PeerImpl::sendProdInfo(const ProdInfo& prodInfo)
+void PeerImpl::sendProdInfo(const ProdInfo& prodInfo) const
 {
     prodNoticeChan.send(prodInfo);
 }

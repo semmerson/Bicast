@@ -63,6 +63,14 @@ public:
             const Peer& peer1,
             const Peer& peer2);
     /**
+     * Indicates if this instance is less than another.
+     * @param that  Other instance
+     * @return `true` iff this instance is less that the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    bool operator<(const Peer& that) const noexcept;
+    /**
      * Returns the hash code of an instance.
      * @param[in] peer  The instance
      * @return The instance's hash code
@@ -85,28 +93,43 @@ public:
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo);
+    void sendNotice(const ProdInfo& prodInfo) const;
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo);
+    void sendNotice(const ChunkInfo& chunkInfo) const;
     /**
      * Sends a product-index to the remote peer.
      * @param[in] prodIndex  Product-index
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ProdIndex& prodIndex);
+    void sendRequest(const ProdIndex& prodIndex) const;
     /**
      * Sends a chunk specification to the remote peer.
      * @param[in] prodIndex  Product-index
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ChunkInfo& info);
+    void sendRequest(const ChunkInfo& info) const;
     /**
      * Sends a chunk-of-data to the remote peer.
      * @param[in] chunk  Chunk-of-data
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendData(const ActualChunk& chunk);
+    void sendData(const ActualChunk& chunk) const;
     /**
      * Returns the number of streams.
      */

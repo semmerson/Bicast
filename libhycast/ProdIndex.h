@@ -86,7 +86,7 @@ public:
      * @param[in] version  Protocol version
      * @return the number of bytes in the serial representation
      */
-    size_t getSerialSize(unsigned version) const {
+    size_t getSerialSize(unsigned version) const noexcept {
         return sizeof(ProdIndex_t);
     }
     /**

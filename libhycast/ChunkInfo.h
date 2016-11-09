@@ -55,7 +55,7 @@ public:
      * @param[in] version  Protocol version
      * @return the size of a serialized instance in bytes
      */
-    size_t getSerialSize(unsigned version) const {
+    size_t getSerialSize(unsigned version) const noexcept {
         return prodIndex.getSerialSize(version) + sizeof(chunkIndex);
     }
     /**

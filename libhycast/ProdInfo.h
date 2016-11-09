@@ -97,14 +97,15 @@ public:
      * @param[in] version  Protocol version
      * @return the number of bytes in the serial representation
      */
-    size_t getSerialSize(unsigned version) const;
+    size_t getSerialSize(unsigned version) const noexcept;
     /**
      * Serializes this instance to a buffer.
      * @param[in] buf       Buffer
      * @param[in] size      Buffer size in bytes
      * @param[in] version   Serialization version
      * @return Address of next byte
-     * @execptionsafety Basic
+     * @throws std::invalid_argument if the buffer is too small
+     * @execptionsafety Basic. `buf` might have been modified.
      * @threadsafety    Compatible but not thread-safe
      */
     char* serialize(

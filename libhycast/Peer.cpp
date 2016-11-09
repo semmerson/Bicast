@@ -26,27 +26,27 @@ void Peer::runReceiver()
     pImpl->runReceiver();
 }
 
-void Peer::sendNotice(const ProdInfo& prodInfo)
+void Peer::sendNotice(const ProdInfo& prodInfo) const
 {
     pImpl->sendProdInfo(prodInfo);
 }
 
-void Peer::sendNotice(const ChunkInfo& chunkInfo)
+void Peer::sendNotice(const ChunkInfo& chunkInfo) const
 {
     pImpl->sendChunkInfo(chunkInfo);
 }
 
-void Peer::sendRequest(const ProdIndex& prodIndex)
+void Peer::sendRequest(const ProdIndex& prodIndex) const
 {
     pImpl->sendProdRequest(prodIndex);
 }
 
-void Peer::sendRequest(const ChunkInfo& info)
+void Peer::sendRequest(const ChunkInfo& info) const
 {
     pImpl->sendRequest(info);
 }
 
-void Peer::sendData(const ActualChunk& chunk)
+void Peer::sendData(const ActualChunk& chunk) const
 {
     pImpl->sendData(chunk);
 }
@@ -63,7 +63,12 @@ size_t Peer::hash(const Peer& peer)
 
 bool Peer::operator ==(const Peer& that) const noexcept
 {
-    return pImpl.get() == that.pImpl.get();
+    return *pImpl.get() == *that.pImpl.get();
+}
+
+bool Peer::operator <(const Peer& that) const noexcept
+{
+    return *pImpl.get() < *that.pImpl.get();
 }
 
 unsigned Peer::getNumStreams()

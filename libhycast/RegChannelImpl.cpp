@@ -32,6 +32,10 @@ void RegChannelImpl<T>::send(const Serializable& obj)
 {
     const size_t nbytes = obj.getSerialSize(version);
     alignas(alignof(max_align_t)) char buf[nbytes];
+    /*
+     * The following won't throw std::invalid_argument because `nbytes` is
+     * correct.
+     */
     obj.serialize(buf, nbytes, version);
     sock.send(streamId, buf, nbytes);
 }

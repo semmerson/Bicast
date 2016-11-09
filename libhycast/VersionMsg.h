@@ -25,7 +25,7 @@ public:
             char*          buf,
             const size_t   bufLen,
             const unsigned version) const;
-    size_t getSerialSize(unsigned version) const;
+    size_t getSerialSize(unsigned version) const noexcept;
     unsigned getVersion() const;
     static unsigned deserialize(
             const char* const buf,

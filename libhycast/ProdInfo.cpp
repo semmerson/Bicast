@@ -41,7 +41,7 @@ bool ProdInfo::equals(const ProdInfo& that) const
     return pImpl->equals(*that.pImpl.get());
 }
 
-size_t ProdInfo::getSerialSize(unsigned version) const
+size_t ProdInfo::getSerialSize(unsigned version) const noexcept
 {
     return pImpl->getSerialSize(version);
 }

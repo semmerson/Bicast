@@ -46,6 +46,9 @@ public:
     /**
      * Sends a serializable object.
      * @param[in] obj  Serializable object.
+     * @throws std::system_error if an I/O error occurred
+     * @exceptionsafety  Basic
+     * @threadsafety     Compatible but not safe
      */
     void send(const Serializable& obj);
     /**

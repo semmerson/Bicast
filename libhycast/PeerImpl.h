@@ -98,8 +98,11 @@ public:
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
+     * @throws std::system_error if an I/O error occurs
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
-    void sendProdInfo(const ProdInfo& prodInfo);
+    void sendProdInfo(const ProdInfo& prodInfo) const;
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
@@ -129,6 +132,26 @@ public:
      */
     bool equals(const PeerImpl& that) const {
         return this == &that; // Every instance is unique
+    }
+    /**
+     * Indicates if this instance equals another.
+     * @param[in] that  Other instance
+     * @return `true` iff this instance equals the other
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
+     */
+    bool operator==(const PeerImpl& that) const {
+        return this == &that; // Every instance is unique
+    }
+    /**
+     * Indicates if this instance is less than another.
+     * @param that  Other instance
+     * @return `true` iff this instance is less that the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    bool operator<(const PeerImpl& that) const noexcept {
+        return this < &that;
     }
     /**
      * Returns the hash code of this instance.

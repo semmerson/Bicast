@@ -81,7 +81,9 @@ public:
      * @param[in] streamId  SCTP stream number
      * @param[in] msg       Message to be sent
      * @param[in] len       Size of message in bytes
+     * @throws std::system_error if an I/O error occurred
      * @exceptionsafety Basic
+     * @threadsafety    Compatible but not safe
      */
     void send(
             const unsigned streamId,

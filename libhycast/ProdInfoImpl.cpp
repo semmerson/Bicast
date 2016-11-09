@@ -80,7 +80,7 @@ bool ProdInfoImpl::equals(const ProdInfoImpl& that) const
             (name.compare(that.name) == 0);
 }
 
-size_t ProdInfoImpl::getSerialSize(unsigned version) const
+size_t ProdInfoImpl::getSerialSize(unsigned version) const noexcept
 {
     // Keep consonant with serialize()
     return 2*sizeof(uint32_t) + 2*sizeof(uint16_t) + name.size();
