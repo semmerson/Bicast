@@ -17,14 +17,14 @@ namespace hycast {
 
 void PeerSetImpl::sendNotice(const ProdInfo& prodInfo)
 {
-    std::for_each(set.begin(), set.end(),
-            [&prodInfo](const Peer& peer) {peer.sendNotice(prodInfo);});
+    for (const auto& peer : set)
+        peer.sendNotice(prodInfo);
 }
 
 void PeerSetImpl::sendNotice(const ChunkInfo& chunkInfo)
 {
-    std::for_each(set.begin(), set.end(),
-            [&chunkInfo](const Peer& peer) {peer.sendNotice(chunkInfo);});
+    for (const auto& peer : set)
+        peer.sendNotice(chunkInfo);
 }
 
 } // namespace
