@@ -19,6 +19,13 @@ dnl Initialize Libtool
 LT_INIT
 
 AC_CONFIG_FILES(Makefile
-                libhycast/Makefile
-                include/Makefile)
+                main/Makefile
+                main/net/Makefile
+                main/p2p/Makefile
+                main/prod/Makefile
+                test/Makefile
+                test/net/Makefile
+                test/prod/Makefile
+                test/p2p/Makefile
+                )
 AC_OUTPUT

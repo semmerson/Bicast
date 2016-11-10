@@ -12,6 +12,7 @@
 #ifndef CHUNK_CHANNEL_H_
 #define CHUNK_CHANNEL_H_
 
+#include "Channel.h"
 #include "Chunk.h"
 #include "Socket.h"
 

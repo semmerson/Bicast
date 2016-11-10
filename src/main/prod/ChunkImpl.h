@@ -1,39 +1,36 @@
 /**
- * This file declares two types of chunks of data: 1) a latent chunk that must
- * be read from an object channel; and 2) a reified chunk with a pointer to its
- * data. The two types are in the same file to support keeping their
- * serialization and de-serialization methods consistent.
+ * This file declares implementations for the two types of chunks of data: 1) a
+ * latent chunk that must be read from an object channel; and 2) a reified chunk
+ * with a pointer to its data. The two types are in the same file to support
+ * keeping their serialization and de-serialization methods consistent.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Chunk.h
+ *   @file: ChunkImpl.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef CHUNK_H_
-#define CHUNK_H_
+#ifndef CHUNKIMPL_H_
+#define CHUNKIMPL_H_
 
-#include "Channel.h"
-#include "ChunkInfo.h"
 #include "HycastTypes.h"
+#include "ChunkInfo.h"
 #include "Socket.h"
-
-#include <memory>
 
 namespace hycast {
 
-class ActualChunkImpl; // Forward declaration of implementation
-class LatentChunkImpl; // Forward declaration of implementation
-
-class LatentChunk final {
-    std::shared_ptr<LatentChunkImpl> pImpl;
+class LatentChunkImpl final {
+    ChunkInfo info;
+    Socket    sock;
+    ChunkSize size;
+    unsigned  version;
 public:
     /**
      * Constructs from nothing.
      */
-    LatentChunk();
+    LatentChunkImpl();
     /**
      * Constructs from an SCTP socket whose current message is a chunk of
      * data and a protocol version. NB: This method reads the current message.
@@ -41,7 +38,7 @@ public:
      * @param[in] version  Protocol version
      * @throws std::invalid_argument if the current message is invalid
      */
-    LatentChunk(
+    LatentChunkImpl(
             Socket&        sock,
             const unsigned version);
     /**
@@ -50,14 +47,18 @@ public:
      * @exceptionsafety Strong
      * @threadsafety Safe
      */
-    const ChunkInfo& getInfo() const noexcept;
+    const ChunkInfo& getInfo() const noexcept {
+        return info;
+    }
     /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data
      * @exceptionsafety Strong
      * @threadsafety Safe
      */
-    ChunkSize getSize() const noexcept;
+    ChunkSize getSize() const {
+        return size;
+    }
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
      * be available.
@@ -83,44 +84,58 @@ public:
     bool hasData();
 };
 
-class ActualChunk final {
-    std::shared_ptr<ActualChunkImpl> pImpl;
+class ActualChunkImpl final {
+    ChunkInfo   info;
+    const void* data;
+    ChunkSize   size;
 public:
     /**
      * Constructs from nothing.
      */
-    ActualChunk();
+    ActualChunkImpl()
+        : info(),
+          data(nullptr),
+          size(0) {}
     /**
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
      * @param[in] data  Chunk data
      * @param[in] size  Amount of data in bytes
      */
-    ActualChunk(
+    ActualChunkImpl(
             const ChunkInfo& info,
             const void*      data,
-            const ChunkSize  size);
+            const ChunkSize  size)
+        : info(info),
+          data(data),
+          size(size) {}
     /**
      * Returns information on the chunk.
      * @return information on the chunk
      * @exceptionsafety Nothrow
      * @threadsafety Safe
      */
-    const ChunkInfo& getInfo() const noexcept;
+    const ChunkInfo& getInfo() const noexcept {
+        return info;
+    }
     /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data
      * @exceptionsafety Nothrow
      * @threadsafety Safe
      */
-    ChunkSize getSize() const noexcept;
+    ChunkSize getSize() const noexcept {
+        return size;
+    }
     /**
      * Returns a pointer to the data.
      * @returns a pointer to the data
      * @exceptionsafety Nothrow
      * @threadsafety Safe
      */
-    const void* getData() const noexcept;
+    const void* getData() const noexcept {
+        return data;
+    }
     /**
      * Serializes this instance to an SCTP socket. NB: This is the only thing
      * that's written to the socket.
@@ -138,4 +153,4 @@ public:
 
 } // namespace
 
-#endif /* CHUNK_H_ */
+#endif /* CHUNKIMPL_H_ */

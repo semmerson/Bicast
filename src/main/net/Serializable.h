@@ -12,8 +12,6 @@
 #ifndef SERIALIZABLE_H_
 #define SERIALIZABLE_H_
 
-#include "Socket.h"
-
 #include <cstddef>
 
 namespace hycast {
