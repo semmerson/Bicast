@@ -54,6 +54,11 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo);
+    /**
+     * Increments the value of a peer.
+     * @param[in] peer  Peer to have its value incremented
+    void incValue(const Peer& peer);
+     */
 };
 
 } // namespace

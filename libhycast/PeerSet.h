@@ -12,6 +12,8 @@
 #ifndef PEERSET_H_
 #define PEERSET_H_
 
+#include "Peer.h"
+
 #include <memory>
 
 namespace hycast {
@@ -24,17 +26,14 @@ public:
     /**
      * Constructs from nothing. The set will be empty.
      */
-    PeerSet()
-        : pImpl(new PeerSetImpl()) {}
+    PeerSet();
     /**
      * Inserts a peer.
      * @param[in] peer  Peer to be inserted
      * @exceptionsafety Strong guarantee
      * @threadsafety    Compatible but not safe
      */
-    void insert(Peer& peer) {
-        pImpl->insert(peer);
-    }
+    void insert(Peer& peer) const;
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo  Product information
@@ -42,9 +41,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) {
-        pImpl->sendNotice(prodInfo);
-    }
+    void sendNotice(const ProdInfo& prodInfo) const;
     /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] chunkInfo  Chunk information
@@ -52,9 +49,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) {
-        pImpl->sendNotice(chunkInfo);
-    }
+    void sendNotice(const ChunkInfo& chunkInfo) const;
 };
 
 } // namespace

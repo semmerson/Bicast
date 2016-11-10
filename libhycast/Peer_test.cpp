@@ -215,6 +215,7 @@ TEST_F(PeerTest, Transmission) {
     waitReceiver();
 }
 
+#if 0
 // Tests performance
 TEST_F(PeerTest, Performance) {
     startPerfReceiver();
@@ -222,6 +223,7 @@ TEST_F(PeerTest, Performance) {
     waitSender();
     waitReceiver();
 }
+#endif
 
 }  // namespace
 

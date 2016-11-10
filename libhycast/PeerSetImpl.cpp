@@ -11,8 +11,6 @@
 
 #include "PeerSetImpl.h"
 
-#include <algorithm>
-
 namespace hycast {
 
 void PeerSetImpl::sendNotice(const ProdInfo& prodInfo)
