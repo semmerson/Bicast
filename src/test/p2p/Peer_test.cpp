@@ -71,16 +71,16 @@ protected:
         TestPeerMgr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
-            EXPECT_TRUE(peerTest->prodInfo.equals(info));
+            EXPECT_TRUE(peerTest->prodInfo == info);
         }
         void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
-            EXPECT_TRUE(peerTest->chunkInfo.equals(info));
+            EXPECT_TRUE(peerTest->chunkInfo == info);
         }
         void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
-            EXPECT_TRUE(peerTest->prodIndex.equals(index));
+            EXPECT_TRUE(peerTest->prodIndex == index);
         }
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
-            EXPECT_TRUE(peerTest->chunkInfo.equals(info));
+            EXPECT_TRUE(peerTest->chunkInfo == info);
         }
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
             ASSERT_EQ(sizeof(peerTest->data), chunk.getSize());
@@ -205,6 +205,12 @@ protected:
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction) {
     hycast::Peer peer{};
+}
+
+// Tests to_string
+TEST_F(PeerTest, ToString) {
+    EXPECT_STREQ("PeerImpl{sock=SocketImpl{sock=-1}, version=0}",
+            hycast::Peer().to_string().data());
 }
 
 // Tests transmission

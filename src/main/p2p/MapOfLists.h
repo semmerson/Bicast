@@ -23,16 +23,13 @@
 namespace hycast {
 
 /**
- * @tparam K  Type of key. Must have the static methods
- *              - `size_t K::hash(const K&)` Returns the hash code of a key
- *              - `bool K::areEqual(const K& k1, const K& k2)` Returns `true`
- *                 iff `k1` and `k2` are considered equal
+ * @tparam K  Type of key. The classes `std::hash<K>` and `std::equal_to<K>`
+ *            must exist.
  * @tparam V  Type of value
  */
 template<class K, class V>
 class MapOfLists final {
-    typedef std::unordered_map<K, std::list<V>,
-            decltype(&K::hash), decltype(&K::areEqual)> Map;
+    typedef std::unordered_map<K, std::list<V>> Map;
 
     Map                             map;
     mutable std::mutex              mutex;

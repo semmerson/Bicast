@@ -16,8 +16,7 @@ namespace hycast {
 
 ProdInfo::ProdInfo()
     : pImpl(new ProdInfoImpl())
-{
-}
+{}
 
 ProdInfo::ProdInfo(
         const std::string& name,
@@ -25,20 +24,18 @@ ProdInfo::ProdInfo(
         const ProdSize     size,
         const ChunkSize    chunkSize)
     : pImpl(new ProdInfoImpl(name, index, size, chunkSize))
-{
-}
+{}
 
 ProdInfo::ProdInfo(
         const char* const buf,
         const size_t      bufLen,
         const unsigned    version)
     : pImpl(new ProdInfoImpl(buf, bufLen, version))
-{
-}
+{}
 
-bool ProdInfo::equals(const ProdInfo& that) const
+bool ProdInfo::operator==(const ProdInfo& that) const noexcept
 {
-    return pImpl->equals(*that.pImpl.get());
+    return *pImpl.get() == *that.pImpl.get();
 }
 
 size_t ProdInfo::getSerialSize(unsigned version) const noexcept

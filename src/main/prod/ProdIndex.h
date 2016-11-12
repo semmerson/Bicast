@@ -44,39 +44,37 @@ public:
         return index;
     }
     /**
-     * Returns the hash code of an instance.
-     * @param[in] obj  The instance
-     * @return The instance's hash code
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    static size_t hash(const ProdIndex& obj) {
-        return std::hash<ProdIndex_t>()(obj.index);
+    size_t hash() const noexcept {
+        return std::hash<decltype(index)>()(index);
     }
-    bool operator ==(const ProdIndex& that) const {
+    bool operator ==(const ProdIndex& that) const noexcept {
         return index == that.index;
     }
-    bool equals(const ProdIndex& that) const {
-        return index == that.index;
-    }
-    bool operator !=(const ProdIndex& that) const {
+    bool operator !=(const ProdIndex& that) const noexcept {
         return index != that.index;
     }
-    bool operator <(const ProdIndex& that) const {
+    bool operator <(const ProdIndex& that) const noexcept {
         return index < that.index;
     }
-    bool operator <=(const ProdIndex& that) const {
+    bool operator <=(const ProdIndex& that) const noexcept {
         return index <= that.index;
     }
-    bool operator >(const ProdIndex& that) const {
+    bool operator >(const ProdIndex& that) const noexcept {
         return index > that.index;
     }
-    bool operator >=(const ProdIndex& that) const {
+    bool operator >=(const ProdIndex& that) const noexcept {
         return index >= that.index;
     }
-    ProdIndex& operator ++() {
+    ProdIndex& operator ++() noexcept {
         ++index;
         return *this;
     }
-    ProdIndex& operator --() {
+    ProdIndex& operator --() noexcept {
         --index;
         return *this;
     }
@@ -119,5 +117,27 @@ public:
 };
 
 } // namespace
+
+namespace std {
+    template<> struct hash<hycast::ProdIndex> {
+        size_t operator()(const hycast::ProdIndex& index) const noexcept {
+            return index.hash();
+        }
+    };
+
+    template<> struct less<hycast::ProdIndex> {
+        bool operator()(const hycast::ProdIndex& index1,
+                const hycast::ProdIndex& index2) const noexcept {
+            return index1 < index2;
+        }
+    };
+
+    template<> struct equal_to<hycast::ProdIndex> {
+        bool operator()(const hycast::ProdIndex& index1,
+                const hycast::ProdIndex& index2) const noexcept {
+            return index1 == index2;
+        }
+    };
+}
 
 #endif /* PRODINDEX_H_ */

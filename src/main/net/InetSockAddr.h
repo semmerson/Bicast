@@ -113,7 +113,7 @@ public:
      * @retval >0  This instance is greater than the other
      * @exceptionsafety Nothrow
      */
-    bool equals(const InetSockAddr& that) const noexcept {
+    bool operator==(const InetSockAddr& that) const noexcept {
         return compare(that) == 0;
     }
     /**

@@ -14,12 +14,15 @@
 
 namespace hycast {
 
+Peer::Peer()
+    : pImpl(new PeerImpl())
+{}
+
 Peer::Peer(
         PeerMgr& peerMgr,
         Socket&  sock)
     : pImpl(new PeerImpl(peerMgr, sock, *this))
-{
-}
+{}
 
 void Peer::runReceiver()
 {
@@ -51,16 +54,6 @@ void Peer::sendData(const ActualChunk& chunk) const
     pImpl->sendData(chunk);
 }
 
-bool Peer::areEqual(const Peer& peer1, const Peer& peer2)
-{
-    return peer1.pImpl->equals(*peer2.pImpl.get());
-}
-
-size_t Peer::hash(const Peer& peer)
-{
-    return peer.pImpl->hash();
-}
-
 bool Peer::operator ==(const Peer& that) const noexcept
 {
     return *pImpl.get() == *that.pImpl.get();
@@ -71,9 +64,19 @@ bool Peer::operator <(const Peer& that) const noexcept
     return *pImpl.get() < *that.pImpl.get();
 }
 
-unsigned Peer::getNumStreams()
+uint16_t Peer::getNumStreams()
 {
     return PeerImpl::getNumStreams();
+}
+
+size_t Peer::hash() const noexcept
+{
+    return pImpl->hash();
+}
+
+std::string Peer::to_string() const
+{
+    return pImpl->to_string();
 }
 
 } // namespace

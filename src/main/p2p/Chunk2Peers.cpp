@@ -15,7 +15,7 @@
 namespace hycast {
 
 Chunk2Peers::Chunk2Peers()
-    : map{16, &ChunkInfo::hash, &ChunkInfo::areEqual}
+    : map{16}
 {}
 
 void Chunk2Peers::add(

@@ -9,12 +9,15 @@
  * @author: Steven R. Emmerson
  */
 
-
-#include "PeerSet.h"
+#include "ClientSocket.h"
+#include "PeerMgr.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
+#include "ServerSocket.h"
+#include "Socket.h"
 
 #include <gtest/gtest.h>
+#include <thread>
 
 namespace {
 
@@ -45,14 +48,46 @@ protected:
         // before the destructor).
     }
 
-    // Objects declared here can be used by all tests in the test case for PeerSet.
-    hycast::PeerSet peerSet{};
-#if 0
-    hycast::ProdInfo prodInfo("product", hycast::ProdIndex(1), 100000, 32000);
-    class myPeerMgr : public hycast::PeerMgr {
+    class TestPeerMgr final : public hycast::PeerMgr {
+        PeerSetTest* peerSetTest;
+    public:
+        TestPeerMgr(PeerSetTest& peerSetTest)
+            : peerSetTest{&peerSetTest} {}
+        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
+            EXPECT_TRUE(peerSetTest->prodInfo == info);
+        }
+        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+            EXPECT_TRUE(peerSetTest->chunkInfo == info);
+        }
+        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
+        }
+        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+        }
+        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
+        }
+    };
 
-    } peerMgr;
-#endif
+    void runTestReceiver(hycast::ServerSocket& serverSock)
+    {
+        hycast::Socket       sock{serverSock.accept()};
+        TestPeerMgr          peerMgr{*this};
+        hycast::Peer{peerMgr, sock}.runReceiver();
+    }
+
+    void runTestSender(const hycast::InetSockAddr& serverSockAddr)
+    {
+        hycast::ClientSocket sock{serverSockAddr, hycast::Peer::getNumStreams()};
+        TestPeerMgr peerMgr{*this};
+        hycast::Peer peer(peerMgr, sock);
+        hycast::PeerSet peerSet{};
+        peerSet.insert(peer);
+        peerSet.sendNotice(prodInfo);
+        peerSet.sendNotice(chunkInfo);
+    }
+
+    // Objects declared here can be used by all tests in the test case for PeerSet.
+    hycast::ProdInfo prodInfo{"product", 1, 100000, 32000};
+    hycast::ChunkInfo chunkInfo{hycast::ProdIndex(1), 2};
 };
 
 // Tests default construction
@@ -63,17 +98,31 @@ TEST_F(PeerSetTest, DefaultConstruction) {
 // Tests inserting a peer
 TEST_F(PeerSetTest, PeerInsertion) {
     hycast::Peer peer{};
+    hycast::PeerSet  peerSet{};
     peerSet.insert(peer);
 }
 
-#if 0
-// Tests sending a product notice
+// Tests sending notices
 TEST_F(PeerSetTest, SendProdNotice) {
-    hycast::Peer peer(peerMgr, sock);
-    peerSet.insert(peer);
-    peerSet.sendNotice(prodInfo);
+    // Receiver socket must exist before client connects
+    hycast::InetSockAddr serverSockAddr{"127.0.0.1", 38800};
+    hycast::ServerSocket serverSock{serverSockAddr,
+        hycast::Peer::getNumStreams()};
+    std::thread          recvThread = std::thread([this, &serverSock](){
+            this->runTestReceiver(serverSock);});
+    std::thread          sendThread = std::thread([this, &serverSockAddr](){
+            this->runTestSender(serverSockAddr);});
+    sendThread.join();
+    recvThread.join();
 }
-#endif
+
+// Tests incrementing the value of a peer
+TEST_F(PeerSetTest, IncrementValue) {
+    hycast::Peer     peer{};
+    hycast::PeerSet  peerSet{};
+    peerSet.insert(peer);
+    peerSet.incValue(peer);
+}
 
 }  // namespace
 

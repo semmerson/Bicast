@@ -106,21 +106,33 @@ public:
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
+     * @throws std::system_error if an I/O error occurred
+     * @exceptionsafety  Basic
+     * @threadsafety     Compatible but not safe
      */
     void sendChunkInfo(const ChunkInfo& chunkInfo);
     /**
      * Sends a request for product information to the remote peer.
      * @param[in] prodIndex  Product-index
+     * @throws std::system_error if an I/O error occurred
+     * @exceptionsafety  Basic
+     * @threadsafety     Compatible but not safe
      */
     void sendProdRequest(const ProdIndex& prodIndex);
     /**
      * Sends a request for a chunk-of-data to the remote peer.
      * @param[in] info  Chunk specification
+     * @throws std::system_error if an I/O error occurred
+     * @exceptionsafety  Basic
+     * @threadsafety     Compatible but not safe
      */
     void sendRequest(const ChunkInfo& info);
     /**
      * Sends a chunk-of-data to the remote peer.
      * @param[in] chunk  Chunk-of-data
+     * @throws std::system_error if an I/O error occurred
+     * @exceptionsafety  Basic
+     * @threadsafety     Compatible but not safe
      */
     void sendData(const ActualChunk& chunk);
     /**
@@ -130,17 +142,7 @@ public:
      * @execptionsafety Nothrow
      * @threadsafety    Thread-safe
      */
-    bool equals(const PeerImpl& that) const {
-        return this == &that; // Every instance is unique
-    }
-    /**
-     * Indicates if this instance equals another.
-     * @param[in] that  Other instance
-     * @return `true` iff this instance equals the other
-     * @execptionsafety Nothrow
-     * @threadsafety    Thread-safe
-     */
-    bool operator==(const PeerImpl& that) const {
+    bool operator==(const PeerImpl& that) const noexcept {
         return this == &that; // Every instance is unique
     }
     /**
@@ -162,6 +164,13 @@ public:
     size_t hash() const noexcept {
         return std::hash<const PeerImpl*>()(this); // Every instance is unique
     }
+    /**
+     * Returns the string representation of this instance.
+     * @return the string representation of this instance
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    std::string to_string() const;
 };
 
 } // namespace

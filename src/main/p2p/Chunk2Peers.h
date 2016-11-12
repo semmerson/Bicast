@@ -23,13 +23,8 @@
 namespace hycast {
 
 class Chunk2Peers final {
-    typedef std::unordered_map<class ChunkInfo, std::list<class Peer>,
-            decltype(&ChunkInfo::hash), decltype(&ChunkInfo::areEqual)> Map;
+    typedef std::unordered_map<class ChunkInfo, std::list<class Peer>> Map;
     Map map;
-#if 0
-    std::unordered_multimap<class ChunkInfo, class Peer,
-            decltype(&ChunkInfo::hash), decltype(&ChunkInfo::areEqual)> multimap;
-#endif
 public:
     typedef Map::mapped_type::const_iterator      PeerIterator;
     typedef std::pair<PeerIterator, PeerIterator> PeerBounds;

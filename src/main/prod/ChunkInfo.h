@@ -72,27 +72,29 @@ public:
      * Indicates if this instance equals another.
      * @param[in] that  Other instance
      * @retval `true` iff this instance equals the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    bool equals(const ChunkInfo& that) const;
+    bool operator==(const ChunkInfo& that) const noexcept;
     /**
-     * Indicates if two instance are equal.
-     * @param[in] obj1  First instance
-     * @param[in] obj2  Second instance
-     * @retval `true` iff the instances are equal
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
+     * @execeptionsafety Nothrow
+     * @threadsafety     Safe
      */
-    static bool areEqual(
-            const ChunkInfo& obj1,
-            const ChunkInfo& obj2) {
-        return obj1.equals(obj2);
+    size_t hash() const noexcept {
+        return prodIndex.hash() | std::hash<ChunkIndex>()(chunkIndex);
     }
     /**
-     * Returns the hash code of an instance.
-     * @param[in] chunk  The instance
-     * @return The instance's hash code
+     * Indicates if this instance is less than another.
+     * @param[in] that  Other instance
+     * @return `true` iff this instance is less than the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    static size_t hash(const ChunkInfo& chunk) {
-        return ProdIndex::hash(chunk.prodIndex) |
-                std::hash<ChunkIndex>()(chunk.chunkIndex);
+    bool operator<(const ChunkInfo& that) const noexcept {
+        return prodIndex < that.prodIndex ||
+                (prodIndex == that.prodIndex && chunkIndex < that.chunkIndex);
     }
     /**
      * Serializes this instance to a buffer.
@@ -121,5 +123,29 @@ public:
 };
 
 } // namespace
+
+#include <functional>
+
+namespace std {
+    template<> struct hash<hycast::ChunkInfo> {
+        size_t operator()(const hycast::ChunkInfo& info) const noexcept {
+            return info.hash();
+        }
+    };
+
+    template<> struct less<hycast::ChunkInfo> {
+        bool operator()(const hycast::ChunkInfo& info1,
+                const hycast::ChunkInfo& info2) const noexcept {
+            return info1 < info2;
+        }
+    };
+
+    template<> struct equal_to<hycast::ChunkInfo> {
+        bool operator()(const hycast::ChunkInfo& info1,
+                const hycast::ChunkInfo& info2) const noexcept {
+            return info1 == info2;
+        }
+    };
+}
 
 #endif /* CHUNKINFO_H_ */

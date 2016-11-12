@@ -90,8 +90,10 @@ public:
      * @param[in] that  The other instance
      * @retval true   This instance is equal to the other
      * @retval false  This instance is not equal to the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    bool equals(const ProdInfoImpl& that) const;
+    bool operator==(const ProdInfoImpl& that) const noexcept;
     /**
      * Returns the number of bytes in the serial representation of this
      * instance.

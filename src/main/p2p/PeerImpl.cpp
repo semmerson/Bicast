@@ -132,4 +132,10 @@ void PeerImpl::sendData(const ActualChunk& chunk)
     chunkChan.send(chunk);
 }
 
+std::string PeerImpl::to_string() const
+{
+    return std::string("PeerImpl{sock=") + sock.to_string() + ", version=" +
+            std::to_string(version) + "}";
+}
+
 } // namespace

@@ -74,6 +74,7 @@ public:
      * @return String representation of this instance's socket
      * @throws std::bad_alloc if required memory can't be allocated
      * @exceptionsafety Strong
+     * @threadsafety    Safe
      */
     std::string to_string() const;
     /**

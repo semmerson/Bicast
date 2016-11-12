@@ -19,7 +19,7 @@ namespace hycast {
 
 template<class K, class V>
 MapOfLists<K, V>::MapOfLists(unsigned numKeys)
-    : map{numKeys, &K::hash, &K::areEqual},
+    : map{numKeys},
       mutex{},
       cond{}
 {}

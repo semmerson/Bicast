@@ -32,7 +32,7 @@ ChunkInfo::ChunkInfo(
     chunkIndex = ntohl(*reinterpret_cast<const uint32_t*>(buf));
 }
 
-bool ChunkInfo::equals(const ChunkInfo& that) const
+bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
 {
     return prodIndex == that.prodIndex && chunkIndex == that.chunkIndex;
 }

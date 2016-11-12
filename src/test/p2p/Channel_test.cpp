@@ -49,7 +49,7 @@ void runClient()
     prodInfoChannel.send(prodInfo1);
     EXPECT_EQ(0, prodInfoChannel.getStreamId());
     hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
-    EXPECT_TRUE(prodInfo1.equals(prodInfo2));
+    EXPECT_TRUE(prodInfo1 == prodInfo2);
 
     hycast::RegChannel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
     EXPECT_EQ(sock, chunkInfoChannel.getSocket());
@@ -57,7 +57,7 @@ void runClient()
     chunkInfoChannel.send(chunkInfo1);
     EXPECT_EQ(1, chunkInfoChannel.getStreamId());
     hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
-    EXPECT_TRUE(chunkInfo1.equals(chunkInfo2));
+    EXPECT_TRUE(chunkInfo1 == chunkInfo2);
 }
 
 // The fixture for testing class Channel.

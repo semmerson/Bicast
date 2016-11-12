@@ -21,7 +21,7 @@
 namespace hycast {
 
 Socket::Socket()
-    : pImpl()
+    : pImpl(new SocketImpl())
 {
 }
 

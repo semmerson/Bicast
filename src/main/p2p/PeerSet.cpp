@@ -14,8 +14,8 @@
 
 namespace hycast {
 
-PeerSet::PeerSet()
-    : pImpl(new PeerSetImpl())
+PeerSet::PeerSet(unsigned maxPeers)
+    : pImpl(new PeerSetImpl(maxPeers))
 {}
 
 void PeerSet::insert(Peer& peer) const
@@ -31,6 +31,11 @@ void PeerSet::sendNotice(const ProdInfo& prodInfo) const
 void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
 {
     pImpl->sendNotice(chunkInfo);
+}
+
+void PeerSet::incValue(const Peer& peer)
+{
+    pImpl->incValue(peer);
 }
 
 } // namespace

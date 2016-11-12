@@ -59,11 +59,11 @@ TEST_F(ChunkInfoTest, Construction) {
 // Tests ChunkInfo::equals()
 TEST_F(ChunkInfoTest, Equals) {
     hycast::ChunkInfo info1(1, 2);
-    EXPECT_TRUE(info1.equals(info1));
+    EXPECT_TRUE(info1 == info1);
     hycast::ChunkInfo info2(2, 2);
-    EXPECT_FALSE(info1.equals(info2));
+    EXPECT_FALSE(info1 == info2);
     hycast::ChunkInfo info3(1, 3);
-    EXPECT_FALSE(info1.equals(info3));
+    EXPECT_FALSE(info1 == info3);
 }
 
 // Tests serialization/de-serialization
@@ -73,7 +73,7 @@ TEST_F(ChunkInfoTest, Serialization) {
     alignas(alignof(max_align_t)) char bytes[nbytes];
     info1.serialize(bytes, nbytes, 0);
     hycast::ChunkInfo info2(bytes, nbytes, 0);
-    EXPECT_TRUE(info1.equals(info2));
+    EXPECT_TRUE(info1 == info2);
 }
 
 }  // namespace

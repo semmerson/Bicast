@@ -231,9 +231,8 @@ TEST_F(SocketTest, EqualityOperator) {
 // Tests to_string()
 TEST_F(SocketTest, ToString) {
     hycast::Socket s1(sock1);
-    EXPECT_EQ(true, s1.to_string() == std::to_string(sock1));
-    hycast::Socket s2(sock2);
-    EXPECT_EQ(true, s1.to_string() != s2.to_string());
+    EXPECT_STREQ((std::string("SocketImpl{sock=") + std::to_string(sock1) + "}").data(),
+            s1.to_string().data());
 }
 
 // Tests send() and recv()

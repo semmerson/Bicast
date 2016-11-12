@@ -72,7 +72,7 @@ ProdInfoImpl::ProdInfoImpl(
     name.assign(nameBuf, nameLen);
 }
 
-bool ProdInfoImpl::equals(const ProdInfoImpl& that) const
+bool ProdInfoImpl::operator==(const ProdInfoImpl& that) const noexcept
 {
     return (index == that.index) &&
             (size == that.size) &&

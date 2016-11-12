@@ -32,7 +32,7 @@ public:
      * Constructs from nothing. Any attempt to use the resulting instance will
      * throw an exception.
      */
-    Peer() = default;
+    Peer();
     /**
      * Constructs from a peer manager and a socket. Doesn't receive anything
      * until `runReceiver()` is called.
@@ -46,22 +46,12 @@ public:
             PeerMgr& peerMgr,
             Socket&  sock);
     /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  The other instance
-     * @return `true` iff this instance is equal to the other
-     */
-    bool operator==(const Peer& that) const noexcept;
-    /**
-     * Indicates if two peers are equal.
-     * @param[in] peer1  First peer
-     * @param[in] peer2  Second peer
-     * @return `true` iff the two peers are equal
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
      * @execptionsafety Nothrow
      * @threadsafety    Thread-safe
      */
-    static bool areEqual(
-            const Peer& peer1,
-            const Peer& peer2);
+    size_t hash() const noexcept;
     /**
      * Indicates if this instance is less than another.
      * @param that  Other instance
@@ -71,13 +61,11 @@ public:
      */
     bool operator<(const Peer& that) const noexcept;
     /**
-     * Returns the hash code of an instance.
-     * @param[in] peer  The instance
-     * @return The instance's hash code
-     * @execptionsafety Nothrow
-     * @threadsafety    Thread-safe
+     * Indicates if this instance is equal to another.
+     * @param[in] that  The other instance
+     * @return `true` iff this instance is equal to the other
      */
-    static size_t hash(const Peer& peer);
+    bool operator==(const Peer& that) const noexcept;
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket
@@ -133,9 +121,40 @@ public:
     /**
      * Returns the number of streams.
      */
-    static unsigned getNumStreams();
+    static uint16_t getNumStreams();
+    /**
+     * Returns the string representation of this instance.
+     * @return the string representation of this instance
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    std::string to_string() const;
 };
 
 } // namespace
+
+#include <functional>
+
+namespace std {
+    template<> struct hash<hycast::Peer> {
+        size_t operator()(const hycast::Peer& peer) const noexcept {
+            return peer.hash();
+        }
+    };
+
+    template<> struct less<hycast::Peer> {
+        bool operator()(const hycast::Peer& peer1, const hycast::Peer& peer2)
+                const noexcept {
+            return peer1 < peer2;
+        }
+    };
+
+    template<> struct equal_to<hycast::Peer> {
+        bool operator()(const hycast::Peer& peer1, const hycast::Peer& peer2)
+                const noexcept {
+            return peer1 == peer2;
+        }
+    };
+}
 
 #endif /* PEER_H_ */

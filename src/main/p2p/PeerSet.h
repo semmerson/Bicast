@@ -24,9 +24,10 @@ class PeerSet final {
     std::shared_ptr<PeerSetImpl> pImpl;
 public:
     /**
-     * Constructs from nothing. The set will be empty.
+     * Constructs from the maximum number of peers. The set will be empty.
+     * @param[in] maxPeers  Maximum number of peers
      */
-    PeerSet();
+    PeerSet(unsigned maxPeers = 8);
     /**
      * Inserts a peer.
      * @param[in] peer  Peer to be inserted
@@ -50,6 +51,11 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo) const;
+    /**
+     * Increments the value of a peer.
+     * @param[in] peer  Peer to have its value incremented
+     */
+    void incValue(const Peer& peer);
 };
 
 } // namespace

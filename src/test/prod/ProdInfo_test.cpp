@@ -74,15 +74,15 @@ TEST_F(ProdInfoTest, Construction) {
 // Tests equals()
 TEST_F(ProdInfoTest, Equals) {
     hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_TRUE(info1.equals(info1));
+    EXPECT_TRUE(info1 == info1);
     hycast::ProdInfo info2("name", 1, 2, 2);
-    EXPECT_FALSE(info1.equals(info2));
+    EXPECT_FALSE(info1 == info2);
     hycast::ProdInfo info3("name", 1, 1, 3);
-    EXPECT_FALSE(info1.equals(info3));
+    EXPECT_FALSE(info1 == info3);
     hycast::ProdInfo info4("name", 2, 2, 3);
-    EXPECT_FALSE(info1.equals(info4));
+    EXPECT_FALSE(info1 == info4);
     hycast::ProdInfo info5("names", 1, 2, 3);
-    EXPECT_FALSE(info1.equals(info5));
+    EXPECT_FALSE(info1 == info5);
 }
 
 // Tests getSerialSize()
@@ -98,7 +98,7 @@ TEST_F(ProdInfoTest, Serialization) {
     alignas(alignof(size_t)) char bytes[nbytes];
     info1.serialize(bytes, nbytes, 0);
     hycast::ProdInfo info2(bytes, nbytes, 0);
-    EXPECT_TRUE(info1.equals(info2));
+    EXPECT_TRUE(info1 == info2);
 }
 
 }  // namespace
