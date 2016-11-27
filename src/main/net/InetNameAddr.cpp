@@ -29,43 +29,50 @@ std::string InetNameAddr::to_string() const noexcept
     return name;
 }
 
-std::shared_ptr<IpAddr> InetNameAddr::getIpAddr() const
+void InetNameAddr::getSockAddrs(
+        const int                        family,
+        const in_port_t                  port,
+        std::set<struct sockaddr>* const set) const
 {
-    IpAddr* addr;
-    struct addrinfo* entry;
-    if (::getaddrinfo(name.data(), nullptr, nullptr, &entry))
+    struct addrinfo  hints = {};
+    hints.ai_family = family;
+    hints.ai_protocol = IPPROTO_SCTP;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo* list;
+    if (::getaddrinfo(name.data(), nullptr, &hints, &list))
         throw std::system_error(errno, std::system_category(),
-                std::string("Couldn't get IP address of host \"") + name.data()
-                + "\"");
+                std::string("::getaddrinfo(AF_INET) failure for host \"") +
+                name.data() + "\"");
     try {
-        if (entry->ai_family == AF_INET) {
-            addr = new Inet4Addr(
-                    reinterpret_cast<struct sockaddr_in*>(entry->ai_addr)->sin_addr);
-        }
-        else if (entry->ai_family == AF_INET6) {
-            addr = new Inet6Addr(
-                    reinterpret_cast<struct sockaddr_in6*>(entry->ai_addr)->sin6_addr);
-        }
-        else {
-            throw std::system_error(errno, std::system_category(),
-                    std::string("Host \"") + name.data() +
-                    "\" doesn't support Internet Protocol");
+        for (struct addrinfo* entry = list; entry->ai_next != NULL;
+                entry = entry->ai_next) {
+            if (entry->ai_addr->sa_family == AF_INET) {
+                (reinterpret_cast<struct sockaddr_in*>(entry->ai_addr))->
+                        sin_port = htons(port);
+            }
+            else if (entry->ai_addr->sa_family == AF_INET6) {
+                (reinterpret_cast<struct sockaddr_in6*>(entry->ai_addr))->
+                        sin6_port = htons(port);
+            }
+            set->insert(*entry->ai_addr);
         }
     }
     catch (...) {
-        freeaddrinfo(entry);
+        freeaddrinfo(list);
         throw;
     }
-    return std::shared_ptr<IpAddr>(addr);
 }
 
-void InetNameAddr::getSockAddr(
-            const in_port_t  port,
-            struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const
+std::shared_ptr<std::set<struct sockaddr>> InetNameAddr::getSockAddr(
+        const in_port_t  port) const
 {
-    std::shared_ptr<IpAddr> addr{getIpAddr()};
-    addr->getSockAddr(port, sockAddr, sockLen);
+    auto set = new std::set<struct sockaddr>();
+    if (set == nullptr)
+        throw std::system_error(errno, std::system_category(),
+                "Couldn't allocate set for socket address");
+    getSockAddrs(AF_INET, port, set);
+    getSockAddrs(AF_INET6, port, set);
+    return std::shared_ptr<std::set<struct sockaddr>>(set);
 }
 
 } // namespace

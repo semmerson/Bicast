@@ -66,13 +66,14 @@ unsigned PeerImpl::getNumStreams()
 
 void PeerImpl::runReceiver()
 {
+    int entryCancelState;
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
     for (;;) {
-        int cancelState;
-        (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
+        (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
         uint32_t size = sock.getSize();
-        (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
+        (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
         if (size == 0)
-            return;
+            break;
         switch (sock.getStreamId()) {
             case PROD_NOTICE_STREAM_ID:
                 peerMgr->recvNotice(prodNoticeChan.recv(), *peer);
@@ -105,6 +106,7 @@ void PeerImpl::runReceiver()
                 sock.discard();
         }
     }
+    (void)pthread_setcancelstate(entryCancelState, nullptr);
 }
 
 void PeerImpl::sendProdInfo(const ProdInfo& prodInfo) const

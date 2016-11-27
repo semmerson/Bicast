@@ -25,4 +25,4 @@ lib_la_SOURCES 	= \
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
-lib_la_CPPFLAGS = -I$(srcdir)/../net -I$(srcdir)/../prod
+lib_la_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../net -I$(srcdir)/../prod

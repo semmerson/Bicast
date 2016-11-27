@@ -14,13 +14,22 @@
 
 namespace hycast {
 
-PeerSet::PeerSet(unsigned maxPeers)
-    : pImpl(new PeerSetImpl(maxPeers))
+PeerSet::PeerSet(
+        const unsigned maxPeers,
+        const std::chrono::seconds minDuration)
+    : pImpl(new PeerSetImpl(maxPeers, minDuration))
 {}
 
-void PeerSet::insert(Peer& peer) const
+PeerSet::InsertStatus PeerSet::tryInsert(
+        Peer& candidate,
+        Peer* replaced) const
 {
-    pImpl->insert(peer);
+    PeerSetImpl::InsertStatus status = pImpl->tryInsert(candidate, replaced);
+    return status == PeerSetImpl::InsertStatus::FAILURE
+            ? PeerSet::InsertStatus::FAILURE
+            : status == PeerSetImpl::InsertStatus::SUCCESS
+                ? PeerSet::InsertStatus::SUCCESS
+                : PeerSet::InsertStatus::REPLACED;
 }
 
 void PeerSet::sendNotice(const ProdInfo& prodInfo) const
@@ -33,7 +42,7 @@ void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
     pImpl->sendNotice(chunkInfo);
 }
 
-void PeerSet::incValue(const Peer& peer)
+void PeerSet::incValue(const Peer& peer) const
 {
     pImpl->incValue(peer);
 }

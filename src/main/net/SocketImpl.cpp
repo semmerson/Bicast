@@ -70,7 +70,7 @@ SocketImpl::SocketImpl(
 
 SocketImpl::~SocketImpl() noexcept
 {
-    (void)::close(sock);
+    this->close();
 }
 
 void SocketImpl::sndrcvinfoInit(
@@ -92,7 +92,8 @@ void SocketImpl::checkIoStatus(
     if (actual < 0)
         throw std::system_error(errno, std::system_category(),
                 std::string(funcName) + " failure: sock=" + std::to_string(sock)
-                + ", expected=" + std::to_string(expected));
+                + ", expected=" + std::to_string(expected) + ", errno=" +
+                std::to_string(errno));
     if (expected != 0 && expected != (size_t)actual)
         throw std::system_error(EIO, std::system_category(),
                 std::string(funcName) + " failure: sock=" + std::to_string(sock)
@@ -171,11 +172,12 @@ void SocketImpl::getNextMsgInfo()
         numRecvd = sctp_recvmsg(sock, msg, sizeof(msg), nullptr, &socklen,
                 &sinfo, &flags);
     }
-    checkIoStatus("getNextMsgInfo()->sctp_recvmsg()", 0, numRecvd);
-    if (numRecvd == 0 || (numRecvd == -1 && errno == ECONNRESET)) {
+    if (numRecvd == 0 ||
+            (numRecvd == -1 && (errno == ECONNRESET || errno == ENOTCONN))) {
         size = 0; // EOF
     }
     else {
+        checkIoStatus("getNextMsgInfo()->sctp_recvmsg()", 0, numRecvd);
         streamId = sinfo.sinfo_stream;
         size = ntohl(sinfo.sinfo_ppid);
     }
@@ -251,6 +253,14 @@ void SocketImpl::discard()
     if (haveCurrMsg) {
         char msg[getSize()]; // Apparently necessary to discard current message
         recv(msg, sizeof(msg));
+    }
+}
+
+void SocketImpl::close()
+{
+    if (sock >= 0) {
+        (void)::close(sock);
+        sock = -1;
     }
 }
 

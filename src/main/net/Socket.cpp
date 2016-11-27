@@ -109,4 +109,9 @@ void Socket::discard()
     pImpl->discard();
 }
 
+void Socket::close()
+{
+    pImpl->close();
+}
+
 } // namespace

@@ -13,9 +13,10 @@
 #define INETADDRIMPL_H_
 
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <netinet/in.h>
-#include <string>
+#include <set>
 #include <sys/socket.h>
 
 namespace hycast {
@@ -66,20 +67,31 @@ public:
      */
     virtual std::string to_string() const = 0;
     /**
-     * Gets the socket address corresponding to a port number.
-     * @param[in]  port      Port number
-     * @param[out] sockAddr  Resulting socket address
-     * @param[out] sockLen   Size of socket address in bytes
+     * Gets the socket addresses corresponding to a port number.
+     * @param[in]  port Port number
+     * @return     Set of socket addresses
      * @throws std::system_error if the IP address couldn't be obtained
+     * @throws std::system_error if required memory couldn't be allocated
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    virtual void getSockAddr(
-            const in_port_t  port,
-            struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const =0;
+    virtual std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+            const in_port_t  port) const =0;
 };
 
 } // namespace
+
+namespace std {
+    template<>
+    struct less<struct sockaddr> {
+        bool operator()(
+            const struct sockaddr sockaddr1,
+            const struct sockaddr sockaddr2)
+        {
+            return ::memcmp(sockaddr1.sa_data, sockaddr2.sa_data,
+                    sizeof(sockaddr1)) < 0;
+        }
+    };
+}
 
 #endif /* INETADDRIMPL_H_ */

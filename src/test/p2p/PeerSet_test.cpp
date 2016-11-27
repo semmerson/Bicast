@@ -80,7 +80,8 @@ protected:
         TestPeerMgr peerMgr{*this};
         hycast::Peer peer(peerMgr, sock);
         hycast::PeerSet peerSet{};
-        peerSet.insert(peer);
+        hycast::Peer    replaced;
+        peerSet.tryInsert(peer, &replaced);
         peerSet.sendNotice(prodInfo);
         peerSet.sendNotice(chunkInfo);
     }
@@ -95,11 +96,18 @@ TEST_F(PeerSetTest, DefaultConstruction) {
     hycast::PeerSet peerSet{};
 }
 
+// Tests construction with invalid argument
+TEST_F(PeerSetTest, InvalidConstruction) {
+    EXPECT_THROW(hycast::PeerSet peerSet{0}, std::invalid_argument);
+}
+
 // Tests inserting a peer
 TEST_F(PeerSetTest, PeerInsertion) {
     hycast::Peer peer{};
     hycast::PeerSet  peerSet{};
-    peerSet.insert(peer);
+    hycast::Peer     replaced;
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS,
+            peerSet.tryInsert(peer, &replaced));
 }
 
 // Tests sending notices
@@ -120,8 +128,22 @@ TEST_F(PeerSetTest, SendProdNotice) {
 TEST_F(PeerSetTest, IncrementValue) {
     hycast::Peer     peer{};
     hycast::PeerSet  peerSet{};
-    peerSet.insert(peer);
+    hycast::Peer     replaced;
+    peerSet.tryInsert(peer, &replaced);
     peerSet.incValue(peer);
+}
+
+// Tests removing the worst peer from a 1-peer set
+TEST_F(PeerSetTest, PossiblyRemoveWorst1) {
+    hycast::PeerSet peerSet{1, std::chrono::seconds{0}};
+    hycast::Peer peer1{};
+    hycast::Peer worstPeer{};
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS,
+            peerSet.tryInsert(peer1, &worstPeer));
+    hycast::Peer peer2{};
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::REPLACED,
+            peerSet.tryInsert(peer2, &worstPeer));
+    EXPECT_EQ(peer1, worstPeer);
 }
 
 }  // namespace

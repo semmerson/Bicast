@@ -18,11 +18,13 @@
 #include <cstring>
 #include <gtest/gtest.h>
 #include <fcntl.h>
+#include <future>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <thread>
+#include <unistd.h>
 
 namespace {
 
@@ -233,6 +235,48 @@ TEST_F(SocketTest, ToString) {
     hycast::Socket s1(sock1);
     EXPECT_STREQ((std::string("SocketImpl{sock=") + std::to_string(sock1) + "}").data(),
             s1.to_string().data());
+}
+
+// Tests whether a read() on a socket returns when the remote end is closed.
+TEST_F(SocketTest, RemoteCloseCausesReadReturn) {
+    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
+    hycast::ServerSocket serverSock(serverSockAddr, numStreams);
+    struct Server {
+        hycast::ServerSocket serverSock;
+        hycast::Socket       sock;
+        Server(hycast::ServerSocket& serverSock) : serverSock{serverSock} {}
+        void run() {
+            sock = serverSock.accept();
+            uint32_t nbytes = sock.getSize();
+            EXPECT_EQ(0, nbytes);
+        }
+    } server{serverSock};
+    std::thread serverThread = std::thread([&server](){server.run();});
+    hycast::ClientSocket clientSock(serverSockAddr, numStreams);
+    clientSock.close();
+    serverThread.join();
+    EXPECT_TRUE(true);
+}
+
+// Tests whether an exception is thrown when a local socket is closed
+TEST_F(SocketTest, LocalCloseThrowsException) {
+    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
+    hycast::ServerSocket serverSock(serverSockAddr, numStreams);
+    struct Server {
+        hycast::ServerSocket serverSock;
+        hycast::Socket       sock;
+        Server(hycast::ServerSocket& serverSock) : serverSock{serverSock} {}
+        int run() {
+            sock = serverSock.accept();
+            sock.getSize();
+            return 0;
+        }
+    } server{serverSock};
+    auto future = std::async([&server](){server.run();});
+    hycast::ClientSocket clientSock(serverSockAddr, numStreams);
+    server.serverSock.close();
+    server.sock.close();
+    EXPECT_THROW(future.get(), std::system_error);
 }
 
 // Tests send() and recv()

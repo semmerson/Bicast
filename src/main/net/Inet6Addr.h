@@ -17,20 +17,22 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <netinet/in.h>
+#include <set>
 #include <sys/socket.h>
 
 namespace hycast {
 
 class Inet6Addr final : public IpAddr {
-    struct in6_addr addr;
+    struct in6_addr ipAddr;
 public:
     /**
      * Constructs from an IPv6 address.
      * @param[in] ipAddr  IPv6 address
      */
     explicit Inet6Addr(const struct in6_addr& ipAddr)
-     : addr(ipAddr) {}
+     : ipAddr(ipAddr) {}
     /**
      * Returns a string representation of the IPv6 address.
      * @return A string representation of the IPv6 address.
@@ -39,39 +41,16 @@ public:
      */
     std::string to_string() const;
     /**
-     * Gets the socket address corresponding to a port number.
-     * @param[in]  port      Port number
-     * @param[out] sockAddr  Resulting socket address
-     * @param[out] sockLen   Size of socket address in bytes
-     * @exceptionsafety Nothrow
+     * Gets the socket addresses corresponding to a port number.
+     * @param[in]  port Port number
+     * @return     Set of socket addresses
+     * @throws std::system_error if the IP address couldn't be obtained
+     * @throws std::system_error if required memory couldn't be allocated
+     * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    void getSockAddr(
-            const in_port_t  port,
-            struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const noexcept;
-    /**
-     * Connects a socket to the given port of this instance's endpoint.
-     * @param[in] sd    Socket descriptor
-     * @param[in] port  Port number in host byte order
-     * @throws std::system_error
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    void connect(
-            int       sd,
-            in_port_t port) const;
-    /**
-     * Binds a socket to the given port of this instance's endpoint.
-     * @param[in] sd    Socket descriptor
-     * @param[in] port  Port number in host byte order
-     * @throws std::system_error
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    void bind(
-            int       sd,
-            in_port_t port) const;
+    std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+            const in_port_t  port) const;
 };
 
 } // namespace

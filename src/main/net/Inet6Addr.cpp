@@ -22,20 +22,24 @@ namespace hycast {
 std::string Inet6Addr::to_string() const
 {
     char buf[INET6_ADDRSTRLEN];
-    return std::string(inet_ntop(AF_INET6, &addr.s6_addr, buf, sizeof(buf)));
+    return std::string(inet_ntop(AF_INET6, &ipAddr.s6_addr, buf, sizeof(buf)));
 }
 
-void Inet6Addr::getSockAddr(
-            const in_port_t  port,
-            struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const noexcept
+std::shared_ptr<std::set<struct sockaddr>> Inet6Addr::getSockAddr(
+            const in_port_t  port) const
 {
-    struct sockaddr_in6* const inAddr{reinterpret_cast<struct sockaddr_in6*>(&sockAddr)};
-    sockLen = sizeof(*inAddr);
-    (void)memset(static_cast<void*>(inAddr), 0, sockLen);
-    inAddr->sin6_family = AF_INET6;
-    inAddr->sin6_port = htons(port);
-    inAddr->sin6_addr = addr;
+    struct sockaddr sockAddr = {};
+    struct sockaddr_in6* const addr =
+            reinterpret_cast<struct sockaddr_in6*>(&sockAddr);
+    addr->sin6_family = AF_INET6;
+    addr->sin6_port = htons(port);
+    addr->sin6_addr = ipAddr;
+    auto set = new std::set<struct sockaddr>();
+    if (set == nullptr)
+        throw std::system_error(errno, std::system_category(),
+                "Couldn't allocate set for socket address");
+    set->insert(sockAddr);
+    return std::shared_ptr<std::set<struct sockaddr>>{set};
 }
 
 } // namespace

@@ -23,18 +23,32 @@ class PeerSetImpl; // Forward declaration
 class PeerSet final {
     std::shared_ptr<PeerSetImpl> pImpl;
 public:
+    typedef enum {
+        FAILURE,
+        SUCCESS,
+        REPLACED
+    } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] maxPeers  Maximum number of peers
+     * @param[in] maxPeers     Maximum number of peers
+     * @param[in] minDuration  Required duration before the worst-performing
+     *                         peer may be replaced
      */
-    PeerSet(unsigned maxPeers = 8);
+    PeerSet(
+            unsigned              maxPeers = 8,
+            std::chrono::seconds  minDuration = std::chrono::seconds{60});
     /**
-     * Inserts a peer.
-     * @param[in] peer  Peer to be inserted
+     * Tries to insert a peer.
+     * @param[in]  candidate Candidate peer
+     * @param[out] worst     Replaced, worst-performing peer
+     * @return The status of the attempted insertion. `*worst` is set if the
+     *         returned status is `REPLACED`.
      * @exceptionsafety Strong guarantee
-     * @threadsafety    Compatible but not safe
+     * @threadsafety    Safe
      */
-    void insert(Peer& peer) const;
+    InsertStatus tryInsert(
+            Peer& candidate,
+            Peer* worst) const;
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo  Product information
@@ -55,7 +69,7 @@ public:
      * Increments the value of a peer.
      * @param[in] peer  Peer to have its value incremented
      */
-    void incValue(const Peer& peer);
+    void incValue(const Peer& peer) const;
 };
 
 } // namespace

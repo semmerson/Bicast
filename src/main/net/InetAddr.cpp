@@ -46,12 +46,10 @@ std::string InetAddr::to_string() const
     return pImpl->to_string();
 }
 
-void InetAddr::getSockAddr(
-        const in_port_t  port,
-        struct sockaddr& sockAddr,
-        socklen_t&       sockLen) const
+std::shared_ptr<std::set<struct sockaddr>> InetAddr::getSockAddr(
+        const in_port_t  port) const
 {
-    return pImpl->getSockAddr(port, sockAddr, sockLen);
+    return pImpl->getSockAddr(port);
 }
 
 } // namespace

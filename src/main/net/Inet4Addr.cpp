@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <errno.h>
+#include <stdexcept>
 #include <sys/socket.h>
 #include <system_error>
 
@@ -22,20 +23,24 @@ namespace hycast {
 std::string Inet4Addr::to_string() const
 {
     char buf[INET_ADDRSTRLEN];
-    return std::string(inet_ntop(AF_INET, &addr, buf, sizeof(buf)));
+    return std::string(inet_ntop(AF_INET, &ipAddr, buf, sizeof(buf)));
 }
 
-void Inet4Addr::getSockAddr(
-            const in_port_t  port,
-            struct sockaddr& sockAddr,
-            socklen_t&       sockLen) const noexcept
+std::shared_ptr<std::set<struct sockaddr>> Inet4Addr::getSockAddr(
+            const in_port_t  port) const
 {
-    struct sockaddr_in* const inAddr{reinterpret_cast<struct sockaddr_in*>(&sockAddr)};
-    sockLen = sizeof(*inAddr);
-    (void)memset(static_cast<void*>(inAddr), 0, sockLen);
-    inAddr->sin_family = AF_INET;
-    inAddr->sin_port = htons(port);
-    inAddr->sin_addr.s_addr = addr;
+    struct sockaddr sockAddr = {};
+    struct sockaddr_in* const addr =
+            reinterpret_cast<struct sockaddr_in*>(&sockAddr);
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr = ipAddr;
+    auto set = new std::set<struct sockaddr>();
+    if (set == nullptr)
+        throw std::system_error(errno, std::system_category(),
+                "Couldn't allocate set for socket address");
+    set->insert(sockAddr);
+    return std::shared_ptr<std::set<struct sockaddr>>{set};
 }
 
 } // namespace

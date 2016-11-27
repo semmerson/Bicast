@@ -107,7 +107,7 @@ public:
             const int      sd,
             const unsigned numStreams);
     /**
-     * Destroys an instance. Closes the underlying socket.
+     * Destroys an instance. Closes the underlying BSD socket.
      * @exceptionsafety Nothrow
      */
     ~SocketImpl();
@@ -223,6 +223,12 @@ public:
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void discard();
+    /**
+     * Closes the underlying BSD socket.
+     * @exceptionsafety Nothrow
+     * @threadsafety    Compatible but not safe
+     */
+    void close();
 };
 
 } // namespace

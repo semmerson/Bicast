@@ -21,9 +21,6 @@ ClientSocketImpl::ClientSocketImpl(
         const uint16_t      numStreams)
     : SocketImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
 {
-    if (sock == -1)
-        throw std::system_error(errno, std::system_category(),
-                "socket() failure");
     addr.connect(sock);
 }
 

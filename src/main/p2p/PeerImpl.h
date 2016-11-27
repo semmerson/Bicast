@@ -71,9 +71,7 @@ public:
      */
     PeerImpl();
     /**
-     * Constructs from a peer, a socket, and a protocol version. Immediately
-     * starts receiving objects from the socket and passing them to the
-     * appropriate peer methods.
+     * Constructs from a peer, a socket, and a protocol version.
      * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
      *                         constructed instance.
      * @param[in,out] sock     Socket
@@ -153,7 +151,7 @@ public:
      * @threadsafety    Safe
      */
     bool operator<(const PeerImpl& that) const noexcept {
-        return this < &that;
+        return this < &that; // Every instance is unique
     }
     /**
      * Returns the hash code of this instance.

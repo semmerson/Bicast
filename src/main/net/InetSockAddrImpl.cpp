@@ -12,6 +12,7 @@
 #include "InetSockAddrImpl.h"
 
 #include <arpa/inet.h>
+#include <cstring>
 #include <functional>
 #include <sys/socket.h>
 #include <system_error>
@@ -64,26 +65,24 @@ std::string InetSockAddrImpl::to_string() const
 
 void InetSockAddrImpl::connect(const int sd) const
 {
-    struct sockaddr sockAddr;
-    socklen_t       sockLen;
-    inetAddr.getSockAddr(port, sockAddr, sockLen);
-    int status = ::connect(sd, &sockAddr, sockLen);
-    if (status)
-        throw std::system_error(errno, std::system_category(),
-                "connect() failure: socket=" + std::to_string(sd) +
-                ", addr=" + to_string());
+    auto set = inetAddr.getSockAddr(port).get();
+    for (auto sockAddr : *set)
+        if (::connect(sd, &sockAddr, sizeof(sockAddr)) == 0)
+            return;
+    throw std::system_error(errno, std::system_category(),
+            "connect() failure: socket=" + std::to_string(sd) +
+            ", addr=" + to_string());
 }
 
 void InetSockAddrImpl::bind(int sd) const
 {
-    struct sockaddr sockAddr;
-    socklen_t       sockLen;
-    inetAddr.getSockAddr(port, sockAddr, sockLen);
-    int status = ::bind(sd, &sockAddr, sockLen);
-    if (status)
-        throw std::system_error(errno, std::system_category(),
-                "bind() failure: socket=" + std::to_string(sd) +
-                ", addr=" + to_string());
+    auto set = inetAddr.getSockAddr(port).get();
+    for (auto sockAddr : *set)
+        if (::bind(sd, &sockAddr, sizeof(sockAddr)) == 0)
+            return;
+    throw std::system_error(errno, std::system_category(),
+            "bind() failure: socket=" + std::to_string(sd) +
+            ", addr=" + to_string());
 }
 
 } // namespace

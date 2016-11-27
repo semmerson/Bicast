@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 
 namespace hycast {
 
