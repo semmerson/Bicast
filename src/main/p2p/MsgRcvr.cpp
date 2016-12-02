@@ -44,4 +44,4 @@ void MsgRcvr::recvData(LatentChunk chunk, Peer& peer) const
     pImpl->recvData(chunk, peer);
 }
 
-}
+} // namespace
