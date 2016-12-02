@@ -9,22 +9,22 @@
  * @author: Steven R. Emmerson
  */
 
-#include <Peer.h>
-#include <PeerImpl.h>
+#include "Peer.h"
+#include "PeerImpl.h"
 
 namespace hycast {
 
 Peer::Peer()
-    : pImpl(new PeerImpl())
+    : pImpl(new PeerImpl(this))
 {}
 
 Peer::Peer(
-        PeerMgr& peerMgr,
+        MsgRcvr& msgRcvr,
         Socket&  sock)
-    : pImpl(new PeerImpl(peerMgr, sock, *this))
+    : pImpl(new PeerImpl(this, msgRcvr, sock))
 {}
 
-void Peer::runReceiver()
+void Peer::runReceiver() const
 {
     pImpl->runReceiver();
 }
@@ -57,6 +57,11 @@ void Peer::sendData(const ActualChunk& chunk) const
 bool Peer::operator ==(const Peer& that) const noexcept
 {
     return *pImpl.get() == *that.pImpl.get();
+}
+
+bool Peer::operator !=(const Peer& that) const noexcept
+{
+    return *pImpl.get() != *that.pImpl.get();
 }
 
 bool Peer::operator <(const Peer& that) const noexcept

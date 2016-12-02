@@ -42,7 +42,7 @@ void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
     pImpl->sendNotice(chunkInfo);
 }
 
-void PeerSet::incValue(const Peer& peer) const
+void PeerSet::incValue(Peer& peer) const
 {
     pImpl->incValue(peer);
 }

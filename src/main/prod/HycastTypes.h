@@ -1,5 +1,5 @@
 /**
- * This file defines types common to the Hycast package.
+ * This file defines primitive types common to the Hycast package.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for

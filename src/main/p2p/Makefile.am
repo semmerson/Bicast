@@ -19,10 +19,12 @@ lib_la_SOURCES 	= \
 	PeerImpl.cpp PeerImpl.h \
 	Peer.cpp Peer.h \
 	PeerMgr.h \
+	MsgRcvrImpl.cpp MsgRcvrImpl.h \
+	MsgRcvr.cpp MsgRcvr.h \
 	MapOfLists.cpp MapOfLists.h \
 	PeerSetImpl.cpp PeerSetImpl.h \
 	PeerSet.cpp PeerSet.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
-lib_la_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../net -I$(srcdir)/../prod
+AM_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../net -I$(srcdir)/../prod

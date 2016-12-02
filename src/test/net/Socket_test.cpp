@@ -15,6 +15,7 @@
 #include "Socket.h"
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <fcntl.h>
@@ -258,7 +259,7 @@ TEST_F(SocketTest, RemoteCloseCausesReadReturn) {
     EXPECT_TRUE(true);
 }
 
-// Tests whether an exception is thrown when a local socket is closed
+// Tests whether an exception is thrown when the local socket is closed
 TEST_F(SocketTest, LocalCloseThrowsException) {
     hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
     hycast::ServerSocket serverSock(serverSockAddr, numStreams);
@@ -272,12 +273,46 @@ TEST_F(SocketTest, LocalCloseThrowsException) {
             return 0;
         }
     } server{serverSock};
-    auto future = std::async([&server](){server.run();});
+    auto future = std::async([&server](){return server.run();});
     hycast::ClientSocket clientSock(serverSockAddr, numStreams);
     server.serverSock.close();
     server.sock.close();
     EXPECT_THROW(future.get(), std::system_error);
 }
+
+#if 0
+// Tests clean closing of receive socket
+TEST_F(SocketTest, CleanReceiveClose) {
+    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
+    hycast::ServerSocket serverSock(serverSockAddr, numStreams);
+    struct Server {
+        hycast::ServerSocket serverSock;
+        hycast::Socket       sock;
+        std::mutex           mutex;
+        Server(hycast::ServerSocket& serverSock)
+            : serverSock{serverSock}
+            , sock{}
+            , mutex{}
+        {}
+        int run() {
+            mutex.lock();
+            sock = serverSock.accept();
+            mutex.unlock();
+            sock.getSize();
+            return 0;
+        }
+    } server{serverSock};
+    server.mutex.lock();
+    auto future = std::async(std::launch::async,
+            [&server]{ return server.run(); });
+    server.mutex.unlock();
+    hycast::ClientSocket clientSock(serverSockAddr, numStreams);
+    server.mutex.lock();
+    ::sleep(1);
+    server.sock.close();
+    EXPECT_EQ(0, future.get());
+}
+#endif
 
 // Tests send() and recv()
 TEST_F(SocketTest, SendRecv) {

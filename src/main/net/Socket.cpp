@@ -52,12 +52,12 @@ bool Socket::operator ==(const Socket& that) const noexcept
     return *pImpl.get() == *that.pImpl.get();
 }
 
-unsigned Socket::getStreamId()
+unsigned Socket::getStreamId() const
 {
     return pImpl->getStreamId();
 }
 
-uint32_t Socket::getSize()
+uint32_t Socket::getSize() const
 {
     return pImpl->getSize();
 }
@@ -70,7 +70,7 @@ std::string Socket::to_string() const
 void Socket::send(
         const unsigned streamId,
         const void*    msg,
-        const size_t   len)
+        const size_t   len) const
 {
     pImpl->send(streamId, msg, len);
 }
@@ -78,7 +78,7 @@ void Socket::send(
 void Socket::sendv(
         const unsigned streamId,
         struct iovec*  iovec,
-        const int      iovcnt)
+        const int      iovcnt) const
 {
     pImpl->sendv(streamId, iovec, iovcnt);
 }
@@ -86,7 +86,7 @@ void Socket::sendv(
 void Socket::recv(
         void*        msg,
         const size_t len,
-        const int    flags)
+        const int    flags) const
 {
     pImpl->recv(msg, len, flags);
 }
@@ -94,22 +94,22 @@ void Socket::recv(
 void Socket::recvv(
         struct iovec* iovec,
         const int     iovcnt,
-        const int     flags)
+        const int     flags) const
 {
     pImpl->recvv(iovec, iovcnt, flags);
 }
 
-bool Socket::hasMessage()
+bool Socket::hasMessage() const
 {
     return pImpl->hasMessage();
 }
 
-void Socket::discard()
+void Socket::discard() const
 {
     pImpl->discard();
 }
 
-void Socket::close()
+void Socket::close() const
 {
     pImpl->close();
 }

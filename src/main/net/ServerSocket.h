@@ -34,7 +34,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Unsafe but compatible
      */
-    Socket accept();
+    Socket accept() const;
 };
 
 } // namespace

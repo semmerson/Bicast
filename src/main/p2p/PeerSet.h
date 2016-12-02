@@ -42,13 +42,13 @@ public:
      * @param[in]  candidate Candidate peer
      * @param[out] worst     Replaced, worst-performing peer
      * @return The status of the attempted insertion. `*worst` is set if the
-     *         returned status is `REPLACED`.
+     *         returned status is `REPLACED` and `worst != nullptr`.
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
     InsertStatus tryInsert(
             Peer& candidate,
-            Peer* worst) const;
+            Peer* worst = nullptr) const;
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo  Product information
@@ -69,7 +69,7 @@ public:
      * Increments the value of a peer.
      * @param[in] peer  Peer to have its value incremented
      */
-    void incValue(const Peer& peer) const;
+    void incValue(Peer& peer) const;
 };
 
 } // namespace

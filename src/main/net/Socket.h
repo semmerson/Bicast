@@ -89,7 +89,7 @@ public:
     void send(
             const unsigned streamId,
             const void*    msg,
-            const size_t   len);
+            const size_t   len) const;
     /**
      * Sends a message.
      * @param[in] streamId  SCTP stream number
@@ -99,7 +99,7 @@ public:
     void sendv(
             const unsigned streamId,
             struct iovec*  iovec,
-            const int      iovcnt);
+            const int      iovcnt) const;
     /**
      * Returns the SCTP stream number of the current message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
@@ -107,7 +107,7 @@ public:
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      */
-    unsigned getStreamId();
+    unsigned getStreamId() const;
     /**
      * Returns the size, in bytes, of the current SCTP message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
@@ -116,7 +116,7 @@ public:
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      */
-    uint32_t getSize();
+    uint32_t getSize() const;
     /**
      * Receives a message.
      * @param[out] msg     Receive buffer
@@ -131,7 +131,7 @@ public:
     void recv(
             void*        msg,
             const size_t len,
-            const int    flags = 0);
+            const int    flags = 0) const;
     /**
      * Receives a message.
      * @param[in] iovec     Vector comprising message to receive
@@ -147,25 +147,25 @@ public:
     void recvv(
             struct iovec*  iovec,
             const int      iovcnt,
-            const int      flags = 0);
+            const int      flags = 0) const;
     /**
      * Indicates if this instance has a current message.
      * @retval true   Yes
      * @retval false  No
      */
-    bool hasMessage();
+    bool hasMessage() const;
     /**
      * Discards the current message.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Thread-compatible but not thread-safe
      */
-    void discard();
+    void discard() const;
     /**
      * Closes the underlying BSD socket.
      * @exceptionsafety Nothrow
      * @threadsafety    Compatible but not safe
      */
-    void close();
+    void close() const;
 };
 
 } // namespace

@@ -14,7 +14,6 @@
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
-#include "PeerMgr.h"
 #include "ProdInfo.h"
 #include "Socket.h"
 
@@ -24,9 +23,10 @@
 namespace hycast {
 
 class PeerImpl; // Forward declaration
+class MsgRcvr; // Forward declaration
 
 class Peer final {
-    std::shared_ptr<PeerImpl> pImpl;
+    std::shared_ptr<PeerImpl> pImpl; // `pImpl` idiom
 public:
     /**
      * Constructs from nothing. Any attempt to use the resulting instance will
@@ -34,16 +34,14 @@ public:
      */
     Peer();
     /**
-     * Constructs from a peer manager and a socket. Doesn't receive anything
-     * until `runReceiver()` is called.
-     * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
-     *                         constructed instance.
+     * Constructs from an object to receive messages from the remote peer and a
+     * socket. Doesn't receive anything until `runReceiver()` is called.
+     * @param[in,out] msgRcvr  Object to receive messages from the remote peer
      * @param[in,out] sock     Socket
-     * @param[in]     version  Protocol version
      * @see runReceiver()
      */
     Peer(
-            PeerMgr& peerMgr,
+            MsgRcvr& msgRcvr,
             Socket&  sock);
     /**
      * Returns the hash code of this instance.
@@ -67,6 +65,12 @@ public:
      */
     bool operator==(const Peer& that) const noexcept;
     /**
+     * Indicates if this instance is not equal to another.
+     * @param[in] that  The other instance
+     * @return `true` iff this instance is not equal to the other
+     */
+    bool operator!=(const Peer& that) const noexcept;
+    /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket
      * is closed or an exception is thrown.
@@ -77,7 +81,7 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Thread-compatible but not thread-safe
      */
-    void runReceiver();
+    void runReceiver() const;
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information

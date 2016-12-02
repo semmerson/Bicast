@@ -23,7 +23,7 @@ ServerSocket::ServerSocket(
 {
 }
 
-Socket ServerSocket::accept()
+Socket ServerSocket::accept() const
 {
     return Socket((static_cast<ServerSocketImpl*>(pImpl.get()))->accept());
 }

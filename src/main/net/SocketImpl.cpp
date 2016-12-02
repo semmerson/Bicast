@@ -34,9 +34,9 @@ SocketImpl::SocketImpl()
 }
 
 SocketImpl::SocketImpl(
-        const int      sd,
+        const int      sck,
         const unsigned numStreams)
-    : sock(sd),
+    : sock(sck),
       streamId(0),
       size(0),
       haveCurrMsg(false),
@@ -44,27 +44,28 @@ SocketImpl::SocketImpl(
       readMutex(),
       writeMutex()
 {
-    if (sock < 0)
-        throw std::invalid_argument("Invalid socket: " + std::to_string(sock));
+    int sd = sock.load();
+    if (sd < 0)
+        throw std::invalid_argument("Invalid socket: " + std::to_string(sd));
     if (numStreams > UINT16_MAX)
         throw std::invalid_argument("Invalid number of streams: " +
                 std::to_string(numStreams));
     struct sctp_event_subscribe events = {0};
     events.sctp_data_io_event = 1;
-    int status = setsockopt(sock, IPPROTO_SCTP, SCTP_EVENTS, &events,
+    int status = setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
             sizeof(events));
     if (status)
         throw std::system_error(errno, std::system_category(),
                 "setsockopt() failure: Couldn't subscribe to SCTP data I/O "
-                "events: sock=" + std::to_string(sock));
+                "events: sock=" + std::to_string(sd));
     struct sctp_initmsg sinit = {0};
     sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
-    status = setsockopt(sock, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
+    status = setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
             sizeof(sinit));
     if (status)
         throw std::system_error(errno, std::system_category(),
                 "setsockopt() failure: Couldn't configure number of SCTP "
-                "streams: sock=" + std::to_string(sock) + ", numStreams=" +
+                "streams: sock=" + std::to_string(sd) + ", numStreams=" +
                 std::to_string(numStreams));
 }
 
@@ -89,14 +90,15 @@ void SocketImpl::checkIoStatus(
         const size_t      expected,
         const ssize_t     actual) const
 {
+    int sd = sock.load();
     if (actual < 0)
         throw std::system_error(errno, std::system_category(),
-                std::string(funcName) + " failure: sock=" + std::to_string(sock)
+                std::string(funcName) + " failure: sock=" + std::to_string(sd)
                 + ", expected=" + std::to_string(expected) + ", errno=" +
                 std::to_string(errno));
     if (expected != 0 && expected != (size_t)actual)
         throw std::system_error(EIO, std::system_category(),
-                std::string(funcName) + " failure: sock=" + std::to_string(sock)
+                std::string(funcName) + " failure: sock=" + std::to_string(sd)
                 + ", expected=" + std::to_string(expected) + ", actual=" +
                 std::to_string(actual));
 }
@@ -121,7 +123,8 @@ void SocketImpl::send(
     int sendStatus;
     {
         std::lock_guard<std::mutex> lock(writeMutex);
-        sendStatus = sctp_send(sock, msg, len, &sinfo, MSG_EOR);
+        int sd = sock.load();
+        sendStatus = sctp_send(sd, msg, len, &sinfo, MSG_EOR);
     }
     checkIoStatus("sctp_send()", len, sendStatus);
 }
@@ -148,7 +151,8 @@ void SocketImpl::sendv(
     ssize_t sendStatus;
     {
         std::lock_guard<std::mutex> lock(writeMutex);
-        sendStatus = sendmsg(sock, &msghdr, MSG_EOR);
+        int sd = sock.load();
+        sendStatus = sendmsg(sd, &msghdr, MSG_EOR);
     }
     checkIoStatus("sendmsg()", numExpected, sendStatus);
 }
@@ -169,7 +173,8 @@ void SocketImpl::getNextMsgInfo()
          * number of bytes in the message -- even if MSG_PEEK is specified).
          */
         std::lock_guard<std::mutex> lock(readMutex);
-        numRecvd = sctp_recvmsg(sock, msg, sizeof(msg), nullptr, &socklen,
+        int sd = sock.load();
+        numRecvd = sctp_recvmsg(sd, msg, sizeof(msg), nullptr, &socklen,
                 &sinfo, &flags);
     }
     if (numRecvd == 0 ||
@@ -218,7 +223,8 @@ void SocketImpl::recv(
     {
         int tmpFlags = flags;
         std::lock_guard<std::mutex> lock(readMutex);
-        numRead = sctp_recvmsg(sock, msg, len, (struct sockaddr*)nullptr,
+        int sd = sock.load();
+        numRead = sctp_recvmsg(sd, msg, len, (struct sockaddr*)nullptr,
                 &socklen, &sinfo, &tmpFlags);
     }
     checkIoStatus("sctp_recvmsg()", len, numRead);
@@ -237,7 +243,8 @@ void SocketImpl::recvv(
     ssize_t numRead;
     {
         std::lock_guard<std::mutex> lock(readMutex);
-        numRead = recvmsg(sock, &msghdr, flags);
+        int sd = sock.load();
+        numRead = recvmsg(sd, &msghdr, flags);
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
     haveCurrMsg = (flags & MSG_PEEK) != 0;
@@ -258,8 +265,9 @@ void SocketImpl::discard()
 
 void SocketImpl::close()
 {
-    if (sock >= 0) {
-        (void)::close(sock);
+    int sd = sock.load();
+    if (sd >= 0) {
+        (void)::close(sd);
         sock = -1;
     }
 }

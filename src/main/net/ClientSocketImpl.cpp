@@ -21,7 +21,7 @@ ClientSocketImpl::ClientSocketImpl(
         const uint16_t      numStreams)
     : SocketImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
 {
-    addr.connect(sock);
+    addr.connect(sock.load());
 }
 
 }

@@ -1,57 +1,66 @@
 /**
- * This file declares an interface for a peer manager.
+ * This file declares the interface for an object that receives messages from a
+ * remote peer.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Peer.h
+ *   @file: MsgRcvr.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef PEERMGR_H_
-#define PEERMGR_H_
+#ifndef MSGRCVR_H_
+#define MSGRCVR_H_
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 
+#include <memory>
+
 namespace hycast {
 
-/*
- * `Peer` is forward declared to break the mutual dependence of the `Peer` and
- * `PeerMgr` header-files: each requires that the other be declared.
- */
-class Peer;
+class MsgRcvrImpl; // Forward declaration
 
-class PeerMgr {
+class MsgRcvr final {
+    std::shared_ptr<MsgRcvrImpl> pImpl; // `pImpl` idiom
 public:
-    virtual ~PeerMgr() {};
+    /**
+     * Constructs from nothing.
+     */
+    MsgRcvr() =default;
+    /**
+     * Constructs from an implementation.
+     * @param[in,out] impl  The implementation
+     */
+    MsgRcvr(MsgRcvrImpl* impl);
     /**
      * Receives a notice about a new product.
      * @param[in]     info  Information about the product
      * @param[in,out] peer  Peer that received the notice
      */
-    virtual void recvNotice(const ProdInfo& info, Peer& peer) =0;
+    void recvNotice(const ProdInfo& info, Peer& peer) const;
     /**
      * Receives a notice about a chunk-of-data.
      * @param[in]     info  Information about the chunk
      * @param[in,out] peer  Peer that received the notice
      */
-    virtual void recvNotice(const ChunkInfo& info, Peer& peer) =0;
+    void recvNotice(const ChunkInfo& info, Peer& peer) const;
     /**
      * Receives a request for information about a product.
      * @param[in]     index Index of the product
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ProdIndex& index, Peer& peer) =0;
+    void recvRequest(const ProdIndex& index, Peer& peer) const;
     /**
      * Receives a request for a chunk-of-data.
      * @param[in]     info  Information on the chunk
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
+    void recvRequest(const ChunkInfo& info, Peer& peer) const;
     /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
@@ -63,9 +72,9 @@ public:
      * because `LatentChunk` uses the pImpl idiom. See
      * `PeerConnectionImpl::runReceiver`.
      */
-    virtual void recvData(LatentChunk chunk, Peer& peer) =0;
+    void recvData(LatentChunk chunk, Peer& peer) const;
 };
 
 } // namespace
 
-#endif /* PEERMGR_H_ */
+#endif /* MSGRCVR_H_ */

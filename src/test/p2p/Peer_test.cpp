@@ -15,7 +15,8 @@
 #include "ClientSocket.h"
 #include "HycastTypes.h"
 #include "InetSockAddr.h"
-#include "PeerMgr.h"
+#include "MsgRcvr.h"
+#include "MsgRcvrImpl.h"
 #include "ProdInfo.h"
 #include "ServerSocket.h"
 
@@ -65,10 +66,10 @@ protected:
         // before the destructor).
     }
 
-    class TestPeerMgr final : public hycast::PeerMgr {
+    class TestMsgRcvr final : public hycast::MsgRcvrImpl {
         PeerTest* peerTest;
     public:
-        TestPeerMgr(PeerTest& peerTest)
+        TestMsgRcvr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodInfo == info);
@@ -90,19 +91,19 @@ protected:
         }
     };
 
-    void runTestReceiver(hycast::ServerSocket serverSock)
+    void runTestReceiver(const hycast::ServerSocket& serverSock)
     {
         hycast::Socket sock{serverSock.accept()};
-        TestPeerMgr peerMgr{*this};
-        hycast::Peer peer{peerMgr, sock};
+        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        hycast::Peer peer{msgRcvr, sock};
         peer.runReceiver();
     }
 
     void runTestSender()
     {
         hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
-        TestPeerMgr peerMgr{*this};
-        hycast::Peer peer(peerMgr, sock);
+        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        hycast::Peer peer(msgRcvr, sock);
         peer.sendNotice(prodInfo);
         peer.sendNotice(chunkInfo);
         peer.sendRequest(prodIndex);
@@ -115,7 +116,7 @@ protected:
     {
         // Server socket must exist before client connects
         hycast::ServerSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
-        receiverThread = std::thread(&PeerTest::runTestReceiver, this, sock);
+        receiverThread = std::thread([=]{ this->runTestReceiver(sock); });
     }
 
     void startTestSender()
@@ -126,7 +127,7 @@ protected:
     void runPerfReceiver(hycast::ServerSocket serverSock)
     {
         hycast::Socket sock{serverSock.accept()};
-        class PerfPeerMgr final : public hycast::PeerMgr {
+        class PerfMsgRcvr final : public hycast::MsgRcvrImpl {
         public:
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
             void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
@@ -135,16 +136,17 @@ protected:
             void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
                 chunk.discard();
             }
-        } peerMgr{};
-        hycast::Peer peer{peerMgr, sock};
+        };
+        hycast::MsgRcvr msgRcvr{new PerfMsgRcvr{}};
+        hycast::Peer peer{msgRcvr, sock};
         peer.runReceiver();
     }
 
     void runPerfSender()
     {
         hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
-        TestPeerMgr peerMgr{*this};
-        hycast::Peer peer(peerMgr, sock);
+        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;
         hycast::ChunkInfo chunkInfo(2, 3);
         for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;

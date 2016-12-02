@@ -16,20 +16,21 @@
 #include <cerrno>
 #include <cstdint>
 #include <exception>
+#include <pthread.h>
 #include <stdexcept>
 
 namespace hycast {
 
-bool isLocked(std::recursive_mutex& mutex)
+bool isLocked(std::mutex& mutex)
 {
     if (!mutex.try_lock())
-        return false;
+        return true;
     mutex.unlock();
-    return true;
+    return false;
 }
 
-bool PeerSetImpl::PeerActionQ::push(
-        std::shared_ptr<PeerAction> action,
+bool PeerSetImpl::SendQ::push(
+        std::shared_ptr<SendAction> action,
         const TimeRes&              maxResideTime)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
@@ -43,21 +44,7 @@ bool PeerSetImpl::PeerActionQ::push(
     return true;
 }
 
-void PeerSetImpl::PeerActionQ::sendNotice(const ProdInfo& prodInfo,
-        const TimeRes& maxResideTime)
-{
-    std::shared_ptr<SendProdNotice> action{new SendProdNotice(prodInfo)};
-    push(action, maxResideTime);
-}
-
-void PeerSetImpl::PeerActionQ::sendNotice(const ChunkInfo& chunkInfo,
-        const TimeRes& maxResideTime)
-{
-    std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(chunkInfo)};
-    push(action, maxResideTime);
-}
-
-std::shared_ptr<PeerSetImpl::PeerAction> PeerSetImpl::PeerActionQ::pop()
+std::shared_ptr<PeerSetImpl::SendAction> PeerSetImpl::SendQ::pop()
 {
     std::unique_lock<decltype(mutex)> lock{mutex};
     while (queue.empty())
@@ -68,55 +55,37 @@ std::shared_ptr<PeerSetImpl::PeerAction> PeerSetImpl::PeerActionQ::pop()
     return action;
 }
 
-void PeerSetImpl::PeerActionQ::terminate()
+void PeerSetImpl::SendQ::terminate()
 {
     std::unique_lock<decltype(mutex)> lock{mutex};
     while (!queue.empty())
         queue.pop();
-    queue.push(std::shared_ptr<PeerAction>(new TerminatePeer()));
+    queue.push(std::shared_ptr<SendAction>(new TerminatePeer()));
     cond.notify_one();
 }
 
-PeerSetImpl::PeerSetImpl(
-        const unsigned maxPeers,
-        const TimeRes  minDuration)
-    : maxPeers{maxPeers},
-      actionQs{},
-      values{4*maxPeers/3},
-      mutex{},
-      incValueEnabled{false},
-      whenEligible{},
-      eligibilityDuration{minDuration},
-      maxResideTime{minDuration*2}
+PeerSetImpl::PeerEntryImpl::~PeerEntryImpl()
 {
-    if (maxPeers == 0)
-        throw std::invalid_argument("Maximum number of peers can't be zero");
+    // Destructors must never throw an exception
+    try {
+        sendQ.terminate();
+        // Receiving code can handle cancellation
+        ::pthread_cancel(recvThread.native_handle());
+        sendThread.join();
+        recvThread.join();
+    }
+    catch (const std::exception& e) {
+        log_what(e);
+    }
+    catch (...) {
+    }
 }
 
-void PeerSetImpl::remove(const Peer& peer)
-{
-    assert(isLocked(mutex));
-    actionQs.erase(peer);
-    values.erase(peer);
-    // TODO: Call something to try adding another peer
-}
-
-void PeerSetImpl::terminate(const Peer& peer)
-{
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    auto iter = actionQs.find(peer);
-    if (iter != actionQs.end())
-        iter->second.terminate();
-    remove(peer);
-}
-
-void PeerSetImpl::processPeerActions(
-        const Peer&  peer,
-        PeerActionQ& actionQ)
+void PeerSetImpl::PeerEntryImpl::processSendQ()
 {
     try {
         for (;;) {
-            std::shared_ptr<PeerAction> action{actionQ.pop()};
+            std::shared_ptr<SendAction> action{sendQ.pop()};
             action->actUpon(peer);
             if (action->terminate())
                 break;
@@ -124,57 +93,67 @@ void PeerSetImpl::processPeerActions(
     }
     catch (const std::exception& e) {
         log_what(e); // Because end of thread
+        handleFailure(peer);
     }
-    terminate(peer);
 }
 
-void PeerSetImpl::runReceiver(const Peer& peer)
+void PeerSetImpl::PeerEntryImpl::runReceiver()
 {
     try {
         peer.runReceiver();
     }
     catch (const std::exception& e) {
         log_what(e); // Because end of thread
+        handleFailure(peer);
     }
-    terminate(peer);
 }
 
-void PeerSetImpl::insert(const Peer& peer)
+PeerSetImpl::PeerSetImpl(
+        const unsigned maxPeers,
+        const TimeRes  minDuration)
+    : peerEntries{}
+    , mutex{}
+    , whenEligible{}
+    , eligibilityDuration{minDuration}
+    , maxResideTime{minDuration*2}
+    , maxPeers{maxPeers}
+    , incValueEnabled{false}
+{
+    if (maxPeers == 0)
+        throw std::invalid_argument("Maximum number of peers can't be zero");
+}
+
+void PeerSetImpl::insert(Peer& peer)
 {
     assert(isLocked(mutex));
-    values[peer] = 0;
-    try {
-        auto iter = actionQs.emplace(peer, PeerActionQ()).first;
-        std::thread([&] { processPeerActions(iter->first, iter->second); })
-                .detach();
-        std::thread([&] { runReceiver(peer); }).detach();
-    }
-    catch (const std::exception& e) {
-        terminate(peer);
-        throw;
+    if (peerEntries.find(peer) == peerEntries.end()) {
+        PeerEntry entry(new PeerEntryImpl(peer, [=](Peer& p){ handleFailure(p); }));
+        peerEntries.emplace(peer, entry);
     }
 }
 
 Peer PeerSetImpl::removeWorstPeer()
 {
     assert(isLocked(mutex));
+    assert(peerEntries.size() > 0);
     Peer worstPeer{};
-    auto minValue = VALUE_MAX;
-    for (const auto& elt : values) {
-        if (elt.second < minValue) {
-            minValue = elt.second;
+    auto minValue = PeerEntryImpl::VALUE_MAX;
+    for (const auto& elt : peerEntries) {
+        auto value = elt.second->getValue();
+        if (value <= minValue) {
+            minValue = value;
             worstPeer = elt.first;
         }
     }
-    terminate(worstPeer);
+    peerEntries.erase(worstPeer);
     return worstPeer;
 }
 
 void PeerSetImpl::resetValues()
 {
     assert(isLocked(mutex));
-    for (auto& elt : values)
-        elt.second = 0;
+    for (auto& elt : peerEntries)
+        elt.second->resetValue();
 }
 
 void PeerSetImpl::setWhenEligible()
@@ -188,12 +167,12 @@ PeerSetImpl::InsertStatus PeerSetImpl::tryInsert(
         Peer* replaced)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
-    if (actionQs.find(candidate) != actionQs.end())
+    if (peerEntries.find(candidate) != peerEntries.end())
         return FAILURE; // Candidate peer is already a member
-    if (actionQs.size() < maxPeers) {
+    if (peerEntries.size() < maxPeers) {
         // Set not full. Just add the candidate peer
         insert(candidate);
-        if (actionQs.size() == maxPeers) {
+        if (peerEntries.size() == maxPeers) {
             incValueEnabled = true;
             setWhenEligible();
         }
@@ -201,7 +180,9 @@ PeerSetImpl::InsertStatus PeerSetImpl::tryInsert(
     }
     if (Clock::now() < whenEligible)
         return FAILURE; // Insufficient duration to determine worst peer
-    *replaced = removeWorstPeer();
+    Peer worst{removeWorstPeer()};
+    if (replaced)
+        *replaced = worst;
     insert(candidate);
     resetValues();
     setWhenEligible();
@@ -211,25 +192,33 @@ PeerSetImpl::InsertStatus PeerSetImpl::tryInsert(
 void PeerSetImpl::sendNotice(const ProdInfo& info)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
-    for (auto& peerEntry : actionQs)
-        peerEntry.second.sendNotice(info, maxResideTime);
+    std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
+    for (auto& elt : peerEntries)
+        elt.second->push(action, maxResideTime);
 }
 
 void PeerSetImpl::sendNotice(const ChunkInfo& info)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
-    for (auto& peerEntry : actionQs)
-        peerEntry.second.sendNotice(info, maxResideTime);
+    std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
+    for (auto& elt : peerEntries)
+        elt.second->push(action, maxResideTime);
 }
 
-void PeerSetImpl::incValue(const Peer& peer)
+void PeerSetImpl::incValue(Peer& peer)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
     if (incValueEnabled) {
-        auto iter = values.find(peer);
-        if (iter != values.end() && iter->second < VALUE_MAX)
-            ++iter->second;
+        auto iter = peerEntries.find(peer);
+        if (iter != peerEntries.end())
+            iter->second->incValue();
     }
+}
+
+void PeerSetImpl::handleFailure(Peer& peer)
+{
+    std::lock_guard<decltype(mutex)> lock{mutex};
+    peerEntries.erase(peer);
 }
 
 } // namespace

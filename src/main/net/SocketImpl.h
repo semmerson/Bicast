@@ -1,5 +1,5 @@
 /**
- * This file declares a RAII object for a socket.
+ * This file declares a RAII object for an SCTP socket.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -12,6 +12,7 @@
 #ifndef SOCKET_IMPL_H_
 #define SOCKET_IMPL_H_
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 /*
@@ -26,7 +27,7 @@ namespace hycast {
 
 class SocketImpl {
 protected:
-    int        sock;
+    std::atomic_int sock;
 private:
     unsigned   streamId;
     uint32_t   size;
@@ -126,7 +127,7 @@ public:
      * @exceptionsafety Nothrow
      */
     bool operator==(const SocketImpl& that) const noexcept {
-        return sock == that.sock;
+        return sock.load() == that.sock.load();
     }
     /**
      * Returns a string representation of this instance's socket.
@@ -136,7 +137,7 @@ public:
      * @threadsafety    Safe
      */
     std::string to_string() const {
-        return std::string("SocketImpl{sock=") + std::to_string(sock) + "}";
+        return std::string("SocketImpl{sock=") + std::to_string(sock.load()) + "}";
     }
     /**
      * Sends a message.

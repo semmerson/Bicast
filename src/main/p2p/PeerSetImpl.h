@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <map>
 #include <mutex>
@@ -31,23 +32,26 @@
 namespace hycast {
 
 /**
- * Indicates if a recursive mutex is locked by the current thread.
+ * Indicates if a mutex is locked by the current thread.
  * @param[in,out] mutex  The mutex
  * @return `true` iff the mutex is locked
  */
-bool isLocked(std::recursive_mutex& mutex);
+bool isLocked(std::mutex& mutex);
 
 class PeerSetImpl final {
     typedef std::chrono::seconds                               TimeRes;
     typedef std::chrono::time_point<std::chrono::steady_clock> Time;
     typedef std::chrono::steady_clock                          Clock;
 
-    class PeerAction {
+    /**
+     * An abstract base class for send-actions to be performed on a peer.
+     */
+    class SendAction {
         Time whenCreated;
     public:
-        PeerAction()
+        SendAction()
             : whenCreated{Clock::now()} {}
-        virtual ~PeerAction() =default;
+        virtual ~SendAction() =default;
         Time getCreateTime() const {
             return whenCreated;
         }
@@ -56,11 +60,14 @@ class PeerSetImpl final {
          * @param[in,out] peer  Peer to be acted upon
          * @return `true` iff processing should continue
          */
-        virtual void actUpon(const Peer& peer) const =0;
+        virtual void actUpon(Peer& peer) const =0;
         virtual bool terminate() const { return false; }
     };
 
-    class SendProdNotice final : public PeerAction {
+    /**
+     * A send-action notice of a new product.
+     */
+    class SendProdNotice final : public SendAction {
         ProdInfo info;
     public:
         SendProdNotice(const ProdInfo& info)
@@ -71,10 +78,13 @@ class PeerSetImpl final {
          * @exceptionsafety  Basic
          * @threadsafety     Compatible but not safe
          */
-        void actUpon(const Peer& peer) const { peer.sendNotice(info); }
+        void actUpon(Peer& peer) const { peer.sendNotice(info); }
     };
 
-    class SendChunkNotice final : public PeerAction {
+    /**
+     * A send-action notice of a new chunk-of-data.
+     */
+    class SendChunkNotice final : public SendAction {
         ChunkInfo info;
     public:
         SendChunkNotice(const ChunkInfo& info)
@@ -86,94 +96,141 @@ class PeerSetImpl final {
          * @exceptionsafety  Basic
          * @threadsafety     Compatible but not safe
          */
-        void actUpon(const Peer& peer) const { peer.sendNotice(info); }
+        void actUpon(Peer& peer) const { peer.sendNotice(info); }
     };
 
-    class TerminatePeer final : public PeerAction {
+    /**
+     * A send-action that terminates the peer.
+     */
+    class TerminatePeer final : public SendAction {
     public:
-        void actUpon(const Peer& peer) const {}
+        void actUpon(Peer& peer) const {}
         bool terminate() const { return true; }
     };
 
-    class PeerActionQ final {
-        std::queue<std::shared_ptr<PeerAction>>  queue;
+    /**
+     * A queue of send-actions to be performed on a peer.
+     */
+    class SendQ final {
+        std::queue<std::shared_ptr<SendAction>>  queue;
         std::mutex                               mutex;
         std::condition_variable                  cond;
-
     public:
-        PeerActionQ()
+        SendQ()
             : queue{},
               mutex{},
               cond{} {}
-        PeerActionQ(const PeerActionQ& that)
-            : queue{that.queue} {}
+        SendQ(const SendQ& that)
+            : queue{that.queue}
+        {}
         bool push(
-                std::shared_ptr<PeerAction> action,
-                const TimeRes&              maxResideTime);
-        void sendNotice(
-                const ProdInfo& prodInfo,
-                const TimeRes&  maxResideTime);
-        void sendNotice(
-                const ChunkInfo& chunkInfo,
-                const TimeRes&   maxResideTime);
-        PeerActionQ& operator =(const PeerActionQ& q) =delete;
-        std::shared_ptr<PeerAction> pop();
+                std::shared_ptr<SendAction> action,
+                const TimeRes&                maxResideTime);
+        SendQ& operator =(const SendQ& q) =delete;
+        std::shared_ptr<SendAction> pop();
         /**
-         * Clears the queue and adds an action that will terminate the
+         * Clears the queue and adds an send-action that will terminate the
          * associated peer.
          */
         void terminate();
     };
 
-    class PeerMap {
-        struct PeerEntryImpl {
-            PeerActionQ                  actionQ;
-            static const uint32_t        VALUE_MAX{UINT32_MAX};
-            mutable std::recursive_mutex mutex;
-            uint32_t                     value;
-            const TimeRes                maxResideTime;
-        };
-        typedef std::shared_ptr<PeerEntryImpl> PeerEntry;
-        std::unordered_map<Peer, PeerEntry>    map;
-        unsigned                               maxPeers;
+    /**
+     * The entry for an active peer.
+     */
+    class PeerEntryImpl {
+        SendQ                      sendQ;
+        Peer                       peer;
+        std::function<void(Peer&)> handleFailure;
+        uint32_t                   value;
+        std::thread                sendThread;
+        std::thread                recvThread;
+    public:
+        static const uint32_t VALUE_MAX{UINT32_MAX};
+        /**
+         * Constructs from the peer. Immediately starts receiving and sending.
+         * @param[in] peer  The peer
+         */
+        PeerEntryImpl(Peer& peer, std::function<void(Peer&)> handleFailure)
+            : sendQ{}
+            , peer{peer}
+            , handleFailure{handleFailure}
+            , value{0}
+            , sendThread{std::thread([=]{ processSendQ(); })}
+            , recvThread{std::thread([=]{ runReceiver(); })}
+        {}
+        /**
+         * Destroys.
+         */
+        ~PeerEntryImpl();
+        /**
+         * Prevents copy assignment and move assignment.
+         */
+        PeerEntryImpl& operator=(PeerEntryImpl& rhs) =delete;
+        PeerEntryImpl& operator=(PeerEntryImpl&& rhs) =delete;
+        /**
+         * Processes send-actions queued-up for a peer. Doesn't return until
+         * the sentinel send-action is seen or an exception is thrown.
+         */
+        void processSendQ();
+        /**
+         * Causes a peer to receive messages from its associated remote peer.
+         * Doesn't return until the remote peer disconnects or an exception is
+         * thrown.
+         */
+        void runReceiver();
+        /**
+         * Increments the value of the peer.
+         * @exceptionsafety Strong
+         * @threadsafety    Safe
+         */
+        void incValue()
+        {
+            if (value < VALUE_MAX)
+                ++value;
+        }
+        /**
+         * Returns the value of the peer.
+         * @return The value of the peer
+         */
+        uint32_t getValue() const
+        {
+            return value;
+        }
+        /**
+         * Resets the value of a peer.
+         * @exceptionsafety Nothrow
+         * @threadsafety    Compatible but not safe
+         */
+        void resetValue()
+        {
+            value = 0;
+        }
+        /**
+         * Adds a send-action to the send-action queue.
+         * @param[in] action         Send-action to be added
+         * @param[in] maxResideTime  Maximum residence time in the queue for
+         *                           send-actions
+         * @return
+         */
+        bool push(
+                std::shared_ptr<SendAction> action,
+                const TimeRes&              maxResideTime)
+        {
+            return sendQ.push(action, maxResideTime);
+        }
     };
 
-    unsigned                            maxPeers;
-    std::map<Peer, PeerActionQ>         actionQs;
-    static const uint32_t               VALUE_MAX{UINT32_MAX};
-    std::unordered_map<Peer, uint32_t>  values;
-    // Recursive because terminate() called while locked and unlocked
-    mutable std::recursive_mutex        mutex;
-    bool                                incValueEnabled;
+    typedef std::shared_ptr<PeerEntryImpl> PeerEntry;
+
+    std::unordered_map<Peer, PeerEntry> peerEntries;
+    mutable std::mutex                  mutex;
     Time                                whenEligible;
     const TimeRes                       eligibilityDuration;
     const TimeRes                       maxResideTime;
+    unsigned                            maxPeers;
+    bool                                incValueEnabled;
 
-    /**
-     * Removes a peer from the internal data structures.
-     * @param[in] peer  Peer to be removed
-     */
-    void remove(const Peer& peer);
-    /**
-     * Terminates a peer in the set of peers and removes it from the set.
-     * @param[in,out] peer  Peer to be terminated and removed
-     */
-    void terminate(const Peer& peer);
-    /**
-     * Processes actions queued-up for a peer.
-     * @param[in,out] peer     The peer
-     * @param[in,out] actionQ  The action queue
-     */
-    void processPeerActions(
-            const Peer&  peer,
-            PeerActionQ& actionQ);
-    /**
-     * Causes a peer to receive messages from its associated remote peer.
-     * Doesn't return until the remote peer disconnects or an exception is
-     * thrown, Calls remove() before returning.
-     * @param[in,out] peer  Peer to receive messages
-     */
-    void runReceiver(const Peer& peer);
     /**
      * Unconditionally inserts a peer. The peer immediately starts receiving
      * messages from its associated remote peer and is ready to send messages.
@@ -181,7 +238,7 @@ class PeerSetImpl final {
      * @exceptionsafety Strong guarantee
      * @threadsafety    Compatible but not safe
      */
-    void insert(const Peer& peer);
+    void insert(Peer& peer);
     /**
      * Sets the time-point when the worst performing peer may be removed from
      * the set of peers.
@@ -200,6 +257,11 @@ class PeerSetImpl final {
      * @threadsafety    Compatible but not safe
      */
     void resetValues();
+    /**
+     * Handles failure of a peer.
+     * @param[in] peer  The peer that failed
+     */
+    void handleFailure(Peer& peer);
 
 public:
     typedef enum {
@@ -251,7 +313,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    void incValue(const Peer& peer);
+    void incValue(Peer& peer);
 };
 
 } // namespace

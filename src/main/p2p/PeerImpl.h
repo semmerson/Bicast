@@ -15,7 +15,6 @@
 #include "ChunkChannel.h"
 #include "ChunkInfo.h"
 #include "VersionMsg.h"
-#include "PeerMgr.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "RegChannel.h"
@@ -24,8 +23,11 @@
 #include <cstddef>
 #include <functional>
 #include <thread>
+#include "MsgRcvr.h"
 
 namespace hycast {
+
+class Peer;
 
 class PeerImpl final {
     typedef enum {
@@ -44,7 +46,7 @@ class PeerImpl final {
     RegChannel<ProdIndex>  prodReqChan;
     RegChannel<ChunkInfo>  chunkReqChan;
     ChunkChannel           chunkChan;
-    PeerMgr*               peerMgr;
+    MsgRcvr                msgRcvr;
     Socket                 sock;
     Peer*                  peer;
 
@@ -66,20 +68,22 @@ class PeerImpl final {
 
 public:
     /**
-     * Constructs from nothing. Any attempt to use use resulting instance will
-     * throw an exception.
+     * Constructs from the containing peer object. Any attempt to use use the
+     * resulting instance will throw an exception.
+     * @param[in,out] peer  The containing peer object
      */
-    PeerImpl();
+    PeerImpl(Peer* peer);
     /**
-     * Constructs from a peer, a socket, and a protocol version.
-     * @param[in,out] peerMgr  Peer manager. Must exist for the duration of the
-     *                         constructed instance.
+     * Constructs from the containing peer object, an object to receive messages
+     * from the remote peer, and a socket.
+     * @param[in,out] peer     The containing peer object
+     * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
      */
     PeerImpl(
-            PeerMgr& peerMgr,
-            Socket&  sock,
-            Peer&    peer);
+            Peer*    peer,
+            MsgRcvr& msgRcvr,
+            Socket&  sock);
     /**
      * Returns the number of streams.
      */
@@ -142,6 +146,16 @@ public:
      */
     bool operator==(const PeerImpl& that) const noexcept {
         return this == &that; // Every instance is unique
+    }
+    /**
+     * Indicates if this instance doesn't equal another.
+     * @param[in] that  Other instance
+     * @return `true` iff this instance doesn't equal the other
+     * @execptionsafety Nothrow
+     * @threadsafety    Thread-safe
+     */
+    bool operator!=(const PeerImpl& that) const noexcept {
+        return this != &that; // Every instance is unique
     }
     /**
      * Indicates if this instance is less than another.
