@@ -16,6 +16,10 @@
 
 #include <gtest/gtest.h>
 
+namespace hycast {
+    template class MapOfLists<ChunkInfo, Peer>;
+}
+
 namespace {
 
 // The fixture for testing a map from chunk information to a list of peers

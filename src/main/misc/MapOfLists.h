@@ -44,7 +44,7 @@ public:
      * Constructs from the initial number of keys.
      * @param[in] numKeys  Initial number of keys
      */
-    MapOfLists(unsigned numKeys = 0);
+    explicit MapOfLists(unsigned numKeys = 0);
     /**
      * Adds a value to the list of values that have a particular key-of-data.
      * The list is ordered by insertion with the first added value at the front.

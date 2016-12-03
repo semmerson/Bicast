@@ -20,6 +20,7 @@ LT_INIT
 
 AC_CONFIG_FILES(Makefile
                 main/Makefile
+                main/misc/Makefile
                 main/net/Makefile
                 main/p2p/Makefile
                 main/prod/Makefile

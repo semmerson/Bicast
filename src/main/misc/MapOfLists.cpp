@@ -11,9 +11,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ChunkInfo.h"
 #include "MapOfLists.h"
-#include "Peer.h"
 
 namespace hycast {
 
@@ -63,7 +61,5 @@ void MapOfLists<K, V>::remove(
     if (listIter != map.end())
         listIter->second.remove(value);
 }
-
-template class MapOfLists<ChunkInfo, Peer>;
 
 } // namespace
