@@ -17,16 +17,9 @@
 #include <stdexcept>
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 namespace hycast {
-
-ProdInfoImpl::ProdInfoImpl()
-    : name(""),
-      index(0),
-      size(0),
-      chunkSize(0)
-{
-}
 
 ProdInfoImpl::ProdInfoImpl(
         const std::string& name,
@@ -70,6 +63,31 @@ ProdInfoImpl::ProdInfoImpl(
     char nameBuf[nameLen];
     (void)memcpy(nameBuf, bytes+12, nameLen);
     name.assign(nameBuf, nameLen);
+}
+
+ChunkSize ProdInfoImpl::getChunkSize(ChunkIndex index) const
+{
+    if (index >= getNumChunks())
+        throw std::invalid_argument("Invalid chunk-index: max=" +
+                std::to_string(getNumChunks()-1) + ", index=" +
+                std::to_string(index));
+    return (index + 1 < getNumChunks())
+            ? chunkSize
+            : size - index*chunkSize;
+}
+
+void ProdInfoImpl::vet(
+        const ChunkInfo& chunkInfo,
+        const ChunkSize  chunkSize) const
+{
+    if (chunkInfo.getProdIndex() != index)
+        throw std::invalid_argument("Wrong product-index: expected=" +
+                std::to_string(index) + ", actual=" +
+                std::to_string(chunkInfo.getProdIndex()));
+    if (chunkSize != getChunkSize(chunkInfo.getChunkIndex()))
+        throw std::invalid_argument("Unexpected chunk size: expected=" +
+                std::to_string(getChunkSize(chunkInfo.getChunkIndex())) +
+                ", actual=" + std::to_string(chunkSize));
 }
 
 bool ProdInfoImpl::operator==(const ProdInfoImpl& that) const noexcept

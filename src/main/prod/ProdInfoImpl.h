@@ -12,6 +12,7 @@
 #ifndef PRODINFOIMPL_H_
 #define PRODINFOIMPL_H_
 
+#include "Chunk.h"
 #include "HycastTypes.h"
 #include "ProdIndex.h"
 #include "Serializable.h"
@@ -27,12 +28,7 @@ class ProdInfoImpl : public Serializable {
     ProdIndex   index;
     ProdSize    size;
     ChunkSize   chunkSize;
-
 public:
-    /**
-     * Constructs from nothing.
-     */
-    ProdInfoImpl();
     /**
      * Constructs from information on a product.
      * @param[in] name       Product name
@@ -85,6 +81,35 @@ public:
      * @threadsafety    Safe
      */
     ChunkSize getChunkSize() const {return chunkSize;}
+    /**
+     * Returns the size, in bytes, of a given chunk-of-data.
+     * @param[in] index  Index of the chunk
+     * @return           The size of the chunk in bytes
+     * @throws std::invalid_argument if the index is invalid
+     * @execeptionsafety Strong guarantee
+     * @threadsafety     Safe
+     */
+    ChunkSize getChunkSize(ChunkIndex index) const;
+    /**
+     * Returns the number of chunks in the product.
+     * @return the number of chunks in the product
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    ChunkIndex getNumChunks() const { return (size+chunkSize-1)/chunkSize; }
+    /**
+     * Vets information on a chunk-of-data ostensibly belonging to this
+     * instance's associated product.
+     * @param[in] chunkInfo  Information on the chunk
+     * @param[in] chunkSize  Size of the chunk in bytes
+     * @throws std::invalid_argument if the chunk is inconsistent with this
+     *                               instance's product
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    void vet(
+            const ChunkInfo& chunkInfo,
+            const ChunkSize  chunkSize) const;
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance

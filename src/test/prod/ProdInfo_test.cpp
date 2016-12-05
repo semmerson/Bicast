@@ -53,15 +53,6 @@ class ProdInfoTest : public ::testing::Test {
   }
 };
 
-// Tests default construction
-TEST_F(ProdInfoTest, DefaultConstruction) {
-    hycast::ProdInfo info;
-    EXPECT_STREQ("", info.getName().data());
-    EXPECT_EQ(0, info.getIndex());
-    EXPECT_EQ(0, info.getSize());
-    EXPECT_EQ(0, info.getChunkSize());
-}
-
 // Tests construction
 TEST_F(ProdInfoTest, Construction) {
     hycast::ProdInfo info("name", 1, 2, 3);

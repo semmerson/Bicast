@@ -12,6 +12,7 @@
 #ifndef PRODINFO_H_
 #define PRODINFO_H_
 
+#include "ChunkInfo.h"
 #include "HycastTypes.h"
 #include "ProdIndex.h"
 #include "Serializable.h"
@@ -28,10 +29,6 @@ class ProdInfo : public Serializable {
     std::shared_ptr<ProdInfoImpl> pImpl;
 
 public:
-    /**
-     * Constructs from nothing.
-     */
-    ProdInfo();
     /**
      * Constructs from information on a product.
      * @param[in] name       Product name
@@ -78,12 +75,40 @@ public:
      */
     ProdSize getSize() const;
     /**
-     * Returns the size of the product's data chunks in bytes.
-     * @return Size of the product's data chunks in bytes
+     * Returns the canonical size of the product's data chunks in bytes.
+     * @return Canonical size of the product's data chunks in bytes
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
     ChunkSize getChunkSize() const;
+    /**
+     * Returns the size, in bytes, of a given chunk-of-data.
+     * @param[in] index  Index of the chunk
+     * @return           The size of the chunk in bytes
+     * @throws std::invalid_argument if the index is invalid
+     * @execeptionsafety Strong guarantee
+     * @threadsafety     Safe
+     */
+    ChunkSize getChunkSize(ChunkIndex index) const;
+    /**
+     * Returns the number of chunks in the product.
+     * @return the number of chunks in the product
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    ChunkIndex getNumChunks() const;
+    /**
+     * Vets information on a chunk-of-data ostensibly belonging to this
+     * instance's associated product.
+     * @param[in] chunkInfo  Information to be vetted
+     * @param[in] chunkSize  Size of the chunk in bytes
+     * @throws std::invalid_argument if the information is inconsistent with
+     *                               this instance's product
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    void vet(const ChunkInfo& chunkInfo,
+            const ChunkSize   chunkSize) const;
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance

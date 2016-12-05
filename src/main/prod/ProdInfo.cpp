@@ -14,10 +14,6 @@
 
 namespace hycast {
 
-ProdInfo::ProdInfo()
-    : pImpl(new ProdInfoImpl())
-{}
-
 ProdInfo::ProdInfo(
         const std::string& name,
         const ProdIndex    index,
@@ -69,6 +65,23 @@ ProdSize ProdInfo::getSize() const
 ChunkSize ProdInfo::getChunkSize() const
 {
     return pImpl->getChunkSize();
+}
+
+ChunkSize ProdInfo::getChunkSize(const ChunkIndex index) const
+{
+    return pImpl->getChunkSize(index);
+}
+
+ChunkIndex ProdInfo::getNumChunks() const
+{
+    return pImpl->getNumChunks();
+}
+
+void ProdInfo::vet(
+        const ChunkInfo& chunkInfo,
+        const ChunkSize  chunkSize) const
+{
+    return pImpl->vet(chunkInfo, chunkSize);
 }
 
 ProdInfo ProdInfo::deserialize(
