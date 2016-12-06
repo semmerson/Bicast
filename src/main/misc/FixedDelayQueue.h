@@ -15,6 +15,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <list>
 #include <mutex>
 #include <queue>
 
@@ -64,13 +65,13 @@ class FixedDelayQueue final {
     };
 
     /// The mutex for protecting the queue.
-    std::mutex              mutex;
+    std::mutex                            mutex;
     /// The condition variable for signaling when the queue has been modified
-    std::condition_variable cond;
+    std::condition_variable               cond;
     /// The queue.
-    std::queue<Element>     queue;
+    std::queue<Element, std::list<Value>> queue;
     /// Residence-time for an element in the queue
-    Duration                delay;
+    Duration                              delay;
 
 public:
     /**
