@@ -9,7 +9,8 @@ noinst_LTLIBRARIES = lib.la
 
 # Sources for libhycast
 lib_la_SOURCES 	= \
-	MapOfLists.cpp MapOfLists.h
+	MapOfLists.cpp MapOfLists.h \
+	FixedDelayQueue.cpp FixedDelayQueue.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
