@@ -84,7 +84,7 @@ TEST_F(ProdFactoryTest, AdditionAndDeletion) {
             prodFac.add(chunk1, &prod));
     EXPECT_EQ(sizeof(data), prod.getInfo().getSize());
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), sizeof(data)));
-    EXPECT_TRUE(prodFac.add(prodInfo));
+    EXPECT_FALSE(prodFac.add(prodInfo));
     EXPECT_TRUE(prodFac.erase(prodIndex));
 }
 

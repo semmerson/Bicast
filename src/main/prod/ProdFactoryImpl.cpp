@@ -37,7 +37,6 @@ ProdFactory::AddStatus ProdFactoryImpl::add(
     iter->second.add(chunk);
     if (iter->second.isComplete()) {
         *prod = iter->second;
-        prods.erase(prodIndex);
         return ProdFactory::AddStatus::PRODUCT_IS_COMPLETE;
     }
     return ProdFactory::AddStatus::PRODUCT_IS_INCOMPLETE;

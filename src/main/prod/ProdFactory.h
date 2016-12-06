@@ -41,15 +41,14 @@ public:
      */
     bool add(const ProdInfo& prodInfo);
     /**
-     * Adds a chunk-of-data. Returns the product if it's complete and deletes
-     * it from this instance.
+     * Adds a chunk-of-data. Returns the product if it's complete but doesn't
+     * delete it.
      * @param[in]  chunk  Chunk to be added
      * @param[out] prod   Complete product. Set iff return status is
      *                    `PRODUCT_IS_COMPLETE`.
      * @retval `NO_SUCH_PRODUCT`        No product corresponds to `chunk`
      * @retval `PRODUCT_IS_INCOMPLETE`  Product is still incomplete
-     * @retval `PRODUCT_IS_COMPLETE`    Product is complete. `prod` is set and
-     *                                  product is deleted from this instance.
+     * @retval `PRODUCT_IS_COMPLETE`    Product is complete. `prod` is set.
      */
     AddStatus add(
             const ActualChunk& chunk,
