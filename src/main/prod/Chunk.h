@@ -51,6 +51,16 @@ public:
      */
     const ChunkInfo& getInfo() const noexcept;
     /**
+     * Returns the index of the associated product.
+     * @return the index of the associated product
+     */
+    ProdIndex_t getProdIndex() const noexcept;
+    /**
+     * Returns the index of the chunk-of-data.
+     * @return the index of the chunk
+     */
+    ProdIndex_t getChunkIndex() const noexcept;
+    /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data
      * @exceptionsafety Strong
@@ -106,6 +116,16 @@ public:
      * @threadsafety Safe
      */
     const ChunkInfo& getInfo() const noexcept;
+    /**
+     * Returns the index of the associated product.
+     * @return the index of the associated product
+     */
+    ProdIndex_t getProdIndex() const noexcept;
+    /**
+     * Returns the index of the chunk-of-data.
+     * @return the index of the chunk
+     */
+    ProdIndex_t getChunkIndex() const noexcept;
     /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data

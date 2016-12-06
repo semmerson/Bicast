@@ -35,6 +35,16 @@ const ChunkInfo& ActualChunk::getInfo() const noexcept
     return pImpl->getInfo();
 }
 
+ProdIndex_t ActualChunk::getProdIndex() const noexcept
+{
+    return pImpl->getProdIndex();
+}
+
+ProdIndex_t ActualChunk::getChunkIndex() const noexcept
+{
+    return pImpl->getChunkIndex();
+}
+
 ChunkSize ActualChunk::getSize() const noexcept
 {
     return pImpl->getSize();
@@ -68,6 +78,16 @@ LatentChunk::LatentChunk(
 const ChunkInfo& LatentChunk::getInfo() const noexcept
 {
     return pImpl->getInfo();
+}
+
+ProdIndex_t LatentChunk::getProdIndex() const noexcept
+{
+    return pImpl->getProdIndex();
+}
+
+ProdIndex_t LatentChunk::getChunkIndex() const noexcept
+{
+    return pImpl->getChunkIndex();
 }
 
 ChunkSize LatentChunk::getSize() const noexcept

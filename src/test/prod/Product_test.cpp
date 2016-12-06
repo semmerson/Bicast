@@ -50,20 +50,24 @@ protected:
 TEST_F(ProductTest, ProdInfoConstruction) {
     hycast::ProdInfo info("product", 0, 2, 1); // 2 chunks of 1-byte each
     hycast::Product prod{info};
+    EXPECT_FALSE(prod.isComplete());
     EXPECT_EQ(info, prod.getInfo());
 }
 
-// Tests adding a chunk
+// Tests adding chunks
 TEST_F(ProductTest, AddChunk) {
     hycast::ProdInfo info("product", 0, 2, 1); // 2 chunks of 1-byte each
     hycast::Product prod{info};
-    char data[1];
-    hycast::ActualChunk chunk{hycast::ChunkInfo{0, 0}, data, sizeof(data)};
+    char data[2] = {'a', 'b'};
+    hycast::ActualChunk chunk{hycast::ChunkInfo{0, 0}, data, 1};
     EXPECT_TRUE(prod.add(chunk));
+    EXPECT_FALSE(prod.isComplete());
     EXPECT_FALSE(prod.add(chunk));
-    EXPECT_TRUE(prod.add(hycast::ActualChunk(hycast::ChunkInfo{0, 1}, data,
-            sizeof(data))));
+    EXPECT_TRUE(prod.add(hycast::ActualChunk(hycast::ChunkInfo{0, 1}, data+1,
+            1)));
     EXPECT_TRUE(prod.isComplete());
+    EXPECT_EQ(2, prod.getInfo().getSize());
+    EXPECT_EQ(0, ::memcmp(data, prod.getData(), 2));
 }
 
 // Tests adding an inconsistent chunk

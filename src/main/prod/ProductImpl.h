@@ -23,9 +23,20 @@ class ProductImpl final {
     ProdInfo          prodInfo;
     std::vector<bool> haveChunk;
     char*             data;
+    ChunkIndex        numChunks;
 
+    /**
+     * Returns a pointer to the start of a chunk-of-data in the accumulating
+     * buffer.
+     * @param chunkIndex  Index of the chunk
+     * @return            Pointer to the start of the chunk
+     */
     char* startOf(const ChunkIndex chunkIndex) const;
 public:
+    /**
+     * Constructs from information on a product.
+     * @param[in] info Information on a product
+     */
     explicit ProductImpl(const ProdInfo& info);
     /**
      * Returns information on the product.
@@ -34,6 +45,9 @@ public:
      * @threadsafety    Safe
      */
     const ProdInfo& getInfo() const noexcept;
+    /**
+     * Destroys this instance.
+     */
     ~ProductImpl();
     /**
      * Adds a chunk-of-data.
@@ -66,6 +80,13 @@ public:
      * @return `true` iff this instance is complete
      */
     bool isComplete() const;
+    /**
+     * Returns a pointer to the data.
+     * @return a pointer to the data
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    const char* getData() const noexcept;
 };
 
 } // namespace

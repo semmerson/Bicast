@@ -21,6 +21,7 @@ ProductImpl::ProductImpl(const ProdInfo& prodInfo)
     // `haveChunk{n}` means add `n` rather than have `n` elements
     , haveChunk(prodInfo.getNumChunks())
     , data{new char[prodInfo.getSize()]}
+    , numChunks{0}
 {}
 
 ProductImpl::~ProductImpl()
@@ -46,6 +47,7 @@ bool ProductImpl::add(const ActualChunk& chunk)
     if (haveChunk[chunkIndex])
         return false;
     ::memcpy(startOf(chunkIndex), chunk.getData(), chunkSize);
+    ++numChunks;
     return haveChunk[chunkIndex] = true;
 }
 
@@ -56,12 +58,18 @@ bool ProductImpl::add(LatentChunk& chunk)
     if (haveChunk[chunkIndex])
         return false;
     chunk.drainData(startOf(chunkIndex));
+    ++numChunks;
     return haveChunk[chunkIndex] = true;
 }
 
 bool ProductImpl::isComplete() const
 {
-    return haveChunk.size() == prodInfo.getNumChunks();
+    return numChunks == prodInfo.getNumChunks();
+}
+
+const char* hycast::ProductImpl::getData() const noexcept
+{
+    return data;
 }
 
 } // namespace

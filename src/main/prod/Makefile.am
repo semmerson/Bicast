@@ -17,6 +17,8 @@ lib_la_SOURCES 	= \
 	ChunkImpl.cpp ChunkImpl.h \
 	Chunk.cpp Chunk.h \
 	ProductImpl.cpp ProductImpl.h \
-	Product.cpp Product.h
+	Product.cpp Product.h \
+	ProdFactoryImpl.cpp ProdFactoryImpl.h \
+	ProdFactory.cpp ProdFactory.h
 
 lib_la_CPPFLAGS = -I$(srcdir)/../net

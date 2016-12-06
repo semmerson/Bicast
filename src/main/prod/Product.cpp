@@ -38,4 +38,9 @@ bool Product::isComplete() const
     return pImpl->isComplete();
 }
 
+const char* Product::getData() const noexcept
+{
+    return pImpl->getData();
+}
+
 } // namespace
