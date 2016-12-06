@@ -43,10 +43,6 @@ protected:
     // is empty.
 
     PeerTest() {
-        prodInfo = hycast::ProdInfo("product", 1, 100000, 1400);
-        chunkInfo = hycast::ChunkInfo(2, 3);
-        prodIndex = hycast::ProdIndex(2);
-        (void)memset(data, 0xbd, sizeof(data));
     }
 
     virtual ~PeerTest() {
@@ -198,10 +194,10 @@ protected:
     // Objects declared here can be used by all tests in the test case for Peer.
     std::thread       senderThread;
     std::thread       receiverThread;
-    hycast::ProdInfo  prodInfo;
-    hycast::ChunkInfo chunkInfo;
-    hycast::ProdIndex prodIndex;
-    char              data[2000];
+    hycast::ProdInfo  prodInfo{"product", 1, 100000, 1400};
+    hycast::ChunkInfo chunkInfo{2, 3};
+    hycast::ProdIndex prodIndex{2};
+    char              data[2000] = {};
 };
 
 // Tests default construction

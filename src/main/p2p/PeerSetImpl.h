@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <future>
+#include <list>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -112,9 +113,10 @@ class PeerSetImpl final {
      * A queue of send-actions to be performed on a peer.
      */
     class SendQ final {
-        std::queue<std::shared_ptr<SendAction>>  queue;
-        std::mutex                               mutex;
-        std::condition_variable                  cond;
+        std::queue<std::shared_ptr<SendAction>,
+            std::list<std::shared_ptr<SendAction>>>  queue;
+        std::mutex                                   mutex;
+        std::condition_variable                      cond;
     public:
         SendQ()
             : queue{},
