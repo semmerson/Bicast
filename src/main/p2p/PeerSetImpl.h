@@ -146,6 +146,19 @@ class PeerSetImpl final {
         uint32_t                   value;
         std::thread                sendThread;
         std::thread                recvThread;
+
+        /**
+         * Processes send-actions queued-up for a peer. Doesn't return until
+         * the sentinel send-action is seen or an exception is thrown.
+         */
+        void processSendQ();
+        /**
+         * Causes a peer to receive messages from its associated remote peer.
+         * Doesn't return until the remote peer disconnects or an exception is
+         * thrown.
+         */
+        void runReceiver();
+
     public:
         static const uint32_t VALUE_MAX{UINT32_MAX};
         /**
@@ -169,17 +182,6 @@ class PeerSetImpl final {
          */
         PeerEntryImpl& operator=(PeerEntryImpl& rhs) =delete;
         PeerEntryImpl& operator=(PeerEntryImpl&& rhs) =delete;
-        /**
-         * Processes send-actions queued-up for a peer. Doesn't return until
-         * the sentinel send-action is seen or an exception is thrown.
-         */
-        void processSendQ();
-        /**
-         * Causes a peer to receive messages from its associated remote peer.
-         * Doesn't return until the remote peer disconnects or an exception is
-         * thrown.
-         */
-        void runReceiver();
         /**
          * Increments the value of the peer.
          * @exceptionsafety Strong
