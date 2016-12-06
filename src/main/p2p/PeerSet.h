@@ -21,7 +21,7 @@ namespace hycast {
 class PeerSetImpl; // Forward declaration
 
 class PeerSet final {
-    std::shared_ptr<PeerSetImpl> pImpl;
+    std::shared_ptr<PeerSetImpl> pImpl; // `pImpl` idiom
 public:
     typedef enum {
         FAILURE,

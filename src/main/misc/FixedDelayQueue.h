@@ -24,12 +24,13 @@ namespace hycast {
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment.
- * @tparam Duration  Unit of delay (e.g., `std::chrono::duration::seconds`)
+ * @tparam Duration  Unit of delay (e.g., `std::chrono::seconds`)
  */
-template<typename Value, typename Duration>
+template<typename Value, typename Rep, typename Period>
 class FixedDelayQueue final {
-    typedef std::chrono::steady_clock Clock;
-    typedef Clock::time_point         TimePoint;
+    typedef std::chrono::duration<Rep, Period> Duration;
+    typedef std::chrono::steady_clock          Clock;
+    typedef Clock::time_point                  TimePoint;
 
     /**
      * An element in the queue.
@@ -81,7 +82,7 @@ public:
      * @throws std::bad_alloc     If necessary memory can't be allocated.
      * @throws std::system_error  If a system error occurs.
      */
-    FixedDelayQueue(Duration delay);
+    explicit FixedDelayQueue(Duration delay);
     /**
      * Adds a value to the queue.
      * @param[in] value The value to be added
@@ -101,7 +102,6 @@ public:
     Value pop();
     /**
      * Returns the number of values in the queue.
-     *
      * @return  The number of values in the queue.
      * @exceptionsafety Nothrow
      * @threadsafety    Safe

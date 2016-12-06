@@ -13,37 +13,37 @@
 
 namespace hycast {
 
-template<typename Value, typename Duration>
-FixedDelayQueue<Value, Duration>::Element::Element(
+template<typename Value, typename Rep, typename Period>
+FixedDelayQueue<Value, Rep, Period>::Element::Element(
         Value          value,
         const Duration delay)
     : value{value}
     , when{Clock::now() + delay}
 {}
 
-template<typename Value, typename Duration>
-FixedDelayQueue<Value, Duration>::FixedDelayQueue(const Duration delay)
+template<typename Value, typename Rep, typename Period>
+FixedDelayQueue<Value, Rep, Period>::FixedDelayQueue(const Duration delay)
     : mutex{}
     , cond{}
     , queue{}
     , delay{delay}
 {}
 
-template<typename Value, typename Duration>
-void FixedDelayQueue<Value, Duration>::push(Value v)
+template<typename Value, typename Rep, typename Period>
+void FixedDelayQueue<Value, Rep, Period>::push(Value value)
 {
     std::unique_lock<std::mutex>(mutex);
-    queue.push(Element(v, delay));
+    queue.push(Element(value, delay));
     cond.notify_one();
 }
 
-template<typename Value, typename Duration>
-Value FixedDelayQueue<Value, Duration>::pop()
+template<typename Value, typename Rep, typename Period>
+Value FixedDelayQueue<Value, Rep, Period>::pop()
 {
     std::unique_lock<std::mutex> lock(mutex);
     while (queue.size() == 0)
         cond.wait(lock);
-    for (const TimePoint time = queue.top().getTime(); time > Clock::now(); )
+    for (const TimePoint time = queue.front().getTime(); time > Clock::now(); )
         cond.wait_until(lock, time);
     Value value = queue.front().getValue();
     queue.pop();
@@ -51,8 +51,8 @@ Value FixedDelayQueue<Value, Duration>::pop()
     return value;
 }
 
-template<typename Value, typename Duration>
-size_t FixedDelayQueue<Value, Duration>::size() const noexcept
+template<typename Value, typename Rep, typename Period>
+size_t FixedDelayQueue<Value, Rep, Period>::size() const noexcept
 {
     std::lock_guard<std::mutex> lock(mutex);
     return queue.size();
