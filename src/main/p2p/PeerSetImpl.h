@@ -274,14 +274,15 @@ public:
     } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] maxPeers     Maximum number of peers
-     * @param[in] minDuration  Required duration before the worst-performing
-     *                         peer may be replaced
+     * @param[in] maxPeers        Maximum number of peers
+     * @param[in] stasisDuration  Required duration, in seconds, without change
+     *                            to the set of peers before the
+     *                            worst-performing peer may be replaced
      * @throws std::invalid_argument if `maxPeers == 0`
      */
     PeerSetImpl(
             unsigned maxPeers,
-            TimeRes  minDuration);
+            unsigned stasisDuration);
     /**
      * Tries to insert a peer.
      * @param[in]  candidate Candidate peer

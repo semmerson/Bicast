@@ -16,8 +16,8 @@ namespace hycast {
 
 PeerSet::PeerSet(
         const unsigned maxPeers,
-        const std::chrono::seconds minDuration)
-    : pImpl(new PeerSetImpl(maxPeers, minDuration))
+        const unsigned stasisDuration)
+    : pImpl(new PeerSetImpl(maxPeers, stasisDuration))
 {}
 
 PeerSet::InsertStatus PeerSet::tryInsert(

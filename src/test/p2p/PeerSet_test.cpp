@@ -12,8 +12,7 @@
 #include "ClientSocket.h"
 #include "HycastTypes.h"
 #include "logging.h"
-#include <MsgRcvr.h>
-#include <MsgRcvrImpl.h>
+#include "MsgRcvr.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
 #include "ServerSocket.h"
@@ -56,7 +55,7 @@ protected:
     /**
      * Thread-safe peer-manager that discards everything.
      */
-    class ClientMsgRcvr final : public hycast::MsgRcvrImpl {
+    class ClientMsgRcvr final : public hycast::MsgRcvr {
         hycast::ProdInfo prodInfo;
         hycast::ChunkInfo chunkInfo;
     public:
@@ -89,7 +88,7 @@ protected:
          * Thread-safe peer-manager that echos everything back to the remote
          * peer.
          */
-        class ServerMsgRcvr final : public hycast::MsgRcvrImpl {
+        class ServerMsgRcvr final : public hycast::MsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
                 peer.sendNotice(info);
@@ -113,7 +112,7 @@ protected:
         };
         std::thread thread;
         void runServer(hycast::ServerSocket serverSock) {
-            hycast::MsgRcvr srvrMsgRcvr{new ServerMsgRcvr()};
+            ServerMsgRcvr srvrMsgRcvr{};
             hycast::PeerSet peerSet{};
             for (;;) {
                 try {
@@ -149,7 +148,7 @@ protected:
     hycast::InetSockAddr serverSockAddr{"127.0.0.1", 38800};
     hycast::ProdInfo     prodInfo{"product", 1, 100000, 32000};
     hycast::ChunkInfo    chunkInfo{hycast::ProdIndex(1), 2};
-    hycast::MsgRcvr      clntMsgRcvr{new ClientMsgRcvr(prodInfo, chunkInfo)};
+    ClientMsgRcvr        clntMsgRcvr{prodInfo, chunkInfo};
 };
 
 // Tests default construction
@@ -175,7 +174,7 @@ TEST_F(PeerSetTest, IncrementPeerValue) {
 TEST_F(PeerSetTest, RemoveWorst) {
     Server server{serverSockAddr};
     hycast::Peer     peer1{getClientPeer()};
-    hycast::PeerSet  peerSet{1, std::chrono::seconds{0}};
+    hycast::PeerSet  peerSet{1, 0};
     EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer1));
     hycast::Peer worstPeer{};
     hycast::Peer peer2{getClientPeer()};

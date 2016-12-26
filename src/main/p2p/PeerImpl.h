@@ -46,9 +46,18 @@ class PeerImpl final {
     RegChannel<ProdIndex>  prodReqChan;
     RegChannel<ChunkInfo>  chunkReqChan;
     ChunkChannel           chunkChan;
-    MsgRcvr                msgRcvr;
+    MsgRcvr&               msgRcvr;
     Socket                 sock;
     Peer*                  peer;
+
+    class : public MsgRcvr
+    {
+        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
+        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
+        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
+    }                      defaultMsgRcvr;
 
     /**
      * Returns the protocol version of the remote peer.

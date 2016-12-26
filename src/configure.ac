@@ -25,6 +25,7 @@ AC_CONFIG_FILES(Makefile
                 main/p2p/Makefile
                 main/prod/Makefile
                 test/Makefile
+                test/misc/Makefile
                 test/net/Makefile
                 test/prod/Makefile
                 test/p2p/Makefile

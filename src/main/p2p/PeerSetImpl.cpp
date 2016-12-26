@@ -77,8 +77,6 @@ PeerSetImpl::PeerEntryImpl::~PeerEntryImpl()
     catch (const std::exception& e) {
         log_what(e);
     }
-    catch (...) {
-    }
 }
 
 void PeerSetImpl::PeerEntryImpl::processSendQ()
@@ -110,12 +108,12 @@ void PeerSetImpl::PeerEntryImpl::runReceiver()
 
 PeerSetImpl::PeerSetImpl(
         const unsigned maxPeers,
-        const TimeRes  minDuration)
+        const unsigned stasisDuration)
     : peerEntries{}
     , mutex{}
     , whenEligible{}
-    , eligibilityDuration{minDuration}
-    , maxResideTime{minDuration*2}
+    , eligibilityDuration{std::chrono::seconds{stasisDuration}}
+    , maxResideTime{eligibilityDuration*2}
     , maxPeers{maxPeers}
     , incValueEnabled{false}
 {

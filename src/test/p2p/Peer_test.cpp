@@ -16,7 +16,6 @@
 #include "HycastTypes.h"
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
-#include "MsgRcvrImpl.h"
 #include "ProdInfo.h"
 #include "ServerSocket.h"
 
@@ -62,7 +61,7 @@ protected:
         // before the destructor).
     }
 
-    class TestMsgRcvr final : public hycast::MsgRcvrImpl {
+    class TestMsgRcvr final : public hycast::MsgRcvr {
         PeerTest* peerTest;
     public:
         TestMsgRcvr(PeerTest& peerTest)
@@ -90,7 +89,7 @@ protected:
     void runTestReceiver(const hycast::ServerSocket& serverSock)
     {
         hycast::Socket sock{serverSock.accept()};
-        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer{msgRcvr, sock};
         peer.runReceiver();
     }
@@ -98,7 +97,7 @@ protected:
     void runTestSender()
     {
         hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
-        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         peer.sendNotice(prodInfo);
         peer.sendNotice(chunkInfo);
@@ -123,7 +122,7 @@ protected:
     void runPerfReceiver(hycast::ServerSocket serverSock)
     {
         hycast::Socket sock{serverSock.accept()};
-        class PerfMsgRcvr final : public hycast::MsgRcvrImpl {
+        class PerfMsgRcvr final : public hycast::MsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
             void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
@@ -133,7 +132,7 @@ protected:
                 chunk.discard();
             }
         };
-        hycast::MsgRcvr msgRcvr{new PerfMsgRcvr{}};
+        PerfMsgRcvr msgRcvr{};
         hycast::Peer peer{msgRcvr, sock};
         peer.runReceiver();
     }
@@ -141,7 +140,7 @@ protected:
     void runPerfSender()
     {
         hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
-        hycast::MsgRcvr msgRcvr{new TestMsgRcvr{*this}};
+        TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;
         hycast::ChunkInfo chunkInfo(2, 3);

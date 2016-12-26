@@ -1,1 +1,1 @@
-SUBDIRS	= net prod p2p
+SUBDIRS	= misc net prod p2p

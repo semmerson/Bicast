@@ -13,66 +13,24 @@
 #define MISC_FIXEDDELAYQUEUE_H
 
 #include <chrono>
-#include <condition_variable>
-#include <cstddef>
-#include <list>
-#include <mutex>
-#include <queue>
+#include <memory>
 
 namespace hycast {
 
+template<typename Value, typename Rep, typename Period>
+class FixedDelayQueueImpl; // Forward declaration
+
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
- *                   copy assignment.
+ *                   copy assignment and move assignment.
  * @tparam Duration  Unit of delay (e.g., `std::chrono::seconds`)
  */
 template<typename Value, typename Rep, typename Period>
 class FixedDelayQueue final {
     typedef std::chrono::duration<Rep, Period> Duration;
-    typedef std::chrono::steady_clock          Clock;
-    typedef Clock::time_point                  TimePoint;
 
-    /**
-     * An element in the queue.
-     */
-    class Element final {
-        /// The value.
-        Value     value;
-        /// The reveal-time.
-        TimePoint when;
-
-    public:
-        /**
-         * Constructs from a value and a delay.
-         * @param[in] value  The value.
-         * @param[in] delay  The delay for the element until the reveal-time.
-         *                   May be negative.
-         */
-        Element(Value value, const Duration delay);
-        /**
-         * Returns the value.
-         * @return  The value.
-         * @exceptionsafety Strong guarantee
-         * @threadsafety    Safe
-         */
-        Value getValue() const noexcept {return value;}
-        /**
-         * Returns the reveal-time.
-         * @return  The reveal-time.
-         * @exceptionsafety Strong guarantee
-         * @threadsafety    Safe
-         */
-        const TimePoint& getTime() const noexcept {return when;}
-    };
-
-    /// The mutex for protecting the queue.
-    std::mutex              mutex;
-    /// The condition variable for signaling when the queue has been modified
-    std::condition_variable cond;
-    /// The queue.
-    std::queue<Element>     queue;
-    /// Residence-time for an element in the queue
-    Duration                delay;
+    /// `pImpl` idiom
+    std::shared_ptr<FixedDelayQueueImpl<Value, Rep, Period>> pImpl;
 
 public:
     /**

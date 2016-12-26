@@ -25,7 +25,7 @@ PeerImpl::PeerImpl(Peer* peer)
       prodReqChan(),
       chunkReqChan(),
       chunkChan(),
-      msgRcvr(),
+      msgRcvr(defaultMsgRcvr),
       sock(),
       peer{peer}
 {}

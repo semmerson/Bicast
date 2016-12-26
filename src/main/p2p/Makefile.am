@@ -22,8 +22,14 @@ lib_la_SOURCES 	= \
 	MsgRcvrImpl.cpp MsgRcvrImpl.h \
 	MsgRcvr.cpp MsgRcvr.h \
 	PeerSetImpl.cpp PeerSetImpl.h \
-	PeerSet.cpp PeerSet.h
+	PeerSet.cpp PeerSet.h \
+	PotentialPeers.h
+#	P2pMgrImpl.cpp P2pMgrImpl.h \
+#	P2pMgr.cpp P2pMgr.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
-AM_CPPFLAGS = -I$(srcdir)/.. -I$(srcdir)/../net -I$(srcdir)/../prod
+AM_CPPFLAGS = -I$(srcdir)/.. \
+	      -I$(srcdir)/../misc \
+	      -I$(srcdir)/../net \
+	      -I$(srcdir)/../prod

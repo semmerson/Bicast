@@ -15,6 +15,9 @@
 
 namespace hycast {
 
+#if 1
+MsgRcvr::~MsgRcvr() {}
+#else
 MsgRcvr::MsgRcvr(MsgRcvrImpl* impl)
     : pImpl{impl}
 {}
@@ -43,5 +46,6 @@ void MsgRcvr::recvData(LatentChunk chunk, Peer& peer) const
 {
     pImpl->recvData(chunk, peer);
 }
+#endif
 
 } // namespace

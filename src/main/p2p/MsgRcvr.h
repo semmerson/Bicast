@@ -23,44 +23,33 @@
 
 namespace hycast {
 
-class MsgRcvrImpl; // Forward declaration
-
-class MsgRcvr final {
-    std::shared_ptr<MsgRcvrImpl> pImpl; // `pImpl` idiom
+class MsgRcvr {
 public:
-    /**
-     * Constructs from nothing.
-     */
-    MsgRcvr() =default;
-    /**
-     * Constructs from an implementation.
-     * @param[in,out] impl  The implementation
-     */
-    MsgRcvr(MsgRcvrImpl* impl);
+    virtual ~MsgRcvr();
     /**
      * Receives a notice about a new product.
      * @param[in]     info  Information about the product
      * @param[in,out] peer  Peer that received the notice
      */
-    void recvNotice(const ProdInfo& info, Peer& peer) const;
+    virtual void recvNotice(const ProdInfo& info, Peer& peer) =0;
     /**
      * Receives a notice about a chunk-of-data.
      * @param[in]     info  Information about the chunk
      * @param[in,out] peer  Peer that received the notice
      */
-    void recvNotice(const ChunkInfo& info, Peer& peer) const;
+    virtual void recvNotice(const ChunkInfo& info, Peer& peer) =0;
     /**
      * Receives a request for information about a product.
      * @param[in]     index Index of the product
      * @param[in,out] peer  Peer that received the request
      */
-    void recvRequest(const ProdIndex& index, Peer& peer) const;
+    virtual void recvRequest(const ProdIndex& index, Peer& peer) =0;
     /**
      * Receives a request for a chunk-of-data.
      * @param[in]     info  Information on the chunk
      * @param[in,out] peer  Peer that received the request
      */
-    void recvRequest(const ChunkInfo& info, Peer& peer) const;
+    virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
@@ -72,7 +61,7 @@ public:
      * because `LatentChunk` uses the pImpl idiom. See
      * `PeerConnectionImpl::runReceiver`.
      */
-    void recvData(LatentChunk chunk, Peer& peer) const;
+    virtual void recvData(LatentChunk chunk, Peer& peer) =0;
 };
 
 } // namespace
