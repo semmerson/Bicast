@@ -21,6 +21,8 @@ namespace hycast {
 
 template<class R> class FutureImpl;
 template<class R> class ExecutorImpl;
+template<class R> class CompleterImpl;
+template<class R> class BasicCompleterImpl;
 
 /**
  * Future of an asynchronous task with a non-void result.
@@ -30,9 +32,21 @@ template<class R>
 class Future final
 {
     friend class ExecutorImpl<R>;
+    friend class CompleterImpl<R>;
+    friend class BasicCompleterImpl<R>;
 
     std::shared_ptr<FutureImpl<R>> pImpl;
 
+    /**
+     * Executes the associated task.
+     */
+    void execute() const;
+    /**
+     * Returns the POSIX thread identifier.
+     * @return  POSIX thread identifier
+     */
+    pthread_t getThreadId() const;
+public:
     /**
      * Constructs from nothing.
      */
@@ -42,11 +56,6 @@ class Future final
      * @param[in] func  Function to execute
      */
     explicit Future(std::function<R()> func);
-    /**
-     * Executes the associated task.
-     */
-    void execute() const;
-public:
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.
@@ -97,9 +106,22 @@ template<>
 class Future<void> final
 {
     friend class ExecutorImpl<void>;
+    friend class CompleterImpl<void>;
+    friend class BasicCompleterImpl<void>;
 
     std::shared_ptr<FutureImpl<void>> pImpl;
 
+    /**
+     * Executes the associated task.
+     */
+    void execute() const;
+    /**
+     * Returns the POSIX thread identifier.
+     * @return  POSIX thread identifier
+     */
+    pthread_t getThreadId() const;
+
+public:
     /**
      * Constructs from nothing.
      */
@@ -109,11 +131,6 @@ class Future<void> final
      * @param[in] fund  Function to execute
      */
     explicit Future(std::function<void()> func);
-    /**
-     * Executes the associated task.
-     */
-    void execute() const;
-public:
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.

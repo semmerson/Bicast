@@ -74,6 +74,11 @@ protected:
      */
     void execute();
     /**
+     * Returns the POSIX thread identifier.
+     * @return  POSIX thread identifier
+     */
+    pthread_t getThreadId() const;
+    /**
      * Cancels the task's thread iff the task hasn't already completed.
      * Idempotent.
      * @exceptionsafety Strong guarantee

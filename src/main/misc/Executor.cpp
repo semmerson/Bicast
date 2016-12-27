@@ -25,6 +25,8 @@ namespace hycast {
 template<class Ret>
 class ExecutorImpl final
 {
+    friend class Executor<Ret>;
+
     /**
      * Executes a future. Designed to be called by `pthread_create()`.
      * @param[in] arg  Future to be executed
@@ -34,22 +36,29 @@ class ExecutorImpl final
         future->execute();
         return nullptr;
     }
+    /**
+     * Submits a future for execution.
+     * @param[in,out] future  Future to be executed
+     */
+    void submit(Future<Ret>& future) {
+        pthread_t   threadId;
+        int         status = pthread_create(&threadId, nullptr, execute,
+                future.pImpl.get());
+        if (status)
+            throw std::system_error(errno, std::system_category(),
+                    "Couldn't create thread");
+    }
 public:
     /**
      * Submits a callable for execution.
      * @param[in,out] func       Callable to be executed
-     * @throws std::system_error if a new thread couldn't be created
+     * @throws std::system_error A new thread couldn't be created
      * @exceptionsafety          Basic guarantee
      * @threadsafety             Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
-        pthread_t   threadId;
         Future<Ret> future{func};
-        int         status = pthread_create(&threadId, nullptr,
-                this->execute, future.pImpl.get());
-        if (status)
-            throw std::system_error(errno, std::system_category(),
-                    "Couldn't create thread");
+        submit(future);
         return std::move(future);
     }
 };
@@ -63,6 +72,12 @@ template<class Ret>
 Future<Ret> Executor<Ret>::submit(const std::function<Ret()>& func)
 {
     return pImpl->submit(func);
+}
+
+template<class Ret>
+void Executor<Ret>::submit(Future<Ret>& future)
+{
+    pImpl->submit(future);
 }
 
 template class Executor<void>;

@@ -14,8 +14,8 @@ lib_la_SOURCES 	= \
 	FixedDelayQueue.cpp FixedDelayQueue.h \
 	FutureImpl.cpp FutureImpl.h \
 	Future.cpp Future.h \
-	Executor.cpp Executor.h
-#	Completer.cpp Completer.h
+	Executor.cpp Executor.h \
+	Completer.cpp Completer.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

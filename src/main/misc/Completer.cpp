@@ -10,20 +10,33 @@
  * @author: Steven R. Emmerson
  */
 
+#include "Completer.h"
 #include "Executor.h"
 #include "Future.h"
 
+#include <condition_variable>
+#include <map>
+#include <mutex>
 #include <pthread.h>
 #include <queue>
-#include <map>
 #include <type_traits>
 #include <utility>
 
 namespace hycast {
 
 template<class Ret>
-class CompleterImpl final
+class BasicCompleterImpl
 {
+    friend class CompleterImpl<Ret>;
+
+    /**
+     * Returns the future for a callable.
+     * @param[in] func  Callable to be executed
+     * @return          Callable's future
+     */
+    virtual Future<Ret> getFuture(const std::function<Ret()>& func) =0;
+
+protected:
     /// Executor
     Executor<Ret>                    executor;
     /// Executing tasks
@@ -33,63 +46,51 @@ class CompleterImpl final
     /// Variables for synchronizing state changes
     std::mutex                       mutex;
     std::condition_variable          cond;
+    bool                             isShutdown;
 
     void finishTask() {
         std::lock_guard<decltype(mutex)> lock{mutex};
-        pthread_t threadId = pthread_self();
-        if (auto iter = activeTasks.find(threadId) != activeTasks.end()) {
-            auto future = iter.second;
-            completedTasks.push(future);
-            activeTasks.erase(threadId);
-            cond.notify_one();
-        }
+        auto threadId = pthread_self();
+        auto iter = activeTasks.find(threadId);
+        auto future = iter->second;
+        completedTasks.push(future);
+        activeTasks.erase(threadId);
+        cond.notify_one();
     }
-
     static void finishTask(void* arg) {
-        reinterpret_cast<Completer<Ret>*>(arg)->finishTask();
+        reinterpret_cast<CompleterImpl<Ret>*>(arg)->finishTask();
     }
 
 public:
     /**
      * Constructs from nothing.
      */
-    CompleterImpl()
+    BasicCompleterImpl()
         : executor{}
         , activeTasks{}
         , completedTasks{}
         , mutex{}
         , cond{}
+        , isShutdown{false}
+    {}
+    virtual ~BasicCompleterImpl()
     {}
     /**
      * Submits a callable for execution. The callable's future will, eventually,
      * be returned by get().
-     * @param[in,out] func  Callable to be executed
-     * @return              The callable's future
-     * @exceptionsafety     Basic guarantee
-     * @threadsafety        Safe
+     * @param[in,out] func       Callable to be executed
+     * @return                   Callable's future
+     * @throws std::logic_error  shutdown() has been called
+     * @exceptionsafety          Basic guarantee
+     * @threadsafety             Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         std::lock_guard<decltype(mutex)> lock{mutex};
-        Future<Ret> future{};
-        future = executor.submit([this,func,future]() mutable {
-            try {
-                {
-                    std::unique_lock<decltype(this->mutex)> lock{this->mutex};
-                    pthread_t threadId = pthread_self();
-                    while (auto iter = this->activeTasks.find(threadId) ==
-                            this->activeTasks.end())
-                        this->cond.wait(lock);
-                }
-                pthread_cleanup_push(finishTask, this);
-                func(); // INVARIANT: Here => `future` is in `activeTasks`
-                pthread_cleanup_pop(1);
-            }
-            catch (const std::exception& e) {
-                // Task threw an exception
-                future.setException();
-            }
-        });
-        activeTasks.insert(future.getThreadId(), future);
+        if (isShutdown)
+            throw std::logic_error("Completer is shut down");
+        auto future = getFuture(func);
+        executor.submit(future);
+        activeTasks.emplace(future.getThreadId(), future);
         cond.notify_all();
         return future;
     }
@@ -108,6 +109,82 @@ public:
         future.wait(); // Joins thread
         return future;
     }
+    /**
+     * Shuts down. Cancels all executing tasks. Will not accept further tasks.
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void shutdown() {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        for (auto pair : activeTasks)
+            pair.second.cancel();
+        isShutdown = true;
+    }
+};
+
+template<class Ret>
+class CompleterImpl final : public BasicCompleterImpl<Ret>
+{
+    using BasicCompleterImpl<Ret>::finishTask;
+
+    /**
+     * Returns the future for a callable.
+     * @param[in] func  Callable to be executed
+     * @return          Callable's future
+     */
+    Future<Ret> getFuture(const std::function<Ret()>& func) {
+        auto future = Future<Ret>([this,func]() mutable {
+                {
+                    // Ensure that `future` is in `activeTasks`
+                    std::lock_guard<decltype(this->mutex)> lock{this->mutex};
+                }
+                Ret result{};
+                pthread_cleanup_push(BasicCompleterImpl<Ret>::finishTask, this);
+                result = func();
+                pthread_cleanup_pop(1);
+                return result;
+            });
+        return future;
+    }
+public:
+    /**
+     * Constructs from nothing.
+     */
+    CompleterImpl()
+        : BasicCompleterImpl<Ret>::BasicCompleterImpl()
+    {}
+};
+
+template<>
+class CompleterImpl<void> final : public BasicCompleterImpl<void>
+{
+    using BasicCompleterImpl<void>::finishTask;
+    using BasicCompleterImpl<void>::mutex;
+
+    /**
+     * Returns the future for a callable.
+     * @param[in] func  Callable to be executed
+     * @return          Callable's future
+     */
+    Future<void> getFuture(const std::function<void()>& func) {
+        auto future = Future<void>([this,func]() mutable {
+                {
+                    // Ensure that `future` is in `activeTasks`
+                    std::lock_guard<decltype(this->mutex)> lock{this->mutex};
+                }
+                pthread_cleanup_push(BasicCompleterImpl<void>::finishTask, this);
+                func();
+                pthread_cleanup_pop(1);
+            });
+        return future;
+    }
+public:
+    /**
+     * Constructs from nothing.
+     */
+    CompleterImpl()
+        : BasicCompleterImpl<void>::BasicCompleterImpl()
+    {}
 };
 
 template<class Ret>
@@ -125,6 +202,12 @@ template<class Ret>
 Future<Ret> Completer<Ret>::get()
 {
     return pImpl->get();
+}
+
+template<class Ret>
+void Completer<Ret>::shutdown()
+{
+    pImpl->shutdown();
 }
 
 template class Completer<void>;

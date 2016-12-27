@@ -16,7 +16,7 @@ namespace hycast {
 
 template<class R>
 Future<R>::Future()
-    : pImpl(new FutureImpl<R>())
+    : pImpl()
 {}
 
 template<class R>
@@ -40,6 +40,12 @@ template<class R>
 void Future<R>::execute() const
 {
     pImpl->execute();
+}
+
+template<class R>
+pthread_t Future<R>::getThreadId() const
+{
+    return pImpl->getThreadId();
 }
 
 template<class R>
@@ -87,6 +93,11 @@ bool Future<void>::operator<(const Future<void>& that) noexcept
 void Future<void>::execute() const
 {
     pImpl->execute();
+}
+
+pthread_t Future<void>::getThreadId() const
+{
+    return pImpl->getThreadId();
 }
 
 void Future<void>::cancel() const

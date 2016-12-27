@@ -25,7 +25,17 @@ class ExecutorImpl;
 template<class Ret>
 class Executor final
 {
+    friend BasicCompleterImpl<Ret>;
+
     std::shared_ptr<ExecutorImpl<Ret>> pImpl;
+
+    /**
+     * Submits a future for execution.
+     * @param[in,out] future  Task's future to be executed
+     * @exceptionsafety       Basic guarantee
+     * @threadsafety          Safe
+     */
+    void submit(Future<Ret>& future);
 public:
     /**
      * Constructs from nothing.

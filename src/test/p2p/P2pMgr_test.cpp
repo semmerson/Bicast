@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include "Executor.h"
+#include "Completer.h"
 #include "logging.h"
 #include "MsgRcvr.h"
 #include "MsgRcvrImpl.h"
@@ -59,10 +59,13 @@ TEST_F(P2pMgrTest, Execution) {
     MsgRcvr msgRcvr{};
     hycast::P2pMgr p2pMgr1(servAddr1, 1, nullptr, 60, msgRcvr);
     hycast::P2pMgr p2pMgr2(servAddr1, 1, nullptr, 60, msgRcvr);
-    hycast::Executor<void> executor{};
-    executor.submit([&]{ p2pMgr1.run(); });
-    executor.submit([&]{ p2pMgr2.run(); });
+    hycast::Completer<void> completer{};
+    completer.submit([&p2pMgr1]{ p2pMgr1.run(); });
+    completer.submit([&p2pMgr2]{ p2pMgr2.run(); });
     ::sleep(1);
+    completer.shutdown();
+    completer.get().getResult();
+    completer.get().getResult();
 }
 
 }  // namespace

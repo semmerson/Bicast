@@ -27,6 +27,7 @@ template<class Ret>
 class Completer final
 {
     std::shared_ptr<CompleterImpl<Ret>> pImpl;
+
 public:
     /**
      * Constructs from nothing.
@@ -35,10 +36,12 @@ public:
     /**
      * Submits a callable for execution. The callable's future will, eventually,
      * be returned by get().
-     * @param[in,out] func  Task to be executed
-     * @return              The task's future
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
+     * @param[in,out] func       Task to be executed
+     * @return                   Task's future
+     * @throws std::logic_error  shutdown() has been called
+     * @exceptionsafety          Basic guarantee
+     * @threadsafety             Safe
+     * @throws std::logic_error  Instance is shut down
      */
     Future<Ret> submit(const std::function<Ret()>& func);
     /**
@@ -48,6 +51,12 @@ public:
      * @threadsafety     Safe
      */
     Future<Ret> get();
+    /**
+     * Shuts down. Cancels all executing tasks. Will not accept further tasks.
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void shutdown();
 };
 
 } // namespace

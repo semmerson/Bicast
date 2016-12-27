@@ -58,24 +58,42 @@ void BasicFutureImpl<R>::execute() {
         throw std::logic_error("Task already executed");
     threadId = pthread_self();
     state[State::THREAD_ID_SET] = true;
-    lock.unlock(); // Unlocked to enable cancellation
-    pthread_cleanup_push(taskCancelled, this);
-    try {
-        setResult();
+    cond.notify_one();
+    if (!state[State::CANCELLED]) {
+        pthread_cleanup_push(taskCancelled, this);
+        lock.unlock(); // Unlocked to enable cancellation
+        try {
+            setResult();
+        }
+        catch (const std::exception& e) {
+            exception = std::current_exception();
+        }
+        lock.lock();
+        pthread_cleanup_pop(0);
     }
-    catch (const std::exception& e) {
-        exception = std::current_exception();
-    }
-    pthread_cleanup_pop(0);
-    lock.lock();
     state[State::COMPLETED] = true;
     cond.notify_one();
 }
 
 template<class R>
+pthread_t BasicFutureImpl<R>::getThreadId() const
+{
+    std::unique_lock<decltype(mutex)> lock(mutex);
+    while (!state[State::THREAD_ID_SET])
+        cond.wait(lock);
+    return threadId;
+}
+
+template<class R>
 void BasicFutureImpl<R>::cancel() {
     std::lock_guard<decltype(mutex)> lock(mutex);
-    if (!state[State::COMPLETED] && state[State::THREAD_ID_SET]) {
+    if (!state[State::THREAD_ID_SET]) {
+        // Task hasn't started
+        state[State::CANCELLED] = true;
+        state[State::COMPLETED] = true;
+        cond.notify_one();
+    }
+    else if (!state[State::COMPLETED]) {
         int status = pthread_cancel(threadId);
         if (status)
             throw std::system_error(status, std::system_category(),
@@ -89,10 +107,12 @@ void BasicFutureImpl<R>::wait() {
     if (!state[State::JOINED]) {
         while (!state[State::THREAD_ID_SET])
             cond.wait(lock);
+        lock.unlock(); // So task's thread can acquire mutex
         int status = pthread_join(threadId, nullptr);
         if (status)
             throw std::system_error(errno, std::system_category(),
                     "Couldn't join thread");
+        lock.lock();
         state[State::JOINED] = true;
         cond.notify_one();
     }
