@@ -16,9 +16,8 @@
 
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
-#include "PotentialPeers.h"
-
 #include <memory>
+#include "PeerSource.h"
 
 namespace hycast {
 
@@ -44,7 +43,7 @@ public:
     P2pMgr(
             InetSockAddr&   serverSockAddr,
             unsigned        peerCount,
-            PotentialPeers* potentialPeers,
+            PeerSource* potentialPeers,
             unsigned        stasisDuration,
             MsgRcvr&        msgRcvr);
     /**

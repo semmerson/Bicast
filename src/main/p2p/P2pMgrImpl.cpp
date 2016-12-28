@@ -27,14 +27,14 @@ namespace hycast {
 P2pMgrImpl::P2pMgrImpl(
         InetSockAddr&   serverSockAddr,
         unsigned        peerCount,
-        PotentialPeers* potentialPeers,
+        PeerSource*     peerSource,
         unsigned        stasisDuration,
         MsgRcvr&        msgRcvr)
     : serverSockAddr{serverSockAddr}
     , msgRcvr(msgRcvr)
-    , potentialPeers{potentialPeers}
+    , peerSource{peerSource}
     , peerSet{peerCount, stasisDuration}
-    , executor{}
+    , completer{}
 {}
 
 void P2pMgrImpl::runServer()
@@ -49,9 +49,10 @@ void P2pMgrImpl::runReplacer()
 
 void P2pMgrImpl::run()
 {
-    executor.submit([=]{ runServer(); });
-    executor.submit([=]{ runReplacer(); });
-    Future<void> future = executor.get();
+    completer.submit([=]{ runServer(); });
+    if (peerSource)
+        completer.submit([=]{ runReplacer(); });
+    auto future = completer.get();
     if (!future.wasCancelled())
         future.getResult(); // might throw exception
 }

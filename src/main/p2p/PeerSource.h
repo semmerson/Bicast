@@ -9,14 +9,14 @@
  * @author: Steven R. Emmerson
  */
 
-#ifndef MAIN_P2P_POTENTIALPEERS_H_
-#define MAIN_P2P_POTENTIALPEERS_H_
+#ifndef MAIN_P2P_PEERSOURCE_H_
+#define MAIN_P2P_PEERSOURCE_H_
 
 #include "InetAddr.h"
 
 namespace hycast {
 
-class PotentialPeers {
+class PeerSource {
 public:
     /**
      * Returns the next potential peer. Blocks until it's available.
@@ -27,4 +27,4 @@ public:
 
 } // namespace
 
-#endif /* MAIN_P2P_POTENTIALPEERS_H_ */
+#endif /* MAIN_P2P_PEERSOURCE_H_ */

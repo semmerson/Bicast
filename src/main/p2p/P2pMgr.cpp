@@ -19,7 +19,7 @@ namespace hycast {
 hycast::P2pMgr::P2pMgr(
         InetSockAddr&   serverSockAddr,
         unsigned        peerCount,
-        PotentialPeers* potentialPeers,
+        PeerSource* potentialPeers,
         unsigned        stasisDuration,
         MsgRcvr&        msgRcvr)
     : pImpl{new P2pMgrImpl(serverSockAddr, peerCount, potentialPeers,

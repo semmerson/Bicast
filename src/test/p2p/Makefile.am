@@ -11,8 +11,8 @@ check_PROGRAMS	= \
 	Channel_test \
 	ChunkChannel_test \
 	Peer_test \
-	PeerSet_test
-#	P2pMgr_test
+	PeerSet_test \
+	P2pMgr_test
 #	Chunk2Peers_test
 
 Channel_test_SOURCES		= Channel_test.cpp
@@ -20,14 +20,14 @@ ChunkChannel_test_SOURCES	= ChunkChannel_test.cpp
 Peer_test_SOURCES		= Peer_test.cpp
 #Chunk2Peers_test_SOURCES	= Chunk2Peers_test.cpp
 PeerSet_test_SOURCES		= PeerSet_test.cpp
-#P2pMgr_test_SOURCES		= P2pMgr_test.cpp
+P2pMgr_test_SOURCES		= P2pMgr_test.cpp
 
 TESTS	= \
 	Channel_test \
 	ChunkChannel_test \
 	Peer_test \
-	PeerSet_test
-#	P2pMgr_test
+	PeerSet_test \
+	P2pMgr_test
 #	Chunk2Peers_test
 
 callgrind:	Peer_test

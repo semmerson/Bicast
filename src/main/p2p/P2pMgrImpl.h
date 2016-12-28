@@ -14,27 +14,26 @@
 #ifndef MAIN_P2P_P2PMGRIMPL_H_
 #define MAIN_P2P_P2PMGRIMPL_H_
 
-#include "Executor.h"
+#include "Completer.h"
 #include "Future.h"
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
 #include "PeerSet.h"
-#include "PotentialPeers.h"
-
 #include <condition_variable>
 #include <future>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include "PeerSource.h"
 
 namespace hycast {
 
 class P2pMgrImpl final {
-    InetSockAddr    serverSockAddr; /// Internet address of peer-server
-    MsgRcvr&        msgRcvr;        /// Object to receive incoming messages
-    PotentialPeers* potentialPeers; /// Source of potential peers
-    PeerSet         peerSet;        /// Set of active peers
-    Executor<void>  executor;
+    InetSockAddr     serverSockAddr; /// Internet address of peer-server
+    MsgRcvr&         msgRcvr;        /// Object to receive incoming messages
+    PeerSource*  peerSource; /// Source of potential peers
+    PeerSet          peerSet;        /// Set of active peers
+    Completer<void>  completer;      /// Asynchronous task completion service
 
     /**
      * Runs the server for connections from remote peers. Doesn't return unless
@@ -68,7 +67,7 @@ public:
     P2pMgrImpl(
             InetSockAddr&   serverSockAddr,
             unsigned        peerCount,
-            PotentialPeers* potentialPeers,
+            PeerSource* potentialPeers,
             unsigned        stasisDuration,
             MsgRcvr&        msgRcvr);
     /**
