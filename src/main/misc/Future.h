@@ -21,7 +21,7 @@ namespace hycast {
 
 template<class R> class FutureImpl;
 template<class R> class ExecutorImpl;
-template<class R> class CompleterImpl;
+template<class R> class BasicExecutorImpl;
 template<class R> class BasicCompleterImpl;
 
 /**
@@ -31,9 +31,7 @@ template<class R> class BasicCompleterImpl;
 template<class R>
 class Future final
 {
-    friend class ExecutorImpl<R>;
-    friend class CompleterImpl<R>;
-    friend class BasicCompleterImpl<R>;
+    friend class BasicExecutorImpl<R>;
 
     std::shared_ptr<FutureImpl<R>> pImpl;
 
@@ -56,6 +54,11 @@ public:
      * @param[in] func  Function to execute
      */
     explicit Future(std::function<R()> func);
+    /**
+     * Indicates if this instance has a callable or is empty.
+     * @return `true` iff this instance has a callable
+     */
+    operator bool() const noexcept;
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.
@@ -105,9 +108,7 @@ public:
 template<>
 class Future<void> final
 {
-    friend class ExecutorImpl<void>;
-    friend class CompleterImpl<void>;
-    friend class BasicCompleterImpl<void>;
+    friend class BasicExecutorImpl<void>;
 
     std::shared_ptr<FutureImpl<void>> pImpl;
 
@@ -131,6 +132,11 @@ public:
      * @param[in] fund  Function to execute
      */
     explicit Future(std::function<void()> func);
+    /**
+     * Indicates if this instance has a callable or is empty.
+     * @return `true` iff this instance has a callable
+     */
+    operator bool() const noexcept;
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.

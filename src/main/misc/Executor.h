@@ -16,11 +16,11 @@
 
 #include <functional>
 #include <memory>
+#include <pthread.h>
 
 namespace hycast {
 
-template <class Ret>
-class ExecutorImpl;
+template<class Ret> class ExecutorImpl;
 
 template<class Ret>
 class Executor final
@@ -49,6 +49,21 @@ public:
      * @threadsafety        Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func);
+    /**
+     * Returns the future corresponding to a thread identifier.
+     * @param[in] threadId  Thread identifier
+     * @return              The corresponding future. Will be empty if no such
+     *                      future exists.
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
+     */
+    Future<Ret> getFuture(const pthread_t threadId);
+    /**
+     * Shuts down. Cancels all executing tasks. Will not accept further tasks.
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void shutdownNow();
 };
 
 } // namespace

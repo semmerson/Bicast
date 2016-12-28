@@ -34,6 +34,12 @@ BasicFutureImpl<R>::BasicFutureImpl(std::function<R()> func)
 {}
 
 template<class R>
+BasicFutureImpl<R>::operator bool() const noexcept
+{
+    return func.operator bool();
+}
+
+template<class R>
 BasicFutureImpl<R>::~BasicFutureImpl()
 {}
 

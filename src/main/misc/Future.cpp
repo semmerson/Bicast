@@ -25,6 +25,12 @@ Future<R>::Future(std::function<R()> func)
 {}
 
 template<class R>
+Future<R>::operator bool() const noexcept
+{
+    return pImpl->operator bool();
+}
+
+template<class R>
 bool Future<R>::operator==(const Future<R>& that)
 {
     return pImpl == that.pImpl;
@@ -79,6 +85,11 @@ Future<void>::Future()
 Future<void>::Future(std::function<void()> func)
     : pImpl(new FutureImpl<void>(func))
 {}
+
+Future<void>::operator bool() const noexcept
+{
+    return pImpl->operator bool();
+}
 
 bool Future<void>::operator==(const Future<void>& that)
 {

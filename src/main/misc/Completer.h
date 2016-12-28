@@ -20,8 +20,7 @@
 
 namespace hycast {
 
-template <class Ret>
-class CompleterImpl;
+template <class Ret> class CompleterImpl;
 
 template<class Ret>
 class Completer final
@@ -56,7 +55,7 @@ public:
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    void shutdown();
+    void shutdownNow();
 };
 
 } // namespace

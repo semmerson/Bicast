@@ -30,8 +30,7 @@ template<class R>
 class BasicFutureImpl
 {
 protected:
-    friend class ExecutorImpl<R>;
-    friend class ExecutorImpl<void>;
+    friend class BasicExecutorImpl<R>;
 
     std::function<R()>              func;
     mutable std::mutex              mutex;
@@ -109,6 +108,13 @@ protected:
      * @threadsafety    Safe
      */
     virtual R getResult() =0;
+
+public:
+    /**
+     * Indicates if this instance has a callable or is empty.
+     * @return `true` iff this instance has a callable
+     */
+    operator bool() const noexcept;
 };
 
 template<class R>
