@@ -16,6 +16,7 @@
 
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
+#include "Notifier.h"
 #include <memory>
 #include "PeerSource.h"
 
@@ -23,7 +24,8 @@ namespace hycast {
 
 class P2pMgrImpl; /// Forward declaration
 
-class P2pMgr final {
+class P2pMgr final : public Notifier
+{
     std::shared_ptr<P2pMgrImpl> pImpl; /// `pImpl` idiom
 public:
     /**
@@ -31,7 +33,7 @@ public:
      * @param[in]     serverSockAddr  Socket address to be used by the server
      *                                that remote peers connect to
      * @param[in]     peerCount       Canonical number of active peers
-     * @param[in]     potentialPeers  Source of potential replacement peers or
+     * @param[in]     peerSource      Source of potential replacement peers or
      *                                `nullptr`, in which case no replacement is
      *                                performed
      * @param[in]     stasisDuration  Time interval, in seconds, over which the
@@ -43,7 +45,7 @@ public:
     P2pMgr(
             InetSockAddr&   serverSockAddr,
             unsigned        peerCount,
-            PeerSource* potentialPeers,
+            PeerSource*     peerSource,
             unsigned        stasisDuration,
             MsgRcvr&        msgRcvr);
     /**
@@ -55,6 +57,22 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void run();
+    /**
+     * Sends information about a product to the remote peers.
+     * @param[in] prodInfo        Product information
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ProdInfo& prodInfo) const;
+    /**
+     * Sends information about a chunk-of-data to the remote peers.
+     * @param[in] chunkInfo       Chunk information
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ChunkInfo& chunkInfo) const;
 };
 
 } // namespace

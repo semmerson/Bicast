@@ -22,25 +22,21 @@ namespace hycast {
 
 Socket::Socket()
     : pImpl(new SocketImpl())
-{
-}
+{}
 
 Socket::Socket(
         const int      sd,
         const uint16_t numStreams)
     : pImpl(new SocketImpl(sd, numStreams))
-{
-}
+{}
 
 Socket::Socket(SocketImpl* impl)
     : pImpl(impl)
-{
-}
+{}
 
 Socket::Socket(std::shared_ptr<SocketImpl> sptr)
     : pImpl(sptr)
-{
-}
+{}
 
 uint16_t Socket::getNumStreams() const
 {

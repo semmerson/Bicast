@@ -9,10 +9,54 @@
  * @author: Steven R. Emmerson
  */
 
+#include "ChannelImpl.h"
 #include "ChunkChannel.h"
-#include "ChunkChannelImpl.h"
+#include "Chunk.h"
+#include "Socket.h"
 
 namespace hycast {
+
+class ChunkChannelImpl final : public ChannelImpl
+{
+public:
+    /**
+     * Constructs from nothing. Any attempt to use the resulting instance will
+     * throw an exception.
+     */
+    ChunkChannelImpl() =default;
+
+    /**
+     * Constructs from an SCTP socket, SCTP stream identifier, and protocol
+     * version.
+     * @param[in] sock      SCTP socket
+     * @param[in] streamId  SCTP stream ID
+     * @param[in] version   Protocol version
+     */
+    ChunkChannelImpl(
+            Socket&        sock,
+            const unsigned streamId,
+            const unsigned version)
+        : ChannelImpl::ChannelImpl(sock, streamId, version)
+    {}
+
+    /**
+     * Sends a chunk-of-data.
+     * @param[in] chunk  Chunk of data
+     */
+    void send(const ActualChunk& chunk)
+    {
+        chunk.serialize(sock, streamId, version);
+    }
+
+    /**
+     * Returns the chunk-of-data in the current message.
+     * @return the chunk-of-data in the current message
+     */
+    LatentChunk recv()
+    {
+        return LatentChunk(sock, version);
+    }
+};
 
 ChunkChannel::ChunkChannel(
         Socket&        sock,

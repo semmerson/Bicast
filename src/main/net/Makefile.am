@@ -16,12 +16,9 @@ lib_la_SOURCES 	= \
 	Inet6Addr.cpp Inet6Addr.h \
 	InetNameAddr.cpp InetNameAddr.h \
 	InetAddr.cpp InetAddr.h \
-	InetSockAddrImpl.cpp InetSockAddrImpl.h \
 	InetSockAddr.cpp InetSockAddr.h \
 	SocketImpl.cpp SocketImpl.h \
 	Socket.cpp Socket.h \
-	ClientSocketImpl.cpp ClientSocketImpl.h \
 	ClientSocket.cpp ClientSocket.h \
-	ServerSocketImpl.cpp ServerSocketImpl.h \
 	ServerSocket.cpp ServerSocket.h \
 	Serializable.h

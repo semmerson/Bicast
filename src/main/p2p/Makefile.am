@@ -13,18 +13,14 @@ lib_la_SOURCES 	= \
 	Channel.h \
 	ChannelImpl.cpp ChannelImpl.h \
 	RegChannel.cpp RegChannel.h \
-	RegChannelImpl.cpp RegChannelImpl.h \
-	ChunkChannelImpl.cpp ChunkChannelImpl.h \
 	ChunkChannel.cpp ChunkChannel.h \
-	PeerImpl.cpp PeerImpl.h \
+	Notifier.h \
 	Peer.cpp Peer.h \
 	PeerMgr.h \
-	MsgRcvrImpl.cpp MsgRcvrImpl.h \
-	MsgRcvr.cpp MsgRcvr.h \
-	PeerSetImpl.cpp PeerSetImpl.h \
+	MsgRcvrImpl.h \
+	MsgRcvr.h \
 	PeerSet.cpp PeerSet.h \
 	PeerSource.h \
-	P2pMgrImpl.cpp P2pMgrImpl.h \
 	P2pMgr.cpp P2pMgr.h
 
 # Compiler options. Here we are adding the include directory

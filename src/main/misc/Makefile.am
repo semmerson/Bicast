@@ -10,7 +10,6 @@ noinst_LTLIBRARIES = lib.la
 # Sources for libhycast
 lib_la_SOURCES 	= \
 	MapOfLists.cpp MapOfLists.h \
-	FixedDelayQueueImpl.cpp FixedDelayQueueImpl.h \
 	FixedDelayQueue.cpp FixedDelayQueue.h \
 	FutureImpl.cpp FutureImpl.h \
 	Future.cpp Future.h \

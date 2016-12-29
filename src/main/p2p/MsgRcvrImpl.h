@@ -23,7 +23,7 @@ namespace hycast {
 
 class MsgRcvrImpl {
 public:
-    virtual ~MsgRcvrImpl();
+    virtual ~MsgRcvrImpl() =default;
     /**
      * Receives a notice about a new product.
      * @param[in]     info  Information about the product

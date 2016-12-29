@@ -62,10 +62,13 @@ TEST_F(P2pMgrTest, Execution) {
     hycast::Completer<void> completer{};
     completer.submit([&p2pMgr1]{ p2pMgr1.run(); });
     completer.submit([&p2pMgr2]{ p2pMgr2.run(); });
+    hycast::ProdInfo prodInfo("product", 1, 2, 32000);
+    p2pMgr1.sendNotice(prodInfo);
+    hycast::ChunkInfo chunkInfo(1, 0);
+    p2pMgr1.sendNotice(chunkInfo);
     ::sleep(1);
-    completer.shutdown();
-    completer.get().getResult();
-    completer.get().getResult();
+    completer.shutdownNow();
+    completer.awaitTermination();
 }
 
 }  // namespace

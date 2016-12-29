@@ -139,6 +139,14 @@ public:
             pair.second.cancel();
         isShutdown = true;
     }
+    /**
+     * Waits until all tasks have completed after a call to shutdownNow().
+     */
+    void awaitTermination() {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (!activeTasks.empty())
+            cond.wait(lock);
+    }
 };
 
 template<class Ret>
@@ -230,6 +238,12 @@ template<class Ret>
 void Executor<Ret>::shutdownNow()
 {
     pImpl->shutdownNow();
+}
+
+template<class Ret>
+void Executor<Ret>::awaitTermination()
+{
+    pImpl->awaitTermination();
 }
 
 template class Executor<void>;

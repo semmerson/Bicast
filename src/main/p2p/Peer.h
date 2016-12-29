@@ -14,6 +14,7 @@
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "Notifier.h"
 #include "ProdInfo.h"
 #include "Socket.h"
 
@@ -25,7 +26,8 @@ namespace hycast {
 class PeerImpl; // Forward declaration
 class MsgRcvr; // Forward declaration
 
-class Peer final {
+class Peer final : public Notifier
+{
     std::shared_ptr<PeerImpl> pImpl; // `pImpl` idiom
 public:
     /**

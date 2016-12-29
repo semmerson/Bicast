@@ -132,16 +132,17 @@ TEST_F(CompleterTest, VoidShutdown) {
     auto future = completer.submit([]{::pause();});
     completer.shutdownNow();
     EXPECT_THROW(completer.submit([]{return;}), std::logic_error);
-    future.wait();
+    completer.awaitTermination();
+    EXPECT_TRUE(future.wasCancelled());
 }
 
 // Tests shutting-down int completer
 TEST_F(CompleterTest, IntShutdown) {
     hycast::Completer<int> completer{};
-    completer.submit([]{::pause(); return 1;});
+    auto future = completer.submit([]{::pause(); return 1;});
     completer.shutdownNow();
     EXPECT_THROW(completer.submit([]{return 2;}), std::logic_error);
-    auto future = completer.get();
+    completer.awaitTermination();
     EXPECT_TRUE(future.wasCancelled());
 }
 

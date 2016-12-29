@@ -11,12 +11,77 @@
 
 #include "ChannelImpl.h"
 #include "RegChannel.h"
-#include "RegChannelImpl.h"
+#include "Serializable.h"
+#include "Socket.h"
 #include "VersionMsg.h"
 
+#include <cstdint>
 #include <memory>
+#include <mutex>
+#include <utility>
 
 namespace hycast {
+
+template <class T>
+class RegChannelImpl final : public ChannelImpl
+{
+public:
+    /**
+     * Constructs from nothing. Any attempt to use the resulting object will
+     * throw an exception.
+     */
+    RegChannelImpl() = default;
+    /**
+     * Constructs from an SCTP socket, SCTP stream identifier, and protocol
+     * version.
+     * @param[in] sock      SCTP socket
+     * @param[in] streamId  SCTP stream ID
+     * @param[in] version   Protocol version
+     */
+    RegChannelImpl(
+            Socket&            sock,
+            const unsigned     streamId,
+            const unsigned     version)
+        : ChannelImpl::ChannelImpl(sock, streamId, version)
+    {}
+
+    /**
+     * Sends a serializable object.
+     * @param[in] obj             Serializable object.
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void send(const Serializable& obj)
+    {
+        const size_t nbytes = obj.getSerialSize(version);
+        alignas(alignof(max_align_t)) char buf[nbytes];
+        /*
+         * The following won't throw std::invalid_argument because `nbytes` is
+         * correct.
+         */
+        obj.serialize(buf, nbytes, version);
+        sock.send(streamId, buf, nbytes);
+    }
+
+    /**
+     * Returns the object in the current message.
+     * @return the object in the current message
+     */
+    typename std::result_of<decltype(&T::deserialize)
+            (const char*, size_t, unsigned)>::type recv()
+    {
+        size_t nbytes = getSize();
+        alignas(alignof(max_align_t)) char buf[nbytes];
+        sock.recv(buf, nbytes);
+        return T::deserialize(buf, nbytes, version);
+    }
+};
+
+template class RegChannelImpl<VersionMsg>;
+template class RegChannelImpl<ProdIndex>;
+template class RegChannelImpl<ProdInfo>;
+template class RegChannelImpl<ChunkInfo>;
 
 template <class T>
 RegChannel<T>::RegChannel(

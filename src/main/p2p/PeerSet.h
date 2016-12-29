@@ -12,6 +12,7 @@
 #ifndef PEERSET_H_
 #define PEERSET_H_
 
+#include "Notifier.h"
 #include "Peer.h"
 
 #include <memory>
@@ -20,7 +21,8 @@ namespace hycast {
 
 class PeerSetImpl; // Forward declaration
 
-class PeerSet final {
+class PeerSet final : public Notifier
+{
     std::shared_ptr<PeerSetImpl> pImpl; // `pImpl` idiom
 public:
     typedef enum {
@@ -42,28 +44,31 @@ public:
      * Tries to insert a peer.
      * @param[in]  candidate Candidate peer
      * @param[out] worst     Replaced, worst-performing peer
-     * @return The status of the attempted insertion. `*worst` is set if the
-     *         returned status is `REPLACED` and `worst != nullptr`.
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * @return               Status of the attempted insertion:
+     *   - PeerSet::FAILURE  Insertion was rejected
+     *   - PeerSet::SUCCESS  Insertion was successful
+     *   - PeerSet::REPLACED Insertion was successful and `*worst` is set if
+     *     `worst != nullptr`
+     * @exceptionsafety      Strong guarantee
+     * @threadsafety         Safe
      */
     InsertStatus tryInsert(
             Peer& candidate,
             Peer* worst = nullptr) const;
     /**
-     * Sends information about a product to the remote peers.
-     * @param[in] prodInfo  Product information
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
+     * Sends information about a product.
+     * @param[in] prodInfo        Product information
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
     void sendNotice(const ProdInfo& prodInfo) const;
     /**
-     * Sends information about a chunk-of-data to the remote peers.
-     * @param[in] chunkInfo  Chunk information
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
+     * Sends information about a chunk-of-data.
+     * @param[in] chunkInfo       Chunk information
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo) const;
     /**

@@ -64,6 +64,10 @@ public:
      * @threadsafety     Safe
      */
     void shutdownNow();
+    /**
+     * Waits until all tasks have completed after a call to shutdownNow().
+     */
+    void awaitTermination();
 };
 
 } // namespace

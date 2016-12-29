@@ -10,15 +10,30 @@
  */
 
 #include "ClientSocket.h"
-#include "ClientSocketImpl.h"
+#include "InetSockAddr.h"
+#include "SocketImpl.h"
+
+#include <errno.h>
+#include <system_error>
 
 namespace hycast {
+
+class ClientSocketImpl final : public SocketImpl
+{
+public:
+    ClientSocketImpl(
+            const InetSockAddr& addr,
+            const uint16_t      numStreams)
+        : SocketImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+    {
+        addr.connect(sock.load());
+    }
+};
 
 ClientSocket::ClientSocket(
         const InetSockAddr& addr,
         const uint16_t      numStreams)
     : Socket(new ClientSocketImpl(addr, numStreams))
-{
-}
+{}
 
 } // namespace

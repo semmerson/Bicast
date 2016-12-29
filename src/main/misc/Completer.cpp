@@ -109,6 +109,12 @@ public:
     void shutdownNow() {
         executor.shutdownNow();
     }
+    /**
+     * Waits until all tasks have completed after a call to shutdownNow().
+     */
+    void awaitTermination() {
+        executor.awaitTermination();
+    }
 };
 
 template<class Ret>
@@ -198,6 +204,12 @@ template<class Ret>
 void Completer<Ret>::shutdownNow()
 {
     pImpl->shutdownNow();
+}
+
+template<class Ret>
+void Completer<Ret>::awaitTermination()
+{
+    pImpl->awaitTermination();
 }
 
 template class Completer<void>;
