@@ -16,7 +16,6 @@
 #include "P2pMgr.h"
 #include "Peer.h"
 #include "ProdInfo.h"
-#include "Task.h"
 
 #include <future>
 #include <gtest/gtest.h>
