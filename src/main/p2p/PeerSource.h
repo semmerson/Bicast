@@ -14,15 +14,24 @@
 
 #include "InetAddr.h"
 
+#include <iterator>
+#include <utility>
+
 namespace hycast {
 
 class PeerSource {
 public:
+    typedef std::iterator<std::forward_iterator_tag, InetAddr> iterator;
+
+    virtual ~PeerSource();
+
     /**
-     * Returns the next potential peer. Blocks until it's available.
-     * @return Internet address of the next potential peer
+     * Returns an iterator over the potential peers. Blocks if no peers are
+     * available.
+     * @return Iterator over potential peers. First element is the forward
+     *         iterator; second element is the "end" iterator.
      */
-    InetAddr getNext();
+    virtual std::pair<iterator,iterator> getPeers();
 };
 
 } // namespace

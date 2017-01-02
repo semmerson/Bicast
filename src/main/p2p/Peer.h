@@ -42,9 +42,8 @@ public:
      * @param[in,out] sock     Socket
      * @see runReceiver()
      */
-    Peer(
-            MsgRcvr& msgRcvr,
-            Socket&  sock);
+    Peer(MsgRcvr& msgRcvr,
+         Socket&  sock);
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
