@@ -43,6 +43,11 @@ uint16_t Socket::getNumStreams() const
     return pImpl->getNumStreams();
 }
 
+const InetSockAddr& Socket::getRemoteAddr()
+{
+    return pImpl->getRemoteAddr();
+}
+
 bool Socket::operator ==(const Socket& that) const noexcept
 {
     return *pImpl.get() == *that.pImpl.get();

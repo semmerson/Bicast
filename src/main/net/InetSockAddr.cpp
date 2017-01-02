@@ -17,6 +17,7 @@
 #include <cstring>
 #include <functional>
 #include <netinet/in.h>
+#include <stdexcept>
 #include <sys/socket.h>
 #include <system_error>
 
@@ -99,6 +100,33 @@ public:
     {}
 
     /**
+     * Constructs from a generic socket address.
+     * @param[in] addr                Generic socket address. Must be either
+     *                                IPv4 or IPv6
+     * @throws std::invalid_argument  `addr` is neither IPv4 nor IPv6
+     */
+    InetSockAddrImpl(const struct sockaddr& sockaddr)
+        : InetSockAddrImpl()
+    {
+        if (sockaddr.sa_family == AF_INET) {
+            const struct sockaddr_in* addr =
+                    reinterpret_cast<const struct sockaddr_in*>(&sockaddr);
+            inetAddr = std::move(InetAddr(addr->sin_addr.s_addr));
+            port = ntohs(addr->sin_port);
+        }
+        else if (sockaddr.sa_family == AF_INET6) {
+            const struct sockaddr_in6* addr =
+                    reinterpret_cast<const struct sockaddr_in6*>(&sockaddr);
+            inetAddr = std::move(InetAddr(addr->sin6_addr));
+            port = ntohs(addr->sin6_port);
+        }
+        else {
+            throw std::invalid_argument("Socket address neither IPv4 nor IPv6: "
+                    "sa_family=" + std::to_string(sockaddr.sa_family));
+        }
+    }
+
+    /**
      * Returns the string representation of the Internet socket address.
      * @return String representation of the Internet socket address
      * @throws std::bad_alloc if required memory can't be allocated
@@ -177,6 +205,10 @@ InetSockAddr::InetSockAddr(const struct sockaddr_in& addr)
 {}
 
 InetSockAddr::InetSockAddr(const struct sockaddr_in6& sockaddr)
+    : pImpl{new InetSockAddrImpl(sockaddr)}
+{}
+
+InetSockAddr::InetSockAddr(const struct sockaddr& sockaddr)
     : pImpl{new InetSockAddrImpl(sockaddr)}
 {}
 

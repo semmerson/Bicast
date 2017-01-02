@@ -12,7 +12,7 @@
 #ifndef MAIN_P2P_PEERSOURCE_H_
 #define MAIN_P2P_PEERSOURCE_H_
 
-#include "InetAddr.h"
+#include "InetSockAddr.h"
 
 #include <iterator>
 #include <utility>
@@ -21,7 +21,7 @@ namespace hycast {
 
 class PeerSource {
 public:
-    typedef std::iterator<std::forward_iterator_tag, InetAddr> iterator;
+    typedef std::iterator<std::forward_iterator_tag, InetSockAddr> iterator;
 
     virtual ~PeerSource();
 

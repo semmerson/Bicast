@@ -1,5 +1,6 @@
 /**
- * This file declares an immutable Internet socket address.
+ * This file declares an immutable Internet socket address, which comprises an
+ * Internet address and a port number.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -78,6 +79,11 @@ public:
      * @exceptionsafety Strong
      */
     InetSockAddr(const struct sockaddr_in6& sockaddr);
+    /**
+     * Constructs from a generic socket address.
+     * @param[in] addr  Generic socket address
+     */
+    InetSockAddr(const struct sockaddr& sockaddr);
     /**
      * Copy constructs from another instance.
      * @param[in] that  Other instance

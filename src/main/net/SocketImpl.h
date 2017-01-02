@@ -12,6 +12,8 @@
 #ifndef SOCKET_IMPL_H_
 #define SOCKET_IMPL_H_
 
+#include "InetSockAddr.h"
+
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -29,12 +31,13 @@ class SocketImpl {
 protected:
     std::atomic_int sock;
 private:
-    unsigned   streamId;
-    uint32_t   size;
-    bool       haveCurrMsg;
-    unsigned   numStreams;
-    std::mutex readMutex;
-    std::mutex writeMutex;
+    unsigned     streamId;
+    uint32_t     size;
+    bool         haveCurrMsg;
+    unsigned     numStreams;
+    std::mutex   readMutex;
+    std::mutex   writeMutex;
+    InetSockAddr remoteAddr;
     /**
      * Prevents copy construction.
      */
@@ -99,10 +102,11 @@ public:
     SocketImpl();
     /**
      * Constructs from a socket and the number of SCTP streams.
-     * @param[in] sd          Socket descriptor
-     * @param[in] numStreams  Number of SCTP streams
-     * @throws std::invalid_argument if `sock < 0 || numStreams > UINT16_MAX`
-     * @throws std::system_error if the socket couldn't be configured
+     * @param[in] sd                  Socket descriptor
+     * @param[in] numStreams          Number of SCTP streams
+     * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
+     * @throws std::system_error      Socket couldn't be configured
+     * @throws std::system_error      `getpeername(sd)` failed
      */
     SocketImpl(
             const int      sd,
@@ -119,6 +123,11 @@ public:
     unsigned getNumStreams() {
         return numStreams;
     }
+    /**
+     * Returns the Internet socket address of the remote end.
+     * @return Internet socket address of the remote end
+     */
+    const InetSockAddr& getRemoteAddr();
     /**
      * Indicates if this instance equals another.
      * @param[in] that  Other instance

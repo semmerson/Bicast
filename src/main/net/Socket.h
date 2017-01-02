@@ -38,12 +38,13 @@ public:
      */
     explicit Socket();
     /**
-     * Constructs from a BSD socket. Only do this once per socket because the
-     * destructor might close the socket.
-     * @param[in] sd          Socket descriptor
-     * @param[in] numStreams  Number of SCTP streams
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @throws std::invalid_argument if `sock < 0`
+     * Constructs from a BSD socket and the number of SCTP streams. Only do this
+     * once per socket because the destructor might close the socket.
+     * @param[in] sd                  Socket descriptor
+     * @param[in] numStreams          Number of SCTP streams
+     * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
+     * @throws std::system_error      Socket couldn't be configured
+     * @throws std::system_error      `getpeername(sd)` failed
      * @see Socket::~Socket()
      * @see Socket::operator=(Socket& socket)
      * @see Socket::operator=(Socket&& socket)
@@ -61,6 +62,11 @@ public:
      * @return the number of SCTP streams
      */
     uint16_t getNumStreams() const;
+    /**
+     * Returns the Internet socket address of the remote end.
+     * @return Internet socket address of the remote end
+     */
+    const InetSockAddr& getRemoteAddr();
     /**
      * Indicates if this instance equals another.
      * @param[in] that  Other instance

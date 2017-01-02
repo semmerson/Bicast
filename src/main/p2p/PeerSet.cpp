@@ -10,7 +10,9 @@
  */
 
 #include "ChunkInfo.h"
+#include "InetSockAddr.h"
 #include "logging.h"
+#include "MsgRcvr.h"
 #include "Peer.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
@@ -329,6 +331,44 @@ class PeerSetImpl final
     bool                                incValueEnabled;
 
     /**
+     * Indicates if insufficient time has passed to determine the
+     * worst-performing peer.
+     * @return `true`  Iff it's too soon
+     */
+    inline bool tooSoon()
+    {
+        assert(isLocked(mutex));
+        return Clock::now() < whenEligible;
+    }
+
+    /**
+     * Indicates if the set is full.
+     * @return `true`  Iff set is full
+     */
+    inline bool full()
+    {
+        assert(isLocked(mutex));
+        return peerEntries.size() >= maxPeers;
+    }
+
+    /**
+     * Indicates if this instance contains a remote peer with a given Internet
+     * socket address.
+     * @param[in] addr  Internet socket address
+     * @return `true`   Iff this instance contains a remote peer with the given
+     *                  Internet socket address
+     */
+    bool contains(const InetSockAddr& addr)
+    {
+        assert(isLocked(mutex));
+        for (auto entry : peerEntries) {
+            if (addr == entry.first.getRemoteAddr())
+                return true;
+        }
+        return false;
+    }
+
+    /**
      * Unconditionally inserts a peer. The peer immediately starts receiving
      * messages from its associated remote peer and is ready to send messages.
      * @param[in] peer   Peer to be inserted
@@ -396,11 +436,6 @@ class PeerSetImpl final
     }
 
 public:
-    typedef enum {
-        FAILURE,
-        SUCCESS,
-        REPLACED
-    } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
      * @param[in] maxPeers            Maximum number of peers
@@ -428,38 +463,72 @@ public:
      * @param[in]  candidate  Candidate peer
      * @param[out] replaced   Replaced, worst-performing peer
      * @return                Insertion status:
-     *   - FAILURE   Failure
+     *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
      *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - FULL      Set is full and insufficient time to determine worst peer
      * @exceptionsafety       Strong guarantee
      * @threadsafety          Safe
      */
-    InsertStatus tryInsert(
+    PeerSet::InsertStatus tryInsert(
             Peer& candidate,
             Peer* replaced)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
         if (peerEntries.find(candidate) != peerEntries.end())
-            return FAILURE; // Candidate peer is already a member
-        if (peerEntries.size() < maxPeers) {
-            // Set not full. Just add the candidate peer
+            return PeerSet::EXISTS; // Candidate peer is already a member
+        if (!full()) {
+            // Just add the candidate peer
             insert(candidate);
             if (peerEntries.size() == maxPeers) {
                 incValueEnabled = true;
                 setWhenEligible();
             }
-            return SUCCESS;
+            return PeerSet::SUCCESS;
         }
-        if (Clock::now() < whenEligible)
-            return FAILURE; // Insufficient duration to determine worst peer
+        // Set is full
+        if (tooSoon())
+            return PeerSet::FULL;
+        // Replace worst-performing peer
         Peer worst{removeWorstPeer()};
         if (replaced)
             *replaced = worst;
         insert(candidate);
         resetValues();
         setWhenEligible();
-        return REPLACED;
+        return PeerSet::REPLACED;
     }
+
+    /**
+     * Tries to insert a remote peer.
+     * @param[in]  candidate   Candidate remote peer
+     * @param[in,out] msgRcvr  Receiver of messages from the remote peer
+     * @param[out] replaced    Replaced, worst-performing peer
+     * @return                 Insertion status:
+     *   - EXISTS    Peer is already member of set
+     *   - SUCCESS   Success
+     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - FULL      Set is full and insufficient time to determine worst peer
+     * @exceptionsafety       Strong guarantee
+     * @threadsafety          Safe
+     */
+    PeerSet::InsertStatus tryInsert(
+            const InetSockAddr& candidate,
+            MsgRcvr&            msgRcvr,
+            Peer*               replaced)
+    {
+        {
+            std::lock_guard<decltype(mutex)> lock{mutex};
+            if (full() && tooSoon())
+                return PeerSet::FULL;
+            if (contains(candidate))
+                return PeerSet::EXISTS;
+        }
+        ClientSocket sock(candidate, Peer::getNumStreams());
+        Peer         peer(msgRcvr, sock);
+        return tryInsert(peer, replaced);
+    }
+
     /**
      * Sends information about a product to the remote peers.
      * @param[in] info            Product information
@@ -515,12 +584,7 @@ PeerSet::InsertStatus PeerSet::tryInsert(
         Peer& candidate,
         Peer* replaced) const
 {
-    PeerSetImpl::InsertStatus status = pImpl->tryInsert(candidate, replaced);
-    return status == PeerSetImpl::InsertStatus::FAILURE
-            ? PeerSet::InsertStatus::FAILURE
-            : status == PeerSetImpl::InsertStatus::SUCCESS
-                ? PeerSet::InsertStatus::SUCCESS
-                : PeerSet::InsertStatus::REPLACED;
+    return pImpl->tryInsert(candidate, replaced);
 }
 
 void PeerSet::sendNotice(const ProdInfo& prodInfo) const

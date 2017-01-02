@@ -23,26 +23,28 @@
 namespace hycast {
 
 SocketImpl::SocketImpl()
-    : sock(-1),
-      streamId(0),
-      size(0),
-      haveCurrMsg(false),
-      numStreams(0),
-      readMutex(),
-      writeMutex()
+    : sock(-1)
+    , streamId(0)
+    , size(0)
+    , haveCurrMsg(false)
+    , numStreams(0)
+    , readMutex()
+    , writeMutex()
+    , remoteAddr{}
 {
 }
 
 SocketImpl::SocketImpl(
         const int      sck,
         const unsigned numStreams)
-    : sock(sck),
-      streamId(0),
-      size(0),
-      haveCurrMsg(false),
-      numStreams(numStreams),
-      readMutex(),
-      writeMutex()
+    : sock(sck)
+    , streamId(0)
+    , size(0)
+    , haveCurrMsg(false)
+    , numStreams(numStreams)
+    , readMutex()
+    , writeMutex()
+    , remoteAddr{}
 {
     int sd = sock.load();
     if (sd < 0)
@@ -52,7 +54,7 @@ SocketImpl::SocketImpl(
                 std::to_string(numStreams));
     struct sctp_event_subscribe events = {0};
     events.sctp_data_io_event = 1;
-    int status = setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
+    int status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
             sizeof(events));
     if (status)
         throw std::system_error(errno, std::system_category(),
@@ -60,18 +62,30 @@ SocketImpl::SocketImpl(
                 "events: sock=" + std::to_string(sd));
     struct sctp_initmsg sinit = {0};
     sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
-    status = setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
+    status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
             sizeof(sinit));
     if (status)
         throw std::system_error(errno, std::system_category(),
                 "setsockopt() failure: Couldn't configure number of SCTP "
                 "streams: sock=" + std::to_string(sd) + ", numStreams=" +
                 std::to_string(numStreams));
+    struct sockaddr addr;
+    socklen_t       len = sizeof(addr);
+    status = ::getpeername(sd, &addr, &len);
+    if (status)
+        throw std::system_error(errno, std::system_category(),
+                "getpeername() failure: sock=" + std::to_string(sd));
+    remoteAddr = std::move(InetSockAddr(addr));
 }
 
 SocketImpl::~SocketImpl() noexcept
 {
     this->close();
+}
+
+const InetSockAddr& SocketImpl::getRemoteAddr()
+{
+    return remoteAddr;
 }
 
 void SocketImpl::sndrcvinfoInit(

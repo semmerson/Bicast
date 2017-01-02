@@ -26,9 +26,10 @@ class PeerSet final : public Notifier
     std::shared_ptr<PeerSetImpl> pImpl; // `pImpl` idiom
 public:
     typedef enum {
-        FAILURE,
-        SUCCESS,
-        REPLACED
+        EXISTS,    /// Peer is already member of set
+        SUCCESS,   /// Success
+        REPLACED,  /// Success. Inserted peer replaced worst-performing member
+        FULL       /// Set is full and insufficient time to determine worst peer
     } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
@@ -45,10 +46,10 @@ public:
      * @param[in]  candidate Candidate peer
      * @param[out] worst     Replaced, worst-performing peer
      * @return               Status of the attempted insertion:
-     *   - PeerSet::FAILURE  Insertion was rejected
-     *   - PeerSet::SUCCESS  Insertion was successful
-     *   - PeerSet::REPLACED Insertion was successful and `*worst` is set if
-     *     `worst != nullptr`
+     *   - EXISTS    Peer is already member of set
+     *   - SUCCESS   Success
+     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - FULL      Set is full and insufficient time to determine worst peer
      * @exceptionsafety      Strong guarantee
      * @threadsafety         Safe
      */
