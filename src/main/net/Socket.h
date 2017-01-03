@@ -12,6 +12,8 @@
 #ifndef SOCKET_H_
 #define SOCKET_H_
 
+#include "InetSockAddr.h"
+
 #include <cstdint>
 #include <memory>
 #include <mutex>

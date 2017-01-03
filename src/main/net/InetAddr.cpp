@@ -16,7 +16,7 @@
 
 namespace hycast {
 
-hycast::InetAddr::InetAddr(InetAddrImpl* impl)
+InetAddr::InetAddr(InetAddrImpl* impl)
         : pImpl{impl}
 {}
 
@@ -33,6 +33,16 @@ InetAddr InetAddr::create(const in6_addr& addr)
 InetAddr InetAddr::create(const std::string addr)
 {
     return InetAddr(InetAddrImpl::create(addr));
+}
+
+size_t InetAddr::hash() const noexcept
+{
+    return pImpl->hash();
+}
+
+bool InetAddr::operator <(const InetAddr& that) const noexcept
+{
+    return *pImpl.get() < *that.pImpl.get();
 }
 
 /**

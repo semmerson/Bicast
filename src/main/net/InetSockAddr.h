@@ -103,25 +103,13 @@ public:
      */
     size_t hash() const noexcept;
     /**
-     * Compares this instance with another.
+     * Indicates if this instance is considered less than another
      * @param[in] that  Other instance
-     * @retval <0 This instance is less than the other
-     * @retval  0 This instance is equal to the other
-     * @retval >0 This instance is greater than the other
+     * @retval `true`   Iff this instance is less than the other
      * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
-    int compare(const InetSockAddr& that) const noexcept;
-    /**
-     * Indicates if this instance equals another.
-     * @param[in] that  Other instance
-     * @retval <0  This instance is less than the other
-     * @retval  0  This instance is equal to the other
-     * @retval >0  This instance is greater than the other
-     * @exceptionsafety Nothrow
-     */
-    bool operator==(const InetSockAddr& that) const noexcept {
-        return compare(that) == 0;
-    }
+    bool operator<(const InetSockAddr& that) const noexcept;
     /**
      * Returns a string representation of this instance.
      * @return A string representation of this instance
@@ -146,6 +134,20 @@ public:
      */
     void bind(int sd) const;
 };
+
+/**
+ * Indicates if one instance equals another.
+ * @retval <0  This instance is less than the other
+ * @retval  0  This instance is equal to the other
+ * @retval >0  This instance is greater than the other
+ * @exceptionsafety Nothrow
+ */
+inline bool operator==(
+        const InetSockAddr& o1,
+        const InetSockAddr& o2) noexcept
+{
+    return !(o1 < o2) && !(o2 < o1);
+}
 
 } // namespace
 

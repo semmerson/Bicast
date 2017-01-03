@@ -101,12 +101,14 @@ public:
      */
     SocketImpl();
     /**
-     * Constructs from a socket and the number of SCTP streams.
+     * Constructs from a socket and the number of SCTP streams. If the socket
+     * isn't connected to a remote endpoint, then getRemoteAddr() will return
+     * a default-constructed `InetSockAddr`.
      * @param[in] sd                  Socket descriptor
      * @param[in] numStreams          Number of SCTP streams
      * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
      * @throws std::system_error      Socket couldn't be configured
-     * @throws std::system_error      `getpeername(sd)` failed
+     * @see getRemoteAddr()
      */
     SocketImpl(
             const int      sd,

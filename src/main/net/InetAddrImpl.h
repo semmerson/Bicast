@@ -21,6 +21,10 @@
 
 namespace hycast {
 
+class Inet4Addr;
+class Inet6Addr;
+class InetNameAddr;
+
 class InetAddrImpl {
 public:
     /**
@@ -60,6 +64,40 @@ public:
      */
     virtual             ~InetAddrImpl() {};
     /**
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    virtual size_t hash() const noexcept =0;
+    /**
+     * Indicates if this instance is considered less than another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff this instance is considered less than the other
+     */
+    virtual bool operator<(const InetAddrImpl& that) const noexcept =0;
+    /**
+     * Indicates if this instance is considered less than an IPv4 address.
+     * @param[in] that  IPv4 address
+     * @retval `true`   Iff this instance is considered less than the IPv4
+     *                  address
+     */
+    virtual bool operator<(const Inet4Addr& that) const noexcept =0;
+    /**
+     * Indicates if this instance is considered less than an IPv6 address.
+     * @param[in] that  IPv6 address
+     * @retval `true`   Iff this instance is considered less than the IPv6
+     *                  address
+     */
+    virtual bool operator<(const Inet6Addr& that) const noexcept =0;
+    /**
+     * Indicates if this instance is considered less than a hostname address.
+     * @param[in] that  Hostname address
+     * @retval `true`   Iff this instance is considered less than the hostname
+     *                  address
+     */
+    virtual bool operator<(const InetNameAddr& that) const noexcept =0;
+    /**
      * Returns the string representation of the Internet address.
      * @return The string representation of the Internet address
      * @throws std::bad_alloc if required memory can't be allocated
@@ -78,6 +116,36 @@ public:
     virtual std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
             const in_port_t  port) const =0;
 };
+
+inline bool less(const Inet4Addr& o1, const Inet6Addr& o2) noexcept
+{
+    return true;
+}
+
+inline bool less(const Inet4Addr& o1, const InetNameAddr& o2) noexcept
+{
+    return true;
+}
+
+inline bool less(const Inet6Addr& o1, const InetNameAddr& o2) noexcept
+{
+    return true;
+}
+
+inline bool less(const Inet6Addr& o1, const Inet4Addr& o2) noexcept
+{
+    return false;
+}
+
+inline bool less(const InetNameAddr& o1, const Inet4Addr& o2) noexcept
+{
+    return false;
+}
+
+inline bool less(const InetNameAddr& o1, const Inet6Addr& o2) noexcept
+{
+    return false;
+}
 
 } // namespace
 

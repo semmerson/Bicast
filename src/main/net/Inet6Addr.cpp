@@ -19,6 +19,16 @@
 
 namespace hycast {
 
+size_t Inet6Addr::hash() const noexcept
+{
+    const size_t*       ptr = reinterpret_cast<const size_t*>(&ipAddr.s6_addr);
+    const size_t* const out = ptr + sizeof(ipAddr.s6_addr)/sizeof(size_t);
+    size_t              hash = 0;
+    while (ptr < out)
+        hash ^= *ptr++;
+    return hash;
+}
+
 std::string Inet6Addr::to_string() const
 {
     char buf[INET6_ADDRSTRLEN];

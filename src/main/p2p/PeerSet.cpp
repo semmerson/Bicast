@@ -10,6 +10,7 @@
  */
 
 #include "ChunkInfo.h"
+#include "ClientSocket.h"
 #include "InetSockAddr.h"
 #include "logging.h"
 #include "MsgRcvr.h"
@@ -328,7 +329,6 @@ class PeerSetImpl final
     const TimeRes                       eligibilityDuration;
     const TimeRes                       maxResideTime;
     unsigned                            maxPeers;
-    bool                                incValueEnabled;
 
     /**
      * Indicates if insufficient time has passed to determine the
@@ -362,7 +362,8 @@ class PeerSetImpl final
     {
         assert(isLocked(mutex));
         for (auto entry : peerEntries) {
-            if (addr == entry.first.getRemoteAddr())
+            const Peer* peer = &entry.first;
+            if (addr == peer->getRemoteAddr())
                 return true;
         }
         return false;
@@ -371,6 +372,9 @@ class PeerSetImpl final
     /**
      * Unconditionally inserts a peer. The peer immediately starts receiving
      * messages from its associated remote peer and is ready to send messages.
+     * If the inserted peer makes the set of peers full, then
+     *   - All value counters are reset;
+     *   - The eligibility timer is set.
      * @param[in] peer   Peer to be inserted
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Compatible but not safe
@@ -381,6 +385,10 @@ class PeerSetImpl final
         if (peerEntries.find(peer) == peerEntries.end()) {
             PeerEntry entry(new PeerEntryImpl(peer, [=](Peer& p){ handleFailure(p); }));
             peerEntries.emplace(peer, entry);
+            if (full()) {
+                resetValues();
+                setWhenEligible();
+            }
         }
     }
     /**
@@ -453,7 +461,6 @@ public:
         , eligibilityDuration{std::chrono::seconds{stasisDuration}}
         , maxResideTime{eligibilityDuration*2}
         , maxPeers{maxPeers}
-        , incValueEnabled{false}
     {
         if (maxPeers == 0)
             throw std::invalid_argument("Maximum number of peers can't be zero");
@@ -480,10 +487,6 @@ public:
         if (!full()) {
             // Just add the candidate peer
             insert(candidate);
-            if (peerEntries.size() == maxPeers) {
-                incValueEnabled = true;
-                setWhenEligible();
-            }
             return PeerSet::SUCCESS;
         }
         // Set is full
@@ -494,13 +497,11 @@ public:
         if (replaced)
             *replaced = worst;
         insert(candidate);
-        resetValues();
-        setWhenEligible();
         return PeerSet::REPLACED;
     }
 
     /**
-     * Tries to insert a remote peer.
+     * Tries to insert a remote peer given its Internet socket address.
      * @param[in]  candidate   Candidate remote peer
      * @param[in,out] msgRcvr  Receiver of messages from the remote peer
      * @param[out] replaced    Replaced, worst-performing peer
@@ -566,7 +567,7 @@ public:
     void incValue(Peer& peer)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
-        if (incValueEnabled) {
+        if (full()) {
             auto iter = peerEntries.find(peer);
             if (iter != peerEntries.end())
                 iter->second->incValue();

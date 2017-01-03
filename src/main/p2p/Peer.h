@@ -45,6 +45,11 @@ public:
     Peer(MsgRcvr& msgRcvr,
          Socket&  sock);
     /**
+     * Returns the Internet socket address of the remote peer.
+     * @return Internet socket address of remote peer
+     */
+    const InetSockAddr& getRemoteAddr() const;
+    /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
      * @execptionsafety Nothrow

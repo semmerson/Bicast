@@ -127,6 +127,32 @@ public:
     }
 
     /**
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    size_t hash() const noexcept
+    {
+        std::hash<uint16_t> h;
+        return inetAddr.hash() ^ h(port);
+    }
+
+    /**
+     * Indicates if this instance is considered less than another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff this instance is less than the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    bool operator<(const InetSockAddrImpl& that) const noexcept
+    {
+        return (inetAddr < that.inetAddr)
+                ? true
+                : inetAddr == that.inetAddr && port < that.port;
+    }
+
+    /**
      * Returns the string representation of the Internet socket address.
      * @return String representation of the Internet socket address
      * @throws std::bad_alloc if required memory can't be allocated
@@ -177,6 +203,21 @@ public:
     }
 
 };
+
+/**
+ * Indicates if an instance is equal to another.
+ * @param[in] that  Other instance
+ * @retval `true`   Iff this instance is considered equal to the other
+ * @exceptionsafety Nothrow
+ * @threadsafety    Safe
+ */
+bool operator==(
+        const InetSockAddrImpl& o1,
+        const InetSockAddrImpl& o2) noexcept
+{
+    return !(o1 < o2) && !(o2 < o1);
+}
+
 
 InetSockAddr::InetSockAddr()
     : pImpl{new InetSockAddrImpl()}
@@ -230,6 +271,16 @@ std::string InetSockAddr::to_string() const
 void InetSockAddr::connect(int sd) const
 {
     pImpl->connect(sd);
+}
+
+size_t InetSockAddr::hash() const noexcept
+{
+    return pImpl->hash();
+}
+
+bool InetSockAddr::operator<(const InetSockAddr& that) const noexcept
+{
+    return pImpl.get() < that.pImpl.get();
 }
 
 void InetSockAddr::bind(int sd) const

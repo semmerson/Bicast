@@ -72,10 +72,9 @@ SocketImpl::SocketImpl(
     struct sockaddr addr;
     socklen_t       len = sizeof(addr);
     status = ::getpeername(sd, &addr, &len);
-    if (status)
-        throw std::system_error(errno, std::system_category(),
-                "getpeername() failure: sock=" + std::to_string(sd));
-    remoteAddr = std::move(InetSockAddr(addr));
+    remoteAddr = status
+            ? std::move(InetSockAddr())
+            : std::move(InetSockAddr(addr));
 }
 
 SocketImpl::~SocketImpl() noexcept

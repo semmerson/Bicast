@@ -130,6 +130,14 @@ public:
         return NUM_STREAM_IDS;
     }
     /**
+     * Returns the Internet socket address of the remote peer.
+     * @return Internet socket address of remote peer
+     */
+    const InetSockAddr& getRemoteAddr()
+    {
+        return sock.getRemoteAddr();
+    }
+    /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer manager methods. Doesn't return until either the socket
      * is closed or an exception is thrown.
@@ -346,6 +354,11 @@ bool Peer::operator <(const Peer& that) const noexcept
 uint16_t Peer::getNumStreams()
 {
     return PeerImpl::getNumStreams();
+}
+
+const InetSockAddr& Peer::getRemoteAddr() const
+{
+    return pImpl->getRemoteAddr();
 }
 
 size_t Peer::hash() const noexcept

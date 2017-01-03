@@ -115,6 +115,43 @@ TEST_F(InetSockAddrTest, CopyAssignment) {
     EXPECT_STREQ("128.117.140.56:388", sockaddr1.to_string().data());
 }
 
+// Tests equality
+TEST_F(InetSockAddrTest, Equality) {
+    hycast::InetSockAddr sockaddr1{"128.117.140.56", 388};
+    EXPECT_EQ(sockaddr1, sockaddr1);
+    hycast::InetSockAddr sockaddr2{"128.117.140.56", 389};
+    EXPECT_FALSE(sockaddr1 == sockaddr2);
+    hycast::InetSockAddr sockaddr3{"128.117.140.57", 388};
+    EXPECT_FALSE(sockaddr1 == sockaddr3);
+    hycast::InetSockAddr sockaddr4{"2001:db8::ff00:42:8329", 388};
+    EXPECT_FALSE(sockaddr1 == sockaddr4);
+    hycast::InetSockAddr sockaddr5{"2001:db8::ff00:42:8328", 388};
+    EXPECT_FALSE(sockaddr4 == sockaddr5);
+    hycast::InetSockAddr sockaddr6{"2001:db8::ff00:42:8329", 389};
+    EXPECT_FALSE(sockaddr4 == sockaddr6);
+}
+
+// Tests comparison
+TEST_F(InetSockAddrTest, Comparison) {
+    hycast::InetSockAddr sockaddr1{"128.117.140.56", 388};
+    EXPECT_FALSE(sockaddr1 < sockaddr1);
+    hycast::InetSockAddr sockaddr2{"128.117.140.56", 389};
+    EXPECT_TRUE(sockaddr1 < sockaddr2);
+    EXPECT_FALSE(sockaddr2 < sockaddr1);
+    hycast::InetSockAddr sockaddr3{"128.117.140.57", 388};
+    EXPECT_TRUE(sockaddr1 < sockaddr3);
+    EXPECT_FALSE(sockaddr3 < sockaddr1);
+    hycast::InetSockAddr sockaddr4{"2001:db8::ff00:42:8329", 388};
+    EXPECT_TRUE(sockaddr1 < sockaddr4);
+    EXPECT_FALSE(sockaddr4 < sockaddr1);
+    hycast::InetSockAddr sockaddr5{"2001:db8::ff00:42:8330", 388};
+    EXPECT_TRUE(sockaddr4 < sockaddr5);
+    EXPECT_FALSE(sockaddr5 < sockaddr4);
+    hycast::InetSockAddr sockaddr6{"2001:db8::ff00:42:8329", 389};
+    EXPECT_TRUE(sockaddr4 < sockaddr6);
+    EXPECT_FALSE(sockaddr6 < sockaddr4);
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {

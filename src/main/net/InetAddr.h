@@ -76,6 +76,19 @@ public:
     explicit InetAddr(const std::string addr = "localhost")
         : pImpl{create(addr).pImpl} {}
     /**
+     * Returns the hash code of this instance.
+     * @return This instance's hash code
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    size_t hash() const noexcept;
+    /**
+     * Indicates if this instance is considered less than another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff this instance is considered less than the other
+     */
+    bool operator<(const InetAddr& that) const noexcept;
+    /**
      * Returns the string representation of the Internet address.
      * @return The string representation of the Internet address
      * @exceptionsafety Strong
@@ -93,6 +106,18 @@ public:
     std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
             const in_port_t  port) const;
 };
+
+/**
+ * Indicates if two Internet addresses are considered equal.
+ * @param[in] that  Other instance
+ * @retval `true`   Iff this instance is considered equal to the other
+ */
+inline bool operator==(
+        const InetAddr& o1,
+        const InetAddr& o2) noexcept
+{
+    return !(o1 < o2) && !(o2 < o1);
+}
 
 } // namespace
 
