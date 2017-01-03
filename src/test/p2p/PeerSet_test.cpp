@@ -194,6 +194,25 @@ TEST_F(PeerSetTest, PeerInsertionAndNotices) {
     ::sleep(1);
 }
 
+// Tests inserting the same peer twice
+TEST_F(PeerSetTest, DuplicatePeerInsertion) {
+    Server server{serverSockAddr};
+    hycast::Peer     peer{getClientPeer()};
+    hycast::PeerSet  peerSet{};
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::EXISTS, peerSet.tryInsert(peer));
+}
+
+// Tests inserting the same peer twice but by Internet socket address
+TEST_F(PeerSetTest, DuplicatePeerInsertionByAddress) {
+    Server server{serverSockAddr};
+    hycast::Peer     peer{getClientPeer()};
+    hycast::PeerSet  peerSet{};
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::EXISTS,
+            peerSet.tryInsert(peer.getRemoteAddr(), clntMsgRcvr, nullptr));
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {

@@ -588,6 +588,14 @@ PeerSet::InsertStatus PeerSet::tryInsert(
     return pImpl->tryInsert(candidate, replaced);
 }
 
+PeerSet::InsertStatus PeerSet::tryInsert(
+        const InetSockAddr& candidate,
+        MsgRcvr&            msgRcvr,
+        Peer*               replaced)
+{
+    return pImpl->tryInsert(candidate, msgRcvr, replaced);
+}
+
 void PeerSet::sendNotice(const ProdInfo& prodInfo) const
 {
     pImpl->sendNotice(prodInfo);

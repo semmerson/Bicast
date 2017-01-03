@@ -12,6 +12,8 @@
 #ifndef PEERSET_H_
 #define PEERSET_H_
 
+#include "InetSockAddr.h"
+#include "MsgRcvr.h"
 #include "Notifier.h"
 #include "Peer.h"
 
@@ -56,6 +58,23 @@ public:
     InsertStatus tryInsert(
             Peer& candidate,
             Peer* worst = nullptr) const;
+    /**
+     * Tries to insert a remote peer given its Internet socket address.
+     * @param[in]  candidate   Candidate remote peer
+     * @param[in,out] msgRcvr  Receiver of messages from the remote peer
+     * @param[out] replaced    Replaced, worst-performing peer
+     * @return                 Insertion status:
+     *   - EXISTS    Peer is already member of set
+     *   - SUCCESS   Success
+     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - FULL      Set is full and insufficient time to determine worst peer
+     * @exceptionsafety       Strong guarantee
+     * @threadsafety          Safe
+     */
+    InsertStatus tryInsert(
+            const InetSockAddr& candidate,
+            MsgRcvr&            msgRcvr,
+            Peer*               replaced);
     /**
      * Sends information about a product.
      * @param[in] prodInfo        Product information
