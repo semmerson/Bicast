@@ -56,7 +56,7 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Compatible but not safe
      */
-    void run();
+    void operator()();
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo        Product information

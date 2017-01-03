@@ -100,7 +100,7 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Compatible but not safe
      */
-    void run()
+    void operator()()
     {
         completer.submit([=]{ runServer(); });
         if (peerSource)
@@ -145,9 +145,9 @@ hycast::P2pMgr::P2pMgr(
             stasisDuration, msgRcvr)}
 {}
 
-void P2pMgr::run()
+void P2pMgr::operator()()
 {
-    pImpl->run();
+    pImpl->operator()();
 }
 
 void P2pMgr::sendNotice(const ProdInfo& prodInfo) const
