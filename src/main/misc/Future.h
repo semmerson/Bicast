@@ -141,13 +141,13 @@ public:
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.
      */
-    bool operator==(const Future<void>& that);
+    bool operator==(const Future<void>& that) const noexcept;
     /**
      * Indicates if this instance is considered less than another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is less than the other
      */
-    bool operator<(const Future<void>& that) noexcept;
+    bool operator<(const Future<void>& that) const noexcept;
     /**
      * Cancels the task's thread iff the task hasn't already completed.
      * Idempotent.

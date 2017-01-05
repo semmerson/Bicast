@@ -384,12 +384,12 @@ Future<void>::operator bool() const noexcept
     return pImpl->operator bool();
 }
 
-bool Future<void>::operator==(const Future<void>& that)
+bool Future<void>::operator==(const Future<void>& that) const noexcept
 {
     return pImpl == that.pImpl;
 }
 
-bool Future<void>::operator<(const Future<void>& that) noexcept
+bool Future<void>::operator<(const Future<void>& that) const noexcept
 {
     return pImpl < that.pImpl;
 }
