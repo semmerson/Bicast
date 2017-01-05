@@ -11,7 +11,6 @@
 
 #include "Executor.h"
 #include "Future.h"
-#include "FutureImpl.h"
 
 #include <condition_variable>
 #include <errno.h>
@@ -79,7 +78,7 @@ protected:
      * @param[in] arg  Future to be executed
      */
     static void* execute(void* arg) {
-        auto future = reinterpret_cast<FutureImpl<Ret>*>(arg);
+        auto future = reinterpret_cast<Future<Ret>*>(arg);
         future->operator()();
         return nullptr;
     }
@@ -93,7 +92,7 @@ protected:
     void start(Future<Ret>& future) {
         pthread_t   threadId;
         int         status = pthread_create(&threadId, nullptr, execute,
-                future.pImpl.get());
+                &future);
         if (status)
             throw std::system_error(errno, std::system_category(),
                     "Couldn't create thread");

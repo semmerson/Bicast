@@ -324,13 +324,13 @@ Future<R>::operator bool() const noexcept
 }
 
 template<class R>
-bool Future<R>::operator==(const Future<R>& that)
+bool Future<R>::operator==(const Future<R>& that) const noexcept
 {
     return pImpl == that.pImpl;
 }
 
 template<class R>
-bool Future<R>::operator<(const Future<R>& that) noexcept
+bool Future<R>::operator<(const Future<R>& that) const noexcept
 {
     return pImpl < that.pImpl;
 }
@@ -392,6 +392,11 @@ bool Future<void>::operator==(const Future<void>& that)
 bool Future<void>::operator<(const Future<void>& that) noexcept
 {
     return pImpl < that.pImpl;
+}
+
+void Future<void>::operator()() const
+{
+    pImpl->operator()();
 }
 
 pthread_t Future<void>::getThreadId() const
