@@ -21,6 +21,7 @@
 #include "PeerSource.h"
 #include "ServerSocket.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -31,11 +32,17 @@ namespace hycast {
 
 class P2pMgrImpl final : public Notifier
 {
-    InetSockAddr     serverSockAddr; /// Internet address of peer-server
-    MsgRcvr&         msgRcvr;        /// Object to receive incoming messages
-    PeerSource*      peerSource;     /// Source of potential peers
-    PeerSet          peerSet;        /// Set of active peers
-    Completer<void>  completer;      /// Asynchronous task completion service
+    InetSockAddr            serverSockAddr; /// Internet address of peer-server
+    MsgRcvr&                msgRcvr;        /// Object to receive incoming messages
+    PeerSource*             peerSource;     /// Source of potential peers
+    PeerSet                 peerSet;        /// Set of active peers
+    Completer<void>         completer;      /// Asynchronous task completion service
+    /// Synchronization variables:
+    std::mutex              mutex;
+    std::condition_variable cond;
+    /// Duration to wait before trying to replace the worst-performing peer.
+    std::chrono::seconds    waitDuration;
+    bool                    addPeers; /// Predicate for premature wake-up
 
     /**
      * Runs the server for connections from remote peers. Doesn't return unless
@@ -45,7 +52,6 @@ class P2pMgrImpl final : public Notifier
      */
     void runServer()
     {
-        //throw std::logic_error("Not implemented yet");
         auto serverSock = ServerSocket(serverSockAddr, Peer::getNumStreams());
         for (;;) {
             auto sock = serverSock.accept();
@@ -54,14 +60,33 @@ class P2pMgrImpl final : public Notifier
         }
     }
     /**
-     * Performs peer-replacement, which replaces the worst-performing peer if
-     * the set of active peers is full, has been unchanged for the required
-     * amount of time, and a potential replacement peer is available. Doesn't
-     * return unless an exception is thrown.
+     * Periodically and episodically adds peers to the set of active peers.
+     * Doesn't return unless an exception is thrown.
      */
-    void runReplacer()
+    void runPeerAdder()
     {
         throw std::logic_error("Not implemented yet");
+        for (;;) {
+             auto pair = peerSource->getPeers();
+             for (auto iter = pair.first; iter != pair.second; ++iter) {
+                 auto status = peerSet.tryInsert(*iter, msgRcvr, nullptr);
+                 if (status == PeerSet::FULL)
+                     break;
+             }
+             std::unique_lock<decltype(mutex)> lock(mutex);
+             cond.wait_until(lock, std::chrono::steady_clock::now() +
+                     waitDuration, [&]{return addPeers;});
+        }
+    }
+    /***
+     * Prematurely wakes-up the peer-adder. Called by the active peer-set when a
+     * peer terminates.
+     */
+    void peerTerminated()
+    {
+        std::lock_guard<decltype(mutex)> lock(mutex);
+        addPeers = true;
+        cond.notify_one();
     }
 
 public:
@@ -88,8 +113,12 @@ public:
         : serverSockAddr{serverSockAddr}
         , msgRcvr(msgRcvr)
         , peerSource{peerSource}
-        , peerSet{peerCount, stasisDuration}
+        , peerSet{[=]{peerTerminated();}, peerCount, stasisDuration}
         , completer{}
+        , mutex{}
+        , cond{}
+        , waitDuration{stasisDuration+1}
+        , addPeers{false}
     {}
     /**
      * Runs this instance. Starts receiving connection requests from remote
@@ -104,7 +133,7 @@ public:
     {
         completer.submit([=]{ runServer(); });
         if (peerSource)
-            completer.submit([=]{ runReplacer(); });
+            completer.submit([&]{ runPeerAdder(); });
         auto future = completer.get();
         completer.shutdownNow();
         completer.awaitTermination();

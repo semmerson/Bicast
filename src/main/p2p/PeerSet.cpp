@@ -328,6 +328,7 @@ class PeerSetImpl final
     Time                                whenEligible;
     const TimeRes                       eligibilityDuration;
     const TimeRes                       maxResideTime;
+    std::function<void()>               peerTerminated;
     unsigned                            maxPeers;
 
     /**
@@ -383,7 +384,8 @@ class PeerSetImpl final
     {
         assert(isLocked(mutex));
         if (peerEntries.find(peer) == peerEntries.end()) {
-            PeerEntry entry(new PeerEntryImpl(peer, [=](Peer& p){ handleFailure(p); }));
+            PeerEntry entry(new PeerEntryImpl(peer,
+                    [=](Peer& p) { handleFailure(p, peerTerminated); }));
             peerEntries.emplace(peer, entry);
             if (full()) {
                 resetValues();
@@ -437,15 +439,19 @@ class PeerSetImpl final
      * Handles failure of a peer.
      * @param[in] peer  The peer that failed
      */
-    void handleFailure(Peer& peer)
+    void handleFailure(Peer& peer, std::function<void()>& peerTerminated)
     {
-        std::lock_guard<decltype(mutex)> lock{mutex};
-        peerEntries.erase(peer);
+        {
+            std::lock_guard<decltype(mutex)> lock{mutex};
+            peerEntries.erase(peer);
+        }
+        peerTerminated();
     }
 
 public:
     /**
      * Constructs from the maximum number of peers. The set will be empty.
+     * @param[in] peerTerminated      Function to call when a peer terminates
      * @param[in] maxPeers            Maximum number of peers
      * @param[in] stasisDuration      Required duration, in seconds, without
      *                                change to the set of peers before the
@@ -453,13 +459,15 @@ public:
      * @throws std::invalid_argument  `maxPeers == 0`
      */
     PeerSetImpl(
-            const unsigned maxPeers,
-            const unsigned stasisDuration)
+            std::function<void()> peerTerminated,
+            const unsigned        maxPeers,
+            const unsigned        stasisDuration)
         : peerEntries{}
         , mutex{}
         , whenEligible{}
         , eligibilityDuration{std::chrono::seconds{stasisDuration}}
         , maxResideTime{eligibilityDuration*2}
+        , peerTerminated{peerTerminated}
         , maxPeers{maxPeers}
     {
         if (maxPeers == 0)
@@ -576,9 +584,10 @@ public:
 };
 
 PeerSet::PeerSet(
-        const unsigned maxPeers,
-        const unsigned stasisDuration)
-    : pImpl(new PeerSetImpl(maxPeers, stasisDuration))
+        std::function<void()> peerTerminated,
+        const unsigned        maxPeers,
+        const unsigned        stasisDuration)
+    : pImpl(new PeerSetImpl(peerTerminated, maxPeers, stasisDuration))
 {}
 
 PeerSet::InsertStatus PeerSet::tryInsert(

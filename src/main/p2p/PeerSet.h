@@ -35,14 +35,16 @@ public:
     } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
+     * @param[in] peerTerminated  Function to call when a peer terminates
      * @param[in] maxPeers        Maximum number of peers
      * @param[in] stasisDuration  Required duration, in seconds, without change
      *                            to the set of peers before the
      *                            worst-performing peer may be replaced
      */
     explicit PeerSet(
-            unsigned maxPeers = 8,
-            unsigned stasisDuration = 60);
+            std::function<void()> peerTerminated,
+            unsigned              maxPeers = 8,
+            unsigned              stasisDuration = 60);
     /**
      * Tries to insert a peer.
      * @param[in]  candidate Candidate peer
