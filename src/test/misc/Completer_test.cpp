@@ -126,24 +126,18 @@ TEST_F(CompleterTest, IntCancellation) {
     EXPECT_THROW(future.getResult(), std::logic_error);
 }
 
-// Tests shutting-down void completer
+// Tests destruction of void completer
 TEST_F(CompleterTest, VoidShutdown) {
     hycast::Completer<void> completer{};
     auto future = completer.submit([]{::pause();});
-    completer.shutdownNow();
-    EXPECT_THROW(completer.submit([]{return;}), std::logic_error);
-    completer.awaitTermination();
-    EXPECT_TRUE(future.wasCancelled());
+    ::sleep(1);
 }
 
-// Tests shutting-down int completer
+// Tests destruction of int completer
 TEST_F(CompleterTest, IntShutdown) {
     hycast::Completer<int> completer{};
     auto future = completer.submit([]{::pause(); return 1;});
-    completer.shutdownNow();
-    EXPECT_THROW(completer.submit([]{return 2;}), std::logic_error);
-    completer.awaitTermination();
-    EXPECT_TRUE(future.wasCancelled());
+    ::sleep(1);
 }
 
 }  // namespace

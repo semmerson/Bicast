@@ -38,7 +38,7 @@ class Future final
     /**
      * Executes the associated task.
      */
-    void execute() const;
+    void operator()() const;
     /**
      * Returns the POSIX thread identifier.
      * @return  POSIX thread identifier
@@ -115,7 +115,7 @@ class Future<void> final
     /**
      * Executes the associated task.
      */
-    void execute() const;
+    void operator()() const;
     /**
      * Returns the POSIX thread identifier.
      * @return  POSIX thread identifier

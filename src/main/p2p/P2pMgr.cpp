@@ -25,6 +25,7 @@
 #include <condition_variable>
 #include <future>
 #include <mutex>
+#include <pthread.h>
 #include <queue>
 #include <thread>
 
@@ -60,7 +61,10 @@ class P2pMgrImpl final : public Notifier
         }
     }
     /**
-     * Periodically and episodically adds peers to the set of active peers.
+     * Attempts to adds peers to the set of active peers when
+     *   - Initially called; and
+     *   - `waitDuration` time passes since the last addition attempt or `cond`
+     *     is notified and `addPeers` is true, whichever occurs first.
      * Doesn't return unless an exception is thrown.
      */
     void runPeerAdder()
@@ -74,8 +78,7 @@ class P2pMgrImpl final : public Notifier
                      break;
              }
              std::unique_lock<decltype(mutex)> lock(mutex);
-             cond.wait_until(lock, std::chrono::steady_clock::now() +
-                     waitDuration, [&]{return addPeers;});
+             cond.wait_for(lock, waitDuration, [&]{return addPeers;});
         }
     }
     /***
@@ -131,14 +134,12 @@ public:
      */
     void operator()()
     {
-        completer.submit([=]{ runServer(); });
+        completer.submit([&]{ runServer(); });
         if (peerSource)
             completer.submit([&]{ runPeerAdder(); });
-        auto future = completer.get();
-        completer.shutdownNow();
-        completer.awaitTermination();
-        if (!future.wasCancelled())
-            future.getResult(); // might throw exception
+        auto future = completer.get(); // Blocks until exception thrown
+        // Futures never cancelled => future.wasCancelled() is unnecessary
+        future.getResult(); // might throw exception
     }
     /**
      * Sends information about a product to the remote peers.

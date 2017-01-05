@@ -58,16 +58,6 @@ public:
      * @threadsafety        Safe
      */
     Future<Ret> getFuture(const pthread_t threadId);
-    /**
-     * Shuts down. Cancels all executing tasks. Will not accept further tasks.
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
-     */
-    void shutdownNow();
-    /**
-     * Waits until all tasks have completed after a call to shutdownNow().
-     */
-    void awaitTermination();
 };
 
 } // namespace

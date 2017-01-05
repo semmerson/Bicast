@@ -35,11 +35,12 @@ public:
     } InsertStatus;
     /**
      * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] peerTerminated  Function to call when a peer terminates
-     * @param[in] maxPeers        Maximum number of peers
-     * @param[in] stasisDuration  Required duration, in seconds, without change
-     *                            to the set of peers before the
-     *                            worst-performing peer may be replaced
+     * @param[in] peerTerminated      Function to call when a peer terminates
+     * @param[in] maxPeers            Maximum number of peers
+     * @param[in] stasisDuration      Required duration, in seconds, without
+     *                                change to the set of peers before the
+     *                                worst-performing peer may be replaced
+     * @throws std::invalid_argument  `maxPeers == 0`
      */
     explicit PeerSet(
             std::function<void()> peerTerminated,

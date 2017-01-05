@@ -29,7 +29,6 @@ class BasicExecutorImpl
 {
     friend class Executor<Ret>;
     friend class ExecutorImpl<Ret>;
-    friend class ExecutorImpl<void>;
 
     /// Executing tasks
     std::map<pthread_t, Future<Ret>> activeTasks;
@@ -66,14 +65,14 @@ protected:
     /**
      * Removes a task from the set of active tasks.
      */
-    void finishTask() {
+    void completeTask() {
         std::lock_guard<decltype(mutex)> lock{mutex};
         auto threadId = pthread_self();
         activeTasks.erase(threadId);
         cond.notify_one();
     }
-    static void finishTask(void* arg) {
-        reinterpret_cast<ExecutorImpl<Ret>*>(arg)->finishTask();
+    static void taskCompleted(void* arg) {
+        reinterpret_cast<ExecutorImpl<Ret>*>(arg)->completeTask();
     }
     /**
      * Executes a future. Designed to be called by `pthread_create()`.
@@ -81,7 +80,7 @@ protected:
      */
     static void* execute(void* arg) {
         auto future = reinterpret_cast<FutureImpl<Ret>*>(arg);
-        future->execute();
+        future->operator()();
         return nullptr;
     }
     /**
@@ -92,41 +91,12 @@ protected:
      * @threadsafety             Safe
      */
     void start(Future<Ret>& future) {
-        std::lock_guard<decltype(mutex)> lock{mutex};
-        if (isShutdown)
-            throw std::logic_error("Executor is shut down");
         pthread_t   threadId;
         int         status = pthread_create(&threadId, nullptr, execute,
                 future.pImpl.get());
         if (status)
             throw std::system_error(errno, std::system_category(),
                     "Couldn't create thread");
-    }
-public:
-    /**
-     * Constructs.
-     */
-    BasicExecutorImpl()
-        : activeTasks{}
-        , mutex{}
-        , cond{}
-        , isShutdown{false}
-    {}
-    virtual ~BasicExecutorImpl()
-    {}
-    /**
-     * Submits a callable for execution.
-     * @param[in,out] func       Callable to be executed
-     * @throws std::system_error A new thread couldn't be created
-     * @exceptionsafety          Basic guarantee
-     * @threadsafety             Safe
-     */
-    Future<Ret> submit(const std::function<Ret()>& func) {
-        auto future = getFuture(func);
-        start(future);
-        activeTasks.emplace(future.getThreadId(), future);
-        cond.notify_all();
-        return std::move(future);
     }
     /**
      * Shuts down. Cancels all executing tasks. Will not accept further tasks.
@@ -147,12 +117,50 @@ public:
         while (!activeTasks.empty())
             cond.wait(lock);
     }
+public:
+    /**
+     * Constructs.
+     */
+    BasicExecutorImpl()
+        : activeTasks{}
+        , mutex{}
+        , cond{}
+        , isShutdown{false}
+    {}
+    virtual ~BasicExecutorImpl()
+    {
+        try {
+            shutdownNow();
+            awaitTermination();
+        }
+        catch (const std::exception& e) {
+        }
+    }
+    /**
+     * Submits a callable for execution.
+     * @param[in,out] func       Callable to be executed
+     * @throws std::logic_error  The executor is shut down
+     * @throws std::system_error A new thread couldn't be created
+     * @exceptionsafety          Basic guarantee
+     * @threadsafety             Safe
+     */
+    Future<Ret> submit(const std::function<Ret()>& func) {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        if (isShutdown)
+            throw std::logic_error("Executor is shut down");
+        auto future = getFuture(func);
+        start(future);
+        ::pthread_t threadId = future.getThreadId();
+        activeTasks.emplace(threadId, future);
+        cond.notify_all();
+        return std::move(future);
+    }
 };
 
 template<class Ret>
 class ExecutorImpl : public BasicExecutorImpl<Ret>
 {
-    using BasicExecutorImpl<Ret>::finishTask;
+    using BasicExecutorImpl<Ret>::taskCompleted;
     using BasicExecutorImpl<Ret>::getFuture;
     using BasicExecutorImpl<Ret>::mutex;
 
@@ -164,11 +172,11 @@ class ExecutorImpl : public BasicExecutorImpl<Ret>
     Future<Ret> getFuture(const std::function<Ret()>& func) {
         auto future = Future<Ret>([this,func]() mutable {
                 {
-                    // Ensures that `future` is in `activeTasks`
+                    // Ensure that `future` is in `activeTasks`
                     std::lock_guard<decltype(mutex)> lock{mutex};
                 }
                 Ret result{};
-                pthread_cleanup_push(BasicExecutorImpl<Ret>::finishTask, this);
+                pthread_cleanup_push(taskCompleted, this);
                 result = func();
                 pthread_cleanup_pop(1);
                 return result;
@@ -187,7 +195,7 @@ public:
 template<>
 class ExecutorImpl<void> final : public BasicExecutorImpl<void>
 {
-    using BasicExecutorImpl<void>::finishTask;
+    using BasicExecutorImpl<void>::taskCompleted;
     using BasicExecutorImpl<void>::getFuture;
     using BasicExecutorImpl<void>::mutex;
 
@@ -200,9 +208,9 @@ class ExecutorImpl<void> final : public BasicExecutorImpl<void>
         auto future = Future<void>([this,func]() mutable {
                 {
                     // Ensure that `future` is in `activeTasks`
-                    std::lock_guard<decltype(this->mutex)> lock{this->mutex};
+                    std::lock_guard<decltype(mutex)> lock{mutex};
                 }
-                pthread_cleanup_push(BasicExecutorImpl<void>::finishTask, this);
+                pthread_cleanup_push(taskCompleted, this);
                 func();
                 pthread_cleanup_pop(1);
             });
@@ -232,18 +240,6 @@ template<class Ret>
 Future<Ret> Executor<Ret>::getFuture(const pthread_t threadId)
 {
     return pImpl->getFuture(threadId);
-}
-
-template<class Ret>
-void Executor<Ret>::shutdownNow()
-{
-    pImpl->shutdownNow();
-}
-
-template<class Ret>
-void Executor<Ret>::awaitTermination()
-{
-    pImpl->awaitTermination();
 }
 
 template class Executor<void>;

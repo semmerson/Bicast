@@ -84,8 +84,6 @@ TEST_F(P2pMgrTest, Execution) {
     p2pMgr1.sendNotice(prodInfo);
     p2pMgr1.sendNotice(chunkInfo);
     ::sleep(1);
-    completer.shutdownNow();
-    completer.awaitTermination();
 }
 
 }  // namespace
