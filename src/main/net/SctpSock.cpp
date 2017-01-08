@@ -9,8 +9,8 @@
  * This file defines a socket.
  */
 
-#include "Socket.h"
-#include "SocketImpl.h"
+#include "SctpSock.h"
+#include "SctpSockImpl.h"
 
 #include <errno.h>
 #include <netinet/sctp.h>
@@ -20,55 +20,55 @@
 
 namespace hycast {
 
-Socket::Socket()
-    : pImpl(new SocketImpl())
+SctpSock::SctpSock()
+    : pImpl(new SctpSockImpl())
 {}
 
-Socket::Socket(
+SctpSock::SctpSock(
         const int      sd,
         const uint16_t numStreams)
-    : pImpl(new SocketImpl(sd, numStreams))
+    : pImpl(new SctpSockImpl(sd, numStreams))
 {}
 
-Socket::Socket(SocketImpl* impl)
+SctpSock::SctpSock(SctpSockImpl* impl)
     : pImpl(impl)
 {}
 
-Socket::Socket(std::shared_ptr<SocketImpl> sptr)
+SctpSock::SctpSock(std::shared_ptr<SctpSockImpl> sptr)
     : pImpl(sptr)
 {}
 
-uint16_t Socket::getNumStreams() const
+uint16_t SctpSock::getNumStreams() const
 {
     return pImpl->getNumStreams();
 }
 
-const InetSockAddr& Socket::getRemoteAddr()
+const InetSockAddr& SctpSock::getRemoteAddr()
 {
     return pImpl->getRemoteAddr();
 }
 
-bool Socket::operator ==(const Socket& that) const noexcept
+bool SctpSock::operator ==(const SctpSock& that) const noexcept
 {
     return *pImpl.get() == *that.pImpl.get();
 }
 
-unsigned Socket::getStreamId() const
+unsigned SctpSock::getStreamId() const
 {
     return pImpl->getStreamId();
 }
 
-uint32_t Socket::getSize() const
+uint32_t SctpSock::getSize() const
 {
     return pImpl->getSize();
 }
 
-std::string Socket::to_string() const
+std::string SctpSock::to_string() const
 {
     return pImpl->to_string();
 }
 
-void Socket::send(
+void SctpSock::send(
         const unsigned streamId,
         const void*    msg,
         const size_t   len) const
@@ -76,7 +76,7 @@ void Socket::send(
     pImpl->send(streamId, msg, len);
 }
 
-void Socket::sendv(
+void SctpSock::sendv(
         const unsigned streamId,
         struct iovec*  iovec,
         const int      iovcnt) const
@@ -84,7 +84,7 @@ void Socket::sendv(
     pImpl->sendv(streamId, iovec, iovcnt);
 }
 
-void Socket::recv(
+void SctpSock::recv(
         void*        msg,
         const size_t len,
         const int    flags) const
@@ -92,7 +92,7 @@ void Socket::recv(
     pImpl->recv(msg, len, flags);
 }
 
-void Socket::recvv(
+void SctpSock::recvv(
         struct iovec* iovec,
         const int     iovcnt,
         const int     flags) const
@@ -100,17 +100,17 @@ void Socket::recvv(
     pImpl->recvv(iovec, iovcnt, flags);
 }
 
-bool Socket::hasMessage() const
+bool SctpSock::hasMessage() const
 {
     return pImpl->hasMessage();
 }
 
-void Socket::discard() const
+void SctpSock::discard() const
 {
     pImpl->discard();
 }
 
-void Socket::close() const
+void SctpSock::close() const
 {
     pImpl->close();
 }

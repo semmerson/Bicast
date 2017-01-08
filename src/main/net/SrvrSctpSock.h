@@ -13,11 +13,11 @@
 #define SERVERSOCKET_H_
 
 #include "InetSockAddr.h"
-#include "Socket.h"
+#include "SctpSock.h"
 
 namespace hycast {
 
-class ServerSocket final : public Socket {
+class SrvrSctpSock final : public SctpSock {
 public:
     /**
      * Constructs from an Internet socket address and the number of SCTP
@@ -25,7 +25,7 @@ public:
      * @param[in] addr        Internet socket address
      * @param[in] numStreams  Number of SCTP streams
      */
-    ServerSocket(
+    SrvrSctpSock(
             const InetSockAddr& addr,
             const uint16_t      numStreams);
     /**
@@ -34,7 +34,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Unsafe but compatible
      */
-    Socket accept() const;
+    SctpSock accept() const;
 };
 
 } // namespace

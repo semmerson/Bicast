@@ -9,23 +9,23 @@
  * @author: Steven R. Emmerson
  */
 
-#include "InetSockAddr.h"
-#include "ServerSocket.h"
-#include "SocketImpl.h"
+#include "SrvrSctpSock.h"
 
+#include "InetSockAddr.h"
+#include "SctpSockImpl.h"
 #include <errno.h>
 #include <memory>
 #include <system_error>
 
 namespace hycast {
 
-class ServerSocketImpl final : public SocketImpl
+class SrvrSockImpl final : public SctpSockImpl
 {
 public:
-    ServerSocketImpl(
+    SrvrSockImpl(
             const InetSockAddr& addr,
             const uint16_t      numStreams)
-        : SocketImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+        : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
     {
         int sd = sock.load();
         if (sd == -1)
@@ -44,7 +44,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Unsafe but compatible
      */
-    std::shared_ptr<SocketImpl> accept()
+    std::shared_ptr<SctpSockImpl> accept()
     {
         socklen_t len = 0;
         int sck = sock.load();
@@ -52,19 +52,19 @@ public:
         if (sd < 0)
             throw std::system_error(errno, std::system_category(),
                     "accept() failure: sock=" + std::to_string(sck));
-        return std::shared_ptr<SocketImpl>(new SocketImpl(sd, getNumStreams()));
+        return std::shared_ptr<SctpSockImpl>(new SctpSockImpl(sd, getNumStreams()));
     }
 };
 
-ServerSocket::ServerSocket(
+SrvrSctpSock::SrvrSctpSock(
         const InetSockAddr& addr,
         const uint16_t      numStreams)
-    : Socket(new ServerSocketImpl(addr, numStreams))
+    : SctpSock(new SrvrSockImpl(addr, numStreams))
 {}
 
-Socket ServerSocket::accept() const
+SctpSock SrvrSctpSock::accept() const
 {
-    return Socket((static_cast<ServerSocketImpl*>(pImpl.get()))->accept());
+    return SctpSock((static_cast<SrvrSockImpl*>(pImpl.get()))->accept());
 }
 
 } // namespace

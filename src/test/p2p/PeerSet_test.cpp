@@ -9,14 +9,14 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
+#include "SctpSock.h"
 #include "HycastTypes.h"
 #include "logging.h"
 #include "MsgRcvr.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
-#include "ServerSocket.h"
-#include "Socket.h"
+#include "SrvrSctpSock.h"
 
 #include <gtest/gtest.h>
 #include <pthread.h>
@@ -111,12 +111,12 @@ protected:
             }
         };
         std::thread thread;
-        void runServer(hycast::ServerSocket serverSock) {
+        void runServer(hycast::SrvrSctpSock serverSock) {
             ServerMsgRcvr srvrMsgRcvr{};
             hycast::PeerSet peerSet{[]{}};
             for (;;) {
                 try {
-                    hycast::Socket sock{serverSock.accept()};
+                    hycast::SctpSock sock{serverSock.accept()};
                     hycast::Peer   peer{srvrMsgRcvr, sock};
                     peerSet.tryInsert(peer);
                 }
@@ -129,7 +129,7 @@ protected:
         Server(const hycast::InetSockAddr& serverSockAddr)
             : thread{}
         {
-            hycast::ServerSocket serverSock{serverSockAddr,
+            hycast::SrvrSctpSock serverSock{serverSockAddr,
                 hycast::Peer::getNumStreams()};
             thread = std::thread([=]{ runServer(serverSock); });
         }
@@ -140,7 +140,7 @@ protected:
     };
 
     hycast::Peer getClientPeer() {
-        hycast::ClientSocket sock{serverSockAddr, hycast::Peer::getNumStreams()};
+        hycast::ClntSctpSock sock{serverSockAddr, hycast::Peer::getNumStreams()};
         return hycast::Peer(clntMsgRcvr, sock);
     }
 

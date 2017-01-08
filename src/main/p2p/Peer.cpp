@@ -16,7 +16,7 @@
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "RegChannel.h"
-#include "Socket.h"
+#include "SctpSock.h"
 #include "VersionMsg.h"
 
 #include <cstddef>
@@ -43,7 +43,7 @@ class PeerImpl final {
     RegChannel<ChunkInfo>  chunkReqChan;
     ChunkChannel           chunkChan;
     MsgRcvr&               msgRcvr;
-    Socket                 sock;
+    SctpSock                 sock;
     Peer*                  peer;
 
     class : public MsgRcvr
@@ -104,7 +104,7 @@ public:
     PeerImpl(
             Peer*          peer,
             MsgRcvr&       msgRcvr,
-            Socket&        sock)
+            SctpSock&        sock)
         : version(0),
           versionChan(sock, VERSION_STREAM_ID, version),
           prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
@@ -302,7 +302,7 @@ Peer::Peer()
 
 Peer::Peer(
         MsgRcvr& msgRcvr,
-        Socket&  sock)
+        SctpSock&  sock)
     : pImpl(new PeerImpl(this, msgRcvr, sock))
 {}
 

@@ -9,31 +9,32 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
+
 #include "InetSockAddr.h"
-#include "SocketImpl.h"
 
 #include <errno.h>
 #include <system_error>
+#include "SctpSockImpl.h"
 
 namespace hycast {
 
-class ClientSocketImpl final : public SocketImpl
+class ClntSctpSockImpl final : public SctpSockImpl
 {
 public:
-    ClientSocketImpl(
+    ClntSctpSockImpl(
             const InetSockAddr& addr,
             const uint16_t      numStreams)
-        : SocketImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+        : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
     {
         addr.connect(sock.load());
     }
 };
 
-ClientSocket::ClientSocket(
+ClntSctpSock::ClntSctpSock(
         const InetSockAddr& addr,
         const uint16_t      numStreams)
-    : Socket(new ClientSocketImpl(addr, numStreams))
+    : SctpSock(new ClntSctpSockImpl(addr, numStreams))
 {}
 
 } // namespace

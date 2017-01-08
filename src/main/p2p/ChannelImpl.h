@@ -16,31 +16,30 @@
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "Serializable.h"
-#include "Socket.h"
-
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <type_traits>
 #include <utility>
+#include "../net/SctpSock.h"
 
 namespace hycast {
 
 class ChannelImpl {
 protected:
-    Socket             sock;
+    SctpSock             sock;
     unsigned           streamId;
     unsigned           version;
 public:
     ChannelImpl(
-            Socket&            sock,
+            SctpSock&            sock,
             const unsigned     streamId,
             const unsigned     version);
     /**
      * Returns the associated SCTP socket.
      * @returns the associated SCTP socket
      */
-    Socket& getSocket() {
+    SctpSock& getSocket() {
         return sock;
     }
     /**

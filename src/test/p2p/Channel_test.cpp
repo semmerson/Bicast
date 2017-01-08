@@ -9,12 +9,11 @@
  * @author: Steven R. Emmerson
  */
 
-
-#include "RegChannel.h"
 #include "ChunkInfo.h"
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
 #include "ProdInfo.h"
-#include "ServerSocket.h"
+#include "RegChannel.h"
+#include "SrvrSctpSock.h"
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -25,9 +24,9 @@ namespace {
 static const unsigned             numStreams = 5;
 static const hycast::InetSockAddr serverSockAddr("127.0.0.1", 38800);
 
-void runServer(hycast::ServerSocket serverSock)
+void runServer(hycast::SrvrSctpSock serverSock)
 {
-    hycast::Socket connSock(serverSock.accept());
+    hycast::SctpSock connSock(serverSock.accept());
     for (;;) {
         uint32_t size = connSock.getSize();
         if (size == 0)
@@ -41,7 +40,7 @@ void runServer(hycast::ServerSocket serverSock)
 
 void runClient()
 {
-    hycast::ClientSocket sock(serverSockAddr, numStreams);
+    hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
     hycast::RegChannel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
     EXPECT_EQ(sock, prodInfoChannel.getSocket());
@@ -90,7 +89,7 @@ protected:
     void startServer()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, numStreams);
+        hycast::SrvrSctpSock sock(serverSockAddr, numStreams);
         serverThread = std::thread(runServer, sock);
     }
 

@@ -11,8 +11,8 @@
 
 #include "ChannelImpl.h"
 #include "RegChannel.h"
+#include "SctpSock.h"
 #include "Serializable.h"
-#include "Socket.h"
 #include "VersionMsg.h"
 
 #include <cstdint>
@@ -39,7 +39,7 @@ public:
      * @param[in] version   Protocol version
      */
     RegChannelImpl(
-            Socket&            sock,
+            SctpSock&            sock,
             const unsigned     streamId,
             const unsigned     version)
         : ChannelImpl::ChannelImpl(sock, streamId, version)
@@ -85,7 +85,7 @@ template class RegChannelImpl<ChunkInfo>;
 
 template <class T>
 RegChannel<T>::RegChannel(
-        Socket&            sock,
+        SctpSock&            sock,
         const unsigned     streamId,
         const unsigned     version)
     : pImpl(new RegChannelImpl<T>(sock, streamId, version))
@@ -93,7 +93,7 @@ RegChannel<T>::RegChannel(
 }
 
 template <class T>
-Socket& RegChannel<T>::getSocket() const
+SctpSock& RegChannel<T>::getSocket() const
 {
     return pImpl->getSocket();
 }

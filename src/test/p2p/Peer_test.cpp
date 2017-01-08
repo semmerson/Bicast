@@ -9,15 +9,14 @@
  * @author: Steven R. Emmerson
  */
 
-#include "Peer.h"
-
 #include "ChunkInfo.h"
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
 #include "HycastTypes.h"
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
+#include "Peer.h"
 #include "ProdInfo.h"
-#include "ServerSocket.h"
+#include "SrvrSctpSock.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -86,9 +85,9 @@ protected:
         }
     };
 
-    void runTestReceiver(const hycast::ServerSocket& serverSock)
+    void runTestReceiver(const hycast::SrvrSctpSock& serverSock)
     {
-        hycast::Socket sock{serverSock.accept()};
+        hycast::SctpSock sock{serverSock.accept()};
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer{msgRcvr, sock};
         peer.runReceiver();
@@ -96,7 +95,7 @@ protected:
 
     void runTestSender()
     {
-        hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::ClntSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         peer.sendNotice(prodInfo);
@@ -110,7 +109,7 @@ protected:
     void startTestReceiver()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SrvrSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         receiverThread = std::thread([=]{ this->runTestReceiver(sock); });
     }
 
@@ -119,9 +118,9 @@ protected:
         senderThread = std::thread(&PeerTest::runTestSender, this);
     }
 
-    void runPerfReceiver(hycast::ServerSocket serverSock)
+    void runPerfReceiver(hycast::SrvrSctpSock serverSock)
     {
-        hycast::Socket sock{serverSock.accept()};
+        hycast::SctpSock sock{serverSock.accept()};
         class PerfMsgRcvr final : public hycast::MsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
@@ -139,7 +138,7 @@ protected:
 
     void runPerfSender()
     {
-        hycast::ClientSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::ClntSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;
@@ -171,7 +170,7 @@ protected:
     void startPerfReceiver()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SrvrSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         receiverThread = std::thread(&PeerTest::runPerfReceiver, this, sock);
     }
 

@@ -15,14 +15,14 @@
 #include "Chunk.h"
 #include "ChunkInfo.h"
 #include "HycastTypes.h"
-#include "Socket.h"
+#include "SctpSock.h"
 
 namespace hycast {
 
 class LatentChunkImpl final
 {
     ChunkInfo info;
-    Socket    sock;
+    SctpSock    sock;
     ChunkSize size;
     unsigned  version;
 public:
@@ -44,7 +44,7 @@ public:
      * @throws std::invalid_argument if the current message is invalid
      */
     LatentChunkImpl(
-            Socket&        sock,
+            SctpSock&        sock,
             const unsigned version)
         : info(),
           sock(sock),
@@ -233,7 +233,7 @@ public:
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            Socket&        sock,
+            SctpSock&        sock,
             const unsigned streamId,
             const unsigned version) const
     {
@@ -288,7 +288,7 @@ const void* ActualChunk::getData() const noexcept
 }
 
 void ActualChunk::serialize(
-        Socket&        sock,
+        SctpSock&        sock,
         const unsigned streamId,
         const unsigned version) const
 {
@@ -300,7 +300,7 @@ LatentChunk::LatentChunk()
 {}
 
 LatentChunk::LatentChunk(
-        Socket&        sock,
+        SctpSock&        sock,
         const unsigned version)
     : pImpl(new LatentChunkImpl(sock, version))
 {}

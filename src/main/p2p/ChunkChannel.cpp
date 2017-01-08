@@ -12,7 +12,7 @@
 #include "ChannelImpl.h"
 #include "ChunkChannel.h"
 #include "Chunk.h"
-#include "Socket.h"
+#include "SctpSock.h"
 
 namespace hycast {
 
@@ -33,7 +33,7 @@ public:
      * @param[in] version   Protocol version
      */
     ChunkChannelImpl(
-            Socket&        sock,
+            SctpSock&        sock,
             const unsigned streamId,
             const unsigned version)
         : ChannelImpl::ChannelImpl(sock, streamId, version)
@@ -59,14 +59,14 @@ public:
 };
 
 ChunkChannel::ChunkChannel(
-        Socket&        sock,
+        SctpSock&        sock,
         const unsigned streamId,
         const unsigned version)
     : pImpl(new ChunkChannelImpl(sock, streamId, version))
 {
 }
 
-Socket& ChunkChannel::getSocket() const
+SctpSock& ChunkChannel::getSocket() const
 {
     return pImpl->getSocket();
 }

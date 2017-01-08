@@ -10,7 +10,7 @@
  */
 
 #include "ChunkInfo.h"
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
 #include "logging.h"
 #include "MsgRcvr.h"
@@ -533,7 +533,7 @@ public:
             if (contains(candidate))
                 return PeerSet::EXISTS;
         }
-        ClientSocket sock(candidate, Peer::getNumStreams());
+        ClntSctpSock sock(candidate, Peer::getNumStreams());
         Peer         peer(msgRcvr, sock);
         return tryInsert(peer, replaced);
     }

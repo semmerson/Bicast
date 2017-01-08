@@ -9,7 +9,7 @@
  * This file defines a RAII object for a socket.
  */
 
-#include "SocketImpl.h"
+#include <SctpSockImpl.h>
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -22,7 +22,7 @@
 
 namespace hycast {
 
-SocketImpl::SocketImpl()
+SctpSockImpl::SctpSockImpl()
     : sock(-1)
     , streamId(0)
     , size(0)
@@ -34,7 +34,7 @@ SocketImpl::SocketImpl()
 {
 }
 
-SocketImpl::SocketImpl(
+SctpSockImpl::SctpSockImpl(
         const int      sck,
         const unsigned numStreams)
     : sock(sck)
@@ -77,17 +77,17 @@ SocketImpl::SocketImpl(
             : std::move(InetSockAddr(addr));
 }
 
-SocketImpl::~SocketImpl() noexcept
+SctpSockImpl::~SctpSockImpl() noexcept
 {
     this->close();
 }
 
-const InetSockAddr& SocketImpl::getRemoteAddr()
+const InetSockAddr& SctpSockImpl::getRemoteAddr()
 {
     return remoteAddr;
 }
 
-void SocketImpl::sndrcvinfoInit(
+void SctpSockImpl::sndrcvinfoInit(
         struct sctp_sndrcvinfo& sinfo,
         const unsigned          streamId,
         const size_t            size) noexcept
@@ -98,7 +98,7 @@ void SocketImpl::sndrcvinfoInit(
     sinfo.sinfo_timetolive = 30000; // in ms
 }
 
-void SocketImpl::checkIoStatus(
+void SctpSockImpl::checkIoStatus(
         const char* const funcName,
         const size_t      expected,
         const ssize_t     actual) const
@@ -116,7 +116,7 @@ void SocketImpl::checkIoStatus(
                 std::to_string(actual));
 }
 
-size_t SocketImpl::iovLen(
+size_t SctpSockImpl::iovLen(
         const struct iovec* iovec,
         const int           iovcnt) noexcept
 {
@@ -126,7 +126,7 @@ size_t SocketImpl::iovLen(
     return len;
 }
 
-void SocketImpl::send(
+void SctpSockImpl::send(
         const unsigned streamId,
         const void*    msg,
         const size_t   len)
@@ -142,7 +142,7 @@ void SocketImpl::send(
     checkIoStatus("sctp_send()", len, sendStatus);
 }
 
-void SocketImpl::sendv(
+void SctpSockImpl::sendv(
         const unsigned streamId,
         struct iovec*  iovec,
         const int      iovcnt)
@@ -170,7 +170,7 @@ void SocketImpl::sendv(
     checkIoStatus("sendmsg()", numExpected, sendStatus);
 }
 
-void SocketImpl::getNextMsgInfo()
+void SctpSockImpl::getNextMsgInfo()
 {
     int                    numRecvd;
     struct sctp_sndrcvinfo sinfo;
@@ -202,25 +202,25 @@ void SocketImpl::getNextMsgInfo()
     haveCurrMsg = true;
 }
 
-inline void SocketImpl::ensureMsg()
+inline void SctpSockImpl::ensureMsg()
 {
     if (!haveCurrMsg)
         getNextMsgInfo();
 }
 
-uint32_t SocketImpl::getSize()
+uint32_t SctpSockImpl::getSize()
 {
     ensureMsg();
     return size;
 }
 
-uint32_t SocketImpl::getStreamId()
+uint32_t SctpSockImpl::getStreamId()
 {
     ensureMsg();
     return streamId;
 }
 
-void SocketImpl::recv(
+void SctpSockImpl::recv(
         void*        msg,
         const size_t len,
         const int    flags)
@@ -244,7 +244,7 @@ void SocketImpl::recv(
     haveCurrMsg = (flags & MSG_PEEK) != 0;
 }
 
-void SocketImpl::recvv(
+void SctpSockImpl::recvv(
         struct iovec*  iovec,
         const int      iovcnt,
         const int      flags)
@@ -263,12 +263,12 @@ void SocketImpl::recvv(
     haveCurrMsg = (flags & MSG_PEEK) != 0;
 }
 
-bool SocketImpl::hasMessage()
+bool SctpSockImpl::hasMessage()
 {
     return haveCurrMsg;
 }
 
-void SocketImpl::discard()
+void SctpSockImpl::discard()
 {
     if (haveCurrMsg) {
         char msg[getSize()]; // Apparently necessary to discard current message
@@ -276,7 +276,7 @@ void SocketImpl::discard()
     }
 }
 
-void SocketImpl::close()
+void SctpSockImpl::close()
 {
     int sd = sock.load();
     if (sd >= 0) {

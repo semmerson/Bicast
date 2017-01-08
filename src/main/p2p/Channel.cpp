@@ -16,7 +16,7 @@
 
 namespace hycast {
 
-Socket& Channel::getSocket() const
+SctpSock& Channel::getSocket() const
 {
     return getPimpl()->getSocket();
 }

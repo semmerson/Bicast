@@ -17,9 +17,8 @@
 
 #include "ChunkInfo.h"
 #include "HycastTypes.h"
-#include "Socket.h"
-
 #include <memory>
+#include "../net/SctpSock.h"
 
 namespace hycast {
 
@@ -41,7 +40,7 @@ public:
      * @throws std::invalid_argument if the current message is invalid
      */
     LatentChunk(
-            Socket&        sock,
+            SctpSock&        sock,
             const unsigned version);
     /**
      * Returns information on the chunk.
@@ -150,7 +149,7 @@ public:
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            Socket&        sock,
+            SctpSock&        sock,
             const unsigned streamId,
             const unsigned version) const;
 };

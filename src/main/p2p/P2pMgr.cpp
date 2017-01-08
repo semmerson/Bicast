@@ -19,7 +19,7 @@
 #include "P2pMgr.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
-#include "ServerSocket.h"
+#include "SrvrSctpSock.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -53,7 +53,7 @@ class P2pMgrImpl final : public Notifier
      */
     void runServer()
     {
-        auto serverSock = ServerSocket(serverSockAddr, Peer::getNumStreams());
+        auto serverSock = SrvrSctpSock(serverSockAddr, Peer::getNumStreams());
         for (;;) {
             auto sock = serverSock.accept();
             auto peer = Peer(msgRcvr, sock);

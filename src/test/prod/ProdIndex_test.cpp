@@ -9,11 +9,11 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ProdIndex.h"
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
-#include "ServerSocket.h"
-#include "Socket.h"
+#include "ProdIndex.h"
+#include "SctpSock.h"
+#include "SrvrSctpSock.h"
 
 #include <arpa/inet.h>
 #include <cstring>

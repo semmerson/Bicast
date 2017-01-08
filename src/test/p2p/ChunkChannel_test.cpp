@@ -11,9 +11,9 @@
 
 #include "Chunk.h"
 #include "ChunkChannel.h"
-#include "ClientSocket.h"
+#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
-#include "ServerSocket.h"
+#include "SrvrSctpSock.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
@@ -24,9 +24,9 @@ namespace {
 static const unsigned             numStreams = 1;
 static const hycast::InetSockAddr serverSockAddr("127.0.0.1", 38800);
 
-void runServer(hycast::ServerSocket serverSock)
+void runServer(hycast::SrvrSctpSock serverSock)
 {
-    hycast::Socket connSock(serverSock.accept());
+    hycast::SctpSock connSock(serverSock.accept());
     for (;;) {
         uint32_t size = connSock.getSize();
         if (size == 0)
@@ -40,7 +40,7 @@ void runServer(hycast::ServerSocket serverSock)
 
 void runClient()
 {
-    hycast::ClientSocket sock(serverSockAddr, numStreams);
+    hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
     hycast::ChunkChannel chunkChannel(sock, 0, 0);
     hycast::ChunkInfo chunkInfo(4, 5);
@@ -89,7 +89,7 @@ protected:
     void startServer()
     {
         // Server socket must exist before client connects
-        hycast::ServerSocket sock(serverSockAddr, numStreams);
+        hycast::SrvrSctpSock sock(serverSockAddr, numStreams);
         serverThread = std::thread(runServer, sock);
     }
 

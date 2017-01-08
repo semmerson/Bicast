@@ -68,9 +68,9 @@ TEST_F(PendingPeerConnectionsTest, AddInvalidSocket) {
     hycast::PeerId peerId1{bytes, sizeof(bytes)};
     hycast::PendingPeerConnections pending(1);
     std::shared_ptr<hycast::Peer> conn =
-            pending.addSocket(peerId1, hycast::Socket(3));
-    conn = pending.addSocket(peerId1, hycast::Socket(4));
-    EXPECT_THROW(pending.addSocket(peerId1, hycast::Socket(3)),
+            pending.addSocket(peerId1, hycast::SctpSock(3));
+    conn = pending.addSocket(peerId1, hycast::SctpSock(4));
+    EXPECT_THROW(pending.addSocket(peerId1, hycast::SctpSock(3)),
             std::invalid_argument);
     EXPECT_EQ(1, pending.numPending());
 }
@@ -82,13 +82,13 @@ TEST_F(PendingPeerConnectionsTest, AddSockets) {
     hycast::PendingPeerConnections pending(1);
     EXPECT_EQ(0, pending.numPending());
     std::shared_ptr<hycast::Peer> conn =
-            pending.addSocket(peerId1, hycast::Socket(3));
+            pending.addSocket(peerId1, hycast::SctpSock(3));
     EXPECT_EQ(nullptr, conn.get());
     EXPECT_EQ(1, pending.numPending());
-    conn = pending.addSocket(peerId1, hycast::Socket(4));
+    conn = pending.addSocket(peerId1, hycast::SctpSock(4));
     EXPECT_EQ(nullptr, conn.get());
     EXPECT_EQ(1, pending.numPending());
-    conn = pending.addSocket(peerId1, hycast::Socket(5));
+    conn = pending.addSocket(peerId1, hycast::SctpSock(5));
     EXPECT_NE((void*)0, conn.get());
     EXPECT_EQ(0, pending.numPending());
 
@@ -97,21 +97,21 @@ TEST_F(PendingPeerConnectionsTest, AddSockets) {
     bytes[0] = 3;
     hycast::PeerId peerId3(bytes, sizeof(bytes));
 
-    conn = pending.addSocket(peerId2, hycast::Socket(6));
+    conn = pending.addSocket(peerId2, hycast::SctpSock(6));
     EXPECT_EQ(nullptr, conn.get());
-    conn = pending.addSocket(peerId2, hycast::Socket(7));
+    conn = pending.addSocket(peerId2, hycast::SctpSock(7));
     EXPECT_EQ(nullptr, conn.get());
-    conn = pending.addSocket(peerId3, hycast::Socket(8));
-    EXPECT_EQ(nullptr, conn.get());
-    EXPECT_EQ(1, pending.numPending());
-    conn = pending.addSocket(peerId2, hycast::Socket(9));
+    conn = pending.addSocket(peerId3, hycast::SctpSock(8));
     EXPECT_EQ(nullptr, conn.get());
     EXPECT_EQ(1, pending.numPending());
-    conn = pending.addSocket(peerId3, hycast::Socket(10));
+    conn = pending.addSocket(peerId2, hycast::SctpSock(9));
     EXPECT_EQ(nullptr, conn.get());
-    conn = pending.addSocket(peerId3, hycast::Socket(11));
+    EXPECT_EQ(1, pending.numPending());
+    conn = pending.addSocket(peerId3, hycast::SctpSock(10));
     EXPECT_EQ(nullptr, conn.get());
-    conn = pending.addSocket(peerId3, hycast::Socket(12));
+    conn = pending.addSocket(peerId3, hycast::SctpSock(11));
+    EXPECT_EQ(nullptr, conn.get());
+    conn = pending.addSocket(peerId3, hycast::SctpSock(12));
     EXPECT_NE(nullptr, conn.get());
     EXPECT_EQ(0, pending.numPending());
 }

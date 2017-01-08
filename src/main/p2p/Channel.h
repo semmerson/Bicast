@@ -12,10 +12,9 @@
 #ifndef CHANNEL_H_
 #define CHANNEL_H_
 
-#include "Socket.h"
-
 #include <cstddef>
 #include <memory>
+#include "../net/SctpSock.h"
 
 namespace hycast {
 
@@ -28,7 +27,7 @@ public:
      * Returns the associated SCTP socket.
      * @returns the associated SCTP socket
      */
-    virtual Socket& getSocket() const =0;
+    virtual SctpSock& getSocket() const =0;
     /**
      * Returns the SCTP stream ID of the current message. Waits for the message
      * if necessary. The message is left in the input buffer.

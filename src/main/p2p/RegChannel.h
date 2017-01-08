@@ -38,14 +38,14 @@ public:
      * @param[in] version   Protocol version
      */
     RegChannel(
-            Socket&            sock,
+            SctpSock&            sock,
             const unsigned     streamId,
             const unsigned     version);
     /**
      * Returns the associated SCTP socket.
      * @returns the associated SCTP socket
      */
-    Socket& getSocket() const;
+    SctpSock& getSocket() const;
     /**
      * Returns the SCTP stream ID of the current message. Waits for the message
      * if necessary. The message is left in the input buffer.

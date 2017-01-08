@@ -22,23 +22,23 @@
 
 namespace hycast {
 
-class SocketImpl; // Forward declaration of implementation
+class SctpSockImpl; // Forward declaration of implementation
 
-class Socket {
+class SctpSock {
 protected:
-    std::shared_ptr<SocketImpl> pImpl;
+    std::shared_ptr<SctpSockImpl> pImpl;
     /**
      * Constructs from a socket implementation.
      * @param[in] impl  The implementation
      */
-    explicit Socket(SocketImpl* impl);
+    explicit SctpSock(SctpSockImpl* impl);
 public:
     /**
      * Constructs from nothing.
      * @throws std::bad_alloc if required memory can't be allocated
      * @exceptionsafety Strong
      */
-    explicit Socket();
+    explicit SctpSock();
     /**
      * Constructs from a BSD socket and the number of SCTP streams. Only do this
      * once per socket because the destructor might close the socket.
@@ -51,14 +51,14 @@ public:
      * @see Socket::operator=(Socket& socket)
      * @see Socket::operator=(Socket&& socket)
      */
-    Socket(
+    SctpSock(
             const int      sd,
             const uint16_t numStreams = 1);
     /**
      * Constructs from a shared pointer to a socket implementation.
      * @param[in] sptr  Shared pointer to implementation
      */
-    explicit Socket(std::shared_ptr<SocketImpl> sptr);
+    explicit SctpSock(std::shared_ptr<SctpSockImpl> sptr);
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
@@ -76,7 +76,7 @@ public:
      * @retval `false`  This instance doesn't equal the other
      * @exceptionsafety Nothrow
      */
-    bool operator==(const Socket& that) const noexcept;
+    bool operator==(const SctpSock& that) const noexcept;
     /**
      * Returns a string representation of this instance's socket.
      * @return String representation of this instance's socket

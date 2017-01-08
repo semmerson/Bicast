@@ -16,10 +16,9 @@
 #include "ChunkInfo.h"
 #include "Notifier.h"
 #include "ProdInfo.h"
-#include "Socket.h"
-
 #include <cstddef>
 #include <memory>
+#include "../net/SctpSock.h"
 
 namespace hycast {
 
@@ -43,7 +42,7 @@ public:
      * @see runReceiver()
      */
     Peer(MsgRcvr& msgRcvr,
-         Socket&  sock);
+         SctpSock&  sock);
     /**
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer

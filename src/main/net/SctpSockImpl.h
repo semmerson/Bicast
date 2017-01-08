@@ -27,7 +27,7 @@
 
 namespace hycast {
 
-class SocketImpl {
+class SctpSockImpl {
 protected:
     std::atomic_int sock;
 private:
@@ -41,11 +41,11 @@ private:
     /**
      * Prevents copy construction.
      */
-    SocketImpl(const SocketImpl& socket) noexcept;
+    SctpSockImpl(const SctpSockImpl& socket) noexcept;
     /**
      * Prevents copy assignment.
      */
-    SocketImpl& operator=(const SocketImpl& rhs) noexcept;
+    SctpSockImpl& operator=(const SctpSockImpl& rhs) noexcept;
     /**
      * Checks the return status of an I/O function.
      * @param[in] funcName  Name of the I/O function
@@ -99,7 +99,7 @@ public:
      * Constructs from nothing.
      * @throws std::bad_alloc if required memory can't be allocated
      */
-    SocketImpl();
+    SctpSockImpl();
     /**
      * Constructs from a socket and the number of SCTP streams. If the socket
      * isn't connected to a remote endpoint, then getRemoteAddr() will return
@@ -110,14 +110,14 @@ public:
      * @throws std::system_error      Socket couldn't be configured
      * @see getRemoteAddr()
      */
-    SocketImpl(
+    SctpSockImpl(
             const int      sd,
             const unsigned numStreams);
     /**
      * Destroys an instance. Closes the underlying BSD socket.
      * @exceptionsafety Nothrow
      */
-    ~SocketImpl();
+    ~SctpSockImpl();
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
@@ -137,7 +137,7 @@ public:
      * @retval `false`  This instance doesn't equal the other
      * @exceptionsafety Nothrow
      */
-    bool operator==(const SocketImpl& that) const noexcept {
+    bool operator==(const SctpSockImpl& that) const noexcept {
         return sock.load() == that.sock.load();
     }
     /**

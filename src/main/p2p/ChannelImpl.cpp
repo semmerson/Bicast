@@ -15,7 +15,7 @@
 namespace hycast {
 
 ChannelImpl::ChannelImpl(
-        Socket&            sock,
+        SctpSock&            sock,
         const unsigned     streamId,
         const unsigned     version)
     : sock(sock),
