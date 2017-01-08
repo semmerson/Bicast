@@ -26,18 +26,18 @@ namespace hycast {
 class InetNameAddr final : public InetAddrImpl {
     std::string name;
     /**
-     * Adds Internet SCTP address to a set.
-     * @param[in]  family  Internet address family of addresses to add
-     * @param[in]  port    Port number in host byte order
-     * @param[in,out] set  Set of Internet addresses.
-     * @throws std::system_error if the IP address couldn't be obtained
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * Adds Internet addresses to a set.
+     * @param[in]  family             Internet address family of addresses to add
+     * @param[in]  port               Port number in host byte order
+     * @param[out] set                Set of Internet addresses.
+     * @throws std::system_error      The IP address couldn't be obtained
+     * @exceptionsafety               Strong guarantee
+     * @threadsafety                  Safe
      */
     void getSockAddrs(
-            const int                        family,
-            const in_port_t                  port,
-            std::set<struct sockaddr>* const set) const;
+            const int                                family,
+            const in_port_t                          port,
+            std::set<struct sockaddr_storage>* const set) const;
 public:
     /**
      * Constructs from a hostname.
@@ -102,15 +102,16 @@ public:
      */
     std::string to_string() const noexcept;
     /**
-     * Gets the socket addresses corresponding to a port number.
-     * @param[in]  port Port number in host byte order
+     * Gets the socket addresses corresponding to an Internet protocol and a
+     * port number.
+     * @param[in]  port      Port number in host byte order
      * @return     Set of socket addresses
      * @throws std::system_error if the IP address couldn't be obtained
      * @throws std::system_error if required memory couldn't be allocated
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    virtual std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+    virtual std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
             const in_port_t  port) const;
 };
 

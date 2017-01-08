@@ -168,7 +168,7 @@ public:
 
     /**
      * Connects a socket to this instance's endpoint.
-     * @param[in] sd  Socket descriptor
+     * @param[in] sd        Socket descriptor
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe
@@ -176,9 +176,12 @@ public:
     void connect(const int sd) const
     {
         auto set = inetAddr.getSockAddr(port).get();
-        for (auto sockAddr : *set)
-            if (::connect(sd, &sockAddr, sizeof(sockAddr)) == 0)
+        for (auto sockAddr : *set) {
+            if (::connect(sd,
+                    reinterpret_cast<const struct sockaddr*>(&sockAddr),
+                    sizeof(sockAddr)) == 0)
                 return;
+        }
         throw std::system_error(errno, std::system_category(),
                 "connect() failure: socket=" + std::to_string(sd) +
                 ", addr=" + to_string());
@@ -195,7 +198,8 @@ public:
     {
         auto set = inetAddr.getSockAddr(port).get();
         for (auto sockAddr : *set)
-            if (::bind(sd, &sockAddr, sizeof(sockAddr)) == 0)
+            if (::bind(sd, reinterpret_cast<const struct sockaddr*>(&sockAddr),
+                    sizeof(sockAddr)) == 0)
                 return;
         throw std::system_error(errno, std::system_category(),
                 "bind() failure: socket=" + std::to_string(sd) +

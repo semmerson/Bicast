@@ -35,21 +35,21 @@ std::string Inet6Addr::to_string() const
     return std::string(inet_ntop(AF_INET6, &ipAddr.s6_addr, buf, sizeof(buf)));
 }
 
-std::shared_ptr<std::set<struct sockaddr>> Inet6Addr::getSockAddr(
-            const in_port_t  port) const
+std::shared_ptr<std::set<struct sockaddr_storage>> Inet6Addr::getSockAddr(
+        const in_port_t  port) const
 {
-    struct sockaddr sockAddr = {};
+    struct sockaddr_storage sockAddr = {};
     struct sockaddr_in6* const addr =
             reinterpret_cast<struct sockaddr_in6*>(&sockAddr);
     addr->sin6_family = AF_INET6;
     addr->sin6_port = htons(port);
     addr->sin6_addr = ipAddr;
-    auto set = new std::set<struct sockaddr>();
+    auto set = new std::set<struct sockaddr_storage>();
     if (set == nullptr)
         throw std::system_error(errno, std::system_category(),
                 "Couldn't allocate set for socket address");
     set->insert(sockAddr);
-    return std::shared_ptr<std::set<struct sockaddr>>{set};
+    return std::shared_ptr<std::set<struct sockaddr_storage>>{set};
 }
 
 } // namespace

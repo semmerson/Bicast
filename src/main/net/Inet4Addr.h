@@ -97,14 +97,14 @@ public:
     std::string to_string() const;
     /**
      * Gets the socket addresses corresponding to a port number.
-     * @param[in]  port Port number
+     * @param[in]  port      Port number
      * @return     Set of socket addresses
      * @throws std::system_error if the IP address couldn't be obtained
      * @throws std::system_error if required memory couldn't be allocated
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+    std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
             const in_port_t  port) const;
 };
 

@@ -106,14 +106,14 @@ public:
     virtual std::string to_string() const = 0;
     /**
      * Gets the socket addresses corresponding to a port number.
-     * @param[in]  port Port number
+     * @param[in]  port      Port number
      * @return     Set of socket addresses
      * @throws std::system_error if the IP address couldn't be obtained
      * @throws std::system_error if required memory couldn't be allocated
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    virtual std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+    virtual std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
             const in_port_t  port) const =0;
 };
 
@@ -151,13 +151,12 @@ inline bool less(const InetNameAddr& o1, const Inet6Addr& o2) noexcept
 
 namespace std {
     template<>
-    struct less<struct sockaddr> {
+    struct less<struct sockaddr_storage> {
         bool operator()(
-            const struct sockaddr sockaddr1,
-            const struct sockaddr sockaddr2)
+            const struct sockaddr_storage sockaddr1,
+            const struct sockaddr_storage sockaddr2)
         {
-            return ::memcmp(sockaddr1.sa_data, sockaddr2.sa_data,
-                    sizeof(sockaddr1)) < 0;
+            return ::memcmp(&sockaddr1, &sockaddr2, sizeof(sockaddr1)) < 0;
         }
     };
 }

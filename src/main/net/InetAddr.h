@@ -103,7 +103,7 @@ public:
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    std::shared_ptr<std::set<struct sockaddr>> getSockAddr(
+    std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
             const in_port_t  port) const;
 };
 

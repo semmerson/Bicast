@@ -119,7 +119,7 @@ public:
     std::string to_string() const;
     /**
      * Connects a socket to this instance's endpoint.
-     * @param[in] sd  Socket descriptor
+     * @param[in] sd        Socket descriptor
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe
@@ -127,7 +127,7 @@ public:
     void connect(int sd) const;
     /**
      * Binds this instance's endpoint to a socket.
-     * @param[in] sd  Socket descriptor
+     * @param[in] sd        Socket descriptor
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe

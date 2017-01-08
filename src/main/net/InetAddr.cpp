@@ -56,7 +56,7 @@ std::string InetAddr::to_string() const
     return pImpl->to_string();
 }
 
-std::shared_ptr<std::set<struct sockaddr>> InetAddr::getSockAddr(
+std::shared_ptr<std::set<struct sockaddr_storage>> InetAddr::getSockAddr(
         const in_port_t  port) const
 {
     return pImpl->getSockAddr(port);
