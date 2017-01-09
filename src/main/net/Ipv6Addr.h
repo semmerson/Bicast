@@ -1,58 +1,53 @@
 /**
- * This file declares an immutable IPv4 address.
+ * This file declares an immutable IPv6 address.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Inet4Addr.h
+ *   @file: Ipv6Addr.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef INET4ADDR_H_
-#define INET4ADDR_H_
+#ifndef INET6ADDR_H_
+#define INET6ADDR_H_
 
 #include "InetAddrImpl.h"
+#include "InetNameAddr.h"
 #include "IpAddr.h"
+#include "Ipv4Addr.h"
 
 #include <cstddef>
-#include <cstdint>
+#include <cstring>
 #include <functional>
+#include <memory>
 #include <netinet/in.h>
 #include <set>
+#include <sys/socket.h>
 
 namespace hycast {
 
-class Inet4Addr final : public IpAddr {
-    in_addr_t ipAddr;
+class Ipv6Addr final : public IpAddr {
+    struct in6_addr ipAddr;
 public:
     /**
-     * Constructs from an IPv4 address.
-     * @param[in] ipAddr  IPv4 address
+     * Constructs from an IPv6 address.
+     * @param[in] ipAddr  IPv6 address
      */
-    explicit Inet4Addr(const in_addr_t ipAddr) noexcept : ipAddr(ipAddr) {};
-    /**
-     * Constructs from an IPv4 address.
-     * @param[in] ipAddr  IPv4 address
-     * @exceptionsafety Nothrow
-     */
-    explicit Inet4Addr(const struct in_addr& ipAddr) noexcept
-        : ipAddr{ipAddr.s_addr} {};
+    explicit Ipv6Addr(const struct in6_addr& ipAddr)
+     : ipAddr(ipAddr) {}
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    size_t hash() const noexcept
-    {
-        std::hash<uint32_t> h;
-        return h(ipAddr);
-    }
+    size_t hash() const noexcept;
     /**
-     * Indicates if this instance is considered less than another.
-     * @param[in] that  Other instance
-     * @retval `true`   Iff this instance is considered less than the other
+     * Indicates if this instance is considered less than an Internet address.
+     * @param[in] that  Internet address
+     * @retval `true`   Iff this instance is considered less than the Internet
+     *                  address
      */
     bool operator<(const InetAddrImpl& that) const noexcept
     {
@@ -64,9 +59,9 @@ public:
      * @retval `true`   Iff this instance is considered less than the IPv4
      *                  address
      */
-    bool operator<(const Inet4Addr& that) const noexcept
+    bool operator<(const Ipv4Addr& that) const noexcept
     {
-        return ::ntohl(ipAddr) < ::ntohl(that.ipAddr);
+        return less(*this, that);
     }
     /**
      * Indicates if this instance is considered less than an IPv6 address.
@@ -74,9 +69,10 @@ public:
      * @retval `true`   Iff this instance is considered less than the IPv6
      *                  address
      */
-    bool operator<(const Inet6Addr& that) const noexcept
+    bool operator<(const Ipv6Addr& that) const noexcept
     {
-        return less(*this, that);
+        return ::memcmp(ipAddr.s6_addr, that.ipAddr.s6_addr,
+                sizeof(ipAddr.s6_addr)) < 0;
     }
     /**
      * Indicates if this instance is considered less than a hostname address.
@@ -89,8 +85,8 @@ public:
         return less(*this, that);
     }
     /**
-     * Returns the string representation of the IPv4 address.
-     * @return The string representation of the IPv4 address
+     * Returns a string representation of the IPv6 address.
+     * @return A string representation of the IPv6 address.
      * @throws std::bad_alloc if required memory can't be allocated
      * @exceptionsafety Strong
      */
@@ -110,4 +106,4 @@ public:
 
 } // namespace
 
-#endif /* INET4ADDR_H_ */
+#endif /* INET6ADDR_H_ */

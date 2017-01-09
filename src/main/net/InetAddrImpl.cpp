@@ -9,9 +9,9 @@
  * This file implements an Internet address.
  */
 
-#include "Inet4Addr.h"
-#include "Inet6Addr.h"
 #include "InetNameAddr.h"
+#include "Ipv4Addr.h"
+#include "Ipv6Addr.h"
 
 #include "arpa/inet.h"
 
@@ -19,12 +19,12 @@ namespace hycast {
 
 InetAddrImpl* InetAddrImpl::create(const in_addr_t addr)
 {
-    return new Inet4Addr(addr);
+    return new Ipv4Addr(addr);
 }
 
 InetAddrImpl* InetAddrImpl::create(const struct in6_addr& addr)
 {
-    return new Inet6Addr(addr);
+    return new Ipv6Addr(addr);
 }
 
 InetAddrImpl* InetAddrImpl::create(const std::string addr)

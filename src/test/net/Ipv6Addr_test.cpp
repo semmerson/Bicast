@@ -3,14 +3,13 @@
  * reserved. See the file COPYRIGHT in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Inet4Addr_test.cpp
+ *   @file: Ipv4Addr_test.cpp
  * @author: Steven R. Emmerson
  *
- * This file tests class `Inet4Addr`.
+ * This file tests class `Ipv6Addr`.
  */
 
-
-#include "Inet4Addr.h"
+#include "Ipv6Addr.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -20,16 +19,16 @@
 namespace {
 
 // The fixture for testing class Foo.
-class Inet4AddrTest : public ::testing::Test {
+class Ipv6AddrTest : public ::testing::Test {
  protected:
   // You can remove any or all of the following functions if its body
   // is empty.
 
-  Inet4AddrTest() {
+  Ipv6AddrTest() {
     // You can do set-up work for each test here.
   }
 
-  virtual ~Inet4AddrTest() {
+  virtual ~Ipv6AddrTest() {
     // You can do clean-up work that doesn't throw exceptions here.
   }
 
@@ -49,48 +48,36 @@ class Inet4AddrTest : public ::testing::Test {
   // Objects declared here can be used by all tests in the test case for Foo.
 };
 
-static const char* ADDR1 = "128.117.140.56";
-static const char* ADDR2 = "128.117.140.57";
+static const char* ADDR1 = "2001:db8::ff00:42:8329";
+static const char* ADDR2 = "2001:db8::ff00:42:8330";
 
-// Tests construction from an in_addr_t
-TEST_F(Inet4AddrTest, InAddrTConstruction) {
-  EXPECT_STREQ(ADDR1,
-          hycast::Inet4Addr(inet_addr(ADDR1)).to_string().data());
-}
-
-// Tests construction from a struct in_addr
-TEST_F(Inet4AddrTest, in_addr_Construction) {
-    struct in_addr inAddr;
-    inAddr.s_addr = inet_addr(ADDR1);
-    EXPECT_STREQ(ADDR1, hycast::Inet4Addr(inAddr).to_string().data());
+// Tests construction from a struct in6_addr
+TEST_F(Ipv6AddrTest, in_addr_Construction) {
+    struct in6_addr inAddr;
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
+    EXPECT_STREQ(ADDR1, hycast::Ipv6Addr(inAddr).to_string().data());
 }
 
 // Tests copy construction
-TEST_F(Inet4AddrTest, CopyConstruction) {
-    hycast::Inet4Addr a1{inet_addr(ADDR1)};
-    hycast::Inet4Addr a2{a1};
+TEST_F(Ipv6AddrTest, CopyConstruction) {
+    struct in6_addr inAddr;
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
+    hycast::Ipv6Addr a1{inAddr};
+    hycast::Ipv6Addr a2{a1};
     EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
 
 // Tests copy assignment
-TEST_F(Inet4AddrTest, CopyAssignment) {
-    hycast::Inet4Addr a1{inet_addr(ADDR1)};
-    hycast::Inet4Addr a2{inet_addr(ADDR2)};
+TEST_F(Ipv6AddrTest, CopyAssignment) {
+    struct in6_addr inAddr;
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
+    hycast::Ipv6Addr a1{inAddr};
+    EXPECT_EQ(1, inet_pton(AF_INET6, ADDR2, &inAddr.s6_addr));
+    hycast::Ipv6Addr a2{inAddr};;
+    EXPECT_STREQ(ADDR2, a2.to_string().data());
     a2 = a1;
     EXPECT_STREQ(ADDR1, a2.to_string().data());
-    hycast::Inet4Addr a3{inet_addr(ADDR1)};
-    a1 = a3;
-    EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
-
-#if 0
-// Tests hash()
-TEST_F(Inet4AddrTest, hash) {
-    hycast::Inet4Addr inAddr1{ADDR1};
-    hycast::Inet4Addr inAddr2{ADDR2};
-    EXPECT_TRUE(inAddr1.hash() != inAddr2.hash());
-}
-#endif
 
 }  // namespace
 

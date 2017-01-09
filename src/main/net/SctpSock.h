@@ -14,12 +14,6 @@
 
 #include "InetSockAddr.h"
 
-#include <cstdint>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <sys/socket.h>
-
 namespace hycast {
 
 class SctpSockImpl; // Forward declaration of implementation

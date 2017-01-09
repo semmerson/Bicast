@@ -9,9 +9,9 @@
  * @author: Steven R. Emmerson
  */
 
-#include "Inet4Addr.h"
-#include "Inet6Addr.h"
 #include "InetNameAddr.h"
+#include "Ipv4Addr.h"
+#include "Ipv6Addr.h"
 
 #include <cstring>
 #include <errno.h>

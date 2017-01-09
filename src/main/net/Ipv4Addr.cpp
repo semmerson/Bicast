@@ -3,13 +3,13 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Inet4Addr.cpp
+ *   @file: Ipv4Addr.cpp
  * @author: Steven R. Emmerson
  *
  * This file defines an IPv4 address.
  */
 
-#include "Inet4Addr.h"
+#include "Ipv4Addr.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -20,13 +20,13 @@
 
 namespace hycast {
 
-std::string Inet4Addr::to_string() const
+std::string Ipv4Addr::to_string() const
 {
     char buf[INET_ADDRSTRLEN];
     return std::string(inet_ntop(AF_INET, &ipAddr, buf, sizeof(buf)));
 }
 
-std::shared_ptr<std::set<struct sockaddr_storage>> Inet4Addr::getSockAddr(
+std::shared_ptr<std::set<struct sockaddr_storage>> Ipv4Addr::getSockAddr(
         const in_port_t  port) const
 {
     struct sockaddr_storage sockAddr = {};

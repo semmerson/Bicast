@@ -12,7 +12,6 @@
 #ifndef INETNAMEADDR_H_
 #define INETNAMEADDR_H_
 
-#include "Inet4Addr.h"
 #include "InetAddrImpl.h"
 #include "IpAddr.h"
 
@@ -20,6 +19,7 @@
 #include <memory>
 #include <netinet/in.h>
 #include <set>
+#include "Ipv4Addr.h"
 
 namespace hycast {
 
@@ -70,7 +70,7 @@ public:
      * @retval `true`   Iff this instance is considered less than the IPv4
      *                  address
      */
-    bool operator<(const Inet4Addr& that) const noexcept
+    bool operator<(const Ipv4Addr& that) const noexcept
     {
         return less(*this, that);
     }
@@ -80,7 +80,7 @@ public:
      * @retval `true`   Iff this instance is considered less than the IPv6
      *                  address
      */
-    bool operator<(const Inet6Addr& that) const noexcept
+    bool operator<(const Ipv6Addr& that) const noexcept
     {
         return less(*this, that);
     }

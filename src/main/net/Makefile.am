@@ -12,11 +12,12 @@ lib_la_SOURCES 	= \
 	PortNumber.h \
 	InetAddrImpl.cpp InetAddrImpl.h \
 	IpAddr.cpp IpAddr.h \
-	Inet4Addr.cpp Inet4Addr.h \
-	Inet6Addr.cpp Inet6Addr.h \
+	Ipv4Addr.cpp Ipv4Addr.h \
+	Ipv6Addr.cpp Ipv6Addr.h \
 	InetNameAddr.cpp InetNameAddr.h \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddr.cpp InetSockAddr.h \
+	SctpSockImpl.cpp SctpSockImpl.h \
 	SctpSock.cpp SctpSock.h \
 	ClntSctpSock.cpp ClntSctpSock.h \
 	SrvrSctpSock.cpp SrvrSctpSock.h \

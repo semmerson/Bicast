@@ -21,8 +21,8 @@
 
 namespace hycast {
 
-class Inet4Addr;
-class Inet6Addr;
+class Ipv4Addr;
+class Ipv6Addr;
 class InetNameAddr;
 
 class InetAddrImpl {
@@ -82,14 +82,14 @@ public:
      * @retval `true`   Iff this instance is considered less than the IPv4
      *                  address
      */
-    virtual bool operator<(const Inet4Addr& that) const noexcept =0;
+    virtual bool operator<(const Ipv4Addr& that) const noexcept =0;
     /**
      * Indicates if this instance is considered less than an IPv6 address.
      * @param[in] that  IPv6 address
      * @retval `true`   Iff this instance is considered less than the IPv6
      *                  address
      */
-    virtual bool operator<(const Inet6Addr& that) const noexcept =0;
+    virtual bool operator<(const Ipv6Addr& that) const noexcept =0;
     /**
      * Indicates if this instance is considered less than a hostname address.
      * @param[in] that  Hostname address
@@ -117,32 +117,32 @@ public:
             const in_port_t  port) const =0;
 };
 
-inline bool less(const Inet4Addr& o1, const Inet6Addr& o2) noexcept
+inline bool less(const Ipv4Addr& o1, const Ipv6Addr& o2) noexcept
 {
     return true;
 }
 
-inline bool less(const Inet4Addr& o1, const InetNameAddr& o2) noexcept
+inline bool less(const Ipv4Addr& o1, const InetNameAddr& o2) noexcept
 {
     return true;
 }
 
-inline bool less(const Inet6Addr& o1, const InetNameAddr& o2) noexcept
+inline bool less(const Ipv6Addr& o1, const InetNameAddr& o2) noexcept
 {
     return true;
 }
 
-inline bool less(const Inet6Addr& o1, const Inet4Addr& o2) noexcept
+inline bool less(const Ipv6Addr& o1, const Ipv4Addr& o2) noexcept
 {
     return false;
 }
 
-inline bool less(const InetNameAddr& o1, const Inet4Addr& o2) noexcept
+inline bool less(const InetNameAddr& o1, const Ipv4Addr& o2) noexcept
 {
     return false;
 }
 
-inline bool less(const InetNameAddr& o1, const Inet6Addr& o2) noexcept
+inline bool less(const InetNameAddr& o1, const Ipv6Addr& o2) noexcept
 {
     return false;
 }

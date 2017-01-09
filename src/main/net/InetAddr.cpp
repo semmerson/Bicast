@@ -9,10 +9,10 @@
  * This file defines an Internet address.
  */
 
-#include "Inet4Addr.h"
-#include "Inet6Addr.h"
 #include "InetAddr.h"
 #include "InetAddrImpl.h"
+#include "Ipv4Addr.h"
+#include "Ipv6Addr.h"
 
 namespace hycast {
 

@@ -3,13 +3,13 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Inet6Addr.cpp
+ *   @file: Ipv6Addr.cpp
  * @author: Steven R. Emmerson
  *
  * This file defines an IPv6 address.
  */
 
-#include "Inet6Addr.h"
+#include "Ipv6Addr.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -19,7 +19,7 @@
 
 namespace hycast {
 
-size_t Inet6Addr::hash() const noexcept
+size_t Ipv6Addr::hash() const noexcept
 {
     const size_t*       ptr = reinterpret_cast<const size_t*>(&ipAddr.s6_addr);
     const size_t* const out = ptr + sizeof(ipAddr.s6_addr)/sizeof(size_t);
@@ -29,13 +29,13 @@ size_t Inet6Addr::hash() const noexcept
     return hash;
 }
 
-std::string Inet6Addr::to_string() const
+std::string Ipv6Addr::to_string() const
 {
     char buf[INET6_ADDRSTRLEN];
     return std::string(inet_ntop(AF_INET6, &ipAddr.s6_addr, buf, sizeof(buf)));
 }
 
-std::shared_ptr<std::set<struct sockaddr_storage>> Inet6Addr::getSockAddr(
+std::shared_ptr<std::set<struct sockaddr_storage>> Ipv6Addr::getSockAddr(
         const in_port_t  port) const
 {
     struct sockaddr_storage sockAddr = {};
