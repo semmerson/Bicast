@@ -41,6 +41,12 @@ public:
      * Constructs from nothing.
      */
     Executor();
+
+    /**
+     * Destroys. Cancels all active tasks and waits for them to complete.
+     */
+    ~Executor();
+
     /**
      * Submits a callable for execution.
      * @param[in,out] func  Task to be executed
@@ -49,6 +55,7 @@ public:
      * @threadsafety        Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func);
+
     /**
      * Returns the future corresponding to a thread identifier.
      * @param[in] threadId  Thread identifier
@@ -58,6 +65,12 @@ public:
      * @threadsafety        Safe
      */
     Future<Ret> getFuture(const pthread_t threadId);
+
+    /**
+     * Cancels this instance. Cancels all active tasks and waits for them to
+     * complete.
+     */
+    void cancel();
 };
 
 } // namespace

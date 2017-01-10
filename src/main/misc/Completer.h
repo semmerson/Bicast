@@ -32,17 +32,25 @@ public:
      * Constructs from nothing.
      */
     Completer();
+
+    /**
+     * Destroys. Cancels all pending tasks, waits for all tasks to complete,
+     * and clears the completion-queue.
+     */
+    ~Completer();
+
     /**
      * Submits a callable for execution. The callable's future will, eventually,
      * be returned by get().
      * @param[in,out] func       Task to be executed
      * @return                   Task's future
-     * @throws std::logic_error  shutdown() has been called
+     * @throws std::logic_error  cancel() has been called
      * @exceptionsafety          Basic guarantee
      * @threadsafety             Safe
      * @throws std::logic_error  Instance is shut down
      */
     Future<Ret> submit(const std::function<Ret()>& func);
+
     /**
      * Returns the next completed future. Blocks until one is available.
      * @return the next completed future

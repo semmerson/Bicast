@@ -41,18 +41,24 @@ protected:
     /// Variables for synchronizing state changes
     std::mutex                       mutex;
     std::condition_variable          cond;
-    /// Completed tasks
+    /// Queue of completed tasks
     std::queue<Future<Ret>>          completedTasks;
     /// Executor
     Executor<Ret>                    executor;
+    /**
+     * Number of pending tasks (i.e., submitted tasks that aren't in the
+     * completion queue).
+     */
+    unsigned long                    numPendingTasks;
 
     void finish() {
-        std::lock_guard<decltype(mutex)> lock{mutex};
         auto threadId = pthread_self();
         auto future = executor.getFuture(threadId);
         assert(future);
+        std::lock_guard<decltype(mutex)> lock{mutex};
         completedTasks.push(future);
-        cond.notify_one();
+        --numPendingTasks;
+        cond.notify_all();
     }
     static void finishTask(void* arg) {
         reinterpret_cast<CompleterImpl<Ret>*>(arg)->finish();
@@ -67,23 +73,42 @@ public:
         , cond{}
         , completedTasks{}
         , executor{}
+        , numPendingTasks{0}
     {}
+
+    /**
+     * Destroys. Cancels all pending tasks, waits for all tasks to complete,
+     * and clears the completion-queue.
+     */
     virtual ~BasicCompleterImpl()
-    {}
+    {
+        executor.cancel(); // Blocks until all tasks complete
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (numPendingTasks)
+            cond.wait(lock);
+        while (!completedTasks.empty()) {
+            auto future = completedTasks.front();
+            completedTasks.pop();
+            future.wait(); // Joins thread
+        }
+    }
+
     /**
      * Submits a callable for execution. The callable's future will, eventually,
      * be returned by get().
      * @param[in,out] func       Callable to be executed
      * @return                   Callable's future
-     * @throws std::logic_error  shutdown() has been called
      * @exceptionsafety          Basic guarantee
      * @threadsafety             Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         auto callable = getCallable(func);
+        std::lock_guard<decltype(mutex)> lock{mutex};
         auto future = executor.submit(callable);
+        ++numPendingTasks;
         return future;
     }
+
     /**
      * Returns the next completed future. Blocks until one is available.
      * @return the next completed future
@@ -162,6 +187,10 @@ public:
 template<class Ret>
 Completer<Ret>::Completer()
     : pImpl(new CompleterImpl<Ret>())
+{}
+
+template<class Ret>
+Completer<Ret>::~Completer()
 {}
 
 template<class Ret>

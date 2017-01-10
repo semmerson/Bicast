@@ -12,6 +12,7 @@
 #include "Executor.h"
 #include "Future.h"
 
+#include <cassert>
 #include <condition_variable>
 #include <errno.h>
 #include <exception>
@@ -32,10 +33,9 @@ class BasicExecutorImpl
     /// Executing tasks
     std::map<pthread_t, Future<Ret>> activeTasks;
     /// Variables for synchronizing state changes
-    std::mutex                       mutex;
+    mutable std::mutex               mutex;
     std::condition_variable          cond;
-    /// Is this instance shut down?
-    bool                             isShutdown;
+    bool                             isTerminated;
 
     /**
      * Returns the future corresponding to a thread identifier.
@@ -45,13 +45,29 @@ class BasicExecutorImpl
      * @exceptionsafety     Strong guarantee
      * @threadsafety        Safe
      */
-    Future<Ret> getFuture(const pthread_t threadId)
+    Future<Ret> getFuture(const pthread_t threadId) const
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
         auto iter = activeTasks.find(threadId);
         return iter == activeTasks.end()
                 ? Future<Ret>()
                 : iter->second;
+    }
+
+    /**
+     * Terminates this instance. Cancels all active tasks and waits for them to
+     * complete. Idempotent.
+     */
+    void terminate()
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        if (!isTerminated) {
+            for (auto pair : activeTasks)
+                pair.second.cancel();
+            while (!activeTasks.empty())
+                cond.wait(lock);
+            isTerminated = true;
+        }
     }
 
 protected:
@@ -61,18 +77,22 @@ protected:
      * @return          Callable's future
      */
     virtual Future<Ret> getFuture(const std::function<Ret()>& func) =0;
+
     /**
      * Removes a task from the set of active tasks.
      */
     void completeTask() {
         std::lock_guard<decltype(mutex)> lock{mutex};
         auto threadId = pthread_self();
-        activeTasks.erase(threadId);
+        auto n = activeTasks.erase(threadId);
+        assert(n == 1);
         cond.notify_one();
     }
+
     static void taskCompleted(void* arg) {
         reinterpret_cast<ExecutorImpl<Ret>*>(arg)->completeTask();
     }
+
     /**
      * Executes a future. Designed to be called by `pthread_create()`.
      * @param[in] arg  Future to be executed
@@ -82,10 +102,10 @@ protected:
         future->operator()();
         return nullptr;
     }
+
     /**
      * Starts executing a future.
      * @param[in,out] future  Future to be executed
-     * @throws std::logic_error  shutdown() has been called
      * @exceptionsafety          Basic guarantee
      * @threadsafety             Safe
      */
@@ -97,25 +117,7 @@ protected:
             throw std::system_error(errno, std::system_category(),
                     "Couldn't create thread");
     }
-    /**
-     * Shuts down. Cancels all executing tasks. Will not accept further tasks.
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
-     */
-    void shutdownNow() {
-        std::lock_guard<decltype(mutex)> lock{mutex};
-        for (auto pair : activeTasks)
-            pair.second.cancel();
-        isShutdown = true;
-    }
-    /**
-     * Waits until all tasks have completed after a call to shutdownNow().
-     */
-    void awaitTermination() {
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (!activeTasks.empty())
-            cond.wait(lock);
-    }
+
 public:
     /**
      * Constructs.
@@ -124,35 +126,43 @@ public:
         : activeTasks{}
         , mutex{}
         , cond{}
-        , isShutdown{false}
+        , isTerminated{false}
     {}
+
+    /**
+     * Destroys. Cancels all active tasks and waits for them to complete.
+     */
     virtual ~BasicExecutorImpl()
     {
-        try {
-            shutdownNow();
-            awaitTermination();
-        }
-        catch (const std::exception& e) {
-        }
+        terminate();
     }
+
     /**
      * Submits a callable for execution.
      * @param[in,out] func       Callable to be executed
-     * @throws std::logic_error  The executor is shut down
      * @throws std::system_error A new thread couldn't be created
+     * @throws std::logic_error  `cancel()` has been called
      * @exceptionsafety          Basic guarantee
      * @threadsafety             Safe
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         std::lock_guard<decltype(mutex)> lock{mutex};
-        if (isShutdown)
-            throw std::logic_error("Executor is shut down");
+        if (isTerminated)
+            throw std::logic_error("Executor has been cancelled");
         auto future = getFuture(func);
         start(future);
         ::pthread_t threadId = future.getThreadId();
         activeTasks.emplace(threadId, future);
-        cond.notify_all();
         return std::move(future);
+    }
+
+    /**
+     * Cancels this instance. Cancels all active tasks and waits for them to
+     * complete. Idempotent.
+     */
+    void cancel()
+    {
+        terminate();
     }
 };
 
@@ -230,6 +240,10 @@ Executor<Ret>::Executor()
 {}
 
 template<class Ret>
+Executor<Ret>::~Executor()
+{}
+
+template<class Ret>
 Future<Ret> Executor<Ret>::submit(const std::function<Ret()>& func)
 {
     return pImpl->submit(func);
@@ -239,6 +253,12 @@ template<class Ret>
 Future<Ret> Executor<Ret>::getFuture(const pthread_t threadId)
 {
     return pImpl->getFuture(threadId);
+}
+
+template<class Ret>
+void Executor<Ret>::cancel()
+{
+    return pImpl->cancel();
 }
 
 template class Executor<void>;

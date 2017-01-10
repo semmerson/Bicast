@@ -77,7 +77,7 @@ TEST_F(P2pMgrTest, Execution) {
     hycast::InetSockAddr servAddr1("localhost", 38800);
     hycast::InetSockAddr servAddr2("localhost", 38801);
     hycast::P2pMgr p2pMgr1(servAddr1, 1, nullptr, 60, msgRcvr);
-    hycast::P2pMgr p2pMgr2(servAddr1, 1, nullptr, 60, msgRcvr);
+    hycast::P2pMgr p2pMgr2(servAddr2, 1, nullptr, 60, msgRcvr);
     hycast::Completer<void> completer{};
     completer.submit([&p2pMgr1]{ p2pMgr1(); });
     completer.submit([&p2pMgr2]{ p2pMgr2(); });
