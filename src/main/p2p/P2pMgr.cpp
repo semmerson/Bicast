@@ -123,6 +123,7 @@ public:
         , waitDuration{stasisDuration+1}
         , addPeers{false}
     {}
+
     /**
      * Runs this instance. Starts receiving connection requests from remote
      * peers. Adds peers to the set of active peers. Replaces the worst
@@ -141,6 +142,7 @@ public:
         // Futures never cancelled => future.wasCancelled() is unnecessary
         future.getResult(); // might throw exception
     }
+
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo        Product information

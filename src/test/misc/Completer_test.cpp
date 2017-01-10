@@ -19,32 +19,6 @@ namespace {
 
 // The fixture for testing class Completer.
 class CompleterTest : public ::testing::Test {
-protected:
-    // You can remove any or all of the following functions if its body
-    // is empty.
-
-    CompleterTest() {
-        // You can do set-up work for each test here.
-    }
-
-    virtual ~CompleterTest() {
-        // You can do clean-up work that doesn't throw exceptions here.
-    }
-
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp() {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-    }
-
-    virtual void TearDown() {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-    }
-
-    // Objects declared here can be used by all tests in the test case for Completer.
 };
 
 // Tests construction of void completer
@@ -112,7 +86,7 @@ TEST_F(CompleterTest, MultipleIntExecution) {
 TEST_F(CompleterTest, VoidCancellation) {
     hycast::Completer<void> completer{};
     auto future = completer.submit([]{::pause();});
-    future.cancel();
+    completer.cancel();
     EXPECT_TRUE(future.wasCancelled());
     EXPECT_THROW(future.getResult(), std::logic_error);
 }
@@ -121,23 +95,9 @@ TEST_F(CompleterTest, VoidCancellation) {
 TEST_F(CompleterTest, IntCancellation) {
     hycast::Completer<int> completer{};
     auto future = completer.submit([]{::pause(); return 1;});
-    future.cancel();
+    completer.cancel();
     EXPECT_TRUE(future.wasCancelled());
     EXPECT_THROW(future.getResult(), std::logic_error);
-}
-
-// Tests destruction of void completer
-TEST_F(CompleterTest, VoidShutdown) {
-    hycast::Completer<void> completer{};
-    auto future = completer.submit([]{::pause();});
-    ::sleep(1);
-}
-
-// Tests destruction of int completer
-TEST_F(CompleterTest, IntShutdown) {
-    hycast::Completer<int> completer{};
-    auto future = completer.submit([]{::pause(); return 1;});
-    ::sleep(1);
 }
 
 }  // namespace
