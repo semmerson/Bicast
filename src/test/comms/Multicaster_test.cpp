@@ -85,8 +85,8 @@ TEST_F(MulticasterTest, Construction) {
 TEST_F(MulticasterTest, Transmission) {
     hycast::Multicaster mcaster(sock, version, &msgRcvr);
     sock.setMcastLoop(true).setHopLimit(0);
-    //char buf[mcaster.getSerialSize(version, prodInfo)];
-    //sock.send(buf, msglen);
+    auto recvThread = std::thread(&mcaster::runReceiver);
+    mcaster.send(prodInfo);
 }
 
 }  // namespace

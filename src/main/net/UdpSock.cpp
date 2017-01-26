@@ -68,6 +68,28 @@ public:
                 ", sock=" + std::to_string(sd) + ")";
     }
 
+    /**
+     * Peeks at the contents of the current UDP packet. Waits for a packet if
+     * necessary. The packet is left in the input buffer.
+     * @param[in] buf  Buffer into which to copy the first bytes of the packet
+     * @param[in] len  Number of bytes to copy
+     * @retval    0    Socket is closed
+     * @return         Number of bytes copied
+     * @throws std::system_error  I/O error
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    ssize_t peek(
+            void*  buf,
+            size_t len) const
+    {
+        ssize_t status = ::recv(sd, buf, len, MSG_PEEK);
+        if (status == -1)
+            throw std::system_error(errno, std::system_category(),
+                    "recv() failure: sock=" + std::to_string(sd));
+        return status;
+    }
+
     void shareLocalPort() const
     {
         /*
@@ -154,11 +176,21 @@ public:
         remoteAddr.setHopLimit(sd, limit);
     }
 
+    /**
+     * Sends a message.
+     * @param[in] msg  Message to be sent
+     * @param[in] len  Length of message in bytes
+     * @throws std::system_error  I/O failure
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
     void send(
             const void*  msg,
             const size_t len) const
     {
-        throw std::logic_error("Not implemented yet");
+        if (::send(sd, msg, len, MSG_EOR) == -1)
+            throw std::system_error(errno, std::system_category(),
+                    "send() failure: sock=" + std::to_string(sd));
     }
 
     void sendv(
@@ -239,6 +271,13 @@ UdpSock::UdpSock(Impl* const pImpl)
 std::string UdpSock::to_string() const
 {
     return pImpl->to_string();
+}
+
+ssize_t UdpSock::peek(
+        void*  buf,
+        size_t len) const
+{
+    return pImpl->peek(buf, len);
 }
 
 void UdpSock::shareLocalPort() const

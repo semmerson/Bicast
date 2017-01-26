@@ -15,6 +15,8 @@
 #include "InetAddr.h"
 #include "InetSockAddr.h"
 
+#include <sys/types.h>
+
 namespace hycast {
 
 /**
@@ -56,10 +58,24 @@ public:
     virtual std::string to_string() const;
 
     /**
+     * Peeks at the contents of the current UDP packet. Waits for a packet if
+     * necessary. The packet is left in the input buffer.
+     * @param[in] buf  Buffer into which to copy the first bytes of the packet
+     * @param[in] len  Number of bytes to copy
+     * @retval    0    Socket is closed
+     * @return         Number of bytes copied
+     * @throws std::system_error  I/O error
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    ssize_t peek(
+            void*  buf,
+            size_t len) const;
+
+    /**
      * Returns the size, in bytes, of the current message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
-     * @returns Size of message in bytes. Will equal 0 when socket is closed by
-     *          remote peer.
+     * @returns Size of message in bytes. Will equal 0 when socket is closed
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      */

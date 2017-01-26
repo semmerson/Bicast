@@ -9,11 +9,12 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/ChannelImpl.h>
-#include <comms/RegChannel.h>
-#include <comms/VersionMsg.h>
+#include "ChannelImpl.h"
+#include "RegChannel.h"
+#include "VersionMsg.h"
 #include "SctpSock.h"
 #include "Serializable.h"
+
 #include <cstdint>
 #include <memory>
 #include <mutex>

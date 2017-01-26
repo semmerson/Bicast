@@ -39,6 +39,22 @@ public:
             McastUdpSock&  mcastSock,
             const unsigned version,
             MsgRcvr*       msgRcvr);
+
+    /**
+     * Runs a receiver that reads multicast objects and sends them to the
+     * message receiver specified at construction. Doesn't return until the
+     * underlying socket is closed or an exception occurs.
+     */
+    void runReceiver();
+
+    /**
+     * Multicasts information on a product.
+     * @param[in] prodInfo  Product information
+     * @throws std::system_error  I/O failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void send(ProdInfo& prodInfo) const;
 };
 
 }

@@ -29,6 +29,11 @@ public:
     /**
      * Receives a notice about a new product.
      * @param[in]     info  Information about the product
+     */
+    virtual void recvNotice(const ProdInfo& info) =0;
+    /**
+     * Receives a notice about a new product.
+     * @param[in]     info  Information about the product
      * @param[in,out] peer  Peer that received the notice
      */
     virtual void recvNotice(const ProdInfo& info, Peer& peer) =0;
@@ -52,6 +57,17 @@ public:
     virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
+     * @param[in] chunk  Chunk-of-data
+     */
+    /*
+     * For an unknown reason, the compiler complains if the `recvData` parameter
+     * is a `LatentChunk&` and not a `LatentChunk`. This is acceptable, however,
+     * because `LatentChunk` uses the pImpl idiom. See
+     * `PeerImpl::runReceiver()`.
+     */
+    virtual void recvData(LatentChunk chunk) =0;
+    /**
+     * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
      * @param[in,out] peer   Peer that received the chunk
      */
@@ -59,7 +75,7 @@ public:
      * For an unknown reason, the compiler complains if the `recvData` parameter
      * is a `LatentChunk&` and not a `LatentChunk`. This is acceptable, however,
      * because `LatentChunk` uses the pImpl idiom. See
-     * `PeerConnectionImpl::runReceiver`.
+     * `PeerImpl::runReceiver()`.
      */
     virtual void recvData(LatentChunk chunk, Peer& peer) =0;
 };

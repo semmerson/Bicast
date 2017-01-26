@@ -40,7 +40,7 @@ public:
      * @throws std::invalid_argument if the current message is invalid
      */
     LatentChunk(
-            SctpSock&        sock,
+            SctpSock&      sock,
             const unsigned version);
     /**
      * Returns information on the chunk.
