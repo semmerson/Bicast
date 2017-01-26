@@ -13,6 +13,7 @@
 #ifndef INETSOCKADDR_H_
 #define INETSOCKADDR_H_
 
+#include "InetAddr.h"
 #include "PortNumber.h"
 
 #include <memory>
@@ -28,11 +29,21 @@ class InetSockAddr final {
 public:
     /**
      * Constructs from nothing. The resulting object will have the default
-     * Internet address and port number 0.
+     * Internet address of the host and port number 0.
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
      */
     InetSockAddr();
+    /**
+     * Constructs from an Internet address and a port number.
+     * @param[in] inetAddr Internet address
+     * @param[in] port     Port number
+     * @throws std::bad_alloc if necessary memory can't be allocated
+     * @exceptionsafety Strong
+     */
+    InetSockAddr(
+            const InetAddr   inetAddr,
+            const in_port_t  port);
     /**
      * Constructs from a string representation of an IP address and a port
      * number.
@@ -96,6 +107,7 @@ public:
      * @exceptionsafety Nothrow
      */
     InetSockAddr& operator=(const InetSockAddr& rhs) noexcept;
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -110,6 +122,7 @@ public:
      * @threadsafety    Safe
      */
     bool operator<(const InetSockAddr& that) const noexcept;
+
     /**
      * Returns a string representation of this instance.
      * @return A string representation of this instance
@@ -117,22 +130,100 @@ public:
      * @exceptionsafety Strong
      */
     std::string to_string() const;
+
+    /**
+     * Returns a new socket.
+     * @param[in] sockType  Type of socket as defined in <sys/socket.h>:
+     *                        - SOCK_STREAM     Streaming socket (e.g., TCP)
+     *                        - SOCK_DGRAM      Datagram socket (e.g., UDP)
+     *                        - SOCK_SEQPACKET  Record-oriented socket
+     * @return Corresponding new socket
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    int getSocket(const int sockType) const;
+
     /**
      * Connects a socket to this instance's endpoint.
      * @param[in] sd        Socket descriptor
+     * @returns  This instance
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    void connect(int sd) const;
+    const InetSockAddr& connect(int sd) const;
+
     /**
-     * Binds this instance's endpoint to a socket.
+     * Binds a socket's local endpoint to this instance.
      * @param[in] sd        Socket descriptor
+     * @returns  This instance
      * @throws std::system_error
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    void bind(int sd) const;
+    const InetSockAddr& bind(int sd) const;
+
+    /**
+     * Returns the Internet socket address that's suitable for a client.
+     * @return Internet socket address that's suitable for a client
+     */
+    InetSockAddr getClntSockAddr() const;
+
+    /**
+     * Sets the hop-limit on a socket for outgoing multicast packets.
+     * @param[in] sd     Socket
+     * @param[in] limit  Hop limit:
+     *                     -         0  Restricted to same host. Won't be
+     *                                  output by any interface.
+     *                     -         1  Restricted to the same subnet. Won't
+     *                                  be forwarded by a router (default).
+     *                     -    [2,31]  Restricted to the same site,
+     *                                  organization, or department.
+     *                     -   [32,63]  Restricted to the same region.
+     *                     -  [64,127]  Restricted to the same continent.
+     *                     - [128,255]  Unrestricted in scope. Global.
+     * @throws std::system_error  `setsockopt()` failure
+     * @execptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    const InetSockAddr& setHopLimit(
+            const int      sd,
+            const unsigned limit) const;
+
+    /**
+     * Sets whether or not a multicast packet sent to a socket will also be
+     * read from the same socket. Such looping in enabled by default.
+     * @param[in] sd      Socket descriptor
+     * @param[in] enable  Whether or not to enable reception of sent packets
+     * @return  This instance
+     * @threadsafety  Safe
+     */
+    const InetSockAddr& setMcastLoop(
+            const int  sd,
+            const bool enable) const;
+
+    /**
+     * Joins a socket to the multicast group corresponding to this instance.
+     * @param[in] sd  Socket descriptor
+     * @returns  This instance
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    const InetSockAddr& joinMcastGroup(const int sd) const;
+
+    /**
+     * Joins a socket to the source-specific multicast group corresponding to
+     * this instance and the IP address of the source.
+     * @param[in] sd       Socket descriptor
+     * @param[in] srcAddr  IP address of source
+     * @return             This instance
+     * @throws std::system_error  `setsockopt()` failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    const InetSockAddr& joinSourceGroup(
+            const int       sd,
+            const InetAddr& srcAddr) const;
 };
 
 /**

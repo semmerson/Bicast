@@ -32,7 +32,7 @@ public:
      * @throws std::bad_alloc if required memory can't be allocated
      * @exceptionsafety Strong
      */
-    explicit SctpSock();
+    SctpSock();
     /**
      * Constructs from a BSD socket and the number of SCTP streams. Only do this
      * once per socket because the destructor might close the socket.

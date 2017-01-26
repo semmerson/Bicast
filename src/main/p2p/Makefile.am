@@ -21,7 +21,8 @@ lib_la_SOURCES 	= \
 	MsgRcvr.h \
 	PeerSet.cpp PeerSet.h \
 	PeerSource.h \
-	P2pMgr.cpp P2pMgr.h
+	P2pMgr.cpp P2pMgr.h \
+	McastRcvr.cpp McastRcvr.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

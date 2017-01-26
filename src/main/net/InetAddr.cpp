@@ -35,6 +35,14 @@ InetAddr InetAddr::create(const std::string addr)
     return InetAddr(InetAddrImpl::create(addr));
 }
 
+void InetAddr::setSockAddrStorage(
+        sockaddr_storage& storage,
+        const int         port,
+        const int         sockType) const noexcept
+{
+    return pImpl->setSockAddrStorage(storage, port, sockType);
+}
+
 size_t InetAddr::hash() const noexcept
 {
     return pImpl->hash();
@@ -56,10 +64,23 @@ std::string InetAddr::to_string() const
     return pImpl->to_string();
 }
 
-std::shared_ptr<std::set<struct sockaddr_storage>> InetAddr::getSockAddr(
-        const in_port_t  port) const
+int InetAddr::getSocket(const int sockType) const
 {
-    return pImpl->getSockAddr(port);
+    return pImpl->getSocket(sockType);
+}
+
+void InetAddr::setHopLimit(
+        const int      sd,
+        const unsigned limit) const
+{
+    pImpl->setHopLimit(sd, limit);
+}
+
+void InetAddr::setMcastLoop(
+        const int      sd,
+        const bool     enable) const
+{
+    pImpl->setMcastLoop(sd, enable);
 }
 
 } // namespace

@@ -108,6 +108,19 @@ TEST_F(InetAddrTest, CopyAssignment) {
     EXPECT_STREQ(IPV6_ADDR1, addr4.to_string().data());
 }
 
+// Tests hostname to socket address
+TEST_F(InetAddrTest, HostnameToSocketAddress) {
+    hycast::InetAddr nameAddr{"localhost"};
+    struct sockaddr_storage storage;
+    unsigned short port{38800};
+    nameAddr.setSockAddrStorage(storage, port, SOCK_DGRAM);
+    struct sockaddr_in* sockAddrIn =
+            reinterpret_cast<struct sockaddr_in*>(&storage);
+    EXPECT_EQ(AF_INET, sockAddrIn->sin_family);
+    EXPECT_EQ(htons(port), sockAddrIn->sin_port);
+    EXPECT_EQ(inet_addr("127.0.0.1"), sockAddrIn->sin_addr.s_addr);
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {

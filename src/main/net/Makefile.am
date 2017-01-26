@@ -11,7 +11,7 @@ noinst_LTLIBRARIES = lib.la
 lib_la_SOURCES 	= \
 	PortNumber.h \
 	InetAddrImpl.cpp InetAddrImpl.h \
-	IpAddr.cpp IpAddr.h \
+	IpAddrImpl.cpp IpAddrImpl.h \
 	Ipv4Addr.cpp Ipv4Addr.h \
 	Ipv6Addr.cpp Ipv6Addr.h \
 	InetNameAddr.cpp InetNameAddr.h \
@@ -21,4 +21,5 @@ lib_la_SOURCES 	= \
 	SctpSock.cpp SctpSock.h \
 	ClntSctpSock.cpp ClntSctpSock.h \
 	SrvrSctpSock.cpp SrvrSctpSock.h \
-	Serializable.h
+	Serializable.h \
+	UdpSock.cpp UdpSock.h

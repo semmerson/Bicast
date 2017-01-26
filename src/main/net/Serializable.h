@@ -18,7 +18,6 @@ namespace hycast {
 
 class Serializable {
 public:
-    Serializable() {}
     virtual ~Serializable() {}
     /**
      * Serializes this instance to a buffer
@@ -34,6 +33,7 @@ public:
             char*          buf,
             const size_t   bufLen,
             const unsigned version) const =0;
+
     /**
      * Returns the size, in bytes, of a serialized representation of this
      * instance.

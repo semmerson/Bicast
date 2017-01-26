@@ -9,11 +9,11 @@
  * @author: Steven R. Emmerson
  */
 
-#include "IpAddr.h"
+#include <IpAddrImpl.h>
 
 namespace hycast {
 
-IpAddr::~IpAddr()
+IpAddrImpl::~IpAddrImpl()
 {}
 
 }

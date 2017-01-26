@@ -13,37 +13,80 @@
 #define INETNAMEADDR_H_
 
 #include "InetAddrImpl.h"
-#include "IpAddr.h"
-
 #include <cstddef>
 #include <memory>
 #include <netinet/in.h>
 #include <set>
+
+#include "IpAddrImpl.h"
 #include "Ipv4Addr.h"
 
 namespace hycast {
 
 class InetNameAddr final : public InetAddrImpl {
-    std::string name;
+    std::string name; /// Hostname
+
     /**
      * Adds Internet addresses to a set.
-     * @param[in]  family             Internet address family of addresses to add
-     * @param[in]  port               Port number in host byte order
-     * @param[out] set                Set of Internet addresses.
-     * @throws std::system_error      The IP address couldn't be obtained
-     * @exceptionsafety               Strong guarantee
-     * @threadsafety                  Safe
+     * @param[in]  family         Internet address family of addresses to add
+     * @param[in]  sockType       Type of socket as defined in <sys/socket.h>
+     * @param[in]  port           Port number in host byte order
+     * @param[out] set            Set of Internet addresses.
+     * @throws std::system_error  The IP address couldn't be obtained
+     * @exceptionsafety           Strong guarantee
+     * @threadsafety              Safe
      */
     void getSockAddrs(
             const int                                family,
+            const int                                sockType,
             const in_port_t                          port,
             std::set<struct sockaddr_storage>* const set) const;
+
+    /**
+     * Returns the first IP-based Internet address of the given family that's
+     * associated with this instance's hostname.
+     * @param[in] family  Address family. One of `AF_INET` or `AF_INET6`.
+     * @retval NULL  No address found
+     * @return       First matching address
+     * @throws std::system_error `getaddrinfo()` failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    IpAddrImpl* getIpAddr(const int family) const;
+
+    /**
+     * Returns the first IP-based Internet address associated with this
+     * instance's hostname.
+     * @retval NULL  No address found
+     * @return       First matching address
+     * @throws std::system_error `getaddrinfo()` failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    IpAddrImpl* getIpAddr() const;
+
 public:
     /**
      * Constructs from a hostname.
      * @param[in] name  A hostname
      */
     explicit InetNameAddr(const std::string name);
+
+    /**
+     * Returns the `struct sockaddr_storage` corresponding to this instance and
+     * a port number.
+     * @param[out] storage   Storage structure. Set upon return.
+     * @param[in]  port      Port number in host byte order
+     * @param[in]  sockType  Socket type hint as for `socket()`. 0 => unspecified.
+     * @return Socket address as a `struct sockaddr_storage`
+     * @exceptionsafety  Nothrow
+     * @threadsafety     Safe
+     */
+    void setSockAddrStorage(
+            sockaddr_storage& storage,
+            const int         port,
+            const int         sockType = 0) const noexcept;
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -101,18 +144,53 @@ public:
      * @threadsafety    Thread-safe
      */
     std::string to_string() const noexcept;
+
     /**
-     * Gets the socket addresses corresponding to an Internet protocol and a
-     * port number.
-     * @param[in]  port      Port number in host byte order
-     * @return     Set of socket addresses
-     * @throws std::system_error if the IP address couldn't be obtained
-     * @throws std::system_error if required memory couldn't be allocated
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * Returns a new socket.
+     * @param[in] sockType  Type of socket as defined in <sys/socket.h>:
+     *                        - SOCK_STREAM     Streaming socket (e.g., TCP)
+     *                        - SOCK_DGRAM      Datagram socket (e.g., UDP)
+     *                        - SOCK_SEQPACKET  Record-oriented socket
+     * @return Corresponding new socket
+     * @throws std::system_error  `socket()` failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
-    virtual std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
-            const in_port_t  port) const;
+    int getSocket(const int sockType) const;
+
+    /**
+     * Sets the hop-limit on a socket for outgoing multicast packets.
+     * @param[in] sd     Socket
+     * @param[in] limit  Hop limit:
+     *                     -         0  Restricted to same host. Won't be
+     *                                  output by any interface.
+     *                     -         1  Restricted to the same subnet. Won't
+     *                                  be forwarded by a router (default).
+     *                     -    [2,31]  Restricted to the same site,
+     *                                  organization, or department.
+     *                     -   [32,63]  Restricted to the same region.
+     *                     -  [64,127]  Restricted to the same continent.
+     *                     - [128,255]  Unrestricted in scope. Global.
+     * @throws std::system_error  `setsockopt()` failure
+     * @execptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void setHopLimit(
+            const int      sd,
+            const unsigned limit) const;
+
+    /**
+     * Sets whether or not a multicast packet written to a socket will be
+     * read from the same socket. Such looping in enabled by default.
+     * @param[in] sd      Socket descriptor
+     * @param[in] enable  Whether or not to enable reception of sent packets
+     * @return  This instance
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void setMcastLoop(
+            const int  sd,
+            const bool enable) const;
 };
 
 } // namespace

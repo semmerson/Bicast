@@ -12,6 +12,8 @@
 #ifndef INETADDRIMPL_H_
 #define INETADDRIMPL_H_
 
+#include "InetSockAddr.h"
+
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -63,6 +65,21 @@ public:
      * Destructor.
      */
     virtual             ~InetAddrImpl() {};
+
+    /**
+     * Returns the `struct sockaddr_storage` corresponding to this instance and
+     * a port number.
+     * @param[out] storage   Storage structure. Set upon return.
+     * @param[in]  port      Port number in host byte order
+     * @param[in]  sockType  Socket type hint as for `socket()`. 0 => unspecified.
+     * @exceptionsafety  Nothrow
+     * @threadsafety     Safe
+     */
+    virtual void setSockAddrStorage(
+            sockaddr_storage& storage,
+            const int         port,
+            const int         sockType = 0) const noexcept =0;
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -104,17 +121,53 @@ public:
      * @exceptionsafety Strong
      */
     virtual std::string to_string() const = 0;
+
     /**
-     * Gets the socket addresses corresponding to a port number.
-     * @param[in]  port      Port number
-     * @return     Set of socket addresses
-     * @throws std::system_error if the IP address couldn't be obtained
-     * @throws std::system_error if required memory couldn't be allocated
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * Returns a new socket.
+     * @param[in] sockType  Type of socket as defined in <sys/socket.h>:
+     *                        - SOCK_STREAM     Streaming socket (e.g., TCP)
+     *                        - SOCK_DGRAM      Datagram socket (e.g., UDP)
+     *                        - SOCK_SEQPACKET  Record-oriented socket
+     * @return Corresponding new socket
+     * @throws std::system_error  `socket()` failure
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
-    virtual std::shared_ptr<std::set<struct sockaddr_storage>> getSockAddr(
-            const in_port_t  port) const =0;
+    virtual int getSocket(const int sockType) const =0;
+
+    /**
+     * Sets the hop-limit on a socket for outgoing multicast packets.
+     * @param[in] sd     Socket
+     * @param[in] limit  Hop limit:
+     *                     -         0  Restricted to same host. Won't be
+     *                                  output by any interface.
+     *                     -         1  Restricted to the same subnet. Won't
+     *                                  be forwarded by a router (default).
+     *                     -    [2,31]  Restricted to the same site,
+     *                                  organization, or department.
+     *                     -   [32,63]  Restricted to the same region.
+     *                     -  [64,127]  Restricted to the same continent.
+     *                     - [128,255]  Unrestricted in scope. Global.
+     * @throws std::system_error  `setsockopt()` failure
+     * @execptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    virtual void setHopLimit(
+            const int      sd,
+            const unsigned limit) const =0;
+
+    /**
+     * Sets whether or not a multicast packet written to a socket will be
+     * read from the same socket. Such looping in enabled by default.
+     * @param[in] sd      Socket descriptor
+     * @param[in] enable  Whether or not to enable reception of sent packets
+     * @return  This instance
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    virtual void setMcastLoop(
+            const int  sd,
+            const bool enable) const =0;
 };
 
 inline bool less(const Ipv4Addr& o1, const Ipv6Addr& o2) noexcept

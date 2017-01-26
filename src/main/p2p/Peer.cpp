@@ -43,7 +43,7 @@ class PeerImpl final {
     RegChannel<ChunkInfo>  chunkReqChan;
     ChunkChannel           chunkChan;
     MsgRcvr&               msgRcvr;
-    SctpSock                 sock;
+    SctpSock               sock;
     Peer*                  peer;
 
     class : public MsgRcvr

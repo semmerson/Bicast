@@ -39,7 +39,7 @@ public:
      * @param[in] version   Protocol version
      */
     RegChannelImpl(
-            SctpSock&            sock,
+            SctpSock&          sock,
             const unsigned     streamId,
             const unsigned     version)
         : ChannelImpl::ChannelImpl(sock, streamId, version)
@@ -54,7 +54,7 @@ public:
      */
     void send(const Serializable& obj)
     {
-        const size_t nbytes = obj.getSerialSize(version);
+        const size_t                       nbytes = obj.getSerialSize(version);
         alignas(alignof(max_align_t)) char buf[nbytes];
         /*
          * The following won't throw std::invalid_argument because `nbytes` is

@@ -19,9 +19,9 @@
 
 namespace hycast {
 
-class IpAddr : public InetAddrImpl {
+class IpAddrImpl : public InetAddrImpl {
 public:
-    virtual ~IpAddr() =0;
+    virtual ~IpAddrImpl();
 };
 
 } // namespace
