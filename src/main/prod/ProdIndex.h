@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class ProdIndex final : public Serializable {
+class ProdIndex final : public Serializable<ProdIndex> {
     ProdIndex_t index;
 public:
     /**

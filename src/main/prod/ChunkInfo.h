@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class ChunkInfo final : public Serializable {
+class ChunkInfo final : public Serializable<ChunkInfo> {
     ProdIndex  prodIndex;
     ChunkIndex chunkIndex;
 public:

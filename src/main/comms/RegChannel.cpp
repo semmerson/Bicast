@@ -51,7 +51,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void send(const Serializable& obj)
+    void send(const Serializable<T>& obj)
     {
         const size_t                       nbytes = obj.getSerialSize(version);
         alignas(alignof(max_align_t)) char buf[nbytes];

@@ -26,7 +26,7 @@
 
 namespace hycast {
 
-class ProdInfoImpl : public Serializable
+class ProdInfoImpl : public Serializable<ProdInfoImpl>
 {
     std::string name;
     ProdIndex   index;
@@ -248,23 +248,6 @@ public:
         buf += 2;
         (void)memcpy(buf, name.data(), name.size());
         return buf + name.size();
-    }
-
-    /**
-     * Returns a new instance corresponding to a serialized representation in a
-     * buffer.
-     * @param[in] buf      Buffer
-     * @param[in] size     Size of buffer in bytes
-     * @param[in] version  Protocol version
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    std::shared_ptr<ProdInfoImpl> deserialize(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version)
-    {
-        return std::shared_ptr<ProdInfoImpl>(new ProdInfoImpl(buf, size, version));
     }
 };
 

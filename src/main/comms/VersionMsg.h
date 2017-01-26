@@ -17,7 +17,7 @@
 
 namespace hycast {
 
-class VersionMsg final : public Serializable {
+class VersionMsg final : public Serializable<VersionMsg> {
     unsigned version;
 public:
     explicit VersionMsg(unsigned version);

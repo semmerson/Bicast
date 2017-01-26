@@ -25,7 +25,7 @@ namespace hycast {
 
 class ProdInfoImpl; // Forward declaration
 
-class ProdInfo : public Serializable {
+class ProdInfo : public Serializable<ProdInfo> {
     std::shared_ptr<ProdInfoImpl> pImpl;
 
 public:
@@ -139,6 +139,7 @@ public:
             char*          buf,
             const size_t   size,
             const unsigned version) const;
+
     /**
      * Returns a new instance corresponding to a serialized representation in a
      * buffer.

@@ -16,6 +16,7 @@
 
 namespace hycast {
 
+template<class T>
 class Serializable {
 public:
     virtual ~Serializable() {}
@@ -44,6 +45,20 @@ public:
      * @threadsafety    Safe
      */
     virtual size_t getSerialSize(unsigned version) const noexcept =0;
+
+    /**
+     * Returns a new instance corresponding to a serialized representation in a
+     * buffer.
+     * @param[in] buf      Buffer
+     * @param[in] size     Size of buffer in bytes
+     * @param[in] version  Protocol version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    static T deserialize(
+            const char* const buf,
+            const size_t      size,
+            const unsigned    version);
 };
 
 } // namespace
