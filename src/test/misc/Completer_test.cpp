@@ -86,7 +86,7 @@ TEST_F(CompleterTest, MultipleIntExecution) {
 TEST_F(CompleterTest, VoidCancellation) {
     hycast::Completer<void> completer{};
     auto future = completer.submit([]{::pause();});
-    completer.cancel();
+    future.cancel();
     EXPECT_TRUE(future.wasCancelled());
     EXPECT_THROW(future.getResult(), std::logic_error);
 }
@@ -95,7 +95,7 @@ TEST_F(CompleterTest, VoidCancellation) {
 TEST_F(CompleterTest, IntCancellation) {
     hycast::Completer<int> completer{};
     auto future = completer.submit([]{::pause(); return 1;});
-    completer.cancel();
+    future.cancel();
     EXPECT_TRUE(future.wasCancelled());
     EXPECT_THROW(future.getResult(), std::logic_error);
 }
