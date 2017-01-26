@@ -1,37 +1,49 @@
 /**
- * This file the UdpRcvr class.
+ * This file tests the Multicaster class.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: UdpRcvr_test.cpp
+ *   @file: Multicaster.cpp
  * @author: Steven R. Emmerson
  */
 
-#include <comms/McastRcvr.h>
+#include "Multicaster.h"
 #include "InetAddr.h"
 #include "InetSockAddr.h"
+
 #include <gtest/gtest.h>
 
 namespace {
 
 // The fixture for testing class UdpRcvr.
-class McastRcvrTest : public ::testing::Test {
+class MulticasterTest : public ::testing::Test {
 protected:
+    class MsgRcvr : public hycast::MsgRcvr
+    {
+        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
+        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
+        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
+    };
+
     // You can remove any or all of the following functions if its body
     // is empty.
 
-    McastRcvrTest()
+    MulticasterTest()
         : localAddr{"localhost"}
         , localSockAddr{localAddr, 38800}
         , remoteSockAddr{"zero.unidata.ucar.edu", 38800}
         // UCAR unicast-based multicast address:
         , mcastSockAddr{"234.128.117.0", 38800}
         , sock{mcastSockAddr, localAddr}
+        , prodInfo{"product", 1, 3, 2}
+        , version{0}
     {}
 
-    virtual ~McastRcvrTest() {
+    virtual ~MulticasterTest() {
         // You can do clean-up work that doesn't throw exceptions here.
     }
 
@@ -54,22 +66,27 @@ protected:
     hycast::InetSockAddr remoteSockAddr;
     hycast::InetSockAddr mcastSockAddr;
     hycast::McastUdpSock sock;
+    MsgRcvr              msgRcvr;
+    hycast::ProdInfo     prodInfo;
+    unsigned             version;
 };
 
 // Tests default construction
-TEST_F(McastRcvrTest, DefaultConstruction) {
-    hycast::McastRcvr      rcvr();
+TEST_F(MulticasterTest, DefaultConstruction) {
+    hycast::Multicaster mcaster();
 }
 
 // Tests construction
-TEST_F(McastRcvrTest, Construction) {
-    hycast::McastRcvr      rcvr(sock, 0);
+TEST_F(MulticasterTest, Construction) {
+    hycast::Multicaster mcaster(sock, 0, &msgRcvr);
 }
 
-// Tests receiving objects
-TEST_F(McastRcvrTest, Receiving) {
-    hycast::McastRcvr      rcvr(sock, 0);
-
+// Tests object transmission
+TEST_F(MulticasterTest, Transmission) {
+    hycast::Multicaster mcaster(sock, version, &msgRcvr);
+    sock.setMcastLoop(true).setHopLimit(0);
+    //char buf[mcaster.getSerialSize(version, prodInfo)];
+    //sock.send(buf, msglen);
 }
 
 }  // namespace

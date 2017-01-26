@@ -9,30 +9,42 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/McastRcvr.h>
+#include <Multicaster.h>
 
 namespace hycast {
 
 /**
  * Implementation of a receiver of objects serialized in UDP packets.
  */
-class McastRcvr::Impl
+class Multicaster::Impl
 {
     McastUdpSock   mcastSock; // Multicast socket from which to read objects
     const unsigned version;   // Protocol version
+    MsgRcvr*       msgRcvr;   // Receiver of multicast objects
 
 public:
+    /**
+     * Constructs.
+     * @param[in] mcastSock  Multicast socket
+     * @param[in] version    Protocol version
+     * @param[in] msgRcvr    Receiver of multicast objects or `nullptr`. If
+     *                       non-null, then must exist for the duration of the
+     *                       constructed instance.
+     */
     Impl(   McastUdpSock&  mcastSock,
-            const unsigned version)
+            const unsigned version,
+            MsgRcvr*       msgRcvr)
         : mcastSock{mcastSock}
         , version{version}
+        , msgRcvr{msgRcvr}
     {}
 };
 
-McastRcvr::McastRcvr(
+Multicaster::Multicaster(
         McastUdpSock&  mcastSock,
-        const unsigned version)
-    : pImpl{new McastRcvr::Impl(mcastSock, version)}
+        const unsigned version,
+        MsgRcvr*       msgRcvr)
+    : pImpl{new Multicaster::Impl(mcastSock, version, msgRcvr)}
 {}
 
 } // namespace

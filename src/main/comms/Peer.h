@@ -35,6 +35,7 @@ public:
      * throw an exception.
      */
     Peer();
+
     /**
      * Constructs from an object to receive messages from the remote peer and a
      * socket. Doesn't receive anything until `runReceiver()` is called.
@@ -42,13 +43,15 @@ public:
      * @param[in,out] sock     Socket
      * @see runReceiver()
      */
-    Peer(MsgRcvr& msgRcvr,
+    Peer(MsgRcvr&   msgRcvr,
          SctpSock&  sock);
+
     /**
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
      */
     const InetSockAddr& getRemoteAddr() const;
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -56,6 +59,7 @@ public:
      * @threadsafety    Thread-safe
      */
     size_t hash() const noexcept;
+
     /**
      * Indicates if this instance is less than another.
      * @param that  Other instance
@@ -64,18 +68,21 @@ public:
      * @threadsafety    Safe
      */
     bool operator<(const Peer& that) const noexcept;
+
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is equal to the other
      */
     bool operator==(const Peer& that) const noexcept;
+
     /**
      * Indicates if this instance is not equal to another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is not equal to the other
      */
     bool operator!=(const Peer& that) const noexcept;
+
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket
@@ -88,6 +95,7 @@ public:
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void runReceiver() const;
+
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -96,6 +104,7 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendNotice(const ProdInfo& prodInfo) const;
+
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
@@ -104,6 +113,7 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo) const;
+
     /**
      * Sends a product-index to the remote peer.
      * @param[in] prodIndex  Product-index
@@ -112,6 +122,7 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendRequest(const ProdIndex& prodIndex) const;
+
     /**
      * Sends a chunk specification to the remote peer.
      * @param[in] prodIndex  Product-index
@@ -120,6 +131,7 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendRequest(const ChunkInfo& info) const;
+
     /**
      * Sends a chunk-of-data to the remote peer.
      * @param[in] chunk  Chunk-of-data
@@ -128,10 +140,12 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void sendData(const ActualChunk& chunk) const;
+
     /**
      * Returns the number of streams.
      */
     static uint16_t getNumStreams();
+
     /**
      * Returns the string representation of this instance.
      * @return the string representation of this instance
