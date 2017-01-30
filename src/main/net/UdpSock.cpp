@@ -22,11 +22,46 @@ namespace hycast {
 /**
  * Base UDP socket implementation.
  */
-class UdpSock::Impl
+class UdpSock::Impl : public InRecStream
 {
+    void checkReadStatus(const ssize_t nbytes)
+    {
+        if (nbytes == 0) {
+            size = 0; // EOF
+        }
+        else if (nbytes == -1) {
+            if (errno == ECONNRESET || errno == ENOTCONN) {
+                size = 0; // EOF
+            }
+            else {
+                throw std::system_error(errno, std::system_category(),
+                        "recv() failure: sock=" + std::to_string(sd));
+            }
+        }
+        else if (nbytes != sizeof(size)) {
+            throw std::system_error(errno, std::system_category(),
+                    "recv() read too few bytes: nbytes=" +
+                    std::to_string(nbytes) + ", sock=" + std::to_string(sd));
+        }
+        else {
+            size = ntohs(size);
+        }
+    }
+
+    void ensureRec()
+    {
+        if (!haveCurrRec) {
+            ssize_t nbytes = ::recv(sd, &size, sizeof(size), MSG_PEEK);
+            checkReadStatus(nbytes);
+            haveCurrRec = true;
+        }
+    }
+
 protected:
-    InetSockAddr localAddr; /// Address of local endpoint
-    int          sd;        /// Socket descriptor
+    InetSockAddr localAddr;   /// Address of local endpoint
+    int          sd;          /// Socket descriptor
+    bool         haveCurrRec; /// Current record exists?
+    uint16_t     size;        /// Size of payload in bytes
 
 public:
     /**
@@ -39,6 +74,8 @@ public:
     Impl(const InetSockAddr& localAddr = InetSockAddr())
         : localAddr{localAddr}
         , sd{localAddr.getSocket(SOCK_DGRAM)}
+        , haveCurrRec{false}
+        , size{0}
     {
         if (sd < 0)
             throw std::system_error(errno, std::system_category(),
@@ -48,11 +85,25 @@ public:
     }
 
     /**
-     * Destroys.
+     * Destroys. Closes the underlying socket.
      */
     ~Impl() noexcept
     {
         ::close(sd);
+    }
+
+    /**
+     * Allows multiple sockets to use the same port number for incoming packets
+     * @throws std::system_error  setsockopt() failure
+     */
+    void shareLocalPort() const
+    {
+        const int yes = 1;
+        int       status = ::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes,
+                sizeof(yes));
+        if (status)
+            throw std::system_error(errno, std::system_category(),
+                   "setsockopt() failure: couldn't share port-number");
     }
 
     /**
@@ -69,39 +120,68 @@ public:
     }
 
     /**
-     * Peeks at the contents of the current UDP packet. Waits for a packet if
-     * necessary. The packet is left in the input buffer.
-     * @param[in] buf  Buffer into which to copy the first bytes of the packet
-     * @param[in] len  Number of bytes to copy
-     * @retval    0    Socket is closed
-     * @return         Number of bytes copied
-     * @throws std::system_error  I/O error
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
+     * Returns the size, in bytes, of the current record. Waits for the
+     * record if necessary. The record is left in the socket's input buffer.
+     * @retval 0  Socket is closed
+     * @return Size of record in bytes
+     * @throws std::system_error I/O error occurred
+     * @exceptionsafety Basic
      */
-    ssize_t peek(
-            void*  buf,
-            size_t len) const
+    size_t getSize()
     {
-        ssize_t status = ::recv(sd, buf, len, MSG_PEEK);
-        if (status == -1)
-            throw std::system_error(errno, std::system_category(),
-                    "recv() failure: sock=" + std::to_string(sd));
-        return status;
+        ensureRec();
+        return size;
     }
 
-    void shareLocalPort() const
+    /**
+     * Receives a record. Waits for the record if necessary. If the requested
+     * number of bytes to be read is less than the record size, then the excess
+     * bytes are discarded.
+     * @param[in] iovec   Scatter-read vector
+     * @param[in] iovcnt  Number of elements in scatter-read vector
+     * @param[in] peek    Whether or not to peek at the record. The data is
+     *                    treated as unread and the next recv() or similar
+     *                    function shall still return this data.
+     * @retval    0       Socket is closed
+     * @return            Actual number of bytes read into the buffers.
+     */
+    size_t recv(
+           const struct iovec* iovec,
+           const int           iovcnt,
+           const bool          peek)
     {
-        /*
-         * Allow multiple sockets to use the same port number for incoming
-         * packets
-         */
-        const int yes = 1;
-        int       status = ::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof(yes));
-        if (status)
-            throw std::system_error(errno, std::system_category(),
-                   "setsockopt() failure: couldn't share port-number");
+        struct iovec iov[1+iovcnt];
+        iov[0].iov_base = &size;
+        iov[0].iov_len = sizeof(size);
+        for (int i = 0; i < iovcnt; ++i)
+            iov[1+i] = iovec[i];
+        struct msghdr msghdr = {};
+        msghdr.msg_iov = iov;
+        msghdr.msg_iovlen = 1+iovcnt;
+        ssize_t nbytes = ::recvmsg(sd, &msghdr, peek ? MSG_PEEK : 0);
+        checkReadStatus(nbytes);
+        haveCurrRec = peek;
+        return nbytes;
+    }
+
+    /**
+     * Discards the current record. Does nothing if there is no current
+     * record. Idempotent.
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Thread-compatible but not thread-safe
+     */
+    void discard()
+    {
+        char buf;
+        InRecStream::recv(&buf, sizeof(buf), false);
+    }
+
+    /**
+     * Indicates if there's a current record.
+     */
+    bool hasRecord()
+    {
+        return haveCurrRec;
     }
 };
 
@@ -177,9 +257,9 @@ public:
     }
 
     /**
-     * Sends a message.
+     * Sends a record.
      * @param[in] msg  Message to be sent
-     * @param[in] len  Length of message in bytes
+     * @param[in] len  Length of record in bytes
      * @throws std::system_error  I/O failure
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
@@ -268,21 +348,22 @@ UdpSock::UdpSock(Impl* const pImpl)
     : pImpl{pImpl}
 {}
 
+void UdpSock::shareLocalPort() const
+{
+    pImpl->shareLocalPort();
+}
+
 std::string UdpSock::to_string() const
 {
     return pImpl->to_string();
 }
 
-ssize_t UdpSock::peek(
-        void*  buf,
-        size_t len) const
+size_t UdpSock::recv(
+        const struct iovec* iovec,
+        const int           iovcnt,
+        const bool          peek)
 {
-    return pImpl->peek(buf, len);
-}
-
-void UdpSock::shareLocalPort() const
-{
-    pImpl->shareLocalPort();
+    return pImpl->recv(iovec, iovcnt, peek);
 }
 
 SrvrUdpSock::SrvrUdpSock(const InetSockAddr& srvrAddr)

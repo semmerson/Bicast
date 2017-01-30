@@ -59,7 +59,7 @@ public:
 };
 
 ChunkChannel::ChunkChannel(
-        SctpSock&        sock,
+        SctpSock&      sock,
         const unsigned streamId,
         const unsigned version)
     : pImpl(new ChunkChannelImpl(sock, streamId, version))

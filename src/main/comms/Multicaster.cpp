@@ -18,7 +18,7 @@ namespace hycast {
  */
 class Multicaster::Impl
 {
-    enum {
+    typedef enum {
         PROD_INFO,
         CHUNK
     } ObjectId;
@@ -45,30 +45,31 @@ public:
     {}
 
     /**
-     * Runs a receiver that reads multicast objects and passes them to the
-     * message receiver specified at construction. Doesn't return until the
-     * underlying socket is closed or an exception occurs.
+     * Runs a receiver that reads multicast objects from the UDP socket and
+     * passes them to the message receiver specified at construction. Doesn't
+     * return until the underlying socket is closed or an exception occurs.
      */
     void runReceiver()
     {
         int entryCancelState;
         (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
         for (;;) {
-            uint32_t buf;
+            uint16_t objId;
             (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-            ssize_t nbytes = mcastSock.peek(&buf, sizeof(buf));
+            ssize_t nbytes = mcastSock.InRecStream::recv(&objId, sizeof(objId), true);
             (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
             if (nbytes == 0)
                 break; // Socket closed
-            ObjectId objId = ntohl(buf);
+            objId = ntohs(objId);
             switch (objId) {
-                case PROD_INFO:
-                    char buf[size];
-                    mcastSock.recv(&buf, sizeof(buf));
-                    ProdInfo prodInfo = ProdInfo::deserialize(buf,
-                            sizeof(buf)-4, version);
-                    msgRcvr.recvNotice(prodInfo);
+                case PROD_INFO: {
+                    char buf[mcastSock.getSize()];
+                    mcastSock.InRecStream::recv(&buf, sizeof(buf));
+                    ProdInfo prodInfo = ProdInfo::deserialize(buf+sizeof(objId),
+                            sizeof(buf)-sizeof(objId), version);
+                    msgRcvr->recvNotice(prodInfo);
                     break;
+                }
                 case CHUNK: {
                     /*
                      * For an unknown reason, the compiler complains if the
@@ -77,8 +78,8 @@ public:
                      * `LatentChunk` can be trivially copied. See
                      * `MsgRcvr::recvData()`.
                      */
-                    LatentChunk chunk = LatentChunk(buf+4, sizeof(buf)-4);
-                    msgRcvr.recvData(chunk);
+                    LatentChunk chunk{mcastSock, version};
+                    msgRcvr->recvData(chunk);
                     if (chunk.hasData())
                         throw std::logic_error(
                                 "Latent chunk-of-data still has data");

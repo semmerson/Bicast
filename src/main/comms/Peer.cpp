@@ -47,10 +47,12 @@ class PeerImpl final {
 
     class : public MsgRcvr
     {
+        void recvNotice(const ProdInfo& info) {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
         void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
         void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvData(LatentChunk chunk) {}
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
     }                      defaultMsgRcvr;
 

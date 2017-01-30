@@ -60,6 +60,7 @@ void SctpSockImpl::getNextMsgInfo()
          * the number of bytes "received". Empirically, this is *not*
          * greater than the number of bytes requested (i.e., it is *not* the
          * number of bytes in the message -- even if MSG_PEEK is specified).
+         * Apparently, it's the total number of bytes written to the buffers.
          */
         std::lock_guard<std::mutex> lock(readMutex);
         int sd = sock.load();
@@ -244,7 +245,7 @@ void SctpSockImpl::recv(
     /*
      * NB: If the current message exists and `len` is less than the size of the
      * message, then the message will continue to be the current message --
-     * regardless of whether or not MSG_PEEK is specified.
+     * regardless of whether or not MSG_PEEK is specified. See `discard()`.
      */
     struct sctp_sndrcvinfo  sinfo;
     int                     numRead;
@@ -287,7 +288,14 @@ bool SctpSockImpl::hasMessage()
 void SctpSockImpl::discard()
 {
     if (haveCurrMsg) {
-        char msg[getSize()]; // Apparently necessary to discard current message
+        /*
+         * A message on an SCTP socket must be read in its entirety in order for
+         * it to be discarded. This is in contrast to a message on a
+         * "message-based" socket, such as SOCK_DGRAM, in which excess bytes
+         * beyond the requested are discarded. Recall that the SCTP socket-type
+         * is SOCK_STREAM. See `recv()`.
+         */
+        char msg[getSize()];
         recv(msg, sizeof(msg));
     }
 }

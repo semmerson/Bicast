@@ -14,6 +14,7 @@
 
 #include "InetAddr.h"
 #include "InetSockAddr.h"
+#include "RecStream.h"
 
 #include <sys/types.h>
 
@@ -23,7 +24,7 @@ namespace hycast {
  * Abstract base class for a UDP socket. Such a socket is bound to a local
  * address and can receive UDP packets.
  */
-class UdpSock
+class UdpSock : public InRecStream
 {
 protected:
     class Impl; // Forward declaration of implementation
@@ -58,82 +59,43 @@ public:
     virtual std::string to_string() const;
 
     /**
-     * Peeks at the contents of the current UDP packet. Waits for a packet if
-     * necessary. The packet is left in the input buffer.
-     * @param[in] buf  Buffer into which to copy the first bytes of the packet
-     * @param[in] len  Number of bytes to copy
-     * @retval    0    Socket is closed
-     * @return         Number of bytes copied
-     * @throws std::system_error  I/O error
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
-     */
-    ssize_t peek(
-            void*  buf,
-            size_t len) const;
-
-    /**
      * Returns the size, in bytes, of the current message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
      * @returns Size of message in bytes. Will equal 0 when socket is closed
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      */
-    uint32_t getSize() const;
+    size_t getSize();
 
     /**
-     * Receives a message.
-     * @param[out] msg     Receive buffer
-     * @param[in]  len     Size of receive buffer in bytes
-     * @param[in]  flags   Type of message reception. Logical OR of zero or
-     *                     more of
-     *                       - `MSG_OOB`  Requests out-of-band data
-     *                       - `MSG_PEEK` Peeks at the incoming message
-     * @throws std::system_error on I/O failure or if number of bytes read
-     *     doesn't equal `len`
+     * Receives a record. Waits for the record if necessary. If the requested
+     * number of bytes to be read is less than the record size, then the excess
+     * bytes are discarded.
+     * @param[in] iovec   Scatter-read vector
+     * @param[in] iovcnt  Number of elements in scatter-read vector
+     * @param[in] peek    Whether or not to peek at the record. The data is
+     *                    treated as unread and the next recv() or similar
+     *                    function shall still return this data.
+     * @retval    0       Socket is closed
+     * @return            Total number of bytes read into the buffers.
      */
-    void recv(
-            void*        msg,
-            const size_t len,
-            const int    flags = 0) const;
+    size_t recv(
+            const struct iovec* iovec,
+            const int           iovcnt,
+            const bool          peek);
 
     /**
-     * Receives a message.
-     * @param[in] iovec     Vector comprising message to receive
-     * @param[in] iovcnt    Number of elements in `iovec`
-     * @param[in] flags     Type of message reception. Logical OR of zero or
-     *                      more of
-     *                      - `MSG_OOB`  Requests out-of-band data
-     *                      - `MSG_PEEK` Peeks at the incoming message
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
-     */
-    void recvv(
-            struct iovec*  iovec,
-            const int      iovcnt,
-            const int      flags = 0) const;
-
-    /**
-     * Indicates if this instance has a current message.
-     * @retval true   Yes
-     * @retval false  No
-     */
-    bool hasMessage() const;
-
-    /**
-     * Discards the current message.
+     * Discards the current record. Does nothing if there is no current
+     * record. Idempotent.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Thread-compatible but not thread-safe
      */
-    void discard() const;
+    void discard();
 
     /**
-     * Closes the underlying socket.
-     * @exceptionsafety Nothrow
-     * @threadsafety    Compatible but not safe
+     * Indicates if there's a current record.
      */
-    void close() const;
+    bool hasRecord();
 };
 
 /**
@@ -198,9 +160,9 @@ public:
 
     /**
      * Constructs.
-     * @param[in] mcastAddr  Internet address of the multicast group
+     * @param[in] remoteAddr  Internet address of the remote endpoint
      */
-    ClntUdpSock(const InetSockAddr& mcastAddr);
+    ClntUdpSock(const InetSockAddr& remoteAddr);
 
     /**
      * Returns a string representation of this instance's socket.
@@ -306,7 +268,7 @@ public:
      * Sets whether or not a multicast packet sent to a socket will also be
      * read from the same socket. Such looping in enabled by default.
      * @param[in] enable  Whether or not to enable reception of sent packets
-     * @return  This instance
+     * @return  This instance (to enable option-chaining)
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */

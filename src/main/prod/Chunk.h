@@ -17,8 +17,11 @@
 
 #include "ChunkInfo.h"
 #include "HycastTypes.h"
+#include "SctpSock.h"
+
 #include <memory>
-#include "../net/SctpSock.h"
+
+#include "../net/RecStream.h"
 
 namespace hycast {
 
@@ -32,6 +35,16 @@ public:
      * Constructs from nothing.
      */
     LatentChunk();
+    /**
+     * Constructs from a record-preserving socket whose current record is a
+     * chunk of data. NB: This method reads the current record.
+     * @param[in] sock     Record-preserving socket
+     * @param[in] version  Protocol version
+     * @throws std::invalid_argument if the current record is invalid
+     */
+    LatentChunk(
+            InRecStream&       sock,
+            const unsigned version);
     /**
      * Constructs from an SCTP socket whose current message is a chunk of
      * data and a protocol version. NB: This method reads the current message.

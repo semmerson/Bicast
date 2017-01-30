@@ -22,7 +22,7 @@ namespace hycast {
 class LatentChunkImpl final
 {
     ChunkInfo info;
-    SctpSock    sock;
+    SctpSock  sock;
     ChunkSize size;
     unsigned  version;
 public:
@@ -38,13 +38,14 @@ public:
 
     /**
      * Constructs from an SCTP socket whose current message is a chunk of
-     * data and a protocol version. NB: This method reads the current message.
+     * data and a protocol version. NB: This method peeks at the current
+     * message.
      * @param[in] sock     SCTP socket
      * @param[in] version  Protocol version
      * @throws std::invalid_argument if the current message is invalid
      */
     LatentChunkImpl(
-            SctpSock&        sock,
+            SctpSock&      sock,
             const unsigned version)
         : info(),
           sock(sock),
@@ -233,7 +234,7 @@ public:
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            SctpSock&        sock,
+            SctpSock&      sock,
             const unsigned streamId,
             const unsigned version) const
     {
