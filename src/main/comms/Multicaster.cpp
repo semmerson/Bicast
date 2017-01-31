@@ -99,7 +99,7 @@ public:
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    void send(ProdInfo& prodInfo) const
+    void send(ProdInfo& prodInfo)
     {
         alignas(4) char buf[4+prodInfo.getSerialSize(version)];
         *reinterpret_cast<uint32_t*>(&buf) = ::htonl(PROD_INFO);

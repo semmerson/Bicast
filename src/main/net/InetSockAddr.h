@@ -34,6 +34,7 @@ public:
      * @exceptionsafety Strong
      */
     InetSockAddr();
+
     /**
      * Constructs from an Internet address and a port number.
      * @param[in] inetAddr Internet address
@@ -44,6 +45,7 @@ public:
     InetSockAddr(
             const InetAddr   inetAddr,
             const in_port_t  port);
+
     /**
      * Constructs from a string representation of an IP address and a port
      * number.
@@ -56,6 +58,7 @@ public:
     InetSockAddr(
             const std::string ip_addr,
             const in_port_t   port);
+
     /**
      * Constructs from an IPv4 address.
      * @param[in] addr  IPv4 address in _network_ byte order
@@ -66,6 +69,7 @@ public:
     InetSockAddr(
             const in_addr_t  addr,
             const PortNumber port);
+
     /**
      * Constructs from an IPv4 socket address.
      * @param[in] addr  IPv4 socket address
@@ -73,6 +77,7 @@ public:
      * @exceptionsafety Strong
      */
     InetSockAddr(const struct sockaddr_in& addr);
+
     /**
      * Constructs from an IPv6 address.
      * @param[in] addr  IPv6 address in _network_ byte order
@@ -83,6 +88,7 @@ public:
     InetSockAddr(
             const struct in6_addr& addr,
             const in_port_t        port);
+
     /**
      * Constructs from an IPv6 socket address.
      * @param[in] addr  IPv6 socket address
@@ -90,17 +96,26 @@ public:
      * @exceptionsafety Strong
      */
     InetSockAddr(const struct sockaddr_in6& sockaddr);
+
     /**
      * Constructs from a generic socket address.
      * @param[in] addr  Generic socket address
      */
     InetSockAddr(const struct sockaddr& sockaddr);
+
     /**
      * Copy constructs from another instance.
      * @param[in] that  Other instance
      * @exceptionsafety Nothrow
      */
     InetSockAddr(const InetSockAddr& that) noexcept;
+
+    /**
+     * Move constructs.
+     * @param[in] that  Other instance
+     */
+    InetSockAddr(InetSockAddr&& that) noexcept =default;
+
     /**
      * Copy assigns from an instance.
      * @param[in] rhs  An instance

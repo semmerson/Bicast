@@ -53,7 +53,7 @@ protected:
 
 // Tests server construction
 TEST_F(UdpSockTest, ServerConstruction) {
-    hycast::SrvrUdpSock sock(localSockAddr);
+    hycast::InUdpSock sock(localSockAddr);
     /*
      * Can't get std::regex to work correctly due to problems with escapes. This
      * occurs when using either ECMAScript and POSIX BRE grammars.
@@ -67,7 +67,7 @@ TEST_F(UdpSockTest, ServerConstruction) {
 
 // Tests client construction
 TEST_F(UdpSockTest, ClientConstruction) {
-    hycast::ClntUdpSock sock(localSockAddr);
+    hycast::InUdpSock sock(localSockAddr);
     if (std::string("ClntUdpSock(localAddr=localhost:0, sock=3)") !=
             sock.to_string()) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";

@@ -24,12 +24,17 @@ namespace hycast {
  * Abstract base class for a UDP socket. Such a socket is bound to a local
  * address and can receive UDP packets.
  */
-class UdpSock : public InRecStream
+class UdpSock
 {
 protected:
     class Impl; // Forward declaration of implementation
 
     std::shared_ptr<Impl> pImpl;
+
+    /**
+     * Default constructs.
+     */
+    UdpSock() =default;
 
     /**
      * Constructs from a pointer to an implementation.
@@ -42,6 +47,50 @@ public:
      * Destroys.
      */
     virtual ~UdpSock() {};
+
+    /**
+     * Returns a string representation of this instance's socket.
+     * @return String representation of this instance's socket
+     * @throws std::bad_alloc if required memory can't be allocated
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    virtual std::string to_string() const =0;
+};
+
+/**
+ * Input UDP socket. The local endpoint of such a socket is bound to a specific
+ * address.
+ */
+class InUdpSock : virtual public UdpSock, public InRecStream
+{
+protected:
+    class Impl;
+
+private:
+    inline Impl* getPimpl() const noexcept
+    {
+        return reinterpret_cast<Impl*>(pImpl.get());
+    }
+
+public:
+    using InRecStream::recv;
+
+    /**
+     * Default constructs.
+     */
+    InUdpSock() =default;
+
+    /**
+     * Destroys.
+     */
+    ~InUdpSock() =default;
+
+    /**
+     * Constructs an instance that listens to a given address.
+     * @param[in] srvrAddr  Internet address for the server
+     */
+    explicit InUdpSock(const InetSockAddr& srvrAddr);
 
     /**
      * Allows multiple sockets to use the same port number for incoming
@@ -59,36 +108,32 @@ public:
     virtual std::string to_string() const;
 
     /**
-     * Returns the size, in bytes, of the current message. Waits for the
-     * message if necessary. The message is left in the socket's input buffer.
-     * @returns Size of message in bytes. Will equal 0 when socket is closed
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     */
-    size_t getSize();
-
-    /**
-     * Receives a record. Waits for the record if necessary. If the requested
-     * number of bytes to be read is less than the record size, then the excess
-     * bytes are discarded.
+     * Scatter-receives a record. Waits for the record if necessary. If the
+     * requested number of bytes to be read is less than the record size, then
+     * the excess bytes are discarded.
      * @param[in] iovec   Scatter-read vector
      * @param[in] iovcnt  Number of elements in scatter-read vector
      * @param[in] peek    Whether or not to peek at the record. The data is
      *                    treated as unread and the next recv() or similar
      *                    function shall still return this data.
-     * @retval    0       Socket is closed
-     * @return            Total number of bytes read into the buffers.
+     * @retval    0       Stream is closed
+     * @return            Actual number of bytes read into the buffers.
      */
     size_t recv(
             const struct iovec* iovec,
             const int           iovcnt,
-            const bool          peek);
+            const bool          peek = false);
 
     /**
-     * Discards the current record. Does nothing if there is no current
-     * record. Idempotent.
-     * @exceptionsafety Basic guarantee
-     * @threadsafety    Thread-compatible but not thread-safe
+     * Returns the size, in bytes, of the current record. Waits for a record if
+     * necessary.
+     * @retval 0  Stream is closed
+     * @return Size, in bytes, of the current record
+     */
+    size_t getSize();
+
+    /**
+     * Discards the current record.
      */
     void discard();
 
@@ -99,52 +144,15 @@ public:
 };
 
 /**
- * Server UDP socket. The remote endpoint of such a socket is unbound. The
- * server listens to the local endpoint.
- */
-class SrvrUdpSock final : public UdpSock
-{
-protected:
-    class Impl;
-
-private:
-    inline Impl* getPimpl() const noexcept
-    {
-        return reinterpret_cast<Impl*>(pImpl.get());
-    }
-
-public:
-    /**
-     * Default constructs.
-     */
-    SrvrUdpSock() =default;
-
-    /**
-     * Constructs an instance that listens to a given address.
-     * @param[in] srvrAddr  Internet address for the server
-     */
-    SrvrUdpSock(const InetSockAddr& srvrAddr);
-
-    /**
-     * Returns a string representation of this instance's socket.
-     * @return String representation of this instance's socket
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    std::string to_string() const;
-};
-
-/**
- * Client UDP socket. The remote endpoint of such a socket is bound to a
+ * Output UDP socket. The remote endpoint of such a socket is bound to a
  * specific address.
  */
-class ClntUdpSock : public UdpSock
+class OutUdpSock : virtual public UdpSock, public OutRecStream
 {
 protected:
     class Impl;
 
-    ClntUdpSock(Impl* const pImpl);
+    OutUdpSock(Impl* const pImpl);
 
 private:
     inline Impl* getPimpl() const noexcept
@@ -153,16 +161,23 @@ private:
     }
 
 public:
+    using OutRecStream::send;
+
     /**
      * Constructs an instance with unbound endpoints.
      */
-    ClntUdpSock();
+    OutUdpSock() =default;
 
     /**
      * Constructs.
      * @param[in] remoteAddr  Internet address of the remote endpoint
      */
-    ClntUdpSock(const InetSockAddr& remoteAddr);
+    explicit OutUdpSock(const InetSockAddr& remoteAddr);
+
+    /**
+     * Destroys.
+     */
+    ~OutUdpSock() =default;
 
     /**
      * Returns a string representation of this instance's socket.
@@ -171,7 +186,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    std::string to_string() const;
+    virtual std::string to_string() const;
 
     /**
      * Sets the hop-limit on a socket for outgoing packets.
@@ -189,36 +204,24 @@ public:
      * @execptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const ClntUdpSock& setHopLimit(
+    const OutUdpSock& setHopLimit(
             const unsigned limit) const;
-
-    /**
-     * Sends a message.
-     * @param[in] msg       Message to be sent
-     * @param[in] len       Size of message in bytes
-     * @throws std::system_error if an I/O error occurred
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     */
-    void send(
-            const void*    msg,
-            const size_t   len) const;
 
     /**
      * Sends a message.
      * @param[in] iovec     Vector comprising message to send
      * @param[in] iovcnt    Number of elements in `iovec`
      */
-    void sendv(
-            struct iovec*  iovec,
-            const int      iovcnt) const;
+    void send(
+            const struct iovec* const iovec,
+            const int                 iovcnt);
 };
 
 /**
  * Multicast UDP socket. The remote endpoint of such a socket is bound to a
  * multicast group address.
  */
-class McastUdpSock final : public ClntUdpSock
+class McastUdpSock final : public InUdpSock, public OutUdpSock
 {
 protected:
     class Impl;
@@ -242,7 +245,7 @@ public:
      * source.
      * @param[in] mcastAddr  Address of multicast group
      */
-    McastUdpSock(const InetSockAddr& mcastAddr);
+    explicit McastUdpSock(const InetSockAddr& mcastAddr);
 
     /**
      * Constructs a source-specific instance. The local and remote endpoints

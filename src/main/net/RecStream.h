@@ -26,7 +26,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~InRecStream();
+    virtual ~InRecStream() =default;
 
     /**
      * Scatter-receives a record. Waits for the record if necessary. If the
@@ -90,7 +90,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~OutRecStream();
+    virtual ~OutRecStream() =default;
 
     /**
      * Scatter-sends a record.
@@ -101,8 +101,8 @@ public:
      * @threadsafety              Compatible but not safe
      */
     virtual void send(
-            const struct iovec* iovec,
-            const int           iovcnt) =0;
+            const struct iovec* const iovec,
+            const int                 iovcnt) =0;
 
     /**
      * Sends a record.
@@ -120,9 +120,9 @@ public:
 /**
  * Input and output record-preserving stream.
  */
-class RecStream : public InRecStream, OutRecStream
+class InOutRecStream : public InRecStream, OutRecStream
 {
-    virtual ~RecStream() =0;
+    virtual ~InOutRecStream() =default;
 };
 
 } // namespace

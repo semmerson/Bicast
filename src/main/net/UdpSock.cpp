@@ -14,6 +14,7 @@
 #include <cerrno>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <system_error>
 #include <unistd.h>
 
@@ -22,8 +23,46 @@ namespace hycast {
 /**
  * Base UDP socket implementation.
  */
-class UdpSock::Impl : public InRecStream
+class UdpSock::Impl
 {
+protected:
+    InetSockAddr inetSockAddr; /// Internet socket address of endpoint
+    int          sd;           /// Socket descriptor
+
+public:
+    /**
+     * Default constructs.
+     */
+    Impl() // Deliberately doesn't initialize the socket descriptor
+    {}
+
+    /**
+     * Constructs from the Internet socket address of an endpoint.
+     * @param[in] localAddr   Internet socket address of an endpoint
+     * @throws std::system_error  Socket couldn't be created
+     */
+    explicit Impl(const InetSockAddr& inetSockAddr)
+        : inetSockAddr{inetSockAddr}
+        , sd{inetSockAddr.getSocket(SOCK_DGRAM)}
+    {}
+
+    /**
+     * Destroys. Closes the underlying socket.
+     */
+    ~Impl() noexcept
+    {
+        ::close(sd);
+    }
+};
+
+/**
+ * Input UDP socket implementation.
+ */
+class InUdpSock::Impl : virtual public UdpSock::Impl, public InRecStream
+{
+    bool         haveCurrRec; /// Current record exists?
+    uint16_t     size;        /// Size of payload in bytes
+
     void checkReadStatus(const ssize_t nbytes)
     {
         if (nbytes == 0) {
@@ -58,38 +97,39 @@ class UdpSock::Impl : public InRecStream
     }
 
 protected:
-    InetSockAddr localAddr;   /// Address of local endpoint
-    int          sd;          /// Socket descriptor
-    bool         haveCurrRec; /// Current record exists?
-    uint16_t     size;        /// Size of payload in bytes
+    void bind()
+    {
+        inetSockAddr.bind(sd);
+    }
 
 public:
+    using InRecStream::recv;
+
     /**
-     * Constructs from the Internet socket address of the local endpoint. The
-     * local port number will be chosen by the system. The socket will be open
-     * for receiving.
-     * @param[in] localAddr   Internet socket address of local endpoint
-     * @throws std::system_error  Socket couldn't be created
+     * Default constructs.
      */
-    Impl(const InetSockAddr& localAddr = InetSockAddr())
-        : localAddr{localAddr}
-        , sd{localAddr.getSocket(SOCK_DGRAM)}
+    Impl()
+        : UdpSock::Impl()
+        , haveCurrRec{false}
+        , size{0}
+    {}
+
+    /**
+     * Constructs from the Internet socket address of the local endpoint.
+     * @param[in] localAddr  Internet socket address of local endpoint
+     */
+    Impl(const InetSockAddr& localAddr)
+        : UdpSock::Impl(localAddr)
         , haveCurrRec{false}
         , size{0}
     {
-        if (sd < 0)
-            throw std::system_error(errno, std::system_category(),
-                   "socket() failure");
-        // Set address of local endpoint
-        localAddr.bind(sd);
+        bind(); // Set address of local endpoint
     }
 
-    /**
-     * Destroys. Closes the underlying socket.
-     */
-    ~Impl() noexcept
+    std::string to_string() const
     {
-        ::close(sd);
+        return std::string("InUdpSock(localAddr=") + inetSockAddr.to_string() +
+                ", sock=" + std::to_string(sd) + ")";
     }
 
     /**
@@ -104,19 +144,6 @@ public:
         if (status)
             throw std::system_error(errno, std::system_category(),
                    "setsockopt() failure: couldn't share port-number");
-    }
-
-    /**
-     * Returns a string representation of this instance's socket.
-     * @return String representation of this instance's socket
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    std::string to_string() const
-    {
-        return std::string("UdpSock(localAddr=") + localAddr.to_string() +
-                ", sock=" + std::to_string(sd) + ")";
     }
 
     /**
@@ -186,51 +213,38 @@ public:
 };
 
 /**
- * Server UDP socket implementation.
+ * Output UDP socket.
  */
-class SrvrUdpSock::Impl final : public UdpSock::Impl
+class OutUdpSock::Impl : virtual public UdpSock::Impl, public OutRecStream
 {
-public:
+protected:
+    void connect()
+    {
+        inetSockAddr.connect(sd);
+    }
+
     /**
-     * Constructs from the Internet socket address of the server.
-     * @param[in] srvrAddr  Server's Internet socket address
+     * Default constructs.
      */
-    Impl(const InetSockAddr& srvrAddr)
-        : UdpSock::Impl(srvrAddr)
+    Impl()
     {}
 
-    std::string to_string() const
-    {
-        return std::string("SrvrUdpSock(localAddr=") + localAddr.to_string() +
-                ", sock=" + std::to_string(sd) + ")";
-    }
-};
-
-/**
- * Client UDP socket.
- */
-class ClntUdpSock::Impl : public UdpSock::Impl
-{
-    InetSockAddr remoteAddr;
-
 public:
+    using OutRecStream::send;
+
     /**
-     * Constructs from addresses for both endpoints.
+     * Constructs from Internet address of remote endpoint.
      * @param[in] remoteAddr   Remote endpoint address
-     * @param[in] localAddr    Local endpoint address
      */
-    Impl(   const InetSockAddr& remoteAddr,
-            const InetSockAddr& localAddr = InetSockAddr())
-        : UdpSock::Impl{localAddr}
-        , remoteAddr{remoteAddr}
+    Impl(   const InetSockAddr& remoteAddr)
+        : UdpSock::Impl{remoteAddr}
     {
-        // Set remote endpoint for outgoing packets
-        remoteAddr.connect(sd);
+        connect(); // Set remote endpoint for outgoing packets
     }
 
     std::string to_string() const
     {
-        return std::string("ClntUdpSock(localAddr=") + localAddr.to_string() +
+        return std::string("OutUdpSock(remoteAddr=") + inetSockAddr.to_string() +
                 ", sock=" + std::to_string(sd) + ")";
     }
 
@@ -253,29 +267,12 @@ public:
     void setHopLimit(
             const unsigned limit) const
     {
-        remoteAddr.setHopLimit(sd, limit);
+        inetSockAddr.setHopLimit(sd, limit);
     }
 
-    /**
-     * Sends a record.
-     * @param[in] msg  Message to be sent
-     * @param[in] len  Length of record in bytes
-     * @throws std::system_error  I/O failure
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
     void send(
-            const void*  msg,
-            const size_t len) const
-    {
-        if (::send(sd, msg, len, MSG_EOR) == -1)
-            throw std::system_error(errno, std::system_category(),
-                    "send() failure: sock=" + std::to_string(sd));
-    }
-
-    void sendv(
-            struct iovec* iovec,
-            const int     iovcnt) const
+            const struct iovec* iovec,
+            const int           iovcnt)
     {
         throw std::logic_error("Not implemented yet");
     }
@@ -288,32 +285,41 @@ public:
  * the UDP layer would pass to the socket every packet whose destination port
  * number was that of the multicast group, regardless of destination IP address.
  */
-class McastUdpSock::Impl : public ClntUdpSock::Impl
+class McastUdpSock::Impl : public InUdpSock::Impl, public OutUdpSock::Impl
 {
+    InetAddr sourceAddr;
+    bool     isSourceSpecific;
+
 public:
     /**
-     * Constructs from the Internet socket address of the multicast group.
-     * The socket will accept any packet sent to the multicast group from any
-     * source.
+     * Constructs a source-independent instance: one that will accept any packet
+     * sent to the multicast group from any source.
      * @param[in] mcastAddr   Address of multicast group
      */
     Impl(const InetSockAddr& mcastAddr)
-        : ClntUdpSock::Impl{mcastAddr, mcastAddr}
+        : UdpSock::Impl{mcastAddr}
+        , isSourceSpecific{false}
     {
+        bind();
+        connect();
         mcastAddr.joinMcastGroup(sd);
     }
 
     /**
-     * Constructs a source-specific instance. The local and remote endpoints
-     * will be bound to the given multicast group and only packets from the
-     * source address will be accepted.
+     * Constructs a source-specific instance: one that will only accept packets
+     * from the given source address. The routing for such a socket is much
+     * easier for the network to handle.
      * @param[in] mcastAddr   Address of multicast group
      * @param[in] sourceAddr  Address of source
      */
     Impl(   const InetSockAddr& mcastAddr,
             const InetAddr&     sourceAddr)
-        : ClntUdpSock::Impl{mcastAddr, mcastAddr}
+        : UdpSock::Impl{mcastAddr}
+        , sourceAddr{sourceAddr}
+        , isSourceSpecific{true}
     {
+        bind();
+        connect();
         mcastAddr.joinSourceGroup(sd, sourceAddr);
     }
 
@@ -326,8 +332,9 @@ public:
      */
     std::string to_string() const
     {
-        return std::string("McastUdpSock(mcastAddr=") + localAddr.to_string() +
-                ", sock=" + std::to_string(sd) + ")";
+        return std::string("McastUdpSock(mcastAddr=") + inetSockAddr.to_string() +
+                ", sock=" + std::to_string(sd) + ", source=" +
+                sourceAddr.to_string() + ")";
     }
 
     /**
@@ -340,7 +347,7 @@ public:
     void setMcastLoop(
             const bool enable) const
     {
-        localAddr.setMcastLoop(sd, enable);
+        inetSockAddr.setMcastLoop(sd, enable);
     }
 };
 
@@ -348,75 +355,74 @@ UdpSock::UdpSock(Impl* const pImpl)
     : pImpl{pImpl}
 {}
 
-void UdpSock::shareLocalPort() const
+InUdpSock::InUdpSock(const InetSockAddr& localAddr)
+    : UdpSock(new InUdpSock::Impl(localAddr))
+{}
+
+void InUdpSock::shareLocalPort() const
 {
-    pImpl->shareLocalPort();
+    getPimpl()->shareLocalPort();
 }
 
-std::string UdpSock::to_string() const
+std::string InUdpSock::to_string() const
 {
-    return pImpl->to_string();
+    return getPimpl()->to_string();
 }
 
-size_t UdpSock::recv(
+size_t InUdpSock::recv(
         const struct iovec* iovec,
         const int           iovcnt,
         const bool          peek)
 {
-    return pImpl->recv(iovec, iovcnt, peek);
+    return getPimpl()->recv(iovec, iovcnt, peek);
 }
 
-SrvrUdpSock::SrvrUdpSock(const InetSockAddr& srvrAddr)
-    : UdpSock(new SrvrUdpSock::Impl(srvrAddr))
-{}
+size_t InUdpSock::getSize()
+{
+    return getPimpl()->getSize();
+}
 
-std::string SrvrUdpSock::to_string() const
+void InUdpSock::discard()
+{
+    return getPimpl()->discard();
+}
+
+bool InUdpSock::hasRecord()
+{
+    return getPimpl()->hasRecord();
+}
+
+std::string OutUdpSock::to_string() const
 {
     return getPimpl()->to_string();
 }
 
-ClntUdpSock::ClntUdpSock(const InetSockAddr& remoteAddr)
-    : UdpSock(new ClntUdpSock::Impl(remoteAddr))
-{}
-
-ClntUdpSock::ClntUdpSock(Impl* const pImpl)
-    : UdpSock(pImpl)
-{}
-
-std::string ClntUdpSock::to_string() const
-{
-    return getPimpl()->to_string();
-}
-
-const ClntUdpSock& ClntUdpSock::setHopLimit(
+const OutUdpSock& OutUdpSock::setHopLimit(
         const unsigned limit) const
 {
     getPimpl()->setHopLimit(limit);
     return *this;
 }
 
-void ClntUdpSock::send(
-        const void*  msg,
-        const size_t len) const
+void OutUdpSock::send(
+        const struct iovec* const iovec,
+        const int                 iovcnt)
 {
-    getPimpl()->send(msg, len);
+    getPimpl()->send(iovec, iovcnt);
 }
 
-void ClntUdpSock::sendv(
-        struct iovec* iovec,
-        const int     iovcnt) const
-{
-    getPimpl()->sendv(iovec, iovcnt);
-}
+OutUdpSock::OutUdpSock(const InetSockAddr& remoteAddr)
+    : UdpSock(new OutUdpSock::Impl(remoteAddr))
+{}
 
 McastUdpSock::McastUdpSock(const InetSockAddr& mcastAddr)
-    : ClntUdpSock(new McastUdpSock::Impl(mcastAddr))
+    : UdpSock(new McastUdpSock::Impl(mcastAddr))
 {}
 
 McastUdpSock::McastUdpSock(
             const InetSockAddr& mcastAddr,
             const InetAddr&     sourceAddr)
-    : ClntUdpSock(new McastUdpSock::Impl(mcastAddr, sourceAddr))
+    : UdpSock(new McastUdpSock::Impl(mcastAddr, sourceAddr))
 {}
 
 std::string McastUdpSock::to_string() const

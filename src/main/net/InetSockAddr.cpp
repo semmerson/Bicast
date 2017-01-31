@@ -83,7 +83,7 @@ class InetSockAddrImpl final
 public:
     /**
      * Constructs from nothing. The resulting instance will have the default
-     * Internet address and the port number will be 0.
+     * Internet address ("localhost") and the port number will be 0.
      * @throws std::bad_alloc if required memory can't be allocated
      */
     InetSockAddrImpl()
@@ -345,12 +345,11 @@ public:
     const InetSockAddrImpl& joinMcastGroup(const int sd) const
     {
         struct group_req req;
-        socklen_t        reqLen = sizeof(req);
         int              sockType = getSockType(sd);
         inetAddr.setSockAddrStorage(req.gr_group, port, sockType);
         req.gr_interface = 0; // Use default multicast interface
-        int protoLevel = familyToLevel(req.gr_group.ss_family);
-        if (::setsockopt(sd, protoLevel, MCAST_JOIN_GROUP, &req, reqLen))
+        int level = familyToLevel(req.gr_group.ss_family);
+        if (::setsockopt(sd, level, MCAST_JOIN_GROUP, &req, sizeof(req)))
             throw std::system_error(errno, std::system_category(),
                     std::string("Couldn't join multicast group: sock=") +
                     std::to_string(sd) + ", group=" + to_string());
@@ -371,8 +370,8 @@ public:
             const int       sd,
             const InetAddr& srcAddr) const
     {
-        int                     sockType = getSockType(sd);
         struct group_source_req req;
+        int                     sockType = getSockType(sd);
         inetAddr.setSockAddrStorage(req.gsr_group, port, sockType);
         req.gsr_interface = 0; // Use default multicast interface
         srcAddr.setSockAddrStorage(req.gsr_source, port, sockType);

@@ -1,5 +1,5 @@
 /**
- * This file implements common functions of streams that preserve record
+ * This file implements non-virtual functions of streams that preserve record
  * boundaries.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
@@ -10,7 +10,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include <RecStream.h>
+#include "RecStream.h"
 
 namespace hycast {
 
@@ -34,8 +34,5 @@ void OutRecStream::send(
     iovec.iov_len = nbytes;
     send(&iovec, 1);
 }
-
-RecStream::~RecStream()
-{}
 
 } // namespace
