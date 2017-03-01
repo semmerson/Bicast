@@ -26,12 +26,13 @@
 
 namespace hycast {
 
-class ProdInfoImpl : public Serializable<ProdInfoImpl>
+class ProdInfoImpl final
 {
     std::string name;
-    ProdIndex   index;
+    ProdIndex_t index;
     ProdSize    size;
     ChunkSize   chunkSize;
+
 public:
     /**
      * Constructs from information on a product.
@@ -57,39 +58,25 @@ public:
     }
 
     /**
-     * Constructs by deserializing a serialized representation from a buffer.
-     * @param[in] buf      Buffer
+     * Constructs by deserializing a serialized representation from a decoder.
+     * @param[in] decoder  Decoder
      * @param[in] version  Serialization version
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
     ProdInfoImpl(
-            const char* const buf,
-            const size_t      bufLen,
-            const unsigned    version)
+        Decoder&        decoder,
+        const unsigned  version)
         : name(),
           index(0),
           size(0),
           chunkSize(0)
     {
-        size_t nbytes = getSerialSize(version);
-        if (bufLen < nbytes)
-            throw std::invalid_argument("Buffer too small for serialized product "
-                    "information: need=" + std::to_string(nbytes) + " bytes, bufLen="
-                    + std::to_string(bufLen));
         // Keep consonant with ProdInfo::serialize()
-        const uint8_t* const bytes = reinterpret_cast<const uint8_t*>(buf);
-        index = ntohl(*reinterpret_cast<const uint32_t*>(bytes));
-        size = ntohl(*reinterpret_cast<const uint32_t*>(bytes+4));
-        chunkSize = ntohs(*reinterpret_cast<const uint16_t*>(bytes+8));
-        const size_t nameLen = ntohs(*reinterpret_cast<const uint16_t*>(bytes+10));
-        if (nameLen > bufLen - nbytes)
-            throw std::invalid_argument("Buffer too small for product name: need=" +
-                    std::to_string(nameLen) + " bytes, remaining=" +
-                    std::to_string(bufLen-nbytes));
-        char nameBuf[nameLen];
-        (void)memcpy(nameBuf, bytes+12, nameLen);
-        name.assign(nameBuf, nameLen);
+        decoder.decode(index);
+        decoder.decode(size);
+        decoder.decode(chunkSize);
+        decoder.decode(name);
     }
 
     /**
@@ -219,35 +206,21 @@ public:
     }
 
     /**
-     * Serializes this instance to a buffer.
-     * @param[in] buf       Buffer
-     * @param[in] bufLen    Buffer size in bytes
+     * Serializes this instance to an encoder.
+     * @param[in] encoder   Encoder
      * @param[in] version   Serialization version
-     * @return Address of next byte
-     * @execptionsafety Basic
+     * @execptionsafety Basic guarantee
      * @threadsafety    Compatible but not thread-safe
      */
-    char* serialize(
-            char*          buf,
-            const size_t   bufLen,
+    void serialize(
+            Encoder&       encoder,
             const unsigned version) const
     {
-        size_t nbytes = getSerialSize(version);
-        if (bufLen < nbytes)
-            throw std::invalid_argument("Buffer too small for serialized product "
-                    "information: need=" + std::to_string(nbytes) + " bytes, bufLen="
-                    + std::to_string(bufLen));
         // Keep consonant with ProdInfo::ProdInfo()
-        buf = index.serialize(buf, bufLen, version);
-        *reinterpret_cast<uint32_t*>(buf) = htonl(size);
-        buf += 4;
-        *reinterpret_cast<uint16_t*>(buf) = htons(chunkSize);
-        buf += 2;
-        *reinterpret_cast<uint16_t*>(buf) =
-                htons(static_cast<uint16_t>(name.size()));
-        buf += 2;
-        (void)memcpy(buf, name.data(), name.size());
-        return buf + name.size();
+        encoder.encode(index);
+        encoder.encode(size);
+        encoder.encode(chunkSize);
+        encoder.encode(name);
     }
 };
 
@@ -257,13 +230,6 @@ ProdInfo::ProdInfo(
         const ProdSize     size,
         const ChunkSize    chunkSize)
     : pImpl(new ProdInfoImpl(name, index, size, chunkSize))
-{}
-
-ProdInfo::ProdInfo(
-        const char* const buf,
-        const size_t      bufLen,
-        const unsigned    version)
-    : pImpl(new ProdInfoImpl(buf, bufLen, version))
 {}
 
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept
@@ -276,12 +242,11 @@ size_t ProdInfo::getSerialSize(unsigned version) const noexcept
     return pImpl->getSerialSize(version);
 }
 
-char* ProdInfo::serialize(
-        char*          buf,
-        const size_t   bufLen,
-        const unsigned version) const
+void ProdInfo::serialize(
+        Encoder&       encoder,
+        const unsigned version)
 {
-    return pImpl->serialize(buf, bufLen, version);
+    pImpl->serialize(encoder, version);
 }
 
 const std::string& ProdInfo::getName() const
@@ -322,11 +287,12 @@ void ProdInfo::vet(
 }
 
 ProdInfo ProdInfo::deserialize(
-        const char* const buf,
-        const size_t      size,
-        const unsigned    version)
+        Decoder&        decoder,
+        const unsigned  version)
 {
-    return ProdInfo(buf, size, version);
+    auto impl = ProdInfoImpl(decoder, version);
+    return ProdInfo(impl.getName(), impl.getIndex(), impl.getSize(),
+            impl.getChunkSize());
 }
 
 } // namespace

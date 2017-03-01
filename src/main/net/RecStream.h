@@ -41,9 +41,9 @@ public:
      * @return            Actual number of bytes read into the buffers.
      */
     virtual size_t recv(
-            const struct iovec* iovec,
-            const int           iovcnt,
-            const bool          peek = false) =0;
+            struct iovec* iovec,
+            const int     iovcnt,
+            const bool    peek = false) =0;
 
     /**
      * Receives a record. Waits for a record if necessary. If the requested
@@ -101,8 +101,8 @@ public:
      * @threadsafety              Compatible but not safe
      */
     virtual void send(
-            const struct iovec* const iovec,
-            const int                 iovcnt) =0;
+            struct iovec* const iovec,
+            const int           iovcnt) =0;
 
     /**
      * Sends a record.
@@ -120,8 +120,9 @@ public:
 /**
  * Input and output record-preserving stream.
  */
-class InOutRecStream : public InRecStream, OutRecStream
+class InOutRecStream : public InRecStream, public OutRecStream
 {
+public:
     virtual ~InOutRecStream() =default;
 };
 

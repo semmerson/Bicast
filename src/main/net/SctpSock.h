@@ -1,11 +1,11 @@
 /**
- * This file declares a handle class for a socket.
+ * This file declares a handle class for an SCTP socket.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYIING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Socket.h
+ *   @file: SctpSocket.h
  * @author: Steven R. Emmerson
  */
 
@@ -21,11 +21,13 @@ class SctpSockImpl; // Forward declaration of implementation
 class SctpSock {
 protected:
     std::shared_ptr<SctpSockImpl> pImpl;
+
     /**
      * Constructs from a socket implementation.
      * @param[in] impl  The implementation
      */
     explicit SctpSock(SctpSockImpl* impl);
+
 public:
     /**
      * Constructs from nothing.
@@ -33,6 +35,7 @@ public:
      * @exceptionsafety Strong
      */
     SctpSock();
+
     /**
      * Constructs from a BSD socket and the number of SCTP streams. Only do this
      * once per socket because the destructor might close the socket.
@@ -48,21 +51,25 @@ public:
     SctpSock(
             const int      sd,
             const uint16_t numStreams = 1);
+
     /**
      * Constructs from a shared pointer to a socket implementation.
      * @param[in] sptr  Shared pointer to implementation
      */
     explicit SctpSock(std::shared_ptr<SctpSockImpl> sptr);
+
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
      */
     uint16_t getNumStreams() const;
+
     /**
      * Returns the Internet socket address of the remote end.
      * @return Internet socket address of the remote end
      */
     const InetSockAddr& getRemoteAddr();
+
     /**
      * Indicates if this instance equals another.
      * @param[in] that  Other instance
@@ -71,6 +78,7 @@ public:
      * @exceptionsafety Nothrow
      */
     bool operator==(const SctpSock& that) const noexcept;
+
     /**
      * Returns a string representation of this instance's socket.
      * @return String representation of this instance's socket
@@ -79,6 +87,7 @@ public:
      * @threadsafety    Safe
      */
     std::string to_string() const;
+
     /**
      * Sends a message.
      * @param[in] streamId  SCTP stream number
@@ -92,6 +101,7 @@ public:
             const unsigned streamId,
             const void*    msg,
             const size_t   len) const;
+
     /**
      * Sends a message.
      * @param[in] streamId  SCTP stream number
@@ -99,9 +109,10 @@ public:
      * @param[in] iovcnt    Number of elements in `iovec`
      */
     void sendv(
-            const unsigned streamId,
-            struct iovec*  iovec,
-            const int      iovcnt) const;
+            const unsigned      streamId,
+            const struct iovec* iovec,
+            const int           iovcnt) const;
+
     /**
      * Returns the SCTP stream number of the current message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
@@ -110,6 +121,7 @@ public:
      * @exceptionsafety Basic
      */
     unsigned getStreamId() const;
+
     /**
      * Returns the size, in bytes, of the current SCTP message. Waits for the
      * message if necessary. The message is left in the socket's input buffer.
@@ -119,6 +131,7 @@ public:
      * @exceptionsafety Basic
      */
     uint32_t getSize() const;
+
     /**
      * Receives a message.
      * @param[out] msg     Receive buffer
@@ -134,6 +147,7 @@ public:
             void*        msg,
             const size_t len,
             const int    flags = 0) const;
+
     /**
      * Receives a message.
      * @param[in] iovec     Vector comprising message to receive
@@ -142,26 +156,30 @@ public:
      *                      more of
      *                      - `MSG_OOB`  Requests out-of-band data
      *                      - `MSG_PEEK` Peeks at the incoming message
+     * @return              Number of bytes actually read
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      * @threadsafety Safe
      */
-    void recvv(
-            struct iovec*  iovec,
-            const int      iovcnt,
-            const int      flags = 0) const;
+    size_t recvv(
+            const struct iovec* iovec,
+            const int           iovcnt,
+            const int           flags = 0) const;
+
     /**
      * Indicates if this instance has a current message.
      * @retval true   Yes
      * @retval false  No
      */
     bool hasMessage() const;
+
     /**
      * Discards the current message.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void discard() const;
+
     /**
      * Closes the underlying BSD socket.
      * @exceptionsafety Nothrow

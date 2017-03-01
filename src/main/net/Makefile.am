@@ -7,8 +7,11 @@ noinst_LTLIBRARIES = lib.la
 #######################################
 # Build information for each library
 
+AM_CPPFLAGS = -I../misc
+
 # Sources for library
 lib_la_SOURCES 	= \
+	Codec.cpp Codec.h \
 	PortNumber.h \
 	InetAddrImpl.cpp InetAddrImpl.h \
 	IpAddrImpl.cpp IpAddrImpl.h \
@@ -21,6 +24,6 @@ lib_la_SOURCES 	= \
 	SctpSock.cpp SctpSock.h \
 	ClntSctpSock.cpp ClntSctpSock.h \
 	SrvrSctpSock.cpp SrvrSctpSock.h \
-	Serializable.h \
+	Serializable.cpp Serializable.h \
 	RecStream.cpp RecStream.h \
 	UdpSock.cpp UdpSock.h

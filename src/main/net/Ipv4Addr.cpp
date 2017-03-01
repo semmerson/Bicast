@@ -9,6 +9,7 @@
  * This file defines an IPv4 address.
  */
 
+#include "error.h"
 #include "Ipv4Addr.h"
 
 #include <arpa/inet.h>
@@ -47,6 +48,13 @@ int Ipv4Addr::getSocket(const int sockType) const
         throw std::system_error(errno, std::system_category(),
                 "socket() failure: sockType=" + std::to_string(sockType));
     return sd;
+}
+
+void Ipv4Addr::setInterface(const int sd) const
+{
+    if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &ipAddr, sizeof(ipAddr)))
+        throw SystemError(__FILE__, __LINE__,
+                "Couldn't set output interface to " + to_string());
 }
 
 void Ipv4Addr::setHopLimit(

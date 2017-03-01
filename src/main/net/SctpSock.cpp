@@ -70,9 +70,9 @@ void SctpSock::send(
 }
 
 void SctpSock::sendv(
-        const unsigned streamId,
-        struct iovec*  iovec,
-        const int      iovcnt) const
+        const unsigned      streamId,
+        const struct iovec* iovec,
+        const int           iovcnt) const
 {
     pImpl->sendv(streamId, iovec, iovcnt);
 }
@@ -85,12 +85,12 @@ void SctpSock::recv(
     pImpl->recv(msg, len, flags);
 }
 
-void SctpSock::recvv(
-        struct iovec* iovec,
-        const int     iovcnt,
-        const int     flags) const
+size_t SctpSock::recvv(
+        const struct iovec* iovec,
+        const int           iovcnt,
+        const int           flags) const
 {
-    pImpl->recvv(iovec, iovcnt, flags);
+    return pImpl->recvv(iovec, iovcnt, flags);
 }
 
 bool SctpSock::hasMessage() const

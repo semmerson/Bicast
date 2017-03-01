@@ -18,36 +18,24 @@
 namespace hycast {
 
 ProdIndex::ProdIndex(
-        const char* const buf,
-        const size_t      size,
-        const unsigned    version)
-{
-    if (size < sizeof(ProdIndex_t))
-        throw std::invalid_argument("Buffer too small for product-index: need="
-                + std::to_string(sizeof(ProdIndex_t)) + " bytes, have=" +
-                std::to_string(size));
-    index = ntohl(*reinterpret_cast<const ProdIndex_t*>(buf));
-}
+        const ProdIndex_t index)
+    : index{index}
+{}
 
-char* ProdIndex::serialize(
-        char*          buf,
-        const size_t   size,
-        const unsigned version) const
+void ProdIndex::serialize(
+        Encoder&       encoder,
+        const unsigned version)
 {
-    if (size < sizeof(ProdIndex_t))
-        throw std::invalid_argument("Buffer too small for product-index: need="
-                + std::to_string(sizeof(ProdIndex_t)) + " bytes, have=" +
-                std::to_string(size));
-    *reinterpret_cast<ProdIndex_t*>(buf) = htonl(index);
-    return buf + sizeof(ProdIndex_t);
+    encoder.encode(index);
 }
 
 ProdIndex ProdIndex::deserialize(
-        const char* const buf,
-        const size_t      size,
-        const unsigned    version)
+        Decoder&       decoder,
+        const unsigned version)
 {
-    return ProdIndex(buf, size, version);
+    ProdIndex_t netIndex;
+    decoder.decode(netIndex);
+    return ProdIndex(netIndex);
 }
 
 } // namespace

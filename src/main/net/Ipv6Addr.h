@@ -29,6 +29,18 @@ namespace hycast {
 
 class Ipv6Addr final : public IpAddrImpl {
     struct in6_addr ipAddr;
+
+    /**
+     * Returns the index of the interface that corresponds to this Internet
+     * address.
+     * @param[in] sd  Socket descriptor (necessary for `ioctl()` calls
+     * @return Index of corresponding interface
+     * @throws SystemError
+     * @exceptionsafety  Strong Guarantee
+     * @threadsafety     Safe
+     */
+    unsigned getIfaceIndex(const int sd) const;
+
 public:
     /**
      * Constructs from an IPv6 address.
@@ -121,6 +133,14 @@ public:
      * @threadsafety     Safe
      */
     int getSocket(const int sockType) const;
+
+    /**
+     * Sets the interface to use for outgoing datagrams.
+     * @param[in] inetAddr  Internet address of interface
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void setInterface(const int sd) const;
 
     /**
      * Sets the hop-limit on a socket for outgoing multicast packets.

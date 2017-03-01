@@ -10,12 +10,10 @@ noinst_LTLIBRARIES = lib.la
 # Sources for libhycast
 lib_la_SOURCES 	= \
 	VersionMsg.cpp VersionMsg.h \
-	Channel.h \
-	ChannelImpl.cpp ChannelImpl.h \
-	RegChannel.cpp RegChannel.h \
-	ChunkChannel.cpp ChunkChannel.h \
-	Notifier.h \
-	Peer.cpp Peer.h \
+	Channel.cpp Channel.h \
+	Notifier.h
+
+#	Peer.cpp Peer.h \
 	PeerMgr.h \
 	MsgRcvrImpl.h \
 	MsgRcvr.h \
@@ -23,6 +21,11 @@ lib_la_SOURCES 	= \
 	PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
 	Multicaster.cpp Multicaster.h
+
+#	ChannelImpl.h \
+	RegChannel.cpp RegChannel.h \
+	ChunkChannel.cpp ChunkChannel.h \
+#
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

@@ -9,7 +9,9 @@
  * @author: Steven R. Emmerson
  */
 
-#include "logging.h"
+#include "error.h"
+
+#include <iostream>
 
 namespace hycast {
 
@@ -21,7 +23,17 @@ void log_what(const std::exception& except)
     catch (const std::exception& inner) {
         log_what(inner);
     }
-    std::cerr << except.what() << '\n';
+    std::clog << except.what() << '\n';
+}
+
+void log_what(
+        const std::exception& except,
+        const char* const     file,
+        const int             line,
+        const std::string     msg)
+{
+    log_what(except);
+    std::clog << placeStamp(file, line) << ": " << msg << '\n';
 }
 
 } // namespace

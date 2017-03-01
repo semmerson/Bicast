@@ -13,6 +13,7 @@
 #define PRODINDEX_H_
 
 #include "HycastTypes.h"
+#include "RecStream.h"
 #include "Serializable.h"
 
 #include <cstdint>
@@ -22,27 +23,18 @@ namespace hycast {
 
 class ProdIndex final : public Serializable<ProdIndex> {
     ProdIndex_t index;
+
 public:
     /**
      * Constructs from a numeric product-index. The constuctor isn't explicit to
      * allow automatic conversions between ProdIndex and ProdIndex_t.
      */
-    ProdIndex(ProdIndex_t index = 0)
-        : index(index) {}
-    /**
-     * Constructs by deserializing a serialized representation from a buffer.
-     * @param[in] buf      Buffer
-     * @param[in] version  Serialization version
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    ProdIndex(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+    ProdIndex(ProdIndex_t index = 0);
+
     operator ProdIndex_t() const {
         return index;
     }
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -52,6 +44,7 @@ public:
     size_t hash() const noexcept {
         return std::hash<decltype(index)>()(index);
     }
+
     bool operator ==(const ProdIndex& that) const noexcept {
         return index == that.index;
     }
@@ -78,6 +71,7 @@ public:
         --index;
         return *this;
     }
+
     /**
      * Returns the number of bytes in the serial representation of this
      * instance.
@@ -87,33 +81,14 @@ public:
     size_t getSerialSize(unsigned version) const noexcept {
         return sizeof(ProdIndex_t);
     }
-    /**
-     * Serializes this instance to a buffer.
-     * @param[in] buf       Buffer
-     * @param[in] size      Buffer size in bytes
-     * @param[in] version   Serialization version
-     * @return Number of bytes serialized
-     * @execptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    char* serialize(
-            char*          buf,
-            const size_t   size,
-            const unsigned version) const;
-    /**
-     * Returns the instance corresponding to a serialized representation in a
-     * buffer.
-     * @param[in] buf      Buffer
-     * @param[in] size     Size of buffer in bytes
-     * @param[in] version  Protocol version
-     * @return Address of next byte
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
+
+    void serialize(
+            Encoder&       encoder,
+            const unsigned version);
+
     static ProdIndex deserialize(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+            Decoder&       decoder,
+            const unsigned version);
 };
 
 } // namespace

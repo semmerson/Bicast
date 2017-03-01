@@ -26,6 +26,7 @@ class InetSockAddrImpl; // Forward declaration
 
 class InetSockAddr final {
     std::shared_ptr<InetSockAddrImpl> pImpl;
+
 public:
     /**
      * Constructs from nothing. The resulting object will have the default
@@ -115,6 +116,26 @@ public:
      * @param[in] that  Other instance
      */
     InetSockAddr(InetSockAddr&& that) noexcept =default;
+
+    /**
+     * Destroys.
+     */
+    ~InetSockAddr() noexcept;
+
+    /**
+     * Returns the associated Internet address.
+     * @return The associated Internet address
+     */
+    InetAddr getInetAddr() const noexcept;
+
+    /**
+     * Sets a socket address storage structure.
+     * @param[in]     sd       Socket descriptor
+     * @param[in,out] storage  Structure to be set
+     */
+    void setSockAddrStorage(
+            const int                sd,
+            struct sockaddr_storage& storage) const;
 
     /**
      * Copy assigns from an instance.

@@ -9,12 +9,18 @@
  * This file defines an IPv6 address.
  */
 
+#include "config.h"
+
+#include "error.h"
 #include "Ipv6Addr.h"
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <net/if.h>
 #include <netinet/in.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <system_error>
 
@@ -56,6 +62,68 @@ int Ipv6Addr::getSocket(const int sockType) const
         throw std::system_error(errno, std::system_category(),
                 "socket() failure: sockType=" + std::to_string(sockType));
     return sd;
+}
+
+unsigned Ipv6Addr::getIfaceIndex(const int sd) const
+{
+    int lastlen = 0;
+    for (size_t size = 1024; ; size *= 2) {
+        char          buf[size];
+        struct ifconf ifc;
+        if (ioctl(sd, SIOCGIFCONF, &ifc) < 0) {
+            if (errno != EINVAL || lastlen != 0)
+                throw SystemError(__FILE__, __LINE__,
+                        "Couldn't get interface configurations");
+        }
+        else if (ifc.ifc_len != lastlen) {
+            lastlen = ifc.ifc_len;
+        }
+        else {
+            int                 len;
+            const struct ifreq* ifr;
+            for (const char* ptr = buf; ptr < buf + ifc.ifc_len;
+                    ptr += sizeof(ifr->ifr_name) + len) {
+                ifr = reinterpret_cast<const struct ifreq*>(ptr);
+#ifdef HAVE_STRUCT_IFREQ_IF_ADDR_SA_LEN
+                len = std::max(sizeof(struct sockaddr),
+                        ifr->ifr_addr.sa_len);
+#else
+                switch (ifr->ifr_addr.sa_family) {
+                    case AF_INET6:
+                        len = sizeof(struct sockaddr_in6);
+                    break;
+                    case AF_INET:
+                    default:
+                        len = sizeof(struct sockaddr);
+                }
+#endif
+                if (ifr->ifr_addr.sa_family != AF_INET6)
+                    continue;
+                auto sockAddr = reinterpret_cast<const struct sockaddr_in6*>
+                        (&ifr->ifr_addr);
+                if (::memcmp(&sockAddr->sin6_addr, &ipAddr, sizeof(ipAddr))
+                        == 0) {
+                    unsigned index = if_nametoindex(ifr->ifr_name);
+                    if (index == 0)
+                        throw SystemError(__FILE__, __LINE__,
+                                "Couldn't convert interface name \"" +
+                                std::string(ifr->ifr_name) + "\" to index");
+                    return index;
+                } // Found matching entry
+            } // Interface entry loop
+        } // Have interface entries
+    } // Interface entries buffer-size increment loop
+    throw NotFoundError(__FILE__, __LINE__, "Couldn't find interface entry "
+            "corresponding to " + to_string());
+}
+
+void Ipv6Addr::setInterface(const int sd) const
+{
+    unsigned ifaceIndex = getIfaceIndex(sd);
+    if (setsockopt(sd, IPPROTO_IP, IPV6_MULTICAST_IF, &ifaceIndex,
+            sizeof(ifaceIndex)))
+        throw SystemError(__FILE__, __LINE__,
+                "Couldn't set output interface to " + to_string());
 }
 
 void Ipv6Addr::setHopLimit(

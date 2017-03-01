@@ -21,24 +21,23 @@ VersionMsg::VersionMsg(unsigned version)
 
 size_t VersionMsg::getSerialSize(unsigned version) const noexcept
 {
-    return 4;
+    return Codec::getSerialSize(&version);
 }
 
-char* VersionMsg::serialize(
-        char*          buf,
-        const size_t   bufLen,
-        const unsigned vers) const
+void VersionMsg::serialize(
+        Encoder&       encoder,
+        const unsigned version)
 {
-    *reinterpret_cast<uint32_t*>(buf) = htonl(version);
-    return buf + 4;
+    encoder.encode(this->version);
 }
 
-unsigned VersionMsg::deserialize(
-        const char* const buf,
-        const size_t      size,
-        const unsigned    vers)
+VersionMsg VersionMsg::deserialize(
+        Decoder&        decoder,
+        const unsigned  version)
 {
-    return ntohl(*reinterpret_cast<const uint32_t*>(buf));
+    unsigned vers;
+    decoder.decode(vers);
+    return VersionMsg(vers);
 }
 
 unsigned VersionMsg::getVersion() const

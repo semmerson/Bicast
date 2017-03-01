@@ -69,6 +69,11 @@ int InetAddr::getSocket(const int sockType) const
     return pImpl->getSocket(sockType);
 }
 
+void InetAddr::setInterface(const int sd) const
+{
+    pImpl->setInterface(sd);
+}
+
 void InetAddr::setHopLimit(
         const int      sd,
         const unsigned limit) const

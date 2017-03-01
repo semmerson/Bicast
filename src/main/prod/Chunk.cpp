@@ -15,50 +15,44 @@
 #include "Chunk.h"
 #include "ChunkInfo.h"
 #include "HycastTypes.h"
+#include "RecStream.h"
 #include "SctpSock.h"
 
 namespace hycast {
 
 class LatentChunkImpl final
 {
-    ChunkInfo info;
-    SctpSock  sock;
-    ChunkSize size;
-    unsigned  version;
+    ChunkInfo    info;
+    Decoder*     decoder;
+    ChunkSize    size;
+    unsigned     version;
+
 public:
     /**
      * Constructs from nothing.
      */
     LatentChunkImpl()
         : info(),
-          sock(),
+          decoder(nullptr),
           size(0),
           version(0)
     {}
 
     /**
-     * Constructs from an SCTP socket whose current message is a chunk of
-     * data and a protocol version. NB: This method peeks at the current
-     * message.
-     * @param[in] sock     SCTP socket
-     * @param[in] version  Protocol version
-     * @throws std::invalid_argument if the current message is invalid
+     * Constructs from a serialized representation in a decoder.
+     * @param[in] decoder   Decoder. *Must* exist for the duration of this
+     *                      instance
+     * @param[in] version   Protocol version
      */
     LatentChunkImpl(
-            SctpSock&      sock,
+            Decoder&       decoder,
             const unsigned version)
-        : info(),
-          sock(sock),
-          size(0),
-          version(version)
-    {
         // Keep consistent with ActualChunkImpl::serialize()
-        unsigned nbytes = info.getSerialSize(version);
-        alignas(alignof(max_align_t)) char buf[nbytes];
-        sock.recv(buf, nbytes, MSG_PEEK);
-        info = ChunkInfo(buf, nbytes, version);
-        size = sock.getSize() - nbytes;
-    }
+        : info(ChunkInfo::deserialize(decoder, version)),
+          decoder(&decoder),
+          size(decoder.getDmaSize()),
+          version(version)
+    {}
 
     /**
      * Returns information on the chunk.
@@ -110,14 +104,7 @@ public:
      */
     void drainData(void* data)
     {
-        unsigned nbytes = info.getSerialSize(version);
-        alignas(alignof(max_align_t)) uint8_t buf[nbytes];
-        struct iovec iovec[2];
-        iovec[0].iov_base = buf;
-        iovec[0].iov_len = nbytes;
-        iovec[1].iov_base = const_cast<void*>(data);
-        iovec[1].iov_len = size;
-        sock.recvv(iovec, 2);
+        decoder->decode(data, size);
     }
 
     /**
@@ -128,7 +115,7 @@ public:
      */
     void discard()
     {
-        sock.discard();
+        decoder->discard();
     }
 
     /**
@@ -139,7 +126,7 @@ public:
      */
     bool hasData()
     {
-        return sock.hasMessage();
+        return decoder->hasRecord();
     }
 };
 
@@ -225,29 +212,22 @@ public:
     }
 
     /**
-     * Serializes this instance to an SCTP socket. NB: This is the only thing
-     * that's written to the socket.
-     * @param[in,out] sock      SCTP socket
-     * @param[in]     streamId  SCTP stream ID
-     * @param[in]     version   Protocol version
+     * Serializes this instance to an encoder.
+     * @param[in] encoder   Encoder
+     * @param[in] version   Protocol version
      * @exceptionsafety Basic
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            SctpSock&      sock,
-            const unsigned streamId,
-            const unsigned version) const
+            Encoder&       encoder,
+            const unsigned version)
     {
-        // Keep consistent with LatentChunkImpl::LatentChunkImpl()
-        unsigned nbytes = info.getSerialSize(version);
-        alignas(alignof(max_align_t)) char buf[nbytes];
-        info.serialize(buf, nbytes, version);
-        struct iovec iovec[2];
-        iovec[0].iov_base = buf;
-        iovec[0].iov_len = nbytes;
-        iovec[1].iov_base = const_cast<void*>(data);
-        iovec[1].iov_len = size;
-        sock.sendv(streamId, iovec, 2);
+        /*
+         * Keep consistent with `LatentChunkImpl::LatentChunkImpl(Decoder,
+         * unsigned)`
+         */
+        info.serialize(encoder, version);
+        encoder.encode(data, size);
     }
 };
 
@@ -289,11 +269,10 @@ const void* ActualChunk::getData() const noexcept
 }
 
 void ActualChunk::serialize(
-        SctpSock&        sock,
-        const unsigned streamId,
+        Encoder&       encoder,
         const unsigned version) const
 {
-    pImpl->serialize(sock, streamId, version);
+    pImpl->serialize(encoder, version);
 }
 
 LatentChunk::LatentChunk()
@@ -301,10 +280,17 @@ LatentChunk::LatentChunk()
 {}
 
 LatentChunk::LatentChunk(
-        SctpSock&        sock,
+        Decoder&       decoder,
         const unsigned version)
-    : pImpl(new LatentChunkImpl(sock, version))
+    : pImpl(new LatentChunkImpl(decoder, version))
 {}
+
+LatentChunk LatentChunk::deserialize(
+        Decoder&       decoder,
+        const unsigned version)
+{
+    return LatentChunk(decoder, version);
+}
 
 const ChunkInfo& LatentChunk::getInfo() const noexcept
 {

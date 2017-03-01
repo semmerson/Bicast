@@ -9,15 +9,14 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/ChunkChannel.h>
-#include <comms/MsgRcvr.h>
-#include <comms/Peer.h>
-#include <comms/RegChannel.h>
-#include <comms/VersionMsg.h>
 #include "ChunkInfo.h"
+#include "MsgRcvr.h"
+#include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
+#include "VersionMsg.h"
+
 #include <cstddef>
 #include <functional>
 #include <thread>
@@ -67,7 +66,7 @@ class PeerImpl final {
     {
         if (sock.getStreamId() != VERSION_STREAM_ID)
             throw std::logic_error("Current message isn't a version message");
-        return versionChan.recv();
+        return versionChan.recv().getVersion();
     }
      /**
       * Every peer implementation is unique.
@@ -105,7 +104,7 @@ public:
     PeerImpl(
             Peer*          peer,
             MsgRcvr&       msgRcvr,
-            SctpSock&        sock)
+            SctpSock&      sock)
         : version(0),
           versionChan(sock, VERSION_STREAM_ID, version),
           prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
@@ -117,7 +116,7 @@ public:
           sock(sock),
           peer(peer)
     {
-        versionChan.send(VersionMsg(version));
+        versionChan.send(VersionMsg{version});
         const unsigned vers = getVersion();
         if (vers != version)
             throw std::logic_error("Unknown protocol version: " +

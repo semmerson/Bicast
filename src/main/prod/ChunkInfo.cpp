@@ -16,20 +16,13 @@
 namespace hycast {
 
 ChunkInfo::ChunkInfo(
-        const char*    buf,
-        const size_t   size,
+        Decoder&       decoder,
         const unsigned version)
-    : prodIndex(buf, size, version),
-      chunkIndex(0)
+    : ChunkInfo()
 {
     // Keep consonant with serialize()
-    unsigned expect = ChunkInfo::getSerialSize(version);
-    if (size < expect)
-        throw std::invalid_argument("Serialized chunk-information has too few "
-                "bytes: expected " + std::to_string(expect) + ", actual="
-                + std::to_string(size));
-    buf += prodIndex.getSerialSize(version);
-    chunkIndex = ntohl(*reinterpret_cast<const uint32_t*>(buf));
+    decoder.decode(prodIndex);
+    decoder.decode(chunkIndex);
 }
 
 bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
@@ -37,28 +30,20 @@ bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
     return prodIndex == that.prodIndex && chunkIndex == that.chunkIndex;
 }
 
-char* ChunkInfo::serialize(
-            char*          buf,
-            const size_t   size,
-            const unsigned version) const
+void ChunkInfo::serialize(
+        Encoder&       encoder,
+        const unsigned version)
 {
-    // Keep consonant with ChunkInfo()
-    unsigned expect = ChunkInfo::getSerialSize(version);
-    if (size < expect)
-        throw std::invalid_argument("Serialized chunk-information buffer is "
-                "too small: need " + std::to_string(expect) + " bytes, actual="
-                + std::to_string(size));
-    buf = prodIndex.serialize(buf, size, version);
-    *reinterpret_cast<ChunkIndex*>(buf) = htonl(chunkIndex);
-    return buf + sizeof(ChunkIndex);
+    // Keep consonant with ChunkInfo(Decoder, unsigned)
+    encoder.encode(prodIndex);
+    encoder.encode(chunkIndex);
 }
 
 ChunkInfo ChunkInfo::deserialize(
-        const char* const buf,
-        const size_t      size,
+        Decoder&          decoder,
         const unsigned    version)
 {
-    return ChunkInfo(buf, size, version);
+    return ChunkInfo(decoder, version);
 }
 
 } // namespace

@@ -136,6 +136,14 @@ public:
     virtual int getSocket(const int sockType) const =0;
 
     /**
+     * Sets the interface to use for outgoing datagrams.
+     * @param[in] inetAddr  Internet address of interface
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    virtual void setInterface(const int sd) const =0;
+
+    /**
      * Sets the hop-limit on a socket for outgoing multicast packets.
      * @param[in] sd     Socket
      * @param[in] limit  Hop limit:

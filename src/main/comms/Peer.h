@@ -14,12 +14,12 @@
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "Notifier.h"
 #include "ProdInfo.h"
+#include "SctpSock.h"
+
 #include <cstddef>
 #include <memory>
-
-#include "../comms/Notifier.h"
-#include "../net/SctpSock.h"
 
 namespace hycast {
 

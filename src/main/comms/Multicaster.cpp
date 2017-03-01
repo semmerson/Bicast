@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "error.h"
 #include "Multicaster.h"
 
 namespace hycast {
@@ -51,45 +52,51 @@ public:
      */
     void runReceiver()
     {
-        int entryCancelState;
-        (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
-        for (;;) {
-            uint16_t objId;
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-            ssize_t nbytes = mcastSock.InRecStream::recv(&objId, sizeof(objId), true);
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
-            if (nbytes == 0)
-                break; // Socket closed
-            objId = ntohs(objId);
-            switch (objId) {
-                case PROD_INFO: {
-                    char buf[mcastSock.getSize()];
-                    mcastSock.InRecStream::recv(&buf, sizeof(buf));
-                    ProdInfo prodInfo = ProdInfo::deserialize(buf+sizeof(objId),
-                            sizeof(buf)-sizeof(objId), version);
-                    msgRcvr->recvNotice(prodInfo);
-                    break;
+        try {
+            int entryCancelState;
+            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
+            for (;;) {
+                uint16_t objId;
+                (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+                ssize_t nbytes = mcastSock.InRecStream::recv(&objId, sizeof(objId), true);
+                (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+                if (nbytes == 0)
+                    break; // Socket closed
+                objId = ntohs(objId);
+                switch (objId) {
+                    case PROD_INFO: {
+                        char buf[mcastSock.getSize()];
+                        mcastSock.InRecStream::recv(&buf, sizeof(buf));
+                        ProdInfo prodInfo = ProdInfo::deserialize(buf+sizeof(objId),
+                                sizeof(buf)-sizeof(objId), version);
+                        msgRcvr->recvNotice(prodInfo);
+                        break;
+                    }
+                    case CHUNK: {
+                        /*
+                         * For an unknown reason, the compiler complains if the
+                         * `peer->recvData` parameter is a `LatentChunk&` and not a
+                         * `LatentChunk`.  This is acceptable, however, because
+                         * `LatentChunk` can be trivially copied. See
+                         * `MsgRcvr::recvData()`.
+                         */
+                        LatentChunk chunk{mcastSock, version};
+                        msgRcvr->recvData(chunk);
+                        if (chunk.hasData())
+                            throw std::logic_error(
+                                    "Latent chunk-of-data still has data");
+                        break;
+                    }
+                    default:
+                        mcastSock.discard();
                 }
-                case CHUNK: {
-                    /*
-                     * For an unknown reason, the compiler complains if the
-                     * `peer->recvData` parameter is a `LatentChunk&` and not a
-                     * `LatentChunk`.  This is acceptable, however, because
-                     * `LatentChunk` can be trivially copied. See
-                     * `MsgRcvr::recvData()`.
-                     */
-                    LatentChunk chunk{mcastSock, version};
-                    msgRcvr->recvData(chunk);
-                    if (chunk.hasData())
-                        throw std::logic_error(
-                                "Latent chunk-of-data still has data");
-                    break;
-                }
-                default:
-                    mcastSock.discard();
             }
+            (void)pthread_setcancelstate(entryCancelState, nullptr);
         }
-        (void)pthread_setcancelstate(entryCancelState, nullptr);
+        catch (const std::exception& e) {
+            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    "Error running UDP multicast receiver"));
+        }
     }
 
     /**

@@ -17,15 +17,17 @@
 
 namespace {
 
-// The fixture for testing class UdpRcvr.
+// The fixture for testing class Multicaster.
 class MulticasterTest : public ::testing::Test {
 protected:
     class MsgRcvr : public hycast::MsgRcvr
     {
+        void recvNotice(const hycast::ProdInfo& info) {};
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
         void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
         void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvData(hycast::LatentChunk chunk) {}
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
     };
 
@@ -60,7 +62,7 @@ protected:
         // before the destructor).
     }
 
-    // Objects declared here can be used by all tests in the test case for UdpRcvr.
+    // Objects declared here can be used by all tests in the test case for Multicaster.
     hycast::InetAddr     localAddr;
     hycast::InetSockAddr localSockAddr;
     hycast::InetSockAddr remoteSockAddr;

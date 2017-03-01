@@ -126,6 +126,15 @@ public:
     int getSocket(const int sockType) const;
 
     /**
+     * Sets the interface to use for outgoing datagrams.
+     * @param[in] inetAddr  Internet address of interface
+     * @throws SystemException  Couldn't set output interface
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void setInterface(const int sd) const;
+
+    /**
      * Sets the hop-limit on a socket for outgoing multicast packets.
      * @param[in] sd     Socket
      * @param[in] limit  Hop limit:

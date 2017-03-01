@@ -14,14 +14,13 @@
 
 namespace hycast {
 
-ChannelImpl::ChannelImpl(
-        SctpSock&            sock,
-        const unsigned     streamId,
-        const unsigned     version)
-    : sock(sock),
-      streamId(streamId),
-      version(version)
-{
-}
+void ChannelImpl::SctpStream::send(
+        const struct iovec* const iovec,
+        const int                 iovcnt);
+
+size_t ChannelImpl::SctpStream::recv(
+        const struct iovec* iovec,
+        const int           iovcnt,
+        const bool          peek = false);
 
 } // namespace

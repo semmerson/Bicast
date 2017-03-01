@@ -198,9 +198,9 @@ void SctpSockImpl::send(
 }
 
 void SctpSockImpl::sendv(
-        const unsigned streamId,
-        struct iovec*  iovec,
-        const int      iovcnt)
+        const unsigned      streamId,
+        const struct iovec* iovec,
+        const int           iovcnt)
 {
     ssize_t numExpected = iovLen(iovec, iovcnt);
     struct {
@@ -212,7 +212,7 @@ void SctpSockImpl::sendv(
     msg_control.cmsghdr.cmsg_type = SCTP_SNDRCV;
     sndrcvinfoInit(msg_control.sinfo, streamId, numExpected);
     struct msghdr msghdr = {0};
-    msghdr.msg_iov = iovec;
+    msghdr.msg_iov = const_cast<struct iovec*>(iovec);
     msghdr.msg_iovlen = iovcnt;
     msghdr.msg_control = &msg_control;
     msghdr.msg_controllen = sizeof(msg_control);
@@ -261,14 +261,14 @@ void SctpSockImpl::recv(
     haveCurrMsg = (flags & MSG_PEEK) != 0;
 }
 
-void SctpSockImpl::recvv(
-        struct iovec*  iovec,
-        const int      iovcnt,
-        const int      flags)
+size_t SctpSockImpl::recvv(
+        const struct iovec* iovec,
+        const int           iovcnt,
+        const int           flags)
 {
     ssize_t numExpected = iovLen(iovec, iovcnt);
     struct msghdr msghdr = {};
-    msghdr.msg_iov = iovec;
+    msghdr.msg_iov = const_cast<struct iovec*>(iovec);
     msghdr.msg_iovlen = iovcnt;
     ssize_t numRead;
     {
@@ -278,6 +278,7 @@ void SctpSockImpl::recvv(
     }
     checkIoStatus("recvmsg()", numExpected, numRead);
     haveCurrMsg = (flags & MSG_PEEK) != 0;
+    return numRead;
 }
 
 bool SctpSockImpl::hasMessage()

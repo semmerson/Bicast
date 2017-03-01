@@ -153,6 +153,19 @@ int InetNameAddr::getSocket(const int sockType) const
     }
 }
 
+void InetNameAddr::setInterface(const int sd) const
+{
+    IpAddrImpl* const ipAddr = getIpAddr();
+    try {
+        ipAddr->setInterface(sd);
+        delete ipAddr;
+    }
+    catch (...) {
+        delete ipAddr;
+        throw;
+    }
+}
+
 void InetNameAddr::setHopLimit(
         const int      sd,
         const unsigned limit) const

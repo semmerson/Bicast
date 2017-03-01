@@ -12,10 +12,10 @@
 #ifndef REGCHANNEL_H_
 #define REGCHANNEL_H_
 
+#include "Channel.h"
 #include "Serializable.h"
 
 #include <memory>
-#include "../comms/Channel.h"
 
 namespace hycast {
 
@@ -38,7 +38,7 @@ public:
      * @param[in] version   Protocol version
      */
     RegChannel(
-            SctpSock&            sock,
+            SctpSock&          sock,
             const unsigned     streamId,
             const unsigned     version);
     /**

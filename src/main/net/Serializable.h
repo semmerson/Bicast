@@ -12,6 +12,8 @@
 #ifndef SERIALIZABLE_H_
 #define SERIALIZABLE_H_
 
+#include "Codec.h"
+
 #include <cstddef>
 
 namespace hycast {
@@ -20,20 +22,17 @@ template<class T>
 class Serializable {
 public:
     virtual ~Serializable() {}
+
     /**
-     * Serializes this instance to a buffer
-     * @param[out] buf      Output buffer. Shall be maximally aligned.
-     * @param[in]  bufLen   Size of buffer in bytes
-     * @param[in]  version  Protocol version
-     * @return Address of next byte
-     * @throws std::invalid_argument if the buffer is too small
-     * @exceptionsafety Basic. `buf` might be modified.
+     * Serializes this instance to an encoder.
+     * @param[out] encoder    Encoder
+     * @param[in]  version    Protocol version
+     * @exceptionsafety Basic Guarantee
      * @threadsafety    Safe
      */
-    virtual char* serialize(
-            char*          buf,
-            const size_t   bufLen,
-            const unsigned version) const =0;
+    virtual void serialize(
+            Encoder&       encoder,
+            const unsigned version) =0;
 
     /**
      * Returns the size, in bytes, of a serialized representation of this
@@ -47,18 +46,16 @@ public:
     virtual size_t getSerialSize(unsigned version) const noexcept =0;
 
     /**
-     * Returns a new instance corresponding to a serialized representation in a
-     * buffer.
-     * @param[in] buf      Buffer
-     * @param[in] size     Size of buffer in bytes
-     * @param[in] version  Protocol version
+     * Returns an instance corresponding to the serialized representation in a
+     * decoder.
+     * @param[in] decoder    Decoder
+     * @param[in] version    Protocol version
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
     static T deserialize(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+            Decoder&        decoder,
+            const unsigned  version);
 };
 
 } // namespace

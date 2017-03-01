@@ -11,12 +11,18 @@ AC_CONFIG_MACRO_DIR([m4])
 
 dnl Initialize automake
 AM_INIT_AUTOMAKE
+AC_CONFIG_SRCDIR([config.h.in])
+AC_CONFIG_HEADERS([config.h])
 
 dnl this allows us specify individual liking flags for each target
 AM_PROG_CC_C_O 
 
 dnl Initialize Libtool
 LT_INIT
+
+dnl Check if socket address structure has length field
+AC_CHECK_MEMBERS(
+    [struct ifreq.if_addr.sa_len], , , [[#include <net/if.h>]])
 
 AC_CONFIG_FILES(Makefile
                 main/Makefile

@@ -78,7 +78,7 @@ public:
     }
 };
 
-template class RegChannelImpl<VersionMsg>;
+template class RegChannelImpl<Version>;
 template class RegChannelImpl<ProdIndex>;
 template class RegChannelImpl<ProdInfo>;
 template class RegChannelImpl<ChunkInfo>;
@@ -123,7 +123,7 @@ typename std::result_of<decltype(&T::deserialize)
     return pImpl->recv();
 }
 
-template class RegChannel<VersionMsg>;
+template class RegChannel<Version>;
 template class RegChannel<ProdInfo>;
 template class RegChannel<ChunkInfo>;
 template class RegChannel<ProdIndex>;

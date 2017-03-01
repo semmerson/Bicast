@@ -14,15 +14,13 @@
 
 #include "InetAddr.h"
 #include "InetSockAddr.h"
-#include "RecStream.h"
 
 #include <sys/types.h>
 
 namespace hycast {
 
 /**
- * Abstract base class for a UDP socket. Such a socket is bound to a local
- * address and can receive UDP packets.
+ * Abstract base class for a UDP socket.
  */
 class UdpSock
 {
@@ -38,7 +36,7 @@ protected:
 
     /**
      * Constructs from a pointer to an implementation.
-     * @param[in] pImpl  Pointer to implementation
+     * @param[in] pImpl  Pointer to implementation.
      */
     UdpSock(Impl* const pImpl);
 
@@ -46,7 +44,14 @@ public:
     /**
      * Destroys.
      */
-    virtual ~UdpSock() {};
+    virtual ~UdpSock();
+
+    /**
+     * Returns the local socket address.
+     * @return The local socket address
+     * @threadsafety     Safe
+     */
+    virtual const InetSockAddr getLocalAddr() const =0;
 
     /**
      * Returns a string representation of this instance's socket.
@@ -59,44 +64,48 @@ public:
 };
 
 /**
- * Input UDP socket. The local endpoint of such a socket is bound to a specific
- * address.
+ * Input UDP socket. The local endpoint is bound to a specific address.
  */
-class InUdpSock : virtual public UdpSock, public InRecStream
+class InUdpSock : public UdpSock
 {
 protected:
     class Impl;
 
+    /**
+     * Constructs from a pointer to an implementation.
+     * @param[in] pImpl  Pointer to implementation.
+     */
+    InUdpSock(Impl* const pImpl);
+
 private:
-    inline Impl* getPimpl() const noexcept
-    {
-        return reinterpret_cast<Impl*>(pImpl.get());
-    }
+    Impl* getPimpl() const noexcept;
 
 public:
-    using InRecStream::recv;
-
     /**
      * Default constructs.
      */
     InUdpSock() =default;
 
     /**
+     * Constructs an instance that listens to a given address.
+     * @param[in] localAddr  Local Internet address to listen to
+     * @param[in] sharePort  Whether or not the local port number should be
+     *                       shared amongst multiple sockets
+     */
+    explicit InUdpSock(const InetSockAddr& localAddr, bool sharePort = false);
+
+    /**
      * Destroys.
      */
-    ~InUdpSock() =default;
+    virtual ~InUdpSock();
 
     /**
-     * Constructs an instance that listens to a given address.
-     * @param[in] srvrAddr  Internet address for the server
+     * Returns the local socket address.
+     * @return The local socket address
+     * @exceptionsafety  No throw
+     * @threadsafety     Safe
      */
-    explicit InUdpSock(const InetSockAddr& srvrAddr);
-
-    /**
-     * Allows multiple sockets to use the same port number for incoming
-     * packets
-     */
-    void shareLocalPort() const;
+    const InetSockAddr getLocalAddr() const noexcept;
 
     /**
      * Returns a string representation of this instance's socket.
@@ -119,10 +128,27 @@ public:
      * @retval    0       Stream is closed
      * @return            Actual number of bytes read into the buffers.
      */
-    size_t recv(
-            const struct iovec* iovec,
-            const int           iovcnt,
-            const bool          peek = false);
+    virtual size_t recv(
+            struct iovec* iovec,
+            const int     iovcnt,
+            const bool    peek = false);
+
+    /**
+     * Receives a record. Waits for the record if necessary. If the requested
+     * number of bytes to be read is less than the record size, then the excess
+     * bytes are discarded.
+     * @param[in] buf     Receive buffer
+     * @param[in] len     Size of receive buffer in bytes
+     * @param[in] peek    Whether or not to peek at the record. The data is
+     *                    treated as unread and the next recv() or similar
+     *                    function shall still return this data.
+     * @retval    0       Socket is closed
+     * @return            Actual number of bytes read into the buffer.
+     * @throws std::system_error  I/O error reading from socket */
+    virtual size_t recv(
+           void* const  buf,
+           const size_t len,
+           const bool   peek = false);
 
     /**
      * Returns the size, in bytes, of the current record. Waits for a record if
@@ -130,39 +156,32 @@ public:
      * @retval 0  Stream is closed
      * @return Size, in bytes, of the current record
      */
-    size_t getSize();
+    virtual size_t getSize();
 
     /**
      * Discards the current record.
      */
-    void discard();
+    virtual void discard();
 
     /**
      * Indicates if there's a current record.
      */
-    bool hasRecord();
+    virtual bool hasRecord();
 };
 
 /**
  * Output UDP socket. The remote endpoint of such a socket is bound to a
  * specific address.
  */
-class OutUdpSock : virtual public UdpSock, public OutRecStream
+class OutUdpSock : public UdpSock
 {
 protected:
     class Impl;
 
-    OutUdpSock(Impl* const pImpl);
-
 private:
-    inline Impl* getPimpl() const noexcept
-    {
-        return reinterpret_cast<Impl*>(pImpl.get());
-    }
+    Impl* getPimpl() const noexcept;
 
 public:
-    using OutRecStream::send;
-
     /**
      * Constructs an instance with unbound endpoints.
      */
@@ -177,7 +196,17 @@ public:
     /**
      * Destroys.
      */
-    ~OutUdpSock() =default;
+    virtual ~OutUdpSock();
+
+    /**
+     * Returns the local socket address.
+     * @return The local socket address
+     * @throws std::bad_alloc  Necessary memory can't be allocated
+     * @throws SystemError     Can't get local socket address
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    const InetSockAddr getLocalAddr() const;
 
     /**
      * Returns a string representation of this instance's socket.
@@ -204,33 +233,40 @@ public:
      * @execptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const OutUdpSock& setHopLimit(
+    virtual const OutUdpSock& setHopLimit(
             const unsigned limit) const;
 
     /**
-     * Sends a message.
+     * Scatter-sends a message.
      * @param[in] iovec     Vector comprising message to send
      * @param[in] iovcnt    Number of elements in `iovec`
+     * @throws std::system_error  I/O error writing to socket
      */
-    void send(
+    virtual void send(
             const struct iovec* const iovec,
             const int                 iovcnt);
+
+    /**
+     * Sends a message.
+     * @param[in] buf       Buffer to send
+     * @param[in] len       Size of buffer in bytes
+     * @throws std::system_error  I/O error writing to socket
+     */
+    virtual void send(
+            const void* const buf,
+            const size_t      len);
 };
 
 /**
  * Multicast UDP socket. The remote endpoint of such a socket is bound to a
  * multicast group address.
  */
-class McastUdpSock final : public InUdpSock, public OutUdpSock
+class McastUdpSock final : public InUdpSock
 {
-protected:
+private:
     class Impl;
 
-private:
-    inline Impl* getPimpl() const noexcept
-    {
-        return reinterpret_cast<Impl*>(pImpl.get());
-    }
+    Impl* getPimpl() const noexcept;
 
 public:
     /**
@@ -244,8 +280,12 @@ public:
      * socket will accept any packet sent to the multicast group from any
      * source.
      * @param[in] mcastAddr  Address of multicast group
+     * @param[in] sharePort  Whether or not the local port number should be
+     *                       shared amongst multiple sockets
      */
-    explicit McastUdpSock(const InetSockAddr& mcastAddr);
+    explicit McastUdpSock(
+            const InetSockAddr& mcastAddr,
+            const bool          sharePort = false);
 
     /**
      * Constructs a source-specific instance. The local and remote endpoints
@@ -253,10 +293,18 @@ public:
      * source address will be accepted.
      * @param[in] mcastAddr   Address of multicast group
      * @param[in] sourceAddr  Address of source
+     * @param[in] sharePort   Whether or not the local port number should be
+     *                        shared amongst multiple sockets
      */
     McastUdpSock(
             const InetSockAddr& mcastAddr,
-            const InetAddr&     sourceAddr);
+            const InetAddr&     sourceAddr,
+            const bool          sharePort = false);
+
+    /**
+     * Destroys.
+     */
+    ~McastUdpSock();
 
     /**
      * Returns a string representation of this instance's socket.
@@ -266,17 +314,6 @@ public:
      * @threadsafety    Safe
      */
     std::string to_string() const;
-
-    /**
-     * Sets whether or not a multicast packet sent to a socket will also be
-     * read from the same socket. Such looping in enabled by default.
-     * @param[in] enable  Whether or not to enable reception of sent packets
-     * @return  This instance (to enable option-chaining)
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    const McastUdpSock& setMcastLoop(
-            const bool enable) const;
 };
 
 } // namespace

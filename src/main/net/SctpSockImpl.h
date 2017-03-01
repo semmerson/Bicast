@@ -188,9 +188,9 @@ public:
      * @threadsafety Safe
      */
     void sendv(
-            const unsigned streamId,
-            struct iovec*  iovec,
-            const int      iovcnt);
+            const unsigned      streamId,
+            const struct iovec* iovec,
+            const int           iovcnt);
 
     /**
      * Returns the size, in bytes, of the current SCTP message. Waits for the
@@ -234,14 +234,15 @@ public:
      *                      more of
      *                      - `MSG_OOB`  Requests out-of-band data
      *                      - `MSG_PEEK` Peeks at the incoming message
+     * @return              Number of bytes actually read
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic guarantee
      * @threadsafety Safe
      */
-    void recvv(
-            struct iovec*  iovec,
-            const int      iovcnt,
-            const int      flags = 0);
+    size_t recvv(
+            const struct iovec* iovec,
+            const int           iovcnt,
+            const int           flags = 0);
 
     /**
      * Indicates if this instance has a current message.

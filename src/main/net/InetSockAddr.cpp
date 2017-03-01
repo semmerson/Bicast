@@ -194,6 +194,28 @@ public:
     }
 
     /**
+     * Returns the associated Internet address.
+     * @return The associated Internet address
+     */
+    InetAddr getInetAddr() const noexcept
+    {
+        return inetAddr;
+    }
+
+    /**
+     * Sets a socket address storage structure.
+     * @param[in]     sd       Socket descriptor
+     * @param[in,out] storage  Structure to be set
+     */
+    void setSockAddrStorage(
+            const int                sd,
+            struct sockaddr_storage& storage) const
+    {
+        int sockType = getSockType(sd);
+        inetAddr.setSockAddrStorage(storage, port, sockType);
+    }
+
+    /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
      * @exceptionsafety Nothrow
@@ -257,9 +279,8 @@ public:
      */
     const InetSockAddrImpl& connect(const int sd) const
     {
-        int sockType = getSockType(sd);
         struct sockaddr_storage storage;
-        inetAddr.setSockAddrStorage(storage, port, sockType);
+        setSockAddrStorage(sd, storage);
         int status = ::connect(sd, reinterpret_cast<struct sockaddr*>(&storage),
                 sizeof(storage));
         if (status)
@@ -274,14 +295,14 @@ public:
      * @param[in] sd  Socket descriptor
      * @return        This instance
      * @throws std::system_error  `getsockopt()` failed
+     * @throws std::system_error  `bind()` failed
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
     const InetSockAddrImpl& bind(const int sd) const
     {
-        int sockType = getSockType(sd);
         struct sockaddr_storage storage;
-        inetAddr.setSockAddrStorage(storage, port, sockType);
+        setSockAddrStorage(sd, storage);
         int status = ::bind(sd, reinterpret_cast<struct sockaddr*>(&storage),
                 sizeof(storage));
         if (status)
@@ -345,8 +366,7 @@ public:
     const InetSockAddrImpl& joinMcastGroup(const int sd) const
     {
         struct group_req req;
-        int              sockType = getSockType(sd);
-        inetAddr.setSockAddrStorage(req.gr_group, port, sockType);
+        setSockAddrStorage(sd, req.gr_group);
         req.gr_interface = 0; // Use default multicast interface
         int level = familyToLevel(req.gr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_GROUP, &req, sizeof(req)))
@@ -371,9 +391,9 @@ public:
             const InetAddr& srcAddr) const
     {
         struct group_source_req req;
-        int                     sockType = getSockType(sd);
-        inetAddr.setSockAddrStorage(req.gsr_group, port, sockType);
+        setSockAddrStorage(sd, req.gsr_group);
         req.gsr_interface = 0; // Use default multicast interface
+        int sockType = getSockType(sd);
         srcAddr.setSockAddrStorage(req.gsr_source, port, sockType);
         int level = familyToLevel(req.gsr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_SOURCE_GROUP, &req, sizeof(req)))
@@ -443,6 +463,21 @@ InetSockAddr::InetSockAddr(const struct sockaddr& sockaddr)
 InetSockAddr::InetSockAddr(const InetSockAddr& that) noexcept
     : pImpl(that.pImpl)
 {}
+
+InetSockAddr::~InetSockAddr()
+{}
+
+InetAddr InetSockAddr::getInetAddr() const noexcept
+{
+    return pImpl->getInetAddr();
+}
+
+void InetSockAddr::setSockAddrStorage(
+        const int                sd,
+        struct sockaddr_storage& storage) const
+{
+    pImpl->setSockAddrStorage(sd, storage);
+}
 
 InetSockAddr& InetSockAddr::operator =(const InetSockAddr& rhs) noexcept
 {

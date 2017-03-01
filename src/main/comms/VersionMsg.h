@@ -2,7 +2,7 @@
  * This file declares a protocol version message exchanged on the peer control
  * channel.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -13,24 +13,44 @@
 #ifndef VERSIONMSG_H_
 #define VERSIONMSG_H_
 
+#include "Codec.h"
 #include "Serializable.h"
 
 namespace hycast {
 
-class VersionMsg final : public Serializable<VersionMsg> {
+class VersionMsg final : public Serializable<VersionMsg>
+{
     unsigned version;
+
 public:
     explicit VersionMsg(unsigned version);
-    char* serialize(
-            char*          buf,
-            const size_t   bufLen,
-            const unsigned version) const;
+
+    /**
+     * Serializes this instance to an encoder.
+     * @param[in] encoder  Encoder
+     * @param[in] version  Protocol version
+     * @exceptionsafety Basic Guarantee
+     * @threadsafety    Safe
+     */
+    void serialize(
+            Encoder&       encoder,
+            const unsigned version);
+
     size_t getSerialSize(unsigned version) const noexcept;
+
     unsigned getVersion() const;
-    static unsigned deserialize(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+
+    /**
+     * Returns an instance corresponding to the serialized representation in a
+     * decoder.
+     * @param[in] decoder    Decoder
+     * @param[in] version    Protocol version
+     * @exceptionsafety Basic
+     * @threadsafety    Compatible but not thread-safe
+     */
+    static VersionMsg deserialize(
+            Decoder&        decoder,
+            const unsigned  version);
 };
 
 } // namespace

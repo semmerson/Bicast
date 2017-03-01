@@ -4,7 +4,7 @@
  * data. The two types are in the same file to support keeping their
  * serialization and de-serialization methods consistent.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -16,45 +16,41 @@
 #define CHUNK_H_
 
 #include "ChunkInfo.h"
+#include "Codec.h"
 #include "HycastTypes.h"
 #include "SctpSock.h"
 
 #include <memory>
-
-#include "../net/RecStream.h"
 
 namespace hycast {
 
 class ActualChunkImpl; // Forward declaration of implementation
 class LatentChunkImpl; // Forward declaration of implementation
 
-class LatentChunk final {
+class LatentChunk final
+{
     std::shared_ptr<LatentChunkImpl> pImpl;
+
 public:
     /**
      * Constructs from nothing.
      */
     LatentChunk();
+
     /**
-     * Constructs from a record-preserving socket whose current record is a
-     * chunk of data. NB: This method reads the current record.
-     * @param[in] sock     Record-preserving socket
-     * @param[in] version  Protocol version
+     * Constructs from a decoder.
+     * @param[in] decoder   Decoder
+     * @param[in] version   Protocol version
      * @throws std::invalid_argument if the current record is invalid
      */
     LatentChunk(
-            InRecStream&       sock,
+            Decoder&       decoder,
             const unsigned version);
-    /**
-     * Constructs from an SCTP socket whose current message is a chunk of
-     * data and a protocol version. NB: This method reads the current message.
-     * @param[in] sock     SCTP socket
-     * @param[in] version  Protocol version
-     * @throws std::invalid_argument if the current message is invalid
-     */
-    LatentChunk(
-            SctpSock&      sock,
+
+    static LatentChunk deserialize(
+            Decoder&       decoder,
             const unsigned version);
+
     /**
      * Returns information on the chunk.
      * @return information on the chunk
@@ -104,13 +100,16 @@ public:
     bool hasData();
 };
 
-class ActualChunk final {
+class ActualChunk final
+{
     std::shared_ptr<ActualChunkImpl> pImpl;
+
 public:
     /**
      * Constructs from nothing.
      */
     ActualChunk();
+
     /**
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
@@ -121,6 +120,7 @@ public:
             const ChunkInfo& info,
             const void*      data,
             const ChunkSize  size);
+
     /**
      * Returns information on the chunk.
      * @return information on the chunk
@@ -128,16 +128,19 @@ public:
      * @threadsafety Safe
      */
     const ChunkInfo& getInfo() const noexcept;
+
     /**
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
     ProdIndex_t getProdIndex() const noexcept;
+
     /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      */
     ProdIndex_t getChunkIndex() const noexcept;
+
     /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data
@@ -145,6 +148,7 @@ public:
      * @threadsafety Safe
      */
     ChunkSize getSize() const noexcept;
+
     /**
      * Returns a pointer to the data.
      * @returns a pointer to the data
@@ -152,18 +156,16 @@ public:
      * @threadsafety Safe
      */
     const void* getData() const noexcept;
+
     /**
-     * Serializes this instance to an SCTP socket. NB: This is the only thing
-     * that's written to the socket.
-     * @param[in,out] sock      SCTP socket
-     * @param[in]     streamId  SCTP stream ID
-     * @param[in]     version   Protocol version
+     * Serializes this instance to an encoder.
+     * @param[in] encoder  Encoder
+     * @param[in] version  Protocol version
      * @exceptionsafety Basic
      * @threadsafety Compatible but not safe
      */
     void serialize(
-            SctpSock&        sock,
-            const unsigned streamId,
+            Encoder&       encoder,
             const unsigned version) const;
 };
 

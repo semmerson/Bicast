@@ -25,7 +25,8 @@ namespace hycast {
 
 class ProdInfoImpl; // Forward declaration
 
-class ProdInfo : public Serializable<ProdInfo> {
+class ProdInfo : public Serializable<ProdInfo>
+{
     std::shared_ptr<ProdInfoImpl> pImpl;
 
 public:
@@ -42,17 +43,7 @@ public:
             const ProdIndex    index,
             const ProdSize     size,
             const ChunkSize    chunkSize);
-    /**
-     * Constructs by deserializing a serialized representation from a buffer.
-     * @param[in] buf      Buffer
-     * @param[in] version  Serialization version
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    ProdInfo(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+
     /**
      * Returns the name of the product.
      * @return Name of the product
@@ -60,6 +51,7 @@ public:
      * @threadsafety    Safe
      */
     const std::string& getName() const;
+
     /**
      * Returns the index of the product.
      * @return index of the product
@@ -67,6 +59,7 @@ public:
      * @threadsafety    Safe
      */
     ProdIndex getIndex() const;
+
     /**
      * Returns the size of the product in bytes.
      * @return Size of the product in bytes
@@ -74,6 +67,7 @@ public:
      * @threadsafety    Safe
      */
     ProdSize getSize() const;
+
     /**
      * Returns the canonical size of the product's data chunks in bytes.
      * @return Canonical size of the product's data chunks in bytes
@@ -81,6 +75,7 @@ public:
      * @threadsafety    Safe
      */
     ChunkSize getChunkSize() const;
+
     /**
      * Returns the size, in bytes, of a given chunk-of-data.
      * @param[in] index  Index of the chunk
@@ -90,6 +85,7 @@ public:
      * @threadsafety     Safe
      */
     ChunkSize getChunkSize(ChunkIndex index) const;
+
     /**
      * Returns the number of chunks in the product.
      * @return the number of chunks in the product
@@ -97,6 +93,7 @@ public:
      * @threadsafety    Safe
      */
     ChunkIndex getNumChunks() const;
+
     /**
      * Vets information on a chunk-of-data ostensibly belonging to this
      * instance's associated product.
@@ -109,6 +106,7 @@ public:
      */
     void vet(const ChunkInfo& chunkInfo,
             const ChunkSize   chunkSize) const;
+
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
@@ -118,6 +116,7 @@ public:
      * @threadsafety    Safe
      */
     bool operator==(const ProdInfo& that) const noexcept;
+
     /**
      * Returns the number of bytes in the serial representation of this
      * instance.
@@ -125,34 +124,29 @@ public:
      * @return the number of bytes in the serial representation
      */
     size_t getSerialSize(unsigned version) const noexcept;
+
     /**
-     * Serializes this instance to a buffer.
-     * @param[in] buf       Buffer
-     * @param[in] size      Buffer size in bytes
+     * Serializes this instance to an encoder.
+     * @param[in] encoder   Encoder
      * @param[in] version   Serialization version
-     * @return Address of next byte
-     * @throws std::invalid_argument if the buffer is too small
-     * @execptionsafety Basic. `buf` might have been modified.
+     * @execptionsafety Basic guarantee
      * @threadsafety    Compatible but not thread-safe
      */
-    char* serialize(
-            char*          buf,
-            const size_t   size,
-            const unsigned version) const;
+    void serialize(
+            Encoder&       encoder,
+            const unsigned version);
 
     /**
      * Returns a new instance corresponding to a serialized representation in a
-     * buffer.
-     * @param[in] buf      Buffer
-     * @param[in] size     Size of buffer in bytes
-     * @param[in] version  Protocol version
+     * decoder.
+     * @param[in]  decoder  Decoder
+     * @param[in]  version  Protocol version
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
     static ProdInfo deserialize(
-            const char* const buf,
-            const size_t      size,
-            const unsigned    version);
+            Decoder&        decoder,
+            const unsigned  version);
 };
 
 } // namespace
