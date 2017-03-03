@@ -65,7 +65,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void sendNotice(const ProdInfo& prodInfo);
     /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] chunkInfo       Chunk information
@@ -73,7 +73,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkInfo& chunkInfo);
 };
 
 } // namespace

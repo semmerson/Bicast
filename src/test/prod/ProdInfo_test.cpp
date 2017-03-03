@@ -78,7 +78,7 @@ TEST_F(ProdInfoTest, Equals) {
 // Tests getSerialSize()
 TEST_F(ProdInfoTest, GetSerialSize) {
     hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_EQ(16, info1.getSerialSize(0));
+    EXPECT_EQ(20, info1.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization
@@ -86,8 +86,12 @@ TEST_F(ProdInfoTest, Serialization) {
     hycast::ProdInfo info1("name", 1, 2, 3);
     const size_t nbytes = info1.getSerialSize(0);
     alignas(alignof(size_t)) char bytes[nbytes];
-    info1.serialize(bytes, nbytes, 0);
-    hycast::ProdInfo info2(bytes, nbytes, 0);
+    hycast::MemEncoder encoder(bytes, nbytes);
+    info1.serialize(encoder, 0);
+    encoder.flush();
+    hycast::MemDecoder decoder(bytes, nbytes);
+    decoder.fill(0);
+    auto info2 = hycast::ProdInfo::deserialize(decoder, 0);
     EXPECT_TRUE(info1 == info2);
 }
 

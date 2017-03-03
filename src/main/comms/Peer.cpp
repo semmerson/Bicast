@@ -9,6 +9,8 @@
  * @author: Steven R. Emmerson
  */
 
+#include "Channel.h"
+#include "Chunk.h"
 #include "ChunkInfo.h"
 #include "MsgRcvr.h"
 #include "Peer.h"
@@ -20,6 +22,7 @@
 #include <cstddef>
 #include <functional>
 #include <thread>
+#include <utility>
 
 namespace hycast {
 
@@ -33,16 +36,16 @@ class PeerImpl final {
         CHUNK_STREAM_ID,
         NUM_STREAM_IDS
     }      SctpStreamId;
-    unsigned               version;
-    RegChannel<VersionMsg> versionChan;
-    RegChannel<ProdInfo>   prodNoticeChan;
-    RegChannel<ChunkInfo>  chunkNoticeChan;
-    RegChannel<ProdIndex>  prodReqChan;
-    RegChannel<ChunkInfo>  chunkReqChan;
-    ChunkChannel           chunkChan;
-    MsgRcvr&               msgRcvr;
-    SctpSock               sock;
-    Peer*                  peer;
+    unsigned                          version;
+    Channel<VersionMsg>               versionChan;
+    Channel<ProdInfo>                 prodNoticeChan;
+    Channel<ChunkInfo>                chunkNoticeChan;
+    Channel<ProdIndex>                prodReqChan;
+    Channel<ChunkInfo>                chunkReqChan;
+    Channel<ActualChunk,LatentChunk>  chunkChan;
+    MsgRcvr&                          msgRcvr;
+    SctpSock                          sock;
+    Peer*                             peer;
 
     class : public MsgRcvr
     {
@@ -116,7 +119,8 @@ public:
           sock(sock),
           peer(peer)
     {
-        versionChan.send(VersionMsg{version});
+        VersionMsg msg(version);
+        versionChan.send(msg);
         const unsigned vers = getVersion();
         if (vers != version)
             throw std::logic_error("Unknown protocol version: " +
@@ -240,7 +244,7 @@ public:
      * @exceptionsafety  Basic
      * @threadsafety     Compatible but not safe
      */
-    void sendData(const ActualChunk& chunk)
+    void sendData(ActualChunk& chunk)
     {
         chunkChan.send(chunk);
     }
@@ -311,27 +315,27 @@ void Peer::runReceiver() const
     pImpl->runReceiver();
 }
 
-void Peer::sendNotice(const ProdInfo& prodInfo) const
+void Peer::sendNotice(const ProdInfo& prodInfo)
 {
     pImpl->sendProdInfo(prodInfo);
 }
 
-void Peer::sendNotice(const ChunkInfo& chunkInfo) const
+void Peer::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendChunkInfo(chunkInfo);
 }
 
-void Peer::sendRequest(const ProdIndex& prodIndex) const
+void Peer::sendRequest(const ProdIndex& prodIndex)
 {
     pImpl->sendProdRequest(prodIndex);
 }
 
-void Peer::sendRequest(const ChunkInfo& info) const
+void Peer::sendRequest(const ChunkInfo& info)
 {
     pImpl->sendRequest(info);
 }
 
-void Peer::sendData(const ActualChunk& chunk) const
+void Peer::sendData(ActualChunk& chunk)
 {
     pImpl->sendData(chunk);
 }

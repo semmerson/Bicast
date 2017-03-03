@@ -134,7 +134,7 @@ public:
      */
     void serialize(
             Encoder&       encoder,
-            const unsigned version);
+            const unsigned version) const;
 
     /**
      * Returns a new instance corresponding to a serialized representation in a

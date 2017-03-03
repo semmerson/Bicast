@@ -60,17 +60,16 @@ protected:
                 const int           iovcnt,
                 const bool          peek = false)
         {
-            return sock.recvv(iov, iovcnt, peek);
+            return sock.recvv(iov, iovcnt, peek ? MSG_PEEK : 0);
         }
     public:
-        //using Decoder::read;
         Dec(SctpSock& sock)
             : Decoder{UINT16_MAX}
             , sock{sock}
         {}
-        size_t read(size_t nbytes = 0)
+        size_t fill(size_t nbytes = 0)
         {
-            return Decoder::read(nbytes);
+            return Decoder::fill(nbytes);
         }
         void discard()
         {
@@ -120,9 +119,9 @@ public:
         return sock.hasMessage();
     }
 
-    size_t read(size_t nbytes = 0)
+    size_t fill(size_t nbytes = 0)
     {
-        return decoder.read(nbytes);
+        return decoder.fill(nbytes);
     }
 
     void discard()
@@ -145,10 +144,10 @@ public:
         : ImplBase{sock, streamId, version}
     {}
 
-    void send(S& obj)
+    void send(const S& obj)
     {
         obj.serialize(encoder, version);
-        encoder.write();
+        encoder.flush();
     }
 
     R recv();
@@ -157,7 +156,7 @@ public:
 template<class S, class R>
 R Channel<S,R>::Impl::recv()
 {
-    decoder.read();
+    decoder.fill();
     R obj = R::deserialize(decoder, version);
     decoder.discard();
     return obj;
@@ -166,9 +165,8 @@ R Channel<S,R>::Impl::recv()
 template<>
 LatentChunk Channel<ActualChunk,LatentChunk>::Impl::recv()
 {
-    ImplBase::read(ChunkInfo::getStaticSerialSize(version));
+    ImplBase::fill(ChunkInfo::getStaticSerialSize(version));
     auto obj = LatentChunk::deserialize(decoder, version);
-    decoder.discard();
     return obj;
 }
 
@@ -193,7 +191,7 @@ size_t Channel<S,R>::getSize() const
 }
 
 template<class S, class R>
-void Channel<S,R>::send(S& obj) const
+void Channel<S,R>::send(const S& obj) const
 {
     pImpl->send(obj);
 }

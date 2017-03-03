@@ -150,10 +150,11 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const
+    void sendNotice(const ProdInfo& prodInfo)
     {
         peerSet.sendNotice(prodInfo);
     }
+
     /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] chunkInfo       Chunk information
@@ -161,7 +162,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const
+    void sendNotice(const ChunkInfo& chunkInfo)
     {
         peerSet.sendNotice(chunkInfo);
     }
@@ -182,12 +183,12 @@ void P2pMgr::operator()()
     pImpl->operator()();
 }
 
-void P2pMgr::sendNotice(const ProdInfo& prodInfo) const
+void P2pMgr::sendNotice(const ProdInfo& prodInfo)
 {
     pImpl->sendNotice(prodInfo);
 }
 
-void P2pMgr::sendNotice(const ChunkInfo& chunkInfo) const
+void P2pMgr::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendNotice(chunkInfo);
 }

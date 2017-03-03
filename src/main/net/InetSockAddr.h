@@ -174,6 +174,7 @@ public:
      *                        - SOCK_DGRAM      Datagram socket (e.g., UDP)
      *                        - SOCK_SEQPACKET  Record-oriented socket
      * @return Corresponding new socket
+     * @throws std::system_error  `socket()` failure
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */

@@ -33,6 +33,8 @@ protected:
     std::shared_ptr<Impl> pImpl;
 
 public:
+    Channel() =default;
+
     /**
      * Constructs.
      * @param[in] sock      SCTP socket
@@ -80,7 +82,7 @@ public:
      * @execptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void send(S& obj) const;
+    void send(const S& obj) const;
 
     /**
      * Returns the value in the current message. Waits for a value if necessary.

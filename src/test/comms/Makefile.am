@@ -13,7 +13,7 @@ check_PROGRAMS	= \
 	Peer_test \
 	PeerSet_test \
 	P2pMgr_test \
-	Multicaster_test
+	McastSender_test
 #	Chunk2Peers_test
 
 Channel_test_SOURCES		= Channel_test.cpp
@@ -22,7 +22,7 @@ Peer_test_SOURCES		= Peer_test.cpp
 #Chunk2Peers_test_SOURCES	= Chunk2Peers_test.cpp
 PeerSet_test_SOURCES		= PeerSet_test.cpp
 P2pMgr_test_SOURCES		= P2pMgr_test.cpp
-Multicaster_test_SOURCES	= Multicaster_test.cpp
+McastSender_test_SOURCES	= McastSender_test.cpp
 
 TESTS	= \
 	Channel_test \
@@ -30,7 +30,7 @@ TESTS	= \
 	Peer_test \
 	PeerSet_test \
 	P2pMgr_test \
-	Multicaster_test
+	McastSender_test
 #	Chunk2Peers_test
 
 callgrind:	Peer_test

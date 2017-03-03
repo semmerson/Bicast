@@ -84,7 +84,7 @@ public:
 
     void serialize(
             Encoder&       encoder,
-            const unsigned version);
+            const unsigned version) const;
 
     static ProdIndex deserialize(
             Decoder&       decoder,

@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/RegChannel.h>
+#include <Channel.h>
 #include "ChunkInfo.h"
 #include "ClntSctpSock.h"
 #include "ProdInfo.h"
@@ -42,19 +42,19 @@ void runClient()
 {
     hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
-    hycast::RegChannel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
+    hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
     EXPECT_EQ(sock, prodInfoChannel.getSocket());
     hycast::ProdInfo prodInfo1("product", 1, 2, 3);
     prodInfoChannel.send(prodInfo1);
-    EXPECT_EQ(0, prodInfoChannel.getStreamId());
+    EXPECT_EQ(0, sock.getStreamId());
     hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
     EXPECT_TRUE(prodInfo1 == prodInfo2);
 
-    hycast::RegChannel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
+    hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
     EXPECT_EQ(sock, chunkInfoChannel.getSocket());
     hycast::ChunkInfo chunkInfo1(4, 5);
     chunkInfoChannel.send(chunkInfo1);
-    EXPECT_EQ(1, chunkInfoChannel.getStreamId());
+    EXPECT_EQ(1, sock.getStreamId());
     hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
     EXPECT_TRUE(chunkInfo1 == chunkInfo2);
 }
@@ -115,7 +115,7 @@ protected:
 
 // Tests default construction
 TEST_F(ChannelTest, DefaultConstruction) {
-    hycast::RegChannel<hycast::ProdInfo> prodInfoChannel();
+    hycast::Channel<hycast::ProdInfo> prodInfoChannel();
 }
 
 // Tests end-to-end execution.

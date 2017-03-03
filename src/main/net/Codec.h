@@ -29,11 +29,11 @@ class Codec
     static const unsigned alignment = 4;
 
 protected:
-    const size_t maxSize; /// Serial buffer size in bytes
-    char* const  buf;     /// Serial buffer
-    char*        next;    /// Next place in serial buffer for writing/reading
-    size_t       nbytes;  /// Number of bytes written to or readable from buffer
-    struct iovec dma;     /// Vector for byte-array direct-memory-access
+    const size_t serialBufSize;  /// Serial buffer size in bytes
+    char* const  serialBuf;      /// Serial buffer
+    char*        nextSerial;     /// Next place in serial buffer for writing/reading
+    size_t       serialBufBytes; /// Number of bytes written to or readable from buffer
+    struct iovec dma;            /// Vector for byte-array direct-memory-access
 
     /**
      * Returns a value rounded-up to the nearest multiple of the alignment.
@@ -125,7 +125,7 @@ public:
      * Writes the serial buffer and any byte-array to the underlying I/O object.
      * Clears the serial buffer.
      */
-    void write();
+    void flush();
 };
 
 /**
@@ -135,8 +135,8 @@ class Decoder : public Codec
 {
 protected:
     /**
-     * Returns the total size of the message in bytes.
-     * @return Total size of the message in bytes
+     * Returns the size, in bytes, of the current record.
+     * @return Current record size in bytes
      */
     virtual size_t getSize() =0;
 
@@ -206,7 +206,7 @@ public:
      *                    is made to read the maximum possible number of bytes
      * @return            Number of bytes actually read
      */
-    size_t read(size_t nbytes = 0);
+    size_t fill(size_t nbytes = 0);
 
     /**
      * Discards the current message.
@@ -218,6 +218,43 @@ public:
      * @return `true` iff this instance has a record
      */
     virtual bool hasRecord() =0;
+};
+
+class MemEncoder final : public Encoder
+{
+    char*  buf;   // Byte buffer
+    size_t size;  // Number of bytes written to buffer
+
+public:
+    MemEncoder(
+            char* const  buf,
+            const size_t maxSize);
+
+    void write(
+            const struct iovec* iov,
+            const int           iovcnt);
+};
+
+class MemDecoder final : public Decoder
+{
+    const char*  memBuf;    // Byte buffer
+    size_t       memRead;  // Number of bytes read from buffer
+
+public:
+    MemDecoder(
+            const char* const  buf,
+            const size_t       size);
+
+    bool hasRecord();
+
+    size_t getSize();
+
+    size_t read(
+            const struct iovec* iov,
+            const int           iovcnt,
+            const bool          peek = false);
+
+    void discard();
 };
 
 } // namespace

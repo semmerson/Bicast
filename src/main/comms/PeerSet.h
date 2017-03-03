@@ -25,6 +25,7 @@ class PeerSetImpl; // Forward declaration
 class PeerSet final : public Notifier
 {
     std::shared_ptr<PeerSetImpl> pImpl; // `pImpl` idiom
+
 public:
     typedef enum {
         EXISTS,    /// Peer is already member of set
@@ -32,6 +33,7 @@ public:
         REPLACED,  /// Success. Inserted peer replaced worst-performing member
         FULL       /// Set is full and insufficient time to determine worst peer
     } InsertStatus;
+
     /**
      * Constructs from the maximum number of peers. The set will be empty.
      * @param[in] peerTerminated      Function to call when a peer terminates
@@ -45,6 +47,7 @@ public:
             std::function<void()> peerTerminated,
             unsigned              maxPeers = 8,
             unsigned              stasisDuration = 60);
+
     /**
      * Tries to insert a peer.
      * @param[in]  candidate Candidate peer
@@ -60,6 +63,7 @@ public:
     InsertStatus tryInsert(
             Peer& candidate,
             Peer* worst = nullptr) const;
+
     /**
      * Tries to insert a remote peer given its Internet socket address.
      * @param[in]  candidate   Candidate remote peer
@@ -77,6 +81,7 @@ public:
             const InetSockAddr& candidate,
             MsgRcvr&            msgRcvr,
             Peer*               replaced);
+
     /**
      * Sends information about a product.
      * @param[in] prodInfo        Product information
@@ -84,7 +89,8 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void sendNotice(const ProdInfo& prodInfo);
+
     /**
      * Sends information about a chunk-of-data.
      * @param[in] chunkInfo       Chunk information
@@ -92,7 +98,8 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkInfo& chunkInfo);
+
     /**
      * Increments the value of a peer.
      * @param[in] peer  Peer to have its value incremented

@@ -314,6 +314,7 @@ public:
     /**
      * Constructs from Internet address of remote endpoint.
      * @param[in] remoteSockAddr   Remote endpoint address
+     * @throws std::system_error  `socket()` failure
      */
     explicit Impl(
             const InetSockAddr& remoteSockAddr)

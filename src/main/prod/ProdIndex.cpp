@@ -24,7 +24,7 @@ ProdIndex::ProdIndex(
 
 void ProdIndex::serialize(
         Encoder&       encoder,
-        const unsigned version)
+        const unsigned version) const
 {
     encoder.encode(index);
 }

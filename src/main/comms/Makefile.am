@@ -11,21 +11,19 @@ noinst_LTLIBRARIES = lib.la
 lib_la_SOURCES 	= \
 	VersionMsg.cpp VersionMsg.h \
 	Channel.cpp Channel.h \
-	Notifier.h
-
-#	Peer.cpp Peer.h \
+	Notifier.h \
+	Peer.cpp Peer.h \
 	PeerMgr.h \
 	MsgRcvrImpl.h \
 	MsgRcvr.h \
 	PeerSet.cpp PeerSet.h \
 	PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
-	Multicaster.cpp Multicaster.h
+	McastSender.cpp McastSender.h
 
 #	ChannelImpl.h \
 	RegChannel.cpp RegChannel.h \
-	ChunkChannel.cpp ChunkChannel.h \
-#
+	ChunkChannel.cpp ChunkChannel.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

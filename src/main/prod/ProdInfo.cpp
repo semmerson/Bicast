@@ -202,7 +202,10 @@ public:
     size_t getSerialSize(unsigned version) const noexcept
     {
         // Keep consonant with serialize()
-        return 2*sizeof(uint32_t) + 2*sizeof(uint16_t) + name.size();
+        return  Codec::getSerialSize(&index) +
+                Codec::getSerialSize(&size) +
+                Codec::getSerialSize(&chunkSize) +
+                Codec::getSerialSize(name);
     }
 
     /**
@@ -244,7 +247,7 @@ size_t ProdInfo::getSerialSize(unsigned version) const noexcept
 
 void ProdInfo::serialize(
         Encoder&       encoder,
-        const unsigned version)
+        const unsigned version) const
 {
     pImpl->serialize(encoder, version);
 }

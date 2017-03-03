@@ -65,6 +65,7 @@ protected:
             : prodInfo{prodInfo}
             , chunkInfo{chunkInfo}
         {}
+        void recvNotice(const hycast::ProdInfo& info) {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
             EXPECT_EQ(prodInfo, info);
         }
@@ -75,6 +76,7 @@ protected:
         }
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
         }
+        void recvData(hycast::LatentChunk chunk) {}
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
             chunk.discard();
         }
@@ -90,6 +92,7 @@ protected:
          */
         class ServerMsgRcvr final : public hycast::MsgRcvr {
         public:
+            void recvNotice(const hycast::ProdInfo& info) {}
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
                 peer.sendNotice(info);
             }
@@ -102,6 +105,7 @@ protected:
             void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
                 peer.sendRequest(info);
             }
+            void recvData(hycast::LatentChunk latentChunk) {}
             void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer) {
                 hycast::ChunkSize size = latentChunk.getSize();
                 char              data[size];

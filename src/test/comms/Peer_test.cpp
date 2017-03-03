@@ -65,6 +65,7 @@ protected:
     public:
         TestMsgRcvr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
+        void recvNotice(const hycast::ProdInfo& info) {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodInfo == info);
         }
@@ -77,6 +78,7 @@ protected:
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo == info);
         }
+        void recvData(hycast::LatentChunk chunk) {}
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
             ASSERT_EQ(sizeof(peerTest->data), chunk.getSize());
             char data2[sizeof(peerTest->data)];
@@ -123,10 +125,12 @@ protected:
         hycast::SctpSock sock{serverSock.accept()};
         class PerfMsgRcvr final : public hycast::MsgRcvr {
         public:
+            void recvNotice(const hycast::ProdInfo& info) {}
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
             void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
             void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
             void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+            void recvData(hycast::LatentChunk chunk) {}
             void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
                 chunk.discard();
             }

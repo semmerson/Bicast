@@ -26,7 +26,7 @@ size_t VersionMsg::getSerialSize(unsigned version) const noexcept
 
 void VersionMsg::serialize(
         Encoder&       encoder,
-        const unsigned version)
+        const unsigned version) const
 {
     encoder.encode(this->version);
 }

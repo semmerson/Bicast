@@ -34,7 +34,7 @@ public:
      */
     void serialize(
             Encoder&       encoder,
-            const unsigned version);
+            const unsigned version) const;
 
     size_t getSerialSize(unsigned version) const noexcept;
 

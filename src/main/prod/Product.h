@@ -23,6 +23,7 @@ class ProductImpl; // Forward declaration
 
 class Product final {
     std::shared_ptr<ProductImpl> pImpl; // "pImpl" idiom
+
 public:
     /**
      * Constructs from nothing.
@@ -30,11 +31,13 @@ public:
     Product()
         : pImpl{}
     {}
+
     /**
      * Constructs from information on a product.
      * @param[in] info Information on a product
      */
     explicit Product(const ProdInfo& info);
+
     /**
      * Returns information on the product.
      * @return Information on the product
@@ -42,6 +45,7 @@ public:
      * @threadsafety    Safe
      */
     const ProdInfo& getInfo() const noexcept;
+
     /**
      * Adds a chunk-of-data.
      * @param[in] chunk  The chunk
@@ -54,6 +58,7 @@ public:
      * @threadsafety     Compatible but not safe
      */
     bool add(const ActualChunk& chunk);
+
     /**
      * Adds a latent chunk-of-data.
      * @param[in] chunk  The latent chunk
@@ -66,12 +71,14 @@ public:
      * @threadsafety     Compatible but not safe
      */
     bool add(LatentChunk& chunk);
+
     /**
      * Indicates if this instance is complete (i.e., contains all
      * chunks-of-data).
      * @return `true` iff this instance is complete
      */
     bool isComplete() const;
+
     /**
      * Returns a pointer to the data.
      * @return a pointer to the data

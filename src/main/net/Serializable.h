@@ -32,7 +32,7 @@ public:
      */
     virtual void serialize(
             Encoder&       encoder,
-            const unsigned version) =0;
+            const unsigned version) const =0;
 
     /**
      * Returns the size, in bytes, of a serialized representation of this

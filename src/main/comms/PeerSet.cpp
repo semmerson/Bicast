@@ -74,7 +74,7 @@ class PeerSetImpl final
          * @param[in,out] peer  Peer to be acted upon
          * @return `true`       Iff processing should continue
          */
-        virtual void actUpon(Peer& peer) const =0;
+        virtual void actUpon(Peer& peer) =0;
         virtual bool terminate() const
         {
             return false;
@@ -97,7 +97,7 @@ class PeerSetImpl final
          * @exceptionsafety     Basic
          * @threadsafety        Compatible but not safe
          */
-        void actUpon(Peer& peer) const
+        void actUpon(Peer& peer)
         {
             peer.sendNotice(info);
         }
@@ -120,7 +120,7 @@ class PeerSetImpl final
          * @exceptionsafety     Basic
          * @threadsafety        Compatible but not safe
          */
-        void actUpon(Peer& peer) const
+        void actUpon(Peer& peer)
         {
             peer.sendNotice(info);
         }
@@ -132,7 +132,7 @@ class PeerSetImpl final
     class TerminatePeer final : public SendAction
     {
     public:
-        void actUpon(Peer& peer) const
+        void actUpon(Peer& peer)
         {}
         bool terminate() const
         {
@@ -605,12 +605,12 @@ PeerSet::InsertStatus PeerSet::tryInsert(
     return pImpl->tryInsert(candidate, msgRcvr, replaced);
 }
 
-void PeerSet::sendNotice(const ProdInfo& prodInfo) const
+void PeerSet::sendNotice(const ProdInfo& prodInfo)
 {
     pImpl->sendNotice(prodInfo);
 }
 
-void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
+void PeerSet::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendNotice(chunkInfo);
 }

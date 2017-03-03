@@ -5,11 +5,12 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: ProdInfo_test.cpp
+ *   @file: ProdIndex_test.cpp
  * @author: Steven R. Emmerson
  */
 
 #include "ClntSctpSock.h"
+#include "Codec.h"
 #include "InetSockAddr.h"
 #include "ProdIndex.h"
 #include "SctpSock.h"
@@ -24,17 +25,17 @@
 
 namespace {
 
-// The fixture for testing class ProdInfo.
-class ProdInfoTest : public ::testing::Test {
+// The fixture for testing class ProdIndex.
+class ProdIndexTest : public ::testing::Test {
  protected:
   // You can remove any or all of the following functions if its body
   // is empty.
 
-  ProdInfoTest() {
+  ProdIndexTest() {
     // You can do set-up work for each test here.
   }
 
-  virtual ~ProdInfoTest() {
+  virtual ~ProdIndexTest() {
     // You can do clean-up work that doesn't throw exceptions here.
   }
 
@@ -53,19 +54,19 @@ class ProdInfoTest : public ::testing::Test {
 };
 
 // Tests default construction
-TEST_F(ProdInfoTest, DefaultConstruction) {
+TEST_F(ProdIndexTest, DefaultConstruction) {
     hycast::ProdIndex index;
     EXPECT_EQ(0, (uint32_t)index);
 }
 
 // Tests construction
-TEST_F(ProdInfoTest, Construction) {
+TEST_F(ProdIndexTest, Construction) {
     hycast::ProdIndex index(1);
     EXPECT_EQ(1, (uint32_t)index);
 }
 
 // Tests comparison
-TEST_F(ProdInfoTest, Comparison) {
+TEST_F(ProdIndexTest, Comparison) {
     hycast::ProdIndex index1(1);
     EXPECT_TRUE(index1 == index1);
     hycast::ProdIndex index2(2);
@@ -80,30 +81,34 @@ TEST_F(ProdInfoTest, Comparison) {
 }
 
 // Tests increment
-TEST_F(ProdInfoTest, Increment) {
+TEST_F(ProdIndexTest, Increment) {
     hycast::ProdIndex index(0);
     EXPECT_EQ(1, ++index);
 }
 
 // Tests decrement
-TEST_F(ProdInfoTest, Decrement) {
+TEST_F(ProdIndexTest, Decrement) {
     hycast::ProdIndex index(1);
     EXPECT_EQ(0, --index);
 }
 
 // Tests getSerialSize()
-TEST_F(ProdInfoTest, GetSerialSize) {
+TEST_F(ProdIndexTest, GetSerialSize) {
     hycast::ProdIndex index(1);
     EXPECT_EQ(4, index.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization
-TEST_F(ProdInfoTest, Serialization) {
+TEST_F(ProdIndexTest, Serialization) {
     hycast::ProdIndex index1(1);
     const size_t nbytes = index1.getSerialSize(0);
     alignas(alignof(size_t)) char bytes[nbytes];
-    index1.serialize(bytes, nbytes, 0);
-    hycast::ProdIndex index2(bytes, nbytes, 0);
+    hycast::MemEncoder encoder(bytes, nbytes);
+    index1.serialize(encoder, 0);
+    encoder.flush();
+    hycast::MemDecoder decoder(bytes, nbytes);
+    decoder.fill(0);
+    auto index2 = hycast::ProdIndex::deserialize(decoder, 0);
     EXPECT_TRUE(index1 == index2);
 }
 

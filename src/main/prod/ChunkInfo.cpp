@@ -32,7 +32,7 @@ bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
 
 void ChunkInfo::serialize(
         Encoder&       encoder,
-        const unsigned version)
+        const unsigned version) const
 {
     // Keep consonant with ChunkInfo(Decoder, unsigned)
     encoder.encode(prodIndex);

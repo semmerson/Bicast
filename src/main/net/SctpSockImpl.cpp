@@ -39,11 +39,6 @@ void SctpSockImpl::checkIoStatus(
                 std::string(funcName) + " failure: sock=" + std::to_string(sd)
                 + ", expected=" + std::to_string(expected) + ", errno=" +
                 std::to_string(errno));
-    if (expected != 0 && expected != (size_t)actual)
-        throw std::system_error(EIO, std::system_category(),
-                std::string(funcName) + " failure: sock=" + std::to_string(sd)
-                + ", expected=" + std::to_string(expected) + ", actual=" +
-                std::to_string(actual));
 }
 
 void SctpSockImpl::getNextMsgInfo()

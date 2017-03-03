@@ -190,6 +190,7 @@ public:
     /**
      * Constructs.
      * @param[in] remoteAddr  Internet address of the remote endpoint
+     * @throws std::system_error  `socket()` failure
      */
     explicit OutUdpSock(const InetSockAddr& remoteAddr);
 

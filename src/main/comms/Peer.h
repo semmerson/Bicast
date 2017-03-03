@@ -103,7 +103,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void sendNotice(const ProdInfo& prodInfo);
 
     /**
      * Sends information about a chunk-of-data to the remote peer.
@@ -112,7 +112,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkInfo& chunkInfo);
 
     /**
      * Sends a product-index to the remote peer.
@@ -121,7 +121,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ProdIndex& prodIndex) const;
+    void sendRequest(const ProdIndex& prodIndex);
 
     /**
      * Sends a chunk specification to the remote peer.
@@ -130,7 +130,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ChunkInfo& info) const;
+    void sendRequest(const ChunkInfo& info);
 
     /**
      * Sends a chunk-of-data to the remote peer.
@@ -139,7 +139,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendData(const ActualChunk& chunk) const;
+    void sendData(ActualChunk& chunk);
 
     /**
      * Returns the number of streams.

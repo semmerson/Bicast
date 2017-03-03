@@ -71,8 +71,12 @@ TEST_F(ChunkInfoTest, Serialization) {
     hycast::ChunkInfo info1(1, 2);
     const size_t nbytes = info1.getSerialSize(0);
     alignas(alignof(max_align_t)) char bytes[nbytes];
-    info1.serialize(bytes, nbytes, 0);
-    hycast::ChunkInfo info2(bytes, nbytes, 0);
+    hycast::MemEncoder encoder(bytes, nbytes);
+    info1.serialize(encoder, 0);
+    encoder.flush();
+    hycast::MemDecoder decoder(bytes, nbytes);
+    decoder.fill(0);
+    auto info2 = hycast::ChunkInfo::deserialize(decoder, 0);
     EXPECT_TRUE(info1 == info2);
 }
 

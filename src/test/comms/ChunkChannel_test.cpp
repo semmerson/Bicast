@@ -1,7 +1,7 @@
 /**
- * This file tests the class `ChunkChannel`.
+ * This file tests the data-chunk transmission of class `Channel`.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/ChunkChannel.h>
+#include <Channel.h>
 #include "Chunk.h"
 #include "ClntSctpSock.h"
 #include "InetSockAddr.h"
@@ -42,14 +42,14 @@ void runClient()
 {
     hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
-    hycast::ChunkChannel chunkChannel(sock, 0, 0);
+    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
     hycast::ChunkInfo chunkInfo(4, 5);
     uint8_t data1[10000] = {};
     (void)memset(data1, 0xbd, sizeof(data1));
     hycast::ActualChunk actualChunk(chunkInfo, data1, sizeof(data1));
     chunkChannel.send(actualChunk);
 
-    ASSERT_EQ(0, chunkChannel.getStreamId());
+    ASSERT_EQ(0, sock.getStreamId());
     hycast::LatentChunk latentChunk = chunkChannel.recv();
     ASSERT_EQ(sizeof(data1), latentChunk.getSize());
     uint8_t data2[sizeof(data1)];
@@ -115,7 +115,7 @@ protected:
 
 // Tests default construction
 TEST_F(ChunkChannelTest, DefaultConstruction) {
-    hycast::ChunkChannel chunkChannel();
+    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel();
 }
 
 // Tests end-to-end Chunk transmission
