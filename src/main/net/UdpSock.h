@@ -41,6 +41,8 @@ protected:
     UdpSock(Impl* const pImpl);
 
 public:
+    static const size_t maxPayload = 65507;
+
     /**
      * Destroys.
      */
