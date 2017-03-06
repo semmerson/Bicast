@@ -20,10 +20,11 @@
 
 namespace hycast {
 
-class ProdFactoryImpl; // Forward declaration
-
 class ProdFactory final {
-    std::shared_ptr<ProdFactoryImpl> pImpl; // "pImpl" idiom
+    class Impl; // Forward declaration
+
+    std::shared_ptr<Impl> pImpl; // "pImpl" idiom
+
 public:
     enum class AddStatus {
         NO_SUCH_PRODUCT,

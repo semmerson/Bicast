@@ -17,15 +17,16 @@
 
 namespace hycast {
 
-class ProdFactoryImpl
+class ProdFactory::Impl
 {
     std::unordered_map<ProdIndex_t, Product> prods;
     std::mutex                               mutex;
+
 public:
     /**
      * Constructs from nothing.
      */
-    ProdFactoryImpl() =default;
+    Impl() =default;
 
     /**
      * Adds information on a product.
@@ -83,7 +84,7 @@ public:
 };
 
 ProdFactory::ProdFactory()
-    : pImpl{new ProdFactoryImpl()}
+    : pImpl{new Impl()}
 {}
 
 bool hycast::ProdFactory::add(const ProdInfo& prodInfo)

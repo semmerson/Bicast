@@ -24,12 +24,11 @@
 
 namespace hycast {
 
-class ActualChunkImpl; // Forward declaration of implementation
-class LatentChunkImpl; // Forward declaration of implementation
-
 class LatentChunk final
 {
-    std::shared_ptr<LatentChunkImpl> pImpl;
+    class Impl; // Forward declaration of implementation
+
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
@@ -102,7 +101,9 @@ public:
 
 class ActualChunk final
 {
-    std::shared_ptr<ActualChunkImpl> pImpl;
+    class Impl; // Forward declaration of implementation
+
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**

@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class LatentChunkImpl final
+class LatentChunk::Impl final
 {
     ChunkInfo    info;
     Decoder*     decoder;
@@ -31,7 +31,7 @@ public:
     /**
      * Constructs from nothing.
      */
-    LatentChunkImpl()
+    Impl()
         : info(),
           decoder(nullptr),
           size(0),
@@ -44,7 +44,7 @@ public:
      *                      instance
      * @param[in] version   Protocol version
      */
-    LatentChunkImpl(
+    Impl(
             Decoder&       decoder,
             const unsigned version)
         // Keep consistent with ActualChunkImpl::serialize()
@@ -130,7 +130,7 @@ public:
     }
 };
 
-class ActualChunkImpl final
+class ActualChunk::Impl final
 {
     ChunkInfo   info;
     const void* data;
@@ -139,7 +139,7 @@ public:
     /**
      * Constructs from nothing.
      */
-    ActualChunkImpl()
+    Impl()
         : info(),
           data(nullptr),
           size(0)
@@ -151,7 +151,7 @@ public:
      * @param[in] data  Chunk data
      * @param[in] size  Amount of data in bytes
      */
-    ActualChunkImpl(
+    Impl(
             const ChunkInfo& info,
             const void*      data,
             const ChunkSize  size)
@@ -232,7 +232,7 @@ public:
 };
 
 ActualChunk::ActualChunk()
-    : pImpl(new ActualChunkImpl())
+    : pImpl(new Impl())
 {
 }
 
@@ -240,7 +240,7 @@ ActualChunk::ActualChunk(
         const ChunkInfo& info,
         const void*      data,
         const ChunkSize  size)
-    : pImpl(new ActualChunkImpl(info, data, size))
+    : pImpl(new Impl(info, data, size))
 {}
 
 const ChunkInfo& ActualChunk::getInfo() const noexcept
@@ -276,13 +276,13 @@ void ActualChunk::serialize(
 }
 
 LatentChunk::LatentChunk()
-    : pImpl(new LatentChunkImpl())
+    : pImpl(new Impl())
 {}
 
 LatentChunk::LatentChunk(
         Decoder&       decoder,
         const unsigned version)
-    : pImpl(new LatentChunkImpl(decoder, version))
+    : pImpl(new Impl(decoder, version))
 {}
 
 LatentChunk LatentChunk::deserialize(
