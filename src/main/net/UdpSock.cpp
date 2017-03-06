@@ -305,11 +305,6 @@ class OutUdpSock::Impl final : public UdpSock::Impl
 protected:
     InetSockAddr remoteSockAddr;
 
-    void connect()
-    {
-        remoteSockAddr.connect(sd);
-    }
-
 public:
     /**
      * Constructs from Internet address of remote endpoint.
@@ -324,8 +319,11 @@ public:
         sizeField.iov_base = &size;
         sizeField.iov_len = sizeof(size);
         remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
-        connect(); // Sets address of remote endpoint for `::send()` function
-                   // (but not `::sendmsg()`)
+        /*
+         * Sets address of remote endpoint for function `::send()` (but not
+         * `::sendmsg()`)
+         */
+        remoteSockAddr.connect(sd);
     }
 
     /**
