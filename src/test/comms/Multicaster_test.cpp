@@ -22,15 +22,10 @@ namespace {
 // The fixture for testing class Multicaster.
 class MulticasterTest : public ::testing::Test {
 protected:
-    class MsgRcvr : public hycast::MsgRcvr
+    class MsgRcvr : public hycast::McastMsgRcvr
     {
         void recvNotice(const hycast::ProdInfo& info) {};
-        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
-        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
-        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
-        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
         void recvData(hycast::LatentChunk chunk) {}
-        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
     };
 
     // You can remove any or all of the following functions if its body

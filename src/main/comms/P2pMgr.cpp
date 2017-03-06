@@ -34,7 +34,7 @@ namespace hycast {
 class P2pMgrImpl final : public Notifier
 {
     InetSockAddr            serverSockAddr; /// Internet address of peer-server
-    MsgRcvr&                msgRcvr;        /// Object to receive incoming messages
+    PeerMsgRcvr&            msgRcvr;        /// Object to receive incoming messages
     PeerSource*             peerSource;     /// Source of potential peers
     PeerSet                 peerSet;        /// Set of active peers
     Completer<void>         completer;      /// Asynchronous task completion service
@@ -112,7 +112,7 @@ public:
             unsigned        peerCount,
             PeerSource*     peerSource,
             unsigned        stasisDuration,
-            MsgRcvr&        msgRcvr)
+            PeerMsgRcvr&    msgRcvr)
         : serverSockAddr{serverSockAddr}
         , msgRcvr(msgRcvr)
         , peerSource{peerSource}
@@ -173,7 +173,7 @@ hycast::P2pMgr::P2pMgr(
         unsigned        peerCount,
         PeerSource* potentialPeers,
         unsigned        stasisDuration,
-        MsgRcvr&        msgRcvr)
+        PeerMsgRcvr&    msgRcvr)
     : pImpl{new P2pMgrImpl(serverSockAddr, peerCount, potentialPeers,
             stasisDuration, msgRcvr)}
 {}

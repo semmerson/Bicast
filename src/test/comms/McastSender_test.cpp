@@ -11,6 +11,7 @@
 
 #include "McastSender.h"
 
+#include <cstring>
 #include <gtest/gtest.h>
 
 namespace {
@@ -49,6 +50,30 @@ protected:
 TEST_F(McastSenderTest, Construction) {
     hycast::InetSockAddr mcastAddr("localhost", 38800);
     hycast::McastSender(mcastAddr, 0);
+}
+
+// Tests sending a data-product
+TEST_F(McastSenderTest, SendDataProduct) {
+    hycast::InetSockAddr    mcastAddr("234.128.117.0", 38800);
+    hycast::McastSender     sender(mcastAddr, 0);
+    const std::string       prodName("product");
+    const hycast::ProdIndex prodIndex(0);
+    const hycast::ProdSize  prodSize{38000};
+    const hycast::ChunkSize chunkSize{1000};
+    hycast::ProdInfo        prodInfo(prodName, prodIndex, prodSize, chunkSize);
+    hycast::Product         prod(prodInfo);
+    hycast::ChunkIndex      chunkIndex = 0;
+    for (size_t remaining = prodSize; remaining > 0; ++chunkIndex) {
+        const size_t        dataSize =
+                remaining < chunkSize ? remaining : chunkSize;
+        char                data[dataSize];
+        ::memset(data, 0xbd, dataSize);
+        hycast::ChunkInfo   chunkInfo(prodIndex, chunkIndex);
+        hycast::ActualChunk chunk(chunkInfo, data, dataSize);
+        prod.add(chunk);
+        remaining -= dataSize;
+    }
+    sender.send(prod);
 }
 
 }  // namespace

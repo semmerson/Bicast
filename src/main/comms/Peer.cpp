@@ -12,8 +12,8 @@
 #include "Channel.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
-#include "MsgRcvr.h"
 #include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
@@ -43,19 +43,19 @@ class PeerImpl final {
     Channel<ProdIndex>                prodReqChan;
     Channel<ChunkInfo>                chunkReqChan;
     Channel<ActualChunk,LatentChunk>  chunkChan;
-    MsgRcvr&                          msgRcvr;
+    PeerMsgRcvr&                      msgRcvr;
     SctpSock                          sock;
     Peer*                             peer;
 
-    class : public MsgRcvr
+    class : public PeerMsgRcvr
     {
         void recvNotice(const ProdInfo& info) {}
-        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
-        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
-        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
-        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+        void recvNotice(const ProdInfo& info, Peer& peer) {}
+        void recvNotice(const ChunkInfo& info, Peer& peer) {}
+        void recvRequest(const ProdIndex& index, Peer& peer) {}
+        void recvRequest(const ChunkInfo& info, Peer& peer) {}
         void recvData(LatentChunk chunk) {}
-        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
+        void recvData(LatentChunk chunk, Peer& peer) {}
     }                      defaultMsgRcvr;
 
     /**
@@ -106,7 +106,7 @@ public:
      */
     PeerImpl(
             Peer*          peer,
-            MsgRcvr&       msgRcvr,
+            PeerMsgRcvr&   msgRcvr,
             SctpSock&      sock)
         : version(0),
           versionChan(sock, VERSION_STREAM_ID, version),
@@ -305,8 +305,8 @@ Peer::Peer()
 {}
 
 Peer::Peer(
-        MsgRcvr& msgRcvr,
-        SctpSock&  sock)
+        PeerMsgRcvr& msgRcvr,
+        SctpSock&    sock)
     : pImpl(new PeerImpl(this, msgRcvr, sock))
 {}
 

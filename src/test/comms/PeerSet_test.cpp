@@ -55,7 +55,7 @@ protected:
     /**
      * Thread-safe peer-manager that discards everything.
      */
-    class ClientMsgRcvr final : public hycast::MsgRcvr {
+    class ClientMsgRcvr final : public hycast::PeerMsgRcvr {
         hycast::ProdInfo prodInfo;
         hycast::ChunkInfo chunkInfo;
     public:
@@ -90,7 +90,7 @@ protected:
          * Thread-safe peer-manager that echos everything back to the remote
          * peer.
          */
-        class ServerMsgRcvr final : public hycast::MsgRcvr {
+        class ServerMsgRcvr final : public hycast::PeerMsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info) {}
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {

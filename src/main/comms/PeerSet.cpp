@@ -523,7 +523,7 @@ public:
      */
     PeerSet::InsertStatus tryInsert(
             const InetSockAddr& candidate,
-            MsgRcvr&            msgRcvr,
+            PeerMsgRcvr&        msgRcvr,
             Peer*               replaced)
     {
         {
@@ -599,7 +599,7 @@ PeerSet::InsertStatus PeerSet::tryInsert(
 
 PeerSet::InsertStatus PeerSet::tryInsert(
         const InetSockAddr& candidate,
-        MsgRcvr&            msgRcvr,
+        PeerMsgRcvr&        msgRcvr,
         Peer*               replaced)
 {
     return pImpl->tryInsert(candidate, msgRcvr, replaced);

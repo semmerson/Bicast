@@ -13,7 +13,7 @@
 #ifndef MAIN_COMMS_MULTICASTER_H_
 #define MAIN_COMMS_MULTICASTER_H_
 
-#include "MsgRcvr.h"
+#include "McastMsgRcvr.h"
 #include "UdpSock.h"
 
 #include <memory>
@@ -38,7 +38,7 @@ public:
     Multicaster(
             McastUdpSock&  mcastSock,
             const unsigned version,
-            MsgRcvr*       msgRcvr);
+            McastMsgRcvr*  msgRcvr);
 
     /**
      * Runs a receiver that reads multicast objects and sends them to the

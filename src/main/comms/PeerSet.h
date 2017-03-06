@@ -79,7 +79,7 @@ public:
      */
     InsertStatus tryInsert(
             const InetSockAddr& candidate,
-            MsgRcvr&            msgRcvr,
+            PeerMsgRcvr&        msgRcvr,
             Peer*               replaced);
 
     /**

@@ -23,12 +23,13 @@
 
 namespace hycast {
 
-class PeerImpl; // Forward declaration
-class MsgRcvr; // Forward declaration
+class PeerImpl;    // Forward declaration
+class PeerMsgRcvr; // Eliminates mutual dependency with `PeerMsgRcvr.h`
 
 class Peer final : public Notifier
 {
     std::shared_ptr<PeerImpl> pImpl; // `pImpl` idiom
+
 public:
     /**
      * Constructs from nothing. Any attempt to use the resulting instance will
@@ -43,8 +44,8 @@ public:
      * @param[in,out] sock     Socket
      * @see runReceiver()
      */
-    Peer(MsgRcvr&   msgRcvr,
-         SctpSock&  sock);
+    Peer(PeerMsgRcvr& msgRcvr,
+         SctpSock&    sock);
 
     /**
      * Returns the Internet socket address of the remote peer.

@@ -39,7 +39,7 @@ public:
      */
     Impl(   McastUdpSock&  mcastSock,
             const unsigned version,
-            MsgRcvr*       msgRcvr)
+            McastMsgRcvr*  msgRcvr)
         : mcastSock{mcastSock}
         , version{version}
         , msgRcvr{msgRcvr}
@@ -118,7 +118,7 @@ public:
 Multicaster::Multicaster(
         McastUdpSock&  mcastSock,
         const unsigned version,
-        MsgRcvr*       msgRcvr)
+        McastMsgRcvr*  msgRcvr)
     : pImpl{new Multicaster::Impl(mcastSock, version, msgRcvr)}
 {}
 

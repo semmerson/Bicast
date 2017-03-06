@@ -27,7 +27,7 @@ namespace {
 // The fixture for testing class P2pMgr.
 class P2pMgrTest : public ::testing::Test {
 protected:
-    class MsgRcvr : public hycast::MsgRcvr {
+    class MsgRcvr : public hycast::PeerMsgRcvr {
         hycast::ProdInfo  prodInfo;
         hycast::ChunkInfo chunkInfo;
     public:

@@ -48,7 +48,7 @@ public:
             unsigned        peerCount,
             PeerSource*     peerSource,
             unsigned        stasisDuration,
-            MsgRcvr&        msgRcvr);
+            PeerMsgRcvr&    msgRcvr);
     /**
      * Runs this instance. Starts receiving connection requests from remote
      * peers. Adds peers to the set of active peers. Replaces the worst

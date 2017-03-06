@@ -60,7 +60,7 @@ protected:
         // before the destructor).
     }
 
-    class TestMsgRcvr final : public hycast::MsgRcvr {
+    class TestMsgRcvr final : public hycast::PeerMsgRcvr {
         PeerTest* peerTest;
     public:
         TestMsgRcvr(PeerTest& peerTest)
@@ -123,7 +123,7 @@ protected:
     void runPerfReceiver(hycast::SrvrSctpSock serverSock)
     {
         hycast::SctpSock sock{serverSock.accept()};
-        class PerfMsgRcvr final : public hycast::MsgRcvr {
+        class PerfMsgRcvr final : public hycast::PeerMsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info) {}
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
