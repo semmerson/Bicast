@@ -114,6 +114,20 @@ TEST_F(UdpSockTest, ClientConstruction) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
+    char buf[1];
+    sock.send(buf, sizeof(buf));
+}
+
+// Tests output socket construction to the local host
+TEST_F(UdpSockTest, LocalhostConstruction) {
+    hycast::OutUdpSock sock(localSockAddr);
+    if (std::string("OutUdpSock(addr=localhost:38800, sock=3)") !=
+            sock.to_string()) {
+        std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
+        ADD_FAILURE();
+    }
+    char buf[1000];
+    sock.send(buf, sizeof(buf));
 }
 
 // Tests source-independent multicast socket construction
