@@ -78,7 +78,7 @@ TEST_F(ProdInfoTest, Equals) {
 // Tests getSerialSize()
 TEST_F(ProdInfoTest, GetSerialSize) {
     hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_EQ(20, info1.getSerialSize(0));
+    EXPECT_EQ(16, info1.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization

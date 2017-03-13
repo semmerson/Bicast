@@ -9,8 +9,8 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/MsgRcvr.h>
-#include <comms/Peer.h>
+#include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "ChunkInfo.h"
 #include "ClntSctpSock.h"
 #include "HycastTypes.h"

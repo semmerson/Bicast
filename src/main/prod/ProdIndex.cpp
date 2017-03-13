@@ -17,11 +17,6 @@
 
 namespace hycast {
 
-ProdIndex::ProdIndex(
-        const ProdIndex_t index)
-    : index{index}
-{}
-
 void ProdIndex::serialize(
         Encoder&       encoder,
         const unsigned version) const
@@ -33,7 +28,7 @@ ProdIndex ProdIndex::deserialize(
         Decoder&       decoder,
         const unsigned version)
 {
-    ProdIndex_t netIndex;
+    ProdIndex::type netIndex;
     decoder.decode(netIndex);
     return ProdIndex(netIndex);
 }

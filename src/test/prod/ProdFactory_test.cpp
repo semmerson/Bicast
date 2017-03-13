@@ -48,7 +48,7 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for ProdFactory.
-    const hycast::ProdIndex_t prodIndex{1};
+    const hycast::ProdIndex   prodIndex{1};
     const hycast::ProdSize    prodSize{3};
     const hycast::ChunkSize   chunkSize{2};
     const hycast::ProdInfo    prodInfo{"product", prodIndex, prodSize, chunkSize};

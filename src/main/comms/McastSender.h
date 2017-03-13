@@ -26,6 +26,11 @@ class McastSender final
     std::shared_ptr<Impl> pImpl;
 
 public:
+    typedef uint16_t MsgIdType;
+
+    static const MsgIdType prodInfoId= 0;
+    static const MsgIdType chunkId= 1;
+
     /**
      * Constructs.
      * @param[in] mcastAddr  Socket address of the multicast group

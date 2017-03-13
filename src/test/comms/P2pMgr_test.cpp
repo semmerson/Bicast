@@ -9,10 +9,9 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/MsgRcvr.h>
-#include <comms/MsgRcvrImpl.h>
-#include <comms/P2pMgr.h>
-#include <comms/Peer.h>
+#include "P2pMgr.h"
+#include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "Completer.h"
 #include "logging.h"
 #include "ProdInfo.h"

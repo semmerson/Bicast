@@ -19,7 +19,7 @@ namespace hycast {
 
 class ProdFactory::Impl
 {
-    std::unordered_map<ProdIndex_t, Product> prods;
+    std::unordered_map<ProdIndex, Product> prods;
     std::mutex                               mutex;
 
 public:
@@ -36,7 +36,7 @@ public:
     bool add(const ProdInfo& prodInfo)
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
-        ProdIndex_t prodIndex{prodInfo.getIndex()};
+        ProdIndex prodIndex{prodInfo.getIndex()};
         decltype(prods)::iterator iter = prods.find(prodIndex);
         if (iter != prods.end())
             return false;
@@ -59,7 +59,7 @@ public:
             Product*           prod)
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
-        ProdIndex_t prodIndex{chunk.getProdIndex()};
+        ProdIndex prodIndex{chunk.getProdIndex()};
         decltype(prods)::iterator iter = prods.find(prodIndex);
         if (iter == prods.end())
             return ProdFactory::AddStatus::NO_SUCH_PRODUCT;
@@ -76,7 +76,7 @@ public:
      * @param[in] prodIndex  Index of product to be deleted
      * @retval `true` iff the product existed
      */
-    bool erase(const ProdIndex_t prodIndex)
+    bool erase(const ProdIndex prodIndex)
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
         return prods.erase(prodIndex) == 1;
@@ -99,7 +99,7 @@ ProdFactory::AddStatus ProdFactory::add(
     return pImpl->add(chunk, prod);
 }
 
-bool ProdFactory::erase(const ProdIndex_t prodIndex)
+bool ProdFactory::erase(const ProdIndex prodIndex)
 {
     return pImpl->erase(prodIndex);
 }

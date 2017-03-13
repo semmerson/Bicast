@@ -22,22 +22,65 @@
 namespace hycast {
 
 class ProdIndex final : public Serializable<ProdIndex> {
-    ProdIndex_t index;
-
 public:
-    /**
-     * Constructs from a numeric product-index. The constuctor isn't explicit to
-     * allow automatic conversions between ProdIndex and ProdIndex_t.
-     */
-    ProdIndex(ProdIndex_t index = 0);
+    typedef uint32_t  type;
+    static const type prodIndexMax = UINT32_MAX;
 
-    operator ProdIndex_t() const {
+    /**
+     * Constructs. NB: Not explicit.
+     * @param[in] index  Product index
+     */
+    ProdIndex(uint32_t index = 0) noexcept
+        : index{index}
+    {}
+
+    /**
+     * Copy constructs.
+     * @param[in] that  Other instance
+     */
+    ProdIndex(const ProdIndex& that) noexcept
+        : index{that.index}
+    {}
+
+    /**
+     * Move constructs.
+     * @param[in] that  Other instance
+     */
+    ProdIndex(const ProdIndex&& that) noexcept
+        : index{that.index}
+    {}
+
+    /**
+     * Copy assigns.
+     * @param[in] that  Other instance
+     */
+    ProdIndex& operator =(const ProdIndex& rhs) noexcept
+    {
+        index = rhs.index;
+        return *this;
+    }
+
+    /**
+     * Move assigns.
+     * @param[in] that  Other instance
+     */
+    ProdIndex& operator =(const ProdIndex&& rhs) noexcept
+    {
+        index = rhs.index;
+        return *this;
+    }
+
+    /**
+     * Converts.
+     */
+    operator uint32_t() const noexcept
+    {
         return index;
     }
 
     /**
      * Returns the hash code of this instance.
-     * @return This instance's hash code
+     * @return This instance's hash cod
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
@@ -78,8 +121,18 @@ public:
      * @param[in] version  Protocol version
      * @return the number of bytes in the serial representation
      */
+    static size_t getStaticSerialSize(const unsigned version) noexcept {
+        return Codec::getSerialSize(sizeof(type));
+    }
+
+    /**
+     * Returns the number of bytes in the serial representation of this
+     * instance.
+     * @param[in] version  Protocol version
+     * @return the number of bytes in the serial representation
+     */
     size_t getSerialSize(unsigned version) const noexcept {
-        return sizeof(ProdIndex_t);
+        return getStaticSerialSize(version);
     }
 
     void serialize(
@@ -89,6 +142,9 @@ public:
     static ProdIndex deserialize(
             Decoder&       decoder,
             const unsigned version);
+
+private:
+    type index;
 };
 
 } // namespace

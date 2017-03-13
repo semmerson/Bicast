@@ -61,12 +61,12 @@ public:
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
-    ProdIndex_t getProdIndex() const noexcept;
+    ProdIndex getProdIndex() const noexcept;
     /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      */
-    ProdIndex_t getChunkIndex() const noexcept;
+    ChunkIndex getChunkIndex() const noexcept;
     /**
      * Returns the size of the chunk of data.
      * @return the size of the chunk of data
@@ -134,13 +134,13 @@ public:
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
-    ProdIndex_t getProdIndex() const noexcept;
+    ProdIndex getProdIndex() const noexcept;
 
     /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      */
-    ProdIndex_t getChunkIndex() const noexcept;
+    ChunkIndex getChunkIndex() const noexcept;
 
     /**
      * Returns the size of the chunk of data.

@@ -47,7 +47,7 @@ class McastSender::Impl final
      */
     void send(const ProdInfo prodInfo)
     {
-        encoder.encode(static_cast<uint16_t>(Type::prodInfo));
+        encoder.encode(prodInfoId);
         prodInfo.serialize(encoder, version);
         encoder.flush();
     }
@@ -62,24 +62,18 @@ class McastSender::Impl final
             const char*     data)
     {
         const ProdIndex prodIndex = prodInfo.getIndex();
-        ProdSize        remaining = prodInfo.getSize();
-        const ChunkSize chunkSize = prodInfo.getChunkSize();
-        for (ChunkIndex chunkIndex = 0; remaining > 0; ++chunkIndex) {
+        const ChunkIndex numChunks = prodInfo.getNumChunks();
+        for (ChunkIndex chunkIndex = 0; chunkIndex < numChunks; ++chunkIndex) {
+            encoder.encode(chunkId);
             ChunkInfo(prodIndex, chunkIndex).serialize(encoder, version);
-            ChunkSize dataSize = remaining < chunkSize ? remaining : chunkSize;
-            encoder.encode(data, dataSize);
+            ChunkSize chunkSize = prodInfo.getChunkSize(chunkIndex);
+            encoder.encode(data, chunkSize);
             encoder.flush();
-            data += dataSize;
-            remaining -= dataSize;
+            data += chunkSize;
         }
     }
 
 public:
-    typedef enum {
-        prodInfo,
-        chunk
-    } Type;
-
     /**
      * Constructs.
      * @param[in] mcastAddr  Socket address of the multicast group
@@ -100,6 +94,7 @@ public:
      */
     void send(Product& prod)
     {
+        // Keep consistent with McastReceiver::operator()()
         const ProdInfo prodInfo = prod.getInfo();
         send(prodInfo);
         send(prodInfo, prod.getData());

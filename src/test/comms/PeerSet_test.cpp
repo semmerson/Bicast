@@ -1,7 +1,7 @@
 /**
  * This file tests class `PeerSet`.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -9,8 +9,8 @@
  * @author: Steven R. Emmerson
  */
 
-#include <comms/MsgRcvr.h>
-#include <comms/PeerSet.h>
+#include "PeerMsgRcvr.h"
+#include "PeerSet.h"
 #include "ClntSctpSock.h"
 #include "SctpSock.h"
 #include "HycastTypes.h"

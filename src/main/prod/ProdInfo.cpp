@@ -29,7 +29,7 @@ namespace hycast {
 class ProdInfoImpl final
 {
     std::string name;
-    ProdIndex_t index;
+    ProdIndex   index;
     ProdSize    size;
     ChunkSize   chunkSize;
 
@@ -47,10 +47,10 @@ public:
             const ProdIndex    index,
             const ProdSize     size,
             const ChunkSize    chunkSize)
-        : name(name),
-          index(index),
-          size(size),
-          chunkSize(chunkSize)
+        : name(name)
+        , index(index)
+        , size(size)
+        , chunkSize(chunkSize)
     {
         if (name.size() > UINT16_MAX)
             throw std::invalid_argument("Name too long: " +
@@ -73,7 +73,7 @@ public:
           chunkSize(0)
     {
         // Keep consonant with ProdInfo::serialize()
-        decoder.decode(index);
+        index = ProdIndex::deserialize(decoder, version);
         decoder.decode(size);
         decoder.decode(chunkSize);
         decoder.decode(name);
@@ -202,7 +202,7 @@ public:
     size_t getSerialSize(unsigned version) const noexcept
     {
         // Keep consonant with serialize()
-        return  Codec::getSerialSize(&index) +
+        return  index.getSerialSize(version) +
                 Codec::getSerialSize(&size) +
                 Codec::getSerialSize(&chunkSize) +
                 Codec::getSerialSize(name);

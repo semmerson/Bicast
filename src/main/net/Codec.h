@@ -26,23 +26,18 @@ namespace hycast {
  */
 class Codec
 {
-    static const unsigned alignment = 4;
-
 protected:
+    typedef uint16_t    StrLen;
+    static const StrLen maxStrLen = UINT16_MAX;
+
     const size_t serialBufSize;  /// Serial buffer size in bytes
     char* const  serialBuf;      /// Serial buffer
-    char*        nextSerial;     /// Next place in serial buffer for writing/reading
-    size_t       serialBufBytes; /// Number of bytes written to or readable from buffer
+    char*        nextSerial;     /// Next byte to access
+    size_t       serialBufBytes; /// Number of bytes written to or remaining to
+                                 /// be read from buffer
     struct iovec dma;            /// Vector for byte-array direct-memory-access
 
-    /**
-     * Returns a value rounded-up to the nearest multiple of the alignment.
-     * @param[in] len  Raw value in bytes
-     * @return         `len` rounded-up to a multiple of the alignment
-     */
-    static size_t roundup(const size_t len);
-
-    void clear() noexcept;
+    void reset() noexcept;
 
 public:
     /**
@@ -151,6 +146,11 @@ protected:
             const int           iovcnt,
             const bool          peek = false) =0;
 
+    /**
+     * Causes the underlying I/O object to discard the current message.
+     */
+    virtual void discard() =0;
+
 public:
     /**
      * Constructs.
@@ -209,9 +209,9 @@ public:
     size_t fill(size_t nbytes = 0);
 
     /**
-     * Discards the current message.
+     * Clears the current message.
      */
-    virtual void discard() =0;
+    void clear();
 
     /**
      * Indicates if this instance has a record.
@@ -240,6 +240,9 @@ class MemDecoder final : public Decoder
     const char*  memBuf;    // Byte buffer
     size_t       memRead;  // Number of bytes read from buffer
 
+    void discard()
+    {}
+
 public:
     MemDecoder(
             const char* const  buf,
@@ -253,8 +256,6 @@ public:
             const struct iovec* iov,
             const int           iovcnt,
             const bool          peek = false);
-
-    void discard();
 };
 
 } // namespace

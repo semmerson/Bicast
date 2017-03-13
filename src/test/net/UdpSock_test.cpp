@@ -38,7 +38,7 @@ void runReceiver(hycast::McastUdpSock sock)
 void runSender(hycast::OutUdpSock sock)
 {
     try {
-#if 1
+#if 0
         for (size_t size = 1; UINT16_MAX-256; size += 1000) {
             uint8_t buf[size];
             ::memset(buf, size%UINT8_MAX, size);

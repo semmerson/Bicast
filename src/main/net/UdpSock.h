@@ -41,7 +41,7 @@ protected:
     UdpSock(Impl* const pImpl);
 
 public:
-    static const size_t maxPayload = 65507;
+    static const size_t maxPayload = 65507 - 2; // 2-byte size field
 
     /**
      * Destroys.
@@ -63,112 +63,6 @@ public:
      * @threadsafety    Safe
      */
     virtual std::string to_string() const =0;
-};
-
-/**
- * Input UDP socket. The local endpoint is bound to a specific address.
- */
-class InUdpSock : public UdpSock
-{
-protected:
-    class Impl;
-
-    /**
-     * Constructs from a pointer to an implementation.
-     * @param[in] pImpl  Pointer to implementation.
-     */
-    InUdpSock(Impl* const pImpl);
-
-private:
-    Impl* getPimpl() const noexcept;
-
-public:
-    /**
-     * Default constructs.
-     */
-    InUdpSock() =default;
-
-    /**
-     * Constructs an instance that listens to a given address.
-     * @param[in] localAddr  Local Internet address to listen to
-     * @param[in] sharePort  Whether or not the local port number should be
-     *                       shared amongst multiple sockets
-     */
-    explicit InUdpSock(const InetSockAddr& localAddr, bool sharePort = false);
-
-    /**
-     * Destroys.
-     */
-    virtual ~InUdpSock();
-
-    /**
-     * Returns the local socket address.
-     * @return The local socket address
-     * @exceptionsafety  No throw
-     * @threadsafety     Safe
-     */
-    const InetSockAddr getLocalAddr() const noexcept;
-
-    /**
-     * Returns a string representation of this instance's socket.
-     * @return String representation of this instance's socket
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    virtual std::string to_string() const;
-
-    /**
-     * Scatter-receives a record. Waits for the record if necessary. If the
-     * requested number of bytes to be read is less than the record size, then
-     * the excess bytes are discarded.
-     * @param[in] iovec   Scatter-read vector
-     * @param[in] iovcnt  Number of elements in scatter-read vector
-     * @param[in] peek    Whether or not to peek at the record. The data is
-     *                    treated as unread and the next recv() or similar
-     *                    function shall still return this data.
-     * @retval    0       Stream is closed
-     * @return            Actual number of bytes read into the buffers.
-     */
-    virtual size_t recv(
-            struct iovec* iovec,
-            const int     iovcnt,
-            const bool    peek = false);
-
-    /**
-     * Receives a record. Waits for the record if necessary. If the requested
-     * number of bytes to be read is less than the record size, then the excess
-     * bytes are discarded.
-     * @param[in] buf     Receive buffer
-     * @param[in] len     Size of receive buffer in bytes
-     * @param[in] peek    Whether or not to peek at the record. The data is
-     *                    treated as unread and the next recv() or similar
-     *                    function shall still return this data.
-     * @retval    0       Socket is closed
-     * @return            Actual number of bytes read into the buffer.
-     * @throws std::system_error  I/O error reading from socket */
-    virtual size_t recv(
-           void* const  buf,
-           const size_t len,
-           const bool   peek = false);
-
-    /**
-     * Returns the size, in bytes, of the current record. Waits for a record if
-     * necessary.
-     * @retval 0  Stream is closed
-     * @return Size, in bytes, of the current record
-     */
-    virtual size_t getSize();
-
-    /**
-     * Discards the current record.
-     */
-    virtual void discard();
-
-    /**
-     * Indicates if there's a current record.
-     */
-    virtual bool hasRecord();
 };
 
 /**
@@ -258,6 +152,112 @@ public:
     virtual void send(
             const void* const buf,
             const size_t      len);
+};
+
+/**
+ * Input UDP socket. The local endpoint is bound to a specific address.
+ */
+class InUdpSock : public UdpSock
+{
+protected:
+    class Impl;
+
+    /**
+     * Constructs from a pointer to an implementation.
+     * @param[in] pImpl  Pointer to implementation.
+     */
+    InUdpSock(Impl* const pImpl);
+
+private:
+    Impl* getPimpl() const noexcept;
+
+public:
+    /**
+     * Default constructs.
+     */
+    InUdpSock() =default;
+
+    /**
+     * Constructs an instance that listens to a given address.
+     * @param[in] localAddr  Local Internet address to listen to
+     * @param[in] sharePort  Whether or not the local port number should be
+     *                       shared amongst multiple sockets
+     */
+    explicit InUdpSock(const InetSockAddr& localAddr, bool sharePort = false);
+
+    /**
+     * Destroys.
+     */
+    virtual ~InUdpSock();
+
+    /**
+     * Returns the local socket address.
+     * @return The local socket address
+     * @exceptionsafety  No throw
+     * @threadsafety     Safe
+     */
+    const InetSockAddr getLocalAddr() const noexcept;
+
+    /**
+     * Returns a string representation of this instance's socket.
+     * @return String representation of this instance's socket
+     * @throws std::bad_alloc if required memory can't be allocated
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    virtual std::string to_string() const;
+
+    /**
+     * Scatter-receives a datagram. Waits for the datagram if necessary. If the
+     * requested number of bytes to be read is less than the datagram size, then
+     * the excess bytes are discarded.
+     * @param[in] iovec   Scatter-read vector
+     * @param[in] iovcnt  Number of elements in scatter-read vector
+     * @param[in] peek    Whether or not to peek at the datagram. The data is
+     *                    treated as unread and the next recv() or similar
+     *                    function shall still return this data.
+     * @retval    0       Stream is closed
+     * @return            Actual number of bytes read into the buffers.
+     */
+    virtual size_t recv(
+            const struct iovec* iovec,
+            const int           iovcnt,
+            const bool          peek = false);
+
+    /**
+     * Receives a datagram. Waits for the datagram if necessary. If the requested
+     * number of bytes to be read is less than the datagram size, then the excess
+     * bytes are discarded.
+     * @param[in] buf     Receive buffer
+     * @param[in] len     Size of receive buffer in bytes
+     * @param[in] peek    Whether or not to peek at the datagram. The data is
+     *                    treated as unread and the next recv() or similar
+     *                    function shall still return this data.
+     * @retval    0       Socket is closed
+     * @return            Actual number of bytes read into the buffer.
+     * @throws std::system_error  I/O error reading from socket */
+    virtual size_t recv(
+           void* const  buf,
+           const size_t len,
+           const bool   peek = false);
+
+    /**
+     * Returns the size, in bytes, of the current datagram. Waits for a datagram if
+     * necessary.
+     * @retval 0  Stream is closed
+     * @return Size, in bytes, of the current datagram
+     */
+    virtual size_t getSize();
+
+    /**
+     * Discards the current datagram.
+     */
+    virtual void discard();
+
+    /**
+     * Indicates if there's a current datagram.
+     */
+    virtual bool hasRecord();
 };
 
 /**

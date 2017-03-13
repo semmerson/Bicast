@@ -22,12 +22,12 @@
 namespace hycast {
 
 class ChunkInfo final : public Serializable<ChunkInfo> {
-    ProdIndex_t prodIndex;
+    ProdIndex   prodIndex;
     ChunkIndex  chunkIndex;
 
 public:
     /**
-     * Constructs from nothing.
+     * Default constructs.
      */
     ChunkInfo()
         : prodIndex(0),
@@ -41,8 +41,8 @@ public:
     ChunkInfo(
             const ProdIndex  prodIndex,
             const ChunkIndex chunkIndex)
-        : prodIndex(prodIndex),
-          chunkIndex(chunkIndex) {}
+        : prodIndex(prodIndex)
+        , chunkIndex(chunkIndex) {}
 
     ChunkInfo(
             Decoder& decoder,
@@ -52,7 +52,7 @@ public:
      * Returns the product index.
      * @return the product index
      */
-    ProdIndex_t getProdIndex() const {return prodIndex;}
+    ProdIndex getProdIndex() const {return prodIndex;}
 
     /**
      * Returns the size of a serialized instance in bytes.
@@ -61,8 +61,8 @@ public:
      */
     static size_t getStaticSerialSize(const unsigned version) noexcept
     {
-        return Codec::getSerialSize(sizeof(decltype(ChunkInfo::prodIndex))) +
-                Codec::getSerialSize(sizeof(decltype(ChunkInfo::chunkIndex)));
+        return ProdIndex::getStaticSerialSize(version) +
+                Codec::getSerialSize(sizeof(chunkIndex));
     }
 
     /**
@@ -98,8 +98,7 @@ public:
      * @threadsafety     Safe
      */
     size_t hash() const noexcept {
-        return std::hash<ChunkIndex>()(chunkIndex) |
-               std::hash<ProdIndex_t>()(prodIndex);
+        return std::hash<ChunkIndex>()(chunkIndex) | prodIndex.hash();
     }
 
     /**

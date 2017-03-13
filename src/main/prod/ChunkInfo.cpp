@@ -21,7 +21,7 @@ ChunkInfo::ChunkInfo(
     : ChunkInfo()
 {
     // Keep consonant with serialize()
-    decoder.decode(prodIndex);
+    prodIndex = ProdIndex::deserialize(decoder, version);
     decoder.decode(chunkIndex);
 }
 

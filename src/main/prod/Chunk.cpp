@@ -69,7 +69,7 @@ public:
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
-    ProdIndex_t getProdIndex() const noexcept
+    ProdIndex getProdIndex() const noexcept
     {
         return info.getProdIndex();
     }
@@ -78,7 +78,7 @@ public:
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      */
-    ProdIndex_t getChunkIndex() const noexcept
+    ChunkIndex getChunkIndex() const noexcept
     {
         return info.getChunkIndex();
     }
@@ -115,7 +115,7 @@ public:
      */
     void discard()
     {
-        decoder->discard();
+        decoder->clear();
     }
 
     /**
@@ -175,7 +175,7 @@ public:
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
-    ProdIndex_t getProdIndex() const noexcept
+    ProdIndex getProdIndex() const noexcept
     {
         return info.getProdIndex();
     }
@@ -248,12 +248,12 @@ const ChunkInfo& ActualChunk::getInfo() const noexcept
     return pImpl->getInfo();
 }
 
-ProdIndex_t ActualChunk::getProdIndex() const noexcept
+ProdIndex ActualChunk::getProdIndex() const noexcept
 {
     return pImpl->getProdIndex();
 }
 
-ProdIndex_t ActualChunk::getChunkIndex() const noexcept
+ChunkIndex ActualChunk::getChunkIndex() const noexcept
 {
     return pImpl->getChunkIndex();
 }
@@ -297,12 +297,12 @@ const ChunkInfo& LatentChunk::getInfo() const noexcept
     return pImpl->getInfo();
 }
 
-ProdIndex_t LatentChunk::getProdIndex() const noexcept
+ProdIndex LatentChunk::getProdIndex() const noexcept
 {
     return pImpl->getProdIndex();
 }
 
-ProdIndex_t LatentChunk::getChunkIndex() const noexcept
+ChunkIndex LatentChunk::getChunkIndex() const noexcept
 {
     return pImpl->getChunkIndex();
 }

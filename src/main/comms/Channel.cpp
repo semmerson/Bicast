@@ -158,7 +158,7 @@ R Channel<S,R>::Impl::recv()
 {
     decoder.fill();
     R obj = R::deserialize(decoder, version);
-    decoder.discard();
+    decoder.clear();
     return obj;
 }
 

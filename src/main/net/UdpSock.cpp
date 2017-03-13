@@ -1,5 +1,5 @@
 /**
- * This file implements handle classes for UDP sockets and UDP sockets.
+ * This file implements UDP sockets.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -77,7 +77,7 @@ public:
  */
 class InUdpSock::Impl : public UdpSock::Impl
 {
-    bool         haveCurrRec; /// Current record exists?
+    bool         haveCurrRec; /// Current datagram exists?
     struct iovec sizeField;   /// Scatter-read element for size field
     uint16_t     size;        /// Size of payload in bytes (excludes size field)
 
@@ -105,7 +105,7 @@ class InUdpSock::Impl : public UdpSock::Impl
     }
 
     /**
-     * @pre `size` is set in network byte order
+     * @pre `size` is set and in network byte order
      */
     void checkReadStatus(const ssize_t nbytes)
     {
@@ -120,13 +120,12 @@ class InUdpSock::Impl : public UdpSock::Impl
             }
         }
         else {
-            size = ntohs(size);
-            if (static_cast<size_t>(nbytes) != sizeField.iov_len + size)
-                throw std::runtime_error(
-                        std::string{"Invalid UDP read: nbytes="} +
-                        std::to_string(nbytes) + ", size=" +
-                        std::to_string(size) + ", sock=" +
+            if (static_cast<size_t>(nbytes) < sizeField.iov_len)
+                throw RuntimeError(__FILE__, __LINE__,
+                        std::string("Couldn't read datagram size-field: "
+                        "nbytes=") +  std::to_string(nbytes) + ", sock=" +
                         std::to_string(sd));
+            size = htons(size);
         }
     }
 
@@ -134,9 +133,15 @@ class InUdpSock::Impl : public UdpSock::Impl
     {
         if (!haveCurrRec) {
             try {
-                ssize_t nbytes = ::recv(sd, sizeField.iov_base, sizeField.iov_len,
-                        MSG_PEEK);
+                ssize_t nbytes = ::recv(sd, sizeField.iov_base,
+                        sizeField.iov_len, MSG_PEEK);
                 checkReadStatus(nbytes);
+                if (static_cast<size_t>(nbytes) < sizeField.iov_len) {
+                    throw RuntimeError(__FILE__, __LINE__,
+                            std::string("Couldn't read UDP size field: "
+                            "nbytes=") +  std::to_string(nbytes) +
+                            ", sock=" + std::to_string(sd));
+                }
                 haveCurrRec = true;
             }
             catch (const std::exception& e) {
@@ -204,10 +209,10 @@ public:
     }
 
     /**
-     * Returns the size, in bytes, of the current record. Waits for the
-     * record if necessary. The record is left in the socket's input buffer.
+     * Returns the size, in bytes, of the current datagram. Waits for the
+     * datagram if necessary. The datagram is left in the socket's input buffer.
      * @retval 0  Socket is closed
-     * @return Size of record in bytes
+     * @return Size of datagram in bytes
      * @throws std::system_error I/O error occurred
      * @exceptionsafety Basic
      */
@@ -218,42 +223,42 @@ public:
     }
 
     /**
-     * Scatter-receives a record. Waits for the record if necessary. If the
-     * requested number of bytes to be read is less than the record size, then
+     * Scatter-receives a datagram. Waits for the datagram if necessary. If the
+     * requested number of bytes to be read is less than the datagram size, then
      * the excess bytes are discarded.
      * @param[in] iovec   Scatter-read vector
      * @param[in] iovcnt  Number of elements in scatter-read vector
-     * @param[in] peek    Whether or not to peek at the record. The data is
+     * @param[in] peek    Whether or not to peek at the datagram. The data is
      *                    treated as unread and the next recv() or similar
      *                    function shall still return this data.
      * @retval    0       Socket is closed
      * @return            Actual number of bytes read into the buffers.
      * @throws std::system_error  I/O error reading from socket */
     size_t recv(
-           struct iovec* iovec,
-           const int     iovcnt,
-           const bool    peek = false)
+           const struct iovec* iovec,
+           const int           iovcnt,
+           const bool          peek = false)
     {
         struct iovec iov[1+iovcnt];
         iov[0] = sizeField;
         for (int i = 0; i < iovcnt; ++i)
             iov[1+i] = iovec[i];
         struct msghdr msghdr = {};
-        msghdr.msg_iov = const_cast<struct iovec*>(iov);
+        msghdr.msg_iov = iov;
         msghdr.msg_iovlen = 1 + iovcnt;
         ssize_t nbytes = ::recvmsg(sd, &msghdr, peek ? MSG_PEEK : 0);
         checkReadStatus(nbytes);
         haveCurrRec = peek;
-        return size;
+        return nbytes - sizeField.iov_len;
     }
 
     /**
-     * Receives a record. Waits for the record if necessary. If the requested
-     * number of bytes to be read is less than the record size, then the excess
+     * Receives a datagram. Waits for the datagram if necessary. If the requested
+     * number of bytes to be read is less than the datagram size, then the excess
      * bytes are discarded.
      * @param[in] buf     Receive buffer
      * @param[in] len     Size of receive buffer in bytes
-     * @param[in] peek    Whether or not to peek at the record. The data is
+     * @param[in] peek    Whether or not to peek at the datagram. The data is
      *                    treated as unread and the next recv() or similar
      *                    function shall still return this data.
      * @retval    0       Socket is closed
@@ -271,8 +276,8 @@ public:
     }
 
     /**
-     * Discards the current record. Does nothing if there is no current
-     * record. Idempotent.
+     * Discards the current datagram. Does nothing if there is no current
+     * datagram. Idempotent.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Thread-compatible but not thread-safe
      */
@@ -285,7 +290,7 @@ public:
     }
 
     /**
-     * Indicates if there's a current record.
+     * Indicates if there's a current datagram.
      */
     bool hasRecord()
     {
@@ -554,9 +559,9 @@ std::string InUdpSock::to_string() const
 }
 
 size_t InUdpSock::recv(
-        struct iovec* iovec,
-        const int     iovcnt,
-        const bool    peek)
+        const struct iovec* iovec,
+        const int           iovcnt,
+        const bool          peek)
 {
     return getPimpl()->recv(iovec, iovcnt, peek);
 }

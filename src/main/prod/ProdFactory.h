@@ -59,7 +59,7 @@ public:
      * @param[in] prodIndex  Index of product to be deleted
      * @retval `true` iff the product existed
      */
-    bool erase(const ProdIndex_t prodIndex);
+    bool erase(const ProdIndex prodIndex);
 };
 
 } // namespace

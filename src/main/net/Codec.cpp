@@ -10,6 +10,8 @@
  * @author: Steven R. Emmerson
  */
 
+#include "config.h"
+
 #include "Codec.h"
 
 #include <climits>
@@ -23,6 +25,7 @@ Codec::Codec(const size_t maxSize)
     : serialBufSize{maxSize}
     , serialBuf{new char[maxSize]}
     , nextSerial{serialBuf}
+    , serialBufBytes{0}
 {
     dma.iov_len = 0;
 }
@@ -32,12 +35,7 @@ Codec::~Codec()
     delete[] serialBuf;
 }
 
-inline size_t Codec::roundup(const size_t len)
-{
-    return ((len + alignment - 1)/alignment) * alignment;
-}
-
-void Codec::clear() noexcept
+void Codec::reset() noexcept
 {
     serialBufBytes = 0;
     nextSerial = serialBuf;
@@ -46,45 +44,43 @@ void Codec::clear() noexcept
 
 size_t Codec::getSerialSize(const size_t size)
 {
-    return roundup(size);
+    return size;
 }
 
 size_t Codec::getSerialSize(const uint16_t* value)
 {
-    return roundup(sizeof(uint16_t));
+    return sizeof(uint16_t);
 }
 
 size_t Codec::getSerialSize(const uint32_t* value)
 {
-    return roundup(sizeof(uint32_t));
+    return sizeof(uint32_t);
 }
 
 size_t Codec::getSerialSize(const std::string& string)
 {
-    return roundup(sizeof(uint32_t)) + roundup(string.size());
+    return sizeof(StrLen) + string.size();
 }
 
-Encoder::Encoder(const size_t maxSize)
+Encoder::Encoder(
+        const size_t maxSize)
     : Codec{maxSize}
-{
-    serialBufBytes = 0;
-}
+{}
 
 Encoder::~Encoder()
 {}
 
-Decoder::Decoder(const size_t maxSize)
+Decoder::Decoder(
+        const size_t maxSize)
     : Codec{maxSize}
-{
-    serialBufBytes = maxSize;
-}
+{}
 
 Decoder::~Decoder()
 {}
 
 void Encoder::encode(uint16_t value)
 {
-    const size_t len = roundup(sizeof(uint16_t));
+    const size_t len = sizeof(uint16_t);
     if (serialBufBytes + len > serialBufSize)
         throw std::runtime_error("Buffer-write overflow");
     *reinterpret_cast<uint16_t*>(nextSerial) = htons(value);
@@ -94,7 +90,7 @@ void Encoder::encode(uint16_t value)
 
 void Encoder::encode(uint32_t value)
 {
-    const size_t len = roundup(sizeof(uint32_t));
+    const size_t len = sizeof(uint32_t);
     if (serialBufBytes + len > serialBufSize)
         throw std::runtime_error("Buffer-write overflow");
     *reinterpret_cast<uint32_t*>(nextSerial) = htonl(value);
@@ -104,7 +100,7 @@ void Encoder::encode(uint32_t value)
 
 void Decoder::decode(uint16_t& value)
 {
-    const size_t len = roundup(sizeof(uint16_t));
+    const size_t len = sizeof(uint16_t);
     if (serialBufBytes < len)
         throw std::runtime_error("Buffer-read overflow");
     value = ntohs(*reinterpret_cast<uint16_t*>(nextSerial));
@@ -114,7 +110,7 @@ void Decoder::decode(uint16_t& value)
 
 void Decoder::decode(uint32_t& value)
 {
-    const size_t len = roundup(sizeof(uint32_t));
+    const size_t len = sizeof(uint32_t);
     if (serialBufBytes < len)
         throw std::runtime_error("Buffer-read overflow");
     value = ntohl(*reinterpret_cast<uint32_t*>(nextSerial));
@@ -125,33 +121,32 @@ void Decoder::decode(uint32_t& value)
 void Encoder::encode(const std::string& string)
 {
     const size_t strlen = string.size();
-    if (strlen > UINT32_MAX)
+    if (strlen > maxStrLen)
         throw std::invalid_argument("String too long: len=" +
                 std::to_string(strlen));
-    encode(static_cast<uint32_t>(strlen));
-    const size_t len = roundup(strlen);
-    if (serialBufBytes + len > serialBufSize)
+    encode(static_cast<StrLen>(strlen));
+    if (serialBufBytes + strlen > serialBufSize)
         throw std::runtime_error("Buffer-write overflow");
     memcpy(nextSerial, string.data(), strlen);
-    serialBufBytes += len;
-    nextSerial += len;
+    serialBufBytes += strlen;
+    nextSerial += strlen;
 }
 
 void Decoder::decode(std::string& string)
 {
-    uint32_t strlen;
+    StrLen strlen;
     decode(strlen);
     if (strlen > serialBufBytes)
         throw std::runtime_error("Buffer-read overflow");
     string.assign(nextSerial, strlen);
-    const size_t len = roundup(strlen);
-    serialBufBytes -= len;
-    nextSerial += len;
+    serialBufBytes -= strlen;
+    nextSerial += strlen;
 }
 
 size_t Decoder::getDmaSize()
 {
-    return getSize() - (nextSerial - serialBuf);
+    ptrdiff_t have = nextSerial - serialBuf;
+    return getSize() - have;
 }
 
 void Encoder::encode(
@@ -174,7 +169,7 @@ size_t Decoder::decode(
     iov[1].iov_base = bytes;
     iov[1].iov_len = len;
     const size_t nbytes = read(iov, 2);
-    clear();
+    reset();
     return nbytes;
 }
 
@@ -182,26 +177,36 @@ void Encoder::flush()
 {
     struct iovec iov[2];
     iov[0].iov_base = serialBuf;
-    iov[0].iov_len = serialBufBytes;
+    iov[0].iov_len = nextSerial - serialBuf;
     iov[1] = dma;
-    clear();
+    reset();
     write(iov, 2);
 }
 
 size_t Decoder::fill(size_t nbytes)
 {
+    ptrdiff_t have = nextSerial - serialBuf;
     if (nbytes == 0) {
-        nbytes = serialBufSize;
+        nbytes = serialBufSize - have;
     }
-    else if (nbytes > serialBufSize) {
+    else if (have + nbytes > serialBufSize) {
         throw std::invalid_argument("Read-length too large: nbytes=" +
-                std::to_string(nbytes) + ", max=" + std::to_string(serialBufSize));
+                std::to_string(nbytes) + ", have=" +
+                std::to_string(have) + ", serialBufSize=" +
+                std::to_string(serialBufSize));
     }
-    clear();
     struct iovec iov;
     iov.iov_base = serialBuf;
-    iov.iov_len = nbytes;
-    return this->serialBufBytes = read(&iov, 1, true);
+    iov.iov_len = have + nbytes;
+    nbytes = read(&iov, 1, true);
+    serialBufBytes += nbytes;
+    return nbytes;
+}
+
+void Decoder::clear()
+{
+    discard();
+    reset();
 }
 
 MemEncoder::MemEncoder(
@@ -262,11 +267,6 @@ size_t MemDecoder::read(
 bool MemDecoder::hasRecord()
 {
     return memRead < serialBufSize;
-}
-
-void MemDecoder::discard()
-{
-    clear();
 }
 
 } // namespace

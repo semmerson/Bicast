@@ -31,11 +31,6 @@ public:
      */
     virtual void recvNotice(const ProdInfo& info) =0;
     /**
-     * Receives a notice about a chunk-of-data.
-     * @param[in]     info  Information about the chunk
-     */
-    virtual void recvNotice(const ChunkInfo& info) =0;
-    /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
      */

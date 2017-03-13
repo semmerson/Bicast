@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "error.h"
 #include "InetAddr.h"
 #include "InetSockAddr.h"
 #include "PortNumber.h"
@@ -371,7 +372,7 @@ public:
         req.gr_interface = 0; // Use default multicast interface
         int level = familyToLevel(req.gr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_GROUP, &req, sizeof(req)))
-            throw std::system_error(errno, std::system_category(),
+            throw SystemError(__FILE__, __LINE__,
                     std::string("Couldn't join multicast group: sock=") +
                     std::to_string(sd) + ", group=" + to_string());
         return *this;
@@ -393,12 +394,12 @@ public:
     {
         struct group_source_req req;
         setSockAddrStorage(sd, req.gsr_group);
-        req.gsr_interface = 0; // Use default multicast interface
+        req.gsr_interface = 0; // Let kernel choose multicast interface
         int sockType = getSockType(sd);
         srcAddr.setSockAddrStorage(req.gsr_source, port, sockType);
         int level = familyToLevel(req.gsr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_SOURCE_GROUP, &req, sizeof(req)))
-            throw std::system_error(errno, std::system_category(),
+            throw SystemError(__FILE__, __LINE__,
                     std::string("Couldn't join source-specific multicast group: "
                     "sock=") + std::to_string(sd) + ", group=" + to_string() +
                     ", source=" + srcAddr.to_string());
