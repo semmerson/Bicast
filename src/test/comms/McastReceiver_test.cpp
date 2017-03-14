@@ -31,7 +31,8 @@ protected:
     // is empty.
 
     McastReceiverTest()
-        : mcastAddr("234.128.117.0", 38800)
+        : asmMcastAddr("234.128.117.0", 38800)
+        , ssmMcastAddr("232.0.0.0", 38800)
         , srcAddr("192.168.192.245")
         , version{0}
         , prodName("product")
@@ -86,7 +87,7 @@ protected:
         ++chunkIndex;
     }
 
-    void sendProduct() {
+    void sendProduct(const hycast::InetSockAddr mcastAddr) {
         hycast::McastSender     sender(mcastAddr, version);
         hycast::ChunkIndex      numChunks = prodInfo.getNumChunks();
         for (hycast::ChunkIndex chunkIndex = 0; chunkIndex < numChunks;
@@ -110,8 +111,9 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for McastReceiver.
-    hycast::InetSockAddr  mcastAddr;
-    hycast::InetAddr      srcAddr;
+    hycast::InetSockAddr  asmMcastAddr; // Any-source multicast-group address
+    hycast::InetSockAddr  ssmMcastAddr; // Source-specific multicast-group address
+    hycast::InetAddr      srcAddr; // IP address of source
     unsigned              version;
     std::string           prodName;
     hycast::ChunkSize     chunkSize;
@@ -125,22 +127,22 @@ protected:
     volatile hycast::ChunkIndex    numChunks;
 };
 
-// Tests construction of source-independent multicast receiver
+// Tests construction of any-source multicast receiver
 TEST_F(McastReceiverTest, Construction) {
-    hycast::McastReceiver mcastRcvr(mcastAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(asmMcastAddr, *this, version);
 }
 
-// Tests construction of source-dependent multicast receiver
+// Tests construction of source-specific multicast receiver
 TEST_F(McastReceiverTest, SourceConstruction) {
-    hycast::McastReceiver mcastRcvr(mcastAddr, srcAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(ssmMcastAddr, srcAddr, *this, version);
 }
 
-// Tests source-dependent reception
+// Tests source-specific reception
 TEST_F(McastReceiverTest, SourceReception) {
-    hycast::McastReceiver mcastRcvr(mcastAddr, srcAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(ssmMcastAddr, srcAddr, *this, version);
     std::thread           rcvrThread =
             std::thread([&]{runReceiver(mcastRcvr);});
-    sendProduct();
+    sendProduct(ssmMcastAddr);
     ::sleep(1);
     ::pthread_cancel(rcvrThread.native_handle());
     rcvrThread.join();
