@@ -1,6 +1,6 @@
 /**
  * This file declares the interface for an object that receives unicast messages
- * from a remote peer.
+ * from one or more remote peers.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
