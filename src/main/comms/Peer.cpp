@@ -12,6 +12,7 @@
 #include "Channel.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "error.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
 #include "ProdIndex.h"
@@ -183,7 +184,7 @@ public:
                     LatentChunk chunk = chunkChan.recv();
                     msgRcvr.recvData(chunk, *peer);
                     if (chunk.hasData())
-                        throw std::logic_error(
+                        throw LogicError(__FILE__, __LINE__,
                                 "Latent chunk-of-data still has data");
                     break;
                 }
