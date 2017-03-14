@@ -85,6 +85,10 @@ TEST_F(ProdStoreTest, AddingLatentChunk) {
     hycast::ProdStore   ps{};
     EXPECT_TRUE(ps.add(prodInfo));
     EXPECT_TRUE(ps.add(latentChunk));
+    hycast::MemDecoder  decoder2(buf, sizeof(buf));
+    decoder2.fill(hycast::ChunkInfo::getStaticSerialSize(0));
+    hycast::LatentChunk latentChunk2(decoder2, 0);
+    EXPECT_FALSE(ps.add(latentChunk2));
 }
 
 }  // namespace
