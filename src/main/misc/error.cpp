@@ -22,14 +22,21 @@ std::string placeStamp(
     return std::string(::basename(name)) + ":" + std::to_string(line);
 }
 
-RuntimeError::RuntimeError(
+LogicError::LogicError(
+        const char*       file,
+        const int         line,
+        const std::string msg)
+    : std::logic_error{placeStamp(file, line) + ": " + msg}
+{}
+
+NotFoundError::NotFoundError(
         const char*       file,
         const int         line,
         const std::string msg)
     : std::runtime_error{placeStamp(file, line) + ": " + msg}
 {}
 
-NotFoundError::NotFoundError(
+RuntimeError::RuntimeError(
         const char*       file,
         const int         line,
         const std::string msg)

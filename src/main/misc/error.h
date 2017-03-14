@@ -49,10 +49,10 @@ std::string placeStamp(
         const char*       file,
         const int         line);
 
-class RuntimeError : public std::runtime_error
+class LogicError : public std::logic_error
 {
 public:
-    RuntimeError(
+    LogicError(
             const char*       file,
             const int         line,
             const std::string msg);
@@ -62,6 +62,15 @@ class NotFoundError : public std::runtime_error
 {
 public:
     NotFoundError(
+            const char*       file,
+            const int         line,
+            const std::string msg);
+};
+
+class RuntimeError : public std::runtime_error
+{
+public:
+    RuntimeError(
             const char*       file,
             const int         line,
             const std::string msg);
