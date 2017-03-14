@@ -44,6 +44,7 @@ protected:
     virtual void TearDown() {
         // Code here will be called immediately after each test (right
         // before the destructor).
+        ::remove(pathname.data());
     }
 
     // Objects declared here can be used by all tests in the test case for ProdStore.
@@ -75,16 +76,19 @@ TEST_F(ProdStoreTest, AddingLatentChunk) {
     const char          data[] = {'\xbd'};
     hycast::ChunkInfo   chunkInfo(0, 0);
     hycast::ActualChunk actualChunk(chunkInfo, data, sizeof(data));
+
     char                buf[100];
     hycast::MemEncoder  encoder(buf, sizeof(buf));
     actualChunk.serialize(encoder, 0);
     encoder.flush();
+
     hycast::MemDecoder  decoder(buf, sizeof(buf));
     decoder.fill(hycast::ChunkInfo::getStaticSerialSize(0));
     hycast::LatentChunk latentChunk(decoder, 0);
     hycast::ProdStore   ps{};
     EXPECT_TRUE(ps.add(prodInfo));
     EXPECT_TRUE(ps.add(latentChunk));
+
     hycast::MemDecoder  decoder2(buf, sizeof(buf));
     decoder2.fill(hycast::ChunkInfo::getStaticSerialSize(0));
     hycast::LatentChunk latentChunk2(decoder2, 0);
