@@ -24,7 +24,6 @@ class LatentChunk::Impl final
 {
     ChunkInfo    info;
     Decoder*     decoder;
-    ChunkSize    size;
     unsigned     version;
 
 public:
@@ -34,7 +33,6 @@ public:
     Impl()
         : info(),
           decoder(nullptr),
-          size(0),
           version(0)
     {}
 
@@ -50,7 +48,6 @@ public:
         // Keep consistent with ActualChunkImpl::serialize()
         : info(ChunkInfo::deserialize(decoder, version)),
           decoder(&decoder),
-          size(decoder.getDmaSize()),
           version(version)
     {}
 
@@ -84,27 +81,20 @@ public:
     }
 
     /**
-     * Returns the size of the chunk of data.
-     * @return the size of the chunk of data
-     * @exceptionsafety Strong
-     * @threadsafety Safe
-     */
-    ChunkSize getSize() const
-    {
-        return size;
-    }
-
-    /**
      * Drains the chunk of data into a buffer. The latent data will no longer
      * be available.
      * @param[in] data  Buffer to drain the chunk of data into
+     * @param[in] size  Size of the buffer in bytes
+     * @return Number of bytes actually transferred
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      * @threadsafety Safe
      */
-    void drainData(void* data)
+    size_t drainData(
+            void* const  data,
+            const size_t size)
     {
-        decoder->decode(data, size);
+        return decoder->decode(data, size);
     }
 
     /**
@@ -307,14 +297,11 @@ ChunkIndex LatentChunk::getChunkIndex() const noexcept
     return pImpl->getChunkIndex();
 }
 
-ChunkSize LatentChunk::getSize() const noexcept
+size_t LatentChunk::drainData(
+        void* const  data,
+        const size_t size)
 {
-    return pImpl->getSize();
-}
-
-void LatentChunk::drainData(void* data)
-{
-    pImpl->drainData(data);
+    return pImpl->drainData(data, size);
 }
 
 void LatentChunk::discard()

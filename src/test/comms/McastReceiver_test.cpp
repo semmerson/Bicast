@@ -76,9 +76,12 @@ protected:
     {
         EXPECT_EQ(prodIndex, chunk.getProdIndex());
         EXPECT_EQ(chunkIndex, chunk.getChunkIndex());
-        char data[chunk.getSize()];
-        chunk.drainData(data);
-        for (unsigned i = 0; i < sizeof(data); ++i)
+        const hycast::ChunkSize expectedSize =
+                prodInfo.getChunkSize(chunkIndex);
+        char data[expectedSize];
+        const size_t actualSize = chunk.drainData(data, sizeof(data));
+        EXPECT_EQ(expectedSize, actualSize);
+        for (unsigned i = 0; i < actualSize; ++i)
             ASSERT_EQ(datum, data[i]);
         ++chunkIndex;
     }

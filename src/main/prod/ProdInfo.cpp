@@ -35,6 +35,16 @@ class ProdInfoImpl final
 
 public:
     /**
+     * Default constructs.
+     */
+    ProdInfoImpl()
+        : name()
+        , index(0)
+        , size(0)
+        , chunkSize(0)
+    {}
+
+    /**
      * Constructs from information on a product.
      * @param[in] name       Product name
      * @param[in] index      Product index
@@ -226,6 +236,10 @@ public:
         encoder.encode(name);
     }
 };
+
+ProdInfo::ProdInfo()
+    : pImpl(new ProdInfoImpl())
+{}
 
 ProdInfo::ProdInfo(
         const std::string& name,

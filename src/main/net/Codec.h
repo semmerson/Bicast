@@ -130,12 +130,6 @@ class Decoder : public Codec
 {
 protected:
     /**
-     * Returns the size, in bytes, of the current record.
-     * @return Current record size in bytes
-     */
-    virtual size_t getSize() =0;
-
-    /**
      * Reads from the underlying I/O object.
      * @param[in] iov     Scatter-read vector
      * @param[in] iovcnt  Size of vector
@@ -180,13 +174,6 @@ public:
      * @return Deserialized value
      */
     void decode(std::string& string);
-
-    /**
-     * Returns the number of bytes available for a direct-memory-access read
-     * by `decode(void*, size_t)`.
-     * @return Number of available bytes
-     */
-    size_t getDmaSize();
 
     /**
      * Deserializes a byte-array. May be called at most once between calls to

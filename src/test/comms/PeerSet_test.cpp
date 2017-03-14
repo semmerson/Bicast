@@ -91,9 +91,10 @@ protected:
          * peer.
          */
         class ServerMsgRcvr final : public hycast::PeerMsgRcvr {
+            hycast::ProdInfo prodInfo;
         public:
-            void recvNotice(const hycast::ProdInfo& info) {}
             void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
+                prodInfo = info;
                 peer.sendNotice(info);
             }
             void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
@@ -105,12 +106,15 @@ protected:
             void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
                 peer.sendRequest(info);
             }
-            void recvData(hycast::LatentChunk latentChunk) {}
             void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer) {
-                hycast::ChunkSize size = latentChunk.getSize();
-                char              data[size];
-                latentChunk.drainData(data);
-                hycast::ActualChunk chunk{latentChunk.getInfo(), data, size};
+                const hycast::ChunkSize expectedSize =
+                        prodInfo.getChunkSize(latentChunk.getChunkIndex());
+                char                    data[expectedSize];
+                const size_t            actualSize =
+                        latentChunk.drainData(data, expectedSize);
+                EXPECT_EQ(expectedSize, actualSize);
+                hycast::ActualChunk chunk{latentChunk.getInfo(), data,
+                    static_cast<hycast::ChunkSize>(actualSize)};
                 peer.sendData(chunk);
             }
         };

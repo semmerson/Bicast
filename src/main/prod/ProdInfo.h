@@ -31,6 +31,11 @@ class ProdInfo : public Serializable<ProdInfo>
 
 public:
     /**
+     * Default constructs.
+     */
+    ProdInfo();
+
+    /**
      * Constructs from information on a product.
      * @param[in] name       Product name
      * @param[in] index      Product index

@@ -48,12 +48,11 @@ void runClient()
     (void)memset(data1, 0xbd, sizeof(data1));
     hycast::ActualChunk actualChunk(chunkInfo, data1, sizeof(data1));
     chunkChannel.send(actualChunk);
-
+    char data2[sizeof(data1)];
     ASSERT_EQ(0, sock.getStreamId());
     hycast::LatentChunk latentChunk = chunkChannel.recv();
-    ASSERT_EQ(sizeof(data1), latentChunk.getSize());
-    uint8_t data2[sizeof(data1)];
-    latentChunk.drainData(data2);
+    const size_t nbytes = latentChunk.drainData(data2, sizeof(data2));
+    EXPECT_EQ(sizeof(data2), nbytes);
     EXPECT_EQ(0, memcmp(data1, data2, sizeof(data1)));
 }
 

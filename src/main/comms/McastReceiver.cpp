@@ -25,10 +25,6 @@ class McastReceiver::Impl final
     {
         McastUdpSock  sock;
     protected:
-        size_t getSize()
-        {
-            return sock.getSize();
-        }
         size_t read(
                 const struct iovec* iov,
                 const int           iovcnt,

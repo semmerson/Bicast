@@ -65,7 +65,6 @@ protected:
     public:
         TestMsgRcvr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
-        void recvNotice(const hycast::ProdInfo& info) {}
         void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodInfo == info);
         }
@@ -78,11 +77,12 @@ protected:
         void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo == info);
         }
-        void recvData(hycast::LatentChunk chunk) {}
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
-            ASSERT_EQ(sizeof(peerTest->data), chunk.getSize());
-            char data2[sizeof(peerTest->data)];
-            chunk.drainData(data2);
+            hycast::ChunkSize expectedSize =
+                    peerTest->prodInfo.getChunkSize(chunk.getChunkIndex());
+            char data2[expectedSize];
+            const size_t actualSize = chunk.drainData(data2, sizeof(data2));
+            ASSERT_EQ(expectedSize, actualSize);
             EXPECT_EQ(0, memcmp(peerTest->data, data2, sizeof(peerTest->data)));
         }
     };
@@ -197,9 +197,9 @@ protected:
     std::thread       senderThread;
     std::thread       receiverThread;
     hycast::ProdInfo  prodInfo{"product", 1, 100000, 1400};
-    hycast::ChunkInfo chunkInfo{2, 3};
-    hycast::ProdIndex prodIndex{2};
-    char              data[2000] = {};
+    hycast::ChunkInfo chunkInfo{1, 3};
+    hycast::ProdIndex prodIndex{1};
+    char              data[1400] = {};
 };
 
 // Tests default construction

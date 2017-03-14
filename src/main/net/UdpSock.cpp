@@ -78,15 +78,10 @@ public:
 class InUdpSock::Impl : public UdpSock::Impl
 {
     bool         haveCurrRec; /// Current datagram exists?
-    struct iovec sizeField;   /// Scatter-read element for size field
-    uint16_t     size;        /// Size of payload in bytes (excludes size field)
 
     void init()
     {
         haveCurrRec = false;
-        size = 0;
-        sizeField.iov_base = &size;
-        sizeField.iov_len = sizeof(size);
     }
 
     /**
@@ -104,51 +99,11 @@ class InUdpSock::Impl : public UdpSock::Impl
                     "sock=" + std::to_string(sd));
     }
 
-    /**
-     * @pre `size` is set and in network byte order
-     */
     void checkReadStatus(const ssize_t nbytes)
     {
-        if (nbytes < 0) {
-            if (errno == ECONNRESET || errno == ENOTCONN) {
-                size = 0; // EOF
-            }
-            else {
-                throw SystemError(__FILE__, __LINE__,
-                        std::string{"recv() failure: sock="} +
-                        std::to_string(sd));
-            }
-        }
-        else {
-            if (static_cast<size_t>(nbytes) < sizeField.iov_len)
-                throw RuntimeError(__FILE__, __LINE__,
-                        std::string("Couldn't read datagram size-field: "
-                        "nbytes=") +  std::to_string(nbytes) + ", sock=" +
-                        std::to_string(sd));
-            size = htons(size);
-        }
-    }
-
-    void ensureRec()
-    {
-        if (!haveCurrRec) {
-            try {
-                ssize_t nbytes = ::recv(sd, sizeField.iov_base,
-                        sizeField.iov_len, MSG_PEEK);
-                checkReadStatus(nbytes);
-                if (static_cast<size_t>(nbytes) < sizeField.iov_len) {
-                    throw RuntimeError(__FILE__, __LINE__,
-                            std::string("Couldn't read UDP size field: "
-                            "nbytes=") +  std::to_string(nbytes) +
-                            ", sock=" + std::to_string(sd));
-                }
-                haveCurrRec = true;
-            }
-            catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                        "Couldn't receive next UDP packet"));
-            }
-        }
+        if (nbytes < 0)
+            throw SystemError(__FILE__, __LINE__,
+                    std::string{"recv() failure: sock="} + std::to_string(sd));
     }
 
 protected:
@@ -209,20 +164,6 @@ public:
     }
 
     /**
-     * Returns the size, in bytes, of the current datagram. Waits for the
-     * datagram if necessary. The datagram is left in the socket's input buffer.
-     * @retval 0  Socket is closed
-     * @return Size of datagram in bytes
-     * @throws std::system_error I/O error occurred
-     * @exceptionsafety Basic
-     */
-    size_t getSize()
-    {
-        ensureRec();
-        return size;
-    }
-
-    /**
      * Scatter-receives a datagram. Waits for the datagram if necessary. If the
      * requested number of bytes to be read is less than the datagram size, then
      * the excess bytes are discarded.
@@ -239,17 +180,13 @@ public:
            const int           iovcnt,
            const bool          peek = false)
     {
-        struct iovec iov[1+iovcnt];
-        iov[0] = sizeField;
-        for (int i = 0; i < iovcnt; ++i)
-            iov[1+i] = iovec[i];
         struct msghdr msghdr = {};
-        msghdr.msg_iov = iov;
-        msghdr.msg_iovlen = 1 + iovcnt;
+        msghdr.msg_iov = const_cast<struct iovec*>(iovec);
+        msghdr.msg_iovlen = iovcnt;
         ssize_t nbytes = ::recvmsg(sd, &msghdr, peek ? MSG_PEEK : 0);
         checkReadStatus(nbytes);
         haveCurrRec = peek;
-        return nbytes - sizeField.iov_len;
+        return nbytes;
     }
 
     /**
@@ -303,8 +240,6 @@ public:
  */
 class OutUdpSock::Impl final : public UdpSock::Impl
 {
-    struct iovec            sizeField;
-    uint16_t                size;
     struct sockaddr_storage sockAddrStorage;
 
 protected:
@@ -321,8 +256,6 @@ public:
         : UdpSock::Impl{remoteSockAddr}
         , remoteSockAddr{remoteSockAddr}
     {
-        sizeField.iov_base = &size;
-        sizeField.iov_len = sizeof(size);
         remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
         /*
          * Sets address of remote endpoint for function `::send()` (but not
@@ -393,8 +326,7 @@ public:
     }
 
     /**
-     * Scatter-sends a message. The size of the payload in bytes is encoded in
-     * the first two bytes of the packet.
+     * Scatter-sends a message.
      * @param[in] iovec     Vector comprising message to send
      * @param[in] iovcnt    Number of elements in `iovec`
      * @throws std::system_error  I/O error writing to socket
@@ -403,19 +335,11 @@ public:
             const struct iovec* iovec,
             const int           iovcnt)
     {
-        size = 0;
-        for (int i = 0; i < iovcnt; ++i)
-            size += iovec[i].iov_len;
-        struct iovec iov[1+iovcnt];
-        size = htons(size);
-        iov[0] = sizeField;
-        for (int i = 0; i < iovcnt; ++i)
-            iov[1+i] = iovec[i];
         struct msghdr msghdr = {};
         msghdr.msg_name = &sockAddrStorage;
         msghdr.msg_namelen = sizeof(sockAddrStorage);
-        msghdr.msg_iov = const_cast<struct iovec*>(iov);
-        msghdr.msg_iovlen = 1+iovcnt;
+        msghdr.msg_iov = const_cast<struct iovec*>(iovec);
+        msghdr.msg_iovlen = iovcnt;
         if (::sendmsg(sd, &msghdr, 0) == -1)
             throw std::system_error(errno, std::system_category(),
                     std::string{"Couldn't send on UDP socket: sd="} +
@@ -572,11 +496,6 @@ size_t InUdpSock::recv(
         const bool   peek)
 {
     return getPimpl()->recv(buf, len, peek);
-}
-
-size_t InUdpSock::getSize()
-{
-    return getPimpl()->getSize();
 }
 
 void InUdpSock::discard()

@@ -10,6 +10,7 @@
  */
 
 #include "Chunk.h"
+#include "error.h"
 #include "ProdInfo.h"
 #include "Product.h"
 
@@ -106,11 +107,17 @@ public:
      */
     bool add(LatentChunk& chunk)
     {
-        prodInfo.vet(chunk.getInfo(), chunk.getSize());
         ChunkIndex chunkIndex{chunk.getInfo().getChunkIndex()};
         if (haveChunk[chunkIndex])
             return false;
-        chunk.drainData(startOf(chunkIndex));
+        const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
+        const auto actualChunkSize = chunk.drainData(startOf(chunkIndex),
+                expectedChunkSize);
+        if (actualChunkSize != expectedChunkSize)
+            throw RuntimeError(__FILE__, __LINE__,
+                    "Unexpected chunk size: expected=" +
+                    std::to_string(expectedChunkSize) +
+                    ", actual=" + std::to_string(actualChunkSize));
         ++numChunks;
         return haveChunk[chunkIndex] = true;
     }

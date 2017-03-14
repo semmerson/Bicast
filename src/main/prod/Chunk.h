@@ -57,32 +57,33 @@ public:
      * @threadsafety Safe
      */
     const ChunkInfo& getInfo() const noexcept;
+
     /**
      * Returns the index of the associated product.
      * @return the index of the associated product
      */
     ProdIndex getProdIndex() const noexcept;
+
     /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      */
     ChunkIndex getChunkIndex() const noexcept;
-    /**
-     * Returns the size of the chunk of data.
-     * @return the size of the chunk of data
-     * @exceptionsafety Strong
-     * @threadsafety Safe
-     */
-    ChunkSize getSize() const noexcept;
+
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
      * be available.
      * @param[in] data  Buffer to drain the chunk of data into
+     * @param[in] size  Size of buffer in bytes
+     * @return Number of bytes actually transferred
      * @throws std::system_error if an I/O error occurs
      * @exceptionsafety Basic
      * @threadsafety Safe
      */
-    void drainData(void* data);
+    size_t drainData(
+            void* const  data,
+            const size_t size);
+
     /**
      * Discards the chunk of data. The latent data will no longer be available.
      * @throws std::system_error if an I/O error occurs
@@ -90,6 +91,7 @@ public:
      * @threadsafety Safe
      */
     void discard();
+
     /**
      * Indicates if this instance has data (i.e., whether or not `drainData()`
      * has been called).

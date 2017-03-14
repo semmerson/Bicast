@@ -41,7 +41,7 @@ protected:
     UdpSock(Impl* const pImpl);
 
 public:
-    static const size_t maxPayload = 65507 - 2; // 2-byte size field
+    static const size_t maxPayload = 65507;
 
     /**
      * Destroys.
@@ -242,22 +242,14 @@ public:
            const bool   peek = false);
 
     /**
-     * Returns the size, in bytes, of the current datagram. Waits for a datagram if
-     * necessary.
-     * @retval 0  Stream is closed
-     * @return Size, in bytes, of the current datagram
-     */
-    virtual size_t getSize();
-
-    /**
      * Discards the current datagram.
      */
-    virtual void discard();
+    void discard();
 
     /**
      * Indicates if there's a current datagram.
      */
-    virtual bool hasRecord();
+    bool hasRecord();
 };
 
 /**

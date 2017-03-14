@@ -143,12 +143,6 @@ void Decoder::decode(std::string& string)
     nextSerial += strlen;
 }
 
-size_t Decoder::getDmaSize()
-{
-    ptrdiff_t have = nextSerial - serialBuf;
-    return getSize() - have;
-}
-
 void Encoder::encode(
         const void* const bytes,
         const size_t      len)
@@ -170,7 +164,7 @@ size_t Decoder::decode(
     iov[1].iov_len = len;
     const size_t nbytes = read(iov, 2);
     reset();
-    return nbytes;
+    return nbytes - iov[0].iov_len; // Minus bytes in serial buffer
 }
 
 void Encoder::flush()

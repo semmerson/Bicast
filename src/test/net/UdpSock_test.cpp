@@ -22,12 +22,13 @@ namespace {
 void runReceiver(hycast::McastUdpSock sock)
 {
     try {
-        for (size_t size = sock.getSize(); size; size = sock.getSize()) {
-            uint8_t buf[size];
-            sock.recv(buf, size);
+        char   buf[hycast::UdpSock::maxPayload];
+        size_t size;
+        do {
+            size = sock.recv(buf, sizeof(buf));
             for (size_t i = 0; i < size; ++i)
                 ASSERT_EQ(size%UINT8_MAX, buf[i]);
-        }
+        } while (size != 0);
     }
     catch (const std::exception& e) {
         hycast::log_what(e, __FILE__, __LINE__,
