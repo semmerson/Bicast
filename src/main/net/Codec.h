@@ -32,7 +32,7 @@ protected:
 
     const size_t serialBufSize;  /// Serial buffer size in bytes
     char* const  serialBuf;      /// Serial buffer
-    char*        nextSerial;     /// Next byte to access
+    char*        nextSerial;     /// Next byte in buffer to access
     size_t       serialBufBytes; /// Number of bytes written to or remaining to
                                  /// be read from buffer
     struct iovec dma;            /// Vector for byte-array direct-memory-access
@@ -158,13 +158,25 @@ public:
     virtual ~Decoder();
 
     /**
-     * Deserializes a 16-bit, unsigned integer from the serial buffer.
+     * Reads additional bytes from the underlying I/O object into the serial
+     * buffer. Calls are cumulative: each adds to the serial buffer.
+     * @param[in] nbytes  Number of additional bytes to read or 0, in which case
+     *                    an attempt is made to read the maximum possible number
+     *                    of bytes
+     * @return            Number of bytes actually added to the serial buffer
+     */
+    size_t fill(size_t nbytes = 0);
+
+    /**
+     * Deserializes a 16-bit, unsigned integer from the serial buffer. Advances
+     * the location in the serial buffer.
      * @return Deserialized value
      */
     void decode(uint16_t& value);
 
     /**
-     * Deserializes a 32-bit, unsigned integer from the serial buffer.
+     * Deserializes a 32-bit, unsigned integer from the serial buffer. Advances
+     * the location in the serial buffer.
      * @return Deserialized value
      */
     void decode(uint32_t& value);
@@ -178,7 +190,8 @@ public:
     /**
      * Deserializes a byte-array. May be called at most once between calls to
      * `read(const size_t nbytes)`. The array isn't read from the serial buffer.
-     * Instead, it's read from the underlying I/O object.
+     * Instead, it's read from the underlying I/O object. Doesn't advance the
+     * location in the serial buffer.
      * @param[in] bytes   Destination
      * @param[in] len     Number of bytes to read
      * @return            Number of bytes actually read
@@ -188,15 +201,8 @@ public:
             const size_t len);
 
     /**
-     * Reads bytes from the underlying I/O object into the serial buffer.
-     * @param[in] nbytes  Number of bytes to read or 0, in which case an attempt
-     *                    is made to read the maximum possible number of bytes
-     * @return            Number of bytes actually read
-     */
-    size_t fill(size_t nbytes = 0);
-
-    /**
-     * Clears the current message.
+     * Clears the current message. Sets the location in the serial buffer to its
+     * beginning.
      */
     void clear();
 
@@ -224,7 +230,7 @@ public:
 
 class MemDecoder final : public Decoder
 {
-    const char*  memBuf;    // Byte buffer
+    const char*  memBuf;   // Byte buffer
     size_t       memRead;  // Number of bytes read from buffer
 
     void discard()

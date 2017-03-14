@@ -192,7 +192,7 @@ size_t Decoder::fill(size_t nbytes)
     struct iovec iov;
     iov.iov_base = serialBuf;
     iov.iov_len = have + nbytes;
-    nbytes = read(&iov, 1, true);
+    nbytes = read(&iov, 1, true) - have;
     serialBufBytes += nbytes;
     return nbytes;
 }
