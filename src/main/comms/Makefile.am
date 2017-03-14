@@ -22,6 +22,8 @@ lib_la_SOURCES 	= \
 	McastSender.cpp McastSender.h \
 	McastReceiver.cpp McastReceiver.h
 
+#	McastMsg.cpp McastMsg.h
+
 #	ChannelImpl.h \
 	RegChannel.cpp RegChannel.h \
 	ChunkChannel.cpp ChunkChannel.h
