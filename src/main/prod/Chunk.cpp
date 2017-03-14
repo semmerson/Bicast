@@ -14,6 +14,7 @@
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "error.h"
 #include "HycastTypes.h"
 #include "RecStream.h"
 #include "SctpSock.h"
@@ -25,15 +26,17 @@ class LatentChunk::Impl final
     ChunkInfo    info;
     Decoder*     decoder;
     unsigned     version;
+    bool         drained;
 
 public:
     /**
      * Constructs from nothing.
      */
     Impl()
-        : info(),
-          decoder(nullptr),
-          version(0)
+        : info()
+        , decoder(nullptr)
+        , version(0)
+        , drained{true}
     {}
 
     /**
@@ -46,9 +49,10 @@ public:
             Decoder&       decoder,
             const unsigned version)
         // Keep consistent with ActualChunkImpl::serialize()
-        : info(ChunkInfo::deserialize(decoder, version)),
-          decoder(&decoder),
-          version(version)
+        : info(ChunkInfo::deserialize(decoder, version))
+        , decoder(&decoder)
+        , version(version)
+        , drained{false}
     {}
 
     /**
@@ -94,7 +98,12 @@ public:
             void* const  data,
             const size_t size)
     {
-        return decoder->decode(data, size);
+        if (drained)
+            throw LogicError(__FILE__, __LINE__,
+                    "Latent chunk-of-data already drained");
+        const size_t nbytes = decoder->decode(data, size);
+        drained = true;
+        return nbytes;
     }
 
     /**
@@ -105,6 +114,7 @@ public:
      */
     void discard()
     {
+        drained = true;
         decoder->clear();
     }
 
@@ -116,7 +126,7 @@ public:
      */
     bool hasData()
     {
-        return decoder->hasRecord();
+        return !drained;
     }
 };
 
