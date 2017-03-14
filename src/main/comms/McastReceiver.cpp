@@ -82,6 +82,11 @@ public:
             decoder.fill(sizeof(msgId));
             decoder.decode(msgId);
             switch (msgId) {
+                /*
+                 * NB: In all the following, the input message *must* be
+                 * completely consumed; otherwise, its tail might be read in the
+                 * next iteration.
+                 */
                 case McastSender::prodInfoId: {
                     decoder.fill(0);
                     auto prodInfo = ProdInfo::deserialize(decoder, version);
@@ -92,6 +97,9 @@ public:
                     decoder.fill(ChunkInfo::getStaticSerialSize(version));
                     auto chunk = LatentChunk::deserialize(decoder, version);
                     msgRcvr->recvData(chunk);
+                    if (chunk.hasData())
+                        throw LogicError(__FILE__, __LINE__,
+                                "Latent chunk-of-data not drained");
                     break;
                 }
                 default:
