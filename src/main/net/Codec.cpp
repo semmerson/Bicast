@@ -78,7 +78,7 @@ Decoder::Decoder(
 Decoder::~Decoder()
 {}
 
-void Encoder::encode(uint16_t value)
+size_t Encoder::encode(uint16_t value)
 {
     const size_t len = sizeof(uint16_t);
     if (serialBufBytes + len > serialBufSize)
@@ -86,9 +86,10 @@ void Encoder::encode(uint16_t value)
     *reinterpret_cast<uint16_t*>(nextSerial) = htons(value);
     serialBufBytes += len;
     nextSerial += len;
+    return len;
 }
 
-void Encoder::encode(uint32_t value)
+size_t Encoder::encode(uint32_t value)
 {
     const size_t len = sizeof(uint32_t);
     if (serialBufBytes + len > serialBufSize)
@@ -96,6 +97,7 @@ void Encoder::encode(uint32_t value)
     *reinterpret_cast<uint32_t*>(nextSerial) = htonl(value);
     serialBufBytes += len;
     nextSerial += len;
+    return len;
 }
 
 void Decoder::decode(uint16_t& value)
@@ -118,18 +120,19 @@ void Decoder::decode(uint32_t& value)
     nextSerial += len;
 }
 
-void Encoder::encode(const std::string& string)
+size_t Encoder::encode(const std::string& string)
 {
     const size_t strlen = string.size();
     if (strlen > maxStrLen)
         throw std::invalid_argument("String too long: len=" +
                 std::to_string(strlen));
-    encode(static_cast<StrLen>(strlen));
+    size_t nbytes = encode(static_cast<StrLen>(strlen));
     if (serialBufBytes + strlen > serialBufSize)
         throw std::runtime_error("Buffer-write overflow");
     memcpy(nextSerial, string.data(), strlen);
     serialBufBytes += strlen;
     nextSerial += strlen;
+    return nbytes + strlen;
 }
 
 void Decoder::decode(std::string& string)
@@ -143,7 +146,7 @@ void Decoder::decode(std::string& string)
     nextSerial += strlen;
 }
 
-void Encoder::encode(
+size_t Encoder::encode(
         const void* const bytes,
         const size_t      len)
 {
@@ -151,6 +154,7 @@ void Encoder::encode(
         throw std::runtime_error("I/O vector overflow");
     dma.iov_base = const_cast<void*>(bytes);
     dma.iov_len = len;
+    return len;
 }
 
 size_t Decoder::decode(

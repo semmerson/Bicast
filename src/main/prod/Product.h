@@ -86,6 +86,14 @@ public:
      * @threadsafety    Safe
      */
     const char* getData() const noexcept;
+
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] that  Other instance
+     * @retval `true`   Yes
+     * @retval `false`  No
+     */
+    bool operator==(const Product& that) const;
 };
 
 } // namespace

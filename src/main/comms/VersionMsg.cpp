@@ -24,11 +24,11 @@ size_t VersionMsg::getSerialSize(unsigned version) const noexcept
     return Codec::getSerialSize(&version);
 }
 
-void VersionMsg::serialize(
+size_t VersionMsg::serialize(
         Encoder&       encoder,
         const unsigned version) const
 {
-    encoder.encode(this->version);
+    return encoder.encode(this->version);
 }
 
 VersionMsg VersionMsg::deserialize(

@@ -29,10 +29,11 @@ public:
      * Serializes this instance to an encoder.
      * @param[in] encoder  Encoder
      * @param[in] version  Protocol version
+     * @return Number of bytes written
      * @exceptionsafety Basic Guarantee
      * @threadsafety    Safe
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
 

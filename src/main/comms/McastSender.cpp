@@ -65,8 +65,9 @@ class McastSender::Impl final
         const ChunkIndex numChunks = prodInfo.getNumChunks();
         for (ChunkIndex chunkIndex = 0; chunkIndex < numChunks; ++chunkIndex) {
             encoder.encode(chunkId);
-            ChunkInfo(prodIndex, chunkIndex).serialize(encoder, version);
             ChunkSize chunkSize = prodInfo.getChunkSize(chunkIndex);
+            ChunkInfo chunkInfo(prodIndex, chunkIndex, chunkSize);
+            chunkInfo.serialize(encoder, version);
             encoder.encode(data, chunkSize);
             encoder.flush();
             data += chunkSize;

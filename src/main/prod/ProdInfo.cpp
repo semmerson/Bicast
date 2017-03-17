@@ -10,6 +10,7 @@
  */
 
 #include "Chunk.h"
+#include "error.h"
 #include "HycastTypes.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
@@ -137,14 +138,15 @@ public:
      * Returns the size, in bytes, of a given chunk-of-data.
      * @param[in] index  Index of the chunk
      * @return           The size of the chunk in bytes
-     * @throws std::invalid_argument if the index is invalid
+     * @throws InvalidArgument  The chunk index is invalid
      * @execeptionsafety Strong guarantee
      * @threadsafety     Safe
      */
     ChunkSize getChunkSize(ChunkIndex index) const
     {
         if (index >= getNumChunks())
-            throw std::invalid_argument("Invalid chunk-index: max=" +
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid chunk-index: max=" +
                     std::to_string(getNumChunks()-1) + ", index=" +
                     std::to_string(index));
         return (index + 1 < getNumChunks())
@@ -178,13 +180,27 @@ public:
             const ChunkSize  chunkSize) const
     {
         if (chunkInfo.getProdIndex() != index)
-            throw std::invalid_argument("Wrong product-index: expected=" +
-                    std::to_string(index) + ", actual=" +
-                    std::to_string(chunkInfo.getProdIndex()));
-        if (chunkSize != getChunkSize(chunkInfo.getChunkIndex()))
-            throw std::invalid_argument("Unexpected chunk size: expected=" +
-                    std::to_string(getChunkSize(chunkInfo.getChunkIndex())) +
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Wrong product-index: expected=" + std::to_string(index) +
+                    ", actual=" + std::to_string(chunkInfo.getProdIndex()));
+        if (chunkSize != getChunkSize(chunkInfo.getIndex()))
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Unexpected chunk size: expected=" +
+                    std::to_string(getChunkSize(chunkInfo.getIndex())) +
                     ", actual=" + std::to_string(chunkSize));
+    }
+
+    /**
+     * Returns information on a chunk of data corresponding to a chunk index.
+     * @param[in] chunkIndex  Chunk index
+     * @return Corresponding chunk information
+     * @throws InvalidArgument  The chunk index is invalid
+     * @execeptionsafety Strong guarantee
+     * @threadsafety     Safe
+     */
+    ChunkInfo makeChunkInfo(const ChunkIndex chunkIndex)
+    {
+        return ChunkInfo(index, chunkIndex, getChunkSize(chunkIndex));
     }
 
     /**
@@ -225,15 +241,15 @@ public:
      * @execptionsafety Basic guarantee
      * @threadsafety    Compatible but not thread-safe
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const
     {
         // Keep consonant with ProdInfo::ProdInfo()
-        encoder.encode(index);
-        encoder.encode(size);
-        encoder.encode(chunkSize);
-        encoder.encode(name);
+        return encoder.encode(index) +
+                encoder.encode(size) +
+                encoder.encode(chunkSize) +
+                encoder.encode(name);
     }
 };
 
@@ -259,11 +275,11 @@ size_t ProdInfo::getSerialSize(unsigned version) const noexcept
     return pImpl->getSerialSize(version);
 }
 
-void ProdInfo::serialize(
+size_t ProdInfo::serialize(
         Encoder&       encoder,
         const unsigned version) const
 {
-    pImpl->serialize(encoder, version);
+    return pImpl->serialize(encoder, version);
 }
 
 const std::string& ProdInfo::getName() const
@@ -301,6 +317,11 @@ void ProdInfo::vet(
         const ChunkSize  chunkSize) const
 {
     return pImpl->vet(chunkInfo, chunkSize);
+}
+
+ChunkInfo ProdInfo::makeChunkInfo(const ChunkIndex chunkIndex) const
+{
+    return pImpl->makeChunkInfo(chunkIndex);
 }
 
 ProdInfo ProdInfo::deserialize(

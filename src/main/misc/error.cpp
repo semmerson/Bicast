@@ -22,6 +22,13 @@ std::string placeStamp(
     return std::string(::basename(name)) + ":" + std::to_string(line);
 }
 
+InvalidArgument::InvalidArgument(
+        const char*       file,
+        const int         line,
+        const std::string msg)
+    : std::invalid_argument{placeStamp(file, line) + ": " + msg}
+{}
+
 LogicError::LogicError(
         const char*       file,
         const int         line,

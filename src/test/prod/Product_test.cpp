@@ -19,30 +19,6 @@ namespace {
 // The fixture for testing class Product.
 class ProductTest : public ::testing::Test {
 protected:
-    // You can remove any or all of the following functions if its body
-    // is empty.
-
-    ProductTest() {
-        // You can do set-up work for each test here.
-    }
-
-    virtual ~ProductTest() {
-        // You can do clean-up work that doesn't throw exceptions here.
-    }
-
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp() {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-    }
-
-    virtual void TearDown() {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-    }
-
     // Objects declared here can be used by all tests in the test case for Product.
 };
 
@@ -56,37 +32,50 @@ TEST_F(ProductTest, ProdInfoConstruction) {
 
 // Tests adding chunks
 TEST_F(ProductTest, AddChunk) {
-    hycast::ProdInfo info("product", 0, 2, 1); // 2 chunks of 1-byte each
-    hycast::Product prod{info};
-    char data[2] = {'a', 'b'};
-    hycast::ActualChunk chunk{hycast::ChunkInfo{0, 0}, data, 1};
-    EXPECT_TRUE(prod.add(chunk));
+    char              data[] = {'a', 'b'};
+    hycast::ProdIndex prodIndex{0};
+    hycast::ProdSize  prodSize{sizeof(data)};
+    hycast::ChunkSize chunkSize{1};
+    hycast::ProdInfo  info("product", prodIndex, prodSize, chunkSize);
+    hycast::Product   prod{info};
+    hycast::ActualChunk actualChunk{info.makeChunkInfo(0), data};
+    EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_FALSE(prod.isComplete());
-    EXPECT_FALSE(prod.add(chunk));
-    EXPECT_TRUE(prod.add(hycast::ActualChunk(hycast::ChunkInfo{0, 1}, data+1,
-            1)));
+    EXPECT_FALSE(prod.add(actualChunk));
+    actualChunk = hycast::ActualChunk(info.makeChunkInfo(1), data+chunkSize);
+    EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_TRUE(prod.isComplete());
-    EXPECT_EQ(2, prod.getInfo().getSize());
-    EXPECT_EQ(0, ::memcmp(data, prod.getData(), 2));
+    EXPECT_EQ(prodSize, prod.getInfo().getSize());
+    EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
 }
 
-// Tests adding an inconsistent chunk
-TEST_F(ProductTest, AddBadChunk) {
-    hycast::ProdInfo info("product", 0, 3, 2); // 3 bytes in 2 chunks
-    hycast::Product prod{info};
-    char data[3];
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(1, 0),
-            data, 2)), std::invalid_argument); // Bad product-index
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(0, 2),
-            data, 2)), std::invalid_argument); // Bad chunk-index
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(0, 0),
-            data, 1)), std::invalid_argument); // First chunk too small
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(0, 0),
-            data, 3)), std::invalid_argument); // First chunk too large
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(0, 1),
-            data, 0)), std::invalid_argument); // Last chunk too small
-    EXPECT_THROW(prod.add(hycast::ActualChunk(hycast::ChunkInfo(0, 1),
-            data, 2)), std::invalid_argument); // Last chunk too large
+// Tests serialization
+TEST_F(ProductTest, Serialization) {
+    unsigned           version{0};
+    hycast::ProdIndex  prodIndex{0};
+    char               data[] = {'a', 'b'};
+    hycast::ProdSize   prodSize{sizeof(data)};
+    hycast::ChunkSize  chunkSize{1};
+    hycast::ProdInfo   prodInfo("product", prodIndex, prodSize, chunkSize);
+    hycast::Product    prod{prodInfo};
+    for (hycast::ChunkIndex chunkIndex = 0;
+            chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
+        hycast::ChunkInfo   chunkInfo{prodInfo.makeChunkInfo(chunkIndex)};
+        hycast::ActualChunk actualChunk(chunkInfo, data + chunkIndex*chunkSize);
+        char                buf[actualChunk.getSerialSize(version)];
+        hycast::MemEncoder  encoder(buf, sizeof(buf));
+        size_t              nbytes = actualChunk.serialize(encoder, version);
+        EXPECT_EQ(sizeof(buf), nbytes);
+        encoder.flush();
+        hycast::MemDecoder decoder(buf, nbytes);
+        decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
+        hycast::LatentChunk latentChunk{decoder, version};
+        EXPECT_EQ(chunkInfo, latentChunk.getInfo());
+        char latentData[latentChunk.getSize()];
+        EXPECT_EQ(chunkSize, latentChunk.drainData(latentData,
+                sizeof(latentData)));
+        EXPECT_EQ(0, ::memcmp(data+chunkIndex*chunkSize, latentData, chunkSize));
+    }
 }
 
 }  // namespace

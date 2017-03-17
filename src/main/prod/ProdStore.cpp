@@ -5,7 +5,7 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: ProdQueue.cpp
+ *   @file: ProdStore.cpp
  * @author: Steven R. Emmerson
  */
 
@@ -24,6 +24,7 @@ namespace hycast {
 
 class ProdStore::Impl final
 {
+    ProdRcvr* const                        prodRcvr;
     std::string                            pathname;
     std::string                            tempPathname;
     std::ofstream                          file;
@@ -41,7 +42,7 @@ class ProdStore::Impl final
         }
         catch (std::exception& e) {
             throw SystemError(__FILE__, __LINE__,
-                    "Couldn't close temporary output product-queue \"" +
+                    "Couldn't close temporary output product-store \"" +
                     tempPathname + "\"");
         }
     }
@@ -50,7 +51,7 @@ class ProdStore::Impl final
     {
         if (::rename(tempPathname.data(), pathname.data()))
             throw SystemError(__FILE__, __LINE__,
-                    "Couldn't rename temporary output product-queue \"" +
+                    "Couldn't rename temporary output product-store \"" +
                     tempPathname + "\" to \"" + pathname + "\"");
     }
 
@@ -58,21 +59,15 @@ class ProdStore::Impl final
     {
         if (::remove(tempPathname.data()))
             throw SystemError(__FILE__, __LINE__,
-                    "Couldn't remove temporary output product-queue \"" +
+                    "Couldn't remove temporary output product-store \"" +
                     tempPathname);
     }
 
 public:
-    Impl()
-        : pathname{}
-        , tempPathname{}
-        , file{}
-        , prods{}
-        , mutex{}
-    {}
-
-    Impl(const std::string pathname)
-        : pathname{pathname}
+    Impl(   ProdRcvr&          prodRcvr,
+            const std::string& pathname)
+        : prodRcvr{&prodRcvr}
+        , pathname{pathname}
         , tempPathname{pathname + ".tmp"}
         , file{}
         , prods{}
@@ -83,7 +78,7 @@ public:
                     std::ofstream::trunc);
             if (file.fail())
                 throw SystemError(__FILE__, __LINE__,
-                        "Couldn't open temporary output product-queue \"" +
+                        "Couldn't open temporary output product-store \"" +
                         tempPathname + "\"");
         }
     }
@@ -124,19 +119,19 @@ public:
         return true;
     }
 
-    bool add(LatentChunk& chunk)
+    Product& add(LatentChunk& chunk)
     {
         std::unique_lock<decltype(mutex)> lock(mutex);
-        return prods.at(chunk.getProdIndex()).add(chunk);
+        Product& prod = prods[chunk.getProdIndex()];
+        prod.add(chunk);
+        return prod;
     }
 };
 
-ProdStore::ProdStore()
-    : pImpl{new Impl()}
-{}
-
-ProdStore::ProdStore(const std::string pathname)
-    : pImpl{new Impl(pathname)}
+ProdStore::ProdStore(
+        ProdRcvr&          prodRcvr,
+        const std::string& pathname)
+    : pImpl{new Impl(prodRcvr, pathname)}
 {}
 
 bool ProdStore::add(const ProdInfo& prodInfo)
@@ -144,7 +139,7 @@ bool ProdStore::add(const ProdInfo& prodInfo)
     return pImpl->add(prodInfo);
 }
 
-bool ProdStore::add(LatentChunk& chunk)
+Product& ProdStore::add(LatentChunk& chunk)
 {
     return pImpl->add(chunk);
 }

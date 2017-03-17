@@ -81,7 +81,16 @@ public:
      */
     ChunkIndex getChunkIndex() const noexcept
     {
-        return info.getChunkIndex();
+        return info.getIndex();
+    }
+
+    /**
+     * Returns the size of the data-chunk in bytes.
+     * @return Size of the data-chunk in bytes
+     */
+    ChunkSize getSize() const noexcept
+    {
+        return info.getSize();
     }
 
     /**
@@ -134,30 +143,26 @@ class ActualChunk::Impl final
 {
     ChunkInfo   info;
     const void* data;
-    ChunkSize   size;
+
 public:
     /**
      * Constructs from nothing.
      */
     Impl()
-        : info(),
-          data(nullptr),
-          size(0)
+        : info()
+        , data(nullptr)
     {}
 
     /**
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
      * @param[in] data  Chunk data
-     * @param[in] size  Amount of data in bytes
      */
     Impl(
             const ChunkInfo& info,
-            const void*      data,
-            const ChunkSize  size)
-        : info(info),
-          data(data),
-          size(size)
+            const void*      data)
+        : info(info)
+        , data(data)
     {}
 
     /**
@@ -186,7 +191,7 @@ public:
      */
     ChunkIndex getChunkIndex() const noexcept
     {
-        return info.getChunkIndex();
+        return info.getIndex();
     }
 
     /**
@@ -197,7 +202,7 @@ public:
      */
     ChunkSize getSize() const noexcept
     {
-        return size;
+        return info.getSize();
     }
 
     /**
@@ -212,13 +217,28 @@ public:
     }
 
     /**
+     * Returns the number of bytes in the serialized representation.
+     * @param[in] version  Protocol version
+     * @return Number of bytes in serial representation
+     * @exceptionsafety No throw
+     * @threadsafety    Safe
+     */
+    size_t getSerialSize(const unsigned version) const noexcept
+    {
+        // Keep consistent with `serialize()`
+        return info.getSerialSize(version) +
+                Codec::getSerialSize(info.getSize());
+    }
+
+    /**
      * Serializes this instance to an encoder.
      * @param[in] encoder   Encoder
      * @param[in] version   Protocol version
+     * @return Number of bytes written
      * @exceptionsafety Basic
      * @threadsafety Compatible but not safe
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version)
     {
@@ -226,8 +246,8 @@ public:
          * Keep consistent with `LatentChunkImpl::LatentChunkImpl(Decoder,
          * unsigned)`
          */
-        info.serialize(encoder, version);
-        encoder.encode(data, size);
+        return info.serialize(encoder, version) +
+                encoder.encode(data, info.getSize());
     }
 };
 
@@ -238,9 +258,8 @@ ActualChunk::ActualChunk()
 
 ActualChunk::ActualChunk(
         const ChunkInfo& info,
-        const void*      data,
-        const ChunkSize  size)
-    : pImpl(new Impl(info, data, size))
+        const void*      data)
+    : pImpl(new Impl(info, data))
 {}
 
 const ChunkInfo& ActualChunk::getInfo() const noexcept
@@ -268,11 +287,16 @@ const void* ActualChunk::getData() const noexcept
     return pImpl->getData();
 }
 
-void ActualChunk::serialize(
+size_t ActualChunk::getSerialSize(const unsigned version) const noexcept
+{
+    return pImpl->getSerialSize(version);
+}
+
+size_t ActualChunk::serialize(
         Encoder&       encoder,
         const unsigned version) const
 {
-    pImpl->serialize(encoder, version);
+    return pImpl->serialize(encoder, version);
 }
 
 LatentChunk::LatentChunk()
@@ -305,6 +329,11 @@ ProdIndex LatentChunk::getProdIndex() const noexcept
 ChunkIndex LatentChunk::getChunkIndex() const noexcept
 {
     return pImpl->getChunkIndex();
+}
+
+ChunkSize LatentChunk::getSize() const noexcept
+{
+    return pImpl->getSize();
 }
 
 size_t LatentChunk::drainData(

@@ -113,6 +113,16 @@ public:
             const ChunkSize   chunkSize) const;
 
     /**
+     * Returns information on a chunk of data corresponding to a chunk index.
+     * @param[in] chunkIndex  Chunk index
+     * @return Corresponding chunk information
+     * @throws InvalidArgument  The chunk index is invalid
+     * @execeptionsafety Strong guarantee
+     * @threadsafety     Safe
+     */
+    ChunkInfo makeChunkInfo(const ChunkIndex chunkIndex) const;
+
+    /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
      * @retval true   This instance is equal to the other
@@ -137,7 +147,7 @@ public:
      * @execptionsafety Basic guarantee
      * @threadsafety    Compatible but not thread-safe
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
 

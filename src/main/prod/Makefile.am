@@ -16,7 +16,9 @@ lib_la_SOURCES 	= \
 	Chunk.cpp Chunk.h \
 	Product.cpp Product.h \
 	ProdFactory.cpp ProdFactory.h \
-	ProdStore.cpp ProdStore.h
+	ProdRcvr.h \
+	ProdStore.cpp ProdStore.h \
+	UnknownProd.cpp UnknownProd.h
 
 lib_la_CPPFLAGS = \
 	-I$(srcdir)/.. \

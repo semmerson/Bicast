@@ -49,6 +49,15 @@ std::string placeStamp(
         const char*       file,
         const int         line);
 
+class InvalidArgument : public std::invalid_argument
+{
+public:
+    InvalidArgument(
+            const char*       file,
+            const int         line,
+            const std::string msg);
+};
+
 class LogicError : public std::logic_error
 {
 public:

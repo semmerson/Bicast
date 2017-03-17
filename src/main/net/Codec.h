@@ -87,21 +87,24 @@ public:
     /**
      * Serializes a 16-bit, unsigned integer into the serial buffer.
      * @param[in] value  Value to serialize
+     * @return Number of bytes written
      */
-    void encode(const uint16_t value);
+    size_t encode(const uint16_t value);
 
     /**
      * Serializes a 32-bit, unsigned integer into the serial buffer.
      * @param[in] value  Value to serialize
+     * @return Number of bytes written
      */
-    void encode(const uint32_t value);
+    size_t encode(const uint32_t value);
 
     /**
      * Serializes a string into the serial buffer.
      * @param[in] string  String to serialize
+     * @return Number of bytes written
      * @throws std::invalid_argument  String is too long
      */
-    void encode(const std::string& string);
+    size_t encode(const std::string& string);
 
     /**
      * Serializes a byte-array. May be called at most once between calls to
@@ -110,9 +113,10 @@ public:
      * the array must persist until the data is written.
      * @param[in] bytes Array to serialize
      * @param[in] len   Size of array in bytes
+     * @return Number of bytes written (same as `len`)
      * @throws std::runtime_error  Already called
      */
-    void encode(
+    size_t encode(
             const void*  bytes,
             const size_t len);
 

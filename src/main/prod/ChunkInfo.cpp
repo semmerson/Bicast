@@ -23,20 +23,22 @@ ChunkInfo::ChunkInfo(
     // Keep consonant with serialize()
     prodIndex = ProdIndex::deserialize(decoder, version);
     decoder.decode(chunkIndex);
+    decoder.decode(chunkSize);
 }
 
 bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
 {
-    return prodIndex == that.prodIndex && chunkIndex == that.chunkIndex;
+    return prodIndex == that.prodIndex && chunkIndex == that.chunkIndex &&
+            chunkSize == that.chunkSize;
 }
 
-void ChunkInfo::serialize(
+size_t ChunkInfo::serialize(
         Encoder&       encoder,
         const unsigned version) const
 {
     // Keep consonant with ChunkInfo(Decoder, unsigned)
-    encoder.encode(prodIndex);
-    encoder.encode(chunkIndex);
+    return encoder.encode(prodIndex) + encoder.encode(chunkIndex) +
+            encoder.encode(chunkSize);
 }
 
 ChunkInfo ChunkInfo::deserialize(

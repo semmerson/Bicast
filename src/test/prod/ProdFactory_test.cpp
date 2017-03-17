@@ -53,10 +53,8 @@ protected:
     const hycast::ChunkSize   chunkSize{2};
     const hycast::ProdInfo    prodInfo{"product", prodIndex, prodSize, chunkSize};
     char                      data[3] = {'a', 'b', 'c'};
-    hycast::ActualChunk       chunk0{hycast::ChunkInfo(prodIndex, 0), data,
-        chunkSize};
-    hycast::ActualChunk       chunk1{hycast::ChunkInfo(prodIndex, 1),
-        data+chunkSize, 1};
+    hycast::ActualChunk       chunk0{prodInfo.makeChunkInfo(0), data};
+    hycast::ActualChunk       chunk1{prodInfo.makeChunkInfo(1), data+chunkSize};
 };
 
 // Tests default construction

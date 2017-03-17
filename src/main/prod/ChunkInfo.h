@@ -24,25 +24,30 @@ namespace hycast {
 class ChunkInfo final : public Serializable<ChunkInfo> {
     ProdIndex   prodIndex;
     ChunkIndex  chunkIndex;
+    ChunkSize   chunkSize;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] prodIndex   Product index
+     * @param[in] chunkIndex  Chunk index
+     * @param[in] chunkSize   Chunk size in bytes
+     */
+    ChunkInfo(
+            const ProdIndex  prodIndex,
+            const ChunkIndex chunkIndex,
+            const ChunkSize  chunkSize)
+        : prodIndex(prodIndex)
+        , chunkIndex(chunkIndex)
+        , chunkSize(chunkSize)
+    {}
+
     /**
      * Default constructs.
      */
     ChunkInfo()
-        : prodIndex(0),
-          chunkIndex(0) {}
-
-    /**
-     * Constructs from product and chunk indexes.
-     * @param[in] prodIndex   Product index
-     * @param[in] chunkIndex  Chunk index
-     */
-    ChunkInfo(
-            const ProdIndex  prodIndex,
-            const ChunkIndex chunkIndex)
-        : prodIndex(prodIndex)
-        , chunkIndex(chunkIndex) {}
+        : ChunkInfo(0, 0, 0)
+    {}
 
     ChunkInfo(
             Decoder& decoder,
@@ -55,6 +60,18 @@ public:
     ProdIndex getProdIndex() const {return prodIndex;}
 
     /**
+     * Returns the chunk index.
+     * @return the chunk index
+     */
+    ChunkIndex getIndex() const {return chunkIndex;}
+
+    /**
+     * Returns the chunk size in bytes.
+     * @return the chunk size in bytes
+     */
+    ChunkIndex getSize() const {return chunkSize;}
+
+    /**
      * Returns the size of a serialized instance in bytes.
      * @param[in] version  Protocol version
      * @return the size of a serialized instance in bytes
@@ -62,7 +79,8 @@ public:
     static size_t getStaticSerialSize(const unsigned version) noexcept
     {
         return ProdIndex::getStaticSerialSize(version) +
-                Codec::getSerialSize(sizeof(chunkIndex));
+                Codec::getSerialSize(sizeof(ChunkIndex)) +
+                Codec::getSerialSize(sizeof(ChunkSize));
     }
 
     /**
@@ -75,12 +93,6 @@ public:
     {
         return getStaticSerialSize(version);
     }
-
-    /**
-     * Returns the chunk index.
-     * @return the chunk index
-     */
-    ChunkIndex getChunkIndex() const {return chunkIndex;}
 
     /**
      * Indicates if this instance equals another.
@@ -117,8 +129,9 @@ public:
      * Serializes this instance to an encoder.
      * @param[out] encoder  Encoder
      * @param[in]  version  Protocol version
+     * @return Number of bytes written
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
 

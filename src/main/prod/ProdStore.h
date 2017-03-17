@@ -1,11 +1,12 @@
 /**
- * This file declares a store of data-products.
+ * This file declares a store of data-products that can persist between
+ * sessions.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: ProdQueue.h
+ *   @file: ProdStore.h
  * @author: Steven R. Emmerson
  */
 
@@ -14,6 +15,7 @@
 
 #include "Chunk.h"
 #include "ProdInfo.h"
+#include "ProdRcvr.h"
 
 #include <memory>
 
@@ -27,19 +29,20 @@ class ProdStore final
 
 public:
     /**
-     * Default constructs.
+     * Constructs. If the given file isn't the empty string, then the
+     * product-store will be written to it upon destruction in order to persist
+     * the store between sessions.
+     * @param[in] prodRcvr  Object to receive completed data-products
+     * @param[in] path      Pathname of file for persisting the product-store
+     *                      between sessions or the empty string to indicate no
+     *                      persistence
      */
-    ProdStore();
+    explicit ProdStore(
+            ProdRcvr&          prodRcvr,
+            const std::string& pathname = "");
 
     /**
-     * Constructs from the pathname of the file for persisting the
-     * product-queue.
-     * @param[in] path  Pathname of persisting file
-     */
-    explicit ProdStore(const std::string pathname);
-
-    /**
-     * Destroys. Writes the product-queue to the persistence-file if one was
+     * Destroys. Writes the product-store to the persistence-file if one was
      * specified during construction.
      */
     ~ProdStore() =default;
@@ -55,14 +58,15 @@ public:
     bool add(const ProdInfo& prodInfo);
 
     /**
-     * Adds a latent chunk of data to a product.
+     * Adds a latent chunk of data to a product. Creates the product if it
+     * doesn't already exist. Will not overwrite an existing chunk of data in
+     * the product.
      * @param[in] chunk  Latent chunk of data to be added
-     * @retval true      Success
-     * @retval false     Chunk of data already exists for product
-     * @exceptionsafety  Basic guarantee
+     * @return Product associated with the chunk of data
+     * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    bool add(LatentChunk& chunk);
+    Product& add(LatentChunk& chunk);
 };
 
 } // namespace

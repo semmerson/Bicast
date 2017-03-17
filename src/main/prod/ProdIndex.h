@@ -21,7 +21,8 @@
 
 namespace hycast {
 
-class ProdIndex final : public Serializable<ProdIndex> {
+class ProdIndex final : public Serializable<ProdIndex>
+{
 public:
     typedef uint32_t  type;
     static const type prodIndexMax = UINT32_MAX;
@@ -135,7 +136,7 @@ public:
         return getStaticSerialSize(version);
     }
 
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
 

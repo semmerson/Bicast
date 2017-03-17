@@ -17,11 +17,11 @@
 
 namespace hycast {
 
-void ProdIndex::serialize(
+size_t ProdIndex::serialize(
         Encoder&       encoder,
         const unsigned version) const
 {
-    encoder.encode(index);
+    return encoder.encode(index);
 }
 
 ProdIndex ProdIndex::deserialize(

@@ -61,14 +61,26 @@ public:
     /**
      * Returns the index of the associated product.
      * @return the index of the associated product
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
     ProdIndex getProdIndex() const noexcept;
 
     /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
      */
     ChunkIndex getChunkIndex() const noexcept;
+
+    /**
+     * Returns the size of the data-chunk in bytes.
+     * @return Size of the data-chunk in bytes
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    ChunkSize getSize() const noexcept;
 
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
@@ -117,12 +129,10 @@ public:
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
      * @param[in] data  Chunk data
-     * @param[in] size  Amount of data in bytes
      */
     ActualChunk(
             const ChunkInfo& info,
-            const void*      data,
-            const ChunkSize  size);
+            const void*      data);
 
     /**
      * Returns information on the chunk.
@@ -161,13 +171,25 @@ public:
     const void* getData() const noexcept;
 
     /**
+     * Returns the number of bytes in the serialized representation excluding
+     * the actual bytes of data (i.e., the returned value is the number of
+     * bytes in the serial representation of the chunk's information).
+     * @param[in] version  Protocol version
+     * @return Number of bytes in serial representation
+     * @exceptionsafety No throw
+     * @threadsafety    Safe
+     */
+    size_t getSerialSize(const unsigned version) const noexcept;
+
+    /**
      * Serializes this instance to an encoder.
      * @param[in] encoder  Encoder
      * @param[in] version  Protocol version
+     * @return Number of bytes written
      * @exceptionsafety Basic
      * @threadsafety Compatible but not safe
      */
-    void serialize(
+    size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
 };

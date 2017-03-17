@@ -85,7 +85,7 @@ public:
     {
         ChunkSize chunkSize{chunk.getSize()};
         prodInfo.vet(chunk.getInfo(), chunkSize);
-        ChunkIndex chunkIndex{chunk.getInfo().getChunkIndex()};
+        ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
         if (haveChunk[chunkIndex])
             return false;
         ::memcpy(startOf(chunkIndex), chunk.getData(), chunkSize);
@@ -107,7 +107,7 @@ public:
      */
     bool add(LatentChunk& chunk)
     {
-        ChunkIndex chunkIndex{chunk.getInfo().getChunkIndex()};
+        ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
         if (haveChunk[chunkIndex])
             return false;
         const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
@@ -142,6 +142,12 @@ public:
     {
         return data;
     }
+
+    bool operator ==(const ProductImpl& that) const
+    {
+        return prodInfo == that.prodInfo &&
+                ::memcmp(data, that.data, prodInfo.getSize()) == 0;
+    }
 };
 
 Product::Product(const ProdInfo& info)
@@ -171,6 +177,11 @@ bool Product::isComplete() const
 const char* Product::getData() const noexcept
 {
     return pImpl->getData();
+}
+
+bool Product::operator ==(const Product& that) const
+{
+    return *pImpl == *that.pImpl;
 }
 
 } // namespace
