@@ -1,7 +1,7 @@
 /**
  * This file defines information on a product.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -27,7 +27,7 @@
 
 namespace hycast {
 
-class ProdInfoImpl final
+class ProdInfo::Impl final
 {
     std::string name;
     ProdIndex   index;
@@ -38,7 +38,7 @@ public:
     /**
      * Default constructs.
      */
-    ProdInfoImpl()
+    Impl()
         : name()
         , index(0)
         , size(0)
@@ -53,7 +53,7 @@ public:
      * @param[in] chunkSize  Size of data chunks in bytes
      * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
      */
-    ProdInfoImpl(
+    Impl(
             const std::string& name,
             const ProdIndex    index,
             const ProdSize     size,
@@ -75,7 +75,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not thread-safe
      */
-    ProdInfoImpl(
+    Impl(
         Decoder&        decoder,
         const unsigned  version)
         : name(),
@@ -211,7 +211,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    bool operator==(const ProdInfoImpl& that) const noexcept
+    bool operator==(const Impl& that) const noexcept
     {
         return (index == that.index) &&
                 (size == that.size) &&
@@ -254,7 +254,7 @@ public:
 };
 
 ProdInfo::ProdInfo()
-    : pImpl(new ProdInfoImpl())
+    : pImpl(new Impl())
 {}
 
 ProdInfo::ProdInfo(
@@ -262,7 +262,7 @@ ProdInfo::ProdInfo(
         const ProdIndex    index,
         const ProdSize     size,
         const ChunkSize    chunkSize)
-    : pImpl(new ProdInfoImpl(name, index, size, chunkSize))
+    : pImpl(new Impl(name, index, size, chunkSize))
 {}
 
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept
@@ -328,7 +328,7 @@ ProdInfo ProdInfo::deserialize(
         Decoder&        decoder,
         const unsigned  version)
 {
-    auto impl = ProdInfoImpl(decoder, version);
+    auto impl = Impl(decoder, version);
     return ProdInfo(impl.getName(), impl.getIndex(), impl.getSize(),
             impl.getChunkSize());
 }

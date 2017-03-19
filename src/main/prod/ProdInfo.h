@@ -23,11 +23,11 @@
 
 namespace hycast {
 
-class ProdInfoImpl; // Forward declaration
-
 class ProdInfo : public Serializable<ProdInfo>
 {
-    std::shared_ptr<ProdInfoImpl> pImpl;
+    class Impl; // Forward declaration
+
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
