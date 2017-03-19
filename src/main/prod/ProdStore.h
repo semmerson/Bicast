@@ -32,14 +32,11 @@ public:
      * Constructs. If the given file isn't the empty string, then the
      * product-store will be written to it upon destruction in order to persist
      * the store between sessions.
-     * @param[in] prodRcvr  Object to receive completed data-products
      * @param[in] path      Pathname of file for persisting the product-store
      *                      between sessions or the empty string to indicate no
      *                      persistence
      */
-    explicit ProdStore(
-            ProdRcvr&          prodRcvr,
-            const std::string& pathname = "");
+    explicit ProdStore(const std::string& pathname = "");
 
     /**
      * Destroys. Writes the product-store to the persistence-file if one was
@@ -61,12 +58,14 @@ public:
      * Adds a latent chunk of data to a product. Creates the product if it
      * doesn't already exist. Will not overwrite an existing chunk of data in
      * the product.
-     * @param[in] chunk  Latent chunk of data to be added
-     * @return Product associated with the chunk of data
-     * @exceptionsafety  Strong guarantee
-     * @threadsafety     Safe
+     * @param[in]  chunk  Latent chunk of data to be added
+     * @param[out] prod   Associated product
+     * @retval `true`     Chunk was added. Product might now be complete.
+     * @retval `false`    Associated product already had chunk. Chunk not added.
+     * @exceptionsafety   Strong guarantee
+     * @threadsafety      Safe
      */
-    Product& add(LatentChunk& chunk);
+    bool add(LatentChunk& chunk, Product& prod);
 };
 
 } // namespace

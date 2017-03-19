@@ -24,7 +24,6 @@ namespace hycast {
 
 class ProdStore::Impl final
 {
-    ProdRcvr* const                        prodRcvr;
     std::string                            pathname;
     std::string                            tempPathname;
     std::ofstream                          file;
@@ -64,10 +63,8 @@ class ProdStore::Impl final
     }
 
 public:
-    Impl(   ProdRcvr&          prodRcvr,
-            const std::string& pathname)
-        : prodRcvr{&prodRcvr}
-        , pathname{pathname}
+    Impl(const std::string& pathname)
+        : pathname{pathname}
         , tempPathname{pathname + ".tmp"}
         , file{}
         , prods{}
@@ -119,19 +116,16 @@ public:
         return true;
     }
 
-    Product& add(LatentChunk& chunk)
+    bool add(LatentChunk& chunk, Product& prod)
     {
         std::unique_lock<decltype(mutex)> lock(mutex);
-        Product& prod = prods[chunk.getProdIndex()];
-        prod.add(chunk);
-        return prod;
+        prod = prods[chunk.getProdIndex()];
+        return prod.add(chunk);
     }
 };
 
-ProdStore::ProdStore(
-        ProdRcvr&          prodRcvr,
-        const std::string& pathname)
-    : pImpl{new Impl(prodRcvr, pathname)}
+ProdStore::ProdStore(const std::string& pathname)
+    : pImpl{new Impl(pathname)}
 {}
 
 bool ProdStore::add(const ProdInfo& prodInfo)
@@ -139,9 +133,9 @@ bool ProdStore::add(const ProdInfo& prodInfo)
     return pImpl->add(prodInfo);
 }
 
-Product& ProdStore::add(LatentChunk& chunk)
+bool ProdStore::add(LatentChunk& chunk, Product& prod)
 {
-    return pImpl->add(chunk);
+    return pImpl->add(chunk, prod);
 }
 
 } // namespace
