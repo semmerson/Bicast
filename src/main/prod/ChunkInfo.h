@@ -21,6 +21,8 @@
 
 namespace hycast {
 
+class ProdInfo;
+
 class ChunkInfo final : public Serializable<ChunkInfo> {
     /**
      * Index of the associated data-product.
@@ -37,7 +39,6 @@ class ChunkInfo final : public Serializable<ChunkInfo> {
      */
     ChunkIndex  chunkIndex;
 
-public:
     /**
      * Constructs.
      * @param[in] prodIndex   Product index
@@ -49,12 +50,22 @@ public:
             const ProdSize    prodSize,
             const ChunkIndex  chunkIndex);
 
+public:
     /**
      * Default constructs.
      */
     ChunkInfo()
         : ChunkInfo(0, 0, 0)
     {}
+
+    /**
+     * Constructs.
+     * @param[in] prodInfo    Information on associated product
+     * @param[in] chunkIndex  Origin-0 chunk index
+     */
+    ChunkInfo(
+            const ProdInfo&   prodInfo,
+            const ChunkIndex  chunkIndex);
 
     ChunkInfo(
             Decoder& decoder,

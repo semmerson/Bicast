@@ -46,7 +46,7 @@ void runClient()
 
         hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
         EXPECT_EQ(sock, prodInfoChannel.getSocket());
-        hycast::ProdInfo prodInfo1("product", 1, 2);
+        hycast::ProdInfo prodInfo1("product", 1, 5);
         prodInfoChannel.send(prodInfo1);
         EXPECT_EQ(0, sock.getStreamId());
         hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
@@ -54,7 +54,7 @@ void runClient()
 
         hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
         EXPECT_EQ(sock, chunkInfoChannel.getSocket());
-        hycast::ChunkInfo chunkInfo1(4, 5, 0);
+        hycast::ChunkInfo chunkInfo1(prodInfo1, 0);
         chunkInfoChannel.send(chunkInfo1);
         EXPECT_EQ(1, sock.getStreamId());
         hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());

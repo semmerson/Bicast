@@ -10,6 +10,7 @@
  */
 
 #include "ChunkInfo.h"
+#include "ProdInfo.h"
 #include "error.h"
 
 #include <arpa/inet.h>
@@ -34,6 +35,12 @@ ChunkInfo::ChunkInfo(
                 "index=" + std::to_string(chunkIndex) + ", numChunks=" +
                 std::to_string(numChunks));
 }
+
+ChunkInfo::ChunkInfo(
+        const ProdInfo&  prodInfo,
+        const ChunkIndex chunkIndex)
+    : ChunkInfo(prodInfo.getIndex(), prodInfo.getSize(), chunkIndex)
+{}
 
 void ChunkInfo::setCanonSize(const ChunkSize size)
 {

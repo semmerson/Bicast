@@ -67,7 +67,7 @@ TEST_F(UnknownProdTest, OrphanChunkAddition) {
 
     // Create chunk
     const hycast::ChunkIndex  chunkIndex{1};
-    const hycast::ChunkInfo   chunkInfo(prodIndex, prodSize, chunkIndex);
+    const hycast::ChunkInfo   chunkInfo(prodInfo, chunkIndex);
     const hycast::ActualChunk actualChunk(chunkInfo, data);
 
     // Serialize chunk

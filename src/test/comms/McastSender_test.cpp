@@ -67,7 +67,7 @@ TEST_F(McastSenderTest, SendDataProduct) {
         auto dataSize = prodInfo.getChunkSize(chunkIndex);
         char data[dataSize];
         ::memset(data, 0xbd, dataSize);
-        hycast::ChunkInfo   chunkInfo(prodIndex, prodInfo.getSize(), chunkIndex);
+        hycast::ChunkInfo   chunkInfo(prodInfo, chunkIndex);
         hycast::ActualChunk chunk(chunkInfo, data);
         prod.add(chunk);
     }

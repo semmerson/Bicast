@@ -154,7 +154,7 @@ protected:
     // Objects declared here can be used in all TEST_F tests
     hycast::InetSockAddr serverSockAddr{"127.0.0.1", 38800};
     hycast::ProdInfo     prodInfo{"product", 1, 100000};
-    hycast::ChunkInfo    chunkInfo{hycast::ProdIndex(1), 100000, 2};
+    hycast::ChunkInfo    chunkInfo{prodInfo, 2};
     ClientMsgRcvr        clntMsgRcvr{prodInfo, chunkInfo};
 };
 

@@ -148,6 +148,7 @@ protected:
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;
+        hycast::ProdInfo prodInfo("product", 0, dataSize);
         for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;
                 chunkSize > 4000; chunkSize /= 2) {
             char              data[chunkSize];
@@ -155,9 +156,8 @@ protected:
                     std::chrono::high_resolution_clock::now();
             size_t remaining = dataSize;
             for (hycast::ChunkIndex chunkIndex = 0;
-                    chunkIndex < (dataSize + chunkSize - 1)/chunkSize;
-                    ++chunkIndex) {
-                hycast::ChunkInfo chunkInfo(2, dataSize, chunkIndex);
+                    chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
+                hycast::ChunkInfo chunkInfo(prodInfo, chunkIndex);
                 hycast::ActualChunk chunk(chunkInfo, data+chunkInfo.getOffset());
                 peer.sendData(chunk);
                 remaining -= chunk.getSize();
@@ -200,7 +200,7 @@ protected:
     std::thread       senderThread;
     std::thread       receiverThread;
     hycast::ProdInfo  prodInfo{"product", 1, 100000};
-    hycast::ChunkInfo chunkInfo{1, prodInfo.getSize(), 3};
+    hycast::ChunkInfo chunkInfo{prodInfo, 3};
     hycast::ProdIndex prodIndex{1};
     char*             data;
 };

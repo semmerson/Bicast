@@ -184,19 +184,6 @@ public:
     }
 
     /**
-     * Returns information on a chunk of data corresponding to a chunk index.
-     * @param[in] chunkIndex  Chunk index
-     * @return Corresponding chunk information
-     * @throws InvalidArgument  The chunk index is invalid
-     * @execeptionsafety Strong guarantee
-     * @threadsafety     Safe
-     */
-    ChunkInfo makeChunkInfo(const ChunkIndex chunkIndex)
-    {
-        return ChunkInfo(index, size, chunkIndex);
-    }
-
-    /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
      * @retval true   This instance is equal to the other
@@ -310,7 +297,7 @@ void ProdInfo::vet(
 
 ChunkInfo ProdInfo::makeChunkInfo(const ChunkIndex chunkIndex) const
 {
-    return pImpl->makeChunkInfo(chunkIndex);
+    return ChunkInfo(*this, chunkIndex);
 }
 
 ProdInfo ProdInfo::deserialize(

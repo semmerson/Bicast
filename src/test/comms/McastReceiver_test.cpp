@@ -92,7 +92,7 @@ protected:
         hycast::ChunkIndex      numChunks = prodInfo.getNumChunks();
         for (hycast::ChunkIndex chunkIndex = 0; chunkIndex < numChunks;
                 ++chunkIndex) {
-            hycast::ChunkInfo   chunkInfo(prodIndex, prodInfo.getSize(), chunkIndex);
+            hycast::ChunkInfo   chunkInfo(prodInfo, chunkIndex);
             hycast::ActualChunk chunk(chunkInfo, data);
             prod.add(chunk);
         }

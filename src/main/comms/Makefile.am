@@ -19,6 +19,7 @@ lib_la_SOURCES 	= \
 	PeerSet.cpp PeerSet.h \
 	PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
+	ChunkGram.cpp ChunkGram.h \
 	McastSender.cpp McastSender.h \
 	McastReceiver.cpp McastReceiver.h
 

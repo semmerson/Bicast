@@ -13,6 +13,7 @@
 #include "Chunk.h"
 #include "ClntSctpSock.h"
 #include "InetSockAddr.h"
+#include "ProdInfo.h"
 #include "SrvrSctpSock.h"
 
 #include <cstring>
@@ -45,7 +46,8 @@ void runClient()
     hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
     uint8_t data1[hycast::ChunkInfo::getCanonSize()];
     (void)memset(data1, 0xbd, sizeof(data1));
-    hycast::ChunkInfo chunkInfo(4, sizeof(data1), 0);
+    hycast::ProdInfo  prodInfo("product", 0, sizeof(data1));
+    hycast::ChunkInfo chunkInfo(prodInfo, 0);
     hycast::ActualChunk actualChunk(chunkInfo, data1);
     chunkChannel.send(actualChunk);
     char data2[sizeof(data1)];
