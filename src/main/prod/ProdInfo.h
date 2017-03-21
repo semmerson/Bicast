@@ -48,6 +48,12 @@ public:
             const ProdSize     size);
 
     /**
+     * Returns a string representation of this instance.
+     * @return String representation of this instance
+     */
+    std::string to_string() const;
+
+    /**
      * Returns the name of the product.
      * @return Name of the product
      * @exceptionsafety Nothrow

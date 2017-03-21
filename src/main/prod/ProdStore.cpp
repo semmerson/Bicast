@@ -105,21 +105,33 @@ public:
         }
     }
 
-    bool add(const ProdInfo& prodInfo)
+    Product add(const ProdInfo& prodInfo)
     {
         auto                              prodIndex = prodInfo.getIndex();
         std::unique_lock<decltype(mutex)> lock(mutex);
         auto                              iter = prods.find(prodIndex);
-        if (iter != prods.end())
-            return false;
-        prods[prodIndex] = Product(prodInfo);
-        return true;
+        if (iter != prods.end()) {
+            Product prod = iter->second;
+            prod.set(prodInfo);
+            return prod;
+        }
+        Product prod = Product(prodInfo);
+        prods.emplace(prodIndex, prod);
+        return prod;
     }
 
     bool add(LatentChunk& chunk, Product& prod)
     {
         std::unique_lock<decltype(mutex)> lock(mutex);
-        prod = prods[chunk.getProdIndex()];
+        auto prodIndex = chunk.getProdIndex();
+        auto iter = prods.find(prodIndex);
+        if (iter != prods.end()) {
+            prod = iter->second;
+        }
+        else {
+            prod = Product(ProdInfo("", prodIndex, chunk.getProdSize()));
+            prods.emplace(prodIndex, prod);
+        }
         return prod.add(chunk);
     }
 };
@@ -128,7 +140,7 @@ ProdStore::ProdStore(const std::string& pathname)
     : pImpl{new Impl(pathname)}
 {}
 
-bool ProdStore::add(const ProdInfo& prodInfo)
+Product ProdStore::add(const ProdInfo& prodInfo)
 {
     return pImpl->add(prodInfo);
 }

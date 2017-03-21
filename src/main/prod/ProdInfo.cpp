@@ -64,6 +64,16 @@ public:
     }
 
     /**
+     * Returns a string representation of this instance.
+     * @return String representation of this instance
+     */
+    std::string to_string() const
+    {
+        return "ProdInfo(name=\"" + name + "\", index=" + std::to_string(index)
+                + ", size=" + std::to_string(size) + ")";
+    }
+
+    /**
      * Constructs by deserializing a serialized representation from a decoder.
      * @param[in] decoder  Decoder
      * @param[in] version  Serialization version
@@ -240,6 +250,11 @@ ProdInfo::ProdInfo(
         const ProdSize     size)
     : pImpl(new Impl(name, index, size))
 {}
+
+std::string ProdInfo::to_string() const
+{
+    return pImpl->to_string();
+}
 
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept
 {

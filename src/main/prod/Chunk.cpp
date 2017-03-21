@@ -63,6 +63,15 @@ public:
     }
 
     /**
+     * Returns the size, in bytes, of the associated product.
+     * @return the size, in bytes, of the associated product
+     */
+    ProdSize getProdSize() const noexcept
+    {
+        return info.getProdSize();
+    }
+
+    /**
      * Returns the size of the data-chunk in bytes.
      * @return Size of the data-chunk in bytes
      */
@@ -322,6 +331,11 @@ const ChunkInfo& LatentChunk::getInfo() const noexcept
 ProdIndex LatentChunk::getProdIndex() const noexcept
 {
     return pImpl->getProdIndex();
+}
+
+ProdSize LatentChunk::getProdSize() const noexcept
+{
+    return pImpl->getProdSize();
 }
 
 ChunkOffset LatentChunk::getOffset() const noexcept

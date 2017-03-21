@@ -70,6 +70,14 @@ public:
     ProdIndex getProdIndex() const noexcept;
 
     /**
+     * Returns the size, in bytes, of the associated product.
+     * @return the size, in bytes, of the associated product
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    ProdSize getProdSize() const noexcept;
+
+    /**
      * Returns the byte-offset of the chunk-of-data.
      * @return the byte-offset of the chunk
      * @exceptionsafety Nothrow

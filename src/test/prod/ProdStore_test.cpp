@@ -50,8 +50,8 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 TEST_F(ProdStoreTest, InitialEntry) {
     hycast::ProdInfo  prodInfo("product", 0, 38000);
     hycast::ProdStore ps{};
-    EXPECT_TRUE(ps.add(prodInfo));
-    EXPECT_FALSE(ps.add(prodInfo));
+    auto prod = ps.add(prodInfo);
+    EXPECT_FALSE(prod.isComplete());
 }
 
 // Tests adding latent chunks
@@ -64,8 +64,7 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
     hycast::ChunkInfo::setCanonSize(chunkSize);
     hycast::ProdInfo    prodInfo("product", prodIndex, prodSize);
     hycast::ProdStore   ps{};
-    EXPECT_TRUE(ps.add(prodInfo));
-    hycast::Product     prod;
+    auto                prod = ps.add(prodInfo);
 
     for (hycast::ChunkIndex chunkIndex = 0;
             chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {

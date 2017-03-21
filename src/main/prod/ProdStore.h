@@ -47,12 +47,11 @@ public:
     /**
      * Makes an initial entry for a product.
      * @param[in] prodInfo  Product information
-     * @retval true   Success
-     * @retval false  Entry already exists for product
+     * @return The product. Might now be complete.
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    bool add(const ProdInfo& prodInfo);
+    Product add(const ProdInfo& prodInfo);
 
     /**
      * Adds a latent chunk of data to a product. Creates the product if it

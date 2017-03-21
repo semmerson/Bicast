@@ -39,6 +39,14 @@ public:
     explicit Product(const ProdInfo& info);
 
     /**
+     * Sets the associated product-information providing it is consistent with
+     * the information provided during construction (basically, only the name
+     * can be changed).
+     * @param[in] info  New product-information
+     */
+    void set(const ProdInfo& info);
+
+    /**
      * Returns information on the product.
      * @return Information on the product
      * @exceptionsafety Nothrow
