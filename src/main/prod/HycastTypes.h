@@ -19,6 +19,7 @@ namespace hycast {
 typedef uint16_t Version;
 typedef uint32_t ProdSize;
 typedef uint32_t ChunkIndex;
+typedef uint32_t ChunkOffset;
 typedef uint16_t ChunkSize;
 typedef uint16_t ProdNameSize;
 

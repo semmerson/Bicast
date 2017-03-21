@@ -12,6 +12,7 @@
 #include <Channel.h>
 #include "ChunkInfo.h"
 #include "ClntSctpSock.h"
+#include "error.h"
 #include "ProdInfo.h"
 #include "SrvrSctpSock.h"
 
@@ -40,23 +41,28 @@ void runServer(hycast::SrvrSctpSock serverSock)
 
 void runClient()
 {
-    hycast::ClntSctpSock sock(serverSockAddr, numStreams);
+    try {
+        hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
-    hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
-    EXPECT_EQ(sock, prodInfoChannel.getSocket());
-    hycast::ProdInfo prodInfo1("product", 1, 2, 3);
-    prodInfoChannel.send(prodInfo1);
-    EXPECT_EQ(0, sock.getStreamId());
-    hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
-    EXPECT_TRUE(prodInfo1 == prodInfo2);
+        hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
+        EXPECT_EQ(sock, prodInfoChannel.getSocket());
+        hycast::ProdInfo prodInfo1("product", 1, 2);
+        prodInfoChannel.send(prodInfo1);
+        EXPECT_EQ(0, sock.getStreamId());
+        hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
+        EXPECT_TRUE(prodInfo1 == prodInfo2);
 
-    hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
-    EXPECT_EQ(sock, chunkInfoChannel.getSocket());
-    hycast::ChunkInfo chunkInfo1(4, 5);
-    chunkInfoChannel.send(chunkInfo1);
-    EXPECT_EQ(1, sock.getStreamId());
-    hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
-    EXPECT_TRUE(chunkInfo1 == chunkInfo2);
+        hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
+        EXPECT_EQ(sock, chunkInfoChannel.getSocket());
+        hycast::ChunkInfo chunkInfo1(4, 5, 0);
+        chunkInfoChannel.send(chunkInfo1);
+        EXPECT_EQ(1, sock.getStreamId());
+        hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
+        EXPECT_TRUE(chunkInfo1 == chunkInfo2);
+    }
+    catch (const std::exception& e) {
+        hycast::log_what(e);
+    }
 }
 
 // The fixture for testing class Channel.

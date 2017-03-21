@@ -61,12 +61,13 @@ class McastSender::Impl final
             const ProdInfo  prodInfo,
             const char*     data)
     {
-        const ProdIndex prodIndex = prodInfo.getIndex();
-        const ChunkIndex numChunks = prodInfo.getNumChunks();
+        const auto prodIndex = prodInfo.getIndex();
+        const auto numChunks = prodInfo.getNumChunks();
+        const auto prodSize = prodInfo.getSize();
         for (ChunkIndex chunkIndex = 0; chunkIndex < numChunks; ++chunkIndex) {
             encoder.encode(chunkId);
-            ChunkSize chunkSize = prodInfo.getChunkSize(chunkIndex);
-            ChunkInfo chunkInfo(prodIndex, chunkIndex, chunkSize);
+            const auto chunkSize = prodInfo.getChunkSize(chunkIndex);
+            ChunkInfo  chunkInfo(prodIndex, prodSize, chunkIndex);
             chunkInfo.serialize(encoder, version);
             encoder.encode(data, chunkSize);
             encoder.flush();

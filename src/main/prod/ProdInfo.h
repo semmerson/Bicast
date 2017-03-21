@@ -40,14 +40,12 @@ public:
      * @param[in] name       Product name
      * @param[in] index      Product index
      * @param[in] size       Size of product in bytes
-     * @param[in] chunkSize  Size of data chunks in bytes
      * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
      */
     ProdInfo(
             const std::string& name,
             const ProdIndex    index,
-            const ProdSize     size,
-            const ChunkSize    chunkSize);
+            const ProdSize     size);
 
     /**
      * Returns the name of the product.

@@ -27,7 +27,9 @@ protected:
     // is empty.
 
     ProdFactoryTest() {
-        // You can do set-up work for each test here.
+        hycast::ChunkInfo::setCanonSize(chunkSize);
+        chunk0 = hycast::ActualChunk{prodInfo.makeChunkInfo(0), data};
+        chunk1 = hycast::ActualChunk{prodInfo.makeChunkInfo(1), data+chunkSize};
     }
 
     virtual ~ProdFactoryTest() {
@@ -50,11 +52,11 @@ protected:
     // Objects declared here can be used by all tests in the test case for ProdFactory.
     const hycast::ProdIndex   prodIndex{1};
     const hycast::ProdSize    prodSize{3};
-    const hycast::ChunkSize   chunkSize{2};
-    const hycast::ProdInfo    prodInfo{"product", prodIndex, prodSize, chunkSize};
+    const hycast::ChunkSize   chunkSize = 2;
+    const hycast::ProdInfo    prodInfo{"product", prodIndex, prodSize};
     char                      data[3] = {'a', 'b', 'c'};
-    hycast::ActualChunk       chunk0{prodInfo.makeChunkInfo(0), data};
-    hycast::ActualChunk       chunk1{prodInfo.makeChunkInfo(1), data+chunkSize};
+    hycast::ActualChunk       chunk0{};
+    hycast::ActualChunk       chunk1{};
 };
 
 // Tests default construction

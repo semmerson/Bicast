@@ -83,7 +83,7 @@ public:
      */
     bool add(const ActualChunk& chunk)
     {
-        ChunkSize chunkSize{chunk.getSize()};
+        const auto chunkSize = chunk.getSize();
         prodInfo.vet(chunk.getInfo(), chunkSize);
         ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
         if (haveChunk[chunkIndex])
@@ -107,12 +107,13 @@ public:
      */
     bool add(LatentChunk& chunk)
     {
-        ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
+        const auto chunkInfo = chunk.getInfo();
+        const auto chunkIndex = chunkInfo.getIndex();
         if (haveChunk[chunkIndex])
             return false;
         const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
-        const auto actualChunkSize = chunk.drainData(startOf(chunkIndex),
-                expectedChunkSize);
+        const auto actualChunkSize = chunk.drainData(
+                data+chunkInfo.getOffset(), expectedChunkSize);
         if (actualChunkSize != expectedChunkSize)
             throw RuntimeError(__FILE__, __LINE__,
                     "Unexpected chunk size: expected=" +

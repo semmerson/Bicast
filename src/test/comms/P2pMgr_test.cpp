@@ -50,8 +50,8 @@ protected:
     };
 
     P2pMgrTest()
-        : prodInfo{"product", 1, 2, 32000}
-        , chunkInfo{1, 0}
+        : prodInfo{"product", 1, 2}
+        , chunkInfo{1, prodInfo.getSize(), 0}
         , msgRcvr{prodInfo, chunkInfo}
     {}
 

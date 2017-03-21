@@ -20,13 +20,18 @@ namespace {
 // The fixture for testing class ProdStore.
 class ProdStoreTest : public ::testing::Test {
 protected:
+    ProdStoreTest()
+    {
+        hycast::ChunkInfo::setCanonSize(chunkSize);
+    }
+
     // Objects declared here can be used by all tests in the test case for ProdStore.
     const unsigned    version{0};
     const std::string pathname{"hycast.ps"};
     hycast::ProdIndex prodIndex{0};
     hycast::ProdSize  prodSize{1};
     hycast::ChunkSize chunkSize{1};
-    hycast::ProdInfo  prodInfo{"product", prodIndex, prodSize, chunkSize};
+    hycast::ProdInfo  prodInfo{"product", prodIndex, prodSize};
     hycast::Product   prod{prodInfo};
 };
 
@@ -43,7 +48,7 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 
 // Tests creating an initial entry
 TEST_F(ProdStoreTest, InitialEntry) {
-    hycast::ProdInfo  prodInfo("product", 0, 38000, 1000);
+    hycast::ProdInfo  prodInfo("product", 0, 38000);
     hycast::ProdStore ps{};
     EXPECT_TRUE(ps.add(prodInfo));
     EXPECT_FALSE(ps.add(prodInfo));
@@ -56,7 +61,8 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
     const char          data[10000] = {'a', 'b'};
     hycast::ProdSize    prodSize = sizeof(data);
     hycast::ChunkSize   chunkSize{1000};
-    hycast::ProdInfo    prodInfo("product", prodIndex, prodSize, chunkSize);
+    hycast::ChunkInfo::setCanonSize(chunkSize);
+    hycast::ProdInfo    prodInfo("product", prodIndex, prodSize);
     hycast::ProdStore   ps{};
     EXPECT_TRUE(ps.add(prodInfo));
     hycast::Product     prod;

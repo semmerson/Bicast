@@ -52,7 +52,7 @@ UnknownProd::UnknownProd()
 
 bool UnknownProd::add(LatentChunk& latentChunk)
 {
-    auto chunkIndex = latentChunk.getChunkIndex();
+    auto chunkIndex = latentChunk.getIndex();
     return chunks[chunkIndex].setIfNot(latentChunk);
 }
 

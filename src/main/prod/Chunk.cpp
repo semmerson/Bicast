@@ -21,38 +21,25 @@
 
 namespace hycast {
 
-class LatentChunk::Impl final
+class ChunkImpl
 {
+protected:
     ChunkInfo    info;
-    Decoder*     decoder;
-    unsigned     version;
-    bool         drained;
 
 public:
     /**
-     * Constructs from nothing.
+     * Default constructs.
      */
-    Impl()
-        : info()
-        , decoder(nullptr)
-        , version(0)
-        , drained{true}
+    ChunkImpl()
+        : info{}
     {}
 
     /**
-     * Constructs from a serialized representation in a decoder.
-     * @param[in] decoder   Decoder. *Must* exist for the duration of this
-     *                      instance
-     * @param[in] version   Protocol version
+     * Constructs.
+     * @param[in] info  Chunk information
      */
-    Impl(
-            Decoder&       decoder,
-            const unsigned version)
-        // Keep consistent with ActualChunkImpl::serialize()
-        : info(ChunkInfo::deserialize(decoder, version))
-        , decoder(&decoder)
-        , version(version)
-        , drained{false}
+    ChunkImpl(const ChunkInfo& info)
+        : info{info}
     {}
 
     /**
@@ -76,21 +63,64 @@ public:
     }
 
     /**
-     * Returns the index of the chunk-of-data.
-     * @return the index of the chunk
-     */
-    ChunkIndex getChunkIndex() const noexcept
-    {
-        return info.getIndex();
-    }
-
-    /**
      * Returns the size of the data-chunk in bytes.
      * @return Size of the data-chunk in bytes
      */
     ChunkSize getSize() const noexcept
     {
         return info.getSize();
+    }
+};
+
+class LatentChunk::Impl final : public ChunkImpl
+{
+    Decoder*     decoder;
+    unsigned     version;
+    bool         drained;
+
+public:
+    /**
+     * Constructs from nothing.
+     */
+    Impl()
+        : ChunkImpl()
+        , decoder(nullptr)
+        , version(0)
+        , drained{true}
+    {}
+
+    /**
+     * Constructs from a serialized representation in a decoder.
+     * @param[in] decoder   Decoder. *Must* exist for the duration of this
+     *                      instance
+     * @param[in] version   Protocol version
+     */
+    Impl(
+            Decoder&       decoder,
+            const unsigned version)
+        // Keep consistent with ActualChunkImpl::serialize()
+        : ChunkImpl(ChunkInfo::deserialize(decoder, version))
+        , decoder(&decoder)
+        , version(version)
+        , drained{false}
+    {}
+
+    /**
+     * Returns the byte-offset of the chunk-of-data.
+     * @return Byte-offset of the chunk-of-data
+     */
+    ChunkOffset getOffset() const noexcept
+    {
+        return info.getOffset();
+    }
+
+    /**
+     * Returns the index of the chunk-of-data.
+     * @return Index of the chunk-of-data
+     */
+    ChunkIndex getIndex() const noexcept
+    {
+        return info.getIndex();
     }
 
     /**
@@ -139,9 +169,8 @@ public:
     }
 };
 
-class ActualChunk::Impl final
+class ActualChunk::Impl final : public ChunkImpl
 {
-    ChunkInfo   info;
     const void* data;
 
 public:
@@ -149,7 +178,7 @@ public:
      * Constructs from nothing.
      */
     Impl()
-        : info()
+        : ChunkImpl()
         , data(nullptr)
     {}
 
@@ -161,48 +190,17 @@ public:
     Impl(
             const ChunkInfo& info,
             const void*      data)
-        : info(info)
+        : ChunkImpl(info)
         , data(data)
     {}
 
     /**
-     * Returns information on the chunk.
-     * @return information on the chunk
-     * @exceptionsafety Nothrow
-     * @threadsafety Safe
+     * Returns the byte-offset of the chunk-of-data.
+     * @return Byte-offset of the chunk-of-data
      */
-    const ChunkInfo& getInfo() const noexcept
+    ChunkOffset getChunkOffset() const noexcept
     {
-        return info;
-    }
-
-    /**
-     * Returns the index of the associated product.
-     * @return the index of the associated product
-     */
-    ProdIndex getProdIndex() const noexcept
-    {
-        return info.getProdIndex();
-    }
-
-    /**
-     * Returns the index of the chunk-of-data.
-     * @return the index of the chunk
-     */
-    ChunkIndex getChunkIndex() const noexcept
-    {
-        return info.getIndex();
-    }
-
-    /**
-     * Returns the size of the chunk of data.
-     * @return the size of the chunk of data
-     * @exceptionsafety Nothrow
-     * @threadsafety Safe
-     */
-    ChunkSize getSize() const noexcept
-    {
-        return info.getSize();
+        return info.getOffset();
     }
 
     /**
@@ -272,9 +270,9 @@ ProdIndex ActualChunk::getProdIndex() const noexcept
     return pImpl->getProdIndex();
 }
 
-ChunkIndex ActualChunk::getChunkIndex() const noexcept
+ChunkIndex ActualChunk::getOffset() const noexcept
 {
-    return pImpl->getChunkIndex();
+    return pImpl->getChunkOffset();
 }
 
 ChunkSize ActualChunk::getSize() const noexcept
@@ -326,9 +324,14 @@ ProdIndex LatentChunk::getProdIndex() const noexcept
     return pImpl->getProdIndex();
 }
 
-ChunkIndex LatentChunk::getChunkIndex() const noexcept
+ChunkOffset LatentChunk::getOffset() const noexcept
 {
-    return pImpl->getChunkIndex();
+    return pImpl->getOffset();
+}
+
+ChunkIndex LatentChunk::getIndex() const noexcept
+{
+    return pImpl->getIndex();
 }
 
 ChunkSize LatentChunk::getSize() const noexcept

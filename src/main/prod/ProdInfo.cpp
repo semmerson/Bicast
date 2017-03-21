@@ -32,7 +32,6 @@ class ProdInfo::Impl final
     std::string name;
     ProdIndex   index;
     ProdSize    size;
-    ChunkSize   chunkSize;
 
 public:
     /**
@@ -42,7 +41,6 @@ public:
         : name()
         , index(0)
         , size(0)
-        , chunkSize(0)
     {}
 
     /**
@@ -50,21 +48,18 @@ public:
      * @param[in] name       Product name
      * @param[in] index      Product index
      * @param[in] size       Size of product in bytes
-     * @param[in] chunkSize  Size of data chunks in bytes
      * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
      */
     Impl(
             const std::string& name,
             const ProdIndex    index,
-            const ProdSize     size,
-            const ChunkSize    chunkSize)
+            const ProdSize     size)
         : name(name)
         , index(index)
         , size(size)
-        , chunkSize(chunkSize)
     {
         if (name.size() > UINT16_MAX)
-            throw std::invalid_argument("Name too long: " +
+            throw InvalidArgument(__FILE__, __LINE__, "Name too long: " +
                     std::to_string(name.size()) + " bytes");
     }
 
@@ -78,15 +73,13 @@ public:
     Impl(
         Decoder&        decoder,
         const unsigned  version)
-        : name(),
-          index(0),
-          size(0),
-          chunkSize(0)
+        : name()
+        , index(0)
+        , size(0)
     {
         // Keep consonant with ProdInfo::serialize()
         index = ProdIndex::deserialize(decoder, version);
         decoder.decode(size);
-        decoder.decode(chunkSize);
         decoder.decode(name);
     }
 
@@ -131,7 +124,7 @@ public:
      */
     ChunkSize getChunkSize() const
     {
-        return chunkSize;
+        return ChunkInfo::getCanonSize();
     }
 
     /**
@@ -150,8 +143,8 @@ public:
                     std::to_string(getNumChunks()-1) + ", index=" +
                     std::to_string(index));
         return (index + 1 < getNumChunks())
-                ? chunkSize
-                : size - index*chunkSize;
+                ? ChunkInfo::getCanonSize()
+                : size - index*ChunkInfo::getCanonSize();
     }
 
     /**
@@ -162,7 +155,7 @@ public:
      */
     ChunkIndex getNumChunks() const
     {
-        return (size+chunkSize-1)/chunkSize;
+        return (size+ChunkInfo::getCanonSize()-1)/ChunkInfo::getCanonSize();
     }
 
     /**
@@ -183,10 +176,10 @@ public:
             throw InvalidArgument(__FILE__, __LINE__,
                     "Wrong product-index: expected=" + std::to_string(index) +
                     ", actual=" + std::to_string(chunkInfo.getProdIndex()));
-        if (chunkSize != getChunkSize(chunkInfo.getIndex()))
+        if (chunkSize != chunkInfo.getSize())
             throw InvalidArgument(__FILE__, __LINE__,
                     "Unexpected chunk size: expected=" +
-                    std::to_string(getChunkSize(chunkInfo.getIndex())) +
+                    std::to_string(chunkInfo.getSize()) +
                     ", actual=" + std::to_string(chunkSize));
     }
 
@@ -200,7 +193,7 @@ public:
      */
     ChunkInfo makeChunkInfo(const ChunkIndex chunkIndex)
     {
-        return ChunkInfo(index, chunkIndex, getChunkSize(chunkIndex));
+        return ChunkInfo(index, size, chunkIndex);
     }
 
     /**
@@ -215,7 +208,6 @@ public:
     {
         return (index == that.index) &&
                 (size == that.size) &&
-                (chunkSize == that.chunkSize) &&
                 (name.compare(that.name) == 0);
     }
 
@@ -230,7 +222,6 @@ public:
         // Keep consonant with serialize()
         return  index.getSerialSize(version) +
                 Codec::getSerialSize(&size) +
-                Codec::getSerialSize(&chunkSize) +
                 Codec::getSerialSize(name);
     }
 
@@ -248,7 +239,6 @@ public:
         // Keep consonant with ProdInfo::ProdInfo()
         return encoder.encode(index) +
                 encoder.encode(size) +
-                encoder.encode(chunkSize) +
                 encoder.encode(name);
     }
 };
@@ -260,9 +250,8 @@ ProdInfo::ProdInfo()
 ProdInfo::ProdInfo(
         const std::string& name,
         const ProdIndex    index,
-        const ProdSize     size,
-        const ChunkSize    chunkSize)
-    : pImpl(new Impl(name, index, size, chunkSize))
+        const ProdSize     size)
+    : pImpl(new Impl(name, index, size))
 {}
 
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept
@@ -329,8 +318,7 @@ ProdInfo ProdInfo::deserialize(
         const unsigned  version)
 {
     auto impl = Impl(decoder, version);
-    return ProdInfo(impl.getName(), impl.getIndex(), impl.getSize(),
-            impl.getChunkSize());
+    return ProdInfo(impl.getName(), impl.getIndex(), impl.getSize());
 }
 
 } // namespace

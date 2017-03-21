@@ -36,10 +36,10 @@ protected:
         , srcAddr("192.168.192.245")
         , version{0}
         , prodName("product")
-        , chunkSize{1000}
+        , chunkSize{hycast::ChunkInfo::getCanonSize()}
         , prodIndex(0)
         , prodSize{38000}
-        , prodInfo(prodName, prodIndex, prodSize, chunkSize)
+        , prodInfo(prodName, prodIndex, prodSize)
         , prod(prodInfo)
         , data{new char[chunkSize]}
         , datum{static_cast<char>(0xbd)}
@@ -76,7 +76,7 @@ protected:
     void recvData(hycast::LatentChunk chunk)
     {
         EXPECT_EQ(prodIndex, chunk.getProdIndex());
-        EXPECT_EQ(chunkIndex, chunk.getChunkIndex());
+        EXPECT_EQ(chunkIndex, chunk.getIndex());
         const hycast::ChunkSize expectedSize =
                 prodInfo.getChunkSize(chunkIndex);
         char data[expectedSize];
@@ -92,9 +92,8 @@ protected:
         hycast::ChunkIndex      numChunks = prodInfo.getNumChunks();
         for (hycast::ChunkIndex chunkIndex = 0; chunkIndex < numChunks;
                 ++chunkIndex) {
-            const size_t dataSize = prodInfo.getChunkSize(chunkIndex);
-            hycast::ChunkInfo   chunkInfo(prodIndex, chunkIndex);
-            hycast::ActualChunk chunk(chunkInfo, data, dataSize);
+            hycast::ChunkInfo   chunkInfo(prodIndex, prodInfo.getSize(), chunkIndex);
+            hycast::ActualChunk chunk(chunkInfo, data);
             prod.add(chunk);
         }
         sender.send(prod);

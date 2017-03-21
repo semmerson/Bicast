@@ -20,7 +20,7 @@ namespace hycast {
 class ProdFactory::Impl
 {
     std::unordered_map<ProdIndex, Product> prods;
-    std::mutex                               mutex;
+    std::mutex                             mutex;
 
 public:
     /**

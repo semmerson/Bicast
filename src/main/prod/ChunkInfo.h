@@ -22,25 +22,39 @@
 namespace hycast {
 
 class ChunkInfo final : public Serializable<ChunkInfo> {
+    /**
+     * Index of the associated data-product.
+     */
     ProdIndex   prodIndex;
-    ChunkIndex  chunkIndex;
-    ChunkSize   chunkSize;
+    /**
+     * The product-size is included in a chunk's information so that the
+     * necessary space for a data-product can be completely allocated based on
+     * an incoming chunk for which no product-information exists.
+     */
+    ProdSize    prodSize;
+    /**
+     * Offset, in bytes, from the start of a data-product's data to the start
+     * of the chunk's data. Used instead of a chunk-index because both would
+     * require 4 bytes and an offset simplifies computation.
+     */
+    ChunkOffset chunkOffset;
+    /**
+     * Canonical size of a chunk-of-data
+    // Arbitrary, but will fit in an ethernet packet
+    static ChunkSize canonSize;
+     */
 
 public:
     /**
      * Constructs.
      * @param[in] prodIndex   Product index
+     * @param[in] prodSize    Product size in bytes
      * @param[in] chunkIndex  Chunk index
-     * @param[in] chunkSize   Chunk size in bytes
      */
     ChunkInfo(
-            const ProdIndex  prodIndex,
-            const ChunkIndex chunkIndex,
-            const ChunkSize  chunkSize)
-        : prodIndex(prodIndex)
-        , chunkIndex(chunkIndex)
-        , chunkSize(chunkSize)
-    {}
+            const ProdIndex   prodIndex,
+            const ProdSize    prodSize,
+            const ChunkIndex  chunkIndex);
 
     /**
      * Default constructs.
@@ -54,45 +68,62 @@ public:
             unsigned version);
 
     /**
+     * Sets the size of a canonical chunk of data (i.e., all chunks except,
+     * perhaps, the last). This should only be done at most once per session.
+     * @param[in] size  Size, in bytes, of a canonical chunk-of-data
+     */
+    static void setCanonSize(const ChunkSize size);
+
+    /**
+     * Returns the size of a canonical chunk of data (i.e., all chunks except,
+     * perhaps, the last).
+     * @return Size of a canonical chunk in bytes
+     */
+    static ChunkSize getCanonSize();
+
+    /**
+     * Returns the size of a chunk of data.
+     * @param[in] prodSize     Size of the associated data-product in bytes
+     * @param[in] chunkOffset  Offset of the chunk in the product in bytes
+     * @return Size of the chunk of data in bytes
+     */
+    static ChunkSize getSize(
+            const ProdSize    prodSize,
+            const ChunkOffset chunkOffset);
+
+    /**
      * Returns the product index.
      * @return the product index
      */
     ProdIndex getProdIndex() const {return prodIndex;}
 
     /**
-     * Returns the chunk index.
-     * @return the chunk index
+     * Returns the size of the associated data-product in bytes.
+     * @return Size of the associated data-product in bytes
      */
-    ChunkIndex getIndex() const {return chunkIndex;}
+    ProdSize getProdSize() const {return prodSize;}
+
+    /**
+     * Returns the offset, in bytes, from the start of the data-product's data
+     * to the data of the chunk.
+     * @return Offset to chunk's data from start of product's data
+     */
+    ChunkOffset getOffset() const {return chunkOffset;}
+
+    /**
+     * Returns the origin-0 index of the chunk-of-data.
+     * @return Origin-0 index of the chunk-of-data
+     */
+    ChunkIndex getIndex() const noexcept
+    {
+        return chunkOffset/getCanonSize();
+    }
 
     /**
      * Returns the chunk size in bytes.
      * @return the chunk size in bytes
      */
-    ChunkIndex getSize() const {return chunkSize;}
-
-    /**
-     * Returns the size of a serialized instance in bytes.
-     * @param[in] version  Protocol version
-     * @return the size of a serialized instance in bytes
-     */
-    static size_t getStaticSerialSize(const unsigned version) noexcept
-    {
-        return ProdIndex::getStaticSerialSize(version) +
-                Codec::getSerialSize(sizeof(ChunkIndex)) +
-                Codec::getSerialSize(sizeof(ChunkSize));
-    }
-
-    /**
-     * Returns the size, in bytes, of the serialized representation of this
-     * instance.
-     * @param[in] version  Protocol version
-     * @return the serialized size, in bytes, of this instance
-     */
-    size_t getSerialSize(unsigned version) const noexcept
-    {
-        return getStaticSerialSize(version);
-    }
+    ChunkSize getSize() const {return getSize(prodSize, chunkOffset);}
 
     /**
      * Indicates if this instance equals another.
@@ -110,7 +141,7 @@ public:
      * @threadsafety     Safe
      */
     size_t hash() const noexcept {
-        return std::hash<ChunkIndex>()(chunkIndex) | prodIndex.hash();
+        return prodIndex.hash() | std::hash<ChunkOffset>()(chunkOffset);
     }
 
     /**
@@ -121,8 +152,39 @@ public:
      * @threadsafety    Safe
      */
     bool operator<(const ChunkInfo& that) const noexcept {
-        return prodIndex < that.prodIndex ||
-                (prodIndex == that.prodIndex && chunkIndex < that.chunkIndex);
+        return (prodIndex < that.prodIndex)
+            ? true
+            : (prodIndex > that.prodIndex)
+              ? false
+                : (chunkOffset < that.chunkOffset)
+                  ? true
+                  : (chunkOffset > that.chunkOffset)
+                    ? false
+                    : true;
+    }
+
+    /**
+     * Returns the size of a serialized instance in bytes.
+     * @param[in] version  Protocol version
+     * @return the size of a serialized instance in bytes
+     */
+    static size_t getStaticSerialSize(const unsigned version) noexcept
+    {
+        // Keep consonant with `serialize()`
+        return ProdIndex::getStaticSerialSize(version) +
+                Codec::getSerialSize(sizeof(ProdSize)) +
+                Codec::getSerialSize(sizeof(chunkOffset));
+    }
+
+    /**
+     * Returns the size, in bytes, of the serialized representation of this
+     * instance.
+     * @param[in] version  Protocol version
+     * @return the serialized size, in bytes, of this instance
+     */
+    size_t getSerialSize(unsigned version) const noexcept
+    {
+        return getStaticSerialSize(version);
     }
 
     /**

@@ -24,6 +24,9 @@
 
 namespace hycast {
 
+/**
+ * A chunk of data that must be read from an I/O object.
+ */
 class LatentChunk final
 {
     class Impl; // Forward declaration of implementation
@@ -67,12 +70,20 @@ public:
     ProdIndex getProdIndex() const noexcept;
 
     /**
+     * Returns the byte-offset of the chunk-of-data.
+     * @return the byte-offset of the chunk
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    ChunkOffset getOffset() const noexcept;
+
+    /**
      * Returns the index of the chunk-of-data.
      * @return the index of the chunk
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkIndex getChunkIndex() const noexcept;
+    ChunkIndex getIndex() const noexcept;
 
     /**
      * Returns the size of the data-chunk in bytes.
@@ -113,6 +124,9 @@ public:
     bool hasData();
 };
 
+/**
+ * An actual chunk of data.
+ */
 class ActualChunk final
 {
     class Impl; // Forward declaration of implementation
@@ -149,10 +163,10 @@ public:
     ProdIndex getProdIndex() const noexcept;
 
     /**
-     * Returns the index of the chunk-of-data.
-     * @return the index of the chunk
+     * Returns the byte-offset of the chunk-of-data.
+     * @return the byte-offset of the chunk
      */
-    ChunkIndex getChunkIndex() const noexcept;
+    ChunkIndex getOffset() const noexcept;
 
     /**
      * Returns the size of the chunk of data.

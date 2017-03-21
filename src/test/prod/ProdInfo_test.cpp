@@ -54,36 +54,33 @@ class ProdInfoTest : public ::testing::Test {
 
 // Tests construction
 TEST_F(ProdInfoTest, Construction) {
-    hycast::ProdInfo info("name", 1, 2, 3);
+    hycast::ProdInfo info("name", 1, 2);
     EXPECT_STREQ("name", info.getName().data());
     EXPECT_EQ(1, info.getIndex());
     EXPECT_EQ(2, info.getSize());
-    EXPECT_EQ(3, info.getChunkSize());
 }
 
 // Tests equals()
 TEST_F(ProdInfoTest, Equals) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
+    hycast::ProdInfo info1("name", 1, 2);
     EXPECT_TRUE(info1 == info1);
-    hycast::ProdInfo info2("name", 1, 2, 2);
-    EXPECT_FALSE(info1 == info2);
-    hycast::ProdInfo info3("name", 1, 1, 3);
+    hycast::ProdInfo info3("name", 1, 1);
     EXPECT_FALSE(info1 == info3);
-    hycast::ProdInfo info4("name", 2, 2, 3);
+    hycast::ProdInfo info4("name", 2, 2);
     EXPECT_FALSE(info1 == info4);
-    hycast::ProdInfo info5("names", 1, 2, 3);
+    hycast::ProdInfo info5("names", 1, 2);
     EXPECT_FALSE(info1 == info5);
 }
 
 // Tests getSerialSize()
 TEST_F(ProdInfoTest, GetSerialSize) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
-    EXPECT_EQ(16, info1.getSerialSize(0));
+    hycast::ProdInfo info1("name", 1, 2);
+    EXPECT_EQ(14, info1.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization
 TEST_F(ProdInfoTest, Serialization) {
-    hycast::ProdInfo info1("name", 1, 2, 3);
+    hycast::ProdInfo info1("name", 1, 2);
     const size_t nbytes = info1.getSerialSize(0);
     alignas(alignof(size_t)) char bytes[nbytes];
     hycast::MemEncoder encoder(bytes, nbytes);

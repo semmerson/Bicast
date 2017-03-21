@@ -51,28 +51,27 @@ protected:
 
 // Tests construction
 TEST_F(ChunkInfoTest, Construction) {
-    hycast::ChunkInfo info(1, 2, 3);
-    EXPECT_EQ(1, info.getProdIndex());
-    EXPECT_EQ(2, info.getIndex());
-    EXPECT_EQ(3, info.getSize());
+    hycast::ChunkInfo info(0, 38000, 1);
+    EXPECT_EQ(0, info.getProdIndex());
+    EXPECT_EQ(1, info.getIndex());
 }
 
 // Tests ChunkInfo::equals()
 TEST_F(ChunkInfoTest, Equals) {
-    hycast::ChunkInfo info1(1, 2, 3);
+    hycast::ChunkInfo info1(1, 38000, 3);
     EXPECT_TRUE(info1 == info1);
-    hycast::ChunkInfo info2(2, 2, 3);
+    hycast::ChunkInfo info2(2, 38000, 3);
     EXPECT_FALSE(info1 == info2);
-    hycast::ChunkInfo info3(1, 3, 3);
+    hycast::ChunkInfo info3(1, 27000, 3);
     EXPECT_FALSE(info1 == info3);
-    hycast::ChunkInfo info4(1, 2, 4);
+    hycast::ChunkInfo info4(1, 38000, 2);
     EXPECT_FALSE(info1 == info4);
 }
 
 // Tests serialization/de-serialization
 TEST_F(ChunkInfoTest, Serialization) {
     const unsigned version = 0;
-    hycast::ChunkInfo info1(1, 2, 3);
+    hycast::ChunkInfo info1(1, 38000, 2);
     const size_t nbytes = info1.getSerialSize(version);
     alignas(alignof(max_align_t)) char bytes[nbytes];
     hycast::MemEncoder encoder(bytes, nbytes);

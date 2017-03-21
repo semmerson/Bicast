@@ -58,20 +58,18 @@ TEST_F(McastSenderTest, SendDataProduct) {
     hycast::McastSender     sender(mcastAddr, 0);
     const std::string       prodName("product");
     const hycast::ProdIndex prodIndex(0);
-    const hycast::ProdSize  prodSize{38000};
-    const hycast::ChunkSize chunkSize{1000};
-    hycast::ProdInfo        prodInfo(prodName, prodIndex, prodSize, chunkSize);
+//    const hycast::ProdSize  prodSize{38000};
+    const hycast::ProdSize  prodSize{2800};
+    hycast::ProdInfo        prodInfo(prodName, prodIndex, prodSize);
     hycast::Product         prod(prodInfo);
-    hycast::ChunkIndex      chunkIndex = 0;
-    for (size_t remaining = prodSize; remaining > 0; ++chunkIndex) {
-        const size_t        dataSize =
-                remaining < chunkSize ? remaining : chunkSize;
-        char                data[dataSize];
+    for (hycast::ChunkIndex chunkIndex = 0;
+            chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
+        auto dataSize = prodInfo.getChunkSize(chunkIndex);
+        char data[dataSize];
         ::memset(data, 0xbd, dataSize);
-        hycast::ChunkInfo   chunkInfo(prodIndex, chunkIndex);
-        hycast::ActualChunk chunk(chunkInfo, data, dataSize);
+        hycast::ChunkInfo   chunkInfo(prodIndex, prodInfo.getSize(), chunkIndex);
+        hycast::ActualChunk chunk(chunkInfo, data);
         prod.add(chunk);
-        remaining -= dataSize;
     }
     sender.send(prod);
 }

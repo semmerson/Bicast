@@ -79,6 +79,11 @@ public:
         return index;
     }
 
+    std::string to_string() const
+    {
+        return std::to_string(index);
+    }
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash cod

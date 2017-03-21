@@ -108,13 +108,12 @@ protected:
             }
             void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer) {
                 const hycast::ChunkSize expectedSize =
-                        prodInfo.getChunkSize(latentChunk.getChunkIndex());
+                        prodInfo.getChunkSize(latentChunk.getIndex());
                 char                    data[expectedSize];
                 const size_t            actualSize =
                         latentChunk.drainData(data, expectedSize);
                 EXPECT_EQ(expectedSize, actualSize);
-                hycast::ActualChunk chunk{latentChunk.getInfo(), data,
-                    static_cast<hycast::ChunkSize>(actualSize)};
+                hycast::ActualChunk chunk{latentChunk.getInfo(), data};
                 peer.sendData(chunk);
             }
         };
@@ -154,8 +153,8 @@ protected:
 
     // Objects declared here can be used in all TEST_F tests
     hycast::InetSockAddr serverSockAddr{"127.0.0.1", 38800};
-    hycast::ProdInfo     prodInfo{"product", 1, 100000, 32000};
-    hycast::ChunkInfo    chunkInfo{hycast::ProdIndex(1), 2};
+    hycast::ProdInfo     prodInfo{"product", 1, 100000};
+    hycast::ChunkInfo    chunkInfo{hycast::ProdIndex(1), 100000, 2};
     ClientMsgRcvr        clntMsgRcvr{prodInfo, chunkInfo};
 };
 

@@ -40,11 +40,13 @@ protected:
     // You can remove any or all of the following functions if its body
     // is empty.
 
-    PeerTest() {
-    }
+    PeerTest()
+        : data{new char[hycast::ChunkInfo::getCanonSize()]}
+    {}
 
-    virtual ~PeerTest() {
-        // You can do clean-up work that doesn't throw exceptions here.
+    virtual ~PeerTest()
+    {
+        delete[] data;
     }
 
     // If the constructor and destructor are not enough for setting up
@@ -79,11 +81,11 @@ protected:
         }
         void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
             hycast::ChunkSize expectedSize =
-                    peerTest->prodInfo.getChunkSize(chunk.getChunkIndex());
+                    peerTest->prodInfo.getChunkSize(chunk.getIndex());
             char data2[expectedSize];
             const size_t actualSize = chunk.drainData(data2, sizeof(data2));
             ASSERT_EQ(expectedSize, actualSize);
-            EXPECT_EQ(0, memcmp(peerTest->data, data2, sizeof(peerTest->data)));
+            EXPECT_EQ(0, memcmp(peerTest->data, data2, actualSize));
         }
     };
 
@@ -104,7 +106,7 @@ protected:
         peer.sendNotice(chunkInfo);
         peer.sendRequest(prodIndex);
         peer.sendRequest(chunkInfo);
-        hycast::ActualChunk actualChunk(chunkInfo, data, sizeof(data));
+        hycast::ActualChunk actualChunk(chunkInfo, data);
         peer.sendData(actualChunk);
     }
 
@@ -146,18 +148,19 @@ protected:
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;
-        hycast::ChunkInfo chunkInfo(2, 3);
         for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;
                 chunkSize > 4000; chunkSize /= 2) {
-            char data[chunkSize];
+            char              data[chunkSize];
             std::chrono::high_resolution_clock::time_point start =
                     std::chrono::high_resolution_clock::now();
             size_t remaining = dataSize;
-            while (remaining > 0) {
-                size_t nbytes = chunkSize < remaining ? chunkSize : remaining;
-                hycast::ActualChunk chunk(chunkInfo, data, nbytes);
+            for (hycast::ChunkIndex chunkIndex = 0;
+                    chunkIndex < (dataSize + chunkSize - 1)/chunkSize;
+                    ++chunkIndex) {
+                hycast::ChunkInfo chunkInfo(2, dataSize, chunkIndex);
+                hycast::ActualChunk chunk(chunkInfo, data+chunkInfo.getOffset());
                 peer.sendData(chunk);
-                remaining -= nbytes;
+                remaining -= chunk.getSize();
             }
             std::chrono::high_resolution_clock::time_point stop =
                     std::chrono::high_resolution_clock::now();
@@ -196,10 +199,10 @@ protected:
     // Objects declared here can be used by all tests in the test case for Peer.
     std::thread       senderThread;
     std::thread       receiverThread;
-    hycast::ProdInfo  prodInfo{"product", 1, 100000, 1400};
-    hycast::ChunkInfo chunkInfo{1, 3};
+    hycast::ProdInfo  prodInfo{"product", 1, 100000};
+    hycast::ChunkInfo chunkInfo{1, prodInfo.getSize(), 3};
     hycast::ProdIndex prodIndex{1};
-    char              data[1400] = {};
+    char*             data;
 };
 
 // Tests default construction

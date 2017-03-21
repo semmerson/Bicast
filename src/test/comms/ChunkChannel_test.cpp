@@ -43,10 +43,10 @@ void runClient()
     hycast::ClntSctpSock sock(serverSockAddr, numStreams);
 
     hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
-    hycast::ChunkInfo chunkInfo(4, 5);
-    uint8_t data1[10000] = {};
+    uint8_t data1[hycast::ChunkInfo::getCanonSize()];
     (void)memset(data1, 0xbd, sizeof(data1));
-    hycast::ActualChunk actualChunk(chunkInfo, data1, sizeof(data1));
+    hycast::ChunkInfo chunkInfo(4, sizeof(data1), 0);
+    hycast::ActualChunk actualChunk(chunkInfo, data1);
     chunkChannel.send(actualChunk);
     char data2[sizeof(data1)];
     ASSERT_EQ(0, sock.getStreamId());

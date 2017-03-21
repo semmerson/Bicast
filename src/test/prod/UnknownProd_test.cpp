@@ -61,10 +61,13 @@ TEST_F(UnknownProdTest, OrphanChunkAddition) {
     char                      data[1000];
     ::memset(data, '\xbd', sizeof(data));
     const hycast::ChunkSize   chunkSize{sizeof(data)};
+    hycast::ChunkInfo::setCanonSize(chunkSize);
+    const hycast::ProdSize    prodSize{2*chunkSize};
+    const hycast::ProdInfo    prodInfo("product", prodIndex, prodSize);
 
     // Create chunk
     const hycast::ChunkIndex  chunkIndex{1};
-    const hycast::ChunkInfo   chunkInfo(prodIndex, chunkIndex, chunkSize);
+    const hycast::ChunkInfo   chunkInfo(prodIndex, prodSize, chunkIndex);
     const hycast::ActualChunk actualChunk(chunkInfo, data);
 
     // Serialize chunk
@@ -84,8 +87,6 @@ TEST_F(UnknownProdTest, OrphanChunkAddition) {
     ASSERT_TRUE(unkProd.add(latentChunk));
 
     // Combine with product-information
-    const hycast::ProdSize    prodSize{2*chunkSize};
-    const hycast::ProdInfo    prodInfo("product", prodIndex, prodSize, chunkSize);
     auto                      product = unkProd.makeProduct(prodInfo);
     EXPECT_FALSE(product.isComplete());
     EXPECT_EQ(0, ::memcmp(product.getData()+chunkIndex*chunkSize, data,
