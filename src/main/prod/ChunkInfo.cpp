@@ -25,7 +25,7 @@ ChunkInfo::ChunkInfo(
         const ChunkIndex  chunkIndex)
     : prodIndex(prodIndex)
     , prodSize(prodSize)
-    , chunkOffset(chunkIndex * getCanonSize())
+    , chunkIndex(chunkIndex)
 {
     auto numChunks = (prodSize+getCanonSize()-1)/getCanonSize();
     if (chunkIndex && chunkIndex >= numChunks)
@@ -49,10 +49,17 @@ ChunkSize ChunkInfo::getCanonSize()
 }
 
 ChunkSize ChunkInfo::getSize(
-        const ProdSize    prodSize,
-        const ChunkOffset chunkOffset)
+        const ProdSize   prodSize,
+        const ChunkIndex chunkIndex)
 {
-    auto remaining = prodSize - chunkOffset;
+    const auto offset = getOffset(chunkIndex);
+    if (offset >= prodSize)
+        throw InvalidArgument(__FILE__, __LINE__,
+                "Chunk-offset is greater than or equal to product-size: "
+                "offset=" + std::to_string(offset) + ", size=" +
+                std::to_string(prodSize) + ", chunkIndex=" +
+                std::to_string(chunkIndex));
+    auto remaining = prodSize - offset;
     auto canonSize = getCanonSize();
     return canonSize < remaining
             ? canonSize
@@ -67,13 +74,13 @@ ChunkInfo::ChunkInfo(
     // Keep consonant with serialize()
     prodIndex = ProdIndex::deserialize(decoder, version);
     decoder.decode(prodSize);
-    decoder.decode(chunkOffset);
+    decoder.decode(chunkIndex);
 }
 
 bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept
 {
     return prodIndex == that.prodIndex && prodSize == that.prodSize &&
-            chunkOffset == that.chunkOffset;
+            chunkIndex == that.chunkIndex;
 }
 
 size_t ChunkInfo::serialize(
@@ -82,14 +89,16 @@ size_t ChunkInfo::serialize(
 {
     // Keep consonant with ChunkInfo(Decoder, unsigned)
     return encoder.encode(prodIndex) + encoder.encode(prodSize) +
-            encoder.encode(chunkOffset);
+            encoder.encode(chunkIndex);
 }
 
 ChunkInfo ChunkInfo::deserialize(
         Decoder&          decoder,
         const unsigned    version)
 {
-    return ChunkInfo(decoder, version);
+    ChunkInfo chunkInfo(decoder, version);
+    return ChunkInfo(chunkInfo.prodIndex, chunkInfo.prodSize,
+            chunkInfo.chunkIndex);
 }
 
 } // namespace

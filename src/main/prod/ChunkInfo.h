@@ -33,16 +33,9 @@ class ChunkInfo final : public Serializable<ChunkInfo> {
      */
     ProdSize    prodSize;
     /**
-     * Offset, in bytes, from the start of a data-product's data to the start
-     * of the chunk's data. Used instead of a chunk-index because both would
-     * require 4 bytes and an offset simplifies computation.
+     * Origin-0 index of the chunk.
      */
-    ChunkOffset chunkOffset;
-    /**
-     * Canonical size of a chunk-of-data
-    // Arbitrary, but will fit in an ethernet packet
-    static ChunkSize canonSize;
-     */
+    ChunkIndex  chunkIndex;
 
 public:
     /**
@@ -83,13 +76,13 @@ public:
 
     /**
      * Returns the size of a chunk of data.
-     * @param[in] prodSize     Size of the associated data-product in bytes
-     * @param[in] chunkOffset  Offset of the chunk in the product in bytes
+     * @param[in] prodSize    Size of the associated data-product in bytes
+     * @param[in] chunkIndex  Origin-0 index of the chunk
      * @return Size of the chunk of data in bytes
      */
     static ChunkSize getSize(
-            const ProdSize    prodSize,
-            const ChunkOffset chunkOffset);
+            const ProdSize   prodSize,
+            const ChunkIndex chunkIndex);
 
     /**
      * Returns the product index.
@@ -108,7 +101,18 @@ public:
      * to the data of the chunk.
      * @return Offset to chunk's data from start of product's data
      */
-    ChunkOffset getOffset() const {return chunkOffset;}
+    ChunkOffset getOffset() const {return chunkIndex*getCanonSize();}
+
+    /**
+     * Returns the offset, in bytes, from the start of the data-product's data
+     * to the data of the chunk.
+     * @param[in] chunkIndex  Origin-0 index of a chunk of data
+     * @return Offset to chunk's data from start of product's data
+     */
+    static ChunkOffset getOffset(const ChunkIndex chunkIndex)
+    {
+        return chunkIndex*getCanonSize();
+    }
 
     /**
      * Returns the origin-0 index of the chunk-of-data.
@@ -116,14 +120,14 @@ public:
      */
     ChunkIndex getIndex() const noexcept
     {
-        return chunkOffset/getCanonSize();
+        return chunkIndex;
     }
 
     /**
      * Returns the chunk size in bytes.
      * @return the chunk size in bytes
      */
-    ChunkSize getSize() const {return getSize(prodSize, chunkOffset);}
+    ChunkSize getSize() const {return getSize(prodSize, chunkIndex);}
 
     /**
      * Indicates if this instance equals another.
@@ -141,7 +145,7 @@ public:
      * @threadsafety     Safe
      */
     size_t hash() const noexcept {
-        return prodIndex.hash() | std::hash<ChunkOffset>()(chunkOffset);
+        return prodIndex.hash() | std::hash<ChunkIndex>()(chunkIndex);
     }
 
     /**
@@ -156,9 +160,9 @@ public:
             ? true
             : (prodIndex > that.prodIndex)
               ? false
-                : (chunkOffset < that.chunkOffset)
+                : (chunkIndex < that.chunkIndex)
                   ? true
-                  : (chunkOffset > that.chunkOffset)
+                  : (chunkIndex > that.chunkIndex)
                     ? false
                     : true;
     }
@@ -173,7 +177,7 @@ public:
         // Keep consonant with `serialize()`
         return ProdIndex::getStaticSerialSize(version) +
                 Codec::getSerialSize(sizeof(ProdSize)) +
-                Codec::getSerialSize(sizeof(chunkOffset));
+                Codec::getSerialSize(sizeof(chunkIndex));
     }
 
     /**
