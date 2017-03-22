@@ -169,6 +169,23 @@ public:
     }
 
     /**
+     * Returns the offset, in bytes, from the start of the data-product's data
+     * to the data of the chunk.
+     * @param[in] chunkIndex  Origin-0 index of a chunk of data
+     * @return Offset to chunk's data from start of product's data
+     * @throws InvalidArgument Chunk-index is greater than or equal to the
+     *                         number of chunks
+     */
+    ChunkOffset getOffset(const ChunkIndex chunkIndex) const
+    {
+        if (chunkIndex >= getNumChunks())
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Chunk-index is too great: index=" + std::to_string(chunkIndex)
+                    + ", numChunks=" + std::to_string(getNumChunks()));
+        return ChunkInfo::getOffset(chunkIndex);
+    }
+
+    /**
      * Vets information on a chunk-of-data ostensibly belonging to this
      * instance's associated product.
      * @param[in] chunkInfo  Information on the chunk
@@ -301,6 +318,11 @@ ChunkSize ProdInfo::getChunkSize(const ChunkIndex index) const
 ChunkIndex ProdInfo::getNumChunks() const
 {
     return pImpl->getNumChunks();
+}
+
+ChunkOffset ProdInfo::getOffset(const ChunkIndex chunkIndex) const
+{
+    return pImpl->getOffset(chunkIndex);
 }
 
 void ProdInfo::vet(

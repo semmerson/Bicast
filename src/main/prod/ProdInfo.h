@@ -104,6 +104,16 @@ public:
     ChunkIndex getNumChunks() const;
 
     /**
+     * Returns the offset, in bytes, from the start of the data-product's data
+     * to the data of the chunk.
+     * @param[in] chunkIndex  Origin-0 index of a chunk of data
+     * @return Offset to chunk's data from start of product's data
+     * @throws InvalidArgument Chunk-index is greater than or equal to the
+     *                         number of chunks
+     */
+    ChunkOffset getOffset(const ChunkIndex chunkIndex) const;
+
+    /**
      * Vets information on a chunk-of-data ostensibly belonging to this
      * instance's associated product.
      * @param[in] chunkInfo  Information to be vetted
