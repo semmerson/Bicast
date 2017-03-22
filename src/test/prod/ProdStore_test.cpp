@@ -46,14 +46,9 @@ protected:
             decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
             hycast::LatentChunk latentChunk(decoder, version);
             hycast::Product     prod;
-            EXPECT_TRUE(ps.add(latentChunk, prod));
-            EXPECT_EQ(chunkIndex == prodInfo.getNumChunks()-1, prod.isComplete());
-
-            // Attempt to store duplicate latent chunk
-            hycast::MemDecoder  decoder2(buf, sizeof(buf));
-            decoder2.fill(hycast::ChunkInfo::getStaticSerialSize(version));
-            hycast::LatentChunk latentChunk2(decoder2, version);
-            EXPECT_FALSE(ps.add(latentChunk2, prod));
+            const bool last = chunkIndex == prodInfo.getNumChunks() - 1;
+            EXPECT_EQ(last && prod.getInfo().getName().length() > 0,
+                    ps.add(latentChunk, prod));
         }
     }
 
@@ -81,7 +76,8 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 TEST_F(ProdStoreTest, InitialEntry) {
     hycast::ProdInfo  prodInfo("product", 0, 38000);
     hycast::ProdStore ps{};
-    auto prod = ps.add(prodInfo);
+    hycast::Product   prod;
+    EXPECT_FALSE(ps.add(prodInfo, prod));
     EXPECT_FALSE(prod.isComplete());
 }
 
@@ -96,7 +92,8 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
     hycast::ProdInfo          prodInfo("product1", prodIndex, prodSize);
     hycast::ProdStore         ps{};
 
-    auto prod = ps.add(prodInfo);
+    hycast::Product prod;
+    EXPECT_FALSE(ps.add(prodInfo, prod));
     addChunks(prodInfo, data, ps);
     EXPECT_EQ(prodInfo, prod.getInfo());
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
@@ -104,7 +101,7 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
     ++prodIndex;
     prodInfo = hycast::ProdInfo("product2", prodIndex, prodSize);
     addChunks(prodInfo, data, ps);
-    prod = ps.add(prodInfo);
+    EXPECT_TRUE(ps.add(prodInfo, prod));
     EXPECT_TRUE(prod.isComplete());
 }
 

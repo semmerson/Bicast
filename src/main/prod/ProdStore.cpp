@@ -105,19 +105,22 @@ public:
         }
     }
 
-    Product add(const ProdInfo& prodInfo)
+    bool add(
+            const ProdInfo& prodInfo,
+            Product&        prod)
     {
         auto                              prodIndex = prodInfo.getIndex();
         std::unique_lock<decltype(mutex)> lock(mutex);
         auto                              iter = prods.find(prodIndex);
         if (iter != prods.end()) {
-            Product prod = iter->second;
+            prod = iter->second;
             prod.set(prodInfo);
-            return prod;
         }
-        Product prod = Product(prodInfo);
-        prods.emplace(prodIndex, prod);
-        return prod;
+        else {
+            prod = Product(prodInfo);
+            prods.emplace(prodIndex, prod);
+        }
+        return prod.isComplete();
     }
 
     bool add(LatentChunk& chunk, Product& prod)
@@ -127,12 +130,13 @@ public:
         auto iter = prods.find(prodIndex);
         if (iter != prods.end()) {
             prod = iter->second;
+            prod.add(chunk);
+            return prod.isComplete() && prod.getInfo().getName().length() > 0;
         }
-        else {
-            prod = Product(ProdInfo("", prodIndex, chunk.getProdSize()));
-            prods.emplace(prodIndex, prod);
-        }
-        return prod.add(chunk);
+        prod = Product(ProdInfo("", prodIndex, chunk.getProdSize()));
+        prods.emplace(prodIndex, prod);
+        prod.add(chunk);
+        return false;
     }
 };
 
@@ -140,9 +144,11 @@ ProdStore::ProdStore(const std::string& pathname)
     : pImpl{new Impl(pathname)}
 {}
 
-Product ProdStore::add(const ProdInfo& prodInfo)
+bool ProdStore::add(
+        const ProdInfo& prodInfo,
+        Product&        prod)
 {
-    return pImpl->add(prodInfo);
+    return pImpl->add(prodInfo, prod);
 }
 
 bool ProdStore::add(LatentChunk& chunk, Product& prod)

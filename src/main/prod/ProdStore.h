@@ -45,13 +45,16 @@ public:
     ~ProdStore() =default;
 
     /**
-     * Makes an initial entry for a product.
+     * Adds product-information to an entry. Creates the entry if it doesn't
+     * exist.
      * @param[in] prodInfo  Product information
-     * @return The product. Might now be complete.
-     * @exceptionsafety  Basic guarantee
-     * @threadsafety     Safe
+     * @param[out] prod     Associated product
+     * @retval true         Product is complete
+     * @retval false        Product is not complete
+     * @exceptionsafety     Basic guarantee
+     * @threadsafety        Safe
      */
-    Product add(const ProdInfo& prodInfo);
+    bool add(const ProdInfo& prodInfo, Product& prod);
 
     /**
      * Adds a latent chunk of data to a product. Creates the product if it
@@ -59,8 +62,8 @@ public:
      * the product.
      * @param[in]  chunk  Latent chunk of data to be added
      * @param[out] prod   Associated product
-     * @retval `true`     Chunk was added. Product might now be complete.
-     * @retval `false`    Associated product already had chunk. Chunk not added.
+     * @retval true       Product is complete
+     * @retval false      Product is not complete
      * @exceptionsafety   Strong guarantee
      * @threadsafety      Safe
      */
