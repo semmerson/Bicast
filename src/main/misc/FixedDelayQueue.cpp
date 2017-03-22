@@ -1,15 +1,15 @@
 /**
  * This file implements a thread-safe, fixed-duration, delay-queue.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
- * reserved. See the the file COPYRIGHT in the top-level source-directory for
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
+ * reserved. See the the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
  *   @file: FixedDelayQueue.cpp
  * @author: Steven R. Emmerson
  */
 
-#include <FixedDelayQueue.h>
+#include "FixedDelayQueue.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -28,7 +28,7 @@ namespace hycast {
  * @tparam Period    Unit of delay (e.g., `std::chrono::seconds::period`)
  */
 template<typename Value, typename Rep, typename Period>
-class FixedDelayQueueImpl final
+class FixedDelayQueue<Value,Rep,Period>::Impl final
 {
     typedef std::chrono::duration<Rep, Period> Duration;
     typedef std::chrono::steady_clock          Clock;
@@ -38,10 +38,8 @@ class FixedDelayQueueImpl final
      * An element in the queue.
      */
     class Element final {
-        /// The value.
-        Value     value;
-        /// The reveal-time.
-        TimePoint when;
+        Value     value; /// The value.
+        TimePoint when;  /// The reveal-time.
 
     public:
         /**
@@ -97,7 +95,7 @@ public:
      * @throws std::bad_alloc     If necessary memory can't be allocated.
      * @throws std::system_error  If a system error occurs.
      */
-    explicit FixedDelayQueueImpl(const Duration delay)
+    explicit Impl(const Duration delay)
         : mutex{}
         , cond{}
         , queue{}
@@ -154,7 +152,7 @@ public:
 
 template<typename Value, typename Rep, typename Period>
 FixedDelayQueue<Value, Rep, Period>::FixedDelayQueue(const Duration delay)
-    : pImpl{new FixedDelayQueueImpl<Value, Rep, Period>{delay}}
+    : pImpl{new Impl{delay}}
 {}
 
 template<typename Value, typename Rep, typename Period>

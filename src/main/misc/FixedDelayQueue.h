@@ -1,7 +1,7 @@
 /**
  * This file declares a thread-safe, fixed-duration, delay-queue.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -17,9 +17,6 @@
 
 namespace hycast {
 
-template<typename Value, typename Rep, typename Period>
-class FixedDelayQueueImpl; // Forward declaration
-
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment and move assignment.
@@ -27,12 +24,15 @@ class FixedDelayQueueImpl; // Forward declaration
  */
 template<typename Value, typename Rep, typename Period>
 class FixedDelayQueue final {
-    typedef std::chrono::duration<Rep, Period> Duration;
+    // Forward declaration of implementation
+    class Impl;
 
     /// `pImpl` idiom
-    std::shared_ptr<FixedDelayQueueImpl<Value, Rep, Period>> pImpl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
+    typedef std::chrono::duration<Rep, Period> Duration;
+
     /**
      * Constructs from a delay.
      * @param[in] delay  The delay for each element in units of the template
@@ -41,6 +41,7 @@ public:
      * @throws std::system_error  If a system error occurs.
      */
     explicit FixedDelayQueue(Duration delay);
+
     /**
      * Adds a value to the queue.
      * @param[in] value The value to be added
@@ -48,6 +49,7 @@ public:
      * @threadsafety    Safe
      */
     void push(Value value);
+
     /**
      * Returns the value whose reveal-time is the earliest and not later than
      * the current time and removes it from the queue. Blocks until such a value
@@ -58,6 +60,7 @@ public:
      * @threadsafety    Safe
      */
     Value pop();
+
     /**
      * Returns the number of values in the queue.
      * @return  The number of values in the queue.
