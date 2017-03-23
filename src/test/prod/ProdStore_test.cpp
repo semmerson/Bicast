@@ -10,6 +10,7 @@
  */
 
 
+#include "FixedDelayQueue.h"
 #include "ProdStore.h"
 
 #include <fstream>
@@ -63,13 +64,15 @@ protected:
 
 // Tests no persistence-file construction
 TEST_F(ProdStoreTest, NoPathnameConstruction) {
-    hycast::ProdStore{};
+    hycast::ProdStore ps{};
+    EXPECT_EQ(0, ps.size());
 }
 
 // Tests persistence-file construction
 TEST_F(ProdStoreTest, PathnameConstruction) {
-    hycast::ProdStore{pathname};
+    hycast::ProdStore ps{pathname};
     EXPECT_TRUE(std::ifstream(pathname, std::ifstream::binary).is_open());
+    EXPECT_EQ(0, ps.size());
 }
 
 // Tests creating an initial entry
@@ -79,6 +82,7 @@ TEST_F(ProdStoreTest, InitialEntry) {
     hycast::Product   prod;
     EXPECT_FALSE(ps.add(prodInfo, prod));
     EXPECT_FALSE(prod.isComplete());
+    EXPECT_EQ(1, ps.size());
 }
 
 // Tests adding latent chunks
@@ -97,12 +101,24 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
     addChunks(prodInfo, data, ps);
     EXPECT_EQ(prodInfo, prod.getInfo());
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
+    EXPECT_EQ(1, ps.size());
 
     ++prodIndex;
     prodInfo = hycast::ProdInfo("product2", prodIndex, prodSize);
     addChunks(prodInfo, data, ps);
     EXPECT_TRUE(ps.add(prodInfo, prod));
     EXPECT_TRUE(prod.isComplete());
+    EXPECT_EQ(2, ps.size());
+}
+// Tests product deletion
+TEST_F(ProdStoreTest, ProductDeletion) {
+    hycast::ProdInfo  prodInfo("product", 0, 38000);
+    hycast::ProdStore ps{"", 0.5};
+    hycast::Product   prod;
+    EXPECT_FALSE(ps.add(prodInfo, prod));
+    EXPECT_EQ(1, ps.size());
+    ::sleep(1);
+    EXPECT_EQ(0, ps.size());
 }
 
 }  // namespace

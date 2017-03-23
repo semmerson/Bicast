@@ -20,9 +20,9 @@ namespace hycast {
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment and move assignment.
- * @tparam Duration  Unit of delay (e.g., `std::chrono::seconds`)
+ * @tparam Dur       Duration type (e.g., std::chrono::seconds)
  */
-template<typename Value, typename Rep, typename Period>
+template<typename Value, typename Dur>
 class FixedDelayQueue final {
     // Forward declaration of implementation
     class Impl;
@@ -31,7 +31,7 @@ class FixedDelayQueue final {
     std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef std::chrono::duration<Rep, Period> Duration;
+    typedef Dur Duration;
 
     /**
      * Constructs from a delay.
@@ -71,5 +71,7 @@ public:
 };
 
 } // namespace
+
+#include "FixedDelayQueue.cpp"
 
 #endif /* MISC_FIXEDDELAYQUEUE_H */

@@ -32,11 +32,17 @@ public:
      * Constructs. If the given file isn't the empty string, then the
      * product-store will be written to it upon destruction in order to persist
      * the store between sessions.
-     * @param[in] path      Pathname of file for persisting the product-store
-     *                      between sessions or the empty string to indicate no
-     *                      persistence
+     * @param[in] path        Pathname of file for persisting the product-store
+     *                        between sessions or the empty string to indicate
+     *                        no persistence
+     * @param[in] residence   Desired minimum residence-time, in seconds, of
+     *                        data-products
+     * @throw SystemError     Couldn't open temporary persistence-file
+     * @throw InvalidArgument Residence-time is negative
      */
-    explicit ProdStore(const std::string& pathname = "");
+    ProdStore(
+            const std::string& pathname = "",
+            const double       residence = 3600);
 
     /**
      * Destroys. Writes the product-store to the persistence-file if one was
@@ -68,6 +74,13 @@ public:
      * @threadsafety      Safe
      */
     bool add(LatentChunk& chunk, Product& prod);
+
+    /**
+     * Returns the number of products in the store -- both complete and
+     * incomplete.
+     * @return Number of products in the store
+     */
+    size_t size() const noexcept;
 };
 
 } // namespace

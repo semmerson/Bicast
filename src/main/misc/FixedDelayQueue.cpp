@@ -8,6 +8,7 @@
  *   @file: FixedDelayQueue.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "FixedDelayQueue.h"
 
@@ -23,16 +24,14 @@ namespace hycast {
  * Implementation of `FixedDelayQueue`.
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment
- * @tparam Rep       Representation of delay counts (e.g.,
- *                   `std::chrono::seconds::rep`)
- * @tparam Period    Unit of delay (e.g., `std::chrono::seconds::period`)
+ * @tparam Dur       Duration type (e.g., std::chrono::seconds)
  */
-template<typename Value, typename Rep, typename Period>
-class FixedDelayQueue<Value,Rep,Period>::Impl final
+template<typename Value, typename Dur>
+class FixedDelayQueue<Value,Dur>::Impl final
 {
-    typedef std::chrono::duration<Rep, Period> Duration;
-    typedef std::chrono::steady_clock          Clock;
-    typedef Clock::time_point                  TimePoint;
+    typedef Dur                       Duration;
+    typedef std::chrono::steady_clock Clock;
+    typedef Clock::time_point         TimePoint;
 
     /**
      * An element in the queue.
@@ -78,13 +77,13 @@ class FixedDelayQueue<Value,Rep,Period>::Impl final
         }
     };
 
-    /// The mutex for protecting the queue.
-    std::mutex              mutex;
+    /// The mutex for concurrent access to the queue.
+    std::mutex mutable      mutex;
     /// The condition variable for signaling when the queue has been modified
     std::condition_variable cond;
     /// The queue.
     std::queue<Element>     queue;
-    /// Residence-time (i.e., delay-time) for an element in the queue
+    /// Minimum residence-time (i.e., delay-time) for an element in the queue
     Duration                delay;
 
 public:
@@ -150,25 +149,25 @@ public:
     }
 };
 
-template<typename Value, typename Rep, typename Period>
-FixedDelayQueue<Value, Rep, Period>::FixedDelayQueue(const Duration delay)
+template<typename Value, typename Dur>
+FixedDelayQueue<Value, Dur>::FixedDelayQueue(const Duration delay)
     : pImpl{new Impl{delay}}
 {}
 
-template<typename Value, typename Rep, typename Period>
-void FixedDelayQueue<Value, Rep, Period>::push(Value value)
+template<typename Value, typename Dur>
+void FixedDelayQueue<Value, Dur>::push(Value value)
 {
     pImpl->push(value);
 }
 
-template<typename Value, typename Rep, typename Period>
-Value FixedDelayQueue<Value, Rep, Period>::pop()
+template<typename Value, typename Dur>
+Value FixedDelayQueue<Value, Dur>::pop()
 {
     return pImpl->pop();
 }
 
-template<typename Value, typename Rep, typename Period>
-size_t FixedDelayQueue<Value, Rep, Period>::size() const noexcept
+template<typename Value, typename Dur>
+size_t FixedDelayQueue<Value, Dur>::size() const noexcept
 {
     return pImpl->size();
 }
