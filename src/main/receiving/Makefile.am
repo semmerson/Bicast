@@ -8,17 +8,12 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Sources for libhycast
-lib_la_SOURCES 	= HycastTypes.h \
-		  ProdIndex.cpp ProdIndex.h \
-		  ProdInfo.cpp ProdInfo.h \
-		  ChunkInfo.cpp ChunkInfo.h \
-		  Chunk.cpp Chunk.h \
-		  Product.cpp Product.h \
-		  ProdFactory.cpp ProdFactory.h \
-		  ProdRcvr.h \
-		  ProdStore.cpp ProdStore.h \
-		  UnknownProd.cpp UnknownProd.h
+lib_la_SOURCES 	= Receiving.cpp Receiving.h
 
+# Compiler options. Here we are adding the include directory
+# to be searched for headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
-	      -I$(srcdir)/../misc \
-              -I$(srcdir)/../net
+              -I$(srcdir)/../comms \
+              -I$(srcdir)/../prod \
+              -I$(srcdir)/../net \
+	      -I$(srcdir)/../misc

@@ -214,6 +214,14 @@ public:
     size_t serialize(
             Encoder&       encoder,
             const unsigned version) const;
+
+    /**
+     * Indicates if this instance is equal to another instance.
+     * @param[in] that  Other instance
+     * @retval `true`   Instances are equal
+     * @retval `false`  Instances are not equal
+     */
+    bool operator ==(const ActualChunk& that) const noexcept;
 };
 
 } // namespace

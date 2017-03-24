@@ -30,23 +30,35 @@ TEST_F(ProductTest, ProdInfoConstruction) {
     hycast::Product prod{info};
     EXPECT_FALSE(prod.isComplete());
     EXPECT_EQ(info, prod.getInfo());
+    hycast::ActualChunk chunk;
+    EXPECT_FALSE(prod.getChunk(0, chunk));
 }
 
 // Tests adding chunks
 TEST_F(ProductTest, AddChunk) {
-    char              data[2][hycast::ChunkInfo::getCanonSize()];
-    hycast::ProdIndex prodIndex{0};
-    hycast::ProdSize  prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
-    hycast::ProdInfo  info("product", prodIndex, prodSize);
-    hycast::Product   prod{info};
-    hycast::ActualChunk actualChunk{info.makeChunkInfo(0), data[0]};
+    char                data[2][hycast::ChunkInfo::getCanonSize()];
+    hycast::ProdIndex   prodIndex{0};
+    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
+    hycast::ProdInfo    info("product", prodIndex, prodSize);
+    hycast::Product     prod{info};
+    hycast::ActualChunk actualChunk;
+    EXPECT_FALSE(prod.getChunk(0, actualChunk));
+
+    actualChunk = hycast::ActualChunk{info.makeChunkInfo(0), data[0]};
     EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_FALSE(prod.isComplete());
     EXPECT_FALSE(prod.add(actualChunk));
+    hycast::ActualChunk actualChunk2;
+    EXPECT_TRUE(prod.getChunk(0, actualChunk2));
+    EXPECT_EQ(actualChunk, actualChunk2);
+
     actualChunk = hycast::ActualChunk(info.makeChunkInfo(1), data[1]);
     EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_TRUE(prod.isComplete());
     EXPECT_EQ(prodSize, prod.getInfo().getSize());
+    EXPECT_TRUE(prod.getChunk(1, actualChunk2));
+    EXPECT_EQ(actualChunk, actualChunk2);
+
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
 }
 

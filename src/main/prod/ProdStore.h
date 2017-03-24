@@ -81,6 +81,36 @@ public:
      * @return Number of products in the store
      */
     size_t size() const noexcept;
+
+    /**
+     * Returns product-information on a given data-product.
+     * @param[in]  index  Index of the data-product
+     * @param[out] info   Information on the given product
+     * @retval `true`     Information found. `info` is set.
+     * @retval `false`    Information not found. `info` is not set.
+     */
+    bool getProdInfo(
+            const ProdIndex index,
+            ProdInfo&       info) const;
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] info  Information on the chunk
+     * @retval `true`   Chunk exists
+     * @retval `false`  Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkInfo& info) const;
+
+    /**
+     * Returns the chunk of data corresponding to chunk-information.
+     * @param[in]  info   Information on the desired chunk
+     * @param[out] chunk  Corresponding chunk of data
+     * @retval `true`     Chunk found. `chunk` is set.
+     * @retval `false`    Chunk not found. `chunk` is not set.
+     */
+    bool getChunk(
+            const ChunkInfo& info,
+            ActualChunk&     chunk) const;
 };
 
 } // namespace

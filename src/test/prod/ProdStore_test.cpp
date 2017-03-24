@@ -47,9 +47,13 @@ protected:
             decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
             hycast::LatentChunk latentChunk(decoder, version);
             hycast::Product     prod;
-            const bool last = chunkIndex == prodInfo.getNumChunks() - 1;
-            EXPECT_EQ(last && prod.getInfo().getName().length() > 0,
+            const bool isLast = chunkIndex == prodInfo.getNumChunks() - 1;
+            EXPECT_EQ(isLast && prod.getInfo().getName().length() > 0,
                     ps.add(latentChunk, prod));
+            hycast::ActualChunk actualChunk2;
+            EXPECT_TRUE(ps.haveChunk(chunkInfo));
+            EXPECT_TRUE(ps.getChunk(chunkInfo, actualChunk2));
+            EXPECT_EQ(actualChunk, actualChunk2);
         }
     }
 
@@ -77,12 +81,18 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 
 // Tests creating an initial entry
 TEST_F(ProdStoreTest, InitialEntry) {
-    hycast::ProdInfo  prodInfo("product", 0, 38000);
+    hycast::ProdIndex prodIndex{0};
+    hycast::ProdInfo  prodInfo("product", prodIndex, 38000);
     hycast::ProdStore ps{};
     hycast::Product   prod;
     EXPECT_FALSE(ps.add(prodInfo, prod));
     EXPECT_FALSE(prod.isComplete());
     EXPECT_EQ(1, ps.size());
+    hycast::ProdInfo prodInfo2;
+    EXPECT_TRUE(ps.getProdInfo(prodIndex, prodInfo2));
+    EXPECT_EQ(prodInfo, prodInfo2);
+    ++prodIndex;
+    EXPECT_FALSE(ps.getProdInfo(prodIndex, prodInfo2));
 }
 
 // Tests adding latent chunks

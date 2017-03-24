@@ -98,8 +98,8 @@ class ProdStore::Impl final
     void deleteOldProds()
     {
         for (;;) {
-            auto prodIndex = delayQ.pop();
-            std::unique_lock<decltype(mutex)> lock(mutex);
+            auto                             prodIndex = delayQ.pop();
+            std::lock_guard<decltype(mutex)> lock(mutex);
             prods.erase(prodIndex);
         }
     }
@@ -151,7 +151,7 @@ public:
             Product&        prod)
     {
         auto                              prodIndex = prodInfo.getIndex();
-        std::unique_lock<decltype(mutex)> lock(mutex);
+        std::lock_guard<decltype(mutex)>  lock(mutex);
         auto                              iter = prods.find(prodIndex);
         if (iter != prods.end()) {
             prod = iter->second;
@@ -167,9 +167,9 @@ public:
 
     bool add(LatentChunk& chunk, Product& prod)
     {
-        std::unique_lock<decltype(mutex)> lock(mutex);
-        auto prodIndex = chunk.getProdIndex();
-        auto iter = prods.find(prodIndex);
+        std::lock_guard<decltype(mutex)> lock(mutex);
+        auto                             prodIndex = chunk.getProdIndex();
+        auto                             iter = prods.find(prodIndex);
         if (iter != prods.end()) {
             prod = iter->second;
             prod.add(chunk);
@@ -189,8 +189,63 @@ public:
      */
     size_t size() const noexcept
     {
-        std::unique_lock<decltype(mutex)> lock(mutex);
+        std::lock_guard<decltype(mutex)> lock(mutex);
         return prods.size();
+    }
+
+    /**
+     * Returns product-information on a given data-product.
+     * @param[in]  index  Index of the data-product
+     * @param[out] info   Information on the given product
+     * @retval `true`     Information found. `info` is set.
+     * @retval `false`    Information not found. `info` is not set.
+     */
+    bool getProdInfo(
+            const ProdIndex index,
+            ProdInfo&       info) const
+    {
+        std::lock_guard<decltype(mutex)> lock(mutex);
+        auto                             iter = prods.find(index);
+        if (iter == prods.end())
+            return false;
+        info = iter->second.getInfo();
+        return true;
+    }
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] info  Information on the chunk
+     * @retval `true`   Chunk exists
+     * @retval `false`  Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkInfo& info) const
+    {
+        std::lock_guard<decltype(mutex)> lock(mutex);
+        auto                             iter = prods.find(info.getProdIndex());
+        if (iter == prods.end())
+            return false;
+        auto prod = iter->second;
+        return prod.haveChunk(info.getIndex());
+    }
+
+    /**
+     * Returns the chunk of data corresponding to chunk-information.
+     * @param[in]  info   Information on the desired chunk
+     * @param[out] chunk  Corresponding chunk of data
+     * @retval `true`     Chunk found. `chunk` is set.
+     * @retval `false`    Chunk not found. `chunk` is not set.
+     */
+    bool getChunk(
+            const ChunkInfo& info,
+            ActualChunk&     chunk) const
+    {
+        std::lock_guard<decltype(mutex)> lock(mutex);
+        auto                             iter = prods.find(info.getProdIndex());
+        if (iter == prods.end())
+            return false;
+        auto prod = iter->second;
+        prod.getChunk(info.getIndex(), chunk);
+        return true;
     }
 };
 
@@ -215,6 +270,25 @@ bool ProdStore::add(LatentChunk& chunk, Product& prod)
 size_t ProdStore::size() const noexcept
 {
     return pImpl->size();
+}
+
+bool ProdStore::getProdInfo(
+        const ProdIndex index,
+        ProdInfo&       info) const
+{
+    return pImpl->getProdInfo(index, info);
+}
+
+bool ProdStore::haveChunk(const ChunkInfo& info) const
+{
+    return pImpl->haveChunk(info);
+}
+
+bool ProdStore::getChunk(
+        const ChunkInfo& info,
+        ActualChunk&     chunk) const
+{
+    return pImpl->getChunk(info, chunk);
 }
 
 } // namespace

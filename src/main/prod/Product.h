@@ -102,6 +102,25 @@ public:
      * @retval `false`  No
      */
     bool operator==(const Product& that) const;
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] index  Chunk index
+     * @retval `true`    Chunk exists
+     * @retval `false`   Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkIndex index) const;
+
+    /**
+     * Returns the chunk of data corresponding to a chunk index.
+     * @param[in] index   Chunk index
+     * @param[out] chunk  Corresponding chunk of data
+     * @retval `true`     Chunk exists. `chunk` is set.
+     * @retval `false`    Chunk doesn't exist. `chunk` isn't set.
+     */
+    bool getChunk(
+            const ChunkIndex index,
+            ActualChunk&     chunk) const;
 };
 
 } // namespace

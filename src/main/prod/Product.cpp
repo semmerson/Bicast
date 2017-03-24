@@ -23,7 +23,7 @@ namespace hycast {
 class ProductImpl final
 {
     ProdInfo          prodInfo;
-    std::vector<bool> haveChunk;
+    std::vector<bool> chunkVec;
     char*             data;
     ChunkIndex        numChunks;
 
@@ -46,16 +46,25 @@ public:
     explicit ProductImpl(const ProdInfo& prodInfo)
         : prodInfo{prodInfo}
         // `haveChunk{n}` means add `n` rather than have `n` elements
-        , haveChunk(prodInfo.getNumChunks())
+        , chunkVec(prodInfo.getNumChunks())
         , data{new char[prodInfo.getSize()]}
         , numChunks{0}
     {}
 
     /**
+     * Destroys this instance.
+     */
+    ~ProductImpl()
+    {
+        delete[] data;
+    }
+
+    /**
      * Sets the associated product-information providing it is consistent with
      * the information provided during construction (basically, only the name
      * can be changed).
-     * @param[in] info  New product-information
+     * @param[in] info       New product-information
+     * @throw RuntimeError  `info` is inconsistent with existing information
      */
     void set(const ProdInfo& info)
     {
@@ -80,14 +89,6 @@ public:
     }
 
     /**
-     * Destroys this instance.
-     */
-    ~ProductImpl()
-    {
-        delete[] data;
-    }
-
-    /**
      * Adds a chunk-of-data.
      * @param[in] chunk  The chunk
      * @return `true`    if the chunk of data was added
@@ -103,11 +104,11 @@ public:
         const auto chunkSize = chunk.getSize();
         prodInfo.vet(chunk.getInfo(), chunkSize);
         ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
-        if (haveChunk[chunkIndex])
+        if (chunkVec[chunkIndex])
             return false;
         ::memcpy(startOf(chunkIndex), chunk.getData(), chunkSize);
         ++numChunks;
-        return haveChunk[chunkIndex] = true;
+        return chunkVec[chunkIndex] = true;
     }
 
     /**
@@ -126,7 +127,7 @@ public:
     {
         const auto chunkInfo = chunk.getInfo();
         const auto chunkIndex = chunkInfo.getIndex();
-        if (haveChunk[chunkIndex])
+        if (chunkVec[chunkIndex])
             return false;
         const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
         const auto actualChunkSize = chunk.drainData(
@@ -137,7 +138,7 @@ public:
                     std::to_string(expectedChunkSize) +
                     ", actual=" + std::to_string(actualChunkSize));
         ++numChunks;
-        return haveChunk[chunkIndex] = true;
+        return chunkVec[chunkIndex] = true;
     }
 
     /**
@@ -165,6 +166,43 @@ public:
     {
         return prodInfo == that.prodInfo &&
                 ::memcmp(data, that.data, prodInfo.getSize()) == 0;
+    }
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] index  Chunk index
+     * @retval `true`    Chunk exists
+     * @retval `false`   Chunk doesn't exist
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Compatible but not safe
+     */
+    bool haveChunk(const ChunkIndex index) const
+    {
+        if (index >= chunkVec.size())
+            throw OutOfRange(__FILE__, __LINE__, "Chunk-index is too great: "
+                    "index=" + std::to_string(index) + ", max=" +
+                    std::to_string(chunkVec.size()-1));
+        return chunkVec[index];
+    }
+
+    /**
+     * Returns the chunk of data corresponding to a chunk index.
+     * @param[in]  index  Chunk index
+     * @param[out] chunk  Corresponding chunk of data
+     * @retval `true`     Chunk exists. `chunk` is set.
+     * @retval `false`    Chunk doesn't exist. `chunk` isn't set.
+     * @exceptionsafety   Strong guarantee
+     * @threadsafety      Compatible but not safe
+     */
+    bool getChunk(
+            const ChunkIndex index,
+            ActualChunk&     chunk) const
+    {
+        if (!chunkVec[index])
+            return false;
+        auto info = prodInfo.makeChunkInfo(index);
+        chunk = ActualChunk(info, data + prodInfo.getOffset(index));
+        return true;
     }
 };
 
@@ -205,6 +243,18 @@ const char* Product::getData() const noexcept
 bool Product::operator ==(const Product& that) const
 {
     return *pImpl == *that.pImpl;
+}
+
+bool Product::haveChunk(const ChunkIndex index) const
+{
+    return pImpl->haveChunk(index);
+}
+
+bool Product::getChunk(
+        const ChunkIndex index,
+        ActualChunk&     chunk) const
+{
+    return pImpl->getChunk(index, chunk);
 }
 
 } // namespace

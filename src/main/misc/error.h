@@ -76,6 +76,15 @@ public:
             const std::string msg);
 };
 
+class OutOfRange : public std::out_of_range
+{
+public:
+    OutOfRange(
+            const char*       file,
+            const int         line,
+            const std::string msg);
+};
+
 class RuntimeError : public std::runtime_error
 {
 public:

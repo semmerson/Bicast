@@ -30,6 +30,7 @@ AC_CONFIG_FILES(Makefile
                 main/net/Makefile
                 main/comms/Makefile
                 main/prod/Makefile
+                main/receiving/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/net/Makefile

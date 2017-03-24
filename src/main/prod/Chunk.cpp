@@ -19,6 +19,8 @@
 #include "RecStream.h"
 #include "SctpSock.h"
 
+#include <cstring>
+
 namespace hycast {
 
 class ChunkImpl
@@ -256,12 +258,23 @@ public:
         return info.serialize(encoder, version) +
                 encoder.encode(data, info.getSize());
     }
+
+    /**
+     * Indicates if this instance is equal to another instance.
+     * @param[in] that  Other instance
+     * @retval `true`   Instances are equal
+     * @retval `false`  Instances are not equal
+     */
+    bool operator ==(const ActualChunk::Impl& that) const noexcept
+    {
+        return (info == that.info) &&
+                !::memcmp(data, that.data, info.getSize());
+    }
 };
 
 ActualChunk::ActualChunk()
     : pImpl(new Impl())
-{
-}
+{}
 
 ActualChunk::ActualChunk(
         const ChunkInfo& info,
@@ -304,6 +317,11 @@ size_t ActualChunk::serialize(
         const unsigned version) const
 {
     return pImpl->serialize(encoder, version);
+}
+
+bool ActualChunk::operator ==(const ActualChunk& that) const noexcept
+{
+    return *pImpl == *that.pImpl;
 }
 
 LatentChunk::LatentChunk()

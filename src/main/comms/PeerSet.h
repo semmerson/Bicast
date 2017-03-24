@@ -83,7 +83,7 @@ public:
             Peer*               replaced);
 
     /**
-     * Sends information about a product.
+     * Sends information about a product to all peers in the set.
      * @param[in] prodInfo        Product information
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
@@ -92,13 +92,34 @@ public:
     void sendNotice(const ProdInfo& prodInfo);
 
     /**
-     * Sends information about a chunk-of-data.
+     * Sends information about a product to all peers in the set except one.
+     * @param[in] prodInfo        Product information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ProdInfo& prodInfo, const Peer& except);
+
+    /**
+     * Sends information about a chunk-of-data to all peers in the set.
      * @param[in] chunkInfo       Chunk information
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo);
+
+    /**
+     * Sends information about a chunk-of-data to all peers in the set except
+     * one.
+     * @param[in] chunkInfo       Chunk information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except);
 
     /**
      * Increments the value of a peer.

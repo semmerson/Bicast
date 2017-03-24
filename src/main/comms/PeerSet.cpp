@@ -552,6 +552,26 @@ public:
         for (auto& elt : peerEntries)
             elt.second->push(action, maxResideTime);
     }
+
+    /**
+     * Sends information about a product to the remote peers except for one.
+     * @param[in] info            Product information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Safe
+     */
+    void sendNotice(const ProdInfo& info, const Peer& except)
+    {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
+        for (auto& elt : peerEntries) {
+            if (elt.first == except)
+                continue;
+            elt.second->push(action, maxResideTime);
+        }
+    }
+
     /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] info            Chunk information
@@ -566,6 +586,27 @@ public:
         for (auto& elt : peerEntries)
             elt.second->push(action, maxResideTime);
     }
+
+    /**
+     * Sends information about a chunk-of-data to the remote peers except for
+     * one.
+     * @param[in] info            Chunk information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Safe
+     */
+    void sendNotice(const ChunkInfo& info, const Peer except)
+    {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
+        for (auto& elt : peerEntries) {
+            if (elt.first == except)
+                continue;
+            elt.second->push(action, maxResideTime);
+        }
+    }
+
     /**
      * Increments the value of a peer. Does nothing if the peer isn't found.
      * @param[in] peer  Peer to have its value incremented
@@ -610,9 +651,19 @@ void PeerSet::sendNotice(const ProdInfo& prodInfo)
     pImpl->sendNotice(prodInfo);
 }
 
+void PeerSet::sendNotice(const ProdInfo& prodInfo, const Peer& except)
+{
+    pImpl->sendNotice(prodInfo, except);
+}
+
 void PeerSet::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendNotice(chunkInfo);
+}
+
+void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
+{
+    pImpl->sendNotice(chunkInfo, except);
 }
 
 void PeerSet::incValue(Peer& peer) const

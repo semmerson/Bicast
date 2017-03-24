@@ -43,6 +43,13 @@ NotFoundError::NotFoundError(
     : std::runtime_error{placeStamp(file, line) + ": " + msg}
 {}
 
+OutOfRange::OutOfRange(
+        const char*       file,
+        const int         line,
+        const std::string msg)
+    : std::out_of_range{placeStamp(file, line) + ": " + msg}
+{}
+
 RuntimeError::RuntimeError(
         const char*       file,
         const int         line,
