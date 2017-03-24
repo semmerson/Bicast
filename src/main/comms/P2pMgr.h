@@ -15,19 +15,19 @@
 #define MAIN_COMMS_P2PMGR_H_
 
 #include "InetSockAddr.h"
-#include <memory>
+#include "MsgRcvr.h"
+#include "Notifier.h"
+#include "PeerSource.h"
 
-#include "../comms/MsgRcvr.h"
-#include "../comms/Notifier.h"
-#include "../comms/PeerSource.h"
+#include <memory>
 
 namespace hycast {
 
-class P2pMgrImpl; /// Forward declaration
-
 class P2pMgr final : public Notifier
 {
-    std::shared_ptr<P2pMgrImpl> pImpl; /// `pImpl` idiom
+    class Impl; /// Forward declaration
+    std::shared_ptr<Impl> pImpl; /// `pImpl` idiom
+
 public:
     /**
      * Constructs.
@@ -49,6 +49,7 @@ public:
             PeerSource*     peerSource,
             unsigned        stasisDuration,
             PeerMsgRcvr&    msgRcvr);
+
     /**
      * Runs this instance. Starts receiving connection requests from remote
      * peers. Adds peers to the set of active peers. Replaces the worst
@@ -58,6 +59,7 @@ public:
      * @threadsafety    Compatible but not safe
      */
     void operator()();
+
     /**
      * Sends information about a product to the remote peers.
      * @param[in] prodInfo        Product information
@@ -66,6 +68,17 @@ public:
      * @threadsafety              Compatible but not safe
      */
     void sendNotice(const ProdInfo& prodInfo);
+
+    /**
+     * Sends information about a product to the remote peers except for one.
+     * @param[in] prodInfo        Product information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ProdInfo& prodInfo, const Peer& except);
+
     /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] chunkInfo       Chunk information
@@ -74,6 +87,17 @@ public:
      * @threadsafety              Compatible but not safe
      */
     void sendNotice(const ChunkInfo& chunkInfo);
+
+    /**
+     * Sends information about a chunk-of-data to the remote peers except for
+     * one.
+     * @param[in] chunkInfo       Chunk information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except);
 };
 
 } // namespace

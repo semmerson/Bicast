@@ -31,7 +31,7 @@
 
 namespace hycast {
 
-class P2pMgrImpl final : public Notifier
+class P2pMgr::Impl final : public Notifier
 {
     InetSockAddr            serverSockAddr; /// Internet address of peer-server
     PeerMsgRcvr&            msgRcvr;        /// Object to receive incoming messages
@@ -107,7 +107,7 @@ public:
      *                                replaced
      * @param[in,out] msgRcvr         Receiver of messages from remote peers
      */
-    P2pMgrImpl(
+    Impl(
             InetSockAddr&   serverSockAddr,
             unsigned        peerCount,
             PeerSource*     peerSource,
@@ -156,6 +156,19 @@ public:
     }
 
     /**
+     * Sends information about a product to the remote peers except for one.
+     * @param[in] prodInfo        Product information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ProdInfo& prodInfo, const Peer& except)
+    {
+        peerSet.sendNotice(prodInfo, except);
+    }
+
+    /**
      * Sends information about a chunk-of-data to the remote peers.
      * @param[in] chunkInfo       Chunk information
      * @throws std::system_error  I/O error occurred
@@ -166,6 +179,20 @@ public:
     {
         peerSet.sendNotice(chunkInfo);
     }
+
+    /**
+     * Sends information about a chunk-of-data to the remote peers except for
+     * one.
+     * @param[in] chunkInfo       Chunk information
+     * @param[in] except          Peer to exclude
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
+    {
+        peerSet.sendNotice(chunkInfo, except);
+    }
 };
 
 hycast::P2pMgr::P2pMgr(
@@ -174,8 +201,8 @@ hycast::P2pMgr::P2pMgr(
         PeerSource* potentialPeers,
         unsigned        stasisDuration,
         PeerMsgRcvr&    msgRcvr)
-    : pImpl{new P2pMgrImpl(serverSockAddr, peerCount, potentialPeers,
-            stasisDuration, msgRcvr)}
+    : pImpl{new Impl(serverSockAddr, peerCount, potentialPeers, stasisDuration,
+            msgRcvr)}
 {}
 
 void P2pMgr::operator()()
@@ -188,9 +215,19 @@ void P2pMgr::sendNotice(const ProdInfo& prodInfo)
     pImpl->sendNotice(prodInfo);
 }
 
+void P2pMgr::sendNotice(const ProdInfo& prodInfo, const Peer& except)
+{
+    pImpl->sendNotice(prodInfo, except);
+}
+
 void P2pMgr::sendNotice(const ChunkInfo& chunkInfo)
 {
     pImpl->sendNotice(chunkInfo);
+}
+
+void P2pMgr::sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
+{
+    pImpl->sendNotice(chunkInfo, except);
 }
 
 } // namespace
