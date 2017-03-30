@@ -20,11 +20,10 @@
 
 namespace hycast {
 
-class PeerSetImpl; // Forward declaration
-
 class PeerSet final : public Notifier
 {
-    std::shared_ptr<PeerSetImpl> pImpl; // `pImpl` idiom
+    class Impl;                  /// Forward declaration
+    std::shared_ptr<Impl> pImpl; /// `pImpl` idiom
 
 public:
     typedef enum {

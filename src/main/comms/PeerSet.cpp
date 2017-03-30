@@ -48,7 +48,7 @@ bool isLocked(std::mutex& mutex)
     return false;
 }
 
-class PeerSetImpl final
+class PeerSet::Impl final
 {
     typedef std::chrono::seconds                               TimeRes;
     typedef std::chrono::time_point<std::chrono::steady_clock> Time;
@@ -172,7 +172,7 @@ class PeerSetImpl final
             return true;
         }
         SendQ& operator =(const SendQ& q) =delete;
-        std::shared_ptr<PeerSetImpl::SendAction> pop()
+        std::shared_ptr<PeerSet::Impl::SendAction> pop()
         {
             std::unique_lock<decltype(mutex)> lock{mutex};
             while (queue.empty())
@@ -458,7 +458,7 @@ public:
      *                                worst-performing peer may be replaced
      * @throws std::invalid_argument  `maxPeers == 0`
      */
-    PeerSetImpl(
+    Impl(
             std::function<void(Peer&)> peerTerminated,
             const unsigned             maxPeers,
             const unsigned             stasisDuration)
@@ -639,7 +639,7 @@ PeerSet::PeerSet(
         std::function<void(Peer&)> peerTerminated,
         const unsigned             maxPeers,
         const unsigned             stasisDuration)
-    : pImpl(new PeerSetImpl(peerTerminated, maxPeers, stasisDuration))
+    : pImpl(new Impl(peerTerminated, maxPeers, stasisDuration))
 {}
 
 PeerSet::InsertStatus PeerSet::tryInsert(
