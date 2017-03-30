@@ -24,10 +24,12 @@ public:
      * streams.
      * @param[in] addr        Internet socket address
      * @param[in] numStreams  Number of SCTP streams
+     * @param[in] queueSize   Length of `accept()` queue
      */
     SrvrSctpSock(
             const InetSockAddr& addr,
-            const uint16_t      numStreams);
+            const uint16_t      numStreams,
+            const int           queueSize = 5);
     /**
      * Accepts an incoming connection on the socket.
      * @return The accepted connection

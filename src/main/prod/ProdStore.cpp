@@ -44,10 +44,16 @@ class ProdStore::Impl final
     /// Thread for deleting products whose residence-time exceeds the minimum
     std::thread                                deletionThread;
 
+    /**
+     * Writes to the temporary persistence-file.
+     */
     void writeTempFile()
     {
     }
 
+    /**
+     * Closes the temporary persistence-file.
+     */
     void closeTempFile()
     {
         try {
@@ -60,6 +66,9 @@ class ProdStore::Impl final
         }
     }
 
+    /**
+     * Renames the temporary persistence-file to the persistence-file.
+     */
     void renameTempFile()
     {
         if (::rename(tempPathname.data(), pathname.data()))
@@ -68,6 +77,9 @@ class ProdStore::Impl final
                     tempPathname + "\" to \"" + pathname + "\"");
     }
 
+    /**
+     * Deletes the temporary persistence-file.
+     */
     void deleteTempFile()
     {
         if (::remove(tempPathname.data()))
@@ -76,6 +88,9 @@ class ProdStore::Impl final
                     tempPathname);
     }
 
+    /**
+     * Saves the state of this instance in a persistence-file.
+     */
     void persist()
     {
         try {
@@ -95,6 +110,10 @@ class ProdStore::Impl final
         renameTempFile();
     }
 
+    /**
+     * Deletes products whose residence-time is greater than the minimum.
+     * Doesn't return.
+     */
     void deleteOldProds()
     {
         for (;;) {
@@ -105,6 +124,12 @@ class ProdStore::Impl final
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] pathname   Pathname of the persistence-file or the empty
+     *                       string to indicate no persistence.
+     * @param[in] residence  Minimum residence-time for a product in the store
+     */
     Impl(   const std::string& pathname,
             const double       residence)
         : pathname{pathname}
@@ -128,6 +153,10 @@ public:
                     "Residence-time is negative: " + std::to_string(residence));
     }
 
+    /**
+     * Destroys. Saves the state of this instance in the persistence-file if
+     * one was specified during construction.
+     */
     ~Impl()
     {
         try {
@@ -146,6 +175,13 @@ public:
         }
     }
 
+    /**
+     * Adds information on a product.
+     * @param[in]  prodInfo  Product information
+     * @param[out] prod      Associated product
+     * @retval `true`        The product is complete
+     * @retval `false`       The product is incomplete
+     */
     bool add(
             const ProdInfo& prodInfo,
             Product&        prod)
@@ -165,7 +201,16 @@ public:
         return prod.isComplete();
     }
 
-    bool add(LatentChunk& chunk, Product& prod)
+    /**
+     * Adds a chunk of data.
+     * @param[in]  chunk  Chunk of data
+     * @param[out] prod   Associated product
+     * @retval `true`     The product is complete
+     * @retval `false`    The product is incomplete
+     */
+    bool add(
+            LatentChunk& chunk,
+            Product&     prod)
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
         auto                             prodIndex = chunk.getProdIndex();
@@ -262,7 +307,9 @@ bool ProdStore::add(
     return pImpl->add(prodInfo, prod);
 }
 
-bool ProdStore::add(LatentChunk& chunk, Product& prod)
+bool ProdStore::add(
+        LatentChunk& chunk,
+        Product&     prod)
 {
     return pImpl->add(chunk, prod);
 }

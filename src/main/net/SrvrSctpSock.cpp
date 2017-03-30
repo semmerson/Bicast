@@ -8,11 +8,13 @@
  *   @file: ServerSocket.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
-#include "SrvrSctpSock.h"
-
+#include "error.h"
 #include "InetSockAddr.h"
 #include "SctpSockImpl.h"
+#include "SrvrSctpSock.h"
+
 #include <errno.h>
 #include <memory>
 #include <system_error>
@@ -24,15 +26,20 @@ class SrvrSockImpl final : public SctpSockImpl
 public:
     SrvrSockImpl(
             const InetSockAddr& addr,
-            const uint16_t      numStreams)
+            const uint16_t      numStreams,
+            const int           queueSize)
         : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
     {
+        if (queueSize <= 0)
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid length for ::accept() queue: " +
+                    std::to_string(queueSize));
         int sd = sock.load();
         if (sd == -1)
             throw std::system_error(errno, std::system_category(),
                     "socket() failure");
         addr.bind(sd);
-        if (listen(sd, 5))
+        if (listen(sd, queueSize))
             throw std::system_error(errno, std::system_category(),
                     "listen() failure: sock=" + std::to_string(sd) +
                     ", addr=" + to_string());
@@ -58,8 +65,9 @@ public:
 
 SrvrSctpSock::SrvrSctpSock(
         const InetSockAddr& addr,
-        const uint16_t      numStreams)
-    : SctpSock(new SrvrSockImpl(addr, numStreams))
+        const uint16_t      numStreams,
+        const int           queueSize)
+    : SctpSock(new SrvrSockImpl(addr, numStreams, queueSize))
 {}
 
 SctpSock SrvrSctpSock::accept() const

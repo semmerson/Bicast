@@ -44,9 +44,9 @@ public:
      * @throws std::invalid_argument  `maxPeers == 0`
      */
     explicit PeerSet(
-            std::function<void()> peerTerminated,
-            unsigned              maxPeers = 8,
-            unsigned              stasisDuration = 60);
+            std::function<void(Peer&)> peerTerminated,
+            unsigned                   maxPeers = 8,
+            unsigned                   stasisDuration = 60);
 
     /**
      * Tries to insert a peer.
@@ -126,6 +126,13 @@ public:
      * @param[in] peer  Peer to have its value incremented
      */
     void incValue(Peer& peer) const;
+
+    /**
+     * Indicates if this instance is full.
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    bool isFull() const;
 };
 
 } // namespace

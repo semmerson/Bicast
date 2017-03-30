@@ -100,7 +100,8 @@ public:
     {}
     /**
      * Constructs from the containing peer object, an object to receive messages
-     * from the remote peer, and a socket.
+     * from the remote peer, and a socket. Blocks while exchanging protocol
+     * version with remote peer.
      * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket

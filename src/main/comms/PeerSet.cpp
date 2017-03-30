@@ -328,7 +328,7 @@ class PeerSetImpl final
     Time                                whenEligible;
     const TimeRes                       eligibilityDuration;
     const TimeRes                       maxResideTime;
-    std::function<void()>               peerTerminated;
+    std::function<void(Peer&)>          peerTerminated;
     unsigned                            maxPeers;
 
     /**
@@ -346,7 +346,7 @@ class PeerSetImpl final
      * Indicates if the set is full.
      * @return `true`  Iff set is full
      */
-    inline bool full()
+    inline bool full() const
     {
         assert(isLocked(mutex));
         return peerEntries.size() >= maxPeers;
@@ -385,7 +385,7 @@ class PeerSetImpl final
         assert(isLocked(mutex));
         if (peerEntries.find(peer) == peerEntries.end()) {
             PeerEntry entry(new PeerEntryImpl(peer,
-                    [=](Peer& p) { handleFailure(p, peerTerminated); }));
+                    [=](Peer& p) { handleFailure(p); }));
             peerEntries.emplace(peer, entry);
             if (full()) {
                 resetValues();
@@ -439,13 +439,13 @@ class PeerSetImpl final
      * Handles failure of a peer.
      * @param[in] peer  The peer that failed
      */
-    void handleFailure(Peer& peer, std::function<void()>& peerTerminated)
+    void handleFailure(Peer& peer)
     {
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
             peerEntries.erase(peer);
         }
-        peerTerminated();
+        peerTerminated(peer);
     }
 
 public:
@@ -459,9 +459,9 @@ public:
      * @throws std::invalid_argument  `maxPeers == 0`
      */
     PeerSetImpl(
-            std::function<void()> peerTerminated,
-            const unsigned        maxPeers,
-            const unsigned        stasisDuration)
+            std::function<void(Peer&)> peerTerminated,
+            const unsigned             maxPeers,
+            const unsigned             stasisDuration)
         : peerEntries{}
         , mutex{}
         , whenEligible{}
@@ -622,12 +622,23 @@ public:
                 iter->second->incValue();
         }
     }
+
+    /**
+     * Indicates if this instance is full.
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    bool isFull() const
+    {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        return full();
+    }
 };
 
 PeerSet::PeerSet(
-        std::function<void()> peerTerminated,
-        const unsigned        maxPeers,
-        const unsigned        stasisDuration)
+        std::function<void(Peer&)> peerTerminated,
+        const unsigned             maxPeers,
+        const unsigned             stasisDuration)
     : pImpl(new PeerSetImpl(peerTerminated, maxPeers, stasisDuration))
 {}
 
@@ -669,6 +680,11 @@ void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
 void PeerSet::incValue(Peer& peer) const
 {
     pImpl->incValue(peer);
+}
+
+bool PeerSet::isFull() const
+{
+    return pImpl->isFull();
 }
 
 } // namespace

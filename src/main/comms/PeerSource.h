@@ -1,6 +1,6 @@
 /**
  * This file declares the interface for a source of potential peers, which are
- * identified by the Internet socket address of their servers that listens for
+ * identified by the Internet socket address of their servers that listen for
  * connections by remote peers.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights

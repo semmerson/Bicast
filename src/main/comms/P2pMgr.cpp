@@ -10,15 +10,17 @@
  *   @file: P2pMgr.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
-#include <comms/MsgRcvr.h>
-#include <comms/Notifier.h>
-#include <comms/P2pMgr.h>
-#include <comms/PeerSet.h>
-#include <comms/PeerSource.h>
 #include "Completer.h"
+#include "error.h"
 #include "Future.h"
 #include "InetSockAddr.h"
+#include "MsgRcvr.h"
+#include "Notifier.h"
+#include "P2pMgr.h"
+#include "PeerSet.h"
+#include "PeerSource.h"
 #include "SrvrSctpSock.h"
 
 #include <chrono>
@@ -27,10 +29,24 @@
 #include <mutex>
 #include <pthread.h>
 #include <queue>
+#include <set>
 #include <thread>
 
 namespace hycast {
 
+/**
+ * Class that implements a manager of peer-to-peer (P2P) connections.
+ *
+ * For reliability of data delivery, the following (overly cautious but simple)
+ * protocol is implemented in order to ensure that every node in the P2P overlay
+ * network has a path through the network from it to the source of the
+ * data-products:
+ *
+ *   - An initiated peer is one that the node creates from a connection that it
+ *     initiates (as opposed to a connection that it accepts).
+ *   - The node accepts connections only if it has at least one initiated peer.
+ *   - The node closes all connections when it has no initiated peers.
+ */
 class P2pMgr::Impl final : public Notifier
 {
     InetSockAddr            serverSockAddr; /// Internet address of peer-server
@@ -38,58 +54,117 @@ class P2pMgr::Impl final : public Notifier
     PeerSource*             peerSource;     /// Source of potential peers
     PeerSet                 peerSet;        /// Set of active peers
     Completer<void>         completer;      /// Asynchronous task completion service
-    /// Synchronization variables:
-    std::mutex              mutex;
-    std::condition_variable cond;
+    /// Concurrent access variables for peer-termination:
+    std::mutex              termMutex;
+    std::condition_variable termCond;
+    /// Concurrent access mutex for initiated peers:
+    std::mutex              initMutex;
     /// Duration to wait before trying to replace the worst-performing peer.
     std::chrono::seconds    waitDuration;
-    bool                    addPeers; /// Predicate for premature wake-up
+    /// Remote socket address of initiated peers
+    std::set<InetSockAddr>  initiated;
+
+    typedef std::lock_guard<decltype(termMutex)>  LockGuard;
+    typedef std::unique_lock<decltype(termMutex)> UniqueLock;
 
     /**
-     * Runs the server for connections from remote peers. Doesn't return unless
-     * an exception is thrown.
+     * Accepts a connection from a remote peer. Creates a corresponding local
+     * peer and tries to add it to the set of active peers. Intended to run on
+     * its own thread.
+     * @param[in] sock   Incoming connection
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
+     */
+    void accept(SctpSock sock)
+    {
+        try {
+            // Blocks exchanging protocol version. Hence, separate thread
+            auto peer = Peer(msgRcvr, sock);
+            peerSet.tryInsert(peer, nullptr);
+        }
+        catch (const std::exception& e) {
+            log_what(e); // Because end of thread
+        }
+    }
+
+    /**
+     * Runs the server for connections from remote peers. Creates a
+     * corresponding local peer and attempts to add it to the set of active
+     * peers if and only if at least one initiated peer exists. Doesn't return
+     * unless an exception is thrown. Intended to be run on a separate thread.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Compatible but not safe
      */
     void runServer()
     {
-        auto serverSock = SrvrSctpSock(serverSockAddr, Peer::getNumStreams());
-        for (;;) {
-            auto sock = serverSock.accept();
-            auto peer = Peer(msgRcvr, sock);
-            peerSet.tryInsert(peer, nullptr);
+        try {
+            auto serverSock =
+                    SrvrSctpSock(serverSockAddr, Peer::getNumStreams());
+            for (;;) {
+                SctpSock sock = serverSock.accept(); // Blocks listening
+                LockGuard lock(initMutex);
+                if (initiated.size()) {
+                    std::thread([=]{accept(sock);}).detach();
+                }
+                else {
+                    sock.close();
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            log_what(e); // Because end of thread
         }
     }
+
     /**
      * Attempts to adds peers to the set of active peers when
-     *   - Initially called; and
-     *   - `waitDuration` time passes since the last addition attempt or `cond`
-     *     is notified and `addPeers` is true, whichever occurs first.
-     * Doesn't return unless an exception is thrown.
+     *   - Initially called; or
+     *   - `waitDuration` time passes since the last addition attempt; or
+     *   - The set of active peers becomes not full,
+     * whichever occurs first. Doesn't return unless an exception is thrown.
+     * Intended to run on its own thread.
      */
     void runPeerAdder()
     {
-        throw std::logic_error("Not implemented yet");
-        for (;;) {
-             auto pair = peerSource->getPeers();
-             for (auto iter = pair.first; iter != pair.second; ++iter) {
-                 auto status = peerSet.tryInsert(*iter, msgRcvr, nullptr);
-                 if (status == PeerSet::FULL)
-                     break;
-             }
-             std::unique_lock<decltype(mutex)> lock(mutex);
-             cond.wait_for(lock, waitDuration, [&]{return addPeers;});
+        throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+        try {
+            for (;;) {
+                 auto pair = peerSource->getPeers();
+                 for (auto iter = pair.first; iter != pair.second; ++iter) {
+                     auto status = peerSet.tryInsert(*iter, msgRcvr, nullptr);
+                     if (status == PeerSet::FULL)
+                         break;
+                     if (status == PeerSet::SUCCESS || status == PeerSet::REPLACED) {
+                         LockGuard lock(initMutex);
+                         initiated.insert(*iter);
+                     }
+                 }
+                 UniqueLock lock(termMutex);
+                 auto when = std::chrono::steady_clock::now() + waitDuration;
+                 while (peerSet.isFull())
+                     termCond.wait_until(lock, when);
+            }
+        }
+        catch (const std::exception& e) {
+            log_what(e); // Because end of thread
         }
     }
+
     /***
-     * Prematurely wakes-up the peer-adder. Called by the active peer-set when a
-     * peer terminates.
+     * Handles termination of a peer. Called by the active peer-set when one of
+     * its peers terminates. Removes the peer from the set of initiated peers,
+     * if appropriate, and prematurely wakes-up the adder of initiated peer.
      */
-    void peerTerminated()
+    void peerTerminated(Peer& peer)
     {
-        std::lock_guard<decltype(mutex)> lock(mutex);
-        addPeers = true;
-        cond.notify_one();
+        {
+            LockGuard lock(initMutex);
+            initiated.erase(peer.getRemoteAddr());
+        }
+        {
+            LockGuard lock(termMutex);
+            termCond.notify_one();
+        }
     }
 
 public:
@@ -116,12 +191,12 @@ public:
         : serverSockAddr{serverSockAddr}
         , msgRcvr(msgRcvr)
         , peerSource{peerSource}
-        , peerSet{[=]{peerTerminated();}, peerCount, stasisDuration}
+        , peerSet{[=](Peer& p){peerTerminated(p);}, peerCount, stasisDuration}
         , completer{}
-        , mutex{}
-        , cond{}
+        , termMutex{}
+        , termCond{}
+        , initMutex{}
         , waitDuration{stasisDuration+1}
-        , addPeers{false}
     {}
 
     /**
@@ -198,7 +273,7 @@ public:
 hycast::P2pMgr::P2pMgr(
         InetSockAddr&   serverSockAddr,
         unsigned        peerCount,
-        PeerSource* potentialPeers,
+        PeerSource*     potentialPeers,
         unsigned        stasisDuration,
         PeerMsgRcvr&    msgRcvr)
     : pImpl{new Impl(serverSockAddr, peerCount, potentialPeers, stasisDuration,
