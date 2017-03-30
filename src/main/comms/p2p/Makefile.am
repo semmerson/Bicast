@@ -6,19 +6,29 @@ noinst_LTLIBRARIES = lib.la
 
 #######################################
 # Build information for each library
-SUBDIRS			= mcast p2p
-lib_la_LIBADD		= mcast/lib.la p2p/lib.la
 
 # Sources for libhycast
-lib_la_SOURCES 	= Receiving.cpp Receiving.h \
-		  MsgRcvrImpl.h MsgRcvr.h \
-		  Notifier.h
+lib_la_SOURCES 	= \
+	VersionMsg.cpp VersionMsg.h \
+	Channel.cpp Channel.h \
+	Notifier.h \
+	Peer.cpp Peer.h \
+	PeerMgr.h \
+	MsgRcvrImpl.h \
+	MsgRcvr.h \
+	PeerSet.cpp PeerSet.h \
+	PeerSource.h \
+	P2pMgr.cpp P2pMgr.h \
+	ChunkGram.cpp ChunkGram.h
+
+#	ChannelImpl.h \
+	RegChannel.cpp RegChannel.h \
+	ChunkChannel.cpp ChunkChannel.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
-              -I$(srcdir)/mcast \
-              -I$(srcdir)/p2p \
-              -I$(srcdir)/../prod \
-              -I$(srcdir)/../net \
-	      -I$(srcdir)/../misc
+	      -I$(srcdir)/../.. \
+	      -I$(srcdir)/../../misc \
+	      -I$(srcdir)/../../net \
+	      -I$(srcdir)/../../prod

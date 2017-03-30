@@ -13,7 +13,7 @@
 #ifndef MSGRCVRIMPL_H_
 #define MSGRCVRIMPL_H_
 
-#include "../comms/Peer.h"
+#include "../p2p/Peer.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
 #include "ProdIndex.h"

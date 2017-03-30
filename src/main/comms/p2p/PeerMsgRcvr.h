@@ -1,17 +1,17 @@
 /**
- * This file declares the interface for an object that receives messages from a
- * remote peer.
+ * This file declares the interface for an object that receives unicast messages
+ * from one or more remote peers.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: MsgRcvr.h
+ *   @file: PeerMsgRcvr.h
  * @author: Steven R. Emmerson
  */
 
-#ifndef MSGRCVR_H_
-#define MSGRCVR_H_
+#ifndef PEERMSGRCVR_H_
+#define PEERMSGRCVR_H_
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
@@ -23,14 +23,9 @@
 
 namespace hycast {
 
-class MsgRcvr {
+class PeerMsgRcvr {
 public:
-    virtual ~MsgRcvr() =default;
-    /**
-     * Receives a notice about a new product.
-     * @param[in]     info  Information about the product
-     */
-    virtual void recvNotice(const ProdInfo& info) =0;
+    virtual ~PeerMsgRcvr() =default;
     /**
      * Receives a notice about a new product.
      * @param[in]     info  Information about the product
@@ -57,17 +52,6 @@ public:
     virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
-     * @param[in] chunk  Chunk-of-data
-     */
-    /*
-     * For an unknown reason, the compiler complains if the `recvData` parameter
-     * is a `LatentChunk&` and not a `LatentChunk`. This is acceptable, however,
-     * because `LatentChunk` uses the pImpl idiom. See
-     * `PeerImpl::runReceiver()`.
-     */
-    virtual void recvData(LatentChunk chunk) =0;
-    /**
-     * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
      * @param[in,out] peer   Peer that received the chunk
      */
@@ -82,4 +66,4 @@ public:
 
 } // namespace
 
-#endif /* MSGRCVR_H_ */
+#endif /* PEERMSGRCVR_H_ */
