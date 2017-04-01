@@ -51,36 +51,38 @@ public:
     /**
      * Tries to insert a peer.
      * @param[in]  candidate Candidate peer
-     * @param[out] worst     Replaced, worst-performing peer
+     * @param[out] size      Number of active peers
      * @return               Status of the attempted insertion:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
-     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - REPLACED  Success
      *   - FULL      Set is full and insufficient time to determine worst peer
      * @exceptionsafety      Strong guarantee
      * @threadsafety         Safe
      */
     InsertStatus tryInsert(
-            Peer& candidate,
-            Peer* worst = nullptr) const;
+            Peer&   candidate,
+            size_t* size = nullptr) const;
 
     /**
      * Tries to insert a remote peer given its Internet socket address.
-     * @param[in]  candidate   Candidate remote peer
-     * @param[in,out] msgRcvr  Receiver of messages from the remote peer
-     * @param[out] replaced    Replaced, worst-performing peer
-     * @return                 Insertion status:
+     * @param[in]     candidate   Candidate remote peer
+     * @param[in,out] msgRcvr     Receiver of messages from the remote peer
+     * @param[out]    size        Number of active peers
+     * @return                    Insertion status:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
-     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
+     *   - REPLACED  Success
      *   - FULL      Set is full and insufficient time to determine worst peer
-     * @exceptionsafety       Strong guarantee
-     * @threadsafety          Safe
+     * @throw InvalidArgument     Unknown protocol version from remote peer.
+     *                            Peer not added to set.
+     * @exceptionsafety           Strong guarantee
+     * @threadsafety              Safe
      */
     InsertStatus tryInsert(
             const InetSockAddr& candidate,
             PeerMsgRcvr&        msgRcvr,
-            Peer*               replaced);
+            size_t*             size);
 
     /**
      * Sends information about a product to all peers in the set.
@@ -126,6 +128,12 @@ public:
      * @param[in] peer  Peer to have its value incremented
      */
     void incValue(Peer& peer) const;
+
+    /**
+     * Returns the number of peers in the set.
+     * @return Number of peers in the set
+     */
+    size_t size() const;
 
     /**
      * Indicates if this instance is full.

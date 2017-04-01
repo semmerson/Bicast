@@ -9,16 +9,17 @@
  * @author: Steven R. Emmerson
  */
 
-#include <p2p/Channel.h>
-#include <p2p/Peer.h>
-#include <p2p/PeerMsgRcvr.h>
-#include <p2p/VersionMsg.h>
+#include "Channel.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
 #include "error.h"
+#include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
+#include "VersionMsg.h"
+
 #include <cstddef>
 #include <functional>
 #include <thread>
@@ -104,6 +105,7 @@ public:
      * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
+     * @throw LogicError       Unknown protocol version from remote peer
      */
     PeerImpl(
             Peer*          peer,
@@ -124,7 +126,7 @@ public:
         versionChan.send(msg);
         const unsigned vers = getVersion();
         if (vers != version)
-            throw std::logic_error("Unknown protocol version: " +
+            throw LogicError(__FILE__, __LINE__, "Unknown protocol version: " +
                     std::to_string(vers));
     }
     /**

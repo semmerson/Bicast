@@ -476,7 +476,7 @@ public:
     /**
      * Tries to insert a peer.
      * @param[in]  candidate  Candidate peer
-     * @param[out] replaced   Replaced, worst-performing peer
+     * @param[out] size       Number of active peers
      * @return                Insertion status:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
@@ -486,45 +486,53 @@ public:
      * @threadsafety          Safe
      */
     PeerSet::InsertStatus tryInsert(
-            Peer& candidate,
-            Peer* replaced)
+            Peer&     candidate,
+            size_t*   size)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
-        if (peerEntries.find(candidate) != peerEntries.end())
-            return PeerSet::EXISTS; // Candidate peer is already a member
-        if (!full()) {
+        InsertStatus                     status;
+        if (peerEntries.find(candidate) != peerEntries.end()) {
+            status = PeerSet::EXISTS; // Candidate peer is already a member
+        }
+        else if (!full()) {
             // Just add the candidate peer
             insert(candidate);
-            return PeerSet::SUCCESS;
+            status = PeerSet::SUCCESS;
         }
-        // Set is full
-        if (tooSoon())
-            return PeerSet::FULL;
-        // Replace worst-performing peer
-        Peer worst{removeWorstPeer()};
-        if (replaced)
-            *replaced = worst;
-        insert(candidate);
-        return PeerSet::REPLACED;
+        else if (tooSoon()) {
+            status = PeerSet::FULL;
+        }
+        else {
+            // Replace worst-performing peer
+            Peer worst{removeWorstPeer()};
+            insert(candidate);
+            status = PeerSet::REPLACED;
+            peerTerminated(worst);
+        }
+        if (size)
+            *size = peerEntries.size();
+        return status;
     }
 
     /**
      * Tries to insert a remote peer given its Internet socket address.
      * @param[in]  candidate   Candidate remote peer
      * @param[in,out] msgRcvr  Receiver of messages from the remote peer
-     * @param[out] replaced    Replaced, worst-performing peer
+     * @param[out]    size     Number of active peers
      * @return                 Insertion status:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
      *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
      *   - FULL      Set is full and insufficient time to determine worst peer
-     * @exceptionsafety       Strong guarantee
-     * @threadsafety          Safe
+     * @throw InvalidArgument  Unknown protocol version from remote peer. Peer
+     *                         not added to set.
+     * @exceptionsafety        Strong guarantee
+     * @threadsafety           Safe
      */
     PeerSet::InsertStatus tryInsert(
             const InetSockAddr& candidate,
             PeerMsgRcvr&        msgRcvr,
-            Peer*               replaced)
+            size_t*             size)
     {
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
@@ -535,7 +543,7 @@ public:
         }
         ClntSctpSock sock(candidate, Peer::getNumStreams());
         Peer         peer(msgRcvr, sock);
-        return tryInsert(peer, replaced);
+        return tryInsert(peer, size);
     }
 
     /**
@@ -624,6 +632,16 @@ public:
     }
 
     /**
+     * Returns the number of peers in the set.
+     * @return Number of peers in the set
+     */
+    size_t size() const
+    {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        return peerEntries.size();
+    }
+
+    /**
      * Indicates if this instance is full.
      * @exceptionsafety Strong
      * @threadsafety    Safe
@@ -643,18 +661,18 @@ PeerSet::PeerSet(
 {}
 
 PeerSet::InsertStatus PeerSet::tryInsert(
-        Peer& candidate,
-        Peer* replaced) const
+        Peer&   candidate,
+        size_t* size) const
 {
-    return pImpl->tryInsert(candidate, replaced);
+    return pImpl->tryInsert(candidate, size);
 }
 
 PeerSet::InsertStatus PeerSet::tryInsert(
         const InetSockAddr& candidate,
         PeerMsgRcvr&        msgRcvr,
-        Peer*               replaced)
+        size_t*             size)
 {
-    return pImpl->tryInsert(candidate, msgRcvr, replaced);
+    return pImpl->tryInsert(candidate, msgRcvr, size);
 }
 
 void PeerSet::sendNotice(const ProdInfo& prodInfo)
@@ -680,6 +698,11 @@ void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
 void PeerSet::incValue(Peer& peer) const
 {
     pImpl->incValue(peer);
+}
+
+size_t PeerSet::size() const
+{
+    return pImpl->size();
 }
 
 bool PeerSet::isFull() const

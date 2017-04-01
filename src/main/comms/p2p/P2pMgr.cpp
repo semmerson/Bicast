@@ -127,21 +127,29 @@ class P2pMgr::Impl final : public Notifier
     void runPeerAdder()
     {
         throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+        size_t numPeers;
         try {
             for (;;) {
                  auto pair = peerSource->getPeers();
                  for (auto iter = pair.first; iter != pair.second; ++iter) {
-                     auto status = peerSet.tryInsert(*iter, msgRcvr, nullptr);
-                     if (status == PeerSet::FULL)
-                         break;
-                     if (status == PeerSet::SUCCESS || status == PeerSet::REPLACED) {
-                         LockGuard lock(initMutex);
-                         initiated.insert(*iter);
+                     try {
+                         auto status = peerSet.tryInsert(*iter, msgRcvr,
+                                 &numPeers);
+                         if (status == PeerSet::FULL)
+                             break;
+                         if (status == PeerSet::SUCCESS ||
+                                 status == PeerSet::REPLACED) {
+                             LockGuard lock(initMutex);
+                             initiated.insert(*iter);
+                         }
+                     }
+                     catch (const std::invalid_argument& e) {
+                         log_what(e);
                      }
                  }
                  UniqueLock lock(termMutex);
                  auto when = std::chrono::steady_clock::now() + waitDuration;
-                 while (peerSet.isFull())
+                 while (peerSet.size() == numPeers)
                      termCond.wait_until(lock, when);
             }
         }
