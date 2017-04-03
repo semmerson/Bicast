@@ -4,3 +4,6 @@
 *.o
 core.*
 *.swp
+INSTALL
+config.h.in~
+missing
