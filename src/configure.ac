@@ -23,6 +23,9 @@ LT_INIT
 dnl Check if socket address structure has length field
 AC_CHECK_MEMBERS(
     [struct ifreq.if_addr.sa_len], , , [[#include <net/if.h>]])
+    
+dnl Check for pthreads library
+AC_SEARCH_LIBS([pthread_create], [pthread])
 
 AC_CONFIG_FILES(Makefile
                 main/Makefile

@@ -32,7 +32,7 @@ protected:
     McastReceiverTest()
         : asmMcastAddr("234.128.117.0", 38800)
         , ssmMcastAddr("232.0.0.0", 38800)
-        , srcAddr("192.168.192.245")
+        , srcAddr("192.168.200.131") // IPv4 address of local host
         , version{0}
         , prodName("product")
         , chunkSize{hycast::ChunkInfo::getCanonSize()}

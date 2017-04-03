@@ -183,11 +183,11 @@ TEST_F(PeerSetTest, RemoveWorst) {
     hycast::Peer     peer1{getClientPeer()};
     hycast::PeerSet  peerSet{[](hycast::Peer&){}, 1, 0};
     EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer1));
-    hycast::Peer worstPeer{};
     hycast::Peer peer2{getClientPeer()};
+    size_t numPeers;
     EXPECT_EQ(hycast::PeerSet::InsertStatus::REPLACED,
-            peerSet.tryInsert(peer2, &worstPeer));
-    EXPECT_EQ(peer1, worstPeer);
+            peerSet.tryInsert(peer2, &numPeers));
+    EXPECT_EQ(1, numPeers);
 }
 
 // Tests inserting a peer and sending notices
