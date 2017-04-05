@@ -22,13 +22,16 @@ namespace {
 void runReceiver(hycast::McastUdpSock sock)
 {
     try {
-        char   buf[hycast::UdpSock::maxPayload];
-        size_t size;
-        do {
-            size = sock.recv(buf, sizeof(buf));
-            for (size_t i = 0; i < size; ++i)
-                ASSERT_EQ(size%UINT8_MAX, buf[i]);
-        } while (size != 0);
+        unsigned char   buf[hycast::UdpSock::maxPayload];
+        for (size_t expectedSize = 1;
+                expectedSize < hycast::UdpSock::maxPayload; expectedSize *= 2) {
+            auto const size = sock.recv(buf, sizeof(buf));
+            ASSERT_EQ(expectedSize, size);
+            for (size_t i = 0; i < size; ++i) {
+                unsigned char value = size | 0xff;
+                ASSERT_EQ(value, buf[i]);
+            }
+        }
     }
     catch (const std::exception& e) {
         hycast::log_what(e, __FILE__, __LINE__,
@@ -39,15 +42,13 @@ void runReceiver(hycast::McastUdpSock sock)
 void runSender(hycast::OutUdpSock sock)
 {
     try {
-#if 0
-        for (size_t size = 1; UINT16_MAX-256; size += 1000) {
+        for (size_t size = 1; size < hycast::UdpSock::maxPayload;
+                size *= 2) {
             uint8_t buf[size];
-            ::memset(buf, size%UINT8_MAX, size);
+            int value = size | 0xff;
+            ::memset(buf, value, size);
             sock.send(buf, size);
         }
-#endif
-        uint8_t buf;
-        sock.send(&buf, 0);
     }
     catch (const std::exception& e) {
         hycast::log_what(e, __FILE__, __LINE__,

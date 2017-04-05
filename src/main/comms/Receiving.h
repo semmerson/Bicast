@@ -14,10 +14,12 @@
 #ifndef MAIN_RECEIVING_RECEIVING_H_
 #define MAIN_RECEIVING_RECEIVING_H_
 
+#include "McastMsgRcvr.h"
+#include "P2pMgr.h"
+#include "PeerMsgRcvr.h"
+
 #include <memory>
 #include <string>
-#include "../mcast/McastMsgRcvr.h"
-#include "../p2p/PeerMsgRcvr.h"
 
 namespace hycast {
 
@@ -29,12 +31,12 @@ class Receiving final : public McastMsgRcvr, public PeerMsgRcvr
 public:
     /**
      * Constructs.
+     * @param[in] p2pMgr    Peer-to-peer manager
      * @param[in] pathname  Pathname of product-store persistence-file or the
      *                      empty string to indicate no persistence
-     * @param[in] p2pMgr    Peer-to-peer manager
      * @see ProdStore::ProdStore()
      */
-    Receiving(const std::string pathname, P2pMgr& p2pMgr);
+    Receiving(P2pMgr& p2pMgr, const std::string& pathname = "");
 
     void recvNotice(const ProdInfo& info);
 

@@ -23,9 +23,23 @@ LT_INIT
 dnl Check if socket address structure has length field
 AC_CHECK_MEMBERS(
     [struct ifreq.if_addr.sa_len], , , [[#include <net/if.h>]])
-    
+
 dnl Check for pthreads library
 AC_SEARCH_LIBS([pthread_create], [pthread])
+
+dnl Check for SCTP library
+AC_SEARCH_LIBS([sctp_recvmsg], [sctp])
+
+dnl Check for YAML library
+AC_MSG_CHECKING([for library containing YAML::Node])
+AC_LANG_PUSH([C++])
+LIBS="-lyaml-cpp $LIBS"
+AC_LINK_IFELSE(
+  [AC_LANG_PROGRAM([#include <yaml-cpp/yaml.h>], 
+    [YAML::Node node])],
+  [AC_MSG_RESULT([-lyaml-cpp])], 
+  [AC_MSG_ERROR([libyaml-cpp is not installed.])])
+AC_LANG_POP()
 
 AC_CONFIG_FILES(Makefile
                 main/Makefile

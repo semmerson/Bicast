@@ -10,9 +10,9 @@
  *   @file: Receiving.cpp
  * @author: Steven R. Emmerson
  */
-#include <p2p/P2pMgr.h>
 #include "config.h"
 
+#include "P2pMgr.h"
 #include "ProdStore.h"
 #include "Receiving.h"
 
@@ -44,7 +44,7 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
         LockGuard lock(mutex);
         if (prodStore.haveChunk(info))
             return false;
-        auto                             iter = requestedChunks.find(info);
+        auto iter = requestedChunks.find(info);
         if (iter != requestedChunks.end())
             return false;
         requestedChunks.insert(info);
@@ -69,13 +69,13 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
 public:
     /**
      * Constructs.
+     * @param[in] p2pMgr    Peer-to-peer manager
      * @param[in] pathname  Pathname of product-store persistence-file or the
      *                      empty string to indicate no persistence
-     * @param[in] p2pMgr    Peer-to-peer manager
      * @see ProdStore::ProdStore()
      */
-    Impl(   const std::string pathname,
-            P2pMgr&           p2pMgr)
+    Impl(   P2pMgr&            p2pMgr,
+            const std::string& pathname)
         : prodStore{pathname}
         , requestedChunks{}
         , mutex{}
@@ -174,14 +174,14 @@ public:
             Peer&       peer)
     {
         accept(chunk);
-        p2pMgr.sendNotice(chunk.getInfo());
+        p2pMgr.sendNotice(chunk.getInfo(), peer);
     }
 };
 
 Receiving::Receiving(
-        const std::string pathname,
-        P2pMgr&           p2pMgr)
-    : pImpl{new Impl(pathname, p2pMgr)}
+        P2pMgr&            p2pMgr,
+        const std::string& pathname)
+    : pImpl{new Impl(p2pMgr, pathname)}
 {}
 
 void Receiving::recvNotice(const ProdInfo& info)

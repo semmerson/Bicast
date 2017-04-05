@@ -44,11 +44,11 @@ public:
      * @param[in,out] msgRcvr         Receiver of messages from remote peers
      */
     P2pMgr(
-            InetSockAddr&   serverSockAddr,
-            unsigned        peerCount,
-            PeerSource*     peerSource,
-            unsigned        stasisDuration,
-            PeerMsgRcvr&    msgRcvr);
+            const InetSockAddr& serverSockAddr,
+            const unsigned      peerCount,
+            PeerSource*         peerSource,
+            const unsigned      stasisDuration,
+            PeerMsgRcvr&        msgRcvr);
 
     /**
      * Runs this instance. Starts receiving connection requests from remote

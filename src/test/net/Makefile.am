@@ -1,5 +1,5 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc -I$(top_srcdir)/main/net 
-AM_LDFLAGS	= $(top_builddir)/main/libhycast.la -lgtest -lsctp
+LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 
 check_PROGRAMS		= \
 	socket_test \

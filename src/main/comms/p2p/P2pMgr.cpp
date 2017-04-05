@@ -130,8 +130,8 @@ class P2pMgr::Impl final : public Notifier
         size_t numPeers;
         try {
             for (;;) {
-                 auto pair = peerSource->getPeers();
-                 for (auto iter = pair.first; iter != pair.second; ++iter) {
+                 for (auto iter = peerSource->getPeers();
+                         iter != peerSource->end(); ++iter) {
                      try {
                          auto status = peerSet.tryInsert(*iter, msgRcvr,
                                  &numPeers);
@@ -191,11 +191,11 @@ public:
      * @param[in,out] msgRcvr         Receiver of messages from remote peers
      */
     Impl(
-            InetSockAddr&   serverSockAddr,
-            unsigned        peerCount,
-            PeerSource*     peerSource,
-            unsigned        stasisDuration,
-            PeerMsgRcvr&    msgRcvr)
+            const InetSockAddr&   serverSockAddr,
+            const unsigned        peerCount,
+            PeerSource*           peerSource,
+            const unsigned        stasisDuration,
+            PeerMsgRcvr&          msgRcvr)
         : serverSockAddr{serverSockAddr}
         , msgRcvr(msgRcvr)
         , peerSource{peerSource}
@@ -279,11 +279,11 @@ public:
 };
 
 hycast::P2pMgr::P2pMgr(
-        InetSockAddr&   serverSockAddr,
-        unsigned        peerCount,
-        PeerSource*     potentialPeers,
-        unsigned        stasisDuration,
-        PeerMsgRcvr&    msgRcvr)
+        const InetSockAddr& serverSockAddr,
+        const unsigned      peerCount,
+        PeerSource*         potentialPeers,
+        const unsigned      stasisDuration,
+        PeerMsgRcvr&        msgRcvr)
     : pImpl{new Impl(serverSockAddr, peerCount, potentialPeers, stasisDuration,
             msgRcvr)}
 {}

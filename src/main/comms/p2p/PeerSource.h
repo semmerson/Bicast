@@ -16,25 +16,13 @@
 
 #include "InetSockAddr.h"
 
-#include <iterator>
-#include <memory>
-#include <utility>
-
 namespace hycast {
 
 class PeerSource {
 public:
-    class iterator :
-        public std::iterator<std::forward_iterator_tag, InetSockAddr>
-    {
-    public:
-        virtual                     ~iterator();
-        virtual bool                operator!=(const iterator& rhs);
-        virtual iterator&           operator++();
-        virtual const InetSockAddr& operator*();
-    };
+    typedef const std::set<InetSockAddr>::iterator Iterator;
 
-    virtual ~PeerSource();
+    virtual ~PeerSource() {};
 
     /**
      * Returns an iterator over the potential peers. Blocks if no peers are
@@ -43,7 +31,9 @@ public:
      *   - First element:  Forward iterator
      *   - Second element: "End" iterator
      */
-    virtual std::pair<iterator&,iterator&> getPeers() =0;
+    virtual Iterator getPeers() =0;
+
+    virtual Iterator end() =0;
 };
 
 } // namespace
