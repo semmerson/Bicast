@@ -23,8 +23,7 @@ namespace hycast {
 
 class ProdStore final
 {
-    class Impl;
-
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
@@ -41,8 +40,34 @@ public:
      * @throw InvalidArgument Residence-time is negative
      */
     ProdStore(
-            const std::string& pathname = "",
-            const double       residence = 3600);
+            const std::string& pathname,
+            const double       residence);
+
+    /**
+     * Constructs. If the given file isn't the empty string, then the
+     * product-store will be written to it upon destruction in order to persist
+     * the store between sessions.
+     * @param[in] path        Pathname of file for persisting the product-store
+     *                        between sessions or the empty string to indicate
+     *                        no persistence.
+     * @throw SystemError     Couldn't open temporary persistence-file
+     * @see ProdStore(const std::string& pathname, double residence)
+     */
+    explicit ProdStore(const std::string& pathname)
+        : ProdStore(pathname, 3600)
+    {}
+
+    /**
+     * Constructs. The product-store will not be written to a persistence-file
+     * upon destruction in order to persist the store between sessions.
+     * @param[in] residence   Desired minimum residence-time, in seconds, of
+     *                        data-products
+     * @throw InvalidArgument Residence-time is negative
+     * @see ProdStore(const std::string& pathname, double residence)
+     */
+    explicit ProdStore(const double residence)
+        : ProdStore("", residence)
+    {}
 
     /**
      * Destroys. Writes the product-store to the persistence-file if one was

@@ -212,7 +212,7 @@ TEST_F(PeerTest, DefaultConstruction) {
 
 // Tests to_string
 TEST_F(PeerTest, ToString) {
-    EXPECT_STREQ("PeerImpl{sock=SocketImpl{sock=-1}, version=0}",
+    EXPECT_STREQ("Peer::Impl{sock=SocketImpl{sock=-1}, version=0}",
             hycast::Peer().to_string().data());
 }
 

@@ -62,6 +62,18 @@ TEST_F(ProductTest, AddChunk) {
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
 }
 
+// Tests construction from complete data
+TEST_F(ProductTest, DataConstruction) {
+    char            data[128000];
+    ::memset(data, 0xbd, sizeof(data));
+    hycast::Product prod("product", 1, data, sizeof(data));
+    auto            prodInfo = prod.getInfo();
+    EXPECT_EQ("product", prodInfo.getName());
+    EXPECT_EQ(1, prodInfo.getIndex());
+    ASSERT_EQ(sizeof(data), prodInfo.getSize());
+    EXPECT_EQ(0, ::memcmp(data, prod.getData(), sizeof(data)));
+}
+
 // Tests serialization
 TEST_F(ProductTest, Serialization) {
     unsigned           version{0};

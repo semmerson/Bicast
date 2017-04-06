@@ -12,7 +12,8 @@ lib_la_LIBADD		= mcast/lib.la p2p/lib.la
 # Sources for libhycast
 lib_la_SOURCES 	= Receiving.cpp Receiving.h \
 		  MsgRcvrImpl.h MsgRcvr.h \
-		  Notifier.h
+		  Notifier.h \
+		  Shipping.cpp Shipping.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

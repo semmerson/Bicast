@@ -39,6 +39,18 @@ public:
     explicit Product(const ProdInfo& info);
 
     /**
+     * Constructs from complete data.
+     * @param[in] name  Name of the product
+     * @param[in] index  Product index
+     * @param[in] data   Product data
+     * @param[in] size   Amount of data in bytes
+     */
+    Product(const std::string& name,
+            const ProdIndex    index,
+            const void*        data,
+            const size_t       size);
+
+    /**
      * Sets the associated product-information providing it is consistent with
      * the information provided during construction (basically, only the name
      * can be changed).

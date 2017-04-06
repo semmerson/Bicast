@@ -98,6 +98,7 @@ public:
           sock(),
           peer{peer}
     {}
+
     /**
      * Constructs from the containing peer object, an object to receive messages
      * from the remote peer, and a socket. Blocks while exchanging protocol
@@ -129,6 +130,7 @@ public:
             throw LogicError(__FILE__, __LINE__, "Unknown protocol version: " +
                     std::to_string(vers));
     }
+
     /**
      * Returns the number of streams.
      */
@@ -136,6 +138,7 @@ public:
     {
         return NUM_STREAM_IDS;
     }
+
     /**
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
@@ -144,6 +147,7 @@ public:
     {
         return sock.getRemoteAddr();
     }
+
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer manager methods. Doesn't return until either the socket
@@ -196,6 +200,7 @@ public:
         }
         (void)pthread_setcancelstate(entryCancelState, nullptr);
     }
+
     /**
      * Sends information about a product to the remote peer.
      * @param[in] prodInfo  Product information
@@ -207,6 +212,7 @@ public:
     {
         prodNoticeChan.send(prodInfo);
     }
+
     /**
      * Sends information about a chunk-of-data to the remote peer.
      * @param[in] chunkInfo  Chunk information
@@ -218,6 +224,7 @@ public:
     {
         chunkNoticeChan.send(chunkInfo);
     }
+
     /**
      * Sends a request for product information to the remote peer.
      * @param[in] prodIndex  Product-index
@@ -229,6 +236,7 @@ public:
     {
         prodReqChan.send(prodIndex);
     }
+
     /**
      * Sends a request for a chunk-of-data to the remote peer.
      * @param[in] info  Chunk specification
@@ -240,6 +248,7 @@ public:
     {
         chunkReqChan.send(info);
     }
+
     /**
      * Sends a chunk-of-data to the remote peer.
      * @param[in] chunk  Chunk-of-data
@@ -251,6 +260,7 @@ public:
     {
         chunkChan.send(chunk);
     }
+
     /**
      * Indicates if this instance equals another.
      * @param[in] that  Other instance
@@ -261,6 +271,7 @@ public:
     bool operator==(const Impl& that) const noexcept {
         return this == &that; // Every instance is unique
     }
+
     /**
      * Indicates if this instance doesn't equal another.
      * @param[in] that  Other instance
@@ -271,6 +282,7 @@ public:
     bool operator!=(const Impl& that) const noexcept {
         return this != &that; // Every instance is unique
     }
+
     /**
      * Indicates if this instance is less than another.
      * @param that  Other instance
@@ -281,6 +293,7 @@ public:
     bool operator<(const Impl& that) const noexcept {
         return this < &that; // Every instance is unique
     }
+
     /**
      * Returns the hash code of this instance.
      * @return the hash code of this instance
@@ -290,6 +303,7 @@ public:
     size_t hash() const noexcept {
         return std::hash<const Impl*>()(this); // Every instance is unique
     }
+
     /**
      * Returns the string representation of this instance.
      * @return the string representation of this instance

@@ -52,6 +52,24 @@ public:
     {}
 
     /**
+     * Constructs from complete data.
+     * @param[in] name  Name of the product
+     * @param[in] index  Product index
+     * @param[in] data   Product data
+     * @param[in] size   Amount of data in bytes
+     */
+    ProductImpl(
+            const std::string& name,
+            const ProdIndex    index,
+            const void*        data,
+            const size_t       size)
+        : ProductImpl(ProdInfo(name, index, size))
+    {
+        ::memcpy(this->data, data, size);
+        numChunks = prodInfo.getNumChunks();
+    }
+
+    /**
      * Destroys this instance.
      */
     ~ProductImpl()
@@ -209,6 +227,15 @@ public:
 Product::Product(const ProdInfo& info)
     : pImpl{new ProductImpl(info)}
 {}
+
+Product::Product(
+        const std::string& name,
+        const ProdIndex    index,
+        const void*        data,
+        const size_t       size)
+    : pImpl{new ProductImpl(name, index, data, size)}
+{
+}
 
 void Product::set(const ProdInfo& info)
 {
