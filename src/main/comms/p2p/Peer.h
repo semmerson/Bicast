@@ -23,12 +23,12 @@
 
 namespace hycast {
 
-class PeerImpl;    // Forward declaration
 class PeerMsgRcvr; // Eliminates mutual dependency with `PeerMsgRcvr.h`
 
 class Peer final : public Notifier
 {
-    std::shared_ptr<PeerImpl> pImpl; // `pImpl` idiom
+    class                 Impl;    // Forward declaration
+    std::shared_ptr<Impl> pImpl; // `pImpl` idiom
 
 public:
     /**

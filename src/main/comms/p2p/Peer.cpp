@@ -27,7 +27,7 @@
 
 namespace hycast {
 
-class PeerImpl final {
+class Peer::Impl final {
     typedef enum {
         VERSION_STREAM_ID = 0,
         PROD_NOTICE_STREAM_ID,
@@ -75,10 +75,10 @@ class PeerImpl final {
      /**
       * Every peer implementation is unique.
       */
-     PeerImpl(const PeerImpl& impl) =delete;
-     PeerImpl(const PeerImpl&& impl) =delete;
-     PeerImpl& operator=(const PeerImpl& impl) =delete;
-     PeerImpl& operator=(const PeerImpl&& impl) =delete;
+     Impl(const Impl& impl) =delete;
+     Impl(const Impl&& impl) =delete;
+     Impl& operator=(const Impl& impl) =delete;
+     Impl& operator=(const Impl&& impl) =delete;
 
 public:
     /**
@@ -86,7 +86,7 @@ public:
      * resulting instance will throw an exception.
      * @param[in,out] peer  The containing peer object
      */
-    PeerImpl(Peer* peer)
+    Impl(Peer* peer)
         : version(0),
           versionChan(),
           prodNoticeChan(),
@@ -107,7 +107,7 @@ public:
      * @param[in,out] sock     Socket
      * @throw LogicError       Unknown protocol version from remote peer
      */
-    PeerImpl(
+    Impl(
             Peer*          peer,
             PeerMsgRcvr&   msgRcvr,
             SctpSock&      sock)
@@ -258,7 +258,7 @@ public:
      * @execptionsafety Nothrow
      * @threadsafety    Thread-safe
      */
-    bool operator==(const PeerImpl& that) const noexcept {
+    bool operator==(const Impl& that) const noexcept {
         return this == &that; // Every instance is unique
     }
     /**
@@ -268,7 +268,7 @@ public:
      * @execptionsafety Nothrow
      * @threadsafety    Thread-safe
      */
-    bool operator!=(const PeerImpl& that) const noexcept {
+    bool operator!=(const Impl& that) const noexcept {
         return this != &that; // Every instance is unique
     }
     /**
@@ -278,7 +278,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    bool operator<(const PeerImpl& that) const noexcept {
+    bool operator<(const Impl& that) const noexcept {
         return this < &that; // Every instance is unique
     }
     /**
@@ -288,7 +288,7 @@ public:
      * @threadsafety    Thread-safe
      */
     size_t hash() const noexcept {
-        return std::hash<const PeerImpl*>()(this); // Every instance is unique
+        return std::hash<const Impl*>()(this); // Every instance is unique
     }
     /**
      * Returns the string representation of this instance.
@@ -298,19 +298,19 @@ public:
      */
     std::string to_string() const
     {
-        return std::string("PeerImpl{sock=") + sock.to_string() + ", version=" +
+        return std::string("Peer::Impl{sock=") + sock.to_string() + ", version=" +
                 std::to_string(version) + "}";
     }
 };
 
 Peer::Peer()
-    : pImpl(new PeerImpl(this))
+    : pImpl(new Impl(this))
 {}
 
 Peer::Peer(
         PeerMsgRcvr& msgRcvr,
         SctpSock&    sock)
-    : pImpl(new PeerImpl(this, msgRcvr, sock))
+    : pImpl(new Impl(this, msgRcvr, sock))
 {}
 
 void Peer::runReceiver() const
@@ -360,7 +360,7 @@ bool Peer::operator <(const Peer& that) const noexcept
 
 uint16_t Peer::getNumStreams()
 {
-    return PeerImpl::getNumStreams();
+    return Impl::getNumStreams();
 }
 
 const InetSockAddr& Peer::getRemoteAddr() const
