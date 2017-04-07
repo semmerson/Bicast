@@ -48,6 +48,15 @@ public:
          SctpSock&    sock);
 
     /**
+     * Constructs. Doesn't receive anything until `runReceiver()` is called.
+     * @param[in,out] msgRcvr   Object to receive messages from the remote peer
+     * @param[in]     peerAddr  Socket address of remote peer
+     * @see runReceiver()
+     */
+    Peer(PeerMsgRcvr&        msgRcvr,
+         const InetSockAddr& peerAddr);
+
+    /**
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
      */

@@ -26,6 +26,7 @@ class ProductImpl final
     std::vector<bool> chunkVec;
     char*             data;
     ChunkIndex        numChunks;
+    bool              complete;
 
     /**
      * Returns a pointer to the start of a chunk-of-data in the accumulating
@@ -49,6 +50,7 @@ public:
         , chunkVec(prodInfo.getNumChunks())
         , data{new char[prodInfo.getSize()]}
         , numChunks{0}
+        , complete{false}
     {}
 
     /**
@@ -65,8 +67,9 @@ public:
             const size_t       size)
         : ProductImpl(ProdInfo(name, index, size))
     {
-        ::memcpy(this->data, data, size);
         numChunks = prodInfo.getNumChunks();
+        complete = true;
+        ::memcpy(this->data, data, size);
     }
 
     /**
@@ -107,6 +110,17 @@ public:
     }
 
     /**
+     * Returns the product's index.
+     * @return          Product's index
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    const ProdIndex getIndex() const noexcept
+    {
+        return prodInfo.getIndex();
+    }
+
+    /**
      * Adds a chunk-of-data.
      * @param[in] chunk  The chunk
      * @return `true`    if the chunk of data was added
@@ -122,10 +136,10 @@ public:
         const auto chunkSize = chunk.getSize();
         prodInfo.vet(chunk.getInfo(), chunkSize);
         ChunkIndex chunkIndex{chunk.getInfo().getIndex()};
-        if (chunkVec[chunkIndex])
+        if (complete || chunkVec[chunkIndex])
             return false;
         ::memcpy(startOf(chunkIndex), chunk.getData(), chunkSize);
-        ++numChunks;
+        complete = ++numChunks == prodInfo.getNumChunks();
         return chunkVec[chunkIndex] = true;
     }
 
@@ -145,7 +159,7 @@ public:
     {
         const auto chunkInfo = chunk.getInfo();
         const auto chunkIndex = chunkInfo.getIndex();
-        if (chunkVec[chunkIndex])
+        if (complete || chunkVec[chunkIndex])
             return false;
         const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
         const auto actualChunkSize = chunk.drainData(
@@ -155,7 +169,7 @@ public:
                     "Unexpected chunk size: expected=" +
                     std::to_string(expectedChunkSize) +
                     ", actual=" + std::to_string(actualChunkSize));
-        ++numChunks;
+        complete = ++numChunks == prodInfo.getNumChunks();
         return chunkVec[chunkIndex] = true;
     }
 
@@ -166,7 +180,7 @@ public:
      */
     bool isComplete() const
     {
-        return numChunks == prodInfo.getNumChunks();
+        return complete;
     }
 
     /**
@@ -200,7 +214,7 @@ public:
             throw OutOfRange(__FILE__, __LINE__, "Chunk-index is too great: "
                     "index=" + std::to_string(index) + ", max=" +
                     std::to_string(chunkVec.size()-1));
-        return chunkVec[index];
+        return complete || chunkVec[index];
     }
 
     /**
@@ -216,7 +230,7 @@ public:
             const ChunkIndex index,
             ActualChunk&     chunk) const
     {
-        if (!chunkVec[index])
+        if (!complete && !chunkVec[index])
             return false;
         auto info = prodInfo.makeChunkInfo(index);
         chunk = ActualChunk(info, data + prodInfo.getOffset(index));
@@ -245,6 +259,11 @@ void Product::set(const ProdInfo& info)
 const ProdInfo& Product::getInfo() const noexcept
 {
     return pImpl->getInfo();
+}
+
+const ProdIndex Product::getIndex() const noexcept
+{
+    return pImpl->getIndex();
 }
 
 bool Product::add(const ActualChunk& chunk)

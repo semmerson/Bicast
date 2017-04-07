@@ -12,6 +12,7 @@
 #include "Channel.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "ClntSctpSock.h"
 #include "error.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
@@ -58,6 +59,20 @@ class Peer::Impl final {
         void recvData(LatentChunk chunk) {}
         void recvData(LatentChunk chunk, Peer& peer) {}
     }                      defaultMsgRcvr;
+
+    /**
+     * Constructs.
+     * @param[in,out] peer     The containing peer object
+     * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
+     * @param[in,out] sock     Socket
+     * @throw LogicError       Unknown protocol version from remote peer
+     * @see Impl(Peer*, PeerMsgRcvr&, const InetSockAddr&)
+     */
+    Impl(   Peer*         peer,
+            PeerMsgRcvr&  msgRcvr,
+            SctpSock&&    sock)
+        : Impl(peer, msgRcvr, std::ref<SctpSock>(sock))
+    {}
 
     /**
      * Returns the protocol version of the remote peer.
@@ -130,6 +145,19 @@ public:
             throw LogicError(__FILE__, __LINE__, "Unknown protocol version: " +
                     std::to_string(vers));
     }
+
+    /**
+     * Constructs.
+     * @param[in,out] peer      The containing peer object
+     * @param[in,out] msgRcvr   Object to receive messages from remote peer
+     * @param[in]     peerAddr  Socket address of remote peer
+     * @throw LogicError        Unknown protocol version from remote peer
+     */
+    Impl(   Peer*               peer,
+            PeerMsgRcvr&        msgRcvr,
+            const InetSockAddr& peerAddr)
+        : Impl{peer, msgRcvr, ClntSctpSock{peerAddr, getNumStreams()}}
+    {}
 
     /**
      * Returns the number of streams.
@@ -325,6 +353,12 @@ Peer::Peer(
         PeerMsgRcvr& msgRcvr,
         SctpSock&    sock)
     : pImpl(new Impl(this, msgRcvr, sock))
+{}
+
+Peer::Peer(
+        PeerMsgRcvr&        msgRcvr,
+        const InetSockAddr& peerAddr)
+    : pImpl(new Impl(this, msgRcvr, peerAddr))
 {}
 
 void Peer::runReceiver() const

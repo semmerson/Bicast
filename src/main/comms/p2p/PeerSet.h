@@ -55,7 +55,6 @@ public:
      * @return               Status of the attempted insertion:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
-     *   - REPLACED  Success
      *   - FULL      Set is full and insufficient time to determine worst peer
      * @exceptionsafety      Strong guarantee
      * @threadsafety         Safe
@@ -63,26 +62,6 @@ public:
     InsertStatus tryInsert(
             Peer&   candidate,
             size_t* size = nullptr) const;
-
-    /**
-     * Tries to insert a remote peer given its Internet socket address.
-     * @param[in]     candidate   Candidate remote peer
-     * @param[in,out] msgRcvr     Receiver of messages from the remote peer
-     * @param[out]    size        Number of active peers
-     * @return                    Insertion status:
-     *   - EXISTS    Peer is already member of set
-     *   - SUCCESS   Success
-     *   - REPLACED  Success
-     *   - FULL      Set is full and insufficient time to determine worst peer
-     * @throw InvalidArgument     Unknown protocol version from remote peer.
-     *                            Peer not added to set.
-     * @exceptionsafety           Strong guarantee
-     * @threadsafety              Safe
-     */
-    InsertStatus tryInsert(
-            const InetSockAddr& candidate,
-            PeerMsgRcvr&        msgRcvr,
-            size_t*             size);
 
     /**
      * Sends information about a product to all peers in the set.

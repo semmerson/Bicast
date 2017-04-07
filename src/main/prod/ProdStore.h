@@ -23,6 +23,7 @@ namespace hycast {
 
 class ProdStore final
 {
+#define DEFAULT_MIN_RESIDENCE 3600.0
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
@@ -54,7 +55,7 @@ public:
      * @see ProdStore(const std::string& pathname, double residence)
      */
     explicit ProdStore(const std::string& pathname)
-        : ProdStore(pathname, 3600)
+        : ProdStore(pathname, DEFAULT_MIN_RESIDENCE)
     {}
 
     /**
@@ -65,7 +66,7 @@ public:
      * @throw InvalidArgument Residence-time is negative
      * @see ProdStore(const std::string& pathname, double residence)
      */
-    explicit ProdStore(const double residence)
+    explicit ProdStore(const double residence = DEFAULT_MIN_RESIDENCE)
         : ProdStore("", residence)
     {}
 
@@ -74,6 +75,16 @@ public:
      * specified during construction.
      */
     ~ProdStore() =default;
+
+    /**
+     * Adds an entire product. Does nothing if the product has already been
+     * added. If added, the product will be removed when the minimum residence
+     * time has elapsed.
+     * @param[in] prod   Product to be added
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void add(Product& prod);
 
     /**
      * Adds product-information to an entry. Creates the entry if it doesn't

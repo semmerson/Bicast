@@ -21,15 +21,14 @@ namespace hycast {
 
 class McastSender final
 {
-    class Impl; // Forward declaration
-
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
     typedef uint16_t MsgIdType;
 
-    static const MsgIdType prodInfoId= 0;
-    static const MsgIdType chunkId= 1;
+    static const MsgIdType prodInfoId = 0;
+    static const MsgIdType chunkId = 1;
 
     /**
      * Constructs.

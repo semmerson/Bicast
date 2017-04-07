@@ -12,6 +12,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "PeerSet.h"
 #include "ProdStore.h"
 #include "Shipping.h"
 
@@ -19,43 +20,37 @@ namespace hycast {
 
 class Shipping::Impl final
 {
-    ProdStore prodStore;
+    class PeerMgr final
+    {
+        PeerSet peerSet;
+    public:
+        PeerMgr(PeerSet& peerSet)
+            : peerSet{peerSet}
+        {}
+        void notify(const Product& prod)
+        {
+            auto prodInfo = prod.getInfo();
+            peerSet.sendNotice(prodInfo);
+            ChunkIndex numChunks = prodInfo.getNumChunks();
+            for (ChunkIndex i = 0; i < numChunks; ++i)
+                peerSet.sendNotice(ChunkInfo{prodInfo, i});
+        }
+    }           peerMgr;
+    ProdStore   prodStore;
+    McastSender mcastSender;
 
 public:
     /**
      * Constructs.
-     * @param[in] path        Pathname of file for persisting the products
-     *                        between sessions or the empty string to indicate
-     *                        no persistence
-     * @param[in] residence   Desired minimum residence-time, in seconds, of
-     *                        data-products
-     * @throw SystemError     Couldn't open temporary persistence-file
-     * @throw InvalidArgument Residence-time is negative
+     * @param[in] prodStore    Product store
+     * @param[in] mcastSender  Multicast sender.
      */
-    Impl(    const std::string& pathname,
-             const double       residence)
-        : prodStore(pathname, residence)
-    {}
-
-    /**
-     * Constructs.
-     * @param[in] path        Pathname of file for persisting the products
-     *                        between sessions or the empty string to indicate
-     *                        no persistence
-     * @throw SystemError     Couldn't open temporary persistence-file
-     */
-    Impl(const std::string& pathname)
-        : prodStore(pathname)
-    {}
-
-    /**
-     * Constructs.
-     * @param[in] residence   Desired minimum residence-time, in seconds, of
-     *                        data-products
-     * @throw InvalidArgument Residence-time is negative
-     */
-    Impl(const double residence)
-        : prodStore(residence)
+    Impl(   ProdStore&   prodStore,
+            McastSender& mcastSender,
+            PeerSet&     peerSet)
+        : peerMgr{peerSet}
+        , prodStore{prodStore}
+        , mcastSender{mcastSender}
     {}
 
     /**
@@ -64,14 +59,17 @@ public:
      */
     void ship(Product& prod)
     {
-        throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+        mcastSender.send(prod);
+        prodStore.add(prod);
+        peerMgr.notify(prod);
     }
 };
 
 Shipping::Shipping(
-        const std::string& pathname,
-        const double       residence)
-    : pImpl{new Impl(pathname, residence)}
+        ProdStore&   prodStore,
+        McastSender& mcastSender,
+        PeerSet&     peerSet)
+    : pImpl{new Impl(prodStore, mcastSender, peerSet)}
 {}
 
 void Shipping::ship(Product& prod)

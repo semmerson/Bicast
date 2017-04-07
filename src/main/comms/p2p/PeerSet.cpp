@@ -480,7 +480,6 @@ public:
      * @return                Insertion status:
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
-     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
      *   - FULL      Set is full and insufficient time to determine worst peer
      * @exceptionsafety       Strong guarantee
      * @threadsafety          Safe
@@ -506,7 +505,7 @@ public:
             // Replace worst-performing peer
             Peer worst{removeWorstPeer()};
             insert(candidate);
-            status = PeerSet::REPLACED;
+            status = PeerSet::SUCCESS;
             peerTerminated(worst);
         }
         if (size)
@@ -665,14 +664,6 @@ PeerSet::InsertStatus PeerSet::tryInsert(
         size_t* size) const
 {
     return pImpl->tryInsert(candidate, size);
-}
-
-PeerSet::InsertStatus PeerSet::tryInsert(
-        const InetSockAddr& candidate,
-        PeerMsgRcvr&        msgRcvr,
-        size_t*             size)
-{
-    return pImpl->tryInsert(candidate, msgRcvr, size);
 }
 
 void PeerSet::sendNotice(const ProdInfo& prodInfo)

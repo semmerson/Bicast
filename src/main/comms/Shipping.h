@@ -13,6 +13,8 @@
 #ifndef MAIN_COMMS_SHIPPING_H_
 #define MAIN_COMMS_SHIPPING_H_
 
+#include "McastSender.h"
+#include "ProdStore.h"
 #include "Product.h"
 
 #include <memory>
@@ -27,20 +29,14 @@ class Shipping final
 public:
     /**
      * Constructs.
+     * @param[in] prodStore    Product store
+     * @param[in] mcastSender  Multicast sender
+     * @param[in] peerSet      Empty set of P2P peers
      */
     Shipping(
-            const std::string& pathname,
-            const double       residence);
-
-    /**
-     * Constructs.
-     */
-    Shipping(const std::string& pathname);
-
-    /**
-     * Constructs.
-     */
-    Shipping(const double residence);
+            ProdStore&   prodStore,
+            McastSender& mcastSender,
+            PeerSet&     peerSet);
 
     /**
      * Ships a product.

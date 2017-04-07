@@ -185,7 +185,7 @@ TEST_F(PeerSetTest, RemoveWorst) {
     EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer1));
     hycast::Peer peer2{getClientPeer()};
     size_t numPeers;
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::REPLACED,
+    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS,
             peerSet.tryInsert(peer2, &numPeers));
     EXPECT_EQ(1, numPeers);
 }
@@ -208,16 +208,6 @@ TEST_F(PeerSetTest, DuplicatePeerInsertion) {
     hycast::PeerSet  peerSet{[](hycast::Peer&){}};
     EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
     EXPECT_EQ(hycast::PeerSet::InsertStatus::EXISTS, peerSet.tryInsert(peer));
-}
-
-// Tests inserting the same peer twice but by Internet socket address
-TEST_F(PeerSetTest, DuplicatePeerInsertionByAddress) {
-    Server server{serverSockAddr};
-    hycast::Peer     peer{getClientPeer()};
-    hycast::PeerSet  peerSet{[](hycast::Peer&){}};
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::EXISTS,
-            peerSet.tryInsert(peer.getRemoteAddr(), clntMsgRcvr, nullptr));
 }
 
 }  // namespace

@@ -18,11 +18,15 @@ namespace {
 // The fixture for testing class Shipping.
 class ShippingTest : public ::testing::Test {
 protected:
+    hycast::ProdStore    prodStore{};
+    hycast::InetSockAddr mcastAddr{"127.0.0.1", 38800};
+    unsigned             protoVers = 0;
+    hycast::McastSender  mcastSender{mcastAddr, protoVers};
 };
 
 // Tests construction
 TEST_F(ShippingTest, Construction) {
-    hycast::Shipping();
+    hycast::Shipping(prodStore, mcastSender);
 }
 
 // Tests shipping a product
@@ -31,7 +35,7 @@ TEST_F(ShippingTest, Shipping) {
     char              data[128000];
     ::memset(data, 0xbd, sizeof(data));
     hycast::Product   prod("product", prodIndex, data, sizeof(data));
-    hycast::Shipping  shipping{};
+    hycast::Shipping  shipping{prodStore, mcastSender};
     shipping.ship(prod);
 }
 

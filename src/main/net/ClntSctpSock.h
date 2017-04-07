@@ -27,7 +27,7 @@ public:
      */
     ClntSctpSock(
             const InetSockAddr& addr,
-            const uint16_t      numStreams);
+            const unsigned      numStreams);
 };
 
 } // namespace

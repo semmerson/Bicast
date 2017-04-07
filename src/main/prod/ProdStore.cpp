@@ -176,7 +176,25 @@ public:
     }
 
     /**
-     * Adds information on a product.
+     * Adds an entire product. Does nothing if the product has already been
+     * added. If added, the product will be removed when the minimum residence
+     * time has elapsed.
+     * @param[in] prod   Product to be added
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void add(Product& prod)
+    {
+        auto                              prodIndex = prod.getIndex();
+        std::lock_guard<decltype(mutex)>  lock(mutex);
+        auto pair = prods.insert(std::pair<ProdIndex, Product>(prodIndex, prod));
+        if (pair.second)
+            delayQ.push(prodIndex);
+    }
+
+    /**
+     * Adds information on a product. If the addition completes the product,
+     * then it will be removed when the minimum residence time has elapsed.
      * @param[in]  prodInfo  Product information
      * @param[out] prod      Associated product
      * @retval `true`        The product is complete
@@ -202,7 +220,8 @@ public:
     }
 
     /**
-     * Adds a chunk of data.
+     * Adds a chunk of data. If the addition completes the product, then it will
+     * be removed when the minimum residence time has elapsed.
      * @param[in]  chunk  Chunk of data
      * @param[out] prod   Associated product
      * @retval `true`     The product is complete
@@ -299,6 +318,11 @@ ProdStore::ProdStore(
         const double       residence)
     : pImpl{new Impl(pathname, residence)}
 {}
+
+void ProdStore::add(Product& prod)
+{
+    pImpl->add(prod);
+}
 
 bool ProdStore::add(
         const ProdInfo& prodInfo,

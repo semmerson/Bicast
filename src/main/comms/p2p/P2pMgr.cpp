@@ -117,6 +117,29 @@ class P2pMgr::Impl final : public Notifier
     }
 
     /**
+     * Tries to insert a remote peer given its Internet socket address.
+     * @param[in]     peerAddr   Socket address of remote peer candidate
+     * @param[in,out] msgRcvr    Receiver of messages from the remote peer
+     * @param[out]    size       Number of active peers
+     * @return                   Insertion status:
+     *   - EXISTS    Peer is already member of set
+     *   - SUCCESS   Success
+     *   - FULL      Set is full and insufficient time to determine worst peer
+     * @throw InvalidArgument    Unknown protocol version from remote peer. Peer
+     *                           not added to set.
+     * @exceptionsafety          Strong guarantee
+     * @threadsafety             Safe
+     */
+    PeerSet::InsertStatus tryInsert(
+            const InetSockAddr& peerAddr,
+            PeerMsgRcvr&        msgRcvr,
+            size_t*             size)
+    {
+        Peer peer(msgRcvr, peerAddr);
+        return peerSet.tryInsert(peer, size);
+    }
+
+    /**
      * Attempts to adds peers to the set of active peers when
      *   - Initially called; or
      *   - `waitDuration` time passes since the last addition attempt; or
@@ -130,27 +153,25 @@ class P2pMgr::Impl final : public Notifier
         size_t numPeers;
         try {
             for (;;) {
-                 for (auto iter = peerSource->getPeers();
+                for (auto iter = peerSource->getPeers();
                          iter != peerSource->end(); ++iter) {
-                     try {
-                         auto status = peerSet.tryInsert(*iter, msgRcvr,
-                                 &numPeers);
-                         if (status == PeerSet::FULL)
-                             break;
-                         if (status == PeerSet::SUCCESS ||
-                                 status == PeerSet::REPLACED) {
-                             LockGuard lock(initMutex);
-                             initiated.insert(*iter);
-                         }
-                     }
-                     catch (const std::invalid_argument& e) {
-                         log_what(e);
-                     }
-                 }
-                 UniqueLock lock(termMutex);
-                 auto when = std::chrono::steady_clock::now() + waitDuration;
-                 while (peerSet.size() == numPeers)
-                     termCond.wait_until(lock, when);
+                    try {
+                        auto status = tryInsert(*iter, msgRcvr, &numPeers);
+                        if (status == PeerSet::FULL)
+                            break;
+                        if (status == PeerSet::SUCCESS) {
+                            LockGuard lock(initMutex);
+                            initiated.insert(*iter);
+                        }
+                   }
+                   catch (const std::invalid_argument& e) {
+                       log_what(e);
+                   }
+                }
+                UniqueLock lock(termMutex);
+                auto when = std::chrono::steady_clock::now() + waitDuration;
+                while (peerSet.size() == numPeers)
+                    termCond.wait_until(lock, when);
             }
         }
         catch (const std::exception& e) {

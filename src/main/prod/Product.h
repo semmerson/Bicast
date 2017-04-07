@@ -67,6 +67,14 @@ public:
     const ProdInfo& getInfo() const noexcept;
 
     /**
+     * Returns the product's index.
+     * @return          Product's index
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    const ProdIndex getIndex() const noexcept;
+
+    /**
      * Adds a chunk-of-data.
      * @param[in] chunk  The chunk
      * @return `true`    if the chunk of data was added

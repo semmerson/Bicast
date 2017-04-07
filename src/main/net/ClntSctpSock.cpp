@@ -24,7 +24,7 @@ class ClntSctpSockImpl final : public SctpSockImpl
 public:
     ClntSctpSockImpl(
             const InetSockAddr& addr,
-            const uint16_t      numStreams)
+            const unsigned      numStreams)
         : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
     {
         addr.connect(sock.load());
@@ -33,7 +33,7 @@ public:
 
 ClntSctpSock::ClntSctpSock(
         const InetSockAddr& addr,
-        const uint16_t      numStreams)
+        const unsigned      numStreams)
     : SctpSock(new ClntSctpSockImpl(addr, numStreams))
 {}
 
