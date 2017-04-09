@@ -1,9 +1,0 @@
-*_test
-*.trs
-*.log
-*.o
-core.*
-*.swp
-INSTALL
-config.h.in~
-missing
