@@ -201,50 +201,10 @@ class PeerSet::Impl final
      */
     class PeerEntryImpl
     {
-        SendQ                      sendQ;
-        Peer                       peer;
-        std::function<void(Peer&)> handleFailure;
-        uint32_t                   value;
-        std::thread                sendThread;
-        std::thread                recvThread;
-
-        /**
-         * Processes send-actions queued-up for a peer. Doesn't return until
-         * the sentinel send-action is seen or an exception is thrown.
-         */
-        void processSendQ()
-        {
-            try {
-                for (;;) {
-                    std::shared_ptr<SendAction> action{sendQ.pop()};
-                    action->actUpon(peer);
-                    if (action->terminate())
-                        break;
-                }
-            }
-            catch (const std::exception& e) {
-                log_what(e); // Because end of thread
-                handleFailure(peer);
-            }
-        }
-        /**
-         * Causes a peer to receive messages from its associated remote peer.
-         * Doesn't return until the remote peer disconnects or an exception is
-         * thrown.
-         */
-        void runReceiver()
-        {
-            try {
-                peer.runReceiver();
-            }
-            catch (const std::exception& e) {
-                log_what(e); // Because end of thread
-                handleFailure(peer);
-            }
-        }
-
     public:
-        static const uint32_t VALUE_MAX{UINT32_MAX};
+    	typedef int32_t        PeerValue;
+        static const PeerValue VALUE_MAX{INT32_MAX};
+        static const PeerValue VALUE_MIN{INT32_MIN};
         /**
          * Constructs from the peer. Immediately starts receiving and sending.
          * @param[in] peer  The peer
@@ -290,10 +250,20 @@ class PeerSet::Impl final
                 ++value;
         }
         /**
+         * Decrements the value of the peer.
+         * @exceptionsafety Strong
+         * @threadsafety    Safe
+         */
+        void decValue()
+        {
+            if (value > VALUE_MIN)
+                --value;
+        }
+        /**
          * Returns the value of the peer.
          * @return The value of the peer
          */
-        uint32_t getValue() const
+        PeerValue getValue() const
         {
             return value;
         }
@@ -318,6 +288,49 @@ class PeerSet::Impl final
                 const TimeRes&              maxResideTime)
         {
             return sendQ.push(action, maxResideTime);
+        }
+
+    private:
+        SendQ                      sendQ;
+        Peer                       peer;
+        std::function<void(Peer&)> handleFailure;
+        PeerValue                  value;
+        std::thread                sendThread;
+        std::thread                recvThread;
+
+        /**
+         * Processes send-actions queued-up for a peer. Doesn't return until
+         * the sentinel send-action is seen or an exception is thrown.
+         */
+        void processSendQ()
+        {
+            try {
+                for (;;) {
+                    std::shared_ptr<SendAction> action{sendQ.pop()};
+                    action->actUpon(peer);
+                    if (action->terminate())
+                        break;
+                }
+            }
+            catch (const std::exception& e) {
+                log_what(e); // Because end of thread
+                handleFailure(peer);
+            }
+        }
+        /**
+         * Causes a peer to receive messages from its associated remote peer.
+         * Doesn't return until the remote peer disconnects or an exception is
+         * thrown.
+         */
+        void runReceiver()
+        {
+            try {
+                peer.runReceiver();
+            }
+            catch (const std::exception& e) {
+                log_what(e); // Because end of thread
+                handleFailure(peer);
+            }
         }
     };
 
@@ -374,7 +387,7 @@ class PeerSet::Impl final
      * Unconditionally inserts a peer. The peer immediately starts receiving
      * messages from its associated remote peer and is ready to send messages.
      * If the inserted peer makes the set of peers full, then
-     *   - All value counters are reset;
+     *   - All peer values are reset;
      *   - The eligibility timer is set.
      * @param[in] peer   Peer to be inserted
      * @exceptionsafety  Strong guarantee
@@ -403,7 +416,7 @@ class PeerSet::Impl final
         whenEligible = Clock::now() + eligibilityDuration;
     }
     /**
-     * Unconditionally removes the worst performing peer from the set of peers.
+     * Unconditionally removes a peer with the lowest value from the set of peers.
      * @return           The removed peer
      * @exceptionsafety  Nothrow
      * @threadsafety     Compatible but not safe
@@ -416,7 +429,7 @@ class PeerSet::Impl final
         auto minValue = PeerEntryImpl::VALUE_MAX;
         for (const auto& elt : peerEntries) {
             auto value = elt.second->getValue();
-            if (value <= minValue) {
+            if (value < minValue) {
                 minValue = value;
                 worstPeer = elt.first;
             }
@@ -429,7 +442,7 @@ class PeerSet::Impl final
      * @exceptionsafety  Nothrow
      * @threadsafety     Compatible but not safe
      */
-    void resetValues()
+    void resetValues() noexcept
     {
         assert(isLocked(mutex));
         for (auto& elt : peerEntries)
@@ -631,6 +644,22 @@ public:
     }
 
     /**
+     * Decrements the value of a peer. Does nothing if the peer isn't found.
+     * @param[in] peer  Peer to have its value decremented
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    void decValue(Peer& peer)
+    {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        if (full()) {
+            auto iter = peerEntries.find(peer);
+            if (iter != peerEntries.end())
+                iter->second->decValue();
+        }
+    }
+
+    /**
      * Returns the number of peers in the set.
      * @return Number of peers in the set
      */
@@ -689,6 +718,11 @@ void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
 void PeerSet::incValue(Peer& peer) const
 {
     pImpl->incValue(peer);
+}
+
+void PeerSet::decValue(Peer& peer) const
+{
+    pImpl->decValue(peer);
 }
 
 size_t PeerSet::size() const

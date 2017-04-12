@@ -26,3 +26,8 @@ missing
 *_test
 test-driver
 *.trs
+html
+/.cproject
+/.project
+/config.h
+/stamp-h1

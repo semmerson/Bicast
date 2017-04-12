@@ -109,6 +109,12 @@ public:
     void incValue(Peer& peer) const;
 
     /**
+     * Decrements the value of a peer.
+     * @param[in] peer  Peer to have its value decremented
+     */
+    void decValue(Peer& peer) const;
+
+    /**
      * Returns the number of peers in the set.
      * @return Number of peers in the set
      */

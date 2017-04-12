@@ -30,9 +30,9 @@ protected:
     // is empty.
 
     McastReceiverTest()
-        : asmMcastAddr("234.128.117.0", 38800)
-        , ssmMcastAddr("232.0.0.0", 38800)
-        , srcAddr("192.168.200.131") // IPv4 address of local host
+        : asmGroupAddr("234.128.117.0", 38800)
+        , ssmGroupAddr("232.0.0.0", 38800)
+        , srcAddr("192.168.132.128") // IPv4 address of local host
         , version{0}
         , prodName("product")
         , chunkSize{hycast::ChunkInfo::getCanonSize()}
@@ -109,8 +109,8 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for McastReceiver.
-    hycast::InetSockAddr  asmMcastAddr; // Any-source multicast-group address
-    hycast::InetSockAddr  ssmMcastAddr; // Source-specific multicast-group address
+    hycast::InetSockAddr  asmGroupAddr; // Any-source multicast-group address
+    hycast::InetSockAddr  ssmGroupAddr; // Source-specific multicast-group address
     hycast::InetAddr      srcAddr; // IP address of source
     unsigned              version;
     std::string           prodName;
@@ -127,20 +127,20 @@ protected:
 
 // Tests construction of any-source multicast receiver
 TEST_F(McastReceiverTest, Construction) {
-    hycast::McastReceiver mcastRcvr(asmMcastAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(asmGroupAddr, *this, version);
 }
 
 // Tests construction of source-specific multicast receiver
 TEST_F(McastReceiverTest, SourceConstruction) {
-    hycast::McastReceiver mcastRcvr(ssmMcastAddr, srcAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(ssmGroupAddr, srcAddr, *this, version);
 }
 
 // Tests source-specific reception
 TEST_F(McastReceiverTest, SourceReception) {
-    hycast::McastReceiver mcastRcvr(ssmMcastAddr, srcAddr, *this, version);
+    hycast::McastReceiver mcastRcvr(ssmGroupAddr, srcAddr, *this, version);
     std::thread           rcvrThread =
             std::thread([&]{runReceiver(mcastRcvr);});
-    sendProduct(ssmMcastAddr);
+    sendProduct(ssmGroupAddr);
     ::sleep(1);
     ::pthread_cancel(rcvrThread.native_handle());
     rcvrThread.join();

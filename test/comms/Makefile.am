@@ -10,10 +10,10 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main \
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 
 check_PROGRAMS	= Receiving_test \
-		  Shipping_test
+				  Shipping_test
 
 Receiving_test_SOURCES		= Receiving_test.cpp
 Shipping_test_SOURCES		= Shipping_test.cpp
 
 TESTS	= Receiving_test \
-	  Shipping_test
+		  Shipping_test
