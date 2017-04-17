@@ -14,6 +14,7 @@
 #define MAIN_COMMS_SHIPPING_H_
 
 #include "McastSender.h"
+#include "PeerSet.h"
 #include "ProdStore.h"
 #include "Product.h"
 
@@ -32,11 +33,13 @@ public:
      * @param[in] prodStore    Product store
      * @param[in] mcastSender  Multicast sender
      * @param[in] peerSet      Empty set of P2P peers
+     * @param[in] serverAddr   Socket address of local server for remote peers
      */
     Shipping(
-            ProdStore&   prodStore,
-            McastSender& mcastSender,
-            PeerSet&     peerSet);
+            ProdStore&          prodStore,
+            McastSender&        mcastSender,
+            PeerSet&            peerSet,
+			const InetSockAddr& serverAddr);
 
     /**
      * Ships a product.

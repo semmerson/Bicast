@@ -17,7 +17,8 @@ multicast UDP packets:
         net.ipv4.conf.default.rp_filter = 2
         net.ipv4.conf.all.rp_filter = 2
 
-   If the values are new, then the command `sysctl -p` must be executed.
+   (The second entry might not be necessary.) If the values are new, then the
+   command `sysctl -p` must be executed.
 
 - A mapping must exist between multicast IP addresses and a network interface:
   - RHEL 6 & 7: The command `ip route` will show the mappings. A default mapping can

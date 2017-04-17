@@ -117,7 +117,8 @@ TEST_F(InetAddrTest, HostnameToSocketAddress) {
     struct sockaddr_in* sockAddrIn =
             reinterpret_cast<struct sockaddr_in*>(&storage);
     EXPECT_EQ(AF_INET, sockAddrIn->sin_family);
-    EXPECT_EQ(htons(port), sockAddrIn->sin_port);
+    in_port_t p = htons(port);
+    EXPECT_EQ(p, sockAddrIn->sin_port);
     EXPECT_EQ(inet_addr("127.0.0.1"), sockAddrIn->sin_addr.s_addr);
 }
 

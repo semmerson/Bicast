@@ -14,6 +14,7 @@
 
 #include "P2pMgr.h"
 #include "ProdStore.h"
+#include "Processing.h"
 #include "Receiving.h"
 
 #include <mutex>
@@ -27,6 +28,7 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
     std::unordered_set<ChunkInfo>            requestedChunks;
     std::mutex                               mutex;
     P2pMgr                                   p2pMgr;
+    Processing*                              processing;
     typedef std::lock_guard<decltype(mutex)> LockGuard;
 
     /**
@@ -69,17 +71,21 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
 public:
     /**
      * Constructs.
-     * @param[in] p2pMgr    Peer-to-peer manager
-     * @param[in] pathname  Pathname of product-store persistence-file or the
-     *                      empty string to indicate no persistence
+     * @param[in] p2pInfo     Information for the peer-to-peer component
+     * @param[in] pathname    Pathname of product-store persistence-file or the
+     *                        empty string to indicate no persistence
+     * @param[in] processing  Processes complete data-products. Must exist for
+     *                        the duration of this instance.
      * @see ProdStore::ProdStore()
      */
-    Impl(   P2pMgr&            p2pMgr,
-            const std::string& pathname)
+    Impl(   const P2pInfo&     p2pInfo,
+            const std::string& pathname,
+			Processing&        processing)
         : prodStore{pathname}
         , requestedChunks{}
         , mutex{}
-        , p2pMgr{p2pMgr}
+        , p2pMgr{p2pInfo, *this}
+        , processing{&processing}
     {}
 
     /**
@@ -179,9 +185,10 @@ public:
 };
 
 Receiving::Receiving(
-        P2pMgr&            p2pMgr,
+        const P2pInfo&     p2pInfo,
+		Processing&        processing,
         const std::string& pathname)
-    : pImpl{new Impl(p2pMgr, pathname)}
+    : pImpl{new Impl(p2pInfo, pathname, processing)}
 {}
 
 void Receiving::recvNotice(const ProdInfo& info)

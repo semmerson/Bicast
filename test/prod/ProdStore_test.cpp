@@ -9,7 +9,6 @@
  * @author: Steven R. Emmerson
  */
 
-
 #include "FixedDelayQueue.h"
 #include "ProdStore.h"
 
@@ -123,7 +122,7 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
 // Tests product deletion
 TEST_F(ProdStoreTest, ProductDeletion) {
     hycast::ProdInfo  prodInfo("product", 0, 38000);
-    hycast::ProdStore ps{"", 0.5};
+    hycast::ProdStore ps{"", 0.1};
     hycast::Product   prod;
     EXPECT_FALSE(ps.add(prodInfo, prod));
     EXPECT_EQ(1, ps.size());

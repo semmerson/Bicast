@@ -96,6 +96,13 @@ TEST_F(InetSockAddrTest, Ipv6AddrAndPortConstruction) {
     EXPECT_STREQ("[2001:db8::ff00:42:8329]:388", inetSockAddr.to_string().data());
 }
 
+// Tests construction from Internet address and port number
+TEST_F(InetSockAddrTest, InetAddrAndPortConstruction) {
+    const hycast::InetAddr     serverInetAddr{"192.168.132.128"};
+    hycast::InetSockAddr       serverAddr{serverInetAddr, 38800};
+    EXPECT_STREQ("192.168.132.128:38800", serverAddr.to_string().data());
+}
+
 // Tests copy construction
 TEST_F(InetSockAddrTest, CopyConstruction) {
     hycast::InetSockAddr sockaddr1{"128.117.140.56", 388};

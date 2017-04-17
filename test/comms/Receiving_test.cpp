@@ -9,8 +9,13 @@
  * @author: Steven R. Emmerson
  */
 
+#include "McastSender.h"
 #include "P2pMgr.h"
+#include "PeerSet.h"
+#include "Processing.h"
+#include "ProdStore.h"
 #include "Receiving.h"
+#include "Shipping.h"
 #include "YamlPeerSource.h"
 
 #include <gtest/gtest.h>
@@ -18,30 +23,66 @@
 namespace {
 
 // The fixture for testing class Receiving.
-class ReceivingTest : public ::testing::Test, public hycast::PeerMsgRcvr {
+class ReceivingTest : public ::testing::Test {
 protected:
 public:
-    void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer)
-    {}
-    void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer)
-    {}
-    void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer)
-    {}
-    void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer)
-    {}
-    void recvData(hycast::LatentChunk chunk, hycast::Peer& peer)
-    {}
+	class Processing final : public hycast::Processing
+	{
+	public:
+		void process(hycast::Product prod)
+		{
+		}
+	};
+
+	ReceivingTest()
+	{
+		p2pInfo.peerCount = maxPeers;
+		p2pInfo.peerSource = &peerSource;
+		p2pInfo.serverSockAddr = serverAddr;
+		p2pInfo.stasisDuration = stasisDuration;
+	}
+
+	hycast::PeerSet            peerSet{[](hycast::Peer&){}};
+    hycast::ProdStore          prodStore{};
+    const in_port_t            port{38800};
+    const hycast::InetSockAddr mcastAddr{"232.0.0.0", port};
+    const std::string          serverInetAddr{"192.168.132.128"};
+    hycast::InetSockAddr       serverAddr{serverInetAddr, port};
+    const unsigned             protoVers{0};
+    hycast::McastSender        mcastSender{mcastAddr, protoVers};
+    hycast::YamlPeerSource     peerSource{"[{inetAddr: " + serverInetAddr +
+    	    ", port: " + std::to_string(port) + "}]"};
+    hycast::ProdIndex          prodIndex{0};
+    char                       data[128000];
+    const unsigned             maxPeers = 1;
+    const unsigned             stasisDuration = 2;
+    hycast::P2pInfo            p2pInfo;
+    Processing                 processing{};
 };
 
 // Tests construction
 TEST_F(ReceivingTest, Construction) {
-    const hycast::InetSockAddr serverAddr("127.0.0.1", 38801);
+    hycast::Receiving{p2pInfo, processing};
+}
+
+// Tests shipping and receiving a product
+TEST_F(ReceivingTest, ShippingAndReceiving) {
+	// Create shipper
+    hycast::Shipping  shipping{prodStore, mcastSender, peerSet, serverAddr};
+
+    ::sleep(1);
+
+    // Create receiver
     const unsigned maxPeers = 1;
-    hycast::YamlPeerSource peerSource("[{inetAddr: 127.0.0.1, port: 38800}]");
-    const unsigned stasisDuration = 60;
-    hycast::P2pMgr p2pMgr(serverAddr, maxPeers, &peerSource, stasisDuration,
-            *this);
-    hycast::Receiving{p2pMgr};
+    const unsigned stasisDuration = 2;
+    hycast::Receiving{p2pInfo, processing};
+
+    ::sleep(1);
+
+    // Ship product
+    ::memset(data, 0xbd, sizeof(data));
+    hycast::Product   prod("product", prodIndex, data, sizeof(data));
+    shipping.ship(prod);
 }
 
 }  // namespace

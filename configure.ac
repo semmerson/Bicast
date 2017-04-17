@@ -3,7 +3,7 @@ dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ(2.59)
 AC_INIT(hycast, 1.0)
 AC_PROG_CXX
-AC_SUBST([AM_CXXFLAGS], [-std=c++0x])
+AC_SUBST([AM_CXXFLAGS], [-std=c++11])
 
 AC_CANONICAL_SYSTEM
 
@@ -25,10 +25,12 @@ AC_CHECK_MEMBERS(
     [struct ifreq.if_addr.sa_len], , , [[#include <net/if.h>]])
 
 dnl Check for pthreads library
-AC_SEARCH_LIBS([pthread_create], [pthread])
+AC_SEARCH_LIBS([pthread_create], [pthread], ,
+        AC_MSG_ERROR([Pthread library not found]))
 
 dnl Check for SCTP library
-AC_SEARCH_LIBS([sctp_recvmsg], [sctp])
+AC_SEARCH_LIBS([sctp_recvmsg], [sctp], ,
+        AC_MSG_ERROR([SCTP library not found]))
 
 dnl Check for YAML library
 AC_MSG_CHECKING([for library containing YAML::Node])

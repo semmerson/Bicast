@@ -26,8 +26,8 @@ class InetAddr final
 {
     std::shared_ptr<InetAddrImpl> pImpl;
     /**
-     * Constructs from a shared pointer to an implementation.
-     * @param[in] pImpl  Shared pointer to implementation
+     * Constructs from an implementation.
+     * @param[in] impl  implementation
      */
     InetAddr(InetAddrImpl* impl);
     /**

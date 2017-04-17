@@ -31,12 +31,16 @@ class Receiving final : public McastMsgRcvr, public PeerMsgRcvr
 public:
     /**
      * Constructs.
-     * @param[in] p2pMgr    Peer-to-peer manager
-     * @param[in] pathname  Pathname of product-store persistence-file or the
-     *                      empty string to indicate no persistence
+     * @param[in] p2pInfo     Information for the peer-to-peer component
+     * @param[in] processing  Locally processes received data-products
+     * @param[in] pathname    Pathname of product-store persistence-file or the
+     *                        empty string to indicate no persistence
      * @see ProdStore::ProdStore()
      */
-    Receiving(P2pMgr& p2pMgr, const std::string& pathname = "");
+    Receiving(
+    		const P2pInfo&     p2pInfo,
+			Processing&        processing,
+			const std::string& pathname = "");
 
     void recvNotice(const ProdInfo& info);
 

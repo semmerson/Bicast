@@ -19,6 +19,7 @@
 #include "MsgRcvr.h"
 #include "Notifier.h"
 #include "P2pMgr.h"
+#include "PeerMsgRcvr.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
 #include "SrvrSctpSock.h"
@@ -49,6 +50,17 @@ namespace hycast {
  */
 class P2pMgr::Impl final : public Notifier
 {
+	class NilMsgRcvr : public PeerMsgRcvr
+	{
+	public:
+		void recvNotice(const ProdInfo& info, Peer& peer) {}
+		void recvNotice(const ChunkInfo& info, Peer& peer) {}
+		void recvRequest(const ProdIndex& index, Peer& peer) {}
+		void recvRequest(const ChunkInfo& info, Peer& peer) {}
+		void recvData(LatentChunk chunk, Peer& peer) {}
+	};
+
+	static NilMsgRcvr       nilMsgRcvr;
     InetSockAddr            serverSockAddr; /// Internet address of peer-server
     PeerMsgRcvr&            msgRcvr;        /// Object to receive incoming messages
     PeerSource*             peerSource;     /// Source of potential peers
@@ -63,6 +75,8 @@ class P2pMgr::Impl final : public Notifier
     std::chrono::seconds    waitDuration;
     /// Remote socket address of initiated peers
     std::set<InetSockAddr>  initiated;
+    bool                    msgRcvrSet;     /// Is `msgRcvr` set?
+    bool                    isRunning;      /// Has `operator()()` been called
 
     typedef std::lock_guard<decltype(termMutex)>  LockGuard;
     typedef std::unique_lock<decltype(termMutex)> UniqueLock;
@@ -98,10 +112,9 @@ class P2pMgr::Impl final : public Notifier
     void runServer()
     {
         try {
-            auto serverSock =
-                    SrvrSctpSock(serverSockAddr, Peer::getNumStreams());
+            SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
             for (;;) {
-                SctpSock sock = serverSock.accept(); // Blocks listening
+                auto sock = serverSock.accept(); // Blocks
                 LockGuard lock(initMutex);
                 if (initiated.size()) {
                     std::thread([=]{accept(sock);}).detach();
@@ -226,7 +239,28 @@ public:
         , termCond{}
         , initMutex{}
         , waitDuration{stasisDuration+1}
+        , msgRcvrSet{true}
+        , isRunning{false}
     {}
+
+    /**
+     * Sets the receiver for messages from the remote peers. Must not be called
+     *   - If a message-receiver was passed to the constructor; or
+     *   - After `operator()()` is called.
+     * @param[in] msgRcvr  Receiver of messages from remote peers
+     * @throws LogicError  This instance was constructed with a message-receiver
+     * @throws LogicError  `operator()()` has been called
+     */
+    void setMsgRcvr(PeerMsgRcvr& msgRcvr)
+    {
+		LockGuard lock(termMutex);
+		if (msgRcvrSet)
+			throw LogicError(__FILE__, __LINE__,
+					"Message-receiver already set");
+		if (isRunning)
+			throw LogicError(__FILE__, __LINE__, "operator()() called");
+    	this->msgRcvr = msgRcvr;
+    }
 
     /**
      * Runs this instance. Starts receiving connection requests from remote
@@ -239,9 +273,13 @@ public:
      */
     void operator()()
     {
-        completer.submit([&]{ runServer(); });
-        if (peerSource)
-            completer.submit([&]{ runPeerAdder(); });
+    	{
+			LockGuard lock(termMutex);
+			if (peerSource)
+				completer.submit([this]{ runPeerAdder(); });
+			completer.submit([this]{ runServer(); });
+			isRunning = true;
+    	}
         auto future = completer.get(); // Blocks until exception thrown
         // Futures never cancelled => future.wasCancelled() is unnecessary
         future.getResult(); // might throw exception
@@ -299,7 +337,9 @@ public:
     }
 };
 
-hycast::P2pMgr::P2pMgr(
+P2pMgr::Impl::NilMsgRcvr P2pMgr::Impl::nilMsgRcvr;
+
+P2pMgr::P2pMgr(
         const InetSockAddr& serverSockAddr,
         const unsigned      peerCount,
         PeerSource*         potentialPeers,
@@ -308,6 +348,11 @@ hycast::P2pMgr::P2pMgr(
     : pImpl{new Impl(serverSockAddr, peerCount, potentialPeers, stasisDuration,
             msgRcvr)}
 {}
+
+void P2pMgr::setMsgRcvr(PeerMsgRcvr& msgRcvr)
+{
+	pImpl->setMsgRcvr(msgRcvr);
+}
 
 void P2pMgr::operator()()
 {
