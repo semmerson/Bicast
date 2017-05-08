@@ -16,7 +16,9 @@
 #include "ProdStore.h"
 #include "Product.h"
 
+#include <atomic>
 #include <cstdio>
+#include <exception>
 #include <fstream>
 #include <mutex>
 #include <pthread.h>
@@ -43,6 +45,7 @@ class ProdStore::Impl final
     FixedDelayQueue<ProdIndex, Duration>       delayQ;
     /// Thread for deleting products whose residence-time exceeds the minimum
     std::thread                                deletionThread;
+    std::exception_ptr                         exception;
 
     /**
      * Writes to the temporary persistence-file.
@@ -112,15 +115,21 @@ class ProdStore::Impl final
 
     /**
      * Deletes products whose residence-time is greater than the minimum.
-     * Doesn't return.
+     * Doesn't return. Intended to run on its own thread.
      */
     void deleteOldProds()
     {
-        for (;;) {
-            auto                             prodIndex = delayQ.pop();
-            std::lock_guard<decltype(mutex)> lock(mutex);
-            prods.erase(prodIndex);
-        }
+    	try {
+			for (;;) {
+				auto                             prodIndex = delayQ.pop();
+				std::lock_guard<decltype(mutex)> lock(mutex);
+				prods.erase(prodIndex);
+			}
+    	}
+    	catch (const std::exception& e) {
+			std::lock_guard<decltype(mutex)> lock(mutex);
+    		exception = std::current_exception();
+    	}
     }
 
 public:
@@ -139,6 +148,7 @@ public:
         , mutex{}
         , delayQ{Duration(static_cast<Duration::rep>(residence*1000))}
         , deletionThread{std::thread([this]{deleteOldProds();})}
+        , exception{}
     {
         if (pathname.length()) {
             file.open(tempPathname, std::ofstream::binary |
@@ -185,8 +195,10 @@ public:
      */
     void add(Product& prod)
     {
-        auto                              prodIndex = prod.getIndex();
         std::lock_guard<decltype(mutex)>  lock(mutex);
+    	if (exception)
+    		std::rethrow_exception(exception);
+        auto prodIndex = prod.getIndex();
         auto pair = prods.insert(std::pair<ProdIndex, Product>(prodIndex, prod));
         if (pair.second)
             delayQ.push(prodIndex);
@@ -204,9 +216,11 @@ public:
             const ProdInfo& prodInfo,
             Product&        prod)
     {
-        auto                              prodIndex = prodInfo.getIndex();
         std::lock_guard<decltype(mutex)>  lock(mutex);
-        auto                              iter = prods.find(prodIndex);
+    	if (exception)
+    		std::rethrow_exception(exception);
+        auto prodIndex = prodInfo.getIndex();
+        auto iter = prods.find(prodIndex);
         if (iter != prods.end()) {
             prod = iter->second;
             prod.set(prodInfo);
@@ -232,8 +246,10 @@ public:
             Product&     prod)
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
-        auto                             prodIndex = chunk.getProdIndex();
-        auto                             iter = prods.find(prodIndex);
+    	if (exception)
+    		std::rethrow_exception(exception);
+        auto prodIndex = chunk.getProdIndex();
+        auto iter = prods.find(prodIndex);
         if (iter != prods.end()) {
             prod = iter->second;
             prod.add(chunk);
@@ -269,7 +285,9 @@ public:
             ProdInfo&       info) const
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
-        auto                             iter = prods.find(index);
+    	if (exception)
+    		std::rethrow_exception(exception);
+        auto iter = prods.find(index);
         if (iter == prods.end())
             return false;
         info = iter->second.getInfo();

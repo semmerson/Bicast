@@ -19,10 +19,9 @@
 
 namespace hycast {
 
-class ProductImpl; // Forward declaration
-
 class Product final {
-    std::shared_ptr<ProductImpl> pImpl; // "pImpl" idiom
+	class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
@@ -42,7 +41,7 @@ public:
      * Constructs from complete data.
      * @param[in] name  Name of the product
      * @param[in] index  Product index
-     * @param[in] data   Product data
+     * @param[in] data   Product data. Copied.
      * @param[in] size   Amount of data in bytes
      */
     Product(const std::string& name,

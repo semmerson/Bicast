@@ -8,33 +8,25 @@
  *   @file: ClientSocket.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "ClntSctpSock.h"
-
-#include "InetSockAddr.h"
-
-#include <errno.h>
-#include <system_error>
-#include "SctpSockImpl.h"
+#include "error.h"
 
 namespace hycast {
-
-class ClntSctpSockImpl final : public SctpSockImpl
-{
-public:
-    ClntSctpSockImpl(
-            const InetSockAddr& addr,
-            const unsigned      numStreams)
-        : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
-    {
-        addr.connect(sock.load());
-    }
-};
 
 ClntSctpSock::ClntSctpSock(
         const InetSockAddr& addr,
         const unsigned      numStreams)
-    : SctpSock(new ClntSctpSockImpl(addr, numStreams))
-{}
+    : SctpSock(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+{
+	try {
+		addr.connect(getSock());
+	}
+	catch (const std::exception& e) {
+		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+				"Couldn't connect SCTP socket to remote endpoint"));
+	}
+}
 
 } // namespace

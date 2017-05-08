@@ -30,11 +30,12 @@ public:
             const InetSockAddr& addr,
             const uint16_t      numStreams,
             const int           queueSize = 5);
+
     /**
      * Accepts an incoming connection on the socket.
      * @return The accepted connection
-     * @exceptionsafety Basic
-     * @threadsafety    Unsafe but compatible
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Thread-compatible but not thread-safe
      */
     SctpSock accept() const;
 };

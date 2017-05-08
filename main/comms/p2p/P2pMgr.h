@@ -51,7 +51,7 @@ public:
      * Constructs.
      * @param[in] serverSockAddr  Socket address to be used by the server that
      *                            remote peers connect to
-     * @param[in] peerCount       Canonical number of active peers
+     * @param[in] maxPeers        Maximum number of active peers
      * @param[in] peerSource      Source of potential replacement peers or
      *                            `nullptr`, in which case no replacement is
      *                            performed
@@ -62,7 +62,7 @@ public:
      */
     P2pMgr(
             const InetSockAddr& serverSockAddr,
-            const unsigned      peerCount,
+            const unsigned      maxPeers,
             PeerSource*         peerSource,
             const unsigned      stasisDuration,
             PeerMsgRcvr&        msgRcvr);

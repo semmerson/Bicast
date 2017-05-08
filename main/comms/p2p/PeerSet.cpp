@@ -11,14 +11,17 @@
 
 #include "ChunkInfo.h"
 #include "ClntSctpSock.h"
+#include "error.h"
 #include "InetSockAddr.h"
 #include "logging.h"
 #include "MsgRcvr.h"
 #include "Peer.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
+#include "SyncQueue.h"
 
 #include <assert.h>
+#include <atomic>
 #include <condition_variable>
 #include <chrono>
 #include <cstdint>
@@ -54,9 +57,7 @@ class PeerSet::Impl final
     typedef std::chrono::time_point<std::chrono::steady_clock> Time;
     typedef std::chrono::steady_clock                          Clock;
 
-    /**
-     * An abstract base class for send-actions to be performed on a peer.
-     */
+    /// An abstract base class for send-actions to be performed on a peer.
     class SendAction
     {
         Time whenCreated;
@@ -73,17 +74,17 @@ class PeerSet::Impl final
          * Acts upon a peer.
          * @param[in,out] peer  Peer to be acted upon
          * @return `true`       Iff processing should continue
+         * @exceptionsafety     No throw
+         * @threadsafety        Safe
          */
         virtual void actUpon(Peer& peer) =0;
-        virtual bool terminate() const
+        virtual bool terminate() const noexcept
         {
             return false;
         }
     };
 
-    /**
-     * A send-action notice of a new product.
-     */
+    /// A send-action notice of a new product.
     class SendProdNotice final : public SendAction
     {
         ProdInfo info;
@@ -103,9 +104,7 @@ class PeerSet::Impl final
         }
     };
 
-    /**
-     * A send-action notice of a new chunk-of-data.
-     */
+    /// A send-action notice of a new chunk-of-data.
     class SendChunkNotice final : public SendAction
     {
         ChunkInfo info;
@@ -126,223 +125,299 @@ class PeerSet::Impl final
         }
     };
 
-    /**
-     * A send-action that terminates the peer.
-     */
+    /// A send-action that terminates the peer.
     class TerminatePeer final : public SendAction
     {
     public:
         void actUpon(Peer& peer)
         {}
-        bool terminate() const
+        bool terminate() const noexcept
         {
             return true;
         }
     };
 
-    /**
-     * A queue of send-actions to be performed on a peer.
-     */
-    class SendQ final
-    {
-        std::queue<std::shared_ptr<SendAction>> queue;
-        std::mutex                              mutex;
-        std::condition_variable                 cond;
-    public:
-        SendQ()
-            : queue{},
-              mutex{},
-              cond{}
-              {}
-        SendQ(const SendQ& that)
-            : queue{that.queue}
-        {}
-        bool push(
-                std::shared_ptr<SendAction> action,
-                const TimeRes&              maxResideTime)
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            if (!queue.empty()) {
-                if (maxResideTime <
-                        (action->getCreateTime() - queue.front()->getCreateTime()))
-                    return false;
-            }
-            queue.push(action);
-            cond.notify_one();
-            return true;
-        }
-        SendQ& operator =(const SendQ& q) =delete;
-        std::shared_ptr<PeerSet::Impl::SendAction> pop()
-        {
-            std::unique_lock<decltype(mutex)> lock{mutex};
-            while (queue.empty())
-                cond.wait(lock);
-            auto action = queue.front();
-            queue.pop();
-            cond.notify_one();
-            return action;
-        }
-        /**
-         * Clears the queue and adds an send-action that will terminate the
-         * associated peer.
-         */
-        void terminate()
-        {
-            std::unique_lock<decltype(mutex)> lock{mutex};
-            while (!queue.empty())
-                queue.pop();
-            queue.push(std::shared_ptr<SendAction>(new TerminatePeer()));
-            cond.notify_one();
-        }
-    };
+	/**
+	 * A class that adds behaviors to a peer. Specifically, it creates and
+	 * manages sending and receiving threads for the peer.
+	 */
+	class PeerWrapper
+	{
+		/// A queue of send-actions to be performed on a peer.
+		class SendQ final
+		{
+			std::queue<std::shared_ptr<SendAction>> queue;
+			std::mutex                              mutex;
+			std::condition_variable                 cond;
+			bool                                    isDisabled;
+		public:
+			SendQ()
+				: queue{}
+				, mutex{}
+				, cond{}
+				, isDisabled{false}
+			{}
 
-    /**
-     * The entry for an active peer.
-     */
-    class PeerEntryImpl
-    {
-    public:
-    	typedef int32_t        PeerValue;
-        static const PeerValue VALUE_MAX{INT32_MAX};
-        static const PeerValue VALUE_MIN{INT32_MIN};
-        /**
-         * Constructs from the peer. Immediately starts receiving and sending.
-         * @param[in] peer  The peer
-         */
-        PeerEntryImpl(Peer& peer, std::function<void(Peer&)> handleFailure)
-            : sendQ{}
-            , peer{peer}
-            , handleFailure{handleFailure}
-            , value{0}
-            , sendThread{std::thread([=]{ processSendQ(); })}
-            , recvThread{std::thread([=]{ runReceiver(); })}
-        {}
-        /**
-         * Destroys.
-         */
-        ~PeerEntryImpl()
-        {
-            // Destructors must never throw an exception
-            try {
-                sendQ.terminate();
-                // Receiving code can handle cancellation
-                ::pthread_cancel(recvThread.native_handle());
-                sendThread.join();
-                recvThread.join();
-            }
-            catch (const std::exception& e) {
-                log_what(e);
-            }
-        }
-        /**
-         * Prevents copy assignment and move assignment.
-         */
-        PeerEntryImpl& operator=(PeerEntryImpl& rhs) =delete;
-        PeerEntryImpl& operator=(PeerEntryImpl&& rhs) =delete;
-        /**
-         * Increments the value of the peer.
-         * @exceptionsafety Strong
-         * @threadsafety    Safe
-         */
-        void incValue()
-        {
-            if (value < VALUE_MAX)
-                ++value;
-        }
-        /**
-         * Decrements the value of the peer.
-         * @exceptionsafety Strong
-         * @threadsafety    Safe
-         */
-        void decValue()
-        {
-            if (value > VALUE_MIN)
-                --value;
-        }
-        /**
-         * Returns the value of the peer.
-         * @return The value of the peer
-         */
-        PeerValue getValue() const
-        {
-            return value;
-        }
-        /**
-         * Resets the value of a peer.
-         * @exceptionsafety Nothrow
-         * @threadsafety    Compatible but not safe
-         */
-        void resetValue()
-        {
-            value = 0;
-        }
-        /**
-         * Adds a send-action to the send-action queue.
-         * @param[in] action         Send-action to be added
-         * @param[in] maxResideTime  Maximum residence time in the queue for
-         *                           send-actions
-         * @return
-         */
-        bool push(
-                std::shared_ptr<SendAction> action,
-                const TimeRes&              maxResideTime)
-        {
-            return sendQ.push(action, maxResideTime);
-        }
+			/// Prevents copy and move construction and assignment
+			SendQ(const SendQ& that) =delete;
+			SendQ(const SendQ&& that) =delete;
+			SendQ& operator =(const SendQ& q) =delete;
+			SendQ& operator =(const SendQ&& q) =delete;
 
-    private:
-        SendQ                      sendQ;
-        Peer                       peer;
-        std::function<void(Peer&)> handleFailure;
-        PeerValue                  value;
-        std::thread                sendThread;
-        std::thread                recvThread;
+			/**
+			 * Adds an action to the queue. Entries older than the maximum
+			 * residence time will be deleted.
+			 * @param[in] action         Action to be added
+			 * @param[in] maxResideTime  Maximum residence time
+			 * @retval    true           Action was added
+			 * @retval    false          Action was not added because
+			 *                           `terminate()` was called
+			 */
+			bool push(
+					std::shared_ptr<SendAction> action,
+					const TimeRes&              maxResideTime)
+			{
+				std::lock_guard<decltype(mutex)> lock{mutex};
+				if (isDisabled)
+					return false;
+				while (!queue.empty()) {
+					if (Clock::now() - queue.front()->getCreateTime() >
+							maxResideTime)
+						queue.pop();
+				}
+				queue.push(action);
+				cond.notify_one();
+				return true;
+			}
 
-        /**
-         * Processes send-actions queued-up for a peer. Doesn't return until
-         * the sentinel send-action is seen or an exception is thrown.
-         */
-        void processSendQ()
-        {
-            try {
-                for (;;) {
-                    std::shared_ptr<SendAction> action{sendQ.pop()};
-                    action->actUpon(peer);
-                    if (action->terminate())
-                        break;
-                }
-            }
-            catch (const std::exception& e) {
-                log_what(e); // Because end of thread
-                handleFailure(peer);
-            }
-        }
-        /**
-         * Causes a peer to receive messages from its associated remote peer.
-         * Doesn't return until the remote peer disconnects or an exception is
-         * thrown.
-         */
-        void runReceiver()
-        {
-            try {
-                peer.runReceiver();
-            }
-            catch (const std::exception& e) {
-                log_what(e); // Because end of thread
-                handleFailure(peer);
-            }
-        }
-    };
+			std::shared_ptr<PeerSet::Impl::SendAction> pop()
+			{
+				std::unique_lock<decltype(mutex)> lock{mutex};
+				while (queue.empty())
+					cond.wait(lock);
+				auto action = queue.front();
+				queue.pop();
+				return action;
+			}
 
-    typedef std::shared_ptr<PeerEntryImpl> PeerEntry;
+			/**
+			 * Clears the queue and adds a send-action that will terminate
+			 * the associated peer. Causes `push()` to always fail. Idempotent.
+			 */
+			void terminate()
+			{
+				std::unique_lock<decltype(mutex)> lock{mutex};
+				while (!queue.empty())
+					queue.pop();
+				queue.push(std::shared_ptr<SendAction>(new TerminatePeer()));
+				isDisabled = true;
+				cond.notify_one();
+			}
+		};
+
+		typedef int32_t            PeerValue;
+
+		SendQ                      sendQ;
+		Peer                       peer;
+		std::function<void(Peer&)> handleFailure;
+		PeerValue                  value;
+		std::thread                sendThread;
+		std::thread                recvThread;
+		std::atomic_bool           reportFailure;
+
+		/**
+		 * Reports a failed peer to the failed-peer observer.
+		 * @param[in] arg  Pointer to relevant `PeerWrapper` instance
+		 */
+		static void reportFailedPeer(void* arg) noexcept
+		{
+			try {
+				auto wrapper = static_cast<PeerWrapper*>(arg);
+				wrapper->handleFailure(wrapper->peer);
+			}
+			catch (const std::exception& e) {
+				log_what(e); // Because this function mustn't throw
+			}
+		}
+
+		/**
+		 * Processes send-actions queued-up for a peer. Doesn't return unless an
+		 * exception is thrown. Intended to run on its own, non-cancellable
+		 * thread.
+		 */
+		void runSender()
+		{
+			try {
+				try {
+					for (;;) {
+						std::shared_ptr<SendAction> action{sendQ.pop()};
+						action->actUpon(peer);
+						if (action->terminate())
+							break;
+					}
+				}
+				catch (const std::exception& e) {
+					std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+							"Can no longer send to remote peer"));
+					handleFailure(peer);
+				}
+			}
+			catch (const std::exception& e) {
+				log_what(e); // Because end of thread
+			}
+		}
+
+		/**
+		 * Causes a peer to receive messages from its associated remote peer.
+		 * Doesn't return until the remote peer disconnects or an exception is
+		 * thrown. Intended to run on its own, non-cancellable thread.
+		 */
+		void runReceiver()
+		{
+			pthread_cleanup_push(reportFailedPeer, this);
+			try {
+				try {
+					peer.runReceiver();
+					handleFailure(peer);
+				}
+				catch (const std::exception& e) {
+					std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+							"Can no longer receive from remote peer"));
+					handleFailure(peer);
+				}
+			}
+			catch (const std::exception& e) {
+				log_what(e); // Because end of thread
+			}
+			pthread_cleanup_pop(reportFailure); // Nothrow
+		}
+
+	public:
+		static const PeerValue VALUE_MAX{INT32_MAX};
+		static const PeerValue VALUE_MIN{INT32_MIN};
+
+		/**
+		 * Constructs from the peer. Immediately starts receiving and sending.
+		 * @param[in] peer           The peer
+		 * @param[in] handleFailure  Function to handle failure of peer. Must
+		 *                           not throw an exception.
+		 * @throw     RuntimeError   Instance couldn't be constructed
+		 */
+		PeerWrapper(Peer& peer, std::function<void(Peer&)> handleFailure)
+			: sendQ{}
+			, peer{peer}
+			, handleFailure{handleFailure}
+			, value{0}
+			, sendThread{}
+			, recvThread{}
+			, reportFailure{true}
+		{
+			try {
+				recvThread = std::thread([=]{runReceiver();});
+				sendThread = std::thread([=]{runSender();});
+			}
+			catch (const std::exception& e) {
+				if (recvThread.joinable()) {
+					::pthread_cancel(recvThread.native_handle());
+					recvThread.join();
+				}
+				std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+						"Couldn't construct peer-wrapper"));
+			}
+		}
+
+		/// Prevents copy and move construction and assignment.
+		PeerWrapper(const PeerWrapper& that) =delete;
+		PeerWrapper(const PeerWrapper&& that) =delete;
+		PeerWrapper& operator=(PeerWrapper& rhs) =delete;
+		PeerWrapper& operator=(PeerWrapper&& rhs) =delete;
+
+		/// Destroys.
+		~PeerWrapper()
+		{
+			try {
+				reportFailure = false;
+				sendQ.terminate();
+				::pthread_cancel(recvThread.native_handle());
+				sendThread.join();
+				recvThread.join();
+			}
+			catch (const std::exception& e) {
+				// Destructors must never throw an exception
+				log_what(e);
+			}
+		}
+
+		/**
+		 * Increments the value of the peer.
+		 * @exceptionsafety Strong
+		 * @threadsafety    Safe
+		 */
+		void incValue()
+		{
+			if (value < VALUE_MAX)
+				++value;
+		}
+
+		/**
+		 * Decrements the value of the peer.
+		 * @exceptionsafety Strong
+		 * @threadsafety    Safe
+		 */
+		void decValue()
+		{
+			if (value > VALUE_MIN)
+				--value;
+		}
+
+		/**
+		 * Returns the value of the peer.
+		 * @return The value of the peer
+		 */
+		PeerValue getValue() const
+		{
+			return value;
+		}
+
+		/**
+		 * Resets the value of a peer.
+		 * @exceptionsafety Nothrow
+		 * @threadsafety    Compatible but not safe
+		 */
+		void resetValue()
+		{
+			value = 0;
+		}
+
+		/**
+		 * Adds a send-action to the send-action queue.
+		 * @param[in] action         Send-action to be added
+		 * @param[in] maxResideTime  Maximum residence time in the queue for
+		 *                           send-actions
+		 * @return
+		 */
+		bool push(
+				std::shared_ptr<SendAction> action,
+				const TimeRes&              maxResideTime)
+		{
+			return sendQ.push(action, maxResideTime);
+		}
+	};
+
+    /// An element in the set of active peers
+	typedef std::shared_ptr<PeerWrapper> PeerEntry;
 
     std::unordered_map<Peer, PeerEntry> peerEntries;
     mutable std::mutex                  mutex;
+    mutable std::condition_variable     cond;
     Time                                whenEligible;
     const TimeRes                       eligibilityDuration;
     const TimeRes                       maxResideTime;
-    std::function<void(Peer&)>          peerTerminated;
+    std::function<void(Peer&)>          peerFailed;
     unsigned                            maxPeers;
+    SyncQueue<Peer>                     failedPeerQ;
+    std::exception_ptr                  exception;
+    std::thread                         failedPeerThread;
 
     /**
      * Indicates if insufficient time has passed to determine the
@@ -375,8 +450,8 @@ class PeerSet::Impl final
     bool contains(const InetSockAddr& addr)
     {
         assert(isLocked(mutex));
-        for (auto entry : peerEntries) {
-            const Peer* peer = &entry.first;
+        for (const auto& elt : peerEntries) {
+            const Peer* peer = &elt.first;
             if (addr == peer->getRemoteAddr())
                 return true;
         }
@@ -397,8 +472,8 @@ class PeerSet::Impl final
     {
         assert(isLocked(mutex));
         if (peerEntries.find(peer) == peerEntries.end()) {
-            PeerEntry entry(new PeerEntryImpl(peer,
-                    [=](Peer& p) { handleFailure(p); }));
+            PeerEntry entry(new PeerWrapper(peer,
+                    [this](Peer& p){handleFailedPeer(p);}));
             peerEntries.emplace(peer, entry);
             if (full()) {
                 resetValues();
@@ -406,6 +481,7 @@ class PeerSet::Impl final
             }
         }
     }
+
     /**
      * Sets the time-point when the worst performing peer may be removed from
      * the set of peers.
@@ -415,6 +491,7 @@ class PeerSet::Impl final
         assert(isLocked(mutex));
         whenEligible = Clock::now() + eligibilityDuration;
     }
+
     /**
      * Unconditionally removes a peer with the lowest value from the set of peers.
      * @return           The removed peer
@@ -426,7 +503,7 @@ class PeerSet::Impl final
         assert(isLocked(mutex));
         assert(peerEntries.size() > 0);
         Peer worstPeer{};
-        auto minValue = PeerEntryImpl::VALUE_MAX;
+        auto minValue = PeerWrapper::VALUE_MAX;
         for (const auto& elt : peerEntries) {
             auto value = elt.second->getValue();
             if (value < minValue) {
@@ -437,6 +514,7 @@ class PeerSet::Impl final
         peerEntries.erase(worstPeer);
         return worstPeer;
     }
+
     /**
      * Resets the value-counts in the map from peer to value.
      * @exceptionsafety  Nothrow
@@ -445,47 +523,94 @@ class PeerSet::Impl final
     void resetValues() noexcept
     {
         assert(isLocked(mutex));
-        for (auto& elt : peerEntries)
+        for (const auto& elt : peerEntries)
             elt.second->resetValue();
     }
+
     /**
-     * Handles failure of a peer.
+     * Handles a failed peer. Called on one of the `PeerEntryImpl` threads.
      * @param[in] peer  The peer that failed
      */
-    void handleFailure(Peer& peer)
+    void handleFailedPeer(Peer& peer)
     {
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            peerEntries.erase(peer);
-        }
-        peerTerminated(peer);
+		failedPeerQ.push(peer);
+    }
+
+    /**
+     * Handles failed peers in the set of active peers. Removes a failed peer
+     * from the set and notifies the failed-peer observer. Intended to run
+     * on its own cancellable thread.
+     */
+    void handleFailedPeers()
+    {
+    	try {
+    		for (;;) {
+    			::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+    			auto peer = failedPeerQ.pop();
+    			::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+				{
+					std::lock_guard<decltype(mutex)> lock{mutex};
+					peerEntries.erase(peer);
+					cond.notify_one();
+				}
+				peerFailed(peer);
+    		}
+    	}
+    	catch (const std::exception& e) {
+    		exception = std::current_exception();
+    	}
     }
 
 public:
     /**
      * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] peerTerminated      Function to call when a peer terminates
+     * @param[in] peerFailed          Function to call when a peer fails
      * @param[in] maxPeers            Maximum number of peers
      * @param[in] stasisDuration      Required duration, in seconds, without
      *                                change to the set of peers before the
      *                                worst-performing peer may be replaced
      * @throws std::invalid_argument  `maxPeers == 0`
      */
-    Impl(
-            std::function<void(Peer&)> peerTerminated,
+    Impl(   std::function<void(Peer&)> peerFailed,
             const unsigned             maxPeers,
             const unsigned             stasisDuration)
         : peerEntries{}
         , mutex{}
+        , cond{}
         , whenEligible{}
         , eligibilityDuration{std::chrono::seconds{stasisDuration}}
         , maxResideTime{eligibilityDuration*2}
-        , peerTerminated{peerTerminated}
+        , peerFailed{peerFailed}
         , maxPeers{maxPeers}
+        , failedPeerQ{}
+        , exception{}
+        , failedPeerThread{}
     {
         if (maxPeers == 0)
-            throw std::invalid_argument("Maximum number of peers can't be zero");
+            throw InvalidArgument(__FILE__, __LINE__,
+            		"Maximum number of peers can't be zero");
+        failedPeerThread = std::thread([this]{handleFailedPeers();});
     }
+
+    /// Destroys
+    ~Impl()
+    {
+    	{
+			std::unique_lock<decltype(mutex)> lock{mutex};
+			peerEntries.clear();
+    	}
+    	if (failedPeerThread.joinable()) {
+    		::pthread_cancel(failedPeerThread.native_handle());
+    		failedPeerThread.join();
+    	}
+    }
+
+    /// Prevents copy and move construction and assignment
+    Impl(const Impl& that) =delete;
+    Impl(const Impl&& that) =delete;
+    Impl& operator =(const Impl& rhs) =delete;
+    Impl& operator =(const Impl&& rhs) =delete;
+
     /**
      * Tries to insert a peer.
      * @param[in]  candidate  Candidate peer
@@ -502,6 +627,8 @@ public:
             size_t*   size)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         InsertStatus                     status;
         if (peerEntries.find(candidate) != peerEntries.end()) {
             status = PeerSet::EXISTS; // Candidate peer is already a member
@@ -510,6 +637,7 @@ public:
             // Just add the candidate peer
             insert(candidate);
             status = PeerSet::SUCCESS;
+            cond.notify_one();
         }
         else if (tooSoon()) {
             status = PeerSet::FULL;
@@ -519,43 +647,10 @@ public:
             Peer worst{removeWorstPeer()};
             insert(candidate);
             status = PeerSet::SUCCESS;
-            peerTerminated(worst);
         }
         if (size)
             *size = peerEntries.size();
         return status;
-    }
-
-    /**
-     * Tries to insert a remote peer given its Internet socket address.
-     * @param[in]  candidate   Candidate remote peer
-     * @param[in,out] msgRcvr  Receiver of messages from the remote peer
-     * @param[out]    size     Number of active peers
-     * @return                 Insertion status:
-     *   - EXISTS    Peer is already member of set
-     *   - SUCCESS   Success
-     *   - REPLACED  Success. `*replaced` is set iff `replaced != nullptr`
-     *   - FULL      Set is full and insufficient time to determine worst peer
-     * @throw InvalidArgument  Unknown protocol version from remote peer. Peer
-     *                         not added to set.
-     * @exceptionsafety        Strong guarantee
-     * @threadsafety           Safe
-     */
-    PeerSet::InsertStatus tryInsert(
-            const InetSockAddr& candidate,
-            PeerMsgRcvr&        msgRcvr,
-            size_t*             size)
-    {
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            if (full() && tooSoon())
-                return PeerSet::FULL;
-            if (contains(candidate))
-                return PeerSet::EXISTS;
-        }
-        ClntSctpSock sock(candidate, Peer::getNumStreams());
-        Peer         peer(msgRcvr, sock);
-        return tryInsert(peer, size);
     }
 
     /**
@@ -568,8 +663,10 @@ public:
     void sendNotice(const ProdInfo& info)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
-        for (auto& elt : peerEntries)
+        for (const auto& elt : peerEntries)
             elt.second->push(action, maxResideTime);
     }
 
@@ -584,8 +681,10 @@ public:
     void sendNotice(const ProdInfo& info, const Peer& except)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
-        for (auto& elt : peerEntries) {
+        for (const auto& elt : peerEntries) {
             if (elt.first == except)
                 continue;
             elt.second->push(action, maxResideTime);
@@ -602,8 +701,10 @@ public:
     void sendNotice(const ChunkInfo& info)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
-        for (auto& elt : peerEntries)
+        for (const auto& elt : peerEntries)
             elt.second->push(action, maxResideTime);
     }
 
@@ -619,8 +720,10 @@ public:
     void sendNotice(const ChunkInfo& info, const Peer except)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
-        for (auto& elt : peerEntries) {
+        for (const auto& elt : peerEntries) {
             if (elt.first == except)
                 continue;
             elt.second->push(action, maxResideTime);
@@ -636,6 +739,8 @@ public:
     void incValue(Peer& peer)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         if (full()) {
             auto iter = peerEntries.find(peer);
             if (iter != peerEntries.end())
@@ -652,6 +757,8 @@ public:
     void decValue(Peer& peer)
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         if (full()) {
             auto iter = peerEntries.find(peer);
             if (iter != peerEntries.end())
@@ -666,6 +773,8 @@ public:
     size_t size() const
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         return peerEntries.size();
     }
 
@@ -677,6 +786,8 @@ public:
     bool isFull() const
     {
         std::lock_guard<decltype(mutex)> lock{mutex};
+    	if (exception)
+    		std::rethrow_exception(exception);
         return full();
     }
 };

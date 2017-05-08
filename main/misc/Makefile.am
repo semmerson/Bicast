@@ -14,7 +14,8 @@ lib_la_SOURCES 	= \
 	Executor.cpp Executor.h \
 	Completer.cpp Completer.h \
 	logging.cpp logging.h \
-	error.cpp error.h
+	error.cpp error.h \
+	SyncQueue.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

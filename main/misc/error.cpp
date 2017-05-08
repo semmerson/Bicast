@@ -60,9 +60,21 @@ RuntimeError::RuntimeError(
 SystemError::SystemError(
         const char*       file,
         const int         line,
-        const std::string msg)
-    : std::system_error{errno, std::system_category(),
+        const std::string msg,
+		const int         errnum)
+    : std::system_error{errnum, std::system_category(),
             placeStamp(file, line) + ": " + msg}
 {}
+
+#if 0
+NestedError::NestedError(
+        const char*       file,
+        const int         line,
+        const std::string msg)
+    : std::nested_exception{}
+	, RuntimeError{file, line, msg}
+{
+}
+#endif
 
 } // namespace

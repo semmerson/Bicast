@@ -20,6 +20,7 @@
 #include "Shipping.h"
 #include "SrvrSctpSock.h"
 
+#include <pthread.h>
 #include <thread>
 
 namespace hycast {
@@ -32,7 +33,7 @@ class Shipping::Impl final
     class PeerMgr final
     {
     	/**
-    	 * Handles messages from remove peers. Only handles requests: doesn't
+    	 * Handles messages from remote peers. Only handles requests: doesn't
     	 * expect or handle notices or data-chunks.
     	 */
     	class MsgRcvr : public PeerMsgRcvr
@@ -46,7 +47,7 @@ class Shipping::Impl final
     		 * @param[in] ProdStore  Store of data-products
     		 * @param[in] peerSet    Set of active remote peers
     		 */
-    		MsgRcvr(ProdStore& ProdStore,
+    		MsgRcvr(ProdStore& prodStore,
     				PeerSet&   peerSet)
 				: prodStore{prodStore}
     			, peerSet{peerSet}
@@ -104,8 +105,8 @@ class Shipping::Impl final
 			{}
 		};
 
-    	MsgRcvr     msgRcvr;
-        PeerSet     peerSet;
+        PeerSet     peerSet; // Must be initialized before `msgRcvr`
+    	MsgRcvr     msgRcvr; // Must be initialized after `peerSet`
         std::thread serverThread;
 
 		/**
@@ -160,13 +161,19 @@ class Shipping::Impl final
 		 *                        for connections from remote peers
 		 */
         PeerMgr(ProdStore&          prodStore,
-        		PeerSet&            peerSet,
+        		const unsigned      maxPeers,
+				const unsigned      stasisDuration,
         		const InetSockAddr& serverAddr)
-            : msgRcvr{prodStore, peerSet}
-        	, peerSet{peerSet}
+        	: peerSet{[](Peer&){}, maxPeers, stasisDuration}
+            , msgRcvr{prodStore, peerSet}
         	, serverThread{[=]{runServer(serverAddr);}}
+        {}
+
+        ~PeerMgr()
         {
-        	serverThread.detach();
+        	// Otherwise, server-socket won't close
+        	::pthread_cancel(serverThread.native_handle());
+        	serverThread.join();
         }
 
         /**
@@ -191,17 +198,20 @@ public:
     /**
      * Constructs.
      * @param[in] prodStore    Product store
-     * @param[in] mcastSender  Multicast sender.
+     * @param[in] mcastAddr    Multicast group socket address
+     * @param[in] version      Protocol version
      * @param[in] peerSet      Initially empty set of active peers
      * @param[in] serverAddr   Socket address of local server for remote peers
      */
     Impl(   ProdStore&          prodStore,
-            McastSender&        mcastSender,
-            PeerSet&            peerSet,
+            const InetSockAddr& mcastAddr,
+			unsigned            version,
+			unsigned            maxPeers,
+			unsigned            stasisDuration,
 			const InetSockAddr& serverAddr)
         : prodStore{prodStore}
-        , peerMgr{prodStore, peerSet, serverAddr}
-        , mcastSender{mcastSender}
+        , peerMgr{prodStore, maxPeers, stasisDuration, serverAddr}
+        , mcastSender{mcastAddr, version}
     {}
 
     /**
@@ -218,10 +228,13 @@ public:
 
 Shipping::Shipping(
         ProdStore&          prodStore,
-        McastSender&        mcastSender,
-        PeerSet&            peerSet,
+        const InetSockAddr& mcastAddr,
+		const unsigned      version,
+		const unsigned      maxPeers,
+		const unsigned      stasisDuration,
 		const InetSockAddr& serverAddr)
-    : pImpl{new Impl(prodStore, mcastSender, peerSet, serverAddr)}
+    : pImpl{new Impl(prodStore, mcastAddr, version, maxPeers, stasisDuration,
+    		serverAddr)}
 {}
 
 void Shipping::ship(Product& prod)

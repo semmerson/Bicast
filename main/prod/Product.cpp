@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class ProductImpl final
+class Product::Impl final
 {
     ProdInfo          prodInfo;
     std::vector<bool> chunkVec;
@@ -44,7 +44,7 @@ public:
      * Constructs from information on a product.
      * @param[in] info Information on a product
      */
-    explicit ProductImpl(const ProdInfo& prodInfo)
+    explicit Impl(const ProdInfo& prodInfo)
         : prodInfo{prodInfo}
         // `haveChunk{n}` means add `n` rather than have `n` elements
         , chunkVec(prodInfo.getNumChunks())
@@ -57,15 +57,14 @@ public:
      * Constructs from complete data.
      * @param[in] name  Name of the product
      * @param[in] index  Product index
-     * @param[in] data   Product data
+     * @param[in] data   Product data. Copied.
      * @param[in] size   Amount of data in bytes
      */
-    ProductImpl(
-            const std::string& name,
+    Impl(   const std::string& name,
             const ProdIndex    index,
             const void*        data,
             const size_t       size)
-        : ProductImpl(ProdInfo(name, index, size))
+        : Impl(ProdInfo(name, index, size))
     {
         numChunks = prodInfo.getNumChunks();
         complete = true;
@@ -73,12 +72,24 @@ public:
     }
 
     /**
+     * Prevents copy and move construction.
+     */
+    Impl(const Impl& that) =delete;
+    Impl(const Impl&& that) =delete;
+
+    /**
      * Destroys this instance.
      */
-    ~ProductImpl()
+    ~Impl()
     {
         delete[] data;
     }
+
+    /**
+     * Prevents copy and move assignment.
+     */
+    Impl& operator=(const Impl& rhs) =delete;
+    Impl& operator=(const Impl&& rhs) =delete;
 
     /**
      * Sets the associated product-information providing it is consistent with
@@ -161,9 +172,16 @@ public:
         const auto chunkIndex = chunkInfo.getIndex();
         if (complete || chunkVec[chunkIndex])
             return false;
-        const ChunkSize expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
-        const auto actualChunkSize = chunk.drainData(
-                data+chunkInfo.getOffset(), expectedChunkSize);
+        const auto expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
+        const auto chunkOffset = chunkInfo.getOffset();
+        if (chunkOffset + expectedChunkSize > prodInfo.getSize())
+            throw RuntimeError(__FILE__, __LINE__,
+                    "Chunk offset + chunk size > product size: offset=" +
+					std::to_string(chunkOffset) + ", chunkSize=" +
+					std::to_string(expectedChunkSize) + ", prodSize=" +
+					std::to_string(prodInfo.getSize()));
+        const auto actualChunkSize = chunk.drainData(data+chunkOffset,
+				expectedChunkSize);
         if (actualChunkSize != expectedChunkSize)
             throw RuntimeError(__FILE__, __LINE__,
                     "Unexpected chunk size: expected=" +
@@ -194,7 +212,7 @@ public:
         return data;
     }
 
-    bool operator ==(const ProductImpl& that) const
+    bool operator ==(const Impl& that) const
     {
         return prodInfo == that.prodInfo &&
                 ::memcmp(data, that.data, prodInfo.getSize()) == 0;
@@ -239,7 +257,7 @@ public:
 };
 
 Product::Product(const ProdInfo& info)
-    : pImpl{new ProductImpl(info)}
+    : pImpl{new Impl(info)}
 {}
 
 Product::Product(
@@ -247,7 +265,7 @@ Product::Product(
         const ProdIndex    index,
         const void*        data,
         const size_t       size)
-    : pImpl{new ProductImpl(name, index, data, size)}
+    : pImpl{new Impl(name, index, data, size)}
 {
 }
 

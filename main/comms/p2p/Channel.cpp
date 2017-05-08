@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include <p2p/Channel.h>
+#include <Channel.h>
 #include "Codec.h"
 
 // The following are for template instantiations

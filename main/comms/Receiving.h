@@ -14,6 +14,7 @@
 #ifndef MAIN_RECEIVING_RECEIVING_H_
 #define MAIN_RECEIVING_RECEIVING_H_
 
+#include "McastReceiver.h"
 #include "McastMsgRcvr.h"
 #include "P2pMgr.h"
 #include "PeerMsgRcvr.h"
@@ -31,16 +32,20 @@ class Receiving final : public McastMsgRcvr, public PeerMsgRcvr
 public:
     /**
      * Constructs.
-     * @param[in] p2pInfo     Information for the peer-to-peer component
-     * @param[in] processing  Locally processes received data-products
-     * @param[in] pathname    Pathname of product-store persistence-file or the
-     *                        empty string to indicate no persistence
+     * @param[in] srcMcastInfo  Information on the source-specific multicast
+     * @param[in] p2pInfo       Information for the peer-to-peer component
+     * @param[in] processing    Locally processes received data-products
+     * @param[in] version       Protocol version
+     * @param[in] pathname      Pathname of product-store persistence-file or
+     *                          the empty string to indicate no persistence
      * @see ProdStore::ProdStore()
      */
     Receiving(
-    		const P2pInfo&     p2pInfo,
-			Processing&        processing,
-			const std::string& pathname = "");
+    		const SrcMcastInfo& srcMcastInfo,
+    		const P2pInfo&      p2pInfo,
+			Processing&         processing,
+			const unsigned      version,
+			const std::string&  pathname = "");
 
     void recvNotice(const ProdInfo& info);
 

@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "error.h"
 #include "Future.h"
 
 #include <bitset>
@@ -142,10 +143,10 @@ protected:
             cond.notify_one();
         }
         else if (!state[State::COMPLETED]) {
-            int status = pthread_cancel(threadId);
+            int status = ::pthread_cancel(threadId);
             if (status)
-                throw std::system_error(status, std::system_category(),
-                        "Couldn't cancel asynchronous task's thread");
+                throw SystemError(__FILE__, __LINE__,
+                        "Couldn't cancel asynchronous task's thread", status);
         }
     }
     /**

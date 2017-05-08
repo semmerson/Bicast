@@ -96,7 +96,8 @@ public:
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer-manager methods. Doesn't return until either the socket
-     * is closed or an exception is thrown.
+     * is closed or an exception is thrown. Intended to run on its own,
+     * cancellable thread.
      * @throws std::logic_error  If the peer-manager didn't drain or discard the
      *                           data of a latent chunk-of-data.
      * @throws std::system_error If an I/O error occurred

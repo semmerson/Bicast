@@ -14,19 +14,28 @@
 
 #include "InetSockAddr.h"
 
-namespace hycast {
+#include <memory>
 
-class SctpSockImpl; // Forward declaration of implementation
+namespace hycast {
 
 class SctpSock {
 protected:
-    std::shared_ptr<SctpSockImpl> pImpl;
+	class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
     /**
      * Constructs from a socket implementation.
      * @param[in] impl  The implementation
      */
-    explicit SctpSock(SctpSockImpl* impl);
+    explicit SctpSock(Impl* impl);
+
+    /**
+     * Returns the socket descriptor.
+     * @return socket descriptor
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    int getSock() const noexcept;
 
 public:
     /**
@@ -56,7 +65,7 @@ public:
      * Constructs from a shared pointer to a socket implementation.
      * @param[in] sptr  Shared pointer to implementation
      */
-    explicit SctpSock(std::shared_ptr<SctpSockImpl> sptr);
+    explicit SctpSock(std::shared_ptr<Impl> sptr);
 
     /**
      * Returns the number of SCTP streams.

@@ -142,7 +142,8 @@ public:
         versionChan.send(msg);
         const unsigned vers = getVersion();
         if (vers != version)
-            throw LogicError(__FILE__, __LINE__, "Unknown protocol version: " +
+            throw LogicError(__FILE__, __LINE__,
+            		"Remote peer uses unsupported protocol version: " +
                     std::to_string(vers));
     }
 
@@ -152,6 +153,7 @@ public:
      * @param[in,out] msgRcvr   Object to receive messages from remote peer
      * @param[in]     peerAddr  Socket address of remote peer
      * @throw LogicError        Unknown protocol version from remote peer
+     * @throw RuntimeError      Other error
      */
     Impl(   Peer*               peer,
             PeerMsgRcvr&        msgRcvr,
@@ -179,10 +181,11 @@ public:
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer manager methods. Doesn't return until either the socket
-     * is closed or an exception is thrown.
-     * @throws
-     * @exceptionsafety Basic guarantee
-     * @threadsafefy    Thread-compatible but not thread-safe
+     * is closed or an exception is thrown. Intended to run on its own,
+     * cancellable thread.
+     * @throws LogicError  Not all of a chunk's data was read
+     * @exceptionsafety    Basic guarantee
+     * @threadsafefy       Thread-compatible but not thread-safe
      */
     void runReceiver()
     {
@@ -190,7 +193,7 @@ public:
         (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
         for (;;) {
             (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-            uint32_t size = sock.getSize();
+            uint32_t size = sock.getSize(); // Blocks waiting for input
             (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
             if (size == 0)
                 break;

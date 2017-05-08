@@ -135,10 +135,16 @@ public:
         : UdpSock::Impl{localSockAddr}
         , localSockAddr{localSockAddr}
     {
-        init();
-        if (sharePort)
-            shareLocalPort(); // Must be before `bind()`
-        bind(); // Set address of local endpoint
+    	try {
+			init();
+			if (sharePort)
+				shareLocalPort(); // Must be before `bind()`
+			bind(); // Set address of local endpoint
+    	}
+    	catch (const std::exception& e) {
+    		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+    				"Couldn't construct input UDP socket"));
+    	}
     }
 
     /**
@@ -256,12 +262,18 @@ public:
         : UdpSock::Impl{remoteSockAddr}
         , remoteSockAddr{remoteSockAddr}
     {
-        remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
-        /*
-         * Sets address of remote endpoint for function `::send()` (but not
-         * `::sendmsg()`)
-         */
-        remoteSockAddr.connect(sd);
+    	try {
+			remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
+			/*
+			 * Sets address of remote endpoint for function `::send()` (but not
+			 * `::sendmsg()`)
+			 */
+			remoteSockAddr.connect(sd);
+    	}
+		catch (const std::exception& e) {
+			std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+					"Couldn't create outgoing UDP socket"));
+		}
     }
 
     /**

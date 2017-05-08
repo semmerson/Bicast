@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYRIGHT in the top-level source-directory for
  * licensing conditions.
  *
@@ -9,8 +9,11 @@
  * This file tests class `Socket`.
  */
 
+#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
 #include "SctpSock.h"
+#include "SrvrSctpSock.h"
+
 #include <arpa/inet.h>
 #include <atomic>
 #include <cstring>
@@ -23,12 +26,8 @@
 #include <sys/uio.h>
 #include <thread>
 #include <unistd.h>
-#include "../../main/net/ClntSctpSock.h"
-#include "../../main/net/SrvrSctpSock.h"
 
 namespace {
-
-static const unsigned numStreams = 5;
 
 void runServer(hycast::SrvrSctpSock serverSock)
 {
@@ -36,7 +35,7 @@ void runServer(hycast::SrvrSctpSock serverSock)
     for (;;) {
         uint32_t size = connSock.getSize();
         if (size == 0)
-            break;
+        	break;
         unsigned streamId = connSock.getStreamId();
         char buf[size];
         connSock.recv(buf, size);
@@ -44,13 +43,11 @@ void runServer(hycast::SrvrSctpSock serverSock)
     }
 }
 
-void runClient(const int port)
+void runClient(hycast::ClntSctpSock sock)
 {
     // Test Socket::send() and Socket::recv()
-    hycast::InetSockAddr sockAddr("127.0.0.1", port);
-    hycast::ClntSctpSock sock(sockAddr, numStreams);
     for (int i = 0; i < 100; ++i) {
-        unsigned outStream = i % numStreams;
+        unsigned outStream = i % sock.getNumStreams();
         uint8_t outBuf[1+i];
         (void)memset(outBuf, 0xbd, sizeof(outBuf));
         sock.send(outStream, outBuf, sizeof(outBuf));
@@ -85,44 +82,33 @@ void runClient(const int port)
     sock.recvv(iov, sizeof(iov)/sizeof(iov[0]), 0);
     for (unsigned i = 0; i < sizeof(outBuf); ++i)
         EXPECT_EQ(outBuf[i], inBuf[i]);
+
+    sock.close();
 }
 
 // The fixture for testing class Socket.
 class SocketTest : public ::testing::Test {
- protected:
-  // You can remove any or all of the following functions if its body
-  // is empty.
+protected:
+    SocketTest() {
+		sock1 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+		sock2 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    }
 
-  SocketTest() {
-    // You can do set-up work for each test here.
-    sock1 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-    sock2 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-  }
-
-  virtual ~SocketTest() {
-    // You can do clean-up work that doesn't throw exceptions here.
-      close(sock1);
-      close(sock2);
-  }
-
-  // If the constructor and destructor are not enough for setting up
-  // and cleaning up each test, you can define the following methods:
-
-  virtual void SetUp() {
-    // Code here will be called immediately after the constructor (right
-    // before each test).
-  }
-
-  virtual void TearDown() {
-    // Code here will be called immediately after each test (right
-    // before the destructor).
-  }
+    virtual ~SocketTest() {
+        close(sock1);
+        close(sock2);
+    }
 
     // Objects declared here can be used by all tests in the test case for Socket.
-    int sock1, sock2;
-    const int MY_PORT_NUM = 38800;
-    std::thread recvThread;
-    std::thread sendThread;
+    const in_port_t      MY_PORT_NUM = 38800;
+	const uint16_t       numStreams = 5;
+	const std::string    INET_ADDR{"192.168.132.131"};
+	hycast::InetSockAddr srvrAddr{INET_ADDR, MY_PORT_NUM};
+    int                  sock1, sock2;
+    std::thread          recvThread;
+    std::thread          sendThread;
+    hycast::SrvrSctpSock srvrSock{srvrAddr, numStreams};
+    hycast::ClntSctpSock clntSock{srvrAddr, numStreams};
 
     bool is_open(int sock)
     {
@@ -133,14 +119,12 @@ class SocketTest : public ::testing::Test {
     void startServer()
     {
         // Work done here so that socket is being listened to when client starts
-        hycast::InetSockAddr sockAddr("127.0.0.1", MY_PORT_NUM);
-        hycast::SrvrSctpSock sock(sockAddr, numStreams);
-        recvThread = std::thread(runServer, sock);
+        recvThread = std::thread(runServer, srvrSock);
     }
 
     void startClient()
     {
-        sendThread = std::thread(runClient, MY_PORT_NUM);
+        sendThread = std::thread(runClient, clntSock);
     }
 
     void stopClient()
@@ -239,41 +223,38 @@ TEST_F(SocketTest, ToString) {
 
 // Tests whether a read() on a socket returns when the remote end is closed.
 TEST_F(SocketTest, RemoteCloseCausesReadReturn) {
-    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
-    hycast::SrvrSctpSock serverSock(serverSockAddr, numStreams);
     struct Server {
-        hycast::SrvrSctpSock serverSock;
-        hycast::SctpSock       sock;
-        Server(hycast::SrvrSctpSock& serverSock) : serverSock{serverSock} {}
-        void run() {
-            sock = serverSock.accept();
-            uint32_t nbytes = sock.getSize();
+        hycast::SrvrSctpSock srvrSock;
+        hycast::SctpSock     peerSock;
+        Server(hycast::SrvrSctpSock& serverSock) : srvrSock{serverSock} {}
+        void operator()() {
+            peerSock = srvrSock.accept();
+            uint32_t nbytes = peerSock.getSize();
             EXPECT_EQ(0, nbytes);
         }
-    } server{serverSock};
-    std::thread serverThread = std::thread([&server](){server.run();});
-    hycast::ClntSctpSock clientSock(serverSockAddr, numStreams);
-    clientSock.close();
-    serverThread.join();
-    EXPECT_TRUE(true);
+    } server{srvrSock};
+    std::thread srvrThread = std::thread([&server](){server();});
+    clntSock.close();
+    srvrThread.join();
 }
 
-// Tests whether an exception is thrown when the local socket is closed
-TEST_F(SocketTest, LocalCloseThrowsException) {
-    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
-    hycast::SrvrSctpSock serverSock(serverSockAddr, numStreams);
+/*
+ * Tests whether an exception is thrown when the server's listening socket is
+ * closed
+ */
+TEST_F(SocketTest, ServersCloseThrowsException) {
     struct Server {
         hycast::SrvrSctpSock serverSock;
-        hycast::SctpSock       sock;
+        hycast::SctpSock     sock;
         Server(hycast::SrvrSctpSock& serverSock) : serverSock{serverSock} {}
         int run() {
             sock = serverSock.accept();
             sock.getSize();
             return 0;
         }
-    } server{serverSock};
+    } server{srvrSock};
     auto future = std::async([&server](){return server.run();});
-    hycast::ClntSctpSock clientSock(serverSockAddr, numStreams);
+    hycast::ClntSctpSock clientSock(srvrAddr, numStreams);
     server.serverSock.close();
     server.sock.close();
     EXPECT_THROW(future.get(), std::system_error);
@@ -282,25 +263,25 @@ TEST_F(SocketTest, LocalCloseThrowsException) {
 #if 0
 // Tests clean closing of receive socket
 TEST_F(SocketTest, CleanReceiveClose) {
-    hycast::InetSockAddr serverSockAddr("127.0.0.1", MY_PORT_NUM);
-    hycast::SrvrSctpSock serverSock(serverSockAddr, numStreams);
+    hycast::InetSockAddr serverSockAddr(INET_ADDR, MY_PORT_NUM);
+    hycast::SrvrSctpSock srvrSock(serverSockAddr, numStreams);
     struct Server {
-        hycast::SrvrSctpSock serverSock;
-        hycast::SctpSock       sock;
+        hycast::SrvrSctpSock srvrSock;
+        hycast::SctpSock       peerSock;
         std::mutex           mutex;
-        Server(hycast::SrvrSctpSock& serverSock)
-            : serverSock{serverSock}
-            , sock{}
+        Server(hycast::SrvrSctpSock& srvrSock)
+            : srvrSock{srvrSock}
+            , peerSock{}
             , mutex{}
         {}
         int run() {
             mutex.lock();
-            sock = serverSock.accept();
+            peerSock = srvrSock.accept();
             mutex.unlock();
-            sock.getSize();
+            peerSock.getSize();
             return 0;
         }
-    } server{serverSock};
+    } server{srvrSock};
     server.mutex.lock();
     auto future = std::async(std::launch::async,
             [&server]{ return server.run(); });
@@ -308,7 +289,7 @@ TEST_F(SocketTest, CleanReceiveClose) {
     hycast::ClntSctpSock clientSock(serverSockAddr, numStreams);
     server.mutex.lock();
     ::sleep(1);
-    server.sock.close();
+    server.peerSock.close();
     EXPECT_EQ(0, future.get());
 }
 #endif

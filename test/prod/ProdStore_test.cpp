@@ -22,21 +22,25 @@ class ProdStoreTest : public ::testing::Test {
 protected:
     ProdStoreTest()
     {
-        hycast::ChunkInfo::setCanonSize(chunkSize);
+		unsigned char data[128000];
+		for (size_t i = 0; i < sizeof(data); ++i)
+			data[i] = i % UCHAR_MAX;
+
+		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
     }
 
     void addChunks(
-            const hycast::ProdInfo& prodInfo,
-            const char* const       data,
-            hycast::ProdStore&      ps)
+    		const hycast::ProdInfo prodInfo,
+			const char*            data,
+			hycast::ProdStore&     ps)
     {
         for (hycast::ChunkIndex chunkIndex = 0;
                 chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
             // Serialize chunk
-            const auto          chunkInfo = prodInfo.makeChunkInfo(chunkIndex);
+            const auto chunkInfo = prodInfo.makeChunkInfo(chunkIndex);
             hycast::ActualChunk actualChunk(chunkInfo,
                     data+prodInfo.getOffset(chunkIndex));
-            char                buf[actualChunk.getSerialSize(version)];
+            char buf[actualChunk.getSerialSize(version)];
             hycast::MemEncoder  encoder(buf, sizeof(buf));
             actualChunk.serialize(encoder, version);
             encoder.flush();
@@ -45,10 +49,10 @@ protected:
             hycast::MemDecoder  decoder(buf, sizeof(buf));
             decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
             hycast::LatentChunk latentChunk(decoder, version);
-            hycast::Product     prod;
+            hycast::Product     prod2;
             const bool isLast = chunkIndex == prodInfo.getNumChunks() - 1;
-            EXPECT_EQ(isLast && prod.getInfo().getName().length() > 0,
-                    ps.add(latentChunk, prod));
+            EXPECT_EQ(isLast && prod2.getInfo().getName().length() > 0,
+                    ps.add(latentChunk, prod2));
             hycast::ActualChunk actualChunk2;
             EXPECT_TRUE(ps.haveChunk(chunkInfo));
             EXPECT_TRUE(ps.getChunk(chunkInfo, actualChunk2));
@@ -57,12 +61,12 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for ProdStore.
-    const unsigned    version{0};
-    const std::string pathname{"hycast.ps"};
-    hycast::ProdIndex prodIndex{0};
-    hycast::ProdSize  prodSize{1};
-    hycast::ChunkSize chunkSize{1};
-    hycast::ProdInfo  prodInfo{"product", prodIndex, prodSize};
+    const unsigned          version{0};
+    const std::string       pathname{"hycast.ps"};
+    const hycast::ProdIndex prodIndex{0};
+    const hycast::ProdSize  prodSize{128000};
+    const hycast::ProdInfo  prodInfo{"product", prodIndex, prodSize};
+    hycast::Product         prod{};
 };
 
 // Tests no persistence-file construction
@@ -80,45 +84,44 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 
 // Tests creating an initial entry
 TEST_F(ProdStoreTest, InitialEntry) {
-    hycast::ProdIndex prodIndex{0};
-    hycast::ProdInfo  prodInfo("product", prodIndex, 38000);
     hycast::ProdStore ps{};
-    hycast::Product   prod;
-    EXPECT_FALSE(ps.add(prodInfo, prod));
-    EXPECT_FALSE(prod.isComplete());
+    hycast::Product   prod2;
+    EXPECT_FALSE(ps.add(prodInfo, prod2));
+    EXPECT_FALSE(prod2.isComplete());
     EXPECT_EQ(1, ps.size());
     hycast::ProdInfo prodInfo2;
     EXPECT_TRUE(ps.getProdInfo(prodIndex, prodInfo2));
     EXPECT_EQ(prodInfo, prodInfo2);
-    ++prodIndex;
-    EXPECT_FALSE(ps.getProdInfo(prodIndex, prodInfo2));
+    EXPECT_FALSE(ps.getProdInfo(prodIndex+1, prodInfo2));
 }
 
 // Tests adding latent chunks
 TEST_F(ProdStoreTest, AddingLatentChunks) {
-    // Create actual chunk
-    hycast::ProdIndex         prodIndex{0};
-    const char                data[10000] = {'a', 'b'};
-    const hycast::ProdSize    prodSize = sizeof(data);
-    const hycast::ChunkSize   chunkSize{1000};
-    hycast::ChunkInfo::setCanonSize(chunkSize);
-    hycast::ProdInfo          prodInfo("product1", prodIndex, prodSize);
-    hycast::ProdStore         ps{};
-
-    hycast::Product prod;
-    EXPECT_FALSE(ps.add(prodInfo, prod));
-    addChunks(prodInfo, data, ps);
-    EXPECT_EQ(prodInfo, prod.getInfo());
-    EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
+    hycast::ProdStore ps{};
+    hycast::Product   prod2;
+    EXPECT_FALSE(ps.add(prodInfo, prod2));
+    addChunks(prodInfo, prod.getData(), ps);
+    EXPECT_EQ(prodInfo, prod2.getInfo());
+    EXPECT_EQ(0, ::memcmp(prod.getData(), prod2.getData(), prodSize));
     EXPECT_EQ(1, ps.size());
 
-    ++prodIndex;
-    prodInfo = hycast::ProdInfo("product2", prodIndex, prodSize);
-    addChunks(prodInfo, data, ps);
-    EXPECT_TRUE(ps.add(prodInfo, prod));
-    EXPECT_TRUE(prod.isComplete());
+    hycast::ProdInfo prodInfo2{"product2", prodIndex+1, prodSize};
+    addChunks(prodInfo2, prod.getData(), ps);
+    EXPECT_TRUE(ps.add(prodInfo2, prod2));
+    EXPECT_TRUE(prod2.isComplete());
     EXPECT_EQ(2, ps.size());
 }
+
+// Tests adding complete product
+TEST_F(ProdStoreTest, AddingCompleteProduct) {
+    hycast::ProdStore ps{};
+    ps.add(prod);
+    EXPECT_EQ(1, ps.size());
+    hycast::ProdInfo prodInfo2;
+    EXPECT_TRUE(ps.getProdInfo(prodIndex, prodInfo2));
+    EXPECT_EQ(prodInfo, prodInfo2);
+}
+
 // Tests product deletion
 TEST_F(ProdStoreTest, ProductDeletion) {
     hycast::ProdInfo  prodInfo("product", 0, 38000);

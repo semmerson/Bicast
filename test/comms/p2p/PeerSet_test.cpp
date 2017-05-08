@@ -83,7 +83,7 @@ protected:
     };
 
     /**
-     * Server that echos everything back to the client.
+     * Server that is a black hole.
      */
     class Server {
         /**
@@ -93,28 +93,17 @@ protected:
         class ServerMsgRcvr final : public hycast::PeerMsgRcvr {
             hycast::ProdInfo prodInfo;
         public:
-            void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
-                prodInfo = info;
-                peer.sendNotice(info);
-            }
-            void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
-                peer.sendNotice(info);
-            }
-            void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
-                peer.sendRequest(index);
-            }
-            void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
-                peer.sendRequest(info);
-            }
-            void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer) {
-                const hycast::ChunkSize expectedSize =
-                        prodInfo.getChunkSize(latentChunk.getIndex());
-                char                    data[expectedSize];
-                const size_t            actualSize =
-                        latentChunk.drainData(data, expectedSize);
-                EXPECT_EQ(expectedSize, actualSize);
-                hycast::ActualChunk chunk{latentChunk.getInfo(), data};
-                peer.sendData(chunk);
+            void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer)
+            {}
+            void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer)
+            {}
+            void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer)
+            {}
+            void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer)
+            {}
+            void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer)
+            {
+            	latentChunk.discard();
             }
         };
         std::thread thread;
@@ -123,7 +112,9 @@ protected:
             hycast::PeerSet peerSet{[](hycast::Peer&){}};
             for (;;) {
                 try {
+                	::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
                     hycast::SctpSock sock{serverSock.accept()};
+                	::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
                     hycast::Peer   peer{srvrMsgRcvr, sock};
                     peerSet.tryInsert(peer);
                 }
@@ -165,7 +156,8 @@ TEST_F(PeerSetTest, DefaultConstruction) {
 
 // Tests construction with invalid argument
 TEST_F(PeerSetTest, InvalidConstruction) {
-    EXPECT_THROW(hycast::PeerSet peerSet([](hycast::Peer&){}, 0), std::invalid_argument);
+    EXPECT_THROW(hycast::PeerSet peerSet([](hycast::Peer&){}, 0),
+    		std::invalid_argument);
 }
 
 // Tests inserting a peer and incrementing its value

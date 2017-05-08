@@ -286,9 +286,8 @@ public:
         int status = ::connect(sd, reinterpret_cast<struct sockaddr*>(&storage),
                 sizeof(storage));
         if (status)
-            throw std::system_error(errno, std::system_category(),
-                    "connect() failure: sd=" + std::to_string(sd) +
-                    ", sockAddr=" + to_string());
+            throw SystemError(__FILE__, __LINE__, "connect() failure: sd=" +
+					std::to_string(sd) + ", sockAddr=" + to_string());
         return *this;
     }
 
@@ -308,9 +307,8 @@ public:
         int status = ::bind(sd, reinterpret_cast<struct sockaddr*>(&storage),
                 sizeof(storage));
         if (status)
-            throw std::system_error(errno, std::system_category(),
-                    "bind() failure: sd=" + std::to_string(sd) +
-                    ", sockAddr=" + to_string());
+            throw SystemError(__FILE__, __LINE__, "bind() failure: sd=" +
+					std::to_string(sd) + ", sockAddr=" + to_string());
         return *this;
     }
 

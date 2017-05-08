@@ -10,81 +10,128 @@
  */
 
 #include "Completer.h"
+#include "error.h"
 #include "logging.h"
+#include "P2pMgr.h"
+#include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "ProdInfo.h"
+#include "ProdStore.h"
+#include "Shipping.h"
+#include "YamlPeerSource.h"
 
-#include <future>
+#include <atomic>
 #include <gtest/gtest.h>
-#include <p2p/P2pMgr.h>
-#include <p2p/Peer.h>
-#include <p2p/PeerMsgRcvr.h>
 #include <thread>
 #include <unistd.h>
 
 namespace {
 
 // The fixture for testing class P2pMgr.
-class P2pMgrTest : public ::testing::Test {
+class P2pMgrTest : public ::testing::Test, public hycast::PeerMsgRcvr {
 protected:
-    class MsgRcvr : public hycast::PeerMsgRcvr {
-        hycast::ProdInfo  prodInfo;
-        hycast::ChunkInfo chunkInfo;
-    public:
-        MsgRcvr(
-                hycast::ProdInfo& prodInfo,
-                hycast::ChunkInfo& chunkInfo)
-            : prodInfo{prodInfo}
-            , chunkInfo{chunkInfo}
-        {}
-        void recvNotice(const hycast::ProdInfo& info) {}
-        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
-            EXPECT_EQ(prodInfo, info);
-        }
-        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
-            EXPECT_EQ(chunkInfo, info);
-        }
-        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
-        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
-        void recvData(hycast::LatentChunk chunk) {}
-        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {}
-    };
+	P2pMgrTest()
+	{
+		for (size_t i = 0; i < sizeof(data); ++i)
+			data[i] = i % UCHAR_MAX;
+		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
+	}
 
-    P2pMgrTest()
-        : prodInfo{"product", 1, 2}
-        , chunkInfo{prodInfo, 0}
-        , msgRcvr{prodInfo, chunkInfo}
-    {}
+    /**
+     * Runs the peer-to-peer manager. Intended to run on its own thread.
+     */
+    static void runP2pMgr(hycast::P2pMgr& p2pMgr)
+    {
+    	try {
+    		p2pMgr();
+    		throw hycast::LogicError(__FILE__, __LINE__,
+    				"Peer-to-peer manager stopped");
+    	}
+    	catch (const std::exception& e) {
+    		hycast::log_what(e);
+    	}
+    }
 
-    hycast::ProdInfo  prodInfo;
-    hycast::ChunkInfo chunkInfo;
-    MsgRcvr           msgRcvr;
+    hycast::ProdStore          prodStore{};
+    hycast::InetSockAddr       mcastAddr{"232.0.0.0", 38800};
+    const unsigned             protoVers{0};
+    const in_port_t            srcPort{38800};
+    const in_port_t            snkPort = srcPort + 1;
+    const std::string          srvrInetAddr{"192.168.132.131"};
+    const hycast::InetSockAddr srcSrvrAddr{srvrInetAddr, srcPort};
+    const hycast::InetSockAddr snkSrvrAddr{srvrInetAddr, snkPort};
+	const unsigned             maxPeers{2};
+    hycast::YamlPeerSource     peerSource{"[{inetAddr: " + srvrInetAddr +
+    	    ", port: " + std::to_string(srcPort) + "}]"};
+    const unsigned             stasisDuration{2};
+    hycast::ProdIndex          prodIndex{0};
+	unsigned char              data[3000];
+    hycast::ProdInfo           prodInfo{"product", prodIndex, sizeof(data)};
+    hycast::Product            prod{};
+    std::atomic_long           numRcvdChunks{0};
+
+public:
+    void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer)
+    {
+		EXPECT_EQ(prodInfo, info);
+    }
+
+    void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer)
+    {
+    	EXPECT_EQ(prodIndex, info.getProdIndex());
+    	EXPECT_TRUE(info.getIndex() < prodInfo.getNumChunks());
+		peer.sendRequest(info);
+    }
+
+    void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer)
+    {
+    	GTEST_FAIL();
+    }
+
+    void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer)
+    {
+    	GTEST_FAIL();
+    }
+
+    void recvData(hycast::LatentChunk chunk, hycast::Peer& peer)
+    {
+    	hycast::ChunkInfo chunkInfo{chunk.getInfo()};
+    	EXPECT_EQ(prodIndex, chunkInfo.getProdIndex());
+    	EXPECT_TRUE(chunkInfo.getIndex() < prodInfo.getNumChunks());
+    	unsigned char data[chunk.getSize()];
+    	chunk.drainData(data, sizeof(data));
+    	EXPECT_EQ(0, ::memcmp(data, this->data+chunk.getOffset(),
+    			sizeof(data)));
+    	++numRcvdChunks;
+    }
 };
 
 // Tests invalid construction argument
 TEST_F(P2pMgrTest, InvalidConstruction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    EXPECT_THROW(hycast::P2pMgr(serverAddr, 0, nullptr, 60, msgRcvr),
+    EXPECT_THROW(hycast::P2pMgr(serverAddr, 0, nullptr, 60, *this),
             std::invalid_argument);
 }
 
 // Tests construction
 TEST_F(P2pMgrTest, Construction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    hycast::P2pMgr(serverAddr, 1, nullptr, 60, msgRcvr);
+    hycast::P2pMgr(serverAddr, 1, nullptr, 60, *this);
 }
 
 // Tests execution
 TEST_F(P2pMgrTest, Execution) {
-    hycast::InetSockAddr servAddr1("localhost", 38800);
-    hycast::InetSockAddr servAddr2("localhost", 38801);
-    hycast::P2pMgr p2pMgr1(servAddr1, 1, nullptr, 60, msgRcvr);
-    hycast::P2pMgr p2pMgr2(servAddr2, 1, nullptr, 60, msgRcvr);
-    hycast::Completer<void> completer{};
-    completer.submit([&p2pMgr1]{ p2pMgr1(); });
-    completer.submit([&p2pMgr2]{ p2pMgr2(); });
-    p2pMgr1.sendNotice(prodInfo);
-    p2pMgr1.sendNotice(chunkInfo);
+    hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
+    hycast::P2pMgr   p2pMgr{snkSrvrAddr, maxPeers, &peerSource, stasisDuration,
+			*this};
+	std::thread p2pMgrThread{[&]{runP2pMgr(p2pMgr);}};
     ::sleep(1);
+	shipping.ship(prod);
+    ::sleep(1);
+    ::pthread_cancel(p2pMgrThread.native_handle());
+    p2pMgrThread.join();
+    std::cerr << "Chunks received: " << numRcvdChunks << '\n';
+    EXPECT_EQ(prodInfo.getNumChunks(), numRcvdChunks);
 }
 
 }  // namespace

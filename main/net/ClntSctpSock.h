@@ -20,9 +20,9 @@ namespace hycast {
 class ClntSctpSock final : public SctpSock {
 public:
     /**
-     * Constructs from an Internet socket address and the number of SCTP
-     * streams.
-     * @param[in] addr        Internet socket address
+     * Constructs from the Internet socket address of the remote server and the
+     * number of SCTP streams.
+     * @param[in] addr        Internet socket address of remote server
      * @param[in] numStreams  Number of SCTP streams
      */
     ClntSctpSock(

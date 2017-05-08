@@ -159,7 +159,8 @@ SctpSockImpl::~SctpSockImpl()
     this->close();
 }
 
-unsigned SctpSockImpl::getNumStreams() {
+unsigned SctpSockImpl::getNumStreams()
+{
     return numStreams;
 }
 
@@ -168,11 +169,13 @@ const InetSockAddr& SctpSockImpl::getRemoteAddr()
     return remoteAddr;
 }
 
-bool SctpSockImpl::operator==(const SctpSockImpl& that) const noexcept {
+bool SctpSockImpl::operator==(const SctpSockImpl& that) const noexcept
+{
     return sock.load() == that.sock.load();
 }
 
-std::string SctpSockImpl::to_string() const {
+std::string SctpSockImpl::to_string() const
+{
     return std::string("SocketImpl{sock=") + std::to_string(sock.load()) + "}";
 }
 

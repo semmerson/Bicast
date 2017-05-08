@@ -20,7 +20,6 @@ lib_la_SOURCES 	= \
 	InetNameAddr.cpp InetNameAddr.h \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddr.cpp InetSockAddr.h \
-	SctpSockImpl.cpp SctpSockImpl.h \
 	SctpSock.cpp SctpSock.h \
 	ClntSctpSock.cpp ClntSctpSock.h \
 	SrvrSctpSock.cpp SrvrSctpSock.h \

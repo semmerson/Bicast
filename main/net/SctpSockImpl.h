@@ -32,7 +32,8 @@
 
 namespace hycast {
 
-class SctpSockImpl {
+class SctpSock::Impl
+{
 protected:
     std::atomic_int sock;
 
@@ -103,7 +104,7 @@ public:
      * Constructs from nothing.
      * @throws std::bad_alloc if required memory can't be allocated
      */
-    SctpSockImpl();
+    Impl();
 
     /**
      * Constructs from a socket and the number of SCTP streams. If the socket
@@ -115,24 +116,25 @@ public:
      * @throws std::system_error      Socket couldn't be configured
      * @see getRemoteAddr()
      */
-    SctpSockImpl(
+    Impl(
             const int      sd,
             const unsigned numStreams);
 
     /**
      * Prevents copy construction.
      */
-    SctpSockImpl(const SctpSockImpl& socket) =delete;
+    Impl(const Impl& socket) =delete;
+
     /**
      * Destroys an instance. Closes the underlying BSD socket.
      * @exceptionsafety Nothrow
      */
-    ~SctpSockImpl();
+    ~Impl();
 
     /**
      * Prevents copy assignment.
      */
-    SctpSockImpl& operator=(const SctpSockImpl& rhs) =delete;
+    Impl& operator=(const Impl& rhs) =delete;
 
     /**
      * Returns the number of SCTP streams.
@@ -153,7 +155,7 @@ public:
      * @retval `false`  This instance doesn't equal the other
      * @exceptionsafety Nothrow
      */
-    bool operator==(const SctpSockImpl& that) const noexcept;
+    bool operator==(const Impl& that) const noexcept;
 
     /**
      * Returns a string representation of this instance's socket.

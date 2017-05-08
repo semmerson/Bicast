@@ -11,68 +11,44 @@
 #include "config.h"
 
 #include "error.h"
-#include "InetSockAddr.h"
-#include "SctpSockImpl.h"
 #include "SrvrSctpSock.h"
 
-#include <errno.h>
-#include <memory>
-#include <system_error>
-
 namespace hycast {
-
-class SrvrSockImpl final : public SctpSockImpl
-{
-public:
-    SrvrSockImpl(
-            const InetSockAddr& addr,
-            const uint16_t      numStreams,
-            const int           queueSize)
-        : SctpSockImpl(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
-    {
-        if (queueSize <= 0)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Invalid length for ::accept() queue: " +
-                    std::to_string(queueSize));
-        int sd = sock.load();
-        if (sd == -1)
-            throw std::system_error(errno, std::system_category(),
-                    "socket() failure");
-        addr.bind(sd);
-        if (listen(sd, queueSize))
-            throw std::system_error(errno, std::system_category(),
-                    "listen() failure: sock=" + std::to_string(sd) +
-                    ", addr=" + to_string());
-    }
-
-    /**
-     * Accepts an incoming connection on the socket.
-     * @return The accepted connection
-     * @exceptionsafety Basic
-     * @threadsafety    Unsafe but compatible
-     */
-    std::shared_ptr<SctpSockImpl> accept()
-    {
-        socklen_t len = 0;
-        int sck = sock.load();
-        int sd = ::accept(sck, (struct sockaddr*)nullptr, &len);
-        if (sd < 0)
-            throw std::system_error(errno, std::system_category(),
-                    "accept() failure: sock=" + std::to_string(sck));
-        return std::shared_ptr<SctpSockImpl>(new SctpSockImpl(sd, getNumStreams()));
-    }
-};
 
 SrvrSctpSock::SrvrSctpSock(
         const InetSockAddr& addr,
         const uint16_t      numStreams,
         const int           queueSize)
-    : SctpSock(new SrvrSockImpl(addr, numStreams, queueSize))
-{}
+	: SctpSock(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+{
+	try {
+		if (queueSize <= 0)
+			throw InvalidArgument(__FILE__, __LINE__,
+					"Invalid length for ::accept() queue: " +
+					std::to_string(queueSize));
+		const int sd = getSock();
+		if (sd == -1)
+			throw SystemError(__FILE__, __LINE__, "socket() failure");
+		addr.bind(sd);
+		if (listen(sd, queueSize))
+			throw SystemError(__FILE__, __LINE__, "listen() failure: sock=" +
+					std::to_string(sd) + ", addr=" + to_string());
+	}
+	catch (const std::exception& e) {
+		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+				"Couldn't construct server-side SCTP socket"));
+	}
+}
 
 SctpSock SrvrSctpSock::accept() const
 {
-    return SctpSock((static_cast<SrvrSockImpl*>(pImpl.get()))->accept());
+	socklen_t len = 0;
+	const int sock = getSock();
+	const int sd = ::accept(sock, (struct sockaddr*)nullptr, &len);
+	if (sd < 0)
+		throw SystemError(__FILE__, __LINE__,  "accept() failure: sock=" +
+				std::to_string(sock));
+	return SctpSock(sd, getNumStreams());
 }
 
 } // namespace

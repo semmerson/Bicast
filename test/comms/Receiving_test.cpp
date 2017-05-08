@@ -19,27 +19,37 @@
 #include "YamlPeerSource.h"
 
 #include <gtest/gtest.h>
+#include <iostream>
+#include <climits>
 
 namespace {
 
 // The fixture for testing class Receiving.
-class ReceivingTest : public ::testing::Test {
+class ReceivingTest : public ::testing::Test, public hycast::Processing
+{
 protected:
-public:
-	class Processing final : public hycast::Processing
+	void process(hycast::Product prod)
 	{
-	public:
-		void process(hycast::Product prod)
-		{
-		}
-	};
+		EXPECT_EQ(this->prod, prod);
+	}
 
 	ReceivingTest()
 	{
+		// gcc 4.8 doesn't support non-trivial designated initializers
 		p2pInfo.peerCount = maxPeers;
 		p2pInfo.peerSource = &peerSource;
 		p2pInfo.serverSockAddr = serverAddr;
 		p2pInfo.stasisDuration = stasisDuration;
+
+		// gcc 4.8 doesn't support non-trivial designated initializers
+		srcMcastInfo.mcastAddr = mcastAddr;
+		srcMcastInfo.srcAddr = hycast::InetAddr(serverInetAddr);
+
+		unsigned char data[128000];
+		for (size_t i = 0; i < sizeof(data); ++i)
+			data[i] = i % UCHAR_MAX;
+
+		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
 	}
 
 	hycast::PeerSet            peerSet{[](hycast::Peer&){}};
@@ -53,36 +63,38 @@ public:
     hycast::YamlPeerSource     peerSource{"[{inetAddr: " + serverInetAddr +
     	    ", port: " + std::to_string(port) + "}]"};
     hycast::ProdIndex          prodIndex{0};
-    char                       data[128000];
     const unsigned             maxPeers = 1;
     const unsigned             stasisDuration = 2;
+    // gcc 4.8 doesn't support non-trivial designated initializers
     hycast::P2pInfo            p2pInfo;
-    Processing                 processing{};
+    // gcc 4.8 doesn't support non-trivial designated initializers
+    hycast::SrcMcastInfo       srcMcastInfo;
+    const unsigned             version = 0;
+    hycast::Product            prod{};
 };
 
 // Tests construction
 TEST_F(ReceivingTest, Construction) {
-    hycast::Receiving{p2pInfo, processing};
+    hycast::Receiving{srcMcastInfo, p2pInfo, *this, version};
 }
 
 // Tests shipping and receiving a product
 TEST_F(ReceivingTest, ShippingAndReceiving) {
 	// Create shipper
-    hycast::Shipping  shipping{prodStore, mcastSender, peerSet, serverAddr};
+    hycast::Shipping shipping{prodStore, mcastAddr, version, peerSet,
+    	serverAddr};
 
     ::sleep(1);
 
     // Create receiver
-    const unsigned maxPeers = 1;
-    const unsigned stasisDuration = 2;
-    hycast::Receiving{p2pInfo, processing};
+    hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, version};
 
     ::sleep(1);
 
     // Ship product
-    ::memset(data, 0xbd, sizeof(data));
-    hycast::Product   prod("product", prodIndex, data, sizeof(data));
     shipping.ship(prod);
+
+    ::sleep(1);
 }
 
 }  // namespace

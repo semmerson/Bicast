@@ -17,9 +17,18 @@
 #include "Notifier.h"
 #include "Peer.h"
 
+#include <functional>
 #include <memory>
 
 namespace hycast {
+
+class PeerSetInfo final
+{
+public:
+	PeerSetInfo(
+			const unsigned       maxPeers,
+			const unsigned       stasisDuration);
+};
 
 class PeerSet final : public Notifier
 {
@@ -34,9 +43,18 @@ public:
         FULL       /// Set is full and insufficient time to determine worst peer
     } InsertStatus;
 
+    /// Default maximum number of peers
+    static const unsigned defaultMaxPeers = 8;
     /**
-     * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] peerTerminated      Function to call when a peer terminates
+     * Default required duration, in seconds, without change to the set of peers
+     * before the worst-performing peer may be replaced
+     */
+    static const unsigned defaultStasisDuration = 60;
+
+    /**
+     * Constructs. The set will be empty.
+     * @param[in] peerFailed          Function to call when a peer fails
+     *                                Default does nothing.
      * @param[in] maxPeers            Maximum number of peers
      * @param[in] stasisDuration      Required duration, in seconds, without
      *                                change to the set of peers before the
@@ -44,9 +62,9 @@ public:
      * @throws std::invalid_argument  `maxPeers == 0`
      */
     explicit PeerSet(
-            std::function<void(Peer&)> peerTerminated,
-            unsigned                   maxPeers = 8,
-            unsigned                   stasisDuration = 60);
+            std::function<void(Peer&)> peerFailed = [](Peer&){},
+            unsigned                   maxPeers = defaultMaxPeers,
+            unsigned                   stasisDuration = defaultStasisDuration);
 
     /**
      * Tries to insert a peer.

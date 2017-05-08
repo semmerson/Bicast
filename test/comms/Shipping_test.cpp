@@ -22,21 +22,17 @@ protected:
 	ShippingTest()
 	{}
 
-	hycast::PeerSet            peerSet{[](hycast::Peer&){}};
     hycast::ProdStore          prodStore{};
     const in_port_t            port{38800};
     const hycast::InetSockAddr mcastAddr{"232.0.0.0", port};
-    const hycast::InetAddr     serverInetAddr{"192.168.132.128"};
+    const hycast::InetAddr     serverInetAddr{"192.168.132.131"};
     hycast::InetSockAddr       serverAddr{serverInetAddr, port};
     const unsigned             protoVers{0};
-    hycast::McastSender        mcastSender{mcastAddr, protoVers};
-    hycast::YamlPeerSource     peerSource{"[{inetAddr: " +
-    	serverInetAddr.to_string() + ", port: " + std::to_string(port) + "}]"};
 };
 
 // Tests construction
 TEST_F(ShippingTest, Construction) {
-    hycast::Shipping(prodStore, mcastSender, peerSet, serverAddr);
+    hycast::Shipping(prodStore, mcastAddr, protoVers, serverAddr);
 }
 
 // Tests shipping a product
@@ -45,7 +41,7 @@ TEST_F(ShippingTest, Shipping) {
     char              data[128000];
     ::memset(data, 0xbd, sizeof(data));
     hycast::Product   prod("product", prodIndex, data, sizeof(data));
-    hycast::Shipping  shipping{prodStore, mcastSender, peerSet, serverAddr};
+    hycast::Shipping  shipping{prodStore, mcastAddr, protoVers, serverAddr};
     shipping.ship(prod);
 }
 

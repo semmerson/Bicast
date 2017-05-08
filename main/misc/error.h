@@ -100,7 +100,8 @@ public:
     SystemError(
             const char*       file,
             const int         line,
-            const std::string msg);
+            const std::string msg,
+			const int         errnum = errno);
 };
 
 void log_what(const std::exception& except);

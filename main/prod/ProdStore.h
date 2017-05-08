@@ -47,7 +47,7 @@ public:
     /**
      * Constructs. If the given file isn't the empty string, then the
      * product-store will be written to it upon destruction in order to persist
-     * the store between sessions.
+     * the store between sessions when the instance is destroyed.
      * @param[in] path        Pathname of file for persisting the product-store
      *                        between sessions or the empty string to indicate
      *                        no persistence.
@@ -69,12 +69,6 @@ public:
     explicit ProdStore(const double residence = DEFAULT_MIN_RESIDENCE)
         : ProdStore("", residence)
     {}
-
-    /**
-     * Destroys. Writes the product-store to the persistence-file if one was
-     * specified during construction.
-     */
-    ~ProdStore() =default;
 
     /**
      * Adds an entire product. Does nothing if the product has already been

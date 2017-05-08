@@ -61,22 +61,36 @@ class P2pMgr::Impl final : public Notifier
 	};
 
 	static NilMsgRcvr       nilMsgRcvr;
-    InetSockAddr            serverSockAddr; /// Internet address of peer-server
-    PeerMsgRcvr&            msgRcvr;        /// Object to receive incoming messages
-    PeerSource*             peerSource;     /// Source of potential peers
-    PeerSet                 peerSet;        /// Set of active peers
-    Completer<void>         completer;      /// Asynchronous task completion service
+    /// Internet address of peer-server
+    InetSockAddr            serverSockAddr;
+    /// Object to receive incoming messages
+    PeerMsgRcvr*            msgRcvr;
+    /// Source of potential peers
+    PeerSource*             peerSource;
+    /// Set of active peers
+    PeerSet                 peerSet;
+    /// Asynchronous task completion service
+    Completer<void>         completer;
     /// Concurrent access variables for peer-termination:
     std::mutex              termMutex;
     std::condition_variable termCond;
+    /// Concurrent access variables for fatal exceptions:
+    std::mutex              exceptMutex;
+    std::condition_variable exceptCond;
     /// Concurrent access mutex for initiated peers:
     std::mutex              initMutex;
     /// Duration to wait before trying to replace the worst-performing peer.
     std::chrono::seconds    waitDuration;
     /// Remote socket address of initiated peers
     std::set<InetSockAddr>  initiated;
-    bool                    msgRcvrSet;     /// Is `msgRcvr` set?
-    bool                    isRunning;      /// Has `operator()()` been called
+    /// Is `msgRcvr` set?
+    bool                    msgRcvrSet;
+    /// Has `operator()()` been called?
+    bool                    isRunning;
+    /// Exception that caused failure
+    std::exception_ptr      exception;
+	std::thread             peerAddrThread;
+	std::thread             serverThread;
 
     typedef std::lock_guard<decltype(termMutex)>  LockGuard;
     typedef std::unique_lock<decltype(termMutex)> UniqueLock;
@@ -93,13 +107,18 @@ class P2pMgr::Impl final : public Notifier
     {
         try {
             // Blocks exchanging protocol version. Hence, separate thread
-            auto peer = Peer(msgRcvr, sock);
+            auto peer = Peer(*msgRcvr, sock);
             peerSet.tryInsert(peer, nullptr);
         }
         catch (const std::exception& e) {
-            log_what(e); // Because end of thread
+        	log_what(e); // Because end of thread but not peer-manager
         }
     }
+
+	static void closeServerSock(void* arg)
+	{
+		static_cast<SrvrSctpSock*>(arg)->close();
+	}
 
     /**
      * Runs the server for connections from remote peers. Creates a
@@ -112,20 +131,29 @@ class P2pMgr::Impl final : public Notifier
     void runServer()
     {
         try {
-            SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
-            for (;;) {
-                auto sock = serverSock.accept(); // Blocks
-                LockGuard lock(initMutex);
-                if (initiated.size()) {
-                    std::thread([=]{accept(sock);}).detach();
-                }
-                else {
-                    sock.close();
-                }
-            }
+        	try {
+				SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
+				pthread_cleanup_push(closeServerSock, &serverSock);
+				for (;;) {
+					auto sock = serverSock.accept(); // Blocks
+					LockGuard lock(initMutex);
+					if (initiated.size()) {
+						std::thread([=]{accept(sock);}).detach();
+					}
+					else {
+						sock.close();
+					}
+				}
+				pthread_cleanup_pop(0);
+        	}
+        	catch (const std::exception& e) {
+        		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+        				"Server for remote peers failed"));
+        	}
         }
         catch (const std::exception& e) {
-            log_what(e); // Because end of thread
+        	exception = std::current_exception();
+        	exceptCond.notify_one();
         }
     }
 
@@ -138,8 +166,9 @@ class P2pMgr::Impl final : public Notifier
      *   - EXISTS    Peer is already member of set
      *   - SUCCESS   Success
      *   - FULL      Set is full and insufficient time to determine worst peer
-     * @throw InvalidArgument    Unknown protocol version from remote peer. Peer
+     * @throw LogicError         Unknown protocol version from remote peer. Peer
      *                           not added to set.
+     * @throw RuntimeException   Other error
      * @exceptionsafety          Strong guarantee
      * @threadsafety             Safe
      */
@@ -148,12 +177,24 @@ class P2pMgr::Impl final : public Notifier
             PeerMsgRcvr&        msgRcvr,
             size_t*             size)
     {
-        Peer peer(msgRcvr, peerAddr);
-        return peerSet.tryInsert(peer, size);
+    	PeerSet::InsertStatus status;
+    	try {
+			Peer peer(msgRcvr, peerAddr);
+			status = peerSet.tryInsert(peer, size);
+		}
+		catch (const LogicError& e) {
+			throw;
+		}
+		catch (const std::exception& e) {
+			std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+					"Couldn't add " + peerAddr.to_string() +
+					" to set of active peers"));
+		}
+		return status; // Eclipse wants to see a return value
     }
 
     /**
-     * Attempts to adds peers to the set of active peers when
+     * Attempts to add peers to the set of active peers when
      *   - Initially called; or
      *   - `waitDuration` time passes since the last addition attempt; or
      *   - The set of active peers becomes not full,
@@ -162,42 +203,48 @@ class P2pMgr::Impl final : public Notifier
      */
     void runPeerAdder()
     {
-        throw LogicError(__FILE__, __LINE__, "Not implemented yet");
         size_t numPeers;
         try {
-            for (;;) {
-                for (auto iter = peerSource->getPeers();
-                         iter != peerSource->end(); ++iter) {
-                    try {
-                        auto status = tryInsert(*iter, msgRcvr, &numPeers);
-                        if (status == PeerSet::FULL)
-                            break;
-                        if (status == PeerSet::SUCCESS) {
-                            LockGuard lock(initMutex);
-                            initiated.insert(*iter);
-                        }
-                   }
-                   catch (const std::invalid_argument& e) {
-                       log_what(e);
-                   }
-                }
-                UniqueLock lock(termMutex);
-                auto when = std::chrono::steady_clock::now() + waitDuration;
-                while (peerSet.size() == numPeers)
-                    termCond.wait_until(lock, when);
-            }
+			try {
+				for (;;) {
+					for (auto iter = peerSource->getPeers();
+							 iter != peerSource->end(); ++iter) {
+						try {
+							auto status = tryInsert(*iter, *msgRcvr, &numPeers);
+							if (status == PeerSet::FULL)
+								break;
+							if (status == PeerSet::SUCCESS) {
+								LockGuard lock(initMutex);
+								initiated.insert(*iter);
+							}
+					    }
+					    catch (const std::exception& e) {
+						    log_what(e);
+					    }
+					}
+					UniqueLock lock(termMutex);
+					auto when = std::chrono::steady_clock::now() + waitDuration;
+					while (peerSet.size() == numPeers)
+						termCond.wait_until(lock, when);
+				}
+        	}
+        	catch (const std::exception& e) {
+        		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+        				"Peer-adder failed"));
+        	}
         }
         catch (const std::exception& e) {
-            log_what(e); // Because end of thread
+        	exception = std::current_exception();
+        	exceptCond.notify_one();
         }
     }
 
     /***
-     * Handles termination of a peer. Called by the active peer-set when one of
-     * its peers terminates. Removes the peer from the set of initiated peers,
-     * if appropriate, and prematurely wakes-up the adder of initiated peer.
+     * Handles peer failure. Called by the active peer-set. Removes the peer
+     * from the set of initiated peers, if appropriate, and prematurely wakes-up
+     * the adder of initiated peers.
      */
-    void peerTerminated(Peer& peer)
+    void handlePeerFailure(Peer& peer)
     {
         {
             LockGuard lock(initMutex);
@@ -209,12 +256,28 @@ class P2pMgr::Impl final : public Notifier
         }
     }
 
+    /**
+     * Stops the threads: cancels and joins them.
+     */
+    static void stopThreads(void* arg)
+    {
+    	auto pImpl = reinterpret_cast<Impl*>(arg);
+    	if (pImpl->serverThread.joinable()) {
+			::pthread_cancel(pImpl->serverThread.native_handle());
+			pImpl->serverThread.join();
+    	}
+		if (pImpl->peerAddrThread.joinable()) {
+			::pthread_cancel(pImpl->peerAddrThread.native_handle());
+			pImpl->peerAddrThread.join();
+		}
+    }
+
 public:
     /**
      * Constructs.
      * @param[in]     serverSockAddr  Socket address to be used by the server
      *                                that remote peers connect to
-     * @param[in]     peerCount       Canonical number of active peers
+     * @param[in]     maxPeers        Maximum number of active peers
      * @param[in]     peerSource      Source of potential replacement peers or
      *                                `nullptr`, in which case no replacement is
      *                                performed
@@ -226,21 +289,26 @@ public:
      */
     Impl(
             const InetSockAddr&   serverSockAddr,
-            const unsigned        peerCount,
+            const unsigned        maxPeers,
             PeerSource*           peerSource,
             const unsigned        stasisDuration,
             PeerMsgRcvr&          msgRcvr)
         : serverSockAddr{serverSockAddr}
-        , msgRcvr(msgRcvr)
+        , msgRcvr(&msgRcvr)
         , peerSource{peerSource}
-        , peerSet{[=](Peer& p){peerTerminated(p);}, peerCount, stasisDuration}
+        , peerSet{[=](Peer& p){handlePeerFailure(p);}, maxPeers, stasisDuration}
         , completer{}
         , termMutex{}
         , termCond{}
+		, exceptMutex{}
+		, exceptCond{}
         , initMutex{}
         , waitDuration{stasisDuration+1}
         , msgRcvrSet{true}
         , isRunning{false}
+        , exception{}
+        , peerAddrThread{}
+        , serverThread{}
     {}
 
     /**
@@ -253,13 +321,15 @@ public:
      */
     void setMsgRcvr(PeerMsgRcvr& msgRcvr)
     {
+    	if (exception)
+    		std::rethrow_exception(exception);
 		LockGuard lock(termMutex);
 		if (msgRcvrSet)
 			throw LogicError(__FILE__, __LINE__,
 					"Message-receiver already set");
 		if (isRunning)
 			throw LogicError(__FILE__, __LINE__, "operator()() called");
-    	this->msgRcvr = msgRcvr;
+    	this->msgRcvr = &msgRcvr;
     }
 
     /**
@@ -273,16 +343,27 @@ public:
      */
     void operator()()
     {
-    	{
-			LockGuard lock(termMutex);
-			if (peerSource)
-				completer.submit([this]{ runPeerAdder(); });
-			completer.submit([this]{ runServer(); });
+		UniqueLock lock(exceptMutex);
+		if (peerSource)
+			peerAddrThread = std::thread([this]{runPeerAdder();});
+			//completer.submit([this]{ runPeerAdder(); });
+		try {
+			pthread_cleanup_push(stopThreads, this);
+			serverThread = std::thread{[this]{runServer();}};
+			//completer.submit([this]{ runServer(); });
 			isRunning = true;
-    	}
-        auto future = completer.get(); // Blocks until exception thrown
-        // Futures never cancelled => future.wasCancelled() is unnecessary
-        future.getResult(); // might throw exception
+			while (!exception)
+				exceptCond.wait(lock);
+			pthread_cleanup_pop(1);
+			//auto future = completer.get(); // Blocks until exception thrown
+			// Futures never cancelled => future.wasCancelled() is unnecessary
+			//future.getResult(); // might throw exception
+			std::rethrow_exception(exception);
+		}
+		catch (const std::exception& e) {
+			stopThreads(this);
+			throw;
+		}
     }
 
     /**
@@ -294,6 +375,8 @@ public:
      */
     void sendNotice(const ProdInfo& prodInfo)
     {
+    	if (exception)
+    		std::rethrow_exception(exception);
         peerSet.sendNotice(prodInfo);
     }
 
@@ -307,6 +390,8 @@ public:
      */
     void sendNotice(const ProdInfo& prodInfo, const Peer& except)
     {
+    	if (exception)
+    		std::rethrow_exception(exception);
         peerSet.sendNotice(prodInfo, except);
     }
 
@@ -319,6 +404,8 @@ public:
      */
     void sendNotice(const ChunkInfo& chunkInfo)
     {
+    	if (exception)
+    		std::rethrow_exception(exception);
         peerSet.sendNotice(chunkInfo);
     }
 
@@ -333,6 +420,8 @@ public:
      */
     void sendNotice(const ChunkInfo& chunkInfo, const Peer& except)
     {
+    	if (exception)
+    		std::rethrow_exception(exception);
         peerSet.sendNotice(chunkInfo, except);
     }
 };
@@ -341,11 +430,11 @@ P2pMgr::Impl::NilMsgRcvr P2pMgr::Impl::nilMsgRcvr;
 
 P2pMgr::P2pMgr(
         const InetSockAddr& serverSockAddr,
-        const unsigned      peerCount,
+        const unsigned      maxPeers,
         PeerSource*         potentialPeers,
         const unsigned      stasisDuration,
         PeerMsgRcvr&        msgRcvr)
-    : pImpl{new Impl(serverSockAddr, peerCount, potentialPeers, stasisDuration,
+    : pImpl{new Impl(serverSockAddr, maxPeers, potentialPeers, stasisDuration,
             msgRcvr)}
 {}
 
