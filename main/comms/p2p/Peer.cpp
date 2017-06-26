@@ -61,7 +61,8 @@ class Peer::Impl final {
     }                      defaultMsgRcvr;
 
     /**
-     * Constructs.
+     * Constructs. Blocks connecting to remote server and exchanging protocol
+     * version with remote peer.
      * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
@@ -116,8 +117,8 @@ public:
 
     /**
      * Constructs from the containing peer object, an object to receive messages
-     * from the remote peer, and a socket. Blocks while exchanging protocol
-     * version with remote peer.
+     * from the remote peer, and a socket. Blocks connecting to remote server
+     * and exchanging protocol version with remote peer.
      * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
@@ -148,7 +149,8 @@ public:
     }
 
     /**
-     * Constructs.
+     * Constructs. Blocks connecting to remote server and exchanging protocol
+     * version with remote peer.
      * @param[in,out] peer      The containing peer object
      * @param[in,out] msgRcvr   Object to receive messages from remote peer
      * @param[in]     peerAddr  Socket address of remote peer
@@ -181,8 +183,8 @@ public:
     /**
      * Runs the receiver. Objects are received from the socket and passed to the
      * appropriate peer manager methods. Doesn't return until either the socket
-     * is closed or an exception is thrown. Intended to run on its own,
-     * cancellable thread.
+     * is closed by the remote peer or an exception is thrown. Intended to run
+     * on its own thread.
      * @throws LogicError  Not all of a chunk's data was read
      * @exceptionsafety    Basic guarantee
      * @threadsafefy       Thread-compatible but not thread-safe

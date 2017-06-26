@@ -224,8 +224,7 @@ public:
      */
     size_t hash() const noexcept
     {
-        std::hash<uint16_t> h;
-        return inetAddr.hash() ^ h(port);
+        return inetAddr.hash() ^ std::hash<uint16_t>()(port);
     }
 
     /**
@@ -421,7 +420,7 @@ bool operator==(
 
 
 InetSockAddr::InetSockAddr()
-    : pImpl{new InetSockAddrImpl()}
+    : pImpl{}
 {}
 
 InetSockAddr::InetSockAddr(
@@ -467,6 +466,11 @@ InetSockAddr::InetSockAddr(const InetSockAddr& that) noexcept
 InetSockAddr::~InetSockAddr()
 {}
 
+InetSockAddr::operator bool() const noexcept
+{
+    return pImpl.operator bool();
+}
+
 InetAddr InetSockAddr::getInetAddr() const noexcept
 {
     return pImpl->getInetAddr();
@@ -503,7 +507,7 @@ const InetSockAddr& InetSockAddr::connect(int sd) const
 
 size_t InetSockAddr::hash() const noexcept
 {
-    return pImpl->hash();
+    return pImpl ? pImpl->hash() : 0;
 }
 
 bool InetSockAddr::operator<(const InetSockAddr& that) const noexcept

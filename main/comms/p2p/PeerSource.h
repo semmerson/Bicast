@@ -27,9 +27,7 @@ public:
     /**
      * Returns an iterator over the potential peers. Blocks if no peers are
      * available.
-     * @return Iterator over potential peers:
-     *   - First element:  Forward iterator
-     *   - Second element: "End" iterator
+     * @return Iterator over potential peers
      */
     virtual Iterator getPeers() =0;
 

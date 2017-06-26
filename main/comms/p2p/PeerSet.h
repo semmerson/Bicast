@@ -17,6 +17,7 @@
 #include "Notifier.h"
 #include "Peer.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 
@@ -32,54 +33,76 @@ public:
 
 class PeerSet final : public Notifier
 {
-    class Impl;                  /// Forward declaration
-    std::shared_ptr<Impl> pImpl; /// `pImpl` idiom
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef enum {
-        EXISTS,    /// Peer is already member of set
-        SUCCESS,   /// Success
-        REPLACED,  /// Success. Inserted peer replaced worst-performing member
-        FULL       /// Set is full and insufficient time to determine worst peer
-    } InsertStatus;
-
     /// Default maximum number of peers
-    static const unsigned defaultMaxPeers = 8;
-    /**
-     * Default required duration, in seconds, without change to the set of peers
-     * before the worst-performing peer may be replaced
-     */
-    static const unsigned defaultStasisDuration = 60;
+    static const unsigned             defaultMaxPeers = 8;
+    typedef std::chrono::seconds      TimeUnit;
+    typedef std::chrono::steady_clock Clock;
 
     /**
      * Constructs. The set will be empty.
-     * @param[in] peerFailed          Function to call when a peer fails
-     *                                Default does nothing.
-     * @param[in] maxPeers            Maximum number of peers
-     * @param[in] stasisDuration      Required duration, in seconds, without
-     *                                change to the set of peers before the
-     *                                worst-performing peer may be replaced
-     * @throws std::invalid_argument  `maxPeers == 0`
+     * @param[in] stasisDuration  Minimum amount of time that the set must be
+     *                            full and unchanged before the worst-performing
+     *                            peer may be removed
+     * @param[in] maxPeers        Maximum number of peers. Default is
+     *                            `PeerSet::defaultMaxPeers`.
+     * @param[in] peerStopped     Function to call when a peer stops. Default
+     *                            does nothing.
+     * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
     explicit PeerSet(
-            std::function<void(Peer&)> peerFailed = [](Peer&){},
-            unsigned                   maxPeers = defaultMaxPeers,
-            unsigned                   stasisDuration = defaultStasisDuration);
+            const TimeUnit                     stasisDuration,
+            unsigned                           maxPeers = defaultMaxPeers,
+            std::function<void(InetSockAddr&)> peerStopped =
+                    [](InetSockAddr&){});
 
     /**
-     * Tries to insert a peer.
-     * @param[in]  candidate Candidate peer
-     * @param[out] size      Number of active peers
-     * @return               Status of the attempted insertion:
-     *   - EXISTS    Peer is already member of set
-     *   - SUCCESS   Success
-     *   - FULL      Set is full and insufficient time to determine worst peer
-     * @exceptionsafety      Strong guarantee
-     * @threadsafety         Safe
+     * Constructs. The set will be empty.
+     * @param[in] statisDuration  Minimum amount of time, in units of
+     *                            `PeerSet::TimeUnit`, that the set must be full
+     *                            and unchanged before the worst-performing peer
+     *                            may be removed
+     * @param[in] maxPeers        Maximum number of peers. Default is
+     *                            `PeerSet::defaultMaxPeers`.
+     * @param[in] peerStopped     Function to call when a peer stops. Default
+     *                            does nothing.
+     * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
-    InsertStatus tryInsert(
-            Peer&   candidate,
-            size_t* size = nullptr) const;
+    explicit PeerSet(
+            const unsigned                     stasisDuration,
+            unsigned                           maxPeers = defaultMaxPeers,
+            std::function<void(InetSockAddr&)> peerStopped =
+                    [](InetSockAddr&){})
+        : PeerSet{TimeUnit{stasisDuration}, maxPeers, peerStopped}
+    {}
+
+    /**
+     * Tries to insert a peer. The attempt will fail if the peer is already a
+     * member. If the set is full, then
+     *   - The current thread is blocked until the membership has been unchanged
+     *     for at least the amount of time given to the constructor; and
+     *   - The worst-performing will have been removed from the set.
+     * @param[in]  peer     Candidate peer
+     * @return     `false`  Peer is already a member
+     * @return     `true`   Peer was added. Worst peer removed and reported if
+     *                      the set was full.
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
+     */
+    bool tryInsert(Peer& peer) const;
+
+    /**
+     * Indicates if this instance already has a given remote peer.
+     * @param[in] peerAddr  Address of the remote peer
+     * @retval `true`       The peer is a member
+     * @retval `false`      The peer is not a member
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
+     */
+    bool contains(const InetSockAddr& peerAddr) const;
 
     /**
      * Sends information about a product to all peers in the set.
@@ -93,12 +116,12 @@ public:
     /**
      * Sends information about a product to all peers in the set except one.
      * @param[in] prodInfo        Product information
-     * @param[in] except          Peer to exclude
+     * @param[in] except          Address of peer to exclude
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo, const Peer& except);
+    void sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except);
 
     /**
      * Sends information about a chunk-of-data to all peers in the set.
@@ -113,12 +136,12 @@ public:
      * Sends information about a chunk-of-data to all peers in the set except
      * one.
      * @param[in] chunkInfo       Chunk information
-     * @param[in] except          Peer to exclude
+     * @param[in] except          Address of peer to exclude
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except);
+    void sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except);
 
     /**
      * Increments the value of a peer.

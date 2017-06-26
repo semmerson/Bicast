@@ -101,7 +101,7 @@ public:
             const char*       file,
             const int         line,
             const std::string msg,
-			const int         errnum = errno);
+            const int         errnum = errno);
 };
 
 void log_what(const std::exception& except);
@@ -110,6 +110,8 @@ void log_what(
         const char* const     file,
         const int             line,
         const std::string     msg);
+
+void log_log(const std::string& msg);
 
 } // namespace
 

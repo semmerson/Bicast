@@ -9,13 +9,17 @@ noinst_LTLIBRARIES = lib.la
 
 # Sources for libhycast
 lib_la_SOURCES 	= \
-	MapOfLists.cpp MapOfLists.h \
-	Future.cpp Future.h \
-	Executor.cpp Executor.h \
-	Completer.cpp Completer.h \
 	logging.cpp logging.h \
 	error.cpp error.h \
-	SyncQueue.h
+	DelayQueue.h \
+	MapOfLists.cpp MapOfLists.h \
+	Thread.cpp Thread.h \
+	Promise.cpp Promise.h \
+	Task.cpp Task.h \
+	Future.cpp Future.h \
+	Executor.cpp Executor.h \
+	Completer.cpp Completer.h
+#	SyncQueue.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

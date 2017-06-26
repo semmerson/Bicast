@@ -59,7 +59,7 @@ class InetSockAddrTest : public ::testing::Test {
 // Tests default construction
 TEST_F(InetSockAddrTest, DefaultConstruction) {
     hycast::InetSockAddr sockaddr;
-    EXPECT_STREQ("localhost:0", sockaddr.to_string().data());
+    EXPECT_FALSE(sockaddr);
 }
 
 // Tests construction from IP address string and port number

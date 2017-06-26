@@ -29,10 +29,11 @@ class InetSockAddr final {
 
 public:
     /**
-     * Constructs from nothing. The resulting object will have the default
-     * Internet address of the host and port number 0.
+     * Constructs from nothing. The resulting object will not have a socket
+     * address: it will be empty.
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
+     * @see operator bool()
      */
     InetSockAddr();
 
@@ -123,6 +124,12 @@ public:
     ~InetSockAddr() noexcept;
 
     /**
+     * Indicates if this instance has a socket address or is empty.
+     * @retval `false`  Iff this instance is empty.
+     */
+    operator bool() const noexcept;
+
+    /**
      * Returns the associated Internet address.
      * @return The associated Internet address
      */
@@ -150,6 +157,7 @@ public:
      * @exceptionsafety Nothrow
      */
     size_t hash() const noexcept;
+
     /**
      * Indicates if this instance is considered less than another
      * @param[in] that  Other instance
@@ -278,5 +286,15 @@ inline bool operator==(
 }
 
 } // namespace
+
+namespace std {
+    template<> struct hash<hycast::InetSockAddr>
+    {
+        size_t operator()(const hycast::InetSockAddr& addr) const noexcept
+        {
+            return addr.hash();
+        }
+    };
+}
 
 #endif /* INETSOCKADDR_H_ */

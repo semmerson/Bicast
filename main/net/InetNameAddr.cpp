@@ -88,9 +88,10 @@ void InetNameAddr::getSockAddrs(
                 set->insert(sockaddr.storage);
             }
         }
+        ::freeaddrinfo(list);
     }
-    catch (...) {
-        freeaddrinfo(list);
+    catch (const std::exception& e) {
+        ::freeaddrinfo(list);
         throw;
     }
 }

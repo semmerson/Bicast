@@ -77,4 +77,8 @@ NestedError::NestedError(
 }
 #endif
 
-} // namespace
+}
+ // namespace
+
+void log_log(const std::string& msg) {
+}

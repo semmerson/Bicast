@@ -3,6 +3,7 @@ LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 
 check_PROGRAMS		= \
 	socket_test \
+	Interface_test \
 	Ipv4Addr_test \
 	Ipv6Addr_test \
 	InetAddr_test \
@@ -11,6 +12,7 @@ check_PROGRAMS		= \
 	UdpSock_test
 
 socket_test_SOURCES		= socket_test.cpp
+Interface_test_SOURCES		= Interface_test.cpp
 Ipv4Addr_test_SOURCES		= Ipv4Addr_test.cpp
 Ipv6Addr_test_SOURCES		= Ipv6Addr_test.cpp
 InetAddr_test_SOURCES		= InetAddr_test.cpp
@@ -20,6 +22,7 @@ UdpSock_test_SOURCES		= UdpSock_test.cpp
 
 TESTS	= \
 	socket_test \
+	Interface_test \
 	Ipv4Addr_test \
 	Ipv6Addr_test \
 	InetAddr_test \

@@ -14,9 +14,11 @@
 #ifndef MAIN_P2P_P2PMGR_H_
 #define MAIN_P2P_P2PMGR_H_
 
+#include "DelayQueue.h"
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
 #include "Notifier.h"
+#include "PeerSet.h"
 #include "PeerSource.h"
 
 #include <memory>
@@ -26,19 +28,22 @@ namespace hycast {
 struct P2pInfo final
 {
     /// Socket address to be used by the server that remote peers connect to
-	InetSockAddr  serverSockAddr;
+	InetSockAddr             serverSockAddr;
+
 	/// Canonical number of active peers
-	unsigned      peerCount;
+	unsigned                 peerCount;
+
 	/**
      * Source of potential replacement peers or `nullptr`, in which case no
      * replacement is performed
      */
-	PeerSource*   peerSource;
+	DelayQueue<InetSockAddr> peerAddrs;
+
 	/**
      * Time interval, in seconds, over which the set of active peers must be
      * unchanged before the worst performing peer may be replaced
      */
-	unsigned      stasisDuration;
+	PeerSet::TimeUnit       stasisDuration;
 };
 
 class P2pMgr final : public Notifier
@@ -51,21 +56,23 @@ public:
      * Constructs.
      * @param[in] serverSockAddr  Socket address to be used by the server that
      *                            remote peers connect to
-     * @param[in] maxPeers        Maximum number of active peers
-     * @param[in] peerSource      Source of potential replacement peers or
-     *                            `nullptr`, in which case no replacement is
-     *                            performed
-     * @param[in] stasisDuration  Time interval, in seconds, over which the set
-     *                            of active peers must be unchanged before the
-     *                            worst performing peer may be replaced
      * @param[in] msgRcvr         Receiver of messages from remote peers
+     * @param[in] maxPeers        Maximum number of active peers. Default is
+     *                            `PeerSet::defaultMaxPeers`.
+     * @param[in] peerAddrs       Addresses of potential peers. Default is an
+     *                            empty set.
+     * @param[in] stasisDuration  Time interval, in units of
+     *                            `PeerSet::TimeUnit`, over which the set
+     *                            of active peers must be unchanged before the
+     *                            worst performing peer may be replaced. Default
+     *                            is 60 seconds.
      */
     P2pMgr(
-            const InetSockAddr& serverSockAddr,
-            const unsigned      maxPeers,
-            PeerSource*         peerSource,
-            const unsigned      stasisDuration,
-            PeerMsgRcvr&        msgRcvr);
+            const InetSockAddr&      serverSockAddr,
+            PeerMsgRcvr&             msgRcvr,
+            const unsigned           maxPeers = PeerSet::defaultMaxPeers,
+            DelayQueue<InetSockAddr> peerAddrs = DelayQueue<InetSockAddr>(),
+            const PeerSet::TimeUnit  stasisDuration = PeerSet::TimeUnit{60});
 
     /**
      * Constructs.
@@ -74,19 +81,9 @@ public:
      */
     P2pMgr( const P2pInfo& p2pInfo,
 			PeerMsgRcvr&   msgRcvr)
-    	: P2pMgr(p2pInfo.serverSockAddr, p2pInfo.peerCount, p2pInfo.peerSource,
-    			p2pInfo.stasisDuration, msgRcvr)
+    	: P2pMgr(p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerCount,
+    	        p2pInfo.peerAddrs, p2pInfo.stasisDuration)
     {}
-
-    /**
-     * Sets the receiver for messages from the remote peers. Must not be called
-     *   - If a message-receiver was passed to the constructor; or
-     *   - After `operator()()` is called.
-     * @param[in] msgRcvr  Receiver of messages from remote peers
-     * @throws LogicError  This instance was constructed with a message-receiver
-     * @throws LogicError  `operator()()` has been called
-     */
-    void setMsgRcvr(PeerMsgRcvr& msgRcvr);
 
     /**
      * Runs this instance. Starts receiving connection requests from remote

@@ -1,7 +1,7 @@
 /**
  * This file tests the class `Completer`.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -34,11 +34,11 @@ TEST_F(CompleterTest, IntConstruction) {
 // Tests execution of void task
 TEST_F(CompleterTest, VoidExecution) {
     hycast::Completer<void> completer{};
-    auto future1 = completer.submit([]{return;});
+    auto future1 = completer.submit([]{});
     auto future2 = completer.get();
     EXPECT_TRUE(future1 == future2);
-    future2.getResult();
-    EXPECT_FALSE(future2.wasCancelled());
+    EXPECT_FALSE(future2.wasCanceled());
+    EXPECT_NO_THROW(future2.getResult());
 }
 
 // Tests execution of int task
@@ -47,8 +47,8 @@ TEST_F(CompleterTest, IntExecution) {
     auto future1 = completer.submit([]{return 1;});
     auto future2 = completer.get();
     EXPECT_TRUE(future1 == future2);
+    EXPECT_FALSE(future2.wasCanceled());
     EXPECT_EQ(1, future2.getResult());
-    EXPECT_FALSE(future2.wasCancelled());
 }
 
 // Tests execution of multiple void tasks
@@ -61,8 +61,8 @@ TEST_F(CompleterTest, MultipleVoidExecution) {
     }
     for (unsigned i = 0; i < futures.size(); ++i) {
         auto future = completer.get();
-        future.getResult();
-        EXPECT_FALSE(future.wasCancelled());
+        EXPECT_FALSE(future.wasCanceled());
+        EXPECT_NO_THROW(future.getResult());
     }
 }
 
@@ -76,8 +76,8 @@ TEST_F(CompleterTest, MultipleIntExecution) {
     }
     for (unsigned i = 0; i < futures.size(); ++i) {
         auto future = completer.get();
+        EXPECT_FALSE(future.wasCanceled());
         int j = future.getResult();
-        EXPECT_FALSE(future.wasCancelled());
         EXPECT_TRUE(futures[j] == future);
     }
 }
@@ -87,8 +87,8 @@ TEST_F(CompleterTest, VoidCancellation) {
     hycast::Completer<void> completer{};
     auto future = completer.submit([]{::pause();});
     future.cancel();
-    EXPECT_TRUE(future.wasCancelled());
-    EXPECT_THROW(future.getResult(), std::logic_error);
+    EXPECT_TRUE(future.wasCanceled());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
 
 // Tests cancellation of int task
@@ -96,8 +96,20 @@ TEST_F(CompleterTest, IntCancellation) {
     hycast::Completer<int> completer{};
     auto future = completer.submit([]{::pause(); return 1;});
     future.cancel();
-    EXPECT_TRUE(future.wasCancelled());
-    EXPECT_THROW(future.getResult(), std::logic_error);
+    EXPECT_TRUE(future.wasCanceled());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
+}
+
+// Tests destruction with active task
+TEST_F(CompleterTest, DestructionWithTask) {
+    hycast::Completer<void> completer{};
+    completer.submit([]{::pause();});
+}
+
+// Tests destruction with active future
+TEST_F(CompleterTest, DestructionWithFuture) {
+    hycast::Completer<void> completer{};
+    auto future = completer.submit([]{::pause();});
 }
 
 }  // namespace

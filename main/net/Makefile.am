@@ -11,6 +11,7 @@ AM_CPPFLAGS = -I../misc
 
 # Sources for library
 lib_la_SOURCES 	= \
+	Interface.cpp Interface.h \
 	Codec.cpp Codec.h \
 	PortNumber.h \
 	InetAddrImpl.cpp InetAddrImpl.h \

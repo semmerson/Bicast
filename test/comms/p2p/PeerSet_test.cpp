@@ -10,6 +10,7 @@
  */
 
 #include "ClntSctpSock.h"
+#include "error.h"
 #include "SctpSock.h"
 #include "HycastTypes.h"
 #include "logging.h"
@@ -26,32 +27,9 @@
 namespace {
 
 // The fixture for testing class PeerSet.
-class PeerSetTest : public ::testing::Test {
+class PeerSetTest : public ::testing::Test
+{
 protected:
-    // You can remove any or all of the following functions if its body
-    // is empty.
-
-    PeerSetTest() {
-        // You can do set-up work for each test here.
-    }
-
-    virtual ~PeerSetTest() {
-        // You can do clean-up work that doesn't throw exceptions here.
-    }
-
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp() {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-    }
-
-    virtual void TearDown() {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-    }
-
     /**
      * Thread-safe peer-manager that discards everything.
      */
@@ -109,13 +87,13 @@ protected:
         std::thread thread;
         void runServer(hycast::SrvrSctpSock serverSock) {
             ServerMsgRcvr srvrMsgRcvr{};
-            hycast::PeerSet peerSet{[](hycast::Peer&){}};
+            hycast::PeerSet peerSet{2};
             for (;;) {
                 try {
-                	::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+                    ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
                     hycast::SctpSock sock{serverSock.accept()};
-                	::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
-                    hycast::Peer   peer{srvrMsgRcvr, sock};
+                    ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+                    hycast::Peer peer{srvrMsgRcvr, sock};
                     peerSet.tryInsert(peer);
                 }
                 catch (const std::exception& e) {
@@ -129,65 +107,85 @@ protected:
         {
             hycast::SrvrSctpSock serverSock{serverSockAddr,
                 hycast::Peer::getNumStreams()};
-            thread = std::thread([=]{ runServer(serverSock); });
+            thread = std::thread([this,serverSock]{runServer(serverSock);});
         }
         ~Server() {
-            ::pthread_cancel(thread.native_handle());
-            thread.join();
+            if (thread.joinable()) {
+                ::pthread_cancel(thread.native_handle());
+                thread.join();
+            }
         }
     };
 
-    hycast::Peer getClientPeer() {
+    PeerSetTest()
+        : server1SockAddr{"127.0.0.1", 38800}
+        , server2SockAddr{"192.168.139.136", 38800}
+    {}
+
+    hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
         hycast::ClntSctpSock sock{serverSockAddr, hycast::Peer::getNumStreams()};
         return hycast::Peer(clntMsgRcvr, sock);
     }
 
     // Objects declared here can be used in all TEST_F tests
-    hycast::InetSockAddr serverSockAddr{"127.0.0.1", 38800};
-    hycast::ProdInfo     prodInfo{"product", 1, 100000};
-    hycast::ChunkInfo    chunkInfo{prodInfo, 2};
-    ClientMsgRcvr        clntMsgRcvr{prodInfo, chunkInfo};
+    const hycast::InetSockAddr server1SockAddr;
+    const hycast::InetSockAddr server2SockAddr;
+    const hycast::ProdInfo     prodInfo{"product", 1, 100000};
+    const hycast::ChunkInfo    chunkInfo{prodInfo, 2};
+    ClientMsgRcvr              clntMsgRcvr{prodInfo, chunkInfo};
 };
 
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction) {
-    hycast::PeerSet peerSet{[](hycast::Peer&){}};
+    hycast::PeerSet peerSet{2};
 }
 
 // Tests construction with invalid argument
 TEST_F(PeerSetTest, InvalidConstruction) {
-    EXPECT_THROW(hycast::PeerSet peerSet([](hycast::Peer&){}, 0),
-    		std::invalid_argument);
+    EXPECT_THROW(hycast::PeerSet(2, 0), std::invalid_argument);
 }
 
 // Tests inserting a peer and incrementing its value
 TEST_F(PeerSetTest, IncrementPeerValue) {
-    Server server{serverSockAddr};
-    hycast::Peer     peer{getClientPeer()};
-    hycast::PeerSet  peerSet{[](hycast::Peer&){}};
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
-    peerSet.incValue(peer);
+    try {
+        Server server{server1SockAddr};
+        hycast::Peer     peer{getClientPeer(server1SockAddr)};
+        hycast::PeerSet  peerSet{2};
+        EXPECT_TRUE(peerSet.tryInsert(peer));
+        EXPECT_EQ(1, peerSet.size());
+        peerSet.incValue(peer);
+    }
+    catch (const std::exception& e) {
+        hycast::log_what(e);
+    }
 }
 
 // Tests removing the worst peer from a 1-peer set
 TEST_F(PeerSetTest, RemoveWorst) {
-    Server server{serverSockAddr};
-    hycast::Peer     peer1{getClientPeer()};
-    hycast::PeerSet  peerSet{[](hycast::Peer&){}, 1, 0};
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer1));
-    hycast::Peer peer2{getClientPeer()};
-    size_t numPeers;
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS,
-            peerSet.tryInsert(peer2, &numPeers));
-    EXPECT_EQ(1, numPeers);
+    try {
+        hycast::PeerSet  peerSet{0, 1};
+
+        Server server1{server1SockAddr};
+        hycast::Peer peer1{getClientPeer(server1SockAddr)};
+        EXPECT_TRUE(peerSet.tryInsert(peer1));
+
+        Server server2{server2SockAddr};
+        hycast::Peer peer2{getClientPeer(server2SockAddr)};
+        EXPECT_TRUE(peerSet.tryInsert(peer2));
+
+        EXPECT_EQ(1, peerSet.size());
+    }
+    catch (const std::exception& e) {
+        hycast::log_what(e);
+    }
 }
 
 // Tests inserting a peer and sending notices
 TEST_F(PeerSetTest, PeerInsertionAndNotices) {
-    Server server{serverSockAddr};
-    hycast::Peer     peer{getClientPeer()};
-    hycast::PeerSet  peerSet{[](hycast::Peer&){}};
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
+    Server server{server1SockAddr};
+    hycast::Peer     peer{getClientPeer(server1SockAddr)};
+    hycast::PeerSet  peerSet{2};
+    EXPECT_TRUE(peerSet.tryInsert(peer));
     peerSet.sendNotice(prodInfo);
     peerSet.sendNotice(chunkInfo);
     ::sleep(1);
@@ -195,11 +193,11 @@ TEST_F(PeerSetTest, PeerInsertionAndNotices) {
 
 // Tests inserting the same peer twice
 TEST_F(PeerSetTest, DuplicatePeerInsertion) {
-    Server server{serverSockAddr};
-    hycast::Peer     peer{getClientPeer()};
-    hycast::PeerSet  peerSet{[](hycast::Peer&){}};
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::SUCCESS, peerSet.tryInsert(peer));
-    EXPECT_EQ(hycast::PeerSet::InsertStatus::EXISTS, peerSet.tryInsert(peer));
+    Server server{server1SockAddr};
+    hycast::Peer     peer{getClientPeer(server1SockAddr)};
+    hycast::PeerSet  peerSet{2};
+    EXPECT_TRUE(peerSet.tryInsert(peer));
+    EXPECT_FALSE(peerSet.tryInsert(peer));
 }
 
 }  // namespace

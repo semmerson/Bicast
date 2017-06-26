@@ -1,16 +1,18 @@
 /**
- * This file declares a thread-safe, fixed-duration, delay-queue.
+ * This file declares a thread-safe delay-queue. Each element has a time-point
+ * when it becomes available.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: FixedDelayQueue.h
- * @author: Steven R. Emmerson
+ *        File: DelayQueue.h
+ *  Created on: May 23, 2017
+ *      Author: Steven R. Emmerson
  */
 
-#ifndef MISC_FIXEDDELAYQUEUE_H
-#define MISC_FIXEDDELAYQUEUE_H
+#ifndef MISC_DELAYQUEUE_H
+#define MISC_DELAYQUEUE_H
 
 #include <chrono>
 #include <memory>
@@ -20,10 +22,10 @@ namespace hycast {
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment and move assignment.
- * @tparam Dur       Duration type (e.g., std::chrono::seconds)
+ * @tparam Dur       Duration type
  */
-template<typename Value, typename Dur>
-class FixedDelayQueue final
+template<typename Value, typename Dur = std::chrono::seconds>
+class DelayQueue final
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
@@ -32,21 +34,23 @@ public:
     typedef Dur Duration;
 
     /**
-     * Constructs from a delay.
-     * @param[in] delay  The delay for each element in units of the template
-     *                   parameter
+     * Default constructs.
      * @throws std::bad_alloc     If necessary memory can't be allocated.
      * @throws std::system_error  If a system error occurs.
      */
-    explicit FixedDelayQueue(Duration delay);
+    explicit DelayQueue();
 
     /**
      * Adds a value to the queue.
      * @param[in] value The value to be added
+     * @param[in] delay  The delay for the element before it becomes available
+     *                   in units of the template parameter
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    void push(Value value);
+    void push(
+            const Value&    value,
+            const Duration& delay = Duration(0)) const;
 
     /**
      * Returns the value whose reveal-time is the earliest and not later than
@@ -57,7 +61,7 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Safe
      */
-    Value pop();
+    Value pop() const;
 
     /**
      * Returns the number of values in the queue.
@@ -70,6 +74,6 @@ public:
 
 } // namespace
 
-#include "FixedDelayQueue.cpp"
+#include "DelayQueue.cpp" // For automatic template instatiation
 
-#endif /* MISC_FIXEDDELAYQUEUE_H */
+#endif /* MISC_DELAYQUEUE_H */

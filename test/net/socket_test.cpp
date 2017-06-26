@@ -8,13 +8,20 @@
  *   @file: socket_test.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
+
+#include "error.h"
+#include "Thread.h"
 
 #include <arpa/inet.h>
 #include <atomic>
 #include <cerrno>
+#include <climits>
+#include <condition_variable>
 #include <cstring>
 #include <fcntl.h>
 #include <future>
+#include <mutex>
 #include <poll.h>
 #include <sys/socket.h>
 #include <thread>
@@ -38,6 +45,10 @@ protected:
         ipv4SockAddr.sin_addr.s_addr = inet_addr("234.128.117.0"); // works
 
         *reinterpret_cast<struct sockaddr_in*>(&sockAddrStorage) = ipv4SockAddr;
+
+        srvrAddr.sin_family = AF_INET;
+        srvrAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+        srvrAddr.sin_port = htons(38800);
     }
 
     void joinMcastGroup(const int sd)
@@ -119,25 +130,26 @@ protected:
     // Objects declared here can be used by all tests in the test case for sockets.
     struct sockaddr_in      ipv4SockAddr = {};
     struct sockaddr_storage sockAddrStorage = {};
+    struct sockaddr_in      srvrAddr = {};
 };
 
 // Tests multicasting
 TEST_F(SocketTest, Multicasting) {
-    int sendSock = makeSendSocket();
     int recvSock = makeRecvSocket();
-    std::thread sendThread([this,sendSock]{send(sendSock);});
     std::thread recvThread([this,recvSock]{recv(recvSock);});
+    int sendSock = makeSendSocket();
+    std::thread sendThread([this,sendSock]{send(sendSock);});
     recvThread.join();
     sendThread.join();
     ::close(recvSock);
     ::close(sendSock);
 }
 
-/*
- * Verifies procedure for terminating a read on a socket when the socket is
- * closed. THIS DOESN'T WORK
- */
 #if 0
+/*
+ * Tests terminating a read on a socket by closing the socket.
+ * THIS DOESN'T WORK
+ */
 TEST_F(SocketTest, LocallyTerminatingRead)
 {
     int recvSock = makeRecvSocket();
@@ -154,71 +166,153 @@ TEST_F(SocketTest, LocallyTerminatingRead)
 				return -2;
 			return ::read(sd, buf, sizeof(buf));
 		}
-		void close() {
-			::close(sd);
+		void stop() {
+			::stop(sd);
 		}
 	} reader{recvSock};
     std::future<int> future = std::async([&reader]{return reader();});
     ::sleep(1);
-	reader.close();
+	reader.stop();
 	EXPECT_EQ(-2, future.get());
 }
 #endif
 
-// Tests procedure for terminating read
+/**
+ * A server that is stopped by polling a signaling pipe.
+ */
+class PollableServer {
+	int             srvrSd; /// Server socket descriptor
+    int             pipeFds[2];
+public:
+	std::atomic_bool threadStarted;
+	std::atomic_bool acceptPollReturned;
+	std::atomic_bool acceptReturned;
+	std::atomic_bool readPollReturned;
+	std::atomic_bool readReturned;
+	PollableServer(struct sockaddr_in& srvrAddr)
+		: srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
+		  pipeFds{-1, -1},
+		  threadStarted{false},
+		  acceptPollReturned{false},
+		  acceptReturned{false},
+		  readPollReturned{false},
+		  readReturned{false}
+	{
+		EXPECT_NE(-1, srvrSd);
+		int status = ::bind(srvrSd,
+				reinterpret_cast<struct sockaddr*>(&srvrAddr),
+				sizeof(srvrAddr));
+		EXPECT_EQ(0, status);
+		status = ::listen(srvrSd, 5);
+		EXPECT_EQ(0, status);
+		status = pipe(pipeFds);
+		EXPECT_EQ(0, status);
+	}
+	~PollableServer() {
+		stop();
+		::close(srvrSd);
+		::close(pipeFds[0]);
+		::close(pipeFds[1]);
+	}
+	ssize_t operator()() {
+	    threadStarted = true;
+		struct pollfd   pollfd[2];
+		const int       stopIndex = 0;
+		const int       sockIndex = 1;
+		for (;;) {
+            pollfd[stopIndex].fd = pipeFds[0]; // Works if write to pipeFds[1]
+            pollfd[stopIndex].fd = pipeFds[1]; // Can result in hanging
+            pollfd[stopIndex].events = POLLIN;
+            pollfd[sockIndex].fd = srvrSd;
+            pollfd[sockIndex].events = POLLIN;
+            ::poll(pollfd, 2, -1); // -1 => indefinite wait
+            acceptPollReturned = true;
+            if (pollfd[stopIndex].revents)
+                return -2;
+            if (pollfd[sockIndex].revents & ~POLLIN)
+                return -3;
+            struct sockaddr clntAddr = {};
+            socklen_t       clntAddrLen = sizeof(clntAddr);
+            int peerSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
+            acceptReturned = true;
+            EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
+            EXPECT_TRUE(peerSd >= 0);
+            pollfd[sockIndex].fd = peerSd;
+            // Can hang here if signal is closing write-end of pipe
+            ::poll(pollfd, 2, -1); // -1 => indefinite wait
+            readPollReturned = true;
+            if (pollfd[stopIndex].revents) {
+                ::close(peerSd);
+                return -4;
+            }
+            if (pollfd[sockIndex].revents & ~POLLIN)
+                return -5;
+            char buf[1];
+            auto nbytes = read(peerSd, buf, sizeof(buf));
+            readReturned = true;
+            ::close(peerSd);
+            return nbytes;
+		}
+	}
+	void stop() {
+        char buf[1];
+        ::write(pipeFds[1], buf, sizeof(buf));
+        ::close(pipeFds[1]); // Doesn't work for PollableReadTermination
+	}
+};
+
+// Tests procedure for terminating an accept().
+TEST_F(SocketTest, PollableAcceptTermination) {
+	PollableServer server{srvrAddr};
+    /*
+     * For an unknown reason, the following doesn't work when std::async() is
+     * used. It also prevents the Eclipse debugger from seeing both threads.
+     */
+    auto srvrThread = hycast::Thread([&]{server();});
+    //::sleep(1);
+    server.stop();
+    srvrThread.join();
+    if (server.threadStarted) {
+        EXPECT_TRUE(server.acceptPollReturned);
+        EXPECT_FALSE(server.readPollReturned);
+    }
+}
+
+#if 0
+// Tests procedure for terminating a socket read.
+TEST_F(SocketTest, PollableReadTermination) {
+	PollableServer server{srvrAddr};
+    /*
+     * For an unknown reason, the following doesn't work when std::async() is
+     * used. It also prevents the Eclipse debugger from seeing both threads.
+     */
+    auto srvrThread = hycast::Thread([&]{server();});
+    auto clntSock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+	EXPECT_NE(-1, clntSock);
+	auto status = ::connect(clntSock,
+			reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
+	EXPECT_EQ(0, status);
+    //::sleep(1);
+    server.stop();
+    srvrThread.join();
+    if (server.threadStarted) {
+        EXPECT_TRUE(server.acceptPollReturned);
+        if (server.acceptReturned) {
+            EXPECT_TRUE(server.readPollReturned);
+            EXPECT_FALSE(server.readReturned);
+        }
+    }
+}
+#endif
+
+#if 0
+// Tests procedure for terminating a socket read.
 TEST_F(SocketTest, ReadTermination) {
     struct sockaddr_in srvrAddr = {};
 	srvrAddr.sin_family = AF_INET;
 	srvrAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 	srvrAddr.sin_port = htons(38800);
-    struct Server {
-        int             srvrSock;
-        std::atomic_int signalFd;
-        int             peerSock;
-        Server(struct sockaddr_in& srvrAddr)
-			: srvrSock{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
-			  signalFd{-1},
-              peerSock{-1}
-        {
-        	EXPECT_NE(-1, srvrSock);
-        	int status = ::bind(srvrSock,
-        			reinterpret_cast<struct sockaddr*>(&srvrAddr),
-					sizeof(srvrAddr));
-        	EXPECT_EQ(0, status);
-        	status = ::listen(srvrSock, 5);
-        	EXPECT_EQ(0, status);
-        	int fds[2];
-        	status = pipe(fds);
-        	EXPECT_EQ(0, status);
-        	signalFd = fds[1];
-        	::close(fds[0]);
-        }
-        ~Server() {
-        	::close(srvrSock);
-        }
-        ssize_t operator()() {
-        	struct sockaddr clntAddr = {};
-        	socklen_t       clntAddrLen = sizeof(clntAddr);
-            peerSock = ::accept(srvrSock, &clntAddr, &clntAddrLen);
-            EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
-            EXPECT_TRUE(peerSock >= 0);
-			struct pollfd pollfd[2];
-			pollfd[0].fd = peerSock;
-			pollfd[0].events = POLLIN;
-			pollfd[1].fd = signalFd;
-			pollfd[1].events = POLLIN;
-			::poll(pollfd, 2, -1);
-			if (pollfd[1].revents & (POLLHUP | POLLERR | POLLNVAL))
-				return -2;
-            char buf[1];
-			auto nbytes = read(peerSock, buf, sizeof(buf));
-            ::close(peerSock);
-            return nbytes;
-        }
-        void close() {
-        	::close(signalFd);
-        }
-    } server{srvrAddr};
+	PollableServer server{srvrAddr};
     /*
      * For an unknown reason, the following doesn't work when std::async() is
      * used. It also prevents the Eclipse debugger from seeing both threads.
@@ -227,23 +321,155 @@ TEST_F(SocketTest, ReadTermination) {
 #if USE_ASYNC
     auto future = std::async([&server]{return server();});
 #else
+    //server.stop(); // Causes hanging if here
     std::atomic_long result;
     auto srvrThread = std::thread([&]{result = server();});
 #endif
     auto clntSock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-	ASSERT_NE(-1, clntSock);
+	EXPECT_NE(-1, clntSock);
 	auto status = ::connect(clntSock,
 			reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
-	ASSERT_EQ(0, status);
+	EXPECT_EQ(0, status);
     ::sleep(1);
-    server.close();
+    server.stop(); // Works if here
 #if USE_ASYNC
     status = future.get();
-    ASSERT_EQ(-2, status);
+    EXPECT_EQ(-3, status);
 #else
     srvrThread.join();
-    ASSERT_EQ(-2, result);
+    EXPECT_EQ(-3, result);
 #endif
+}
+#endif
+
+/**
+ * A server that is stopped by canceling the thread on which it's executing.
+ */
+class CancellableServer {
+	int srvrSd; /// Server socket descriptor
+	int clntSd; /// Client socket descriptor
+	std::mutex              mutex;
+	std::condition_variable cond;
+	std::thread::native_handle_type nativeHandle;
+	static void acceptCleanup(void* arg)
+	{
+	    CancellableServer* obj = static_cast<CancellableServer*>(arg);
+	    obj->acceptCleanupCalled = true;
+	}
+	static void readCleanup(void* arg)
+	{
+	    CancellableServer* obj = static_cast<CancellableServer*>(arg);
+	    EXPECT_TRUE(obj->clntSd >= 0);
+	    int status = ::close(obj->clntSd);
+	    EXPECT_EQ(0, status);
+	    obj->readCleanupCalled = true;
+	}
+public:
+	std::atomic_bool started;
+	std::atomic_bool accepted;
+	std::atomic_bool acceptCleanupCalled;
+	std::atomic_bool readCleanupCalled;
+	CancellableServer(struct sockaddr_in& srvrAddr)
+		: srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
+		  clntSd{-1},
+		  started{false},
+		  accepted{false},
+		  acceptCleanupCalled{false},
+		  readCleanupCalled{false},
+		  mutex{},
+		  cond{},
+		  nativeHandle{}
+	{
+		EXPECT_NE(-1, srvrSd);
+		int status = ::bind(srvrSd,
+				reinterpret_cast<struct sockaddr*>(&srvrAddr),
+				sizeof(srvrAddr));
+		EXPECT_EQ(0, status);
+		status = ::listen(srvrSd, 5);
+		EXPECT_EQ(0, status);
+	}
+	~CancellableServer() {
+		::close(srvrSd);
+	}
+	void operator()() {
+	    // A thread can be cancelled before it ever starts
+	    {
+	        std::lock_guard<decltype(mutex)> lock(mutex);
+            started = true;
+            nativeHandle = ::pthread_self();
+            cond.notify_one();
+	    }
+	    THREAD_CLEANUP_PUSH(acceptCleanup, this);
+            struct sockaddr clntAddr = {};
+            socklen_t       clntAddrLen = sizeof(clntAddr);
+            clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
+            accepted = true;
+            THREAD_CLEANUP_PUSH(readCleanup, this);
+            EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
+            EXPECT_TRUE(clntSd >= 0);
+                for (;;) {
+                    char buf[1];
+                    auto nbytes = read(clntSd, buf, sizeof(buf));
+                }
+            THREAD_CLEANUP_POP(true);
+	    THREAD_CLEANUP_POP(false);
+	}
+	void stop()
+	{
+        std::unique_lock<decltype(mutex)> lock(mutex);
+        while (!started)
+            cond.wait(lock);
+        ::pthread_cancel(nativeHandle);
+	}
+};
+
+// Tests mechanism for terminating an `accept()`
+TEST_F(SocketTest, AcceptTermination)
+{
+	CancellableServer server{srvrAddr};
+    std::atomic_long result;
+    auto srvrThread = hycast::Thread([&]{server();});
+    srvrThread.cancel();
+    srvrThread.join();
+    if (server.started) {
+        EXPECT_EQ(true, server.acceptCleanupCalled);
+        EXPECT_EQ(false, server.accepted);
+        EXPECT_EQ(false, server.readCleanupCalled);
+    }
+}
+
+// Tests mechanism for terminating a read on a socket.
+TEST_F(SocketTest, ReadTermination)
+{
+	CancellableServer server{srvrAddr};
+    std::atomic_long result;
+    auto srvrThread = hycast::Thread([&]{server();});
+    auto clntSd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+	EXPECT_NE(-1, clntSd);
+	auto status = ::connect(clntSd,
+			reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
+	EXPECT_EQ(0, status);
+	/*
+	 * One or the other of the following increases the likelihood that the
+	 * return from the `accept()` happens before the thread cancellation. It
+	 * appears, therefore, that a successful `connect()` doesn't mean that the
+	 * corresponding `accept()` has returned.
+	 */
+#if 1
+    char buf[1];
+    status = write(clntSd, buf, sizeof(buf));
+    EXPECT_EQ(1, status);
+#else
+	::sleep(1);
+#endif
+    //srvrThread.cancel(); // Works
+	server.stop(); // Works
+    srvrThread.join();
+    if (server.started) {
+        EXPECT_EQ(true, server.acceptCleanupCalled);
+        if (server.accepted)
+            EXPECT_EQ(true, server.readCleanupCalled);
+    }
 }
 
 }  // namespace

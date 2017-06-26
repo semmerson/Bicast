@@ -15,6 +15,7 @@
 #include "P2pMgr.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
+#include "PeerSet.h"
 #include "ProdInfo.h"
 #include "ProdStore.h"
 #include "Shipping.h"
@@ -35,6 +36,8 @@ protected:
 		for (size_t i = 0; i < sizeof(data); ++i)
 			data[i] = i % UCHAR_MAX;
 		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
+        auto peerAddr = hycast::InetSockAddr(srvrInetAddr, srcPort);
+        peerAddrs.push(peerAddr);
 	}
 
     /**
@@ -52,23 +55,24 @@ protected:
     	}
     }
 
-    hycast::ProdStore          prodStore{};
-    hycast::InetSockAddr       mcastAddr{"232.0.0.0", 38800};
-    const unsigned             protoVers{0};
-    const in_port_t            srcPort{38800};
-    const in_port_t            snkPort = srcPort + 1;
-    const std::string          srvrInetAddr{"192.168.132.131"};
-    const hycast::InetSockAddr srcSrvrAddr{srvrInetAddr, srcPort};
-    const hycast::InetSockAddr snkSrvrAddr{srvrInetAddr, snkPort};
-	const unsigned             maxPeers{2};
-    hycast::YamlPeerSource     peerSource{"[{inetAddr: " + srvrInetAddr +
-    	    ", port: " + std::to_string(srcPort) + "}]"};
-    const unsigned             stasisDuration{2};
-    hycast::ProdIndex          prodIndex{0};
-	unsigned char              data[3000];
-    hycast::ProdInfo           prodInfo{"product", prodIndex, sizeof(data)};
-    hycast::Product            prod{};
-    std::atomic_long           numRcvdChunks{0};
+    hycast::ProdStore               prodStore{};
+    hycast::InetSockAddr            mcastAddr{"232.0.0.0", 38800};
+    const unsigned                  protoVers{0};
+    const in_port_t                 srcPort{38800};
+    const in_port_t                 snkPort = srcPort + 1;
+    const std::string               srvrInetAddr{"192.168.132.131"};
+    const hycast::InetSockAddr      srcSrvrAddr{srvrInetAddr, srcPort};
+    const hycast::InetSockAddr      snkSrvrAddr{srvrInetAddr, snkPort};
+	const unsigned                  maxPeers{2};
+    hycast::DelayQueue<hycast::InetSockAddr>
+                                    peerAddrs{};
+    const hycast::PeerSet::TimeUnit stasisDuration{2};
+    hycast::ProdIndex               prodIndex{0};
+	unsigned char                   data[3000];
+    hycast::ProdInfo                prodInfo{"product", prodIndex,
+        sizeof(data)};
+    hycast::Product                 prod{};
+    std::atomic_long                numRcvdChunks{0};
 
 public:
     void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer)
@@ -109,21 +113,20 @@ public:
 // Tests invalid construction argument
 TEST_F(P2pMgrTest, InvalidConstruction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    EXPECT_THROW(hycast::P2pMgr(serverAddr, 0, nullptr, 60, *this),
-            std::invalid_argument);
+    EXPECT_THROW(hycast::P2pMgr(serverAddr, *this, 0), std::invalid_argument);
 }
 
 // Tests construction
 TEST_F(P2pMgrTest, Construction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    hycast::P2pMgr(serverAddr, 1, nullptr, 60, *this);
+    hycast::P2pMgr(serverAddr, *this);
 }
 
 // Tests execution
 TEST_F(P2pMgrTest, Execution) {
     hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
-    hycast::P2pMgr   p2pMgr{snkSrvrAddr, maxPeers, &peerSource, stasisDuration,
-			*this};
+    hycast::P2pMgr   p2pMgr{snkSrvrAddr, *this, maxPeers, peerAddrs,
+        stasisDuration};
 	std::thread p2pMgrThread{[&]{runP2pMgr(p2pMgr);}};
     ::sleep(1);
 	shipping.ship(prod);

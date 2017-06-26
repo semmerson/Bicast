@@ -1,23 +1,24 @@
 /**
  * This file implements the future of an asynchronous task.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
  *   @file: Future.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "error.h"
 #include "Future.h"
+#include "Thread.h"
 
 #include <bitset>
+#include <cassert>
 #include <condition_variable>
 #include <errno.h>
 #include <exception>
-#include <mutex>
-#include <pthread.h>
 #include <system_error>
 #include <utility>
 
@@ -27,406 +28,314 @@ namespace hycast {
  * Abstract base class for the future of an asynchronous task.
  * @tparam R  Task result
  */
-template<class R>
-class BasicFutureImpl
+class BasicFuture::Impl
 {
-protected:
-    friend class BasicExecutorImpl<R>;
+    typedef std::mutex              Mutex;
+    typedef std::lock_guard<Mutex>  LockGuard;
+    typedef std::unique_lock<Mutex> UniqueLock;
 
-    std::function<R()>              func;
-    mutable std::mutex              mutex;
+    mutable Mutex                   mutex;
     mutable std::condition_variable cond;
     std::exception_ptr              exception;
-    pthread_t                       threadId;
-    typedef enum {
-        THREAD_ID_SET = 0,
-        COMPLETED,
-        CANCELLED,
-        JOINED,
-        NUM_FLAGS
-    } State;
-    std::bitset<NUM_FLAGS>  state;
+    bool                            canceled;
+    bool                            haveResult;
+    bool                            haveThreadId;
+    Thread::ThreadId                threadId;
 
     /**
-     * Constructs from nothing.
+     * Indicates whether or not the mutex is locked. Upon return, the state of
+     * the mutex is the same as upon entry.
+     * @retval `true`    Iff the mutex is locked
      */
-    BasicFutureImpl()
-        : func{}
-        , mutex{}
-        , cond{}
-        , exception{}
-        , threadId{}
-        , state{}
-    {}
-    /**
-     * Constructs from the function to execute.
-     * @param[in] func  Function to execute
-     */
-    BasicFutureImpl(std::function<R()> func)
-        : func{func}
-        , mutex{}
-        , cond{}
-        , exception{}
-        , threadId{}
-        , state{}
-    {}
-    virtual ~BasicFutureImpl()
-    {}
-    /**
-     * Handles cancellation of the task's thread.
-     */
-    void taskCancelled() {
-        std::lock_guard<decltype(mutex)> lock(mutex);
-        state[State::CANCELLED] = true;
-        state[State::COMPLETED] = true;
-        cond.notify_one();
-    }
-    /**
-     * Handles cancellation of a task's thread.
-     */
-    static void taskCancelled(void* arg) {
-        auto future = reinterpret_cast<BasicFutureImpl<R>*>(arg);
-        future->taskCancelled();
-    }
-    /**
-     * Sets the result of executing the associated task.
-     */
-    virtual void setResult() =0;
-    /**
-     * Executes the associated task.
-     */
-    void operator()() {
-        std::unique_lock<decltype(mutex)> lock(mutex);
-        if (state[State::THREAD_ID_SET])
-            throw std::logic_error("Task already executed");
-        threadId = pthread_self();
-        state[State::THREAD_ID_SET] = true;
-        cond.notify_one();
-        if (!state[State::CANCELLED]) {
-            pthread_cleanup_push(taskCancelled, this);
-            lock.unlock(); // Unlocked to enable cancellation
-            try {
-                setResult();
-            }
-            catch (const std::exception& e) {
-                exception = std::current_exception();
-            }
-            lock.lock();
-            pthread_cleanup_pop(0);
-        }
-        state[State::COMPLETED] = true;
-        cond.notify_one();
-    }
-    /**
-     * Returns the POSIX thread identifier.
-     * @return  POSIX thread identifier
-     */
-    pthread_t getThreadId() const
+    bool isLocked() const
     {
-        std::unique_lock<decltype(mutex)> lock(mutex);
-        while (!state[State::THREAD_ID_SET])
-            cond.wait(lock);
-        return threadId;
+        if (!mutex.try_lock())
+            return true;
+        mutex.unlock();
+        return false;
     }
+
+protected:
     /**
-     * Cancels the task's thread iff the task hasn't already completed.
+     * Default constructs.
+     */
+    Impl()
+        : mutex{}
+        , cond{}
+        , exception{}
+        , canceled{false}
+        , haveResult{false}
+        , haveThreadId{false}
+        , threadId{0}
+    {}
+
+    /**
+     * @pre `mutex` is locked
+     * @retval `true`  Iff the associated task is done
+     */
+    bool isDone() const
+    {
+        assert(isLocked());
+        return exception || canceled || haveResult;
+    }
+
+    virtual void setResult() =0;
+
+    /**
+     * Sets the exception to be thrown by `getResult()` to the current
+     * exception.
+     */
+    void setException()
+    {
+        LockGuard lock{mutex};
+        exception = std::current_exception();
+        cond.notify_one();
+    }
+
+    /**
+     * Waits for the task to complete. Idempotent.
+     * @param[in] lock   Condition variable lock
+     * @pre              `lock` is locked
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    void wait(UniqueLock& lock)
+    {
+        assert(lock.owns_lock());
+        while (!isDone())
+            cond.wait(lock);
+    }
+
+    void checkResult()
+    {
+        UniqueLock lock{mutex};
+        wait(lock);
+        if (haveResult)
+            return;
+        if (exception)
+            std::rethrow_exception(exception);
+        if (canceled)
+            throw LogicError(__FILE__, __LINE__,
+                    "Asynchronous task was canceled");
+    }
+
+public:
+    virtual ~Impl() =default;
+
+    /**
+     * Cancels the task iff the task hasn't already completed.
      * Idempotent.
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    void cancel() {
-        std::lock_guard<decltype(mutex)> lock(mutex);
-        if (!state[State::THREAD_ID_SET]) {
-            // Task hasn't started
-            state[State::CANCELLED] = true;
-            state[State::COMPLETED] = true;
-            cond.notify_one();
-        }
-        else if (!state[State::COMPLETED]) {
-            int status = ::pthread_cancel(threadId);
-            if (status)
-                throw SystemError(__FILE__, __LINE__,
-                        "Couldn't cancel asynchronous task's thread", status);
-        }
-    }
-    /**
-     * Waits for the task to complete. Joins with the task's thread. Idempotent.
-     * @throws std::system_error  The task's thread couldn't be joined
-     * @exceptionsafety           Basic guarantee
-     * @threadsafety              Safe
-     */
-    void wait() {
-        std::unique_lock<decltype(mutex)> lock(mutex);
-        if (!state[State::JOINED]) {
-            while (!state[State::THREAD_ID_SET])
-                cond.wait(lock);
-            lock.unlock(); // So task's thread can acquire mutex
-            int status = pthread_join(threadId, nullptr);
-            if (status)
-                throw std::system_error(errno, std::system_category(),
-                        "Couldn't join thread");
-            lock.lock();
-            state[State::JOINED] = true;
-            cond.notify_one();
-        }
-    }
-    /**
-     * Indicates if the task's thread was cancelled. Should always be
-     * called before getResult() in case the task was cancelled.
-     * @return `true` iff the task's thread was cancelled
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    bool wasCancelled() {
-        wait();
-        return state[State::CANCELLED];
-    }
-    /**
-     * Gets the result of the asynchronous task. If the task threw an exception,
-     * then it is re-thrown here.
-     * @return result of the asynchronous task
-     * @throws std::logic_error if the task's thread was cancelled
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    virtual R getResult() =0;
-
-public:
-    /**
-     * Indicates if this instance has a callable or is empty.
-     * @return `true` iff this instance has a callable
-     */
-    operator bool() const noexcept
+    void cancel(const bool mayInterrupt)
     {
-        return func.operator bool();
+        LockGuard lock{mutex};
+        if (!isDone()) {
+            canceled = true;
+            if (haveThreadId && mayInterrupt)
+                Thread::cancel(threadId);
+            cond.notify_one();
+        }
+    }
+
+    /**
+     * Indicates if the task was canceled before it completed. Waits for the
+     * task to complete. Should be called before getResult() if having that
+     * function throw an exception is undesirable.
+     * @return `true`   Iff the task was canceled before it completed
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     * @see             getResult()
+     */
+    bool wasCanceled()
+    {
+        UniqueLock lock{mutex};
+        wait(lock);
+        return canceled;
+    }
+
+    void operator()() noexcept
+    {
+        try {
+            UniqueLock lock{mutex};
+            threadId = Thread::getId();
+            haveThreadId = true;
+            if (!canceled) {
+                bool enabled = Thread::enableCancel();
+                lock.unlock();
+                setResult();
+                lock.lock();
+                haveResult = true;
+                cond.notify_one();
+                Thread::enableCancel(enabled);
+            }
+        }
+        catch (const std::exception& e) {
+            setException();
+        }
     }
 };
 
-template<class R>
-class FutureImpl : public BasicFutureImpl<R>
+BasicFuture::BasicFuture()
+    : pImpl{}
+{}
+
+BasicFuture::BasicFuture(Impl* ptr)
+    : pImpl{ptr}
+{}
+
+BasicFuture::~BasicFuture()
+{}
+
+BasicFuture::operator bool() const noexcept
 {
-    friend class Future<R>;
+    return pImpl.operator bool();
+}
 
-    using BasicFutureImpl<R>::func;
-    using BasicFutureImpl<R>::mutex;
-    using BasicFutureImpl<R>::exception;
-    using BasicFutureImpl<R>::State;
-    using BasicFutureImpl<R>::state;
-    using BasicFutureImpl<R>::wait;
+bool BasicFuture::operator==(const BasicFuture& that) const noexcept
+{
+    return pImpl == that.pImpl;
+}
 
-    R result;
+bool BasicFuture::operator!=(const BasicFuture& that) const noexcept
+{
+    return pImpl != that.pImpl;
+}
 
+bool BasicFuture::operator<(const BasicFuture& that) const noexcept
+{
+    return pImpl < that.pImpl;
+}
+
+void BasicFuture::operator()() const noexcept
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Future is empty");
+    pImpl->operator()();
+}
+
+void BasicFuture::cancel(bool mayInterrupt) const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Future is empty");
+    pImpl->cancel(mayInterrupt);
+}
+
+bool BasicFuture::wasCanceled() const
+{
+    return pImpl ? pImpl->wasCanceled() : false;
+}
+
+/******************************************************************************/
+
+template<class Ret>
+class Future<Ret>::Impl : public BasicFuture::Impl
+{
+    Task<Ret> task;
+    Ret       result;
+
+    void setResult()
+    {
+        result = task();
+    }
+
+public:
     /**
-     * Constructs from nothing.
+     * Constructs from the task to be executed.
+     * @param[in] task  Task to be executed
      */
-    FutureImpl()
-        : result{}
-    {}
-    /**
-     * Constructs from the function to execute.
-     * @param[in] func  Function to execute
-     */
-    explicit FutureImpl(std::function<R()> func)
-        : BasicFutureImpl<R>::BasicFutureImpl(func)
+    Impl(Task<Ret>& task)
+        : BasicFuture::Impl{}
+        , task{task}
         , result{}
     {}
+
     /**
-     * Sets the result of executing the associated task.
+     * Returns the result of the asynchronous task. Blocks until the task is
+     * done. If the task threw an exception, then it is re-thrown by this
+     * function.
+     * @return             Result of the asynchronous task
+     * @throws LogicError  The task's thread was canceled
+     * @exceptionsafety    Strong guarantee
+     * @threadsafety       Safe
+     * @see                wasCanceled()
      */
-    void setResult() {
-        result = func();
-    }
-    /**
-     * Returns the result of the asynchronous task. If the task threw an
-     * exception, then it is re-thrown by this function.
-     * @return                  Result of the asynchronous task
-     * @throws std::logic_error The task's thread was cancelled
-     * @exceptionsafety         Strong guarantee
-     * @threadsafety            Safe
-     */
-    R getResult() {
-        wait();
-        if (exception)
-            std::rethrow_exception(exception);
-        if (state[BasicFutureImpl<R>::State::CANCELLED])
-            throw std::logic_error("Asynchronous task was cancelled");
+    Ret getResult() {
+        checkResult();
         return result;
     }
 };
 
-template<>
-class FutureImpl<void> : public BasicFutureImpl<void>
+template<class Ret>
+Future<Ret>::Future()
+    : BasicFuture{}
+{}
+
+template<class Ret>
+Future<Ret>::Future(Task<Ret>& task)
+    : BasicFuture{new Impl(task)}
+{}
+
+template<class Ret>
+Ret Future<Ret>::getResult() const
 {
-    friend class Future<void>;
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Empty future");
+    return reinterpret_cast<Impl*>(pImpl.get())->getResult();
+}
 
-    using BasicFutureImpl<void>::func;
-    using BasicFutureImpl<void>::mutex;
-    using BasicFutureImpl<void>::exception;
-    using BasicFutureImpl<void>::State;
-    using BasicFutureImpl<void>::state;
-    using BasicFutureImpl<void>::wait;
+template class Future<int>;
 
-    /**
-     * Constructs from nothing.
-     */
-    FutureImpl()
-        : BasicFutureImpl<void>::BasicFutureImpl()
-    {}
-    /**
-     * Constructs from the function to execute.
-     * @param[in] func  Function to execute
-     */
-    explicit FutureImpl(std::function<void()> func)
-        : BasicFutureImpl<void>::BasicFutureImpl(func)
-    {}
-    /**
-     * Sets the result of executing the associated task.
-     */
-    void setResult() {
-        func();
+/******************************************************************************/
+
+class Future<void>::Impl : public BasicFuture::Impl
+{
+    Task<void> task;
+
+    void setResult()
+    {
+        task();
     }
+
+public:
     /**
-     * Returns the result of the asynchronous task. If the task threw an
-     * exception, then it is re-thrown by this function.
-     * @return                  Result of the asynchronous task
-     * @throws std::logic_error The task's thread was cancelled
-     * @exceptionsafety         Strong guarantee
-     * @threadsafety            Safe
+     * Constructs from the task to be executed.
+     * @param[in] task  Task to be executed
+     */
+    Impl(Task<void>& task)
+        : BasicFuture::Impl{}
+        , task{task}
+    {}
+
+    /**
+     * Returns when the task is done. If the task threw an exception, then it is
+     * re-thrown by this function.
+     * @throws LogicError  The task was canceled
+     * @exceptionsafety    Strong guarantee
+     * @threadsafety       Safe
+     * @see                wasCanceled()
      */
     void getResult() {
-        wait();
-        if (exception)
-            std::rethrow_exception(exception);
-        if (state[State::CANCELLED])
-            throw std::logic_error("Asynchronous task was cancelled");
+        checkResult();
     }
 };
 
-template class BasicFutureImpl<int>;
-template class BasicFutureImpl<void>;
-
-template class FutureImpl<int>;
-template class FutureImpl<void>;
-
-template<class R>
-Future<R>::Future()
-    : pImpl()
-{}
-
-template<class R>
-Future<R>::Future(std::function<R()> func)
-    : pImpl(new FutureImpl<R>(func))
-{}
-
-template<class R>
-Future<R>::operator bool() const noexcept
-{
-    return pImpl->operator bool();
-}
-
-template<class R>
-bool Future<R>::operator==(const Future<R>& that) const noexcept
-{
-    return pImpl == that.pImpl;
-}
-
-template<class R>
-bool Future<R>::operator<(const Future<R>& that) const noexcept
-{
-    return pImpl < that.pImpl;
-}
-
-template<class R>
-void Future<R>::operator()() const
-{
-    pImpl->operator()();
-}
-
-template<class R>
-pthread_t Future<R>::getThreadId() const
-{
-    return pImpl->getThreadId();
-}
-
-template<class R>
-void Future<R>::cancel() const
-{
-    pImpl->cancel();
-}
-
-template<class R>
-void Future<R>::wait() const
-{
-    pImpl->wait();
-}
-
-template<class R>
-bool Future<R>::wasCancelled() const
-{
-    return pImpl->wasCancelled();
-}
-
-template<class R>
-R Future<R>::getResult() const
-{
-    return pImpl->getResult();
-}
-
 Future<void>::Future()
-    : pImpl()
+    : BasicFuture{}
 {}
 
-Future<void>::Future(std::function<void()> func)
-    : pImpl(new FutureImpl<void>(func))
+Future<void>::Future(Task<void>& task)
+    : BasicFuture{new Impl(task)}
 {}
-
-Future<void>::operator bool() const noexcept
-{
-    return pImpl->operator bool();
-}
-
-bool Future<void>::operator==(const Future<void>& that) const noexcept
-{
-    return pImpl == that.pImpl;
-}
-
-bool Future<void>::operator<(const Future<void>& that) const noexcept
-{
-    return pImpl < that.pImpl;
-}
-
-void Future<void>::operator()() const
-{
-    pImpl->operator()();
-}
-
-pthread_t Future<void>::getThreadId() const
-{
-    return pImpl->getThreadId();
-}
-
-void Future<void>::cancel() const
-{
-    pImpl->cancel();
-}
-
-void Future<void>::wait() const
-{
-    pImpl->wait();
-}
-
-bool Future<void>::wasCancelled() const
-{
-    return pImpl->wasCancelled();
-}
 
 void Future<void>::getResult() const
 {
-    pImpl->getResult();
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Empty future");
+    reinterpret_cast<Impl*>(pImpl.get())->getResult();
 }
 
-//template class Future<>;
-template class Future<int>;
 template class Future<void>;
 
 } // namespace

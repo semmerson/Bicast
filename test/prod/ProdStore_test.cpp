@@ -78,7 +78,6 @@ TEST_F(ProdStoreTest, NoPathnameConstruction) {
 // Tests persistence-file construction
 TEST_F(ProdStoreTest, PathnameConstruction) {
     hycast::ProdStore ps{pathname};
-    EXPECT_TRUE(std::ifstream(pathname, std::ifstream::binary).is_open());
     EXPECT_EQ(0, ps.size());
 }
 

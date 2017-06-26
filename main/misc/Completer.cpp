@@ -25,9 +25,33 @@
 namespace hycast {
 
 template<class Ret>
-class BasicCompleterImpl
+class Completer<Ret>::Impl
 {
-    friend class CompleterImpl<Ret>;
+    /// Types:
+    typedef std::mutex              Mutex;
+    typedef std::lock_guard<Mutex>  LockGuard;
+    typedef std::unique_lock<Mutex> UniqueLock;
+
+    /// Variables for synchronizing state changes
+    std::mutex               mutex;
+    std::condition_variable  cond;
+    /// Queue of completed tasks
+    std::queue<Future<Ret>>  completedTasks;
+    /// Executor
+    Executor<Ret>            executor;
+
+    void finish() {
+        auto threadId = pthread_self();
+        auto future = executor.getFuture(threadId);
+        LockGuard lock{mutex};
+        completedTasks.push(future);
+        cond.notify_all();
+    }
+
+protected:
+    static void finishTask(void* arg) {
+        static_cast<Impl*>(arg)->finish();
+    }
 
     /**
      * Wraps a callable in a callable that adds the associated future to the
@@ -35,77 +59,41 @@ class BasicCompleterImpl
      * @param[in] func  Callable to be wrapped
      * @return          Wrapped callable
      */
-    virtual std::function<Ret()> getCallable(const std::function<Ret()>& func) =0;
-
-protected:
-    /// Variables for synchronizing state changes
-    std::mutex                       mutex;
-    std::condition_variable          cond;
-    /// Queue of completed tasks
-    std::queue<Future<Ret>>          completedTasks;
-    /// Executor
-    Executor<Ret>                    executor;
-    /**
-     * Number of pending tasks (i.e., submitted tasks that aren't in the
-     * completion queue).
-     */
-    unsigned long                    numPendingTasks;
-
-    void finish() {
-        auto threadId = pthread_self();
-        auto future = executor.getFuture(threadId);
-        assert(future);
-        std::lock_guard<decltype(mutex)> lock{mutex};
-        completedTasks.push(future);
-        --numPendingTasks;
-        cond.notify_all();
-    }
-    static void finishTask(void* arg) {
-        reinterpret_cast<CompleterImpl<Ret>*>(arg)->finish();
+    std::function<Ret()> getCallable(const std::function<Ret()>& func)
+    {
+        return [this,func] {
+            Ret result{};
+            THREAD_CLEANUP_PUSH(finishTask, this);
+            result = func();
+            THREAD_CLEANUP_POP(true);
+            return result;
+        };
     }
 
 public:
     /**
      * Constructs from nothing.
      */
-    BasicCompleterImpl()
+    Impl()
         : mutex{}
         , cond{}
         , completedTasks{}
         , executor{}
-        , numPendingTasks{0}
     {}
 
     /**
-     * Destroys. Cancels all pending tasks, waits for all tasks to complete,
-     * and clears the completion-queue.
-     */
-    virtual ~BasicCompleterImpl()
-    {
-        executor.cancel(); // Blocks until all tasks complete
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (numPendingTasks)
-            cond.wait(lock);
-        while (!completedTasks.empty()) {
-            auto future = completedTasks.front();
-            completedTasks.pop();
-            future.wait(); // Joins thread
-        }
-    }
-
-    /**
-     * Submits a callable for execution. The callable's future will, eventually,
-     * be returned by get().
-     * @param[in,out] func       Callable to be executed
-     * @return                   Callable's future
-     * @exceptionsafety          Basic guarantee
-     * @threadsafety             Safe
+     * Submits a callable for execution. The callable's future will also be
+     * returned by get(), eventually.
+     * @param[in,out] func  Callable to be executed
+     * @return              Callable's future
+     * @exceptionsafety     Basic guarantee
+     * @threadsafety        Safe
+     * @see                 get()
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         auto callable = getCallable(func);
-        std::lock_guard<decltype(mutex)> lock{mutex};
+        LockGuard lock{mutex};
         auto future = executor.submit(callable);
-        ++numPendingTasks;
         return future;
     }
 
@@ -116,77 +104,39 @@ public:
      * @threadsafety     Safe
      */
     Future<Ret> get() {
-        std::unique_lock<decltype(mutex)> lock{mutex};
+        UniqueLock lock{mutex};
         while (completedTasks.empty())
             cond.wait(lock);
         auto future = completedTasks.front();
         completedTasks.pop();
-        future.wait(); // Joins thread
         return future;
     }
 };
 
-template<class Ret>
-class CompleterImpl final : public BasicCompleterImpl<Ret>
-{
-    using BasicCompleterImpl<Ret>::finishTask;
-    using BasicCompleterImpl<Ret>::mutex;
+/******************************************************************************/
 
-    /**
-     * Wraps a callable in a callable that adds the associated future to the
-     * completed-task queue when the task completes.
-     * @param[in] func  Callable to be wrapped
-     * @return          Wrapped callable
-     */
-    std::function<Ret()> getCallable(const std::function<Ret()>& func) {
-        return [this,func] {
-            Ret result{};
-            pthread_cleanup_push(finishTask, this);
-            result = func();
-            pthread_cleanup_pop(1);
-            return result;
-        };
-    }
-public:
-    /**
-     * Constructs from nothing.
-     */
-    CompleterImpl()
-        : BasicCompleterImpl<Ret>::BasicCompleterImpl()
-    {}
-};
-
+/**
+ * Wraps a callable in a callable that adds the associated future to the
+ * completed-task queue when the task completes. Complete specialization for
+ * callables that return void.
+ * @param[in] func  Void callable to be wrapped
+ * @return          Wrapped callable
+ */
 template<>
-class CompleterImpl<void> final : public BasicCompleterImpl<void>
-{
-    using BasicCompleterImpl<void>::finishTask;
-    using BasicCompleterImpl<void>::mutex;
+std::function<void()> Completer<void>::Impl::getCallable(
+        const std::function<void()>& func) {
+    return [this,func] {
+        THREAD_CLEANUP_PUSH(finishTask, this);
+        func();
+        THREAD_CLEANUP_POP(true);
+    };
+}
 
-    /**
-     * Wraps a callable in a callable that adds the associated future to the
-     * completed-task queue when the task completes.
-     * @param[in] func  Callable to be wrapped
-     * @return          Wrapped callable
-     */
-    std::function<void()> getCallable(const std::function<void()>& func) {
-        return [this,func] {
-            pthread_cleanup_push(finishTask, this);
-            func();
-            pthread_cleanup_pop(1);
-        };
-    }
-public:
-    /**
-     * Constructs from nothing.
-     */
-    CompleterImpl()
-        : BasicCompleterImpl<void>::BasicCompleterImpl()
-    {}
-};
+/******************************************************************************/
 
 template<class Ret>
 Completer<Ret>::Completer()
-    : pImpl(new CompleterImpl<Ret>())
+    : pImpl(new Impl())
 {}
 
 template<class Ret>
@@ -205,7 +155,7 @@ Future<Ret> Completer<Ret>::get()
     return pImpl->get();
 }
 
-template class Completer<void>;
 template class Completer<int>;
+template class Completer<void>;
 
 } // namespace

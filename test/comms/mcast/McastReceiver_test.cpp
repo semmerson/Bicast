@@ -33,7 +33,7 @@ protected:
     McastReceiverTest()
         : asmGroupAddr("234.128.117.0", 38800)
         , ssmGroupAddr("232.0.0.0", 38800)
-        , srcAddr("192.168.132.131") // IPv4 address of ethernet interface
+        , srcAddr("192.168.139.135") // IPv4 address of ethernet interface
         , version{0}
         , prodName("product")
         , chunkSize{hycast::ChunkInfo::getCanonSize()}

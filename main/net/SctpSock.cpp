@@ -54,8 +54,7 @@ private:
      * @param[in] expected  The expected return status or 0, which disables the
      *                      comparison with `actual`
      * @param[in] actual    The actual return status
-     * @throws std::system_error if `actual < 0 || (expected && actual !=
-     *                           expected)`
+     * @throws SystemError  if `actual < 0 || (expected && actual != expected)`
      * @exceptionsafety Strong
      */
     void checkIoStatus(
@@ -75,9 +74,9 @@ private:
     /**
      * Gets information on the next SCTP message. The message is left in the
      * socket's input buffer.
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
+     * @throws SystemError if an I/O error occurs
+     * @exceptionsafety    Basic
+     * @threadsafety       Safe
      */
     void getNextMsgInfo()
 	{
@@ -132,7 +131,7 @@ private:
      * @param[out] sinfo     SCTP send/receive information structure
      * @param[in]  streamId  SCTP stream number
      * @param[in]  size      Size of the message in bytes
-     * @exceptionsafety Nothrow
+     * @exceptionsafety      Nothrow
      */
     static void sndrcvinfoInit(
             struct sctp_sndrcvinfo& sinfo,
@@ -147,9 +146,9 @@ private:
 
     /**
      * Ensures that the current message exists.
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
+     * @throws SystemError if an I/O error occurs
+     * @exceptionsafety    Basic
+     * @threadsafety       Safe
      */
     void ensureMsg()
 	{
@@ -160,7 +159,7 @@ private:
 public:
     /**
      * Constructs from nothing.
-     * @throws std::bad_alloc if required memory can't be allocated
+     * @throws SystemError if required memory can't be allocated
      */
     Impl()
 		: sock(-1)
@@ -179,47 +178,49 @@ public:
      * Constructs from a socket and the number of SCTP streams. If the socket
      * isn't connected to a remote endpoint, then getRemoteAddr() will return
      * a default-constructed `InetSockAddr`.
-     * @param[in] sd                  Socket descriptor
-     * @param[in] numStreams          Number of SCTP streams
-     * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
-     * @throws std::system_error      Socket couldn't be configured
+     * @param[in] sd            Socket descriptor
+     * @param[in] numStreams    Number of SCTP streams
+     * @throws InvalidArgument  `sock < 0 || numStreams > UINT16_MAX`
+     * @throws SystemError      Socket couldn't be configured
      * @see getRemoteAddr()
      */
     Impl(   const int      sd,
             const unsigned numStreams)
 		: Impl()
-	{
-		if (sd < 0)
-			throw std::invalid_argument("Invalid socket: " + std::to_string(sd));
-		if (numStreams > UINT16_MAX)
-			throw std::invalid_argument("Invalid number of streams: " +
-					std::to_string(numStreams));
+    {
+        if (sd < 0)
+                throw InvalidArgument(__FILE__, __LINE__,
+                        "Invalid socket: " + std::to_string(sd));
+        if (numStreams > UINT16_MAX)
+                throw InvalidArgument(__FILE__, __LINE__,
+                        "Invalid number of streams: " +
+                        std::to_string(numStreams));
         sock = sd;
-		this->numStreams = numStreams;
-		struct sctp_event_subscribe events = {0};
-		events.sctp_data_io_event = 1;
-		int status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
-				sizeof(events));
-		if (status)
-			throw std::system_error(errno, std::system_category(),
-					"setsockopt() failure: Couldn't subscribe to SCTP data I/O "
-					"events: sock=" + std::to_string(sd));
-		struct sctp_initmsg sinit = {0};
-		sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
-		status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
-				sizeof(sinit));
-		if (status)
-			throw std::system_error(errno, std::system_category(),
-					"setsockopt() failure: Couldn't configure number of SCTP "
-					"streams: sock=" + std::to_string(sd) + ", numStreams=" +
-					std::to_string(numStreams));
-		struct sockaddr addr;
-		socklen_t       len = sizeof(addr);
-		status = ::getpeername(sd, &addr, &len);
-		remoteAddr = status
-				? std::move(InetSockAddr())
-				: std::move(InetSockAddr(addr));
-	}
+        this->numStreams = numStreams;
+        struct sctp_event_subscribe events = {0};
+        events.sctp_data_io_event = 1;
+        int status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
+                sizeof(events));
+        if (status)
+            throw SystemError(__FILE__, __LINE__,
+                    "setsockopt() failure: Couldn't subscribe to SCTP data I/O "
+                    "events: sock=" + std::to_string(sd));
+        struct sctp_initmsg sinit = {0};
+        sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
+        status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
+                sizeof(sinit));
+        if (status)
+            throw SystemError(__FILE__, __LINE__,
+                    "setsockopt() failure: Couldn't configure number of SCTP "
+                    "streams: sock=" + std::to_string(sd) + ", numStreams=" +
+                    std::to_string(numStreams));
+        struct sockaddr addr;
+        socklen_t       len = sizeof(addr);
+        status = ::getpeername(sd, &addr, &len);
+        remoteAddr = status
+                        ? std::move(InetSockAddr())
+                        : std::move(InetSockAddr(addr));
+    }
 
     /**
      * Prevents copy and move construction.

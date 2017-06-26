@@ -14,6 +14,7 @@
 #define MAIN_COMMS_SHIPPING_H_
 
 #include "McastSender.h"
+#include "P2pMgr.h"
 #include "PeerSet.h"
 #include "ProdStore.h"
 #include "Product.h"
@@ -34,20 +35,20 @@ public:
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version
      * @param[in] maxPeers        Maximum number of peers
-     * @param[in] stasisDuration  Minimum amount of time, in seconds, that the
-     *                            set of active peers must be unchanged before
-     *                            the worst-performing peer may be replaced
+     * @param[in] stasisDuration  Minimum amount of time that the set of active
+     *                            peers must be unchanged before the
+     *                            worst-performing peer may be replaced
      * @param[in] serverAddr      Socket address of local server for remote
      *                            peers
      * @see PeerSet(std::function<Peer&>, unsigned, unsigned)
      */
     Shipping(
-            ProdStore&          prodStore,
-            const InetSockAddr& mcastAddr,
-			const unsigned      version,
-			const unsigned      maxPeers,
-			const unsigned      stasisDuration,
-			const InetSockAddr& serverAddr);
+            ProdStore&              prodStore,
+            const InetSockAddr&     mcastAddr,
+			const unsigned          version,
+			const unsigned          maxPeers,
+			const PeerSet::TimeUnit stasisDuration,
+			const InetSockAddr&     serverAddr);
 
     /**
      * Constructs. The default maximum number of peers and default stasis
@@ -66,7 +67,7 @@ public:
 			const unsigned      version,
 			const InetSockAddr& serverAddr)
     	: Shipping(prodStore, mcastAddr, version, PeerSet::defaultMaxPeers,
-    			PeerSet::defaultStasisDuration, serverAddr)
+    			PeerSet::TimeUnit{60}, serverAddr)
     {}
 
     /**

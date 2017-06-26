@@ -20,12 +20,11 @@
 
 namespace hycast {
 
-template <class Ret> class CompleterImpl;
-
 template<class Ret>
 class Completer final
 {
-    std::shared_ptr<CompleterImpl<Ret>> pImpl;
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**

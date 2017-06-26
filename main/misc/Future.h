@@ -6,11 +6,14 @@
  * licensing conditions.
  *
  *   @file: Future.h
- * @author: Steven R. Emmerson
+ * @author: Steven Ret. Emmerson
  */
 
 #ifndef MAIN_MISC_FUTURE_H_
 #define MAIN_MISC_FUTURE_H_
+
+#include "Task.h"
+#include "Thread.h"
 
 #include <exception>
 #include <functional>
@@ -19,166 +22,166 @@
 
 namespace hycast {
 
-template<class R> class FutureImpl;
-template<class R> class ExecutorImpl;
-template<class R> class BasicExecutorImpl;
-template<class R> class BasicCompleterImpl;
-
-/**
- * Future of an asynchronous task with a non-void result.
- * @tparam R  Task's result
- */
-template<class R>
-class Future final
+class BasicFuture
 {
-    friend class BasicExecutorImpl<R>;
+    friend class          std::hash<BasicFuture>;
 
-    std::shared_ptr<FutureImpl<R>> pImpl;
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
     /**
-     * Executes the associated task.
+     * Constructs from a pointer to the template subclass implementation.
+     * @param[in] ptr  Pointer to template subclass implementation
      */
-    void operator()() const;
-    /**
-     * Returns the POSIX thread identifier.
-     * @return  POSIX thread identifier
-     */
-    pthread_t getThreadId() const;
+    BasicFuture(Impl* ptr);
+
 public:
+    typedef std::function<void(bool mayInterrupt)> CancelFunc;
+
     /**
-     * Constructs from nothing.
+     * Default constructs.
      */
-    Future();
+    BasicFuture();
+
     /**
-     * Constructs from the function to execute.
-     * @param[in] func  Function to execute
+     * Destroys.
      */
-    explicit Future(std::function<R()> func);
+    virtual ~BasicFuture();
+
     /**
-     * Indicates if this instance has a callable or is empty.
-     * @return `true` iff this instance has a callable
+     * Indicates if this instance is associated with a task or is empty.
+     * @return `true` iff this instance is associated with a task
      */
     operator bool() const noexcept;
+
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance.
+     * @retval `true`  iff this instance equals the other
      */
-    bool operator==(const Future<R>& that) const noexcept;
+    bool operator==(const BasicFuture& that) const noexcept;
+
+    /**
+     * Indicates if this instance is not equal to another.
+     * @param[in] that  The other instance.
+     * @retval `true`  iff this instance does not equal the other
+     */
+    bool operator!=(const BasicFuture& that) const noexcept;
+
     /**
      * Indicates if this instance is considered less than another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is less than the other
      */
-    bool operator<(const Future<R>& that) const noexcept;
+    bool operator<(const BasicFuture& that) const noexcept;
+
+    void operator()() const noexcept;
+
     /**
-     * Cancels the task's thread iff the task hasn't already completed.
+     * Cancels the task's thread if the task hasn't already completed.
      * Idempotent.
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * @param[in] mayInterrupt  Whether or not the task may be interrupted if it
+     *                          has already started
+     * @exceptionsafety         Strong guarantee
+     * @threadsafety            Safe
      */
-    void cancel() const;
-    /**
-     * Waits for the task to complete. Idempotent.
-     */
-    void wait() const;
+    void cancel(bool mayInterrupt = true) const;
+
     /**
      * Indicates if the task's thread was cancelled. Blocks until the task
      * completes if necessary. Should always be called before getResult().
-     * @retval `true`  iff the task's thread was cancelled.
+     * @retval `true`   iff the task's thread was cancelled.
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      */
-    bool wasCancelled() const;
-    /**
-     * Returns the result of the asynchronous task. Blocks until the task
-     * completes if necessary. If the task threw an exception, then this
-     * function will rethrow it.
-     * @return the result of the asynchronous task
-     * @throws std::logic_error if the task's thread was cancelled
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    R getResult() const;
+    bool wasCanceled() const;
 };
 
 /**
- * Future of an asynchronous task with a void result. Total specialization of
- * the `Future` class template.
+ * Future of an asynchronous task with a non-void result.
+ * @tparam Ret  Task's result
  */
-template<>
-class Future<void> final
+template<class Ret>
+class Future final : public BasicFuture
 {
-    friend class BasicExecutorImpl<void>;
-
-    std::shared_ptr<FutureImpl<void>> pImpl;
-
-    /**
-     * Executes the associated task.
-     */
-    void operator()() const;
-    /**
-     * Returns the POSIX thread identifier.
-     * @return  POSIX thread identifier
-     */
-    pthread_t getThreadId() const;
+    class Impl;
 
 public:
     /**
-     * Constructs from nothing.
+     * Default constructs.
      */
     Future();
+
     /**
-     * Constructs from the function to execute.
-     * @param[in] fund  Function to execute
+     * Constructs from the task to be executed.
+     * @param[in] task  Task to be executed
      */
-    explicit Future(std::function<void()> func);
-    /**
-     * Indicates if this instance has a callable or is empty.
-     * @return `true` iff this instance has a callable
-     */
-    operator bool() const noexcept;
-    /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  The other instance.
-     */
-    bool operator==(const Future<void>& that) const noexcept;
-    /**
-     * Indicates if this instance is considered less than another.
-     * @param[in] that  The other instance
-     * @return `true` iff this instance is less than the other
-     */
-    bool operator<(const Future<void>& that) const noexcept;
-    /**
-     * Cancels the task's thread iff the task hasn't already completed.
-     * Idempotent.
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    void cancel() const;
-    /**
-     * Waits for the task to complete. Idempotent.
-     */
-    void wait() const;
-    /**
-     * Indicates if the task's thread was cancelled. Blocks until the task
-     * completes if necessary. Should always be called before getResult().
-     * @retval `true`  iff the task's thread was cancelled.
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    bool wasCancelled() const;
+    Future(Task<Ret>& task);
+
     /**
      * Returns the result of the asynchronous task. Blocks until the task
      * completes if necessary. If the task threw an exception, then this
      * function will rethrow it.
-     * @return the result of the asynchronous task
-     * @throws std::logic_error if the task's thread was cancelled
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * @return                Result of the asynchronous task
+     * @throw LogicError      Task's thread was cancelled or Future is empty
+     * @throw std::exception  Exception thrown by task
+     * @exceptionsafety       Strong guarantee
+     * @threadsafety          Safe
+     * @see                   wasCanceled()
+     */
+    Ret getResult() const;
+};
+
+/**
+ * Future of an asynchronous task with a void result.
+ */
+template<>
+class Future<void> final : public BasicFuture
+{
+    class Impl;
+
+public:
+    /**
+     * Default constructs.
+     */
+    Future();
+
+    /**
+     * Constructs from the task to be executed.
+     * @param[in] task  Task to be executed
+     */
+    Future(Task<void>& task);
+
+    /**
+     * Returns when the task is done. If the task threw an exception, then this
+     * function will rethrow it.
+     * @throw LogicError      Task's thread was cancelled or Future is empty
+     * @throw std::exception  Exception thrown by task
+     * @exceptionsafety       Strong guarantee
+     * @threadsafety          Safe
+     * @see                   wasCanceled()
      */
     void getResult() const;
 };
 
 } // namespace
+
+namespace std {
+    template<> struct hash<hycast::BasicFuture>
+    {
+        size_t operator()(const hycast::BasicFuture& future) const
+        {
+            return hash<hycast::BasicFuture::Impl*>()(future.pImpl.get());
+        }
+    };
+    template<> struct hash<hycast::Future<void>>
+    {
+        size_t operator()(const hycast::Future<void>& future) const
+        {
+            return hash<hycast::BasicFuture>()(future);
+        }
+    };
+}
 
 #endif /* MAIN_MISC_FUTURE_H_ */

@@ -11,7 +11,10 @@
 
 #include "Executor.h"
 
+#include <chrono>
+#include <exception>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <stdexcept>
 
 namespace {
@@ -19,6 +22,31 @@ namespace {
 // The fixture for testing class Executor.
 class ExecutorTest : public ::testing::Test {
 };
+
+#if 1
+
+// Tests construction and cancellation performance
+TEST_F(ExecutorTest, CtorAndCancelPerformance) {
+    std::set_terminate([]{::pause();}); // For debugging
+    typedef std::chrono::microseconds      TimeUnit;
+    typedef std::chrono::steady_clock      Clock;
+    typedef std::chrono::time_point<Clock> TimePoint;
+
+    const TimePoint start = Clock::now();
+    const int       numExec = 1000;
+
+    for (int i = 0; i < numExec; ++i) {
+        std::cout << i << '\n';
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{::pause();});
+        future.cancel();
+        EXPECT_TRUE(future.wasCanceled());
+    }
+
+    std::cout << numExec << " executions\n";
+}
+
+#else
 
 // Tests construction of void executor
 TEST_F(ExecutorTest, DefaultVoidConstruction) {
@@ -33,9 +61,8 @@ TEST_F(ExecutorTest, IntConstruction) {
 // Tests executing void task
 TEST_F(ExecutorTest, VoidExecution) {
     hycast::Executor<void> executor{};
-    auto future = executor.submit([]{return;});
-    future.wait();
-    EXPECT_FALSE(future.wasCancelled());
+    auto future = executor.submit([]{});
+    EXPECT_FALSE(future.wasCanceled());
     future.getResult();
 }
 
@@ -43,8 +70,7 @@ TEST_F(ExecutorTest, VoidExecution) {
 TEST_F(ExecutorTest, IntExecution) {
     hycast::Executor<int> executor{};
     auto future = executor.submit([]{return 1;});
-    future.wait();
-    EXPECT_FALSE(future.wasCancelled());
+    EXPECT_FALSE(future.wasCanceled());
     EXPECT_EQ(1, future.getResult());
 }
 
@@ -53,8 +79,9 @@ TEST_F(ExecutorTest, CancelVoid) {
     hycast::Executor<void> executor{};
     auto future = executor.submit([]{::pause();});
     future.cancel();
-    EXPECT_TRUE(future.wasCancelled());
+    EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), std::logic_error);
+    //::usleep(250000);
 }
 
 // Tests canceling int task
@@ -62,16 +89,45 @@ TEST_F(ExecutorTest, CancelInt) {
     hycast::Executor<int> executor{};
     auto future = executor.submit([]{::pause(); return 1;});
     future.cancel();
-    EXPECT_TRUE(future.wasCancelled());
+    EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), std::logic_error);
+}
+
+// Tests soft shutdown of void executor
+TEST_F(ExecutorTest, SoftVoidShutdown) {
+    hycast::Executor<void> executor{};
+    auto future = executor.submit([]{::usleep(250000);});
+    executor.shutdown(false);
+    EXPECT_FALSE(future.wasCanceled());
+    EXPECT_NO_THROW(future.getResult());
+}
+
+// Tests hard shutdown of void executor
+TEST_F(ExecutorTest, HardVoidShutdown) {
+    hycast::Executor<void> executor{};
+    auto future = executor.submit([]{::pause();});
+    executor.shutdown();
+    EXPECT_TRUE(future.wasCanceled());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
+}
+
+// Tests destruction with active task
+TEST_F(ExecutorTest, DestructionWithTask) {
+    hycast::Executor<void> executor{};
+    executor.submit([]{::pause();});
+}
+
+// Tests destruction with active future
+TEST_F(ExecutorTest, DestructionWithFuture) {
+    hycast::Executor<void> executor{};
+    auto future = executor.submit([]{::pause();});
 }
 
 // Tests exception in void task
 TEST_F(ExecutorTest, VoidException) {
     hycast::Executor<void> executor{};
     auto future = executor.submit([]{throw std::runtime_error("Dummy");});
-    future.wait();
-    EXPECT_FALSE(future.wasCancelled());
+    EXPECT_FALSE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), std::runtime_error);
 }
 
@@ -79,8 +135,7 @@ TEST_F(ExecutorTest, VoidException) {
 TEST_F(ExecutorTest, IntException) {
     hycast::Executor<int> executor{};
     auto future = executor.submit([]{throw std::runtime_error("Dummy"); return 1;});
-    future.wait();
-    EXPECT_FALSE(future.wasCancelled());
+    EXPECT_FALSE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), std::runtime_error);
 }
 
@@ -129,6 +184,7 @@ TEST_F(ExecutorTest, CompareInt) {
     future1.getResult();
     future2.getResult();
 }
+#endif
 
 }  // namespace
 

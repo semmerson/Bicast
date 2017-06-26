@@ -21,7 +21,7 @@ class ClntSctpSock final : public SctpSock {
 public:
     /**
      * Constructs from the Internet socket address of the remote server and the
-     * number of SCTP streams.
+     * number of SCTP streams. Blocks connecting to remote server.
      * @param[in] addr        Internet socket address of remote server
      * @param[in] numStreams  Number of SCTP streams
      */

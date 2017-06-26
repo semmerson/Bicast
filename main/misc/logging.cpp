@@ -36,4 +36,9 @@ void log_what(
     std::clog << placeStamp(file, line) << ": " << msg << '\n';
 }
 
+void log_log(const std::string& msg)
+{
+    std::clog << msg << '\n';
+}
+
 } // namespace

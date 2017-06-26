@@ -37,7 +37,7 @@ protected:
 	{
 		// gcc 4.8 doesn't support non-trivial designated initializers
 		p2pInfo.peerCount = maxPeers;
-		p2pInfo.peerSource = &peerSource;
+		p2pInfo.peerAddrs = &peerSource;
 		p2pInfo.serverSockAddr = serverAddr;
 		p2pInfo.stasisDuration = stasisDuration;
 

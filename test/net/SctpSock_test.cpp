@@ -1,4 +1,6 @@
 /**
+ * This file tests the class `SctpSock`.
+ *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYRIGHT in the top-level source-directory for
  * licensing conditions.
@@ -10,6 +12,7 @@
  */
 
 #include "ClntSctpSock.h"
+#include "error.h"
 #include "InetSockAddr.h"
 #include "SctpSock.h"
 #include "SrvrSctpSock.h"
@@ -87,23 +90,23 @@ void runClient(hycast::ClntSctpSock sock)
 }
 
 // The fixture for testing class Socket.
-class SocketTest : public ::testing::Test {
+class SctpTest : public ::testing::Test {
 protected:
-    SocketTest() {
-		sock1 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-		sock2 = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    SctpTest() {
+		sock1 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+		sock2 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
     }
 
-    virtual ~SocketTest() {
+    virtual ~SctpTest() {
         close(sock1);
         close(sock2);
     }
 
     // Objects declared here can be used by all tests in the test case for Socket.
     const in_port_t      MY_PORT_NUM = 38800;
-	const uint16_t       numStreams = 5;
-	const std::string    INET_ADDR{"192.168.132.131"};
-	hycast::InetSockAddr srvrAddr{INET_ADDR, MY_PORT_NUM};
+    const uint16_t       numStreams = 5;
+    const std::string    INET_ADDR{"192.168.139.135"};
+    hycast::InetSockAddr srvrAddr{INET_ADDR, MY_PORT_NUM};
     int                  sock1, sock2;
     std::thread          recvThread;
     std::thread          sendThread;
@@ -139,12 +142,12 @@ protected:
 };
 
 // Tests invalid argument
-TEST_F(SocketTest, InvalidArgument) {
-    EXPECT_THROW(hycast::SctpSock s(-1), std::invalid_argument);
+TEST_F(SctpTest, InvalidArgument) {
+    EXPECT_THROW(hycast::SctpSock s(-1), hycast::InvalidArgument);
 }
 
 // Tests destruction
-TEST_F(SocketTest, CloseOnDestruction) {
+TEST_F(SctpTest, CloseOnDestruction) {
     hycast::SctpSock s(sock1);
     EXPECT_EQ(true, is_open(sock1));
     s.~SctpSock();
@@ -152,7 +155,7 @@ TEST_F(SocketTest, CloseOnDestruction) {
 }
 
 // Tests copy-construction
-TEST_F(SocketTest, CopyConstruction) {
+TEST_F(SctpTest, CopyConstruction) {
     hycast::SctpSock s1(sock1);
     EXPECT_EQ(true, is_open(sock1));
     hycast::SctpSock s2(s1);
@@ -163,7 +166,7 @@ TEST_F(SocketTest, CopyConstruction) {
 }
 
 // Tests move-assignment
-TEST_F(SocketTest, MoveAssignment) {
+TEST_F(SctpTest, MoveAssignment) {
     hycast::SctpSock s1 = hycast::SctpSock(sock1);
     EXPECT_EQ(true, is_open(sock1));
     s1.~SctpSock();
@@ -171,7 +174,7 @@ TEST_F(SocketTest, MoveAssignment) {
 }
 
 // Tests copy-assignment to empty instance
-TEST_F(SocketTest, CopyAssignmentToEmpty) {
+TEST_F(SctpTest, CopyAssignmentToEmpty) {
     hycast::SctpSock s1(sock1);
     EXPECT_EQ(true, is_open(sock1));
     hycast::SctpSock s2;
@@ -184,7 +187,7 @@ TEST_F(SocketTest, CopyAssignmentToEmpty) {
 }
 
 // Tests copy-assignment to non-empty instance
-TEST_F(SocketTest, CopyAssignmentToNonEmpty) {
+TEST_F(SctpTest, CopyAssignmentToNonEmpty) {
     hycast::SctpSock s1(sock1);
     EXPECT_EQ(true, is_open(sock1));
     hycast::SctpSock s2(sock2);
@@ -199,7 +202,7 @@ TEST_F(SocketTest, CopyAssignmentToNonEmpty) {
 }
 
 // Tests copy-assignment to self
-TEST_F(SocketTest, CopyAssignmentToSelf) {
+TEST_F(SctpTest, CopyAssignmentToSelf) {
     hycast::SctpSock s1(sock1);
     EXPECT_EQ(true, is_open(sock1));
     s1 = s1;
@@ -207,7 +210,7 @@ TEST_F(SocketTest, CopyAssignmentToSelf) {
 }
 
 // Tests equality operator
-TEST_F(SocketTest, EqualityOperator) {
+TEST_F(SctpTest, EqualityOperator) {
     hycast::SctpSock s1(sock1);
     EXPECT_EQ(true, s1 == s1);
     hycast::SctpSock s2(sock2);
@@ -215,14 +218,14 @@ TEST_F(SocketTest, EqualityOperator) {
 }
 
 // Tests to_string()
-TEST_F(SocketTest, ToString) {
+TEST_F(SctpTest, ToString) {
     hycast::SctpSock s1(sock1);
     EXPECT_STREQ((std::string("SocketImpl{sock=") + std::to_string(sock1) + "}").data(),
             s1.to_string().data());
 }
 
 // Tests whether a read() on a socket returns when the remote end is closed.
-TEST_F(SocketTest, RemoteCloseCausesReadReturn) {
+TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
     struct Server {
         hycast::SrvrSctpSock srvrSock;
         hycast::SctpSock     peerSock;
@@ -242,7 +245,7 @@ TEST_F(SocketTest, RemoteCloseCausesReadReturn) {
  * Tests whether an exception is thrown when the server's listening socket is
  * closed
  */
-TEST_F(SocketTest, ServersCloseThrowsException) {
+TEST_F(SctpTest, ServersCloseThrowsException) {
     struct Server {
         hycast::SrvrSctpSock serverSock;
         hycast::SctpSock     sock;
@@ -262,7 +265,7 @@ TEST_F(SocketTest, ServersCloseThrowsException) {
 
 #if 0
 // Tests clean closing of receive socket
-TEST_F(SocketTest, CleanReceiveClose) {
+TEST_F(SctpTest, CleanReceiveClose) {
     hycast::InetSockAddr serverSockAddr(INET_ADDR, MY_PORT_NUM);
     hycast::SrvrSctpSock srvrSock(serverSockAddr, numStreams);
     struct Server {
@@ -295,7 +298,7 @@ TEST_F(SocketTest, CleanReceiveClose) {
 #endif
 
 // Tests send() and recv()
-TEST_F(SocketTest, SendRecv) {
+TEST_F(SctpTest, SendRecv) {
     startServer();
     startClient();
     stopClient();
