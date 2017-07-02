@@ -17,7 +17,6 @@
 #include <assert.h>
 #include <condition_variable>
 #include <mutex>
-#include <pthread.h>
 #include <queue>
 #include <type_traits>
 #include <utility>
@@ -41,7 +40,7 @@ class Completer<Ret>::Impl
     Executor<Ret>            executor;
 
     void finish() {
-        auto threadId = pthread_self();
+        auto threadId = Thread::getId();
         auto future = executor.getFuture(threadId);
         LockGuard lock{mutex};
         completedTasks.push(future);

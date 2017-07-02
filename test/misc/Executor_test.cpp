@@ -25,29 +25,6 @@ class ExecutorTest : public ::testing::Test {
 
 #if 1
 
-// Tests construction and cancellation performance
-TEST_F(ExecutorTest, CtorAndCancelPerformance) {
-    std::set_terminate([]{::pause();}); // For debugging
-    typedef std::chrono::microseconds      TimeUnit;
-    typedef std::chrono::steady_clock      Clock;
-    typedef std::chrono::time_point<Clock> TimePoint;
-
-    const TimePoint start = Clock::now();
-    const int       numExec = 1000;
-
-    for (int i = 0; i < numExec; ++i) {
-        std::cout << i << '\n';
-        hycast::Executor<void> executor{};
-        auto future = executor.submit([]{::pause();});
-        future.cancel();
-        EXPECT_TRUE(future.wasCanceled());
-    }
-
-    std::cout << numExec << " executions\n";
-}
-
-#else
-
 // Tests construction of void executor
 TEST_F(ExecutorTest, DefaultVoidConstruction) {
     hycast::Executor<void> executor{};
@@ -98,6 +75,7 @@ TEST_F(ExecutorTest, SoftVoidShutdown) {
     hycast::Executor<void> executor{};
     auto future = executor.submit([]{::usleep(250000);});
     executor.shutdown(false);
+    executor.awaitTermination();
     EXPECT_FALSE(future.wasCanceled());
     EXPECT_NO_THROW(future.getResult());
 }
@@ -107,6 +85,7 @@ TEST_F(ExecutorTest, HardVoidShutdown) {
     hycast::Executor<void> executor{};
     auto future = executor.submit([]{::pause();});
     executor.shutdown();
+    executor.awaitTermination();
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
@@ -185,6 +164,37 @@ TEST_F(ExecutorTest, CompareInt) {
     future2.getResult();
 }
 #endif
+
+// Tests construction and cancellation performance
+TEST_F(ExecutorTest, CtorAndCancelPerformance) {
+    std::set_terminate([]{::pause();}); // For debugging
+    typedef std::chrono::microseconds      TimeUnit;
+    typedef std::chrono::steady_clock      Clock;
+    typedef std::chrono::time_point<Clock> TimePoint;
+
+    const TimePoint start = Clock::now();
+    const int       numExec = 1000;
+    int             i;
+
+    try {
+        for (i = 0; i < numExec; ++i) {
+            hycast::Executor<void> executor{};
+            auto future = executor.submit([]{::pause();});
+            future.cancel();
+            EXPECT_TRUE(future.wasCanceled());
+        }
+
+        TimePoint stop = Clock::now();
+        TimeUnit  duration = std::chrono::duration_cast<TimeUnit>(stop - start);
+        std::cout << numExec << " executions in " << duration.count() <<
+                " microseconds = " << 1000000*numExec/duration.count() <<
+                " Hz\n";
+    }
+    catch (const std::exception& e) {
+        hycast::log_what(e, __FILE__, __LINE__, "Failed on iteration " +
+                std::to_string(i));
+    }
+}
 
 }  // namespace
 

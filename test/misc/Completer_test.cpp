@@ -56,7 +56,7 @@ TEST_F(CompleterTest, MultipleVoidExecution) {
     hycast::Completer<void> completer{};
     std::array<hycast::Future<void>, 8> futures;
     for (unsigned i = 0; i < futures.size(); ++i) {
-        auto future = completer.submit([]{return;});
+        auto future = completer.submit([]{});
         futures[i] = future;
     }
     for (unsigned i = 0; i < futures.size(); ++i) {

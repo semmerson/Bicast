@@ -1,5 +1,6 @@
 /**
- * This file implements a task that can be executed asynchronously.
+ * This file implements a RAII class for an independent thread-of-control that
+ * supports copying, assignment, and POSIX thread cancellation.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
@@ -15,73 +16,141 @@
 #include "Thread.h"
 
 #include <atomic>
+#include <cassert>
 #include <functional>
+#include <map>
+#include <mutex>
 #include <pthread.h>
+#include <system_error>
 #include <thread>
 #include <utility>
 
 namespace hycast {
 
+/**
+ * Indicates if a mutex is locked by the current thread.
+ * @param[in,out] mutex  The mutex
+ * @return `true`        Iff the mutex is locked
+ */
+static bool isLocked(std::mutex& mutex)
+{
+    if (!mutex.try_lock())
+        return true;
+    mutex.unlock();
+    return false;
+}
+
+void Thread::Impl::ensureJoined()
+{
+    try {
+        if (stdThread.joinable())
+            stdThread.join();
+    }
+    catch (const std::system_error& e) {
+        /*
+         * std::thread::join() throws invalid argument exception if thread
+         * canceled
+         */
+        if (e.code() != std::errc::invalid_argument)
+            std::throw_with_nested(RuntimeError{__FILE__, __LINE__,
+                    "std::thread::join() failure"});
+    }
+    catch (const std::exception& e) {
+        std::throw_with_nested(RuntimeError{__FILE__, __LINE__,
+                "std::thread::join() failure"});
+    }
+}
+
+void Thread::Impl::privateCancel()
+{
+    int status = ::pthread_cancel(stdThread.native_handle());
+    if (status)
+        throw SystemError(__FILE__, __LINE__, "pthread_cancel() failure: "
+                "native_handle=" + std::to_string(stdThread.native_handle()),
+                status);
+}
+
+Thread::Impl::~Impl()
+{
+    try {
+        if (Thread::getId() == id())
+            throw LogicError(__FILE__, __LINE__,
+                    "Thread object being destroyed on associated thread");
+        if (!done)
+            privateCancel();
+        ensureJoined();
+    }
+    catch (const std::exception& e){
+        log_what(e, __FILE__, __LINE__, "Couldn't destroy thread object");
+    }
+}
+
+Thread::ThreadId Thread::Impl::id() const
+{
+    if (stdThread.joinable())
+        return stdThread.get_id();
+    throw InvalidArgument(__FILE__, __LINE__, "Thread was canceled");
+}
+
+void Thread::Impl::cancel()
+{
+    if (!done.exchange(true))
+        privateCancel();
+}
+
+void Thread::Impl::join()
+{
+    ensureJoined();
+}
+
+/******************************************************************************/
+
+Thread::Mutex                             Thread::mutex;
+std::map<Thread::ThreadId, Thread::Pimpl> Thread::threads;
+
 Thread::Thread()
-    : std::thread{}
-    , canceled{false}
-    , defaultConstructed{true}
+    : pImpl{}
+{}
+
+Thread::Thread(const Thread& that)
+    : pImpl{that.pImpl}
 {}
 
 Thread::Thread(Thread&& that)
-{
-    swap(that);
-}
+    : pImpl{that.pImpl}
+{}
 
 Thread::~Thread()
 {
-    try {
-        if (getId() == native_handle())
-            throw LogicError(__FILE__, __LINE__,
-                    "Thread object being destroyed on associated thread");
-        if (!defaultConstructed) {
-            cancel();
-            join();
-#if 0
-            throw LogicError(__FILE__, __LINE__,
-                    "Joinable thread object being destroyed");
-#endif
-        }
-    }
-    catch (const std::exception& e){
-        log_what(e);
-    }
+    LockGuard lock{mutex};
+    if (pImpl && pImpl.use_count() == 2) // this->pImpl + threads => 2
+        threads.erase(id());
 }
 
-void Thread::threadCanceled(void* arg)
+void Thread::add(Thread& thread)
 {
-    auto thread = static_cast<Thread*>(arg);
-    thread->canceled = true;
+    LockGuard lock{mutex};
+    assert(threads.find(thread.id()) == threads.end());
+    threads[thread.id()] = thread.pImpl;
 }
 
-void Thread::swap(Thread& that) noexcept
+Thread& Thread::operator=(const Thread& rhs)
 {
-    log_log("Thread::swap(&) entered");
-    std::thread::swap(that);
-    bool tmp = that.canceled;
-    that.canceled = static_cast<bool>(canceled);
-    canceled = tmp;
-    tmp = that.defaultConstructed;
-    that.defaultConstructed = static_cast<bool>(defaultConstructed);
-    defaultConstructed = tmp;
+    if (pImpl)
+        this->~Thread();
+    pImpl = rhs.pImpl;
 }
 
-Thread& Thread::operator=(Thread&& rhs) noexcept
+Thread::ThreadId Thread::getId() noexcept
 {
-    log_log("Thread::operator=(&&) entered");
-    if (this != &rhs) {
-        if (joinable()) {
-            log_what(LogicError(__FILE__, __LINE__, "Calling std::terminate()"));
-            std::terminate();
-        }
-        swap(rhs);
-    }
-    return *this;
+    return std::this_thread::get_id();
+}
+
+Thread::ThreadId Thread::id() const
+{
+    if (!pImpl)
+        throw InvalidArgument(__FILE__, __LINE__, "Default-constructed thread");
+    return pImpl->id();
 }
 
 bool Thread::enableCancel(const bool enable)
@@ -95,37 +164,40 @@ bool Thread::enableCancel(const bool enable)
     return previous == PTHREAD_CANCEL_ENABLE ? true : false;
 }
 
-void Thread::cancel(const ThreadId& threadId)
+void Thread::staticCancel(const Pimpl& pImpl)
 {
-    int status = ::pthread_cancel(threadId);
-    if (status)
-        throw SystemError(__FILE__, __LINE__, "pthread_cancel() failure",
-                status);
+    assert(isLocked(mutex));
+    auto ident = pImpl->id();
+    pImpl->cancel();
+    auto n = threads.erase(ident);
+    assert(n == 1);
 }
 
-void Thread::cancel()
+void Thread::cancel() const
 {
-    if (!defaultConstructed && !canceled.exchange(true)) {
-        int status = ::pthread_cancel(native_handle());
-        if (status)
-            throw SystemError(__FILE__, __LINE__, "pthread_cancel() failure",
-                    status);
+    if (pImpl) {
+        LockGuard lock{mutex};
+        staticCancel(pImpl);
     }
 }
 
-void swap(Thread& a, Thread& b)
+void Thread::cancel(const ThreadId& threadId)
 {
-    a.swap(b);
+    LockGuard lock{mutex};
+    auto& pImpl = threads.at(threadId);
+    staticCancel(pImpl);
+}
+
+void Thread::join()
+{
+    if (pImpl)
+        pImpl->join();
+}
+
+size_t Thread::size()
+{
+    LockGuard lock{mutex};
+    return threads.size();
 }
 
 } // namespace
-
-namespace std {
-    template<>
-    void swap<hycast::Thread>(
-            hycast::Thread& a,
-            hycast::Thread& b)
-    {
-        a.swap(b);
-    }
-}

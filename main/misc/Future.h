@@ -76,7 +76,7 @@ public:
      */
     bool operator<(const BasicFuture& that) const noexcept;
 
-    void operator()() const noexcept;
+    void operator()() const;
 
     /**
      * Cancels the task's thread if the task hasn't already completed.

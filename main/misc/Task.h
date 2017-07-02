@@ -30,7 +30,7 @@ protected:
 
 public:
     /**
-     * Default constructs.
+     * Default constructs. `operator bool()` will return `false`.
      */
     Task();
 

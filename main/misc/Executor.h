@@ -14,10 +14,10 @@
 
 #include "Future.h"
 #include "Task.h"
+#include "Thread.h"
 
 #include <functional>
 #include <memory>
-#include <pthread.h>
 
 namespace hycast {
 
@@ -27,8 +27,10 @@ namespace hycast {
 template<class Ret>
 class Executor final
 {
-    class                 Impl;
-    std::shared_ptr<Impl> pImpl;
+    typedef Thread::ThreadId ThreadId;
+
+    class                    Impl;
+    std::shared_ptr<Impl>    pImpl;
 
 public:
     /**
@@ -68,7 +70,7 @@ public:
      * @exceptionsafety        Strong guarantee
      * @threadsafety           Safe
      */
-    Future<Ret> getFuture(const pthread_t threadId) const;
+    Future<Ret> getFuture(const ThreadId threadId) const;
 
     void shutdown(const bool mayInterrupt = true) const;
 

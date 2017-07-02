@@ -1,0 +1,42 @@
+==12418== Memcheck, a memory error detector
+==12418== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==12418== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
+==12418== Command: /home/steve/Projects/hycast/src/test/misc/.libs/lt-Completer_test
+==12418== 
+[==========] Running 10 tests from 1 test case.
+[----------] Global test environment set-up.
+[----------] 10 tests from CompleterTest
+[ RUN      ] CompleterTest.VoidConstruction
+[       OK ] CompleterTest.VoidConstruction (50 ms)
+[ RUN      ] CompleterTest.IntConstruction
+[       OK ] CompleterTest.IntConstruction (31 ms)
+[ RUN      ] CompleterTest.VoidExecution
+[       OK ] CompleterTest.VoidExecution (171 ms)
+[ RUN      ] CompleterTest.IntExecution
+[       OK ] CompleterTest.IntExecution (84 ms)
+[ RUN      ] CompleterTest.MultipleVoidExecution
+[       OK ] CompleterTest.MultipleVoidExecution (42 ms)
+[ RUN      ] CompleterTest.MultipleIntExecution
+[       OK ] CompleterTest.MultipleIntExecution (32 ms)
+[ RUN      ] CompleterTest.VoidCancellation
+[       OK ] CompleterTest.VoidCancellation (87 ms)
+[ RUN      ] CompleterTest.IntCancellation
+[       OK ] CompleterTest.IntCancellation (9 ms)
+[ RUN      ] CompleterTest.DestructionWithTask
+[       OK ] CompleterTest.DestructionWithTask (9 ms)
+[ RUN      ] CompleterTest.DestructionWithFuture
+[       OK ] CompleterTest.DestructionWithFuture (8 ms)
+[----------] 10 tests from CompleterTest (539 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test case ran. (571 ms total)
+[  PASSED  ] 10 tests.
+==12418== 
+==12418== HEAP SUMMARY:
+==12418==     in use at exit: 0 bytes in 0 blocks
+==12418==   total heap usage: 1,226 allocs, 1,226 frees, 119,468 bytes allocated
+==12418== 
+==12418== All heap blocks were freed -- no leaks are possible
+==12418== 
+==12418== For counts of detected and suppressed errors, rerun with: -v
+==12418== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

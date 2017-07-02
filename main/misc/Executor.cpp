@@ -11,6 +11,7 @@
 
 #include "error.h"
 #include "Executor.h"
+#include "Thread.h"
 
 #include <cassert>
 #include <condition_variable>
@@ -19,7 +20,6 @@
 #include <list>
 #include <map>
 #include <mutex>
-#include <pthread.h>
 #include <stdexcept>
 #include <system_error>
 #include <utility>
@@ -83,8 +83,6 @@ class Executor<Ret>::Impl final
     /// Whether or not this instance has been shut down
     bool                            closed;
 
-    ThreadId                        pendingThreadId;
-
     /**
      * Indicates whether or not the mutex is locked. Upon return, the state of
      * the mutex is the same as upon entry.
@@ -106,15 +104,12 @@ class Executor<Ret>::Impl final
     void destroyDoneThreads()
     {
         assert(isLocked());
-        const auto myThreadId = Thread::getId();
-        assert(doneThreadIds.size() <= 1);
+        const auto currThreadId = Thread::getId();
         for (auto threadId : doneThreadIds) {
-            assert(threadId == pendingThreadId);
             Thread& thread = threads[threadId];
-            assert(thread.native_handle() != myThreadId);
-            assert(thread.native_handle() == threadId);
+            assert(thread.id() != currThreadId);
+            assert(thread.id() == threadId || thread.id() == ThreadId{});
             threads.erase(threadId);
-            pendingThreadId = 0;
         }
         doneThreadIds.clear();
     }
@@ -131,7 +126,6 @@ class Executor<Ret>::Impl final
          * cause undefined behavior.
          */
         const auto doneThreadId = Thread::getId();
-        assert(doneThreadId == pendingThreadId);
         const auto n = futures.erase(doneThreadId);
         assert(n <= 1);
         doneThreadIds.push_back(doneThreadId);
@@ -175,7 +169,7 @@ class Executor<Ret>::Impl final
     void add(Thread&& thread)
     {
         assert(isLocked());
-        const auto threadId = thread.native_handle();
+        const auto threadId = thread.id();
         assert(threads.find(threadId) == threads.end());
         threads[threadId] = std::forward<Thread>(thread);
     }
@@ -211,7 +205,6 @@ class Executor<Ret>::Impl final
         Thread      thread{};
         Gate        gate{};
         try {
-            assert(pendingThreadId == 0);
             thread = newThread(future, gate);
         }
         catch (const std::exception& e) {
@@ -221,12 +214,12 @@ class Executor<Ret>::Impl final
         ThreadId threadId;
         try {
             gate.wait();
-            threadId = thread.native_handle();
-            pendingThreadId = threadId;
+            threadId = thread.id();
             add(std::move(thread)); // Mustn't reference `thread` after this
         }
         catch (const std::exception& e) {
             future.cancel();
+            future.wasCanceled();
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't add new thread"));
         }
@@ -235,6 +228,7 @@ class Executor<Ret>::Impl final
         }
         catch (const std::exception& e) {
             future.cancel();
+            future.wasCanceled();
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't add thread's future"));
         }
@@ -252,7 +246,6 @@ public:
         , futures{}
         , doneThreadIds{}
         , closed{false}
-        , pendingThreadId{0}
     {}
 
     /**
@@ -261,7 +254,7 @@ public:
     ~Impl()
     {
         try {
-            shutdown(false);
+            shutdown(true);
             awaitTermination();
         }
         catch (const std::exception& e) {
@@ -315,13 +308,18 @@ public:
      */
     void shutdown(const bool mayInterrupt)
     {
-        LockGuard lock{mutex};
-        if (!closed) {
-            closed = true;
-            if (mayInterrupt)
-                for (auto pair : futures)
-                    pair.second.cancel(); // Pending until future() entered
+        {
+            LockGuard lock{mutex};
+            if (!closed)
+                closed = true;
         }
+        /*
+         * The mutex must be released when `Future::cancel()` is called
+         * because `completeTask()` acquires it.
+         */
+        if (mayInterrupt)
+            for (auto pair : futures)
+                pair.second.cancel(); // Pending until future() entered
     }
 
     /**
@@ -364,7 +362,7 @@ Future<Ret> Executor<Ret>::submit(std::function<Ret()>&& func) const
 }
 
 template<class Ret>
-Future<Ret> Executor<Ret>::getFuture(const pthread_t threadId) const
+Future<Ret> Executor<Ret>::getFuture(const ThreadId threadId) const
 {
     return pImpl->getFuture(threadId);
 }

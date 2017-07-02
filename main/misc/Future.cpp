@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <errno.h>
 #include <exception>
+#include <iostream>
 #include <system_error>
 #include <utility>
 
@@ -66,7 +67,7 @@ protected:
         , canceled{false}
         , haveResult{false}
         , haveThreadId{false}
-        , threadId{0}
+        , threadId{}
     {}
 
     /**
@@ -123,27 +124,34 @@ public:
     virtual ~Impl() =default;
 
     /**
-     * Cancels the task iff the task hasn't already completed.
-     * Idempotent.
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * Cancels the task iff the task hasn't already completed. Idempotent.
+     * @param[in] mayInterrupt  Whether or not the thread on which the task is
+     *                          executing may be canceled. If false and the task
+     *                          has already started, then it will complete
+     *                          normally or throw an exception: it's thread will
+     *                          not be canceled.
+     * @exceptionsafety         Strong guarantee
+     * @threadsafety            Safe
      */
     void cancel(const bool mayInterrupt)
     {
-        LockGuard lock{mutex};
+        UniqueLock lock{mutex};
         if (!isDone()) {
             canceled = true;
-            if (haveThreadId && mayInterrupt)
+            if (mayInterrupt) {
+                if (!haveThreadId)
+                    cond.wait(lock);
                 Thread::cancel(threadId);
+            }
             cond.notify_one();
         }
     }
 
     /**
-     * Indicates if the task was canceled before it completed. Waits for the
-     * task to complete. Should be called before getResult() if having that
-     * function throw an exception is undesirable.
-     * @return `true`   Iff the task was canceled before it completed
+     * Indicates if the task completed by being canceled. Blocks until the task
+     * completes. Should be called before getResult() if having that function
+     * throw an exception is undesirable.
+     * @return `true`   Iff the task completed by being canceled
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
      * @see             getResult()
@@ -155,15 +163,17 @@ public:
         return canceled;
     }
 
-    void operator()() noexcept
+    void operator()()
     {
         try {
             UniqueLock lock{mutex};
             threadId = Thread::getId();
             haveThreadId = true;
+            cond.notify_one();
             if (!canceled) {
                 bool enabled = Thread::enableCancel();
                 lock.unlock();
+                //std::cout << "Calling setResult()\n";
                 setResult();
                 lock.lock();
                 haveResult = true;
@@ -208,7 +218,7 @@ bool BasicFuture::operator<(const BasicFuture& that) const noexcept
     return pImpl < that.pImpl;
 }
 
-void BasicFuture::operator()() const noexcept
+void BasicFuture::operator()() const
 {
     if (!pImpl)
         throw LogicError(__FILE__, __LINE__, "Future is empty");
