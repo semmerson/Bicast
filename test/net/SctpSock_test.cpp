@@ -14,6 +14,7 @@
 #include "ClntSctpSock.h"
 #include "error.h"
 #include "InetSockAddr.h"
+#include "Interface.h"
 #include "SctpSock.h"
 #include "SrvrSctpSock.h"
 
@@ -103,15 +104,16 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for Socket.
-    const in_port_t      MY_PORT_NUM = 38800;
-    const uint16_t       numStreams = 5;
-    const std::string    INET_ADDR{"192.168.139.135"};
-    hycast::InetSockAddr srvrAddr{INET_ADDR, MY_PORT_NUM};
-    int                  sock1, sock2;
-    std::thread          recvThread;
-    std::thread          sendThread;
-    hycast::SrvrSctpSock srvrSock{srvrAddr, numStreams};
-    hycast::ClntSctpSock clntSock{srvrAddr, numStreams};
+    const in_port_t         MY_PORT_NUM = 38800;
+    const uint16_t          numStreams = 5;
+    const hycast::Interface ethnetIfaceName{"ens33"};
+    hycast::InetSockAddr    srvrAddr{ethnetIfaceName.getInetAddr(AF_INET),
+            MY_PORT_NUM};
+    int                     sock1, sock2;
+    std::thread             recvThread;
+    std::thread             sendThread;
+    hycast::SrvrSctpSock    srvrSock{srvrAddr, numStreams};
+    hycast::ClntSctpSock    clntSock{srvrAddr, numStreams};
 
     bool is_open(int sock)
     {

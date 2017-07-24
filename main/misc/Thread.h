@@ -1,5 +1,5 @@
 /**
- * This file declares a RAII class for an independent thread-of-control that
+ * This file declares a RAII class for an independent thread-of-execution that
  * supports copying, assignment, and POSIX thread cancellation.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All Rights
@@ -17,7 +17,9 @@
 #include "error.h"
 
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
+#include <exception>
 #include <functional>
 #include <map>
 #include <memory>
@@ -31,73 +33,150 @@ namespace hycast {
 
 class Thread final
 {
+public:
+    class Barrier
+    {
+        pthread_barrier_t barrier;
+
+    public:
+        Barrier(const int numThreads);
+
+        Barrier(const Barrier& that) =delete;
+        Barrier(Barrier&& that) =delete;
+        Barrier& operator=(const Barrier& rhs) =delete;
+        Barrier& operator=(Barrier&& rhs) =delete;
+
+        void wait();
+
+        ~Barrier();
+    };
+
 private:
     class Impl final
     {
-    private:
-        std::atomic_bool  done;
-        std::thread       stdThread;
+        typedef enum {
+            unset = 0,
+            completed = 1,
+            beingJoined = 2,
+            joined = 4
+        }                               State;
+        typedef std::mutex              Mutex;
+        typedef std::lock_guard<Mutex>  LockGuard;
+        typedef std::unique_lock<Mutex> UniqueLock;
+        typedef std::condition_variable Cond;
+
+        mutable Mutex       mutex;
+        mutable Cond        cond;
+        std::exception_ptr  exception;
+        std::atomic_uint    state;
+        Barrier             barrier;
+        mutable std::thread stdThread;
 
         /**
-         * Ensures that the thread-of-control associated with this instance has
-         * been joined.
+         * Thread cleanup routine for when the thread-of-control is canceled.
+         * @param[in] arg  Pointer to an instance of this class.
+         */
+        static void threadWasCanceled(void* arg);
+
+        /**
+         * Ensures that the thread-of-execution associated with this instance
+         * has been joined. Idempotent.
+         */
+        void privateJoin();
+
+        /**
+         * Unconditionally cancels the thread-of-execution associated with this
+         * instance.
+         */
+        void privateCancel();
+
+        /**
+         * Ensures that the thread-of-execution has completed by canceling it if
+         * necessary. Sets the `State::completed` bit in `state`.
+         */
+        void ensureCompleted();
+
+        /**
+         * Ensures that the thread-of-execution is joined. Sets the
+         * `State::completed` bit in `state`.
          */
         void ensureJoined();
 
         /**
-         * Unconditionally cancels the thread-of-control associated with this
-         * instance.
+         * Indicates whether or not the mutex is locked. Upon return, the state
+         * of the mutex is the same as upon entry.
+         * @retval `true`    Iff the mutex is locked
          */
-        void privateCancel();
+        bool isLocked() const;
 
     public:
         /// Thread identifier
         typedef std::thread::id ThreadId;
 
+        Impl() =delete;
+        Impl(const Impl& that) = delete;
+        Impl(Impl&& that) =delete;
+        Impl& operator=(const Impl& rhs) =delete;
+        Impl& operator=(Impl&& rhs) =delete;
+
         /**
-         * Constructs.
+         * Constructs. Either `callable()` will be called or `terminate()` will
+         * be called.
          * @param[in] callable  Object to be executed by calling it's
-         *                      `operator()` method
+         *                      `operator()` function
          * @param[in] args      Arguments of the `operator()` method
          */
         template<class Callable, class... Args>
         explicit Impl(Callable& callable, Args&&... args)
-            : done{false}
-            // Ensure deferred cancelability
+            : mutex{}
+            , cond{}
+            , exception{}
+            , state{State::unset}
+            , barrier{2}
             , stdThread{[this](decltype(
-                      std::bind(callable, std::forward<Args>(args)...))&&
-                            boundCallable)
-                      mutable {
-                  try {
-                      try {
-                          int previous;
-                          if (::pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED,
-                                  &previous))
-                              throw SystemError(__FILE__, __LINE__,
-                                      "pthread_setcanceltype() failure");
-                          Thread::enableCancel();
-                      }
-                      catch (const std::exception& e) {
-                          log_what(e, __FILE__, __LINE__,
-                                  "Couldn't start thread");
-                      }
-                      boundCallable();
-                      done = true;
-                  }
-                  catch (const std::exception& e) {
-                      done = true;
-                      throw;
-                  }
-                  catch (...) {
-                      //log_log("Cancellation exception");
-                      throw;
-                  }
-              }, std::bind(callable, std::forward<Args>(args)...)}
-        {}
+                    std::bind(callable, std::forward<Args>(args)...))&&
+                            boundCallable) mutable {
+                THREAD_CLEANUP_PUSH(threadWasCanceled, this);
+                try {
+                    // Ensure deferred cancelability
+                    int  previous;
+                    auto status = ::pthread_setcanceltype(
+                            PTHREAD_CANCEL_DEFERRED, &previous);
+                    if (status)
+                        throw SystemError(__FILE__, __LINE__,
+                                "pthread_setcanceltype() failure", status);
+                    try {
+                        barrier.wait();
+                        Thread::enableCancel();
+                        Thread::testCancel(); // In case destructor called
+                        boundCallable();
+                        Thread::testCancel(); // In case destructor called
+                        Thread::disableCancel(); // Disables Thread::testCancel()
+                        LockGuard lock{mutex};
+                        state.fetch_or(State::completed);
+                    }
+                    catch (const std::exception& e) {
+                        Thread::disableCancel();
+                        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                                "Task threw an exception"));
+                    }
+                }
+                catch (const std::exception& e) {
+                    Thread::disableCancel();
+                    exception = std::current_exception();
+                    LockGuard lock{mutex};
+                    state.fetch_or(State::completed);
+                    throw;
+                }
+                THREAD_CLEANUP_POP(false);
+            }, std::bind(callable, std::forward<Args>(args)...)}
+        {
+            barrier.wait();
+        }
 
         /**
-         * Destroys. The associated thread-of-control is canceled and joined
-         * if necessary.
+         * Destroys. The associated thread-of-execution is canceled if it hasn't
+         * completed and joined if it hasn't been.
          */
         ~Impl();
 
@@ -105,10 +184,10 @@ private:
          * Returns the thread identifier.
          * @return                  Thread identifier
          * @throw  InvalidArgument  This instance was canceled
-         * @exceptionsafety         Strong guarantee
+         * @exceptionsafety         Nothrow
          * @threadsafety            Safe
          */
-        ThreadId id() const;
+        ThreadId id() const noexcept;
 
         /**
          * Cancels the thread. Idempotent.
@@ -130,53 +209,174 @@ private:
 
 public:
     /// Thread identifier
-    typedef Impl::ThreadId            ThreadId;
+    typedef Impl::ThreadId             Id;
 
 private:
-    typedef std::mutex                Mutex;
-    typedef std::lock_guard<Mutex>    LockGuard;
-    typedef std::shared_ptr<Impl>     Pimpl;
+    typedef std::unique_ptr<Impl>      Pimpl;
 
-    static Mutex                      mutex;
+    class ThreadMap
+    {
+        typedef std::mutex             Mutex;
+        typedef std::lock_guard<Mutex> LockGuard;
+        typedef std::map<Id, Thread*>  Map;
+
+        Mutex mutex;
+        Map   threads;
+
+    public:
+        ThreadMap();
+        void add(Thread* thread);
+        void replace(Thread* thread);
+        bool contains(const Id& threadId);
+        Thread* get(const Id& threadId);
+        void erase(const Id& threadId);
+        Map::size_type size();
+    };
+
+    /// Set of joinable threads:
+    static ThreadMap                   threads;
+    /// Pointer to the implementation:
+    Pimpl                              pImpl;
+
     /**
-     * Set of active threads. The mapped-value isn't a `Thread` because that
-     * would prevent its destruction because `Thread::pImpl.count()` would never
-     * reach zero.
+     * Checks invariants.
+     * @invariant        `pImpl` <=> thread's ID isn't default
+     * @invariant        `Thread` object is joinable <=> its ID isn't default
+     * @invariant        `Thread` object is in `threads` <=> it's joinable
+     * @exceptionsafety  Strong guarantee
      */
-    static std::map<ThreadId, Pimpl>  threads;
-    Pimpl                             pImpl;
+    void checkInvariants() const;
 
     /**
      * Adds a thread object to the set of such objects.
      * @param[in] thread  Thread object to be added
      */
-    static void add(Thread& thread);
-
-    static void staticCancel(const Pimpl& pImpl);
+    static void add(Thread* thread);
 
 public:
+    /**
+     * Key for accessing a user-supplied thread-specific pointer.
+     * @tparam T  Type of pointed-to value.
+     */
+    template<class T> class PtrKey
+    {
+        pthread_key_t   key;
+
+    public:
+        /**
+         * Constructs.
+         * @throw SystemError  `::pthread_key_create()` failed
+         */
+        PtrKey()
+            : key{}
+        {
+            auto status = ::pthread_key_create(&key, nullptr);
+            if (status)
+                throw SystemError(__FILE__, __LINE__,
+                        "pthread_key_create() failure", status);
+        }
+
+        /**
+         * Sets the thread-specific pointer.
+         * @param ptr  Pointer value. May be `nullptr`
+         * @see   get()
+         */
+        void set(T* ptr)
+        {
+            ::pthread_setspecific(key, ptr);
+        }
+
+        /**
+         * Returns the thread-specific pointer. Will be `nullptr` if `set()`
+         * hasn't been called.
+         * @return  Pointer
+         * @see     set()
+         */
+        T* get()
+        {
+            return static_cast<T*>(::pthread_getspecific(key));
+        }
+    };
+
+    /**
+     * Key for accessing a user-supplied thread-specific value.
+     * @tparam T  Type of value. Must have a copy constructor.
+     */
+    template<class T> class ValueKey
+    {
+        pthread_key_t      key;
+
+        static void deletePtr(void* ptr)
+        {
+            delete static_cast<std::shared_ptr<T>*>(ptr);
+        }
+
+    public:
+        /**
+         * Constructs.
+         * @throw SystemError  `::pthread_key_create()` failed
+         */
+        ValueKey()
+            : key{}
+        {
+            auto status = ::pthread_key_create(&key, &deletePtr);
+            if (status)
+                throw SystemError(__FILE__, __LINE__,
+                        "pthread_key_create() failure", status);
+        }
+
+        /**
+         * Sets the value. The value is copied.
+         * @param value  Value
+         * @see get()
+         */
+        void set(const T& value)
+        {
+            auto ptr = static_cast<std::shared_ptr<T>*>(
+                    ::pthread_getspecific(key));
+            if (ptr == nullptr)
+                ptr = new std::shared_ptr<T>{};
+            *ptr = std::make_shared<T>(value);
+            ::pthread_setspecific(key, ptr);
+        }
+
+        /**
+         * Returns a copy of the value.
+         * @return            Copy of the value
+         * @throw LogicError  `set()` hasn't been called
+         * @see set()
+         */
+        T get()
+        {
+            auto ptr = static_cast<std::shared_ptr<T>*>(::pthread_getspecific(key));
+            if (ptr == nullptr)
+                throw LogicError(__FILE__, __LINE__, "Key is not set");
+            return *(*ptr).get();
+        }
+    };
+
     friend class std::hash<Thread>;
     friend class std::less<Thread>;
 
     /**
-     * Default constructs.
+     * Default constructs. The resulting instance will not be joinable.
      */
     Thread();
 
     /**
      * Copy constructs.
-     * @param[in] that  Other object
+     * @param[in] that  Other instance
      */
-    Thread(const Thread& that);
+    Thread(const Thread& that) =delete;
 
     /**
      * Move constructs.
-     * @param[in] that  Rvalue object
+     * @param[in] that  Rvalue instance
      */
     Thread(Thread&& that);
 
     /**
-     * Constructs.
+     * Constructs. The resulting instance will be joinable.
      * @param[in] callable  Object to be executed by calling it's
      *                      `operator()` method
      * @param[in] args      Arguments of the `operator()` method
@@ -185,12 +385,13 @@ public:
     explicit Thread(Callable&& callable, Args&&... args)
         : pImpl{new Impl(callable, std::forward<Args>(args)...)}
     {
-        add(*this);
+        add(this);
     }
 
     /**
-     * Destroys. Because this is a RAII class, the associated thread-of-control
-     * is canceled and joined if necessary.
+     * Destroys. Because this is a RAII class, the associated
+     * thread-of-execution is canceled if it hasn't completed and joined if it
+     * hasn't been joined.
      */
     ~Thread();
 
@@ -199,17 +400,23 @@ public:
      * @param[in] rhs  Right-hand-side of assignment operator
      * @return         This instance
      */
-    Thread& operator=(const Thread& rhs);
-
-    //Thread& operator=(Thread&& rhs);
+    Thread& operator=(const Thread& rhs) =delete;
 
     /**
-     * Returns the identifier of the current thread.
+     * Move assigns.
+     * @param[in] rhs  Rvalue instance
+     * @return         This instance
+     */
+    Thread& operator=(Thread&& rhs);
+
+    /**
+     * Returns the identifier of the current thread. Non-joinable instances
+     * all return the same identifier.
      * @return           Identifier of the current thread
      * @exceptionsafety  Nothrow
      * @threadsafety     Safe
      */
-    static ThreadId getId() noexcept;
+    static Id getId() noexcept;
 
     /**
      * Returns the identifier of this instance.
@@ -218,7 +425,7 @@ public:
      * @exceptionsafety        Strong guarantee
      * @threadsafety           Safe
      */
-    ThreadId id() const;
+    Id id() const;
 
     /**
      * Sets the cancelability of the current thread.
@@ -231,11 +438,12 @@ public:
     static bool enableCancel(const bool enable = true);
 
     /**
-     * Disables cancelability of the current thread.
+     * Disables cancelability of the current thread. Disables `testCancel()`.
      * @return             Previous state
      * @throw SystemError  Cancelability couldn't be set
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
+     * @see testCancel()
      */
     inline static bool disableCancel()
     {
@@ -243,54 +451,69 @@ public:
     }
 
     /**
-     * Cancels a thread.
-     * @throw OutOfRange   Thread doesn't exist
-     * @throw SystemError  Thread couldn't be canceled
-     * @threadsafety       Safe
+     * Cancellation point for the current thread. Disabled by `disableCancel()`.
+     * @see disableCancel()
      */
-    static void cancel(const ThreadId& threadId);
+    static void testCancel();
 
     /**
-     * Cancels the thread only if it hasn't been default constructed.
-     * Idempotent.
+     * Cancels this thread. Idempotent. Does nothing if the thread isn't
+     * joinable.
      * @throw SystemError  Thread couldn't be canceled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      */
-    void cancel() const;
+    void cancel();
 
     /**
-     * Joins the thread. Idempotent. This call is necessary to ensure that all
-     * thread cleanup routines have completed.
+     * Cancels a thread. Idempotent. Does nothing if the thread isn't joinable.
+     * @throw OutOfRange   Thread doesn't exist
+     * @throw SystemError  Thread couldn't be canceled
+     * @threadsafety       Safe
+     */
+    static void cancel(const Id& threadId);
+
+    /**
+     * Indicates if this instance is joinable.
+     * @retval `true`  Iff this instance is joinable
+     */
+    bool joinable() const noexcept;
+
+    /**
+     * Joins this thread. Idempotent. If the thread wasn't canceled, then this
+     * call is necessary to ensure that all thread cleanup routines have
+     * completed. Does nothing if the thread isn't joinable.
      * @throw SystemError  Thread couldn't be joined
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      */
     void join();
 
+    /**
+     * Returns the number of joinable threads.
+     * @return Number of joinable threads
+     */
     static size_t size();
 };
 
 } // namespace
 
 namespace std {
-    template<>
-    struct hash<hycast::Thread>
+    template<> struct hash<hycast::Thread>
     {
         size_t operator()(hycast::Thread& thread) const noexcept
         {
-            return hash<hycast::Thread::ThreadId>()(thread.id());
+            return hash<hycast::Thread::Id>()(thread.id());
         }
     };
 
-    template<>
-    struct less<hycast::Thread>
+    template<> struct less<hycast::Thread>
     {
         size_t operator()(
                 hycast::Thread& thread1,
                 hycast::Thread& thread2) const noexcept
         {
-            return less<hycast::Thread::ThreadId>()(thread1.id(), thread2.id());
+            return less<hycast::Thread::Id>()(thread1.id(), thread2.id());
         }
     };
 }

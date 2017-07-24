@@ -21,6 +21,7 @@
 #include <exception>
 #include <iostream>
 #include <system_error>
+#include <unistd.h>
 #include <utility>
 
 namespace hycast {
@@ -38,10 +39,11 @@ class BasicFuture::Impl
     mutable Mutex                   mutex;
     mutable std::condition_variable cond;
     std::exception_ptr              exception;
+    bool                            cancelCalled;
     bool                            canceled;
     bool                            haveResult;
+    Thread::Id                threadId;
     bool                            haveThreadId;
-    Thread::ThreadId                threadId;
 
     /**
      * Indicates whether or not the mutex is locked. Upon return, the state of
@@ -56,6 +58,16 @@ class BasicFuture::Impl
         return false;
     }
 
+    static void threadWasCanceled(void* arg)
+    {
+        auto impl = static_cast<Impl*>(arg);
+        LockGuard lock{impl->mutex};
+        assert(impl->haveThreadId);
+        assert(impl->threadId == Thread::getId());
+        impl->canceled = true;
+        impl->cond.notify_all();
+    }
+
 protected:
     /**
      * Default constructs.
@@ -64,10 +76,11 @@ protected:
         : mutex{}
         , cond{}
         , exception{}
+        , cancelCalled{false}
         , canceled{false}
         , haveResult{false}
-        , haveThreadId{false}
         , threadId{}
+        , haveThreadId{false}
     {}
 
     /**
@@ -77,7 +90,7 @@ protected:
     bool isDone() const
     {
         assert(isLocked());
-        return exception || canceled || haveResult;
+        return haveResult || exception || canceled;
     }
 
     virtual void setResult() =0;
@@ -90,7 +103,7 @@ protected:
     {
         LockGuard lock{mutex};
         exception = std::current_exception();
-        cond.notify_one();
+        cond.notify_all();
     }
 
     /**
@@ -105,23 +118,29 @@ protected:
         assert(lock.owns_lock());
         while (!isDone())
             cond.wait(lock);
+        //::fprintf(stderr, "haveResult=%d, exception=%d, canceled=%d\n",
+                //haveResult, exception ? 1 : 0, canceled);
     }
 
     void checkResult()
     {
         UniqueLock lock{mutex};
         wait(lock);
-        if (haveResult)
-            return;
         if (exception)
             std::rethrow_exception(exception);
         if (canceled)
             throw LogicError(__FILE__, __LINE__,
                     "Asynchronous task was canceled");
+        return; // `haveResult` must be true
     }
 
 public:
-    virtual ~Impl() =default;
+    virtual ~Impl()
+    {
+        cancel(true);
+        UniqueLock lock{mutex};
+        wait(lock);
+    }
 
     /**
      * Cancels the task iff the task hasn't already completed. Idempotent.
@@ -136,15 +155,53 @@ public:
     void cancel(const bool mayInterrupt)
     {
         UniqueLock lock{mutex};
-        if (!isDone()) {
+        cancelCalled = true;
+        if (!haveThreadId) {
             canceled = true;
-            if (mayInterrupt) {
-                if (!haveThreadId)
-                    cond.wait(lock);
-                Thread::cancel(threadId);
-            }
-            cond.notify_one();
         }
+        else if (!isDone() && mayInterrupt) {
+            lock.unlock();
+            Thread::cancel(threadId);
+            lock.lock();
+        }
+        cond.notify_all();
+    }
+
+    /**
+     * @threadsafety  Incompatible
+     */
+    void operator()()
+    {
+        THREAD_CLEANUP_PUSH(threadWasCanceled, this);
+        try {
+            UniqueLock lock{mutex};
+            if (haveThreadId)
+                throw LogicError(__FILE__, __LINE__,
+                        "operator() already called");
+            threadId = Thread::getId();
+            assert(threadId != Thread::Id{});
+            haveThreadId = true;
+            if (cancelCalled) {
+                canceled = true;
+            }
+            else {
+                lock.unlock();
+                bool enabled = Thread::enableCancel();
+                Thread::testCancel(); // In case destructor called
+                //std::cout << "Calling setResult()\n";
+                setResult();
+                Thread::testCancel(); // In case destructor called
+                Thread::disableCancel(); // Disables Thread::testCancel()
+                lock.lock();
+                haveResult = true;
+                Thread::enableCancel(enabled);
+            }
+            cond.notify_all();
+        }
+        catch (const std::exception& e) {
+            setException();
+        }
+        THREAD_CLEANUP_POP(false);
     }
 
     /**
@@ -160,30 +217,7 @@ public:
     {
         UniqueLock lock{mutex};
         wait(lock);
-        return canceled;
-    }
-
-    void operator()()
-    {
-        try {
-            UniqueLock lock{mutex};
-            threadId = Thread::getId();
-            haveThreadId = true;
-            cond.notify_one();
-            if (!canceled) {
-                bool enabled = Thread::enableCancel();
-                lock.unlock();
-                //std::cout << "Calling setResult()\n";
-                setResult();
-                lock.lock();
-                haveResult = true;
-                cond.notify_one();
-                Thread::enableCancel(enabled);
-            }
-        }
-        catch (const std::exception& e) {
-            setException();
-        }
+        return canceled && !exception;
     }
 };
 
@@ -242,8 +276,8 @@ bool BasicFuture::wasCanceled() const
 template<class Ret>
 class Future<Ret>::Impl : public BasicFuture::Impl
 {
-    Task<Ret> task;
-    Ret       result;
+    Task<Ret>                   task;
+    Ret                         result;
 
     void setResult()
     {
@@ -253,9 +287,22 @@ class Future<Ret>::Impl : public BasicFuture::Impl
 public:
     /**
      * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed
+     * @param[in] task    Task to be executed
      */
-    Impl(Task<Ret>& task)
+    Impl(Task<Ret>&   task)
+        : BasicFuture::Impl{}
+        , task{task}
+        , result{}
+    {}
+
+    /**
+     * Constructs from the task to be executed and the key under which to store
+     * the thread-specific future.
+     * @param[in] task    Task to be executed
+     * @param[in] future  Associated public future
+     */
+    Impl(   Task<Ret>&   task,
+            Future<Ret>* future)
         : BasicFuture::Impl{}
         , task{task}
         , result{}
@@ -301,7 +348,7 @@ template class Future<int>;
 
 class Future<void>::Impl : public BasicFuture::Impl
 {
-    Task<void> task;
+    Task<void>                   task;
 
     void setResult()
     {

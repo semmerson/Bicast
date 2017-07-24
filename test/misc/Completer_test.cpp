@@ -14,11 +14,20 @@
 
 #include <array>
 #include <gtest/gtest.h>
+#include <random>
+#include <unistd.h>
 
 namespace {
 
 // The fixture for testing class Completer.
 class CompleterTest : public ::testing::Test {
+protected:
+    void cancelGet()
+    {
+        hycast::Completer<void> completer{};
+        completer.submit(&::pause);
+        auto future = completer.get();
+    }
 };
 
 // Tests construction of void completer
@@ -100,16 +109,36 @@ TEST_F(CompleterTest, IntCancellation) {
     EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
 
-// Tests destruction with active task
+// Tests destruction of completer with active task
 TEST_F(CompleterTest, DestructionWithTask) {
     hycast::Completer<void> completer{};
     completer.submit([]{::pause();});
 }
 
-// Tests destruction with active future
+// Tests destruction of completer with active future
 TEST_F(CompleterTest, DestructionWithFuture) {
     hycast::Completer<void> completer{};
     auto future = completer.submit([]{::pause();});
+}
+
+// Tests cancellation of nested Completer::get()
+TEST_F(CompleterTest, CancelNestedGet) {
+    hycast::Completer<void> completer{};
+    completer.submit([this]{cancelGet();});
+    ::usleep(100000);
+}
+
+// Tests execution of a bunch of tasks
+TEST_F(CompleterTest, BunchOfJobs) {
+    //std::set_terminate([]{std::cout << "terminate() called\n"; ::pause();});
+    hycast::Completer<void> completer{};
+    std::default_random_engine generator{};
+    std::uniform_int_distribution<useconds_t> distribution{0, 100000};
+    for (int i = 0; i < 200; ++i)
+        completer.submit([&generator,&distribution]() mutable
+                {::usleep(distribution(generator));});
+    for (int i = 0; i < 100; ++i)
+        completer.get();
 }
 
 }  // namespace

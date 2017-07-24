@@ -177,7 +177,7 @@ class PeerSet::Impl final
              */
             bool push(
                     std::shared_ptr<SendAction> action,
-                    const TimeUnit&              maxResideTime)
+                    const TimeUnit&             maxResideTime)
             {
                 LockGuard lock{mutex};
                 if (isDisabled)
@@ -538,7 +538,8 @@ public:
      * member. If the set is full, then
      *   - The current thread is blocked until the membership has been unchanged
      *     for at least the amount of time given to the constructor; and
-     *   - The worst-performing will have been removed from the set.
+     *   - Upon return, the worst-performing will have been removed from the
+     *     set.
      * @param[in]  peer     Candidate peer
      * @return     `false`  Peer is already a member
      * @return     `true`   Peer was added. Worst peer removed and reported if

@@ -27,7 +27,7 @@ namespace hycast {
 template<class Ret>
 class Executor final
 {
-    typedef Thread::ThreadId ThreadId;
+    typedef Thread::Id       ThreadId;
 
     class                    Impl;
     std::shared_ptr<Impl>    pImpl;
@@ -62,18 +62,28 @@ public:
     Future<Ret> submit(std::function<Ret()>&& func) const;
 
     /**
-     * Returns the future corresponding to a thread identifier.
-     * @param[in] threadId     Thread identifier
-     * @return                 The corresponding future. Will be empty if no such
+     * Returns the future associated with the current thread.
+     * @return                 The associated future. Will be empty if no such
      *                         future exists.
      * @throw OutOfRange       No such future
      * @exceptionsafety        Strong guarantee
      * @threadsafety           Safe
      */
-    Future<Ret> getFuture(const ThreadId threadId) const;
+    Future<Ret>& getFuture() const;
 
+    /**
+     * Shuts down this instance. Callables that have not started will not be
+     * started. Upon return, `submit()` will always throw an exception.
+     * @param[in] mayInterrupt  Whether or not the thread-of-execution of
+     *                          executing callables may be canceled.
+     */
     void shutdown(const bool mayInterrupt = true) const;
 
+    /**
+     * Waits until all callables have completed, either by being canceled, by
+     * throwing an exception, or by returning.
+     * @throw LogicError  Iff `shutdown()` wasn't called first
+     */
     void awaitTermination() const;
 };
 

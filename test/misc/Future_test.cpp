@@ -14,10 +14,14 @@
 #include "Task.h"
 #include "Thread.h"
 
+#include <atomic>
+#include <condition_variable>
 #include <exception>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <mutex>
 #include <pthread.h>
+#include <random>
 #include <stdexcept>
 #include <stdio.h>
 #include <thread>
@@ -60,7 +64,6 @@ TEST_F(FutureTest, VoidTaskRelationalOperations)
     EXPECT_TRUE(future1 != future2);
     EXPECT_TRUE(future1 < future2);
 }
-#endif
 
 // Tests void task cancellation
 TEST_F(FutureTest, VoidTaskCancellation)
@@ -71,11 +74,29 @@ TEST_F(FutureTest, VoidTaskCancellation)
     hycast::Thread thread(future);
     ASSERT_EQ(1, hycast::Thread::size());
     future.cancel();
-    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_TRUE(future.wasCanceled());
+    thread.join();
+    EXPECT_EQ(0, hycast::Thread::size());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
+}
+#endif
+
+// Tests void task thread-cancellation
+TEST_F(FutureTest, VoidTaskThreadCancellation)
+{
+    hycast::Task<void> task{::pause};
+    hycast::Future<void> future{task};
+    ASSERT_EQ(0, hycast::Thread::size());
+    hycast::Thread thread{future};
+    ASSERT_EQ(1, hycast::Thread::size());
+    thread.cancel();
+    EXPECT_TRUE(future.wasCanceled());
+    thread.join();
+    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
 
+#if 1
 // Tests void task cancellation loop
 TEST_F(FutureTest, VoidTaskCancellationLoop)
 {
@@ -88,12 +109,12 @@ TEST_F(FutureTest, VoidTaskCancellationLoop)
         hycast::Thread thread{future};
         ASSERT_EQ(1, hycast::Thread::size());
         future.cancel();
-        EXPECT_EQ(0, hycast::Thread::size());
+        thread.join();
         EXPECT_TRUE(future.wasCanceled());
+        EXPECT_EQ(0, hycast::Thread::size());
     }
 }
 
-#if 1
 // Tests getting result of void task
 TEST_F(FutureTest, VoidTaskResult)
 {
@@ -122,6 +143,7 @@ TEST_F(FutureTest, VoidFutureCancelOrdering)
     hycast::Thread thread(future);
     EXPECT_FALSE(future.wasCanceled());
     future.cancel();
+    thread.join();
     EXPECT_FALSE(future.wasCanceled());
     EXPECT_NO_THROW(future.getResult());
 }
@@ -135,6 +157,7 @@ TEST_F(FutureTest, VoidFutureExceptionOrdering)
     hycast::Thread thread(future);
     EXPECT_FALSE(future.wasCanceled());
     future.cancel();
+    thread.join();
     EXPECT_FALSE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::RuntimeError);
 }
@@ -177,6 +200,7 @@ TEST_F(FutureTest, IntTaskCancellation)
     hycast::Future<int> future{task};
     hycast::Thread thread(future);
     future.cancel();
+    thread.join();
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
@@ -209,6 +233,7 @@ TEST_F(FutureTest, IntFutureCancelOrdering)
     hycast::Thread thread(future);
     EXPECT_FALSE(future.wasCanceled());
     future.cancel();
+    thread.join();
     EXPECT_FALSE(future.wasCanceled());
     EXPECT_NO_THROW(future.getResult());
 }
@@ -221,10 +246,35 @@ TEST_F(FutureTest, IntFutureExceptionOrdering)
     hycast::Future<int> future{task};
     hycast::Thread thread(future);
     EXPECT_FALSE(future.wasCanceled());
-    future.cancel();
+    thread.join();
     EXPECT_FALSE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::RuntimeError);
 }
+
+// Tests execution of a bunch of futures
+TEST_F(FutureTest, BunchOfFutures) {
+    std::default_random_engine generator{};
+    std::uniform_int_distribution<useconds_t> distribution{0, 10000};
+    hycast::Thread threads[200];
+    std::mutex mutex;
+    std::unique_lock<decltype(mutex)> lock{mutex};
+    std::condition_variable cond{};
+    int count{0};
+    for (int i = 0; i < 200; ++i) {
+        hycast::Task<void> task{[&generator,&distribution,&mutex,&count,&cond]()
+                mutable {
+            ::usleep(distribution(generator));
+            std::lock_guard<decltype(mutex)> lock{mutex};
+            ++count;
+            cond.notify_one();
+        }};
+        auto future = hycast::Future<void>{task};
+        threads[i] = hycast::Thread{future};
+    }
+    while (count < 100)
+        cond.wait(lock);
+}
+
 #endif
 }  // namespace
 

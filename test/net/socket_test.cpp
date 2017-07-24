@@ -181,47 +181,47 @@ TEST_F(SocketTest, LocallyTerminatingRead)
  * A server that is stopped by polling a signaling pipe.
  */
 class PollableServer {
-	int             srvrSd; /// Server socket descriptor
-    int             pipeFds[2];
+    int srvrSd; /// Server socket descriptor
+    int pipeFds[2];
 public:
-	std::atomic_bool threadStarted;
-	std::atomic_bool acceptPollReturned;
-	std::atomic_bool acceptReturned;
-	std::atomic_bool readPollReturned;
-	std::atomic_bool readReturned;
-	PollableServer(struct sockaddr_in& srvrAddr)
-		: srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
-		  pipeFds{-1, -1},
-		  threadStarted{false},
-		  acceptPollReturned{false},
-		  acceptReturned{false},
-		  readPollReturned{false},
-		  readReturned{false}
-	{
-		EXPECT_NE(-1, srvrSd);
-		int status = ::bind(srvrSd,
-				reinterpret_cast<struct sockaddr*>(&srvrAddr),
-				sizeof(srvrAddr));
-		EXPECT_EQ(0, status);
-		status = ::listen(srvrSd, 5);
-		EXPECT_EQ(0, status);
-		status = pipe(pipeFds);
-		EXPECT_EQ(0, status);
-	}
-	~PollableServer() {
-		stop();
-		::close(srvrSd);
-		::close(pipeFds[0]);
-		::close(pipeFds[1]);
-	}
-	ssize_t operator()() {
-	    threadStarted = true;
-		struct pollfd   pollfd[2];
-		const int       stopIndex = 0;
-		const int       sockIndex = 1;
-		for (;;) {
-            pollfd[stopIndex].fd = pipeFds[0]; // Works if write to pipeFds[1]
+    std::atomic_bool threadStarted;
+    std::atomic_bool acceptPollReturned;
+    std::atomic_bool acceptReturned;
+    std::atomic_bool readPollReturned;
+    std::atomic_bool readReturned;
+    PollableServer(struct sockaddr_in& srvrAddr)
+        : srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
+          pipeFds{-1, -1},
+          threadStarted{false},
+          acceptPollReturned{false},
+          acceptReturned{false},
+          readPollReturned{false},
+          readReturned{false}
+    {
+        EXPECT_NE(-1, srvrSd);
+        int status = ::bind(srvrSd,
+                reinterpret_cast<struct sockaddr*>(&srvrAddr),
+                sizeof(srvrAddr));
+        EXPECT_EQ(0, status);
+        status = ::listen(srvrSd, 5);
+        EXPECT_EQ(0, status);
+        status = pipe(pipeFds);
+        EXPECT_EQ(0, status);
+    }
+    ~PollableServer() {
+        stop();
+        ::close(srvrSd);
+        ::close(pipeFds[0]);
+        ::close(pipeFds[1]);
+    }
+    ssize_t operator()() {
+        threadStarted = true;
+        struct pollfd   pollfd[2];
+        const int       stopIndex = 0;
+        const int       sockIndex = 1;
+        for (;;) {
             pollfd[stopIndex].fd = pipeFds[1]; // Can result in hanging
+            pollfd[stopIndex].fd = pipeFds[0]; // Works if write to pipeFds[1]
             pollfd[stopIndex].events = POLLIN;
             pollfd[sockIndex].fd = srvrSd;
             pollfd[sockIndex].events = POLLIN;
@@ -238,7 +238,7 @@ public:
             EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
             EXPECT_TRUE(peerSd >= 0);
             pollfd[sockIndex].fd = peerSd;
-            // Can hang here if signal is closing write-end of pipe
+            // Can hang here if stop-signal is closing write-end of pipe
             ::poll(pollfd, 2, -1); // -1 => indefinite wait
             readPollReturned = true;
             if (pollfd[stopIndex].revents) {
@@ -252,13 +252,13 @@ public:
             readReturned = true;
             ::close(peerSd);
             return nbytes;
-		}
-	}
-	void stop() {
+        }
+    }
+    void stop() {
         char buf[1];
         ::write(pipeFds[1], buf, sizeof(buf));
         ::close(pipeFds[1]); // Doesn't work for PollableReadTermination
-	}
+    }
 };
 
 // Tests procedure for terminating an accept().
@@ -346,87 +346,87 @@ TEST_F(SocketTest, ReadTermination) {
  * A server that is stopped by canceling the thread on which it's executing.
  */
 class CancellableServer {
-	int srvrSd; /// Server socket descriptor
-	int clntSd; /// Client socket descriptor
-	std::mutex              mutex;
-	std::condition_variable cond;
-	std::thread::native_handle_type nativeHandle;
-	static void acceptCleanup(void* arg)
-	{
-	    CancellableServer* obj = static_cast<CancellableServer*>(arg);
-	    obj->acceptCleanupCalled = true;
-	}
-	static void readCleanup(void* arg)
-	{
-	    CancellableServer* obj = static_cast<CancellableServer*>(arg);
-	    EXPECT_TRUE(obj->clntSd >= 0);
-	    int status = ::close(obj->clntSd);
-	    EXPECT_EQ(0, status);
-	    obj->readCleanupCalled = true;
-	}
+    int srvrSd; /// Server socket descriptor
+    int clntSd; /// Client socket descriptor
+    std::mutex              mutex;
+    std::condition_variable cond;
+    std::thread::native_handle_type nativeHandle;
+    static void acceptCleanup(void* arg)
+    {
+        CancellableServer* obj = static_cast<CancellableServer*>(arg);
+        obj->acceptCleanupCalled = true;
+    }
+    static void readCleanup(void* arg)
+    {
+        CancellableServer* obj = static_cast<CancellableServer*>(arg);
+        EXPECT_TRUE(obj->clntSd >= 0);
+        int status = ::close(obj->clntSd);
+        EXPECT_EQ(0, status);
+        obj->readCleanupCalled = true;
+    }
 public:
-	std::atomic_bool started;
-	std::atomic_bool accepted;
-	std::atomic_bool acceptCleanupCalled;
-	std::atomic_bool readCleanupCalled;
-	CancellableServer(struct sockaddr_in& srvrAddr)
-		: srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
-		  clntSd{-1},
-		  started{false},
-		  accepted{false},
-		  acceptCleanupCalled{false},
-		  readCleanupCalled{false},
-		  mutex{},
-		  cond{},
-		  nativeHandle{}
-	{
-		EXPECT_NE(-1, srvrSd);
-		int status = ::bind(srvrSd,
-				reinterpret_cast<struct sockaddr*>(&srvrAddr),
-				sizeof(srvrAddr));
-		EXPECT_EQ(0, status);
-		status = ::listen(srvrSd, 5);
-		EXPECT_EQ(0, status);
-	}
-	~CancellableServer() {
-		::close(srvrSd);
-	}
-	void operator()() {
-	    // A thread can be cancelled before it ever starts
-	    {
-	        std::lock_guard<decltype(mutex)> lock(mutex);
+    std::atomic_bool started;
+    std::atomic_bool accepted;
+    std::atomic_bool acceptCleanupCalled;
+    std::atomic_bool readCleanupCalled;
+    CancellableServer(struct sockaddr_in& srvrAddr)
+        : srvrSd{::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP)},
+          clntSd{-1},
+          started{false},
+          accepted{false},
+          acceptCleanupCalled{false},
+          readCleanupCalled{false},
+          mutex{},
+          cond{},
+          nativeHandle{}
+    {
+        EXPECT_NE(-1, srvrSd);
+        int status = ::bind(srvrSd,
+                reinterpret_cast<struct sockaddr*>(&srvrAddr),
+                sizeof(srvrAddr));
+        EXPECT_EQ(0, status);
+        status = ::listen(srvrSd, 5);
+        EXPECT_EQ(0, status);
+    }
+    ~CancellableServer() {
+        ::close(srvrSd);
+    }
+    void operator()() {
+        // A thread can be cancelled before it ever starts
+        {
+            std::lock_guard<decltype(mutex)> lock(mutex);
             started = true;
             nativeHandle = ::pthread_self();
             cond.notify_one();
-	    }
-	    THREAD_CLEANUP_PUSH(acceptCleanup, this);
-            struct sockaddr clntAddr = {};
-            socklen_t       clntAddrLen = sizeof(clntAddr);
-            clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
-            accepted = true;
-            THREAD_CLEANUP_PUSH(readCleanup, this);
-            EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
-            EXPECT_TRUE(clntSd >= 0);
-                for (;;) {
-                    char buf[1];
-                    auto nbytes = read(clntSd, buf, sizeof(buf));
-                }
-            THREAD_CLEANUP_POP(true);
-	    THREAD_CLEANUP_POP(false);
-	}
-	void stop()
-	{
+        }
+        THREAD_CLEANUP_PUSH(acceptCleanup, this);
+        struct sockaddr clntAddr = {};
+        socklen_t       clntAddrLen = sizeof(clntAddr);
+        clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
+        accepted = true;
+        THREAD_CLEANUP_PUSH(readCleanup, this);
+        EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
+        EXPECT_TRUE(clntSd >= 0);
+        for (;;) {
+            char buf[1];
+            auto nbytes = read(clntSd, buf, sizeof(buf));
+        }
+        THREAD_CLEANUP_POP(true);
+        THREAD_CLEANUP_POP(false);
+    }
+    void stop()
+    {
         std::unique_lock<decltype(mutex)> lock(mutex);
         while (!started)
             cond.wait(lock);
         ::pthread_cancel(nativeHandle);
-	}
+    }
 };
 
 // Tests mechanism for terminating an `accept()`
 TEST_F(SocketTest, AcceptTermination)
 {
-	CancellableServer server{srvrAddr};
+    CancellableServer server{srvrAddr};
     std::atomic_long result;
     auto srvrThread = hycast::Thread([&]{server();});
     srvrThread.cancel();
@@ -441,20 +441,20 @@ TEST_F(SocketTest, AcceptTermination)
 // Tests mechanism for terminating a read on a socket.
 TEST_F(SocketTest, ReadTermination)
 {
-	CancellableServer server{srvrAddr};
+    CancellableServer server{srvrAddr};
     std::atomic_long result;
     auto srvrThread = hycast::Thread([&]{server();});
     auto clntSd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-	EXPECT_NE(-1, clntSd);
-	auto status = ::connect(clntSd,
-			reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
-	EXPECT_EQ(0, status);
-	/*
-	 * One or the other of the following increases the likelihood that the
-	 * return from the `accept()` happens before the thread cancellation. It
-	 * appears, therefore, that a successful `connect()` doesn't mean that the
-	 * corresponding `accept()` has returned.
-	 */
+    EXPECT_NE(-1, clntSd);
+    auto status = ::connect(clntSd,
+            reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
+    EXPECT_EQ(0, status);
+    /*
+     * One or the other of the following increases the likelihood that the
+     * return from the `accept()` happens before the thread cancellation. It
+     * appears, therefore, that a successful `connect()` doesn't mean that the
+     * corresponding `accept()` has returned.
+     */
 #if 1
     char buf[1];
     status = write(clntSd, buf, sizeof(buf));
@@ -463,7 +463,7 @@ TEST_F(SocketTest, ReadTermination)
 	::sleep(1);
 #endif
     //srvrThread.cancel(); // Works
-	server.stop(); // Works
+    server.stop(); // Works
     srvrThread.join();
     if (server.started) {
         EXPECT_EQ(true, server.acceptCleanupCalled);

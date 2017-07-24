@@ -38,13 +38,13 @@ public:
     	: name{name}
     {}
 
-	/**
-	 * Constructs.
-	 * @param[in] index  Index of the interface (e.g., 2)
-	 */
-	Impl(const int index)
+    /**
+     * Constructs.
+     * @param[in] index  Index of the interface (e.g., 2)
+     */
+    Impl(const int index)
     {
-		throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+        throw LogicError(__FILE__, __LINE__, "Not implemented yet");
     }
 
     /**

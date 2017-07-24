@@ -1,17 +1,19 @@
-==128110== Memcheck, a memory error detector
-==128110== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
-==128110== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
-==128110== Command: /home/steve/Projects/hycast/src/test/misc/.libs/lt-Future_test
-==128110== 
-[==========] Running 15 tests from 1 test case.
+==36482== Memcheck, a memory error detector
+==36482== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==36482== Using Valgrind-3.11.0 and LibVEX; rerun with -h for copyright info
+==36482== Command: /home/steve/Projects/hycast/src/test/misc/.libs/lt-Future_test
+==36482== 
+[==========] Running 16 tests from 1 test case.
 [----------] Global test environment set-up.
-[----------] 15 tests from FutureTest
+[----------] 16 tests from FutureTest
 [ RUN      ] FutureTest.VoidTaskExecution
-[       OK ] FutureTest.VoidTaskExecution (115 ms)
+[       OK ] FutureTest.VoidTaskExecution (111 ms)
 [ RUN      ] FutureTest.VoidTaskRelationalOperations
-[       OK ] FutureTest.VoidTaskRelationalOperations (12 ms)
+[       OK ] FutureTest.VoidTaskRelationalOperations (11 ms)
 [ RUN      ] FutureTest.VoidTaskCancellation
-[       OK ] FutureTest.VoidTaskCancellation (98 ms)
+[       OK ] FutureTest.VoidTaskCancellation (85 ms)
+[ RUN      ] FutureTest.VoidTaskThreadCancellation
+[       OK ] FutureTest.VoidTaskThreadCancellation (9 ms)
 [ RUN      ] FutureTest.VoidTaskCancellationLoop
 0
 1
@@ -1013,40 +1015,40 @@
 997
 998
 999
-[       OK ] FutureTest.VoidTaskCancellationLoop (588 ms)
+[       OK ] FutureTest.VoidTaskCancellationLoop (1183 ms)
 [ RUN      ] FutureTest.VoidTaskResult
-[       OK ] FutureTest.VoidTaskResult (7 ms)
+[       OK ] FutureTest.VoidTaskResult (6 ms)
 [ RUN      ] FutureTest.VoidTaskWaiting
-[       OK ] FutureTest.VoidTaskWaiting (8 ms)
+[       OK ] FutureTest.VoidTaskWaiting (5 ms)
 [ RUN      ] FutureTest.VoidFutureCancelOrdering
 [       OK ] FutureTest.VoidFutureCancelOrdering (6 ms)
 [ RUN      ] FutureTest.VoidFutureExceptionOrdering
-[       OK ] FutureTest.VoidFutureExceptionOrdering (16 ms)
+[       OK ] FutureTest.VoidFutureExceptionOrdering (12 ms)
 [ RUN      ] FutureTest.IntTaskExecution
-[       OK ] FutureTest.IntTaskExecution (36 ms)
+[       OK ] FutureTest.IntTaskExecution (37 ms)
 [ RUN      ] FutureTest.IntTaskRelationalOperations
 [       OK ] FutureTest.IntTaskRelationalOperations (10 ms)
 [ RUN      ] FutureTest.IntTaskCancellation
-[       OK ] FutureTest.IntTaskCancellation (7 ms)
+[       OK ] FutureTest.IntTaskCancellation (8 ms)
 [ RUN      ] FutureTest.IntTaskResult
 [       OK ] FutureTest.IntTaskResult (6 ms)
 [ RUN      ] FutureTest.IntTaskWaiting
 [       OK ] FutureTest.IntTaskWaiting (6 ms)
 [ RUN      ] FutureTest.IntFutureCancelOrdering
-[       OK ] FutureTest.IntFutureCancelOrdering (7 ms)
+[       OK ] FutureTest.IntFutureCancelOrdering (6 ms)
 [ RUN      ] FutureTest.IntFutureExceptionOrdering
-[       OK ] FutureTest.IntFutureExceptionOrdering (10 ms)
-[----------] 15 tests from FutureTest (949 ms total)
+[       OK ] FutureTest.IntFutureExceptionOrdering (7 ms)
+[----------] 16 tests from FutureTest (1522 ms total)
 
 [----------] Global test environment tear-down
-[==========] 15 tests from 1 test case ran. (979 ms total)
-[  PASSED  ] 15 tests.
-==128110== 
-==128110== HEAP SUMMARY:
-==128110==     in use at exit: 0 bytes in 0 blocks
-==128110==   total heap usage: 11,082 allocs, 11,082 frees, 501,752 bytes allocated
-==128110== 
-==128110== All heap blocks were freed -- no leaks are possible
-==128110== 
-==128110== For counts of detected and suppressed errors, rerun with: -v
-==128110== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+[==========] 16 tests from 1 test case ran. (1549 ms total)
+[  PASSED  ] 16 tests.
+==36482== 
+==36482== HEAP SUMMARY:
+==36482==     in use at exit: 0 bytes in 0 blocks
+==36482==   total heap usage: 10,116 allocs, 10,116 frees, 609,980 bytes allocated
+==36482== 
+==36482== All heap blocks were freed -- no leaks are possible
+==36482== 
+==36482== For counts of detected and suppressed errors, rerun with: -v
+==36482== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

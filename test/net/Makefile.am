@@ -21,7 +21,6 @@ SctpSock_test_SOURCES		= SctpSock_test.cpp
 UdpSock_test_SOURCES		= UdpSock_test.cpp
 
 TESTS	= \
-	socket_test \
 	Interface_test \
 	Ipv4Addr_test \
 	Ipv6Addr_test \
@@ -29,3 +28,5 @@ TESTS	= \
 	InetSockAddr_test \
 	SctpSock_test \
 	UdpSock_test
+
+#	socket_test

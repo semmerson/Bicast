@@ -12,6 +12,7 @@
 
 #include "error.h"
 #include "InetSockAddr.h"
+#include "Interface.h"
 
 #include <atomic>
 #include <gtest/gtest.h>
@@ -33,7 +34,7 @@ protected:
     McastReceiverTest()
         : asmGroupAddr("234.128.117.0", 38800)
         , ssmGroupAddr("232.0.0.0", 38800)
-        , srcAddr("192.168.139.135") // IPv4 address of ethernet interface
+        , srcAddr{hycast::Interface{"ens33"}.getInetAddr(AF_INET)}
         , version{0}
         , prodName("product")
         , chunkSize{hycast::ChunkInfo::getCanonSize()}

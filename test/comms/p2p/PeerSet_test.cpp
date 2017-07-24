@@ -11,15 +11,16 @@
 
 #include "ClntSctpSock.h"
 #include "error.h"
-#include "SctpSock.h"
 #include "HycastTypes.h"
+#include "Interface.h"
 #include "logging.h"
+#include "PeerMsgRcvr.h"
+#include "PeerSet.h"
 #include "ProdInfo.h"
+#include "SctpSock.h"
 #include "SrvrSctpSock.h"
 
 #include <gtest/gtest.h>
-#include <p2p/PeerMsgRcvr.h>
-#include <p2p/PeerSet.h>
 #include <pthread.h>
 #include <thread>
 #include <unistd.h>
@@ -119,7 +120,8 @@ protected:
 
     PeerSetTest()
         : server1SockAddr{"127.0.0.1", 38800}
-        , server2SockAddr{"192.168.139.136", 38800}
+        , server2SockAddr{hycast::Interface{"ens33"}.getInetAddr(AF_INET),
+                38800}
     {}
 
     hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
@@ -135,6 +137,7 @@ protected:
     ClientMsgRcvr              clntMsgRcvr{prodInfo, chunkInfo};
 };
 
+#if 0
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction) {
     hycast::PeerSet peerSet{2};
@@ -144,22 +147,25 @@ TEST_F(PeerSetTest, DefaultConstruction) {
 TEST_F(PeerSetTest, InvalidConstruction) {
     EXPECT_THROW(hycast::PeerSet(2, 0), std::invalid_argument);
 }
+#endif
 
 // Tests inserting a peer and incrementing its value
 TEST_F(PeerSetTest, IncrementPeerValue) {
     try {
+        //std::set_terminate([]{std::cerr << "In terminate()\n"; ::pause();});
         Server server{server1SockAddr};
         hycast::Peer     peer{getClientPeer(server1SockAddr)};
         hycast::PeerSet  peerSet{2};
         EXPECT_TRUE(peerSet.tryInsert(peer));
         EXPECT_EQ(1, peerSet.size());
-        peerSet.incValue(peer);
+        EXPECT_NO_THROW(peerSet.incValue(peer));
     }
     catch (const std::exception& e) {
         hycast::log_what(e);
     }
 }
 
+#if 0
 // Tests removing the worst peer from a 1-peer set
 TEST_F(PeerSetTest, RemoveWorst) {
     try {
@@ -199,6 +205,7 @@ TEST_F(PeerSetTest, DuplicatePeerInsertion) {
     EXPECT_TRUE(peerSet.tryInsert(peer));
     EXPECT_FALSE(peerSet.tryInsert(peer));
 }
+#endif
 
 }  // namespace
 

@@ -15,7 +15,9 @@
 #include <exception>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <random>
 #include <stdexcept>
+#include <unistd.h>
 
 namespace {
 
@@ -34,6 +36,7 @@ TEST_F(ExecutorTest, DefaultVoidConstruction) {
 TEST_F(ExecutorTest, IntConstruction) {
     hycast::Executor<int> executor{};
 }
+#endif
 
 // Tests executing void task
 TEST_F(ExecutorTest, VoidExecution) {
@@ -43,6 +46,7 @@ TEST_F(ExecutorTest, VoidExecution) {
     future.getResult();
 }
 
+#if 1
 // Tests executing int task
 TEST_F(ExecutorTest, IntExecution) {
     hycast::Executor<int> executor{};
@@ -163,7 +167,18 @@ TEST_F(ExecutorTest, CompareInt) {
     future1.getResult();
     future2.getResult();
 }
-#endif
+
+// Tests execution of a bunch of tasks
+TEST_F(ExecutorTest, BunchOfJobs) {
+    hycast::Executor<void> executor{};
+    std::default_random_engine generator{};
+    std::uniform_int_distribution<useconds_t> distribution{0, 100000};
+    for (int i = 0; i < 200; ++i)
+        executor.submit([&generator,&distribution]() mutable
+                {::usleep(distribution(generator));});
+    executor.shutdown(false);
+    executor.awaitTermination();
+}
 
 // Tests construction and cancellation performance
 TEST_F(ExecutorTest, CtorAndCancelPerformance) {
@@ -195,6 +210,7 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
                 std::to_string(i));
     }
 }
+#endif
 
 }  // namespace
 

@@ -30,21 +30,47 @@ class Completer<Ret>::Impl
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  LockGuard;
     typedef std::unique_lock<Mutex> UniqueLock;
+    typedef std::condition_variable Cond;
+    class FutureQueue
+    {
+        Mutex                    mutex;
+        Cond                     cond;
+        std::queue<Future<Ret>>  futures;
 
-    /// Variables for synchronizing state changes
-    std::mutex               mutex;
-    std::condition_variable  cond;
-    /// Queue of completed tasks
-    std::queue<Future<Ret>>  completedTasks;
+    public:
+        FutureQueue()
+            : mutex{}
+            , cond{}
+            , futures{}
+        {}
+
+        void push(Future<Ret> future)
+        {
+            LockGuard lock{mutex};
+            futures.push(future);
+            cond.notify_all();
+        }
+
+        Future<Ret> pop()
+        {
+            UniqueLock lock{mutex};
+            while (futures.empty())
+                cond.wait(lock);
+            auto future = futures.front();
+            futures.pop();
+            return future;
+        }
+    };
+
+    /// Queue of futures of completed tasks
+    FutureQueue              completedFutures;
     /// Executor
     Executor<Ret>            executor;
 
     void finish() {
         auto threadId = Thread::getId();
-        auto future = executor.getFuture(threadId);
-        LockGuard lock{mutex};
-        completedTasks.push(future);
-        cond.notify_all();
+        auto future = executor.getFuture();
+        completedFutures.push(future);
     }
 
 protected:
@@ -54,7 +80,7 @@ protected:
 
     /**
      * Wraps a callable in a callable that adds the associated future to the
-     * completed-task queue.
+     * queue of completed futures.
      * @param[in] func  Callable to be wrapped
      * @return          Wrapped callable
      */
@@ -74,9 +100,7 @@ public:
      * Constructs from nothing.
      */
     Impl()
-        : mutex{}
-        , cond{}
-        , completedTasks{}
+        : completedFutures{}
         , executor{}
     {}
 
@@ -91,7 +115,6 @@ public:
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         auto callable = getCallable(func);
-        LockGuard lock{mutex};
         auto future = executor.submit(callable);
         return future;
     }
@@ -103,12 +126,7 @@ public:
      * @threadsafety     Safe
      */
     Future<Ret> get() {
-        UniqueLock lock{mutex};
-        while (completedTasks.empty())
-            cond.wait(lock);
-        auto future = completedTasks.front();
-        completedTasks.pop();
-        return future;
+        return completedFutures.pop();
     }
 };
 

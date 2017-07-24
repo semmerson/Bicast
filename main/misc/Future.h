@@ -37,8 +37,6 @@ protected:
     BasicFuture(Impl* ptr);
 
 public:
-    typedef std::function<void(bool mayInterrupt)> CancelFunc;
-
     /**
      * Default constructs.
      */
@@ -76,6 +74,11 @@ public:
      */
     bool operator<(const BasicFuture& that) const noexcept;
 
+    /**
+     * Executes the task given to the constructor.
+     * @throw LogicError  Function already called
+     * @threadsafety      Incompatible
+     */
     void operator()() const;
 
     /**
@@ -90,7 +93,8 @@ public:
 
     /**
      * Indicates if the task's thread was cancelled. Blocks until the task
-     * completes if necessary. Should always be called before getResult().
+     * completes if necessary. Should always be called before getResult() if
+     * having that function throw an exception is undesirable.
      * @retval `true`   iff the task's thread was cancelled.
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
@@ -115,7 +119,7 @@ public:
 
     /**
      * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed
+     * @param[in] task  Task to be executed. Must have a copy constructor.
      */
     Future(Task<Ret>& task);
 
@@ -149,7 +153,7 @@ public:
 
     /**
      * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed
+     * @param[in] task  Task to be executed. Must have a copy constructor.
      */
     Future(Task<void>& task);
 

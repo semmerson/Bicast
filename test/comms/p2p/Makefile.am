@@ -7,6 +7,7 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main \
                   -I$(top_srcdir)/main/comms/p2p
 LDADD		= $(top_builddir)/main/libhycast.la 
 AM_LDFLAGS	= -lgtest -lsctp
+CLEANFILES	= *.vg
 
 check_PROGRAMS	= Channel_test \
                   ChunkChannel_test \
@@ -30,6 +31,11 @@ TESTS	= Channel_test \
 	  PeerSet_test \
 	  P2pMgr_test
 #	  Chunk2Peers_test
+
+PeerSet_test.vg:	PeerSet_test
+	$(TESTS_ENVIRONMENT) $(LIBTOOL) --mode=execute valgrind \
+	--leak-check=full --show-reachable=yes \
+	./PeerSet_test >$@ 2>&1
 
 callgrind:	Peer_test
 	rm -f callgrind.out.*

@@ -22,25 +22,25 @@ namespace {
 class InterfaceTest : public ::testing::Test
 {
 protected:
-    const std::string name{"ens33"};
+    const std::string ethernetIfaceName{"ens33"};
 };
 
 // Tests default construction
 TEST_F(InterfaceTest, DefaultConstruction)
 {
-    hycast::Interface iface{};
+    EXPECT_NO_THROW(hycast::Interface iface{});
 }
 
 // Tests construction from name
 TEST_F(InterfaceTest, ConstructionFromName)
 {
-    hycast::Interface iface{name};
+    hycast::Interface iface{ethernetIfaceName};
 }
 
 // Tests getting IPv4 address
 TEST_F(InterfaceTest, GetIPv4Addr)
 {
-    hycast::Interface iface{name};
+    hycast::Interface iface{ethernetIfaceName};
     auto inetAddr = iface.getInetAddr(AF_INET);
     std::cout << "IPv4 addr = " << inetAddr.to_string() << '\n';
 }
@@ -48,7 +48,7 @@ TEST_F(InterfaceTest, GetIPv4Addr)
 // Tests getting IPv6 address
 TEST_F(InterfaceTest, GetIPv6Addr)
 {
-    hycast::Interface iface{name};
+    hycast::Interface iface{ethernetIfaceName};
     auto inetAddr = iface.getInetAddr(AF_INET6);
     std::cout << "IPv6 addr = " << inetAddr.to_string() << '\n';
 }

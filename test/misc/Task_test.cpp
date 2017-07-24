@@ -34,7 +34,7 @@ protected:
     Cond                     cond;
     bool                     taskStarted;
     bool                     callableCalled;
-    hycast::Thread::ThreadId threadId;
+    hycast::Thread::Id threadId;
 
     TaskTest()
         : mutex{}
@@ -109,6 +109,7 @@ TEST_F(TaskTest, TrivialVoidTaskExplicitCancellation)
     hycast::Thread thread{task};
     EXPECT_EQ(1, hycast::Thread::size());
     thread.cancel();
+    thread.join();
     EXPECT_EQ(0, hycast::Thread::size());
 }
 
@@ -123,6 +124,7 @@ TEST_F(TaskTest, EndlessVoidTaskExplicitCancellation)
     EXPECT_EQ(threadId, thread.id());
     EXPECT_EQ(1, hycast::Thread::size());
     thread.cancel();
+    thread.join();
     EXPECT_EQ(0, hycast::Thread::size());
 }
 
@@ -139,6 +141,7 @@ TEST_F(TaskTest, EndlessVoidTaskExplicitCancellationLoop)
         EXPECT_EQ(threadId, thread.id());
         EXPECT_EQ(1, hycast::Thread::size());
         thread.cancel();
+        thread.join();
         EXPECT_EQ(0, hycast::Thread::size());
     }
 }

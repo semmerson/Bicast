@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <mutex>
+#include <random>
 
 namespace {
 
@@ -26,14 +27,14 @@ namespace {
 class ThreadTest : public ::testing::Test
 {
 protected:
-    typedef hycast::Thread::ThreadId ThreadId;
+    typedef hycast::Thread::Id ThreadId;
     typedef std::mutex               Mutex;
     typedef std::lock_guard<Mutex>   LockGuard;
     typedef std::unique_lock<Mutex>  UniqueLock;
 
     std::mutex                mutex;
     std::condition_variable   cond;
-    hycast::Thread::ThreadId  threadId;
+    hycast::Thread::Id  threadId;
     std::atomic_bool          cleanupCalled;
     bool                      callableCalled;
 
@@ -99,8 +100,11 @@ TEST_F(ThreadTest, DefaultConstruction)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{};
+    std::cout << "Default thread-ID: " << hycast::Thread::Id{} << '\n';
     ASSERT_EQ(0, hycast::Thread::size());
-    EXPECT_THROW(thread.id(), hycast::InvalidArgument);
+    EXPECT_NO_THROW(thread.id());
+    EXPECT_EQ(ThreadId{}, thread.id());
+    EXPECT_NO_THROW(thread.cancel());
 }
 #endif
 
@@ -125,10 +129,9 @@ TEST_F(ThreadTest, MoveConstruction)
 TEST_F(ThreadTest, MoveAssignment)
 {
     ASSERT_EQ(0, hycast::Thread::size());
-    hycast::Thread thread{[]{}};
-    ASSERT_EQ(1, hycast::Thread::size());
+    hycast::Thread thread{};
     ThreadId threadId = thread.id();
-    thread = hycast::Thread{[]{}};
+    thread = hycast::Thread{[]{}}; // Move assignment
     EXPECT_NE(threadId, thread.id());
     ASSERT_EQ(1, hycast::Thread::size());
 }
@@ -138,8 +141,10 @@ TEST_F(ThreadTest, IdOfJoinedThread)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[]{}};
+    auto ident = thread.id();
     thread.join();
-    EXPECT_THROW(thread.id(), hycast::InvalidArgument);
+    EXPECT_NE(ident, thread.id());
+    EXPECT_EQ(ThreadId{}, thread.id());
 }
 
 // Tests usage
@@ -148,11 +153,12 @@ TEST_F(ThreadTest, Usage)
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[this]{printArgs(1, 2, 3);}};
     ASSERT_EQ(1, hycast::Thread::size());
-    waitOnCallable();
+    thread.join();
+    ASSERT_EQ(0, hycast::Thread::size());
 }
 
-// Tests member cancellation
-TEST_F(ThreadTest, MemberCancellation)
+// Tests instance cancellation
+TEST_F(ThreadTest, InstanceCancellation)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[this]{markNotifyAndPause();}};
@@ -164,14 +170,14 @@ TEST_F(ThreadTest, MemberCancellation)
     ASSERT_EQ(0, hycast::Thread::size());
 }
 
-// Tests non-member cancellation
-TEST_F(ThreadTest, NonMemberCancellation)
+// Tests static cancellation
+TEST_F(ThreadTest, StaticCancellation)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[this]{markNotifyAndPause();}};
     auto id = thread.id();
     waitOnCallable();
-    hycast::Thread::cancel(thread.id());
+    hycast::Thread::cancel(id);
     thread.join();
     EXPECT_EQ(id, threadId);
     ASSERT_EQ(0, hycast::Thread::size());
@@ -189,8 +195,8 @@ TEST_F(ThreadTest, DestructorCancellation)
 TEST_F(ThreadTest, CancelDoneThread)
 {
     ASSERT_EQ(0, hycast::Thread::size());
-    hycast::Thread thread{[]{}};
-    ::usleep(250000); // Allows thread to complete
+    hycast::Thread thread{[this]{markAndNotify();}};
+    waitOnCallable();
     thread.cancel();
     thread.join();
     ASSERT_EQ(0, hycast::Thread::size());
@@ -254,22 +260,37 @@ TEST_F(ThreadTest, CancellationLoop)
             ASSERT_EQ(0, hycast::Thread::size());
             hycast::Thread thread{[]{}};
             thread.cancel();
+            thread.join();
         }
         for (; i < 1000; ++i) {
             ASSERT_EQ(0, hycast::Thread::size());
             hycast::Thread thread{[this]{markNotifyAndPause();}};
             thread.cancel();
+            thread.join();
         }
         for (; i < 1500; ++i) {
             ASSERT_EQ(0, hycast::Thread::size());
             hycast::Thread thread{[this]{markNotifyAndPause();}};
             waitOnCallable();
             thread.cancel();
+            thread.join();
         }
     }
     catch (const std::exception& e) {
         std::cerr << "Loop failed on iteration " << i << '\n';
     }
+}
+
+// Tests execution of a bunch of threads
+TEST_F(ThreadTest, BunchOfThreads) {
+    //std::set_terminate([]{std::cout << "terminate() called\n"; ::pause();});
+    std::default_random_engine generator{};
+    std::uniform_int_distribution<useconds_t> distribution{0, 100000};
+    hycast::Thread threads[200];
+    for (int i = 0; i < 200; ++i)
+        threads[i] = hycast::Thread([&generator,&distribution]() mutable
+                {::usleep(distribution(generator));});
+    usleep(50000);
 }
 #endif
 }  // namespace

@@ -20,6 +20,8 @@
 #include <list>
 #include <map>
 #include <mutex>
+#include <queue>
+#include <set>
 #include <stdexcept>
 #include <system_error>
 #include <utility>
@@ -29,59 +31,146 @@ namespace hycast {
 template<class Ret>
 class Executor<Ret>::Impl final
 {
-    /**
-     * Synchronizes two threads. One will wait until the gate has been opened
-     * by the other.
-     */
-    class Gate final
-    {
-        /// Types
-        typedef std::mutex              Mutex;
-        typedef std::unique_lock<Mutex> UniqueLock;
-
-        Mutex                           mutex;
-        std::condition_variable         cond;
-        bool                            isOpen;
-
-    public:
-        Gate()
-            : mutex{}
-            , cond{}
-            , isOpen{false}
-        {}
-        void wait()
-        {
-            UniqueLock lock{mutex};
-            while (!isOpen)
-                cond.wait(lock);
-        }
-        void open()
-        {
-            UniqueLock lock{mutex};
-            isOpen = true;
-            cond.notify_one();
-        }
-    };
-
     /// Types
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  LockGuard;
     typedef std::unique_lock<Mutex> UniqueLock;
-    typedef Thread::ThreadId        ThreadId;
+    typedef std::condition_variable Cond;
+    typedef Thread::Id              ThreadId;
+
+    /// Queue of thread identifiers.
+    class ThreadIdQueue
+    {
+        typedef std::queue<ThreadId> Queue;
+        Queue                        threadIds;
+
+    public:
+        ThreadIdQueue()
+            : threadIds{}
+        {}
+
+        void push(const ThreadId& threadId)
+        {
+            assert(threadId != ThreadId{});
+            threadIds.push(threadId);
+        }
+
+        bool empty()
+        {
+            return threadIds.empty();
+        }
+
+        ThreadId pop()
+        {
+            if (empty())
+                throw LogicError(__FILE__, __LINE__, "Queue is empty");
+            auto threadId = threadIds.front();
+            assert(threadId != ThreadId{});
+            threadIds.pop();
+            return threadId;
+        }
+    };
+
+    /// Map from thread identifiers to threads.
+    class ThreadMap
+    {
+        typedef std::map<ThreadId, Thread> Map;
+
+        Map   threads;
+
+    public:
+        ThreadMap()
+            : threads{}
+        {}
+
+        void add(Thread&& thread)
+        {
+            auto threadId = thread.id();
+            assert(threadId != ThreadId{});
+            assert(threads.find(threadId) == threads.end());
+            threads[threadId] = std::forward<Thread>(thread);
+        }
+
+        Thread remove(const ThreadId& threadId)
+        {
+            assert(threadId != ThreadId{});
+            Thread thread = std::move(threads.at(threadId));
+            auto n = threads.erase(threadId);
+            assert(n == 1);
+            return thread;
+        }
+
+        bool empty()
+        {
+            return threads.empty();
+        }
+    };
+
+    /// Map from thread identifiers to futures.
+    class FutureMap
+    {
+        typedef std::map<ThreadId, Future<Ret>>  Map;
+
+        Map futures;
+
+    public:
+        FutureMap()
+            : futures{}
+        {}
+
+        void add(const ThreadId& threadId, Future<Ret>& future)
+        {
+            assert(threadId != ThreadId{});
+            assert(futures.find(threadId) == futures.end());
+            futures[threadId] = future;
+        }
+
+        /**
+         * Returns the thread that corresponds to a thread identifier.
+         * @param[in] threadId       Thread ID
+         * @return                   Corresponding thread
+         * @throw std::out_of_range  No such thread
+         */
+        Future<Ret>& get(const ThreadId& threadId)
+        {
+            assert(threadId != ThreadId{});
+            return futures.at(threadId);
+        }
+
+        typename Map::size_type size()
+        {
+            return futures.size();
+        }
+
+        typename Map::size_type erase(const ThreadId& threadId)
+        {
+            assert(threadId != ThreadId{});
+            return futures.erase(threadId);
+        }
+
+        template<class Func> void forEach(Func func)
+        {
+            for (auto pair : futures)
+                func(pair.second);
+        }
+    };
 
     /// Variables for synchronizing state changes
     mutable Mutex                   mutex;
     mutable std::condition_variable cond;
 
     /// Active jobs
-    std::map<ThreadId, Thread>      threads;
-    std::map<ThreadId, Future<Ret>> futures;
+    ThreadMap                       threads;
+    FutureMap                       futures;
 
     /// Completed threads:
-    std::list<ThreadId>             doneThreadIds;
+    ThreadIdQueue                   doneThreadIds;
 
     /// Whether or not this instance has been shut down
     bool                            closed;
+
+    /// Key for thread-specific future:
+    Thread::PtrKey<Future<Ret>> futureKey;
 
     /**
      * Indicates whether or not the mutex is locked. Upon return, the state of
@@ -100,56 +189,77 @@ class Executor<Ret>::Impl final
      * For each thread referenced by `doneThreadIds`, the thread's associated
      * thread object is erased from `threads` -- destroying the thread object.
      * @pre `mutex` is locked
+     * @return `true`  Iff `threads` was modified
      */
-    void destroyDoneThreads()
+    bool destroyDoneThreads()
     {
         assert(isLocked());
         const auto currThreadId = Thread::getId();
-        for (auto threadId : doneThreadIds) {
-            Thread& thread = threads[threadId];
+        const bool modified = !doneThreadIds.empty();
+        while (!doneThreadIds.empty()) {
+            const auto threadId = doneThreadIds.pop();
+            Thread thread = threads.remove(threadId);
+            assert(thread.joinable());
             assert(thread.id() != currThreadId);
             assert(thread.id() == threadId || thread.id() == ThreadId{});
-            threads.erase(threadId);
+            thread.join();
         }
-        doneThreadIds.clear();
+        return modified;
     }
 
     /**
-     * Removes the future of the task being executed on the current thread from
-     * the set of active futures and adds the current thread's identifier to
-     * the set of done threads. Must be executed on the task's thread.
+     * Thread cleanup function. Removes the future of the task being executed on
+     * the current thread from the set of active futures and adds the current
+     * thread's identifier to the set of done threads. Must be executed on the
+     * task's thread.
      */
     void completeTask() {
         LockGuard lock{mutex};
+        destroyDoneThreads();
         /*
-         * Destroying the thread object associated with the current thread would
-         * cause undefined behavior.
+         * The thread object associated with the current thread-of-execution is
+         * not destroyed because that would cause undefined behavior.
          */
-        const auto doneThreadId = Thread::getId();
-        const auto n = futures.erase(doneThreadId);
-        assert(n <= 1);
-        doneThreadIds.push_back(doneThreadId);
-        cond.notify_one();
-    }
-
-    static void taskCompleted(void* arg) {
-        static_cast<Impl*>(arg)->completeTask();
+        const auto threadId = Thread::getId();
+        assert(threadId != ThreadId{});
+        const auto n = futures.erase(threadId);
+        assert(n == 1);
+        doneThreadIds.push(threadId);
+        cond.notify_all();
     }
 
     /**
-     * Returns a thread object whose thread will execute a task's future.
-     * @param[in] future  Task's future
-     * @return            The thread object
+     * Thread cleanup function. Calls the thread cleanup member function of the
+     * passed-in executor implementation.
+     * @param[in] arg  Pointer to `Executor::Impl`
+     */
+    static void taskCompleted(void* arg) {
+        auto pImpl = static_cast<Impl*>(arg);
+        pImpl->completeTask();
+    }
+
+    /**
+     * Returns a thread object whose thread will execute a task's future. Adds
+     * the future to the `futures` map.
+     * @param[in] future   Task's future
+     * @param[in] barrier  Synchronization barrier. `barrier.wait()` will be
+     *                     called just before `future()`.
+     * @return             The thread object
      */
     Thread newThread(
-            Future<Ret>& future,
-            Gate&        gate)
+            Future<Ret>&     future,
+            Thread::Barrier& barrier)
     {
         return Thread{
-            [this,future,&gate]() {
+            [this,&future,&barrier]() mutable {
                 try {
+                    /*
+                     * Block parent thread until thread-cleanup routine pushed
+                     * and until `getFuture()` will find the future.
+                     */
                     THREAD_CLEANUP_PUSH(taskCompleted, this);
-                    gate.open(); // Block parent thread until cleanup pushed
+                    //futureKey.set(&future);
+                    barrier.wait();
                     // future.cancel() held pending until future() entered
                     future();
                     THREAD_CLEANUP_POP(true);
@@ -159,34 +269,6 @@ class Executor<Ret>::Impl final
                 }
             }
         };
-    }
-
-    /**
-     * Adds a thread object to this instance.
-     * @pre               `isLocked()`
-     * @param[in] thread  Thread object to be added
-     */
-    void add(Thread&& thread)
-    {
-        assert(isLocked());
-        const auto threadId = thread.id();
-        assert(threads.find(threadId) == threads.end());
-        threads[threadId] = std::forward<Thread>(thread);
-    }
-
-    /**
-     * Adds a task's future to this instance.
-     * @pre                 `isLocked()`
-     * @param[in] threadId  Associated thread identifier
-     * @param[in] future    Task's future to be added
-     */
-    void add(
-            const ThreadId threadId,
-            Future<Ret>&   future)
-    {
-        assert(isLocked());
-        assert(futures.find(threadId) == futures.end());
-        futures[threadId] = future;
     }
 
     /**
@@ -200,37 +282,38 @@ class Executor<Ret>::Impl final
         UniqueLock lock{mutex};
         if (closed)
             throw LogicError(__FILE__, __LINE__, "Executor is shut down");
-        destroyDoneThreads();
-        Future<Ret> future{task};
-        Thread      thread{};
-        Gate        gate{};
+        Future<Ret>     future{task};
+        Thread          thread{};
+        Thread::Barrier barrier{2};
+        ThreadId        threadId;
         try {
-            thread = newThread(future, gate);
+            thread = newThread(future, barrier);
+            threadId = thread.id();
         }
         catch (const std::exception& e) {
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't create new thread"));
         }
-        ThreadId threadId;
         try {
-            gate.wait();
-            threadId = thread.id();
-            add(std::move(thread)); // Mustn't reference `thread` after this
+            barrier.wait();
+            futures.add(threadId, future);
         }
         catch (const std::exception& e) {
+            future.cancel();
+            future.wasCanceled();
+            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    "Couldn't add new future"));
+        }
+        try {
+            // Mustn't reference `thread` after this
+            threads.add(std::move(thread));
+        }
+        catch (const std::exception& e) {
+            futures.erase(threadId);
             future.cancel();
             future.wasCanceled();
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't add new thread"));
-        }
-        try {
-            add(threadId, future);
-        }
-        catch (const std::exception& e) {
-            future.cancel();
-            future.wasCanceled();
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                    "Couldn't add thread's future"));
         }
         return future;
     }
@@ -246,6 +329,7 @@ public:
         , futures{}
         , doneThreadIds{}
         , closed{false}
+        , futureKey{}
     {}
 
     /**
@@ -287,17 +371,20 @@ public:
     }
 
     /**
-     * Returns the future corresponding to a thread identifier.
-     * @param[in] threadId       Thread identifier
-     * @return                   The corresponding future
+     * Returns the future associated with the current thread.
+     * @return                   The associated future
      * @throw std::out_of_range  No such future
      * @exceptionsafety          Strong guarantee
      * @threadsafety             Safe
      */
-    Future<Ret> getFuture(const ThreadId threadId)
+    Future<Ret>& getFuture()
     {
+#if 0
+        return *futureKey.get();
+#else
         LockGuard lock{mutex};
-        return futures.at(threadId);
+        return futures.get(Thread::getId());
+#endif
     }
 
     /**
@@ -308,18 +395,15 @@ public:
      */
     void shutdown(const bool mayInterrupt)
     {
-        {
-            LockGuard lock{mutex};
-            if (!closed)
-                closed = true;
+        LockGuard lock{mutex};
+        if (!closed) {
+            closed = true;
+            if (mayInterrupt) {
+                futures.forEach([](Future<Ret>& future) {
+                    future.cancel(); // Pending until future() entered
+                });
+            }
         }
-        /*
-         * The mutex must be released when `Future::cancel()` is called
-         * because `completeTask()` acquires it.
-         */
-        if (mayInterrupt)
-            for (auto pair : futures)
-                pair.second.cancel(); // Pending until future() entered
     }
 
     /**
@@ -332,10 +416,10 @@ public:
         if (!closed)
             throw LogicError(__FILE__, __LINE__,
                     "Executor hasn't been shut down");
-        destroyDoneThreads(); // Necessary
         while (!threads.empty()) {
-            cond.wait(lock);
-            destroyDoneThreads(); // Necessary
+            while (doneThreadIds.empty())
+                cond.wait(lock);
+            destroyDoneThreads();
         }
     }
 };
@@ -362,9 +446,9 @@ Future<Ret> Executor<Ret>::submit(std::function<Ret()>&& func) const
 }
 
 template<class Ret>
-Future<Ret> Executor<Ret>::getFuture(const ThreadId threadId) const
+Future<Ret>& Executor<Ret>::getFuture() const
 {
-    return pImpl->getFuture(threadId);
+    return pImpl->getFuture();
 }
 
 template<class Ret>
