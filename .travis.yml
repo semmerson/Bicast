@@ -9,6 +9,6 @@ before_install:
 #    - sudo find / -name 'libyaml-cpp.*' 
     - mkdir m4
     - autoreconf -fi
-install:        sudo ./install_gtest.sh /usr/lib/x86_64-linux-gnu
+install:        sudo sh -x ./install_gtest.sh /usr/lib/x86_64-linux-gnu
 script:         ./configure && make && make check
 after_failure:  cat config.status
