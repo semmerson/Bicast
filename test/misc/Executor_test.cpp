@@ -25,18 +25,15 @@ namespace {
 class ExecutorTest : public ::testing::Test {
 };
 
-#if 1
-
-// Tests construction of void executor
+// Tests default construction of void executor
 TEST_F(ExecutorTest, DefaultVoidConstruction) {
     hycast::Executor<void> executor{};
 }
 
-// Tests construction of int executor
-TEST_F(ExecutorTest, IntConstruction) {
+// Tests default construction of int executor
+TEST_F(ExecutorTest, DefaultIntConstruction) {
     hycast::Executor<int> executor{};
 }
-#endif
 
 // Tests executing void task
 TEST_F(ExecutorTest, VoidExecution) {
@@ -46,7 +43,6 @@ TEST_F(ExecutorTest, VoidExecution) {
     future.getResult();
 }
 
-#if 1
 // Tests executing int task
 TEST_F(ExecutorTest, IntExecution) {
     hycast::Executor<int> executor{};
@@ -62,7 +58,6 @@ TEST_F(ExecutorTest, CancelVoid) {
     future.cancel();
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), std::logic_error);
-    //::usleep(250000);
 }
 
 // Tests canceling int task
@@ -77,7 +72,7 @@ TEST_F(ExecutorTest, CancelInt) {
 // Tests soft shutdown of void executor
 TEST_F(ExecutorTest, SoftVoidShutdown) {
     hycast::Executor<void> executor{};
-    auto future = executor.submit([]{::usleep(250000);});
+    auto future = executor.submit([]{::usleep(100000);});
     executor.shutdown(false);
     executor.awaitTermination();
     EXPECT_FALSE(future.wasCanceled());
@@ -96,14 +91,13 @@ TEST_F(ExecutorTest, HardVoidShutdown) {
 
 // Tests destruction with active task
 TEST_F(ExecutorTest, DestructionWithTask) {
-    hycast::Executor<void> executor{};
-    executor.submit([]{::pause();});
-}
-
-// Tests destruction with active future
-TEST_F(ExecutorTest, DestructionWithFuture) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{::pause();});
+    hycast::Future<void> future{};
+    {
+        hycast::Executor<void> executor{};
+        future = executor.submit([]{::pause();});
+    }
+    EXPECT_TRUE(future.wasCanceled());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
 
 // Tests exception in void task
@@ -111,9 +105,11 @@ TEST_F(ExecutorTest, VoidException) {
     hycast::Executor<void> executor{};
     auto future = executor.submit([]{throw std::runtime_error("Dummy");});
     EXPECT_FALSE(future.wasCanceled());
+    //future.getResult();
     EXPECT_THROW(future.getResult(), std::runtime_error);
 }
 
+#if 0
 // Tests exception in int task
 TEST_F(ExecutorTest, IntException) {
     hycast::Executor<int> executor{};

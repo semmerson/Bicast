@@ -13,8 +13,7 @@
 #ifndef MAIN_MISC_TASK_H_
 #define MAIN_MISC_TASK_H_
 
-#include "Promise.h"
-#include "Thread.h"
+#include "Future.h"
 
 #include <functional>
 #include <mutex>
@@ -38,13 +37,18 @@ public:
      * Constructs from the callable to execute.
      * @param[in] func  Callable to execute
      */
-    explicit Task(std::function<Ret()>& func);
+    Task(std::function<Ret()> func);
 
     /**
-     * Constructs from the callable to execute.
+     * Move constructs from the callable to execute.
      * @param[in] func  Callable to execute
      */
-    explicit Task(std::function<Ret()>&& func);
+#if 0
+    Task(   std::function<Ret()>&&       func,
+            typename Future<Ret>::Stop&& stop);
+#endif
+
+    Future<Ret> getFuture() const;
 
     /**
      * Indicates if this instance has a callable or is empty.
@@ -57,7 +61,9 @@ public:
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      */
-    Ret operator()() const;
+    void operator()() const;
+
+    void cancel(const bool mayInterrupt = true) const;
 };
 
 } // namespace

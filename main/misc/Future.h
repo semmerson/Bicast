@@ -12,27 +12,36 @@
 #ifndef MAIN_MISC_FUTURE_H_
 #define MAIN_MISC_FUTURE_H_
 
-#include "Task.h"
+#if 0
 #include "Thread.h"
+#endif
 
 #include <exception>
 #include <functional>
 #include <memory>
+#if 0
 #include <thread>
+#endif
 
 namespace hycast {
 
 class BasicFuture
 {
-    friend class          std::hash<BasicFuture>;
+private:
+    friend class std::hash<BasicFuture>;
 
 protected:
+    typedef std::function<void(const bool mayInterrupt)> Stop;
+
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
+    //static void cantStop(const bool mayInterrupt);
+    static Stop cantStop;
+
     /**
      * Constructs from a pointer to the template subclass implementation.
-     * @param[in] ptr  Pointer to template subclass implementation
+     * @param[in] ptr   Pointer to template subclass implementation
      */
     BasicFuture(Impl* ptr);
 
@@ -81,15 +90,24 @@ public:
      */
     void operator()() const;
 
+    void setException() const;
+
+    void setException(const std::exception_ptr& ptr) const;
+
     /**
-     * Cancels the task's thread if the task hasn't already completed.
-     * Idempotent.
-     * @param[in] mayInterrupt  Whether or not the task may be interrupted if it
-     *                          has already started
-     * @exceptionsafety         Strong guarantee
-     * @threadsafety            Safe
+     * Cancels the task if the task hasn't already completed. Idempotent.
+     * @param[in] mayInterrupt  Whether the task may be interrupted if it's
+     *                          being executed
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
-    void cancel(bool mayInterrupt = true) const;
+    void cancel(const bool mayInterrupt = true) const;
+
+    void setCanceled() const;
+
+    bool hasCompleted() const;
+
+    void wait() const;
 
     /**
      * Indicates if the task's thread was cancelled. Blocks until the task
@@ -112,16 +130,26 @@ class Future final : public BasicFuture
     class Impl;
 
 public:
+    typedef BasicFuture::Stop Stop;
+
     /**
      * Default constructs.
      */
     Future();
 
     /**
-     * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed. Must have a copy constructor.
+     * Constructs from function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
      */
-    Future(Task<Ret>& task);
+    Future(Stop& stop);
+
+    /**
+     * Constructs from function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Future(Stop&& stop);
+
+    void setResult(Ret result) const;
 
     /**
      * Returns the result of the asynchronous task. Blocks until the task
@@ -146,16 +174,26 @@ class Future<void> final : public BasicFuture
     class Impl;
 
 public:
+    typedef BasicFuture::Stop Stop;
+
     /**
      * Default constructs.
      */
     Future();
 
     /**
-     * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed. Must have a copy constructor.
+     * Constructs from function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
      */
-    Future(Task<void>& task);
+    explicit Future(Stop& stop);
+
+    /**
+     * Constructs from function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    explicit Future(Stop&& stop);
+
+    void setResult() const;
 
     /**
      * Returns when the task is done. If the task threw an exception, then this

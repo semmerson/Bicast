@@ -12,7 +12,9 @@
 
 #include "error.h"
 #include "Future.h"
+#if 0
 #include "Thread.h"
+#endif
 
 #include <bitset>
 #include <cassert>
@@ -28,7 +30,6 @@ namespace hycast {
 
 /**
  * Abstract base class for the future of an asynchronous task.
- * @tparam R  Task result
  */
 class BasicFuture::Impl
 {
@@ -39,11 +40,18 @@ class BasicFuture::Impl
     mutable Mutex                   mutex;
     mutable std::condition_variable cond;
     std::exception_ptr              exception;
-    bool                            cancelCalled;
-    bool                            canceled;
     bool                            haveResult;
-    Thread::Id                threadId;
+    bool                            canceled;
+#if 0
+    Thread::Id                      threadId;
     bool                            haveThreadId;
+#endif
+    Stop                            stop;
+
+    void cantStop(const bool mayInterrupt)
+    {
+        throw LogicError(__FILE__, __LINE__, "No stop function specified");
+    }
 
     /**
      * Indicates whether or not the mutex is locked. Upon return, the state of
@@ -58,6 +66,7 @@ class BasicFuture::Impl
         return false;
     }
 
+#if 0
     static void threadWasCanceled(void* arg)
     {
         auto impl = static_cast<Impl*>(arg);
@@ -67,6 +76,7 @@ class BasicFuture::Impl
         impl->canceled = true;
         impl->cond.notify_all();
     }
+#endif
 
 protected:
     /**
@@ -76,12 +86,51 @@ protected:
         : mutex{}
         , cond{}
         , exception{}
-        , cancelCalled{false}
-        , canceled{false}
         , haveResult{false}
+        , canceled{false}
+#if 0
         , threadId{}
         , haveThreadId{false}
+#endif
+        , stop{}
     {}
+
+    /**
+     * Constructs.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop& stop)
+        : mutex{}
+        , cond{}
+        , exception{}
+        , haveResult{false}
+        , canceled{false}
+#if 0
+        , threadId{}
+        , haveThreadId{false}
+#endif
+        , stop{stop}
+    {}
+
+    /**
+     * Constructs.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop&& stop)
+        : mutex{}
+        , cond{}
+        , exception{}
+        , haveResult{false}
+        , canceled{false}
+        , stop{stop}
+    {}
+
+    void markResult()
+    {
+        LockGuard lock{mutex};
+        haveResult = true;
+        cond.notify_all();
+    }
 
     /**
      * @pre `mutex` is locked
@@ -93,21 +142,9 @@ protected:
         return haveResult || exception || canceled;
     }
 
-    virtual void setResult() =0;
-
     /**
-     * Sets the exception to be thrown by `getResult()` to the current
-     * exception.
-     */
-    void setException()
-    {
-        LockGuard lock{mutex};
-        exception = std::current_exception();
-        cond.notify_all();
-    }
-
-    /**
-     * Waits for the task to complete. Idempotent.
+     * Waits for the task to complete or for cancel() to be called, whichever
+     * occurs first. Idempotent.
      * @param[in] lock   Condition variable lock
      * @pre              `lock` is locked
      * @exceptionsafety  Basic guarantee
@@ -130,16 +167,18 @@ protected:
             std::rethrow_exception(exception);
         if (canceled)
             throw LogicError(__FILE__, __LINE__,
-                    "Asynchronous task was canceled");
+                    "Future::cancel() was canceled");
         return; // `haveResult` must be true
     }
 
 public:
     virtual ~Impl()
     {
+#if 0
         cancel(true);
         UniqueLock lock{mutex};
         wait(lock);
+#endif
     }
 
     /**
@@ -154,17 +193,21 @@ public:
      */
     void cancel(const bool mayInterrupt)
     {
+#if 0
         UniqueLock lock{mutex};
         cancelCalled = true;
         if (!haveThreadId) {
             canceled = true;
         }
-        else if (!isDone() && mayInterrupt) {
+        else if (!hasCompleted() && mayInterrupt) {
             lock.unlock();
             Thread::cancel(threadId);
             lock.lock();
         }
         cond.notify_all();
+#endif
+        if (!hasCompleted())
+            stop(mayInterrupt);
     }
 
     /**
@@ -172,6 +215,7 @@ public:
      */
     void operator()()
     {
+#if 0
         THREAD_CLEANUP_PUSH(threadWasCanceled, this);
         try {
             UniqueLock lock{mutex};
@@ -202,6 +246,45 @@ public:
             setException();
         }
         THREAD_CLEANUP_POP(false);
+#endif
+    }
+
+    void setException(const std::exception_ptr ptr)
+    {
+        LockGuard lock{mutex};
+        exception = ptr;
+        cond.notify_all();
+    }
+
+    /**
+     * Sets the exception to be thrown by `getResult()` to the current
+     * exception.
+     */
+    void setException()
+    {
+        setException(std::current_exception());
+    }
+
+    void setCanceled()
+    {
+        LockGuard lock{mutex};
+        canceled = true;
+        cond.notify_all();
+    }
+
+    /**
+     * @retval `true`  Iff the associated task is done
+     */
+    bool hasCompleted() const
+    {
+        UniqueLock lock{mutex};
+        return isDone();
+    }
+
+    void wait()
+    {
+        UniqueLock lock{mutex};
+        wait(lock);
     }
 
     /**
@@ -254,9 +337,11 @@ bool BasicFuture::operator<(const BasicFuture& that) const noexcept
 
 void BasicFuture::operator()() const
 {
+#if 0
     if (!pImpl)
         throw LogicError(__FILE__, __LINE__, "Future is empty");
     pImpl->operator()();
+#endif
 }
 
 void BasicFuture::cancel(bool mayInterrupt) const
@@ -266,9 +351,41 @@ void BasicFuture::cancel(bool mayInterrupt) const
     pImpl->cancel(mayInterrupt);
 }
 
+void BasicFuture::setCanceled() const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Future is empty");
+    pImpl->setCanceled();
+}
+
+bool BasicFuture::hasCompleted() const
+{
+    return pImpl ? pImpl->hasCompleted() : true;
+}
+
+void BasicFuture::wait() const
+{
+    if (pImpl)
+        pImpl->wait();
+}
+
 bool BasicFuture::wasCanceled() const
 {
     return pImpl ? pImpl->wasCanceled() : false;
+}
+
+void BasicFuture::setException() const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Future is empty");
+    pImpl->setException();
+}
+
+void BasicFuture::setException(const std::exception_ptr& ptr) const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Future is empty");
+    pImpl->setException(ptr);
 }
 
 /******************************************************************************/
@@ -276,37 +393,46 @@ bool BasicFuture::wasCanceled() const
 template<class Ret>
 class Future<Ret>::Impl : public BasicFuture::Impl
 {
-    Task<Ret>                   task;
-    Ret                         result;
+    Ret result;
 
+public:
+    /**
+     * Default constructs.
+     */
+    Impl()
+        : BasicFuture::Impl{}
+        , result{}
+    {}
+
+    /**
+     * Constructs from the function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop& stop)
+        : BasicFuture::Impl{stop}
+        , result{}
+    {}
+
+    /**
+     * Constructs from the function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop&& stop)
+        : BasicFuture::Impl{std::forward<Stop>(stop)}
+        , result{}
+    {}
+
+#if 0
     void setResult()
     {
         result = task();
     }
-
-public:
-    /**
-     * Constructs from the task to be executed.
-     * @param[in] task    Task to be executed
-     */
-    Impl(Task<Ret>&   task)
-        : BasicFuture::Impl{}
-        , task{task}
-        , result{}
-    {}
-
-    /**
-     * Constructs from the task to be executed and the key under which to store
-     * the thread-specific future.
-     * @param[in] task    Task to be executed
-     * @param[in] future  Associated public future
-     */
-    Impl(   Task<Ret>&   task,
-            Future<Ret>* future)
-        : BasicFuture::Impl{}
-        , task{task}
-        , result{}
-    {}
+#endif
+    void setResult(Ret result)
+    {
+        this->result = result;
+        markResult();
+    }
 
     /**
      * Returns the result of the asynchronous task. Blocks until the task is
@@ -330,9 +456,22 @@ Future<Ret>::Future()
 {}
 
 template<class Ret>
-Future<Ret>::Future(Task<Ret>& task)
-    : BasicFuture{new Impl(task)}
+Future<Ret>::Future(Stop& stop)
+    : BasicFuture{new Impl(stop)}
 {}
+
+template<class Ret>
+Future<Ret>::Future(Stop&& stop)
+    : BasicFuture{new Impl(std::forward<Stop>(stop))}
+{}
+
+template<class Ret>
+void Future<Ret>::setResult(Ret result) const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Empty future");
+    return reinterpret_cast<Impl*>(pImpl.get())->setResult(result);
+}
 
 template<class Ret>
 Ret Future<Ret>::getResult() const
@@ -348,22 +487,37 @@ template class Future<int>;
 
 class Future<void>::Impl : public BasicFuture::Impl
 {
-    Task<void>                   task;
+public:
+    /**
+     * Default constructs.
+     */
+    Impl()
+        : BasicFuture::Impl{}
+    {}
+
+    /**
+     * Constructs from the function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop& stop)
+        : BasicFuture::Impl{stop}
+    {}
+
+    /**
+     * Constructs from the function to call to cancel execution.
+     * @param[in] stop  Function to call to cancel execution
+     */
+    Impl(Stop&& stop)
+        : BasicFuture::Impl{std::forward<Stop>(stop)}
+    {}
 
     void setResult()
     {
+#if 0
         task();
+#endif
+        markResult();
     }
-
-public:
-    /**
-     * Constructs from the task to be executed.
-     * @param[in] task  Task to be executed
-     */
-    Impl(Task<void>& task)
-        : BasicFuture::Impl{}
-        , task{task}
-    {}
 
     /**
      * Returns when the task is done. If the task threw an exception, then it is
@@ -382,9 +536,20 @@ Future<void>::Future()
     : BasicFuture{}
 {}
 
-Future<void>::Future(Task<void>& task)
-    : BasicFuture{new Impl(task)}
+Future<void>::Future(Stop& stop)
+    : BasicFuture{new Impl(stop)}
 {}
+
+Future<void>::Future(Stop&& stop)
+    : BasicFuture{new Impl(std::forward<Stop>(stop))}
+{}
+
+void Future<void>::setResult() const
+{
+    if (!pImpl)
+        throw LogicError(__FILE__, __LINE__, "Empty future");
+    reinterpret_cast<Impl*>(pImpl.get())->setResult();
+}
 
 void Future<void>::getResult() const
 {

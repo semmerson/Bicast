@@ -15,6 +15,7 @@
 #include <cerrno>
 #include <cstring>
 #include <exception>
+#include <future>
 #include <libgen.h>
 #include <stdexcept>
 #include <string>

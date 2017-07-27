@@ -32,3 +32,4 @@ html
 /config.h
 /stamp-h1
 .settings
+*.vg

@@ -69,7 +69,7 @@ public:
      * @exceptionsafety        Strong guarantee
      * @threadsafety           Safe
      */
-    Future<Ret>& getFuture() const;
+    Future<Ret> getFuture() const;
 
     /**
      * Shuts down this instance. Callables that have not started will not be

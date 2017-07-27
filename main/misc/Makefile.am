@@ -14,11 +14,11 @@ lib_la_SOURCES 	= \
 	DelayQueue.h \
 	MapOfLists.cpp MapOfLists.h \
 	Thread.cpp Thread.h \
-	Promise.cpp Promise.h \
-	Task.cpp Task.h \
 	Future.cpp Future.h \
+	Task.cpp Task.h \
 	Executor.cpp Executor.h \
 	Completer.cpp Completer.h
+#	Promise.cpp Promise.h
 #	SyncQueue.h
 
 # Compiler options. Here we are adding the include directory

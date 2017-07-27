@@ -12,6 +12,7 @@
 #include "config.h"
 
 #include "Task.h"
+#include "Thread.h"
 
 #include <condition_variable>
 #include "gtest/gtest.h"
@@ -34,7 +35,8 @@ protected:
     Cond                     cond;
     bool                     taskStarted;
     bool                     callableCalled;
-    hycast::Thread::Id threadId;
+    hycast::Thread::Id       threadId;
+    bool                     stopCalled;
 
     TaskTest()
         : mutex{}
@@ -42,7 +44,21 @@ protected:
         , taskStarted{false}
         , callableCalled{false}
         , threadId{}
+        , stopCalled{false}
     {}
+
+    void stop(const bool mayInterrupt)
+    {
+        stopCalled = true;
+    }
+
+    void stop(
+            const bool      mayInterrupt,
+            hycast::Thread& thread)
+    {
+        stopCalled = true;
+        thread.cancel();
+    }
 
     void markAndNotify()
     {
@@ -71,6 +87,7 @@ TEST_F(TaskTest, VoidTaskDefaultConstruction)
 {
     hycast::Task<void> task{};
     EXPECT_FALSE(task);
+    EXPECT_THROW(task(), hycast::LogicError);
 }
 
 // Tests construction of trivial void task
@@ -78,71 +95,74 @@ TEST_F(TaskTest, VoidTaskConstruction)
 {
     hycast::Task<void> task{[]{}};
     EXPECT_TRUE(task);
-}
-
-// Tests default cancellation of trivial void task
-TEST_F(TaskTest, TrivialVoidTaskDefaultCancellation)
-{
-    EXPECT_EQ(0, hycast::Thread::size());
-    hycast::Task<void> task{[]{}};
-    hycast::Thread thread{task};
-    EXPECT_EQ(1, hycast::Thread::size());
-}
-
-// Tests default cancellation of endless void task
-TEST_F(TaskTest, EndlessVoidTaskDefaultCancellation)
-{
-    EXPECT_EQ(0, hycast::Thread::size());
-    hycast::Task<void> task{[this]{markNotifyAndPause();}};
-    hycast::Thread thread{task};
-    waitOnCallable();
-    EXPECT_TRUE(callableCalled);
-    EXPECT_EQ(threadId, thread.id());
-    EXPECT_EQ(1, hycast::Thread::size());
-}
-
-// Tests explicit cancellation of trivial void task
-TEST_F(TaskTest, TrivialVoidTaskExplicitCancellation)
-{
-    EXPECT_EQ(0, hycast::Thread::size());
-    hycast::Task<void> task{[]{}};
-    hycast::Thread thread{task};
-    EXPECT_EQ(1, hycast::Thread::size());
-    thread.cancel();
+    auto future = task.getFuture();
+    EXPECT_TRUE(future);
+    auto thread = hycast::Thread(task);
+    EXPECT_NO_THROW(future.getResult());
+    EXPECT_NO_THROW(future.cancel());
+    EXPECT_FALSE(future.wasCanceled());
     thread.join();
-    EXPECT_EQ(0, hycast::Thread::size());
 }
 
-// Tests explicit cancellation of endless void task
-TEST_F(TaskTest, EndlessVoidTaskExplicitCancellation)
+// Tests exception in void task
+TEST_F(TaskTest, VoidTaskException)
 {
-    EXPECT_EQ(0, hycast::Thread::size());
-    hycast::Task<void> task{[this]{markNotifyAndPause();}};
-    hycast::Thread thread{task};
-    waitOnCallable();
-    EXPECT_TRUE(callableCalled);
-    EXPECT_EQ(threadId, thread.id());
-    EXPECT_EQ(1, hycast::Thread::size());
-    thread.cancel();
+    hycast::Thread thread;
+    hycast::Task<void> task{[]{throw std::runtime_error("Dummy");}};
+    auto future = task.getFuture();
+    thread = hycast::Thread{task};
+    try {
+        future.getResult();
+    }
+    catch (const std::exception& e) {
+        EXPECT_STREQ("Dummy", e.what());
+    }
+    EXPECT_TRUE(future.hasCompleted());
+    EXPECT_FALSE(future.wasCanceled());
     thread.join();
-    EXPECT_EQ(0, hycast::Thread::size());
 }
 
-// Tests looping over explicit cancellation of endless void task
-TEST_F(TaskTest, EndlessVoidTaskExplicitCancellationLoop)
+// Tests cancellation of void task
+TEST_F(TaskTest, VoidTaskCancellation)
 {
+    hycast::Thread thread;
+    hycast::Task<void> task{::pause};
+    auto future = task.getFuture();
+    thread = hycast::Thread{task};
+    EXPECT_FALSE(future.hasCompleted());
+    EXPECT_NO_THROW(task.cancel());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_TRUE(future.hasCompleted());
+    EXPECT_TRUE(future.wasCanceled());
+    thread.join();
+}
+
+// Tests cancellation of void task via future
+TEST_F(TaskTest, VoidFutureCancellation)
+{
+    hycast::Thread thread;
+    hycast::Task<void> task{::pause};
+    auto future = task.getFuture();
+    thread = hycast::Thread{task};
+    EXPECT_FALSE(future.hasCompleted());
+    EXPECT_NO_THROW(future.cancel());
+    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_TRUE(future.hasCompleted());
+    EXPECT_TRUE(future.wasCanceled());
+    thread.join();
+}
+
+// Tests looping over cancellation via future of void task
+TEST_F(TaskTest, VoidTaskCancellationLoop)
+{
+    hycast::Thread thread;
     for (int i = 0; i < 1000; ++i) {
-        EXPECT_EQ(0, hycast::Thread::size());
-        std::cout << i << '\n';
-        hycast::Task<void> task{[this]{markNotifyAndPause();}};
-        hycast::Thread thread{task};
-        waitOnCallable();
-        EXPECT_TRUE(callableCalled);
-        EXPECT_EQ(threadId, thread.id());
-        EXPECT_EQ(1, hycast::Thread::size());
-        thread.cancel();
+        hycast::Task<void> task{::pause};
+        auto future = task.getFuture();
+        thread = hycast::Thread{task};
+        future.cancel();
+        EXPECT_TRUE(future.wasCanceled());
         thread.join();
-        EXPECT_EQ(0, hycast::Thread::size());
     }
 }
 
