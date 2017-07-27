@@ -1,4 +1,6 @@
 language:       cpp
 dist:           trusty
-before_install: autoreconf -fi
+before_install:
+    - sudo apt-get install libsctp-dev
+    - autoreconf -fi
 install:        true
