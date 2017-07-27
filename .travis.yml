@@ -1,3 +1,4 @@
-language: cpp
-dist: trusty
-install: true
+language:       cpp
+dist:           trusty
+before_install: autoreconf -fi
+install:        true
