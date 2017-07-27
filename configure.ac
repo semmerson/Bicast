@@ -35,10 +35,11 @@ AC_SEARCH_LIBS([sctp_recvmsg], [sctp], ,
 dnl Check for YAML library
 AC_MSG_CHECKING([for library containing YAML::Node])
 AC_LANG_PUSH([C++])
+AC_CHECK_HEADER([yaml-cpp/yaml.h], ,
+  [AC_MSG_ERROR([yaml-cpp/yaml.h is not installed.])])
 LIBS="-lyaml-cpp $LIBS"
 AC_LINK_IFELSE(
-  [AC_LANG_PROGRAM([#include <yaml-cpp/yaml.h>], 
-    [YAML::Node node])],
+  [AC_LANG_PROGRAM([#include <yaml-cpp/yaml.h>], [YAML::Node node])],
   [AC_MSG_RESULT([-lyaml-cpp])], 
   [AC_MSG_ERROR([libyaml-cpp is not installed.])])
 AC_LANG_POP()
