@@ -2,6 +2,7 @@ language:       cpp
 dist:           trusty
 before_install:
     - sudo apt-get install libboost-all-dev libyaml-cpp-dev libsctp-dev
+          libgtest-dev
 #    - sudo dpkg -L libyaml-cpp-dev
 #    - sudo find / -name yaml-cpp
 #    - sudo find / -name yaml.h 
