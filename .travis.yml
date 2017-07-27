@@ -9,3 +9,4 @@ before_install:
     - mkdir m4
     - autoreconf -fi
 install:        true
+after_failure: cat config.log
