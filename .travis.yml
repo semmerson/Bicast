@@ -3,6 +3,8 @@ dist:           trusty
 before_install:
     - sudo apt-get install libyaml-cpp-dev libsctp-dev
     - sudo dpkg -L libyaml-cpp-dev
-    - sudo find / -name yaml.h
+    - sudo find / -name yaml.h 
+    - sudo find / -name 'libyaml-cpp.*' 
+    - mkdir m4
     - autoreconf -fi
 install:        true
