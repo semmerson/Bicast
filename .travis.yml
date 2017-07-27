@@ -1,14 +1,15 @@
 language:       cpp
 dist:           trusty
 before_install:
-    - sudo apt-get install gtest libgtest-dev libboost-all-dev
+    - sudo apt-get install cmake libgtest-dev libboost-all-dev
           libyaml-cpp-dev libsctp-dev
 #    - sudo dpkg -L libyaml-cpp-dev
 #    - sudo find / -name yaml-cpp
 #    - sudo find / -name yaml.h 
 #    - sudo find / -name 'libyaml-cpp.*' 
+    - sudo ./install_gtest
     - mkdir m4
     - autoreconf -fi
-install:        true
+install:        ./install_gtest
 script:         ./configure && make && make check
 after_failure:  cat config.status
