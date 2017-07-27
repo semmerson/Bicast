@@ -1,6 +1,6 @@
 language:       cpp
 dist:           trusty
 before_install:
-    - sudo apt-get install libsctp-dev
+    - sudo apt-get install libyaml-cpp-dev libsctp-dev
     - autoreconf -fi
 install:        true
