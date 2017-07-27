@@ -7,9 +7,8 @@ before_install:
 #    - sudo find / -name yaml-cpp
 #    - sudo find / -name yaml.h 
 #    - sudo find / -name 'libyaml-cpp.*' 
-    - sudo ./install_gtest
     - mkdir m4
     - autoreconf -fi
-install:        ./install_gtest
+install:        sudo ./install_gtest.sh /usr/lib/x86_64-linux-gnu
 script:         ./configure && make && make check
 after_failure:  cat config.status
