@@ -1,12 +1,13 @@
 language:       cpp
 dist:           trusty
 before_install:
-    - sudo apt-get install libboost-all-dev libyaml-dev libyaml-cpp-dev libsctp-dev
-    - sudo dpkg -L libyaml-cpp-dev
-    - sudo find / -name yaml-cpp
-    - sudo find / -name yaml.h 
-    - sudo find / -name 'libyaml-cpp.*' 
+    - sudo apt-get install libboost-all-dev libyaml-cpp-dev libsctp-dev
+#    - sudo dpkg -L libyaml-cpp-dev
+#    - sudo find / -name yaml-cpp
+#    - sudo find / -name yaml.h 
+#    - sudo find / -name 'libyaml-cpp.*' 
     - mkdir m4
     - autoreconf -fi
 install:        true
-after_failure: cat config.status
+script:         ./configure && make && make check
+after_failure:  cat config.status
