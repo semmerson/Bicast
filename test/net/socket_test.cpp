@@ -32,19 +32,22 @@
 namespace {
 
 // The fixture for testing sockets.
-class SocketTest : public ::testing::Test {
+class SocketTest : public ::testing::Test
+{
 protected:
-    // You can remove any or all of the following functions if its body
-    // is empty.
+    struct sockaddr_in mcastSockAddr = {};
+    struct sockaddr_in srvrAddr = {};
 
     SocketTest() {
         // You can do set-up work for each test here.
-        ipv4SockAddr.sin_family = AF_INET;
-        ipv4SockAddr.sin_port = htons(38800);
-        //ipv4SockAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // works
-        ipv4SockAddr.sin_addr.s_addr = inet_addr("234.128.117.0"); // works
-
-        *reinterpret_cast<struct sockaddr_in*>(&sockAddrStorage) = ipv4SockAddr;
+        mcastSockAddr.sin_family = AF_INET;
+        mcastSockAddr.sin_port = htons(38800);
+        /*
+         * The following causes the bind() to fail -- possibly because the
+         * address isn't a multicast one.
+         */
+        //mcastSockAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // fails
+        mcastSockAddr.sin_addr.s_addr = inet_addr("234.128.117.0"); // works
 
         srvrAddr.sin_family = AF_INET;
         srvrAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
@@ -54,12 +57,13 @@ protected:
     void joinMcastGroup(const int sd)
     {
         struct group_req req = {};
-        req.gr_group = sockAddrStorage;
+        ::memcpy(&req.gr_group, &mcastSockAddr, sizeof(mcastSockAddr));
         //req.gr_interface = 2; // Ethernet interface. Makes no difference
         req.gr_interface = 0; // Use default multicast interface
+        // The following fails if the address is 127.0.0.1
         int status = ::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_GROUP, &req,
                 sizeof(req));
-        EXPECT_EQ(0, status);
+        ASSERT_EQ(0, status);
     }
 
     int makeSendSocket()
@@ -68,8 +72,8 @@ protected:
         EXPECT_NE(-1, sd);
 
         int status = ::connect(sd,
-                reinterpret_cast<struct sockaddr*>(&ipv4SockAddr),
-                sizeof(ipv4SockAddr)); // Makes no difference
+                reinterpret_cast<struct sockaddr*>(&mcastSockAddr),
+                sizeof(mcastSockAddr)); // Makes no difference
         EXPECT_NE(-1, status);
 
         unsigned char hopLimit = 1;
@@ -86,9 +90,10 @@ protected:
         int       sd = ::socket(AF_INET, SOCK_DGRAM, 0);
         EXPECT_NE(-1, sd);
 
-        int status = ::bind(sd, reinterpret_cast<struct sockaddr*>(&ipv4SockAddr),
-                sizeof(ipv4SockAddr));
-        EXPECT_NE(-1, status);
+        int status = ::bind(sd,
+                reinterpret_cast<struct sockaddr*>(&mcastSockAddr),
+                sizeof(mcastSockAddr));
+        EXPECT_EQ(0, status);
 
         joinMcastGroup(sd);
 
@@ -103,13 +108,13 @@ protected:
         iov.iov_len = sizeof(size);
         struct msghdr msghdr = {};
         ::memset(&msghdr, 0, sizeof(msghdr)); // Makes no difference
-        msghdr.msg_name = &sockAddrStorage;
-        msghdr.msg_namelen = sizeof(sockAddrStorage);
+        msghdr.msg_name = &mcastSockAddr;
+        msghdr.msg_namelen = sizeof(mcastSockAddr);
         // msghdr.msg_namelen = sizeof(struct sockaddr_in); // Makes no difference
         msghdr.msg_iov = const_cast<struct iovec*>(&iov);
         msghdr.msg_iovlen = 1;
         int status = ::sendmsg(sd, &msghdr, 0); // MSG_EOR makes no difference
-        EXPECT_EQ(iov.iov_len, status);
+        ASSERT_EQ(iov.iov_len, status);
     }
 
     void recv(const int sd)
@@ -123,14 +128,9 @@ protected:
         msghdr.msg_iovlen = 1;
         msghdr.msg_name = nullptr; // Makes no difference
         ssize_t status = ::recvmsg(sd, &msghdr, 0);
-        EXPECT_EQ(iov.iov_len, status);
-        EXPECT_EQ(1, size);
+        ASSERT_EQ(iov.iov_len, status);
+        ASSERT_EQ(1, size);
     }
-
-    // Objects declared here can be used by all tests in the test case for sockets.
-    struct sockaddr_in      ipv4SockAddr = {};
-    struct sockaddr_storage sockAddrStorage = {};
-    struct sockaddr_in      srvrAddr = {};
 };
 
 // Tests multicasting
@@ -359,9 +359,9 @@ class CancellableServer {
     static void readCleanup(void* arg)
     {
         CancellableServer* obj = static_cast<CancellableServer*>(arg);
-        EXPECT_TRUE(obj->clntSd >= 0);
+        ASSERT_TRUE(obj->clntSd >= 0);
         int status = ::close(obj->clntSd);
-        EXPECT_EQ(0, status);
+        ASSERT_EQ(0, status);
         obj->readCleanupCalled = true;
     }
 public:
@@ -405,8 +405,8 @@ public:
         clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
         accepted = true;
         THREAD_CLEANUP_PUSH(readCleanup, this);
-        EXPECT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
-        EXPECT_TRUE(clntSd >= 0);
+        ASSERT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
+        ASSERT_TRUE(clntSd >= 0);
         for (;;) {
             char buf[1];
             auto nbytes = read(clntSd, buf, sizeof(buf));
@@ -445,10 +445,10 @@ TEST_F(SocketTest, ReadTermination)
     std::atomic_long result;
     auto srvrThread = hycast::Thread([&]{server();});
     auto clntSd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-    EXPECT_NE(-1, clntSd);
+    ASSERT_NE(-1, clntSd);
     auto status = ::connect(clntSd,
             reinterpret_cast<struct sockaddr*>(&srvrAddr), sizeof(srvrAddr));
-    EXPECT_EQ(0, status);
+    ASSERT_EQ(0, status);
     /*
      * One or the other of the following increases the likelihood that the
      * return from the `accept()` happens before the thread cancellation. It
@@ -458,7 +458,7 @@ TEST_F(SocketTest, ReadTermination)
 #if 1
     char buf[1];
     status = write(clntSd, buf, sizeof(buf));
-    EXPECT_EQ(1, status);
+    ASSERT_EQ(1, status);
 #else
 	::sleep(1);
 #endif
@@ -466,9 +466,9 @@ TEST_F(SocketTest, ReadTermination)
     server.stop(); // Works
     srvrThread.join();
     if (server.started) {
-        EXPECT_EQ(true, server.acceptCleanupCalled);
+        ASSERT_EQ(true, server.acceptCleanupCalled);
         if (server.accepted)
-            EXPECT_EQ(true, server.readCleanupCalled);
+            ASSERT_EQ(true, server.readCleanupCalled);
     }
 }
 
