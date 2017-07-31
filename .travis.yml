@@ -17,7 +17,8 @@ before_install:
 #    - sudo find / -name yaml.h 
 #    - sudo find / -name 'libyaml-cpp.*' 
     - mkdir m4
-    - autoreconf -fi
+    - autoreconf -i
+    - ./configure
 
 addons:
     coverity_scan:
@@ -25,12 +26,12 @@ addons:
             name: "semmerson/hycast"
             description: "Build submitted via Travis CI"
         notification_email: emmerson@ucar.edu
-        build_command_prepend: "mkdir -p m4; autoreconf -fi; ./configure; make clean"
+        build_command_prepend: true
         build_command:  "make"
         branch_pattern: coverity_scan
 
-install:        sudo sh -x ./install_gtest.sh /usr/lib/x86_64-linux-gnu
+install: sudo sh -x ./install_gtest.sh /usr/lib/x86_64-linux-gnu
 
-script:         ./configure && make && make check
+script: if [ ${COVERITY_SCAN_BRANCH} != 1 ]; then make all check; fi
 
 after_failure:  cat config.status
