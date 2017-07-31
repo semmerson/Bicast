@@ -25,11 +25,7 @@ addons:
             name: "semmerson/hycast"
             description: "Build submitted via Travis CI"
         notification_email: emmerson@ucar.edu
-        build_command_prepend:
-                - mkdir -p m4
-                - autoreconf -fi
-                - ./configure
-                - make clean
+        build_command_prepend: "mkdir -p m4; autoreconf -fi; ./configure; make clean"
         build_command:  "make"
         branch_pattern: coverity_scan
 
