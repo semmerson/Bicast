@@ -1,5 +1,5 @@
 /**
- * This file defines a server-side socket.
+ * This file implements a server-side SCTP socket.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -15,11 +15,19 @@
 
 namespace hycast {
 
+int SrvrSctpSock::createSocket()
+{
+      auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+      if (sd == -1)
+          throw SystemError(__FILE__, __LINE__, "Couldn't create socket", sd);
+      return sd;
+}
+
 SrvrSctpSock::SrvrSctpSock(
         const InetSockAddr& addr,
         const uint16_t      numStreams,
         const int           queueSize)
-	: SctpSock(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+	: SctpSock(createSocket(), numStreams)
 {
 	try {
 		if (queueSize <= 0)
