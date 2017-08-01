@@ -106,8 +106,8 @@ IpAddrImpl* InetNameAddr::getIpAddr(const int family) const
     struct addrinfo* list;
     if (::getaddrinfo(name.data(), nullptr, &hints, &list))
         throw SystemError(__FILE__, __LINE__,
-                "::getaddrinfo() failure for host \"" + name.data() + "\"",
-                errno);
+                std::string("::getaddrinfo() failure for host \"") +
+                name.data() + "\"", errno);
     try {
         IpAddrImpl* ipAddr = nullptr;
         for (struct addrinfo* entry = list; entry != NULL;
