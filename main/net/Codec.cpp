@@ -42,7 +42,7 @@ void Codec::reset() noexcept
     dma.iov_len = 0;
 }
 
-size_t Codec::getSerialSize(const size_t size)
+size_t Codec::getSerialSize(const size_t size) noexcept
 {
     return size;
 }

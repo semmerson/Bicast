@@ -51,7 +51,7 @@ public:
      */
     virtual ~Codec() =0;
 
-    static size_t getSerialSize(const size_t size);
+    static size_t getSerialSize(const size_t size) noexcept;
     static size_t getSerialSize(const uint16_t* value);
     static size_t getSerialSize(const uint32_t* value);
     static size_t getSerialSize(const std::string& string);
