@@ -502,6 +502,15 @@ public:
 
 struct sigaction SctpSock::Impl::sigact;
 
+int SctpSock::createSocket()
+{
+      auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+      if (sd == -1)
+          throw SystemError(__FILE__, __LINE__, "Couldn't create SCTP socket",
+                  sd);
+      return sd;
+}
+
 SctpSock::SctpSock()
     : pImpl(new Impl())
 {}

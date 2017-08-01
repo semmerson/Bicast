@@ -18,8 +18,6 @@
 namespace hycast {
 
 class SrvrSctpSock final : public SctpSock {
-    static int createSocket();
-
 public:
     /**
      * Constructs from an Internet socket address and the number of SCTP

@@ -18,15 +18,15 @@ namespace hycast {
 ClntSctpSock::ClntSctpSock(
         const InetSockAddr& addr,
         const unsigned      numStreams)
-    : SctpSock(socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP), numStreams)
+    : SctpSock(createSocket(), numStreams)
 {
-	try {
-		addr.connect(getSock());
-	}
-	catch (const std::exception& e) {
-		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-				"Couldn't connect SCTP socket to remote endpoint"));
-	}
+    try {
+        addr.connect(getSock());
+    }
+    catch (const std::exception& e) {
+        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                "Couldn't connect SCTP socket to remote endpoint"));
+    }
 }
 
 } // namespace

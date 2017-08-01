@@ -37,6 +37,12 @@ protected:
      */
     int getSock() const noexcept;
 
+    /**
+     * Creates an SCTP socket.
+     * @return An SCTP socket
+     */
+    static int createSocket();
+
 public:
     /**
      * Constructs from nothing.

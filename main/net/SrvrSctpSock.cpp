@@ -15,14 +15,6 @@
 
 namespace hycast {
 
-int SrvrSctpSock::createSocket()
-{
-      auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-      if (sd == -1)
-          throw SystemError(__FILE__, __LINE__, "Couldn't create socket", sd);
-      return sd;
-}
-
 SrvrSctpSock::SrvrSctpSock(
         const InetSockAddr& addr,
         const uint16_t      numStreams,
@@ -54,8 +46,8 @@ SctpSock SrvrSctpSock::accept() const
 	const int sock = getSock();
 	const int sd = ::accept(sock, (struct sockaddr*)nullptr, &len);
 	if (sd < 0)
-		throw SystemError(__FILE__, __LINE__,  "accept() failure: sock=" +
-				std::to_string(sock));
+		throw SystemError(__FILE__, __LINE__,
+		        "accept() failure: sock=" + std::to_string(sock));
 	return SctpSock(sd, getNumStreams());
 }
 
