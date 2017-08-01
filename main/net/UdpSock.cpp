@@ -8,6 +8,7 @@
  *   @file: UdpSock.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "error.h"
 #include "UdpSock.h"
@@ -103,7 +104,8 @@ class InUdpSock::Impl : public UdpSock::Impl
     {
         if (nbytes < 0)
             throw SystemError(__FILE__, __LINE__,
-                    std::string{"recv() failure: sock="} + std::to_string(sd));
+                    std::string{"recvmsg() failure: sock="} +
+                    std::to_string(sd));
     }
 
 protected:
@@ -173,14 +175,15 @@ public:
      * Scatter-receives a datagram. Waits for the datagram if necessary. If the
      * requested number of bytes to be read is less than the datagram size, then
      * the excess bytes are discarded.
-     * @param[in] iovec   Scatter-read vector
-     * @param[in] iovcnt  Number of elements in scatter-read vector
-     * @param[in] peek    Whether or not to peek at the datagram. The data is
-     *                    treated as unread and the next recv() or similar
-     *                    function shall still return this data.
-     * @retval    0       Socket is closed
-     * @return            Actual number of bytes read into the buffers.
-     * @throws std::system_error  I/O error reading from socket */
+     * @param[in] iovec     Scatter-read vector
+     * @param[in] iovcnt    Number of elements in scatter-read vector
+     * @param[in] peek      Whether or not to peek at the datagram. The data is
+     *                      treated as unread and the next recv() or similar
+     *                      function shall still return this data.
+     * @retval    0         Socket is closed
+     * @return              Actual number of bytes read into the buffers.
+     * @throws SystemError  I/O error reading from socket
+     */
     size_t recv(
            const struct iovec* iovec,
            const int           iovcnt,
@@ -199,14 +202,14 @@ public:
      * Receives a datagram. Waits for the datagram if necessary. If the requested
      * number of bytes to be read is less than the datagram size, then the excess
      * bytes are discarded.
-     * @param[in] buf     Receive buffer
-     * @param[in] len     Size of receive buffer in bytes
-     * @param[in] peek    Whether or not to peek at the datagram. The data is
-     *                    treated as unread and the next recv() or similar
-     *                    function shall still return this data.
-     * @retval    0       Socket is closed
-     * @return            Actual number of bytes read into the buffer.
-     * @throws std::system_error  I/O error reading from socket */
+     * @param[in] buf       Receive buffer
+     * @param[in] len       Size of receive buffer in bytes
+     * @param[in] peek      Whether or not to peek at the datagram. The data is
+     *                      treated as unread and the next recv() or similar
+     *                      function shall still return this data.
+     * @retval    0         Socket is closed
+     * @return              Actual number of bytes read into the buffer.
+     * @throws SystemError  I/O error reading from socket */
     size_t recv(
            void* const  buf,
            const size_t len,
