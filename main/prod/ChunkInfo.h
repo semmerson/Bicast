@@ -138,7 +138,19 @@ public:
      * Returns the chunk size in bytes.
      * @return the chunk size in bytes
      */
-    ChunkSize getSize() const {return getSize(prodSize, chunkIndex);}
+    ChunkSize getSize() const noexcept
+    {
+        try {
+            return getSize(prodSize, chunkIndex);
+        }
+        catch (const std::exception& e) {
+            /*
+             * The following can't happen because the product size and the chunk
+             * index are checked during construction.
+             */
+            ::abort();
+        }
+    }
 
     /**
      * Indicates if this instance equals another.
