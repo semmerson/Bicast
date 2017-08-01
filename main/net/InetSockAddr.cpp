@@ -72,15 +72,6 @@ class InetSockAddrImpl final
         }
     }
 
-    static int getSockSype(const int sd)
-    {
-        int       sockType;
-        socklen_t len = sizeof(sockType);
-        if (::getsockopt(sd, SOL_SOCKET, SO_TYPE, &sockType, &len))
-            throw std::system_error(errno, std::system_category(),
-                    "getsockopt() failure: sd=" + std::to_string(sd));
-    }
-
 public:
     /**
      * Constructs from nothing. The resulting instance will have the default
