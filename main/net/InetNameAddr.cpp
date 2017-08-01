@@ -31,7 +31,7 @@ InetNameAddr::InetNameAddr(const std::string name)
 void InetNameAddr::setSockAddrStorage(
         sockaddr_storage& storage,
         const int         port,
-        const int         sockType) const noexcept
+        const int         sockType) const
 {
     IpAddrImpl* const ipAddr = getIpAddr();
     try {
