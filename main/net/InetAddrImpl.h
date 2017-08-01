@@ -78,7 +78,7 @@ public:
     virtual void setSockAddrStorage(
             sockaddr_storage& storage,
             const int         port,
-            const int         sockType = 0) const noexcept =0;
+            const int         sockType = 0) const =0;
 
     /**
      * Returns the hash code of this instance.

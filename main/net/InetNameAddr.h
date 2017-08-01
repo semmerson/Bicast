@@ -23,7 +23,8 @@
 
 namespace hycast {
 
-class InetNameAddr final : public InetAddrImpl {
+class InetNameAddr final : public InetAddrImpl
+{
     std::string name; /// Hostname
 
     /**
