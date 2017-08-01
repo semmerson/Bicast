@@ -48,7 +48,7 @@ public:
 
         void wait();
 
-        ~Barrier();
+        ~Barrier() noexcept;
     };
 
 private:

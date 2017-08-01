@@ -198,12 +198,12 @@ void Thread::Barrier::wait()
                 status);
 }
 
-Thread::Barrier::~Barrier()
+Thread::Barrier::~Barrier() noexcept
 {
     int status = ::pthread_barrier_destroy(&barrier);
     if (status)
-        throw SystemError(__FILE__, __LINE__,
-                "pthread_barrier_destroy() failure", status);
+        log_what(SystemError(__FILE__, __LINE__,
+                "pthread_barrier_destroy() failure", status));
 }
 
 /******************************************************************************/
