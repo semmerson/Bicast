@@ -28,6 +28,7 @@ Codec::Codec(const size_t maxSize)
     , serialBufBytes{0}
 {
     dma.iov_len = 0;
+    dma.iov_base = nullptr;
 }
 
 Codec::~Codec()
