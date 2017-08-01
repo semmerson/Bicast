@@ -77,15 +77,16 @@ public:
      * a port number.
      * @param[out] storage   Storage structure. Set upon return.
      * @param[in]  port      Port number in host byte order
-     * @param[in]  sockType  Socket type hint as for `socket()`. 0 => unspecified.
-     * @return Socket address as a `struct sockaddr_storage`
-     * @exceptionsafety  Nothrow
-     * @threadsafety     Safe
+     * @param[in]  sockType  Socket type hint as for `socket()`. 0 =>
+     *                       unspecified.
+     * @throw SystemError    ::getaddrinfo() failure
+     * @exceptionsafety      Strong Guarantee
+     * @threadsafety         Safe
      */
     void setSockAddrStorage(
             sockaddr_storage& storage,
             const int         port,
-            const int         sockType = 0) const noexcept;
+            const int         sockType = 0) const;
 
     /**
      * Returns the hash code of this instance.

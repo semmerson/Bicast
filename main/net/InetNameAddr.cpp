@@ -8,7 +8,9 @@
  *   @file: InetNameAddr.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
+#include "error.h"
 #include "InetNameAddr.h"
 #include "Ipv4Addr.h"
 #include "Ipv6Addr.h"
@@ -103,9 +105,9 @@ IpAddrImpl* InetNameAddr::getIpAddr(const int family) const
     hints.ai_socktype = SOCK_DGRAM;
     struct addrinfo* list;
     if (::getaddrinfo(name.data(), nullptr, &hints, &list))
-        throw std::system_error(errno, std::system_category(),
-                std::string("::getaddrinfo() failure for host \"") +
-                name.data() + "\"");
+        throw SystemError(__FILE__, __LINE__,
+                "::getaddrinfo() failure for host \"" + name.data() + "\"",
+                errno);
     try {
         IpAddrImpl* ipAddr = nullptr;
         for (struct addrinfo* entry = list; entry != NULL;
