@@ -1,4 +1,4 @@
-SUBDIRS=main #test
+SUBDIRS=main test
 ACLOCAL_AMFLAGS=-I m4
 
 maintainer-clean-local:

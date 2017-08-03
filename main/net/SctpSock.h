@@ -20,7 +20,7 @@ namespace hycast {
 
 class SctpSock {
 protected:
-	class                 Impl;
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
     /**
@@ -54,7 +54,9 @@ public:
     /**
      * Constructs from a BSD socket and the number of SCTP streams. Only do this
      * once per socket because the destructor might close the socket.
-     * @param[in] sd                  Socket descriptor
+     * @param[in] sd                  Socket descriptor. Will be closed when the
+     *                                last `SctpSock` that references it is
+     *                                destroyed.
      * @param[in] numStreams          Number of SCTP streams
      * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
      * @throws std::system_error      Socket couldn't be configured
@@ -72,6 +74,11 @@ public:
      * @param[in] sptr  Shared pointer to implementation
      */
     explicit SctpSock(std::shared_ptr<Impl> sptr);
+
+    /**
+     * Destroys. Closes the underlying BSD socket if it's open.
+     */
+    ~SctpSock() noexcept =default;
 
     /**
      * Returns the number of SCTP streams.
@@ -194,13 +201,6 @@ public:
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void discard() const;
-
-    /**
-     * Closes the underlying BSD socket.
-     * @exceptionsafety Nothrow
-     * @threadsafety    Compatible but not safe
-     */
-    void close() const;
 };
 
 } // namespace

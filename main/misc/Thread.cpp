@@ -27,7 +27,7 @@
 
 namespace hycast {
 
-void Thread::Impl::threadWasCanceled(void* arg)
+void Thread::Impl::setCompleted(void* arg)
 {
     auto impl = static_cast<Impl*>(arg);
     LockGuard lock{impl->mutex};
@@ -142,18 +142,11 @@ Thread::ThreadMap::ThreadMap()
     , threads{}
 {}
 
-void Thread::ThreadMap::add(Thread* const thread)
+void Thread::ThreadMap::add(Impl* const impl)
 {
     LockGuard lock{mutex};
-    assert(threads.find(thread->id()) == threads.end());
-    threads[thread->id()] = thread;
-}
-
-void Thread::ThreadMap::replace(Thread* const thread)
-{
-    LockGuard lock{mutex};
-    assert(threads.find(thread->id()) != threads.end());
-    threads[thread->id()] = thread;
+    assert(threads.find(impl->id()) == threads.end());
+    threads[impl->id()] = impl;
 }
 
 bool Thread::ThreadMap::contains(const Id& threadId)
@@ -162,7 +155,7 @@ bool Thread::ThreadMap::contains(const Id& threadId)
     return threads.find(threadId) != threads.end();
 }
 
-Thread* Thread::ThreadMap::get(const Id& threadId)
+Thread::Impl* Thread::ThreadMap::get(const Id& threadId)
 {
     LockGuard lock{mutex};
     return threads.at(threadId);
@@ -223,6 +216,16 @@ Thread::Thread()
     : pImpl{}
 {}
 
+#if 0
+Thread::Thread(const Thread& that)
+{
+    if (pImpl)
+        throw LogicError(__FILE__, __LINE__, "Target is not empty");
+    pImpl = that.pImpl;
+    checkInvariants();
+}
+#endif
+
 Thread::Thread(Thread&& that)
 {
     if (pImpl)
@@ -231,21 +234,28 @@ Thread::Thread(Thread&& that)
     checkInvariants();
 }
 
+Thread& Thread::operator=(const Thread& rhs)
+{
+    if (pImpl)
+        throw LogicError(__FILE__, __LINE__, "Target is not empty");
+    pImpl = rhs.pImpl;
+    checkInvariants();
+    return *this;
+}
+
 Thread& Thread::operator=(Thread&& rhs)
 {
     if (pImpl)
         throw LogicError(__FILE__, __LINE__, "Target is not empty");
     pImpl = std::move(rhs.pImpl);
-    if (pImpl)
-        threads.replace(this);
     checkInvariants();
     return *this;
 }
 
-Thread::~Thread()
+Thread::~Thread() noexcept
 {
     try {
-        if (pImpl) {
+        if (pImpl.unique()) {
             threads.erase(pImpl->id());
             pImpl.reset();
             checkInvariants();
@@ -256,11 +266,11 @@ Thread::~Thread()
     }
 }
 
-void Thread::add(Thread* const thread)
+void Thread::add()
 {
-    assert(thread->pImpl);
-    threads.add(thread);
-    thread->checkInvariants();
+    assert(pImpl);
+    threads.add(pImpl.get());
+    checkInvariants();
 }
 
 Thread::Id Thread::getId() noexcept

@@ -129,7 +129,7 @@ public:
      * Destroys an instance. Closes the underlying BSD socket.
      * @exceptionsafety Nothrow
      */
-    ~Impl();
+    ~Impl() noexcept;
 
     /**
      * Prevents copy assignment.

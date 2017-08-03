@@ -83,18 +83,19 @@ class Executor<Ret>::Impl final
             : threads{}
         {}
 
-        void add(Thread&& thread)
+        void add(Thread& thread)
         {
             auto threadId = thread.id();
             assert(threadId != ThreadId{});
             assert(threads.find(threadId) == threads.end());
-            threads[threadId] = std::forward<Thread>(thread);
+            threads[threadId] = thread;
         }
 
         Thread remove(const ThreadId& threadId)
         {
             assert(threadId != ThreadId{});
-            Thread thread = std::move(threads.at(threadId));
+            Thread thread{};
+            thread = threads.at(threadId);
             auto n = threads.erase(threadId);
             assert(n == 1);
             return thread;
@@ -126,7 +127,8 @@ class Executor<Ret>::Impl final
         }
 
         /**
-         * Returns the thread that corresponds to a thread identifier.
+         * Returns a reference to the task that corresponds to a thread
+         * identifier. Doesn't remove the task.
          * @param[in] threadId       Thread ID
          * @return                   Corresponding thread
          * @throw std::out_of_range  No such thread
@@ -218,15 +220,15 @@ class Executor<Ret>::Impl final
     }
 
     /**
-     * Thread cleanup function. Adds the ID of the current thread-of-execution
-     * to the set of done threads. Must be executed on the task's thread.
+     * Purges tasks that previously completed and adds the task associated with
+     * the current thread-of-execution. Must be executed on that task's thread.
      */
-    void completeTask() {
+    void purgeDoneTasksAndAddDoneTask() {
         LockGuard lock{mutex};
         purgeCompletedTasks();
         /*
          * The thread object associated with the current thread-of-execution is
-         * not destroyed because that would cause undefined behavior.
+         * not destroyed because that causes undefined behavior.
          */
         const auto threadId = Thread::getId();
         assert(threadId != ThreadId{});
@@ -235,13 +237,14 @@ class Executor<Ret>::Impl final
     }
 
     /**
-     * Thread cleanup function. Calls the thread cleanup member function of the
-     * passed-in executor implementation.
+     * Thread cleanup function. Purges tasks that previously completed and adds
+     * the task associated with the current thread-of-execution. Must be
+     * executed on that task's thread.
      * @param[in] arg  Pointer to `Executor::Impl`
      */
-    static void taskCompleted(void* arg) {
-        auto pImpl = static_cast<Impl*>(arg);
-        pImpl->completeTask();
+    static void purgeDoneTasksAndAddDoneTask(void* arg) {
+        auto impl = static_cast<Impl*>(arg);
+        impl->purgeDoneTasksAndAddDoneTask();
     }
 
     /**
@@ -249,7 +252,7 @@ class Executor<Ret>::Impl final
      * execute a task.
      * @param[in] task     Task to be executed
      * @param[in] barrier  Synchronization barrier. `barrier.wait()` will be
-     *                     called just before `future()`.
+     *                     called just before `task()`.
      * @return             The thread object
      */
     Thread newThread(
@@ -257,8 +260,8 @@ class Executor<Ret>::Impl final
             Thread::Barrier& barrier)
     {
         return Thread{
-            [this,&task,&barrier]() mutable {
-                THREAD_CLEANUP_PUSH(taskCompleted, this);
+            [this,task,&barrier]() mutable {
+                THREAD_CLEANUP_PUSH(purgeDoneTasksAndAddDoneTask, this);
                 try {
                     /*
                      * Block parent thread until thread-cleanup routine pushed
@@ -270,7 +273,7 @@ class Executor<Ret>::Impl final
                     task();
                 }
                 catch (const std::exception& e) {
-                    log_what(e, __FILE__, __LINE__, "Couldn't execute task");
+                    log_what(e, __FILE__, __LINE__, "Task threw an exception");
                 }
                 THREAD_CLEANUP_POP(true);
             }
@@ -278,50 +281,35 @@ class Executor<Ret>::Impl final
     }
 
     /**
-     * Submits a task for execution.
-     * @param[in] task    Task to be executed
-     * @return            Future of the task
-     * @throw LogicError  `shutdown()` has been called
+     * Submits a task for execution. Creates a new thread-of-execution for the
+     * task, adds the task to the set of active tasks, and adds the thread to
+     * the set of active threads.
+     * @param[in] task         Task to be executed. Must not be empty.
+     * @return                 Future of the task
+     * @throw InvalidArgument  `task` is empty
+     * @throw LogicError       `shutdown()` has been called
      */
-    Future<Ret> submit(Task<Ret>& task)
+    Future<Ret> submitTask(Task<Ret>& task)
     {
-#if 1
-        UniqueLock lock{mutex};
+        if (!task)
+            throw InvalidArgument(__FILE__, __LINE__, "Empty task");
+        LockGuard lock{mutex};
         if (closed)
             throw LogicError(__FILE__, __LINE__, "Executor is shut down");
-        Thread          thread{};
         Thread::Barrier barrier{2};
-        ThreadId        threadId;
-        auto            future = task.getFuture();
+        auto            thread = newThread(task, barrier); // RAII object
+        barrier.wait();
+        ThreadId threadId = thread.id();
+        tasks.add(threadId, task);
         try {
-            thread = newThread(task, barrier);
-            threadId = thread.id();
-        }
-        catch (const std::exception& e) {
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                    "Couldn't create new thread"));
-        }
-        try {
-            barrier.wait();
-            tasks.add(threadId, task);
-        }
-        catch (const std::exception& e) {
-            task.cancel();
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                    "Couldn't add new future"));
-        }
-        try {
-            // Mustn't reference `thread` after this
-            threads.add(std::move(thread));
+            threads.add(thread);
         }
         catch (const std::exception& e) {
             tasks.erase(threadId);
-            task.cancel();
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't add new thread"));
         }
-        return future;
-#endif
+        return task.getFuture();
     }
 
 public:
@@ -353,15 +341,22 @@ public:
     }
 
     /**
-     * Submits a task for execution.
-     * @param[in] func    Task to be executed
-     * @return            Task future
-     * @throw LogicError  `shutdown()` has been called
+     * Submits a job for execution.
+     * @param[in] func      Job to be executed
+     * @return              Job's future
+     * @throw LogicError    `shutdown()` has been called
+     * @throw RuntimeError  Runtime failure
      */
     Future<Ret> submit(std::function<Ret()> func)
     {
-        Task<Ret> task{func};
-        return submit(task);
+        try {
+            Task<Ret> task{func};
+            return submitTask(task);
+        }
+        catch (const std::exception& e) {
+            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    "Couldn't submit job"));
+        }
     }
 
 #if 0
@@ -374,7 +369,7 @@ public:
     Future<Ret> submit(std::function<Ret()>&& func)
     {
         Task<Ret> task{func, [this](bool mayIntr){this->stop(mayIntr);}};
-        return submit(task);
+        return submitTask(task);
     }
 #endif
 

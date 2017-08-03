@@ -101,7 +101,7 @@ TEST_F(ThreadTest, DefaultConstruction)
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{};
     std::cout << "Default thread-ID: " << hycast::Thread::Id{} << '\n';
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_NO_THROW(thread.id());
     EXPECT_EQ(ThreadId{}, thread.id());
     EXPECT_NO_THROW(thread.cancel());
@@ -113,15 +113,41 @@ TEST_F(ThreadTest, Construction)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[]{}};
-    ASSERT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(1, hycast::Thread::size());
 }
+
+#if 0
+// Tests copy construction
+TEST_F(ThreadTest, CopyConstruction)
+{
+    ASSERT_EQ(0, hycast::Thread::size());
+    hycast::Thread thread1{[]{}};
+    EXPECT_EQ(1, hycast::Thread::size());
+    hycast::Thread thread2{thread1};
+    EXPECT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(thread1.id(), thread2.id());
+}
+#endif
 
 // Tests move construction
 TEST_F(ThreadTest, MoveConstruction)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{hycast::Thread{[]{}}};
-    ASSERT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(1, hycast::Thread::size());
+}
+
+// Tests copy assignment
+TEST_F(ThreadTest, CopyAssignment)
+{
+    ASSERT_EQ(0, hycast::Thread::size());
+    hycast::Thread thread1{};
+    hycast::Thread thread2{[]{}};
+    EXPECT_NE(thread1.id(), thread2.id());
+    EXPECT_EQ(1, hycast::Thread::size());
+    thread1 = thread2; // Copy assignment
+    EXPECT_EQ(thread1.id(), thread2.id());
+    EXPECT_EQ(1, hycast::Thread::size());
 }
 
 #if 1
@@ -133,7 +159,7 @@ TEST_F(ThreadTest, MoveAssignment)
     ThreadId threadId = thread.id();
     thread = hycast::Thread{[]{}}; // Move assignment
     EXPECT_NE(threadId, thread.id());
-    ASSERT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(1, hycast::Thread::size());
 }
 
 // Tests id() of joined thread
@@ -152,9 +178,9 @@ TEST_F(ThreadTest, Usage)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[this]{printArgs(1, 2, 3);}};
-    ASSERT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(1, hycast::Thread::size());
     thread.join();
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests instance cancellation
@@ -167,7 +193,7 @@ TEST_F(ThreadTest, InstanceCancellation)
     thread.cancel();
     thread.join();
     EXPECT_EQ(id, threadId);
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests static cancellation
@@ -180,7 +206,7 @@ TEST_F(ThreadTest, StaticCancellation)
     hycast::Thread::cancel(id);
     thread.join();
     EXPECT_EQ(id, threadId);
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests destructor cancellation
@@ -188,7 +214,7 @@ TEST_F(ThreadTest, DestructorCancellation)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{[]{::pause();}};
-    ASSERT_EQ(1, hycast::Thread::size());
+    EXPECT_EQ(1, hycast::Thread::size());
 }
 
 // Tests canceling completed thread
@@ -199,7 +225,7 @@ TEST_F(ThreadTest, CancelDoneThread)
     waitOnCallable();
     thread.cancel();
     thread.join();
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests move assignment and non-member cancellation
@@ -212,7 +238,7 @@ TEST_F(ThreadTest, MoveAssignmentAndNonMemberCancellation)
     waitOnCallable();
     EXPECT_NO_THROW(hycast::Thread::cancel(thread.id()));
     thread.join();
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_TRUE(callableCalled);
     EXPECT_EQ(id, threadId);
 }
@@ -225,7 +251,7 @@ TEST_F(ThreadTest, SettingCancelability)
     waitOnCallable();
     thread.cancel();
     thread.join();
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests thread cleanup routine
@@ -245,7 +271,7 @@ TEST_F(ThreadTest, ThreadCleanupRoutine)
     thread.join();
     EXPECT_NE(ThreadId{}, threadId);
     EXPECT_TRUE(cleanupCalled);
-    ASSERT_EQ(0, hycast::Thread::size());
+    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_EQ(id, threadId);
 }
 #endif

@@ -172,13 +172,14 @@ protected:
     }
 
 public:
-    virtual ~Impl()
+    virtual ~Impl() noexcept
     {
 #if 0
         cancel(true);
         UniqueLock lock{mutex};
         wait(lock);
 #endif
+        //assert(hasCompleted());
     }
 
     /**

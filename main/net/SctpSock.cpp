@@ -45,7 +45,7 @@ private:
     std::mutex              readMutex;
     std::mutex              writeMutex;
     InetSockAddr            remoteAddr;
-	static struct sigaction sigact;
+    static struct sigaction sigact;
 
     /**
      * Checks the return status of an I/O function.
@@ -58,18 +58,18 @@ private:
      * @exceptionsafety Strong
      */
     void checkIoStatus(
-			const int     line,
+            const int     line,
             const char*   funcName,
             const size_t  expected,
             const ssize_t actual) const
-	{
-		int sd = sock.load();
-		if (actual < 0)
-			throw SystemError(__FILE__, line, std::string(funcName) +
-					" failure: sock=" + std::to_string(sd) + ", expected=" +
-					std::to_string(expected) + ", errno=" +
-					std::to_string(errno));
-	}
+    {
+        int sd = sock.load();
+        if (actual < 0)
+            throw SystemError(__FILE__, line, std::string(funcName) +
+                    " failure: sock=" + std::to_string(sd) + ", expected=" +
+                    std::to_string(expected) + ", errno=" +
+                    std::to_string(errno));
+    }
 
     /**
      * Gets information on the next SCTP message. The message is left in the
@@ -79,52 +79,52 @@ private:
      * @threadsafety       Safe
      */
     void getNextMsgInfo()
-	{
-		int                    numRecvd;
-		struct sctp_sndrcvinfo sinfo;
-		{
-			int       flags = MSG_PEEK;
-			char      msg[1];
-			socklen_t socklen = 0;
-			/*
-			 * According to `man sctp_recvmsg` and
-			 * <https://tools.ietf.org/html/rfc6458>, `sctp_recvmsg()` returns
-			 * the number of bytes "received". Empirically, this is *not*
-			 * greater than the number of bytes requested (i.e., it is *not* the
-			 * number of bytes in the message -- even if MSG_PEEK is specified).
-			 * Apparently, it's the total number of bytes written to the buffers.
-			 */
-			std::lock_guard<std::mutex> lock(readMutex);
-			int sd = sock.load();
-			numRecvd = sctp_recvmsg(sd, msg, sizeof(msg), nullptr, &socklen,
-					&sinfo, &flags);
-		}
-		if (numRecvd == 0 ||
-				(numRecvd == -1 && (errno == ECONNRESET || errno == ENOTCONN))) {
-			size = 0; // EOF
-		}
-		else {
-			checkIoStatus(__LINE__, "getNextMsgInfo()->sctp_recvmsg()", 0,
-					numRecvd);
-			streamId = sinfo.sinfo_stream;
-			size = ntohl(sinfo.sinfo_ppid);
-		}
-		haveCurrMsg = true;
-	}
+    {
+        int                    numRecvd;
+        struct sctp_sndrcvinfo sinfo;
+        {
+            int       flags = MSG_PEEK;
+            char      msg[1];
+            socklen_t socklen = 0;
+            /*
+             * According to `man sctp_recvmsg` and
+             * <https://tools.ietf.org/html/rfc6458>, `sctp_recvmsg()` returns
+             * the number of bytes "received". Empirically, this is *not*
+             * greater than the number of bytes requested (i.e., it is *not* the
+             * number of bytes in the message -- even if MSG_PEEK is specified).
+             * Apparently, it's the total number of bytes written to the buffers.
+             */
+            std::lock_guard<std::mutex> lock(readMutex);
+            int sd = sock.load();
+            numRecvd = sctp_recvmsg(sd, msg, sizeof(msg), nullptr, &socklen,
+                    &sinfo, &flags);
+        }
+        if (numRecvd == 0 ||
+                (numRecvd == -1 && (errno == ECONNRESET || errno == ENOTCONN))) {
+            size = 0; // EOF
+        }
+        else {
+            checkIoStatus(__LINE__, "getNextMsgInfo()->sctp_recvmsg()", 0,
+                    numRecvd);
+            streamId = sinfo.sinfo_stream;
+            size = ntohl(sinfo.sinfo_ppid);
+        }
+        haveCurrMsg = true;
+    }
     /**
      * Computes the total number of bytes in a scatter/gather IO operation.
      * @param[in] iovec   Scatter/gather IO vector
      * @param[in] iovcnt  Number of elements in `iovec`
      */
     static size_t iovLen(
-            const struct iovec* iovec,
-            const int           iovcnt) noexcept
-	{
-		size_t len = 0;
-		for (int i = 0; i < iovcnt; i++)
-			len += iovec[i].iov_len;
-		return len;
-	}
+        const struct iovec* iovec,
+        const int           iovcnt) noexcept
+    {
+        size_t len = 0;
+        for (int i = 0; i < iovcnt; i++)
+            len += iovec[i].iov_len;
+        return len;
+    }
 
     /**
      * Initializes an SCTP send/receive information structure.
@@ -137,12 +137,12 @@ private:
             struct sctp_sndrcvinfo& sinfo,
             const unsigned          streamId,
             const size_t            size) noexcept
-	{
-		sinfo.sinfo_stream = streamId;
-		sinfo.sinfo_flags = SCTP_UNORDERED;
-		sinfo.sinfo_ppid = htonl(size);
-		sinfo.sinfo_timetolive = 30000; // in ms
-	}
+    {
+        sinfo.sinfo_stream = streamId;
+        sinfo.sinfo_flags = SCTP_UNORDERED;
+        sinfo.sinfo_ppid = htonl(size);
+        sinfo.sinfo_timetolive = 30000; // in ms
+    }
 
     /**
      * Ensures that the current message exists.
@@ -151,10 +151,10 @@ private:
      * @threadsafety       Safe
      */
     void ensureMsg()
-	{
-		if (!haveCurrMsg)
-			getNextMsgInfo();
-	}
+    {
+        if (!haveCurrMsg)
+            getNextMsgInfo();
+    }
 
 public:
     /**
@@ -162,23 +162,24 @@ public:
      * @throws SystemError if required memory can't be allocated
      */
     Impl()
-		: sock(-1)
-		, streamId(0)
-		, size(0)
-		, haveCurrMsg(false)
-		, numStreams(0)
-		, readMutex()
-		, writeMutex()
-		, remoteAddr{}
-	{
-		sigact.sa_handler = SIG_IGN;
-	}
+        : sock(-1)
+        , streamId(0)
+        , size(0)
+        , haveCurrMsg(false)
+        , numStreams(0)
+        , readMutex()
+        , writeMutex()
+        , remoteAddr{}
+    {
+        sigact.sa_handler = SIG_IGN;
+    }
 
     /**
      * Constructs from a socket and the number of SCTP streams. If the socket
      * isn't connected to a remote endpoint, then getRemoteAddr() will return
      * a default-constructed `InetSockAddr`.
-     * @param[in] sd            Socket descriptor
+     * @param[in] sd            Socket descriptor. Will be closed on
+     *                          destruction.
      * @param[in] numStreams    Number of SCTP streams
      * @throws InvalidArgument  `sock < 0 || numStreams > UINT16_MAX`
      * @throws SystemError      Socket couldn't be configured
@@ -186,15 +187,14 @@ public:
      */
     Impl(   const int      sd,
             const unsigned numStreams)
-		: Impl()
+        : Impl()
     {
         if (sd < 0)
-                throw InvalidArgument(__FILE__, __LINE__,
-                        "Invalid socket: " + std::to_string(sd));
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid socket: " + std::to_string(sd));
         if (numStreams > UINT16_MAX)
-                throw InvalidArgument(__FILE__, __LINE__,
-                        "Invalid number of streams: " +
-                        std::to_string(numStreams));
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid number of streams: " + std::to_string(numStreams));
         sock = sd;
         this->numStreams = numStreams;
         struct sctp_event_subscribe events = {0};
@@ -235,13 +235,21 @@ public:
     Impl& operator=(const Impl&& rhs) =delete;
 
     /**
-     * Destroys an instance. Closes the underlying BSD socket.
+     * Destroys an instance. Closes the underlying BSD socket it it's open.
      * @exceptionsafety Nothrow
      */
-    ~Impl()
-	{
-		close();
-	}
+    ~Impl() noexcept
+    {
+        int sd = sock.load();
+        if (sd >= 0) {
+            auto status = ::close(sd);
+            if (status)
+                log_what(SystemError(__FILE__, __LINE__,
+                        "Couldn't close socket: sd=" + std::to_string(sd),
+                        status));
+            sock = -1;
+        }
+    }
 
     /**
      * Returns the socket descriptor.
@@ -491,13 +499,13 @@ public:
      * @threadsafety    Safe
      */
     void close() noexcept
-	{
-		int sd = sock.load();
-		if (sd >= 0) {
-			(void)::close(sd);
-			sock = -1;
-		}
-	}
+    {
+        int sd = sock.load();
+        if (sd >= 0) {
+            (void)::close(sd);
+            sock = -1;
+        }
+    }
 };
 
 struct sigaction SctpSock::Impl::sigact;
@@ -604,11 +612,6 @@ bool SctpSock::hasMessage() const
 void SctpSock::discard() const
 {
     pImpl->discard();
-}
-
-void SctpSock::close() const
-{
-    pImpl->close();
 }
 
 } // namespace

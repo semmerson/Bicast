@@ -34,7 +34,7 @@ class Task<Ret>::Impl
     Future<Ret>          future;
     bool                 cancelCalled;
 
-    static void threadWasCanceled(void* arg)
+    static void markFutureCanceled(void* arg)
     {
         auto impl = static_cast<Impl*>(arg);
         impl->future.setCanceled();
@@ -73,6 +73,11 @@ public:
         , cancelCalled{false}
     {}
 
+    ~Impl() noexcept
+    {
+        assert(future.hasCompleted());
+    }
+
     Future<Ret> getFuture() const
     {
         return future;
@@ -84,7 +89,7 @@ public:
      */
     void operator()()
     {
-        THREAD_CLEANUP_PUSH(threadWasCanceled, this);
+        THREAD_CLEANUP_PUSH(markFutureCanceled, this);
         try {
             UniqueLock lock{mutex};
             if (!cancelCalled) {
@@ -109,16 +114,35 @@ public:
     void cancel(const bool mayInterrupt)
     {
         // Might be called (e.g., by `future`) before `threadId` is set
-        UniqueLock lock{mutex};
-        if (!haveThreadId) {
-            cancelCalled = true;
-            lock.unlock();
-            future.setCanceled();
+        UniqueLock lock{};
+        try {
+            lock = UniqueLock{mutex};
+        }
+        catch (const std::exception& e) {
+            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    "Couldn't lock mutex"));
+        }
+        if (haveThreadId) {
+            try {
+                lock.unlock();
+                if (mayInterrupt)
+                    Thread::cancel(threadId);
+            }
+            catch (const std::exception& e) {
+                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                        "Couldn't cancel thread"));
+            }
         }
         else {
-            lock.unlock();
-            if (mayInterrupt)
-                Thread::cancel(threadId);
+            try {
+                cancelCalled = true;
+                lock.unlock();
+                future.setCanceled();
+            }
+            catch (const std::exception& e) {
+                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                        "Couldn't cancel future"));
+            }
         }
     }
 };

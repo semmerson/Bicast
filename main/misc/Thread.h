@@ -34,226 +34,6 @@ namespace hycast {
 class Thread final
 {
 public:
-    class Barrier
-    {
-        pthread_barrier_t barrier;
-
-    public:
-        Barrier(const int numThreads);
-
-        Barrier(const Barrier& that) =delete;
-        Barrier(Barrier&& that) =delete;
-        Barrier& operator=(const Barrier& rhs) =delete;
-        Barrier& operator=(Barrier&& rhs) =delete;
-
-        void wait();
-
-        ~Barrier() noexcept;
-    };
-
-private:
-    class Impl final
-    {
-        typedef enum {
-            unset = 0,
-            completed = 1,
-            beingJoined = 2,
-            joined = 4
-        }                               State;
-        typedef std::mutex              Mutex;
-        typedef std::lock_guard<Mutex>  LockGuard;
-        typedef std::unique_lock<Mutex> UniqueLock;
-        typedef std::condition_variable Cond;
-
-        mutable Mutex       mutex;
-        mutable Cond        cond;
-        std::exception_ptr  exception;
-        std::atomic_uint    state;
-        Barrier             barrier;
-        mutable std::thread stdThread;
-
-        /**
-         * Thread cleanup routine for when the thread-of-control is canceled.
-         * @param[in] arg  Pointer to an instance of this class.
-         */
-        static void threadWasCanceled(void* arg);
-
-        /**
-         * Ensures that the thread-of-execution associated with this instance
-         * has been joined. Idempotent.
-         */
-        void privateJoin();
-
-        /**
-         * Unconditionally cancels the thread-of-execution associated with this
-         * instance.
-         */
-        void privateCancel();
-
-        /**
-         * Ensures that the thread-of-execution has completed by canceling it if
-         * necessary. Sets the `State::completed` bit in `state`.
-         */
-        void ensureCompleted();
-
-        /**
-         * Ensures that the thread-of-execution is joined. Sets the
-         * `State::completed` bit in `state`.
-         */
-        void ensureJoined();
-
-        /**
-         * Indicates whether or not the mutex is locked. Upon return, the state
-         * of the mutex is the same as upon entry.
-         * @retval `true`    Iff the mutex is locked
-         */
-        bool isLocked() const;
-
-    public:
-        /// Thread identifier
-        typedef std::thread::id ThreadId;
-
-        Impl() =delete;
-        Impl(const Impl& that) = delete;
-        Impl(Impl&& that) =delete;
-        Impl& operator=(const Impl& rhs) =delete;
-        Impl& operator=(Impl&& rhs) =delete;
-
-        /**
-         * Constructs. Either `callable()` will be called or `terminate()` will
-         * be called.
-         * @param[in] callable  Object to be executed by calling it's
-         *                      `operator()` function
-         * @param[in] args      Arguments of the `operator()` method
-         */
-        template<class Callable, class... Args>
-        explicit Impl(Callable& callable, Args&&... args)
-            : mutex{}
-            , cond{}
-            , exception{}
-            , state{State::unset}
-            , barrier{2}
-            , stdThread{[this](decltype(
-                    std::bind(callable, std::forward<Args>(args)...))&&
-                            boundCallable) mutable {
-                THREAD_CLEANUP_PUSH(threadWasCanceled, this);
-                try {
-                    // Ensure deferred cancelability
-                    int  previous;
-                    auto status = ::pthread_setcanceltype(
-                            PTHREAD_CANCEL_DEFERRED, &previous);
-                    if (status)
-                        throw SystemError(__FILE__, __LINE__,
-                                "pthread_setcanceltype() failure", status);
-                    try {
-                        barrier.wait();
-                        Thread::enableCancel();
-                        Thread::testCancel(); // In case destructor called
-                        boundCallable();
-                        Thread::testCancel(); // In case destructor called
-                        Thread::disableCancel(); // Disables Thread::testCancel()
-                        LockGuard lock{mutex};
-                        state.fetch_or(State::completed);
-                    }
-                    catch (const std::exception& e) {
-                        Thread::disableCancel();
-                        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                                "Task threw an exception"));
-                    }
-                }
-                catch (const std::exception& e) {
-                    Thread::disableCancel();
-                    exception = std::current_exception();
-                    LockGuard lock{mutex};
-                    state.fetch_or(State::completed);
-                    throw;
-                }
-                THREAD_CLEANUP_POP(false);
-            }, std::bind(callable, std::forward<Args>(args)...)}
-        {
-            barrier.wait();
-        }
-
-        /**
-         * Destroys. The associated thread-of-execution is canceled if it hasn't
-         * completed and joined if it hasn't been.
-         */
-        ~Impl();
-
-        /**
-         * Returns the thread identifier.
-         * @return                  Thread identifier
-         * @throw  InvalidArgument  This instance was canceled
-         * @exceptionsafety         Nothrow
-         * @threadsafety            Safe
-         */
-        ThreadId id() const noexcept;
-
-        /**
-         * Cancels the thread. Idempotent.
-         * @throw SystemError  Thread couldn't be canceled
-         * @exceptionsafety    Strong guarantee
-         * @threadsafety       Safe
-         */
-        void cancel();
-
-        /**
-         * Joins the thread. Idempotent. This call is necessary to ensure that
-         * all thread cleanup routines have completed.
-         * @throw SystemError  Thread couldn't be joined
-         * @exceptionsafety    Strong guarantee
-         * @threadsafety       Safe
-         */
-        void join();
-    };
-
-public:
-    /// Thread identifier
-    typedef Impl::ThreadId             Id;
-
-private:
-    typedef std::unique_ptr<Impl>      Pimpl;
-
-    class ThreadMap
-    {
-        typedef std::mutex             Mutex;
-        typedef std::lock_guard<Mutex> LockGuard;
-        typedef std::map<Id, Thread*>  Map;
-
-        Mutex mutex;
-        Map   threads;
-
-    public:
-        ThreadMap();
-        void add(Thread* thread);
-        void replace(Thread* thread);
-        bool contains(const Id& threadId);
-        Thread* get(const Id& threadId);
-        void erase(const Id& threadId);
-        Map::size_type size();
-    };
-
-    /// Set of joinable threads:
-    static ThreadMap                   threads;
-    /// Pointer to the implementation:
-    Pimpl                              pImpl;
-
-    /**
-     * Checks invariants.
-     * @invariant        `pImpl` <=> thread's ID isn't default
-     * @invariant        `Thread` object is joinable <=> its ID isn't default
-     * @invariant        `Thread` object is in `threads` <=> it's joinable
-     * @exceptionsafety  Strong guarantee
-     */
-    void checkInvariants() const;
-
-    /**
-     * Adds a thread object to the set of such objects.
-     * @param[in] thread  Thread object to be added
-     */
-    static void add(Thread* thread);
-
-public:
     /**
      * Key for accessing a user-supplied thread-specific pointer.
      * @tparam T  Type of pointed-to value.
@@ -355,6 +135,225 @@ public:
         }
     };
 
+    class Barrier
+    {
+        pthread_barrier_t barrier;
+
+    public:
+        Barrier(const int numThreads);
+
+        Barrier(const Barrier& that) =delete;
+        Barrier(Barrier&& that) =delete;
+        Barrier& operator=(const Barrier& rhs) =delete;
+        Barrier& operator=(Barrier&& rhs) =delete;
+
+        void wait();
+
+        ~Barrier() noexcept;
+    };
+
+private:
+    class Impl final
+    {
+        typedef enum {
+            unset = 0,
+            completed = 1,
+            beingJoined = 2,
+            joined = 4
+        }                               State;
+        typedef std::mutex              Mutex;
+        typedef std::lock_guard<Mutex>  LockGuard;
+        typedef std::unique_lock<Mutex> UniqueLock;
+        typedef std::condition_variable Cond;
+
+        mutable Mutex       mutex;
+        mutable Cond        cond;
+        std::exception_ptr  exception;
+        std::atomic_uint    state;
+        Barrier             barrier;
+        mutable std::thread stdThread;
+
+        /**
+         * Thread cleanup routine for when the thread-of-control is canceled.
+         * @param[in] arg  Pointer to an instance of this class.
+         */
+        static void setCompleted(void* arg);
+
+        /**
+         * Ensures that the thread-of-execution associated with this instance
+         * has been joined. Idempotent.
+         */
+        void privateJoin();
+
+        /**
+         * Unconditionally cancels the thread-of-execution associated with this
+         * instance.
+         */
+        void privateCancel();
+
+        /**
+         * Ensures that the thread-of-execution has completed by canceling it if
+         * necessary. Sets the `State::completed` bit in `state`.
+         */
+        void ensureCompleted();
+
+        /**
+         * Ensures that the thread-of-execution is joined. Sets the
+         * `State::completed` bit in `state`.
+         */
+        void ensureJoined();
+
+        /**
+         * Indicates whether or not the mutex is locked. Upon return, the state
+         * of the mutex is the same as upon entry.
+         * @retval `true`    Iff the mutex is locked
+         */
+        bool isLocked() const;
+
+    public:
+        /// Thread identifier
+        typedef std::thread::id ThreadId;
+
+        Impl() =delete;
+        Impl(const Impl& that) = delete;
+        Impl(Impl&& that) =delete;
+        Impl& operator=(const Impl& rhs) =delete;
+        Impl& operator=(Impl&& rhs) =delete;
+
+        /**
+         * Constructs. Either `callable()` will be called or `terminate()` will
+         * be called.
+         * @param[in] callable  Object to be executed by calling it's
+         *                      `operator()` function
+         * @param[in] args      Arguments of the `operator()` method
+         */
+        template<class Callable, class... Args>
+        explicit Impl(Callable& callable, Args&&... args)
+            : mutex{}
+            , cond{}
+            , exception{}
+            , state{State::unset}
+            , barrier{2}
+            , stdThread{[this](decltype(
+                    std::bind(callable, std::forward<Args>(args)...))&&
+                            boundCallable) mutable {
+                THREAD_CLEANUP_PUSH(setCompleted, this);
+                try {
+                    // Ensure deferred cancelability
+                    int  previous;
+                    auto status = ::pthread_setcanceltype(
+                            PTHREAD_CANCEL_DEFERRED, &previous);
+                    if (status)
+                        throw SystemError(__FILE__, __LINE__,
+                                "pthread_setcanceltype() failure", status);
+                    try {
+                        barrier.wait();
+                        Thread::enableCancel();
+                        Thread::testCancel(); // In case destructor called
+                        boundCallable();
+                        Thread::testCancel(); // In case destructor called
+                        Thread::disableCancel(); // Disables Thread::testCancel()
+                        LockGuard lock{mutex};
+                        state.fetch_or(State::completed);
+                    }
+                    catch (const std::exception& e) {
+                        Thread::disableCancel();
+                        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                                "Task threw an exception"));
+                    }
+                }
+                catch (const std::exception& e) {
+                    Thread::disableCancel();
+                    exception = std::current_exception();
+                    LockGuard lock{mutex};
+                    state.fetch_or(State::completed);
+                    throw;
+                }
+                THREAD_CLEANUP_POP(false);
+            }, std::bind(callable, std::forward<Args>(args)...)}
+        {
+            barrier.wait();
+        }
+
+        /**
+         * Destroys. The associated thread-of-execution is canceled if it hasn't
+         * completed and joined if it hasn't been.
+         */
+        ~Impl();
+
+        /**
+         * Returns the thread identifier.
+         * @return                  Thread identifier
+         * @throw  InvalidArgument  This instance was canceled
+         * @exceptionsafety         Nothrow
+         * @threadsafety            Safe
+         */
+        ThreadId id() const noexcept;
+
+        /**
+         * Cancels the thread. Idempotent.
+         * @throw SystemError  Thread couldn't be canceled
+         * @exceptionsafety    Strong guarantee
+         * @threadsafety       Safe
+         */
+        void cancel();
+
+        /**
+         * Joins the thread. Idempotent. This call is necessary to ensure that
+         * all thread cleanup routines have completed.
+         * @throw SystemError  Thread couldn't be joined
+         * @exceptionsafety    Strong guarantee
+         * @threadsafety       Safe
+         */
+        void join();
+    };
+
+public:
+    /// Thread identifier
+    typedef Impl::ThreadId             Id;
+
+private:
+    class ThreadMap
+    {
+        typedef std::mutex             Mutex;
+        typedef std::lock_guard<Mutex> LockGuard;
+        typedef std::map<Id, Impl*>    Map;
+
+        Mutex mutex;
+        Map   threads;
+
+    public:
+        ThreadMap();
+        void add(Impl* impl);
+        bool contains(const Id& threadId);
+        Impl* get(const Id& threadId);
+        void erase(const Id& threadId);
+        Map::size_type size();
+    };
+
+    typedef std::shared_ptr<Impl>      Pimpl;
+
+    /// Set of joinable threads:
+    static ThreadMap                   threads;
+    /// Pointer to the implementation:
+    Pimpl                              pImpl;
+
+    /**
+     * Checks invariants.
+     * @invariant        `pImpl` <=> thread's ID isn't default
+     * @invariant        `Thread` object is joinable <=> its ID isn't default
+     * @invariant        `Thread` object is in `threads` <=> it's joinable
+     * @exceptionsafety  Strong guarantee
+     */
+    void checkInvariants() const;
+
+    /**
+     * Adds a thread object to the set of such objects.
+     * @param[in] thread  Thread object to be added
+     */
+    void add();
+
+public:
     friend class std::hash<Thread>;
     friend class std::less<Thread>;
 
@@ -385,7 +384,7 @@ public:
     explicit Thread(Callable&& callable, Args&&... args)
         : pImpl{new Impl(callable, std::forward<Args>(args)...)}
     {
-        add(this);
+        add();
     }
 
     /**
@@ -393,14 +392,14 @@ public:
      * thread-of-execution is canceled if it hasn't completed and joined if it
      * hasn't been joined.
      */
-    ~Thread();
+    ~Thread() noexcept;
 
     /**
      * Copy assigns.
      * @param[in] rhs  Right-hand-side of assignment operator
      * @return         This instance
      */
-    Thread& operator=(const Thread& rhs) =delete;
+    Thread& operator=(const Thread& rhs);
 
     /**
      * Move assigns.

@@ -118,11 +118,6 @@ class P2pMgr::Impl final : public Notifier
     /// Thread on which remote peers are accepted:
     Thread                    serverThread;
 
-    static void closeServerSock(void* arg)
-    {
-        static_cast<SrvrSctpSock*>(arg)->close();
-    }
-
     /**
      * Runs the server for connections from remote peers. Creates a
      * corresponding local peer and attempts to add it to the set of active
@@ -137,21 +132,18 @@ class P2pMgr::Impl final : public Notifier
         try {
             try {
                 SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
-                THREAD_CLEANUP_PUSH(closeServerSock, &serverSock);
                 for (;;) {
                     auto sock = serverSock.accept(); // Blocks
                     LockGuard lock(peerSetMutex);
                     Peer peer;
                     try {
                         peer = Peer(*msgRcvr, sock);
+                        peerSet.tryInsert(peer); // Might block
                     }
                     catch (const std::exception& e) {
                         log_what(e); // Possibly incompatible protocol versions
                     }
-                    if (!peerSet.tryInsert(peer)) // Might block
-                        sock.close();
                 }
-                THREAD_CLEANUP_POP(0);
             }
             catch (const std::exception& e) {
                 std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
