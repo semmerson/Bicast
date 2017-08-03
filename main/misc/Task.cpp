@@ -166,16 +166,6 @@ Task<Ret>::Task(std::function<Ret()> func)
     : pImpl{new Impl(func)}
 {}
 
-#if 0
-template<class Ret>
-Task<Ret>::Task(
-        std::function<Ret()>&&       func,
-        typename Future<Ret>::Stop&& cancel)
-    : pImpl{new Impl(std::forward<std::function<Ret()>>(func),
-            std::forward<typename Future<Ret>::Stop>(cancel))}
-{}
-#endif
-
 template<class Ret>
 Task<Ret>::operator bool() const noexcept
 {

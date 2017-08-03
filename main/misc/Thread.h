@@ -363,7 +363,8 @@ public:
     Thread();
 
     /**
-     * Copy constructs.
+     * Copy constructs. This constructor is deleted because the compiler
+     * confuses is with `Thread(Callable, ...)`.
      * @param[in] that  Other instance
      */
     Thread(const Thread& that) =delete;

@@ -12,9 +12,6 @@
 
 #include "error.h"
 #include "Future.h"
-#if 0
-#include "Thread.h"
-#endif
 
 #include <bitset>
 #include <cassert>
@@ -42,10 +39,6 @@ class BasicFuture::Impl
     std::exception_ptr              exception;
     bool                            haveResult;
     bool                            canceled;
-#if 0
-    Thread::Id                      threadId;
-    bool                            haveThreadId;
-#endif
     Stop                            stop;
 
     void cantStop(const bool mayInterrupt)
@@ -66,18 +59,6 @@ class BasicFuture::Impl
         return false;
     }
 
-#if 0
-    static void threadWasCanceled(void* arg)
-    {
-        auto impl = static_cast<Impl*>(arg);
-        LockGuard lock{impl->mutex};
-        assert(impl->haveThreadId);
-        assert(impl->threadId == Thread::getId());
-        impl->canceled = true;
-        impl->cond.notify_all();
-    }
-#endif
-
 protected:
     /**
      * Default constructs.
@@ -88,10 +69,6 @@ protected:
         , exception{}
         , haveResult{false}
         , canceled{false}
-#if 0
-        , threadId{}
-        , haveThreadId{false}
-#endif
         , stop{}
     {}
 
@@ -105,10 +82,6 @@ protected:
         , exception{}
         , haveResult{false}
         , canceled{false}
-#if 0
-        , threadId{}
-        , haveThreadId{false}
-#endif
         , stop{stop}
     {}
 
@@ -173,14 +146,7 @@ protected:
 
 public:
     virtual ~Impl() noexcept
-    {
-#if 0
-        cancel(true);
-        UniqueLock lock{mutex};
-        wait(lock);
-#endif
-        //assert(hasCompleted());
-    }
+    {}
 
     /**
      * Cancels the task iff the task hasn't already completed. Idempotent.
@@ -194,60 +160,8 @@ public:
      */
     void cancel(const bool mayInterrupt)
     {
-#if 0
-        UniqueLock lock{mutex};
-        cancelCalled = true;
-        if (!haveThreadId) {
-            canceled = true;
-        }
-        else if (!hasCompleted() && mayInterrupt) {
-            lock.unlock();
-            Thread::cancel(threadId);
-            lock.lock();
-        }
-        cond.notify_all();
-#endif
         if (!hasCompleted())
             stop(mayInterrupt);
-    }
-
-    /**
-     * @threadsafety  Incompatible
-     */
-    void operator()()
-    {
-#if 0
-        THREAD_CLEANUP_PUSH(threadWasCanceled, this);
-        try {
-            UniqueLock lock{mutex};
-            if (haveThreadId)
-                throw LogicError(__FILE__, __LINE__,
-                        "operator() already called");
-            threadId = Thread::getId();
-            assert(threadId != Thread::Id{});
-            haveThreadId = true;
-            if (cancelCalled) {
-                canceled = true;
-            }
-            else {
-                lock.unlock();
-                bool enabled = Thread::enableCancel();
-                Thread::testCancel(); // In case destructor called
-                //std::cout << "Calling setResult()\n";
-                setResult();
-                Thread::testCancel(); // In case destructor called
-                Thread::disableCancel(); // Disables Thread::testCancel()
-                lock.lock();
-                haveResult = true;
-                Thread::enableCancel(enabled);
-            }
-            cond.notify_all();
-        }
-        catch (const std::exception& e) {
-            setException();
-        }
-        THREAD_CLEANUP_POP(false);
-#endif
     }
 
     void setException(const std::exception_ptr ptr)
@@ -305,6 +219,8 @@ public:
     }
 };
 
+/******************************************************************************/
+
 BasicFuture::BasicFuture()
     : pImpl{}
 {}
@@ -334,15 +250,6 @@ bool BasicFuture::operator!=(const BasicFuture& that) const noexcept
 bool BasicFuture::operator<(const BasicFuture& that) const noexcept
 {
     return pImpl < that.pImpl;
-}
-
-void BasicFuture::operator()() const
-{
-#if 0
-    if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Future is empty");
-    pImpl->operator()();
-#endif
 }
 
 void BasicFuture::cancel(bool mayInterrupt) const
@@ -423,12 +330,6 @@ public:
         , result{}
     {}
 
-#if 0
-    void setResult()
-    {
-        result = task();
-    }
-#endif
     void setResult(Ret result)
     {
         this->result = result;
@@ -514,9 +415,6 @@ public:
 
     void setResult()
     {
-#if 0
-        task();
-#endif
         markResult();
     }
 

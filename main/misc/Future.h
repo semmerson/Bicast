@@ -12,16 +12,9 @@
 #ifndef MAIN_MISC_FUTURE_H_
 #define MAIN_MISC_FUTURE_H_
 
-#if 0
-#include "Thread.h"
-#endif
-
 #include <exception>
 #include <functional>
 #include <memory>
-#if 0
-#include <thread>
-#endif
 
 namespace hycast {
 
@@ -82,13 +75,6 @@ public:
      * @return `true` iff this instance is less than the other
      */
     bool operator<(const BasicFuture& that) const noexcept;
-
-    /**
-     * Executes the task given to the constructor.
-     * @throw LogicError  Function already called
-     * @threadsafety      Incompatible
-     */
-    void operator()() const;
 
     void setException() const;
 

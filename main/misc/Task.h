@@ -39,15 +39,6 @@ public:
      */
     Task(std::function<Ret()> func);
 
-    /**
-     * Move constructs from the callable to execute.
-     * @param[in] func  Callable to execute
-     */
-#if 0
-    Task(   std::function<Ret()>&&       func,
-            typename Future<Ret>::Stop&& stop);
-#endif
-
     Future<Ret> getFuture() const;
 
     /**

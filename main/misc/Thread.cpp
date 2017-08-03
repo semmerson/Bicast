@@ -217,6 +217,7 @@ Thread::Thread()
 {}
 
 #if 0
+// See `Thread.h` for why this is commented-out
 Thread::Thread(const Thread& that)
 {
     if (pImpl)

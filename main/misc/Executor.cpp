@@ -250,7 +250,7 @@ class Executor<Ret>::Impl final
     /**
      * Returns a thread object that references a thread-of-execution that will
      * execute a task.
-     * @param[in] task     Task to be executed
+     * @param[in] task     Task to be executed. Copied.
      * @param[in] barrier  Synchronization barrier. `barrier.wait()` will be
      *                     called just before `task()`.
      * @return             The thread object
@@ -359,20 +359,6 @@ public:
         }
     }
 
-#if 0
-    /**
-     * Submits a task for execution.
-     * @param[in] func    Task to be executed
-     * @return            Task future
-     * @throw LogicError  `shutdown()` has been called
-     */
-    Future<Ret> submit(std::function<Ret()>&& func)
-    {
-        Task<Ret> task{func, [this](bool mayIntr){this->stop(mayIntr);}};
-        return submitTask(task);
-    }
-#endif
-
     /**
      * Returns the future associated with the current thread.
      * @return                   The associated future
@@ -382,12 +368,8 @@ public:
      */
     Future<Ret> getFuture()
     {
-#if 0
-        return *futureKey.get();
-#else
         LockGuard lock{mutex};
         return tasks.get(Thread::getId()).getFuture();
-#endif
     }
 
     /**
