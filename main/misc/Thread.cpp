@@ -27,11 +27,12 @@
 
 namespace hycast {
 
-void Thread::Impl::setCompleted(void* arg)
+void Thread::Impl::setCompletedAndNotify(void* arg)
 {
     auto impl = static_cast<Impl*>(arg);
     LockGuard lock{impl->mutex};
-    impl->state.fetch_or(State::completed);
+    impl->state |= State::completed;
+    impl->cond.notify_all();
 }
 
 void Thread::Impl::privateCancel()
@@ -73,28 +74,19 @@ void Thread::Impl::privateJoin()
 void Thread::Impl::ensureCompleted()
 {
     UniqueLock lock{mutex};
-    auto       completed = state.fetch_or(State::completed) & State::completed;
-    lock.unlock();
-    if (!completed)
+    if (!(state & State::completed))
         privateCancel();
 }
 
 void Thread::Impl::ensureJoined()
 {
     UniqueLock lock{mutex};
-    auto needsJoining = !(state.fetch_or(State::beingJoined) &
-            State::beingJoined);
-    if (needsJoining) {
+    if (!(state & State::joined)) {
+        state |= State::joined;
         lock.unlock();
         privateJoin();
-        assert(id() == ThreadId{});
         lock.lock();
-        state.fetch_or(State::joined);
         cond.notify_all();
-    }
-    else {
-        while (!(state.load() & State::joined))
-            cond.wait(lock);
     }
 }
 

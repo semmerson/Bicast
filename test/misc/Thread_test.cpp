@@ -106,7 +106,6 @@ TEST_F(ThreadTest, DefaultConstruction)
     EXPECT_EQ(ThreadId{}, thread.id());
     EXPECT_NO_THROW(thread.cancel());
 }
-#endif
 
 // Tests construction
 TEST_F(ThreadTest, Construction)
@@ -150,7 +149,6 @@ TEST_F(ThreadTest, CopyAssignment)
     EXPECT_EQ(1, hycast::Thread::size());
 }
 
-#if 1
 // Tests move assignment
 TEST_F(ThreadTest, MoveAssignment)
 {
@@ -182,6 +180,7 @@ TEST_F(ThreadTest, Usage)
     thread.join();
     EXPECT_EQ(0, hycast::Thread::size());
 }
+#endif
 
 // Tests instance cancellation
 TEST_F(ThreadTest, InstanceCancellation)
@@ -196,6 +195,7 @@ TEST_F(ThreadTest, InstanceCancellation)
     EXPECT_EQ(0, hycast::Thread::size());
 }
 
+#if 1
 // Tests static cancellation
 TEST_F(ThreadTest, StaticCancellation)
 {
@@ -274,7 +274,7 @@ TEST_F(ThreadTest, ThreadCleanupRoutine)
     EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_EQ(id, threadId);
 }
-#endif
+
 #if 1
 // Tests cancellation loop
 TEST_F(ThreadTest, CancellationLoop)
@@ -319,6 +319,8 @@ TEST_F(ThreadTest, BunchOfThreads) {
     usleep(50000);
 }
 #endif
+#endif
+
 }  // namespace
 
 int main(int argc, char **argv) {

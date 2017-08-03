@@ -158,8 +158,7 @@ private:
         typedef enum {
             unset = 0,
             completed = 1,
-            beingJoined = 2,
-            joined = 4
+            joined = 2
         }                               State;
         typedef std::mutex              Mutex;
         typedef std::lock_guard<Mutex>  LockGuard;
@@ -169,7 +168,7 @@ private:
         mutable Mutex       mutex;
         mutable Cond        cond;
         std::exception_ptr  exception;
-        std::atomic_uint    state;
+        unsigned            state;
         Barrier             barrier;
         mutable std::thread stdThread;
 
@@ -177,7 +176,7 @@ private:
          * Thread cleanup routine for when the thread-of-control is canceled.
          * @param[in] arg  Pointer to an instance of this class.
          */
-        static void setCompleted(void* arg);
+        static void setCompletedAndNotify(void* arg);
 
         /**
          * Ensures that the thread-of-execution associated with this instance
@@ -237,7 +236,7 @@ private:
             , stdThread{[this](decltype(
                     std::bind(callable, std::forward<Args>(args)...))&&
                             boundCallable) mutable {
-                THREAD_CLEANUP_PUSH(setCompleted, this);
+                THREAD_CLEANUP_PUSH(setCompletedAndNotify, this);
                 try {
                     // Ensure deferred cancelability
                     int  previous;
@@ -249,12 +248,8 @@ private:
                     try {
                         barrier.wait();
                         Thread::enableCancel();
-                        Thread::testCancel(); // In case destructor called
                         boundCallable();
-                        Thread::testCancel(); // In case destructor called
                         Thread::disableCancel(); // Disables Thread::testCancel()
-                        LockGuard lock{mutex};
-                        state.fetch_or(State::completed);
                     }
                     catch (const std::exception& e) {
                         Thread::disableCancel();
@@ -265,11 +260,9 @@ private:
                 catch (const std::exception& e) {
                     Thread::disableCancel();
                     exception = std::current_exception();
-                    LockGuard lock{mutex};
-                    state.fetch_or(State::completed);
                     throw;
                 }
-                THREAD_CLEANUP_POP(false);
+                THREAD_CLEANUP_POP(true);
             }, std::bind(callable, std::forward<Args>(args)...)}
         {
             barrier.wait();
