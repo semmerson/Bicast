@@ -158,7 +158,8 @@ private:
         typedef enum {
             unset = 0,
             completed = 1,
-            joined = 2
+            beingJoined = 2,
+            joined = 4
         }                               State;
         typedef std::mutex              Mutex;
         typedef std::lock_guard<Mutex>  LockGuard;
@@ -172,8 +173,49 @@ private:
         Barrier             barrier;
         mutable std::thread stdThread;
 
+        inline void setStateBit(const State bit)
+        {
+            state |= bit;
+            cond.notify_all(); // Notify of all state changes
+        }
+
+        inline bool isStateBitSet(const State bit) const
+        {
+            return (state & bit) != 0;
+        }
+
+        inline void setCompleted()
+        {
+            setStateBit(State::completed);
+        }
+
+        inline bool isCompleted() const
+        {
+            isStateBitSet(State::completed);
+        }
+
+        inline void setBeingJoined()
+        {
+            setStateBit(State::beingJoined);
+        }
+
+        inline bool isBeingJoined() const
+        {
+            isStateBitSet(State::beingJoined);
+        }
+
+        inline void setJoined()
+        {
+            setStateBit(State::joined);
+        }
+
+        inline bool isJoined() const
+        {
+            isStateBitSet(State::joined);
+        }
+
         /**
-         * Thread cleanup routine for when the thread-of-control is canceled.
+         * Thread cleanup routine for when the thread-of-execution is canceled.
          * @param[in] arg  Pointer to an instance of this class.
          */
         static void setCompletedAndNotify(void* arg);
@@ -238,6 +280,7 @@ private:
                             boundCallable) mutable {
                 THREAD_CLEANUP_PUSH(setCompletedAndNotify, this);
                 try {
+                    Thread::disableCancel();
                     // Ensure deferred cancelability
                     int  previous;
                     auto status = ::pthread_setcanceltype(
@@ -248,6 +291,7 @@ private:
                     try {
                         barrier.wait();
                         Thread::enableCancel();
+                        Thread::testCancel();
                         boundCallable();
                         Thread::disableCancel(); // Disables Thread::testCancel()
                     }
@@ -272,7 +316,7 @@ private:
          * Destroys. The associated thread-of-execution is canceled if it hasn't
          * completed and joined if it hasn't been.
          */
-        ~Impl();
+        ~Impl() noexcept;
 
         /**
          * Returns the thread identifier.

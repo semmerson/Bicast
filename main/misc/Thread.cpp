@@ -31,8 +31,7 @@ void Thread::Impl::setCompletedAndNotify(void* arg)
 {
     auto impl = static_cast<Impl*>(arg);
     LockGuard lock{impl->mutex};
-    impl->state |= State::completed;
-    impl->cond.notify_all();
+    impl->setCompleted();
 }
 
 void Thread::Impl::privateCancel()
@@ -73,20 +72,27 @@ void Thread::Impl::privateJoin()
 
 void Thread::Impl::ensureCompleted()
 {
-    UniqueLock lock{mutex};
-    if (!(state & State::completed))
+    LockGuard lock{mutex};
+    if (!isCompleted())
         privateCancel();
 }
 
 void Thread::Impl::ensureJoined()
 {
     UniqueLock lock{mutex};
-    if (!(state & State::joined)) {
-        state |= State::joined;
+    if (!isBeingJoined()) {
+        setBeingJoined();
+        /*
+         * Unlock because Thread::Impl::setCompletedAndNotify() might be
+         * executing
+         */
         lock.unlock();
-        privateJoin();
+        privateJoin(); // Blocks until thread-of-execution joined
         lock.lock();
-        cond.notify_all();
+        setJoined();
+    }
+    else while (!isJoined()) {
+        cond.wait(lock);
     }
 }
 
@@ -98,7 +104,7 @@ bool Thread::Impl::isLocked() const
     return false;
 }
 
-Thread::Impl::~Impl()
+Thread::Impl::~Impl() noexcept
 {
     try {
         if (Thread::getId() == id())
@@ -248,11 +254,8 @@ Thread& Thread::operator=(Thread&& rhs)
 Thread::~Thread() noexcept
 {
     try {
-        if (pImpl.unique()) {
+        if (pImpl.unique())
             threads.erase(pImpl->id());
-            pImpl.reset();
-            checkInvariants();
-        }
     }
     catch (const std::exception& e) {
         log_what(e, __FILE__, __LINE__, "Couldn't destroy thread");
