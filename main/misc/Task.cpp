@@ -100,9 +100,9 @@ public:
                 assert(threadId != Thread::Id{});
                 haveThreadId = true;
                 lock.unlock();
-                bool enabled = Thread::enableCancel();
+                Thread::enableCancel();
                 setResult();
-                Thread::enableCancel(enabled);
+                Thread::disableCancel();
             }
         }
         catch (const std::exception& e) {
