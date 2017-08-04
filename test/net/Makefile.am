@@ -20,13 +20,4 @@ InetSockAddr_test_SOURCES	= InetSockAddr_test.cpp
 SctpSock_test_SOURCES		= SctpSock_test.cpp
 UdpSock_test_SOURCES		= UdpSock_test.cpp
 
-TESTS	= \
-	Interface_test \
-	Ipv4Addr_test \
-	Ipv6Addr_test \
-	InetAddr_test \
-	InetSockAddr_test \
-	SctpSock_test \
-	UdpSock_test
-
-#	socket_test
+TESTS	= $(check_PROGRAMS)
