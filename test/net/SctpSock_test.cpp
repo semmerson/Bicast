@@ -106,7 +106,7 @@ protected:
     // Objects declared here can be used by all tests in the test case for Socket.
     const in_port_t         MY_PORT_NUM = 38800;
     const uint16_t          numStreams = 5;
-    const hycast::Interface ethnetIfaceName{"ens33"};
+    const hycast::Interface ethnetIfaceName{"lo"};
     hycast::InetSockAddr    srvrAddr{ethnetIfaceName.getInetAddr(AF_INET),
             MY_PORT_NUM};
     int                     sock1, sock2;

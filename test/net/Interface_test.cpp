@@ -22,7 +22,7 @@ namespace {
 class InterfaceTest : public ::testing::Test
 {
 protected:
-    const std::string ethernetIfaceName{"ens33"};
+    const std::string ethernetIfaceName{"lo"};
 };
 
 // Tests default construction
