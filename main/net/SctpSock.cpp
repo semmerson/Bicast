@@ -178,8 +178,7 @@ public:
      * Constructs from a socket and the number of SCTP streams. If the socket
      * isn't connected to a remote endpoint, then getRemoteAddr() will return
      * a default-constructed `InetSockAddr`.
-     * @param[in] sd            Socket descriptor. Will be closed on
-     *                          destruction.
+     * @param[in] sd            Socket descriptor
      * @param[in] numStreams    Number of SCTP streams
      * @throws InvalidArgument  `sock < 0 || numStreams > UINT16_MAX`
      * @throws SystemError      Socket couldn't be configured
@@ -612,6 +611,11 @@ bool SctpSock::hasMessage() const
 void SctpSock::discard() const
 {
     pImpl->discard();
+}
+
+void SctpSock::close() const
+{
+    pImpl->close();
 }
 
 } // namespace
