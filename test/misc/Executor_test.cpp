@@ -10,6 +10,7 @@
  */
 
 #include "Executor.h"
+#include "Thread.h"
 
 #include <chrono>
 #include <exception>
@@ -37,56 +38,80 @@ TEST_F(ExecutorTest, DefaultIntConstruction) {
 
 // Tests executing void task
 TEST_F(ExecutorTest, VoidExecution) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{});
-    EXPECT_FALSE(future.wasCanceled());
-    future.getResult();
+    {
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{});
+        EXPECT_EQ(1, hycast::Thread::size());
+        EXPECT_FALSE(future.wasCanceled());
+        future.getResult();
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests executing int task
 TEST_F(ExecutorTest, IntExecution) {
-    hycast::Executor<int> executor{};
-    auto future = executor.submit([]{return 1;});
-    EXPECT_FALSE(future.wasCanceled());
-    EXPECT_EQ(1, future.getResult());
+    {
+        hycast::Executor<int> executor{};
+        auto future = executor.submit([]{return 1;});
+        EXPECT_EQ(1, hycast::Thread::size());
+        EXPECT_FALSE(future.wasCanceled());
+        EXPECT_EQ(1, future.getResult());
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests canceling void task
 TEST_F(ExecutorTest, CancelVoid) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{::pause();});
-    future.cancel();
-    EXPECT_TRUE(future.wasCanceled());
-    EXPECT_THROW(future.getResult(), std::logic_error);
+    {
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{::pause();});
+        EXPECT_EQ(1, hycast::Thread::size());
+        future.cancel();
+        EXPECT_TRUE(future.wasCanceled());
+        EXPECT_THROW(future.getResult(), std::logic_error);
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests canceling int task
 TEST_F(ExecutorTest, CancelInt) {
-    hycast::Executor<int> executor{};
-    auto future = executor.submit([]{::pause(); return 1;});
-    future.cancel();
-    EXPECT_TRUE(future.wasCanceled());
-    EXPECT_THROW(future.getResult(), std::logic_error);
+    {
+        hycast::Executor<int> executor{};
+        auto future = executor.submit([]{::pause(); return 1;});
+        EXPECT_EQ(1, hycast::Thread::size());
+        future.cancel();
+        EXPECT_TRUE(future.wasCanceled());
+        EXPECT_THROW(future.getResult(), std::logic_error);
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests soft shutdown of void executor
 TEST_F(ExecutorTest, SoftVoidShutdown) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{::usleep(100000);});
-    executor.shutdown(false);
-    executor.awaitTermination();
-    EXPECT_FALSE(future.wasCanceled());
-    EXPECT_NO_THROW(future.getResult());
+    {
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{::usleep(100000);});
+        EXPECT_EQ(1, hycast::Thread::size());
+        executor.shutdown(false);
+        executor.awaitTermination();
+        EXPECT_FALSE(future.wasCanceled());
+        EXPECT_NO_THROW(future.getResult());
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests hard shutdown of void executor
 TEST_F(ExecutorTest, HardVoidShutdown) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{::pause();});
-    executor.shutdown();
-    executor.awaitTermination();
-    EXPECT_TRUE(future.wasCanceled());
-    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    {
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{::pause();});
+        EXPECT_EQ(1, hycast::Thread::size());
+        executor.shutdown();
+        executor.awaitTermination();
+        EXPECT_TRUE(future.wasCanceled());
+        EXPECT_THROW(future.getResult(), hycast::LogicError);
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests destruction with active task
@@ -95,38 +120,54 @@ TEST_F(ExecutorTest, DestructionWithTask) {
     {
         hycast::Executor<void> executor{};
         future = executor.submit([]{::pause();});
+        EXPECT_EQ(1, hycast::Thread::size());
     }
+    EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
 }
 
 // Tests exception in void task
 TEST_F(ExecutorTest, VoidException) {
-    hycast::Executor<void> executor{};
-    auto future = executor.submit([]{throw std::runtime_error("Dummy");});
-    EXPECT_FALSE(future.wasCanceled());
-    //future.getResult();
-    EXPECT_THROW(future.getResult(), std::runtime_error);
+    {
+        hycast::Executor<void> executor{};
+        auto future = executor.submit([]{throw std::runtime_error("Dummy");});
+        EXPECT_EQ(1, hycast::Thread::size());
+        EXPECT_FALSE(future.wasCanceled());
+        //future.getResult();
+        EXPECT_THROW(future.getResult(), std::runtime_error);
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
-#if 0
 // Tests exception in int task
 TEST_F(ExecutorTest, IntException) {
-    hycast::Executor<int> executor{};
-    auto future = executor.submit([]{throw std::runtime_error("Dummy"); return 1;});
-    EXPECT_FALSE(future.wasCanceled());
-    EXPECT_THROW(future.getResult(), std::runtime_error);
+    {
+        hycast::Executor<int> executor{};
+        auto future = executor.submit([]{throw std::runtime_error("Dummy");
+                return 1;});
+        EXPECT_EQ(1, hycast::Thread::size());
+        EXPECT_FALSE(future.wasCanceled());
+        EXPECT_THROW(future.getResult(), std::runtime_error);
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests equality operator of void task
 TEST_F(ExecutorTest, VoidEquality) {
-    hycast::Executor<void> executor{};
-    auto future1 = executor.submit([]{return;});
-    EXPECT_TRUE(future1 == future1);
-    auto future2 = executor.submit([]{return;});
-    EXPECT_FALSE(future1 == future2);
-    future1.getResult();
-    future2.getResult();
+    {
+        hycast::Executor<void> executor{};
+        auto future1 = executor.submit([]{return;});
+        EXPECT_EQ(1, hycast::Thread::size());
+        EXPECT_TRUE(future1 == future1);
+        auto future2 = executor.submit([]{return;});
+        EXPECT_GE(2, hycast::Thread::size());
+        EXPECT_LE(1, hycast::Thread::size());
+        EXPECT_FALSE(future1 == future2);
+        future1.getResult();
+        future2.getResult();
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
 }
 
 // Tests equality operator of int task
@@ -206,7 +247,6 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
                 std::to_string(i));
     }
 }
-#endif
 
 }  // namespace
 
