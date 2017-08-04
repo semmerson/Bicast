@@ -38,39 +38,6 @@ class Executor<Ret>::Impl final
     typedef std::condition_variable Cond;
     typedef Thread::Id              ThreadId;
 
-    /// Queue of thread identifiers.
-    class ThreadIdQueue
-    {
-        typedef std::queue<ThreadId> Queue;
-        Queue                        threadIds;
-
-    public:
-        ThreadIdQueue()
-            : threadIds{}
-        {}
-
-        void push(const ThreadId& threadId)
-        {
-            assert(threadId != ThreadId{});
-            threadIds.push(threadId);
-        }
-
-        bool empty() const
-        {
-            return threadIds.empty();
-        }
-
-        ThreadId pop()
-        {
-            if (empty())
-                throw LogicError(__FILE__, __LINE__, "Queue is empty");
-            auto threadId = threadIds.front();
-            assert(threadId != ThreadId{});
-            threadIds.pop();
-            return threadId;
-        }
-    };
-
     /// Map from thread identifiers to threads.
     class ThreadMap
     {
@@ -165,14 +132,12 @@ class Executor<Ret>::Impl final
     ThreadMap                       threads;
     TaskMap                         tasks;
 
-    /// Completed threads:
-    ThreadIdQueue                   doneThreadIds;
+    /// Previously-completed thread:
+    Thread::Id                      doneThreadId;
+    Thread::Id                      emptyThreadId;
 
     /// Whether or not this instance has been shut down
     bool                            closed;
-
-    /// Key for thread-specific future:
-    Thread::PtrKey<Future<Ret>> futureKey;
 
     void stop(const bool mayInterrupt)
     {
@@ -195,61 +160,59 @@ class Executor<Ret>::Impl final
     }
 
     /**
-     * Purges completed tasks. For each thread referenced by `doneThreadIds`:
-     * - The thread-of-execution is joined;
-     * - The associated thread object is destroyed; and
-     * - The associated task is destroyed.
+     * Purges any previously completed thread. If `doneThreadId` isn't empty,
+     * then:
+     * - Its thread-of-execution is joined;
+     * - The associated thread object is destroyed;
+     * - The associated task is destroyed; and
+     * - `doneThreadId` is made empty
      * @pre `mutex` is locked
-     * @return `true`  Iff `threads` was modified
      */
-    bool purgeCompletedTasks()
+    void purgeDoneThread()
     {
         assert(isLocked());
         const auto currThreadId = Thread::getId();
-        const bool modified = !doneThreadIds.empty();
-        while (!doneThreadIds.empty()) {
-            const auto threadId = doneThreadIds.pop();
-            Thread thread = threads.remove(threadId);
+        if (doneThreadId != emptyThreadId) {
+            Thread thread = threads.remove(doneThreadId);
             assert(thread.joinable());
             assert(thread.id() != currThreadId);
-            assert(thread.id() == threadId || thread.id() == ThreadId{});
+            assert(thread.id() == doneThreadId);
             thread.join();
-            tasks.erase(threadId);
-        }
-        return modified;
+            tasks.erase(doneThreadId);
+            doneThreadId = emptyThreadId;
+        } // `thread` is destroyed here
     }
 
     /**
-     * Purges tasks that previously completed and adds the task associated with
-     * the current thread-of-execution. Must be executed on that task's thread.
+     * Purges any previously completed thread and saves the current
+     * thread-of-execution.
      */
-    void purgeDoneTasksAndAddDoneTask() {
+    void purgeDoneThreadAndSaveThisThread() {
         LockGuard lock{mutex};
-        purgeCompletedTasks();
+        purgeDoneThread();
         /*
          * The thread object associated with the current thread-of-execution is
          * not destroyed because that causes undefined behavior.
          */
         const auto threadId = Thread::getId();
-        assert(threadId != ThreadId{});
-        doneThreadIds.push(threadId);
+        assert(threadId != emptyThreadId);
+        doneThreadId = threadId;
         cond.notify_all();
     }
 
     /**
-     * Thread cleanup function. Purges tasks that previously completed and adds
-     * the task associated with the current thread-of-execution. Must be
-     * executed on that task's thread.
+     * Thread cleanup function. Purges any previously-completed thread and saves
+     * the current thread-of-execution.
      * @param[in] arg  Pointer to `Executor::Impl`
      */
-    static void purgeDoneTasksAndAddDoneTask(void* arg) {
+    static void purgeDoneThreadAndSaveThisThread(void* arg) {
         auto impl = static_cast<Impl*>(arg);
-        impl->purgeDoneTasksAndAddDoneTask();
+        impl->purgeDoneThreadAndSaveThisThread();
     }
 
     /**
-     * Returns a thread object that references a thread-of-execution that will
-     * execute a task.
+     * Returns a thread object that references a thread-of-execution that
+     * executes a task.
      * @param[in] task     Task to be executed. Copied.
      * @param[in] barrier  Synchronization barrier. `barrier.wait()` will be
      *                     called just before `task()`.
@@ -261,13 +224,12 @@ class Executor<Ret>::Impl final
     {
         return Thread{
             [this,task,&barrier]() mutable {
-                THREAD_CLEANUP_PUSH(purgeDoneTasksAndAddDoneTask, this);
+                THREAD_CLEANUP_PUSH(purgeDoneThreadAndSaveThisThread, this);
                 try {
                     /*
                      * Block parent thread until thread-cleanup routine pushed
                      * and until `getFuture()` will find the future.
                      */
-                    //futureKey.set(&future);
                     barrier.wait();
                     // task.cancel() held pending until task() entered
                     task();
@@ -275,15 +237,17 @@ class Executor<Ret>::Impl final
                 catch (const std::exception& e) {
                     log_what(e, __FILE__, __LINE__, "Task threw an exception");
                 }
+                Thread::disableCancel(); // To prevent cleanup interruption
                 THREAD_CLEANUP_POP(true);
             }
         };
     }
 
     /**
-     * Submits a task for execution. Creates a new thread-of-execution for the
-     * task, adds the task to the set of active tasks, and adds the thread to
-     * the set of active threads.
+     * Submits a task for execution:
+     * - Creates a new thread-of-execution for the task;
+     * - Adds the task to the set of active tasks; and
+     * - Adds the task's thread to the set of active threads.
      * @param[in] task         Task to be executed. Must not be empty.
      * @return                 Future of the task
      * @throw InvalidArgument  `task` is empty
@@ -296,6 +260,7 @@ class Executor<Ret>::Impl final
         LockGuard lock{mutex};
         if (closed)
             throw LogicError(__FILE__, __LINE__, "Executor is shut down");
+        purgeDoneThread();
         Thread::Barrier barrier{2};
         auto            thread = newThread(task, barrier); // RAII object
         barrier.wait();
@@ -321,9 +286,9 @@ public:
         , cond{}
         , threads{}
         , tasks{}
-        , doneThreadIds{}
+        , doneThreadId{}
+        , emptyThreadId{}
         , closed{false}
-        , futureKey{}
     {}
 
     /**
@@ -402,9 +367,9 @@ public:
             throw LogicError(__FILE__, __LINE__,
                     "Executor hasn't been shut down");
         while (!threads.empty()) {
-            while (doneThreadIds.empty())
+            while (doneThreadId == emptyThreadId)
                 cond.wait(lock);
-            purgeCompletedTasks();
+            purgeDoneThread();
         }
     }
 };
