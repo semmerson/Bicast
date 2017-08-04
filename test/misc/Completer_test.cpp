@@ -9,8 +9,8 @@
  * @author: Steven R. Emmerson
  */
 
-
 #include "Completer.h"
+#include "error.h"
 
 #include <array>
 #include <gtest/gtest.h>
