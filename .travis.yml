@@ -19,6 +19,8 @@ before_install:
 # - sudo find / -name 'libyaml-cpp.*' 
   - mkdir m4
   - autoreconf -i
+  - sudo ip addr
+  - sudo ip link
   - ./configure CXXFLAGS=-O0
 
 addons:
