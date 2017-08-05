@@ -19,7 +19,7 @@ before_install:
 # - sudo find / -name 'libyaml-cpp.*' 
   - mkdir m4
   - autoreconf -i
-  - ./configure CXXFLAGS=-g
+  - ./configure CXXFLAGS=-O0
 
 addons:
   coverity_scan:
@@ -33,6 +33,8 @@ addons:
 
 install: sudo sh -x ./install_gtest.sh /usr/lib/x86_64-linux-gnu
 
-script: if [ ${COVERITY_SCAN_BRANCH} != 1 ]; then make all check; fi
+script: if [ ${COVERITY_SCAN_BRANCH} != 1 ]; then make all check >&make.log; fi
 
-after_failure:  cat config.status
+after_failure:
+  - cat config.log
+  - cat make.log

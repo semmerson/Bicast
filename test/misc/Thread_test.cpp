@@ -94,7 +94,6 @@ protected:
     }
 };
 
-#if 1
 // Tests default construction
 TEST_F(ThreadTest, DefaultConstruction)
 {
@@ -180,7 +179,6 @@ TEST_F(ThreadTest, Usage)
     thread.join();
     EXPECT_EQ(0, hycast::Thread::size());
 }
-#endif
 
 // Tests instance cancellation
 TEST_F(ThreadTest, InstanceCancellation)
@@ -195,7 +193,6 @@ TEST_F(ThreadTest, InstanceCancellation)
     EXPECT_EQ(0, hycast::Thread::size());
 }
 
-#if 1
 // Tests static cancellation
 TEST_F(ThreadTest, StaticCancellation)
 {
@@ -275,7 +272,6 @@ TEST_F(ThreadTest, ThreadCleanupRoutine)
     EXPECT_EQ(id, threadId);
 }
 
-#if 1
 // Tests cancellation loop
 TEST_F(ThreadTest, CancellationLoop)
 {
@@ -318,8 +314,6 @@ TEST_F(ThreadTest, BunchOfThreads) {
                 {::usleep(distribution(generator));});
     usleep(50000);
 }
-#endif
-#endif
 
 }  // namespace
 
