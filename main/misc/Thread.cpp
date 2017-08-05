@@ -37,9 +37,11 @@ void Thread::Impl::setCompletedAndNotify(void* arg)
 void Thread::Impl::privateCancel()
 {
     assert(id() != ThreadId{});
+    if (native_handle != stdThread.native_handle())
+        assert(false);
     int status = ::pthread_cancel(stdThread.native_handle());
     if (status)
-        throw SystemError(__FILE__, __LINE__, "pthread_cancel() failure: "
+        throw SystemError(__FILE__, __LINE__, "Couldn't cancel thread: "
                 "native_handle=" + std::to_string(stdThread.native_handle()),
                 status);
 }
@@ -226,10 +228,8 @@ Thread::Thread(const Thread& that)
 #endif
 
 Thread::Thread(Thread&& that)
+    : pImpl{std::forward<Pimpl>(that.pImpl)}
 {
-    if (pImpl)
-        throw LogicError(__FILE__, __LINE__, "Target is not empty");
-    pImpl = std::move(that.pImpl);
     checkInvariants();
 }
 
