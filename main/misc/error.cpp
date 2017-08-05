@@ -61,7 +61,7 @@ SystemError::SystemError(
         const char*       file,
         const int         line,
         const std::string msg,
-		const int         errnum)
+        const int         errnum)
     : std::system_error{errnum, std::system_category(),
             placeStamp(file, line) + ": " + msg}
 {}
