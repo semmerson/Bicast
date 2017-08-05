@@ -172,6 +172,7 @@ private:
         unsigned            state;
         Barrier             barrier;
         mutable std::thread stdThread;
+        std::thread::native_handle_type native_handle;
 
         inline void setStateBit(const State bit)
         {
@@ -310,6 +311,7 @@ private:
             }, std::bind(callable, std::forward<Args>(args)...)}
         {
             barrier.wait();
+            native_handle = stdThread.native_handle();
         }
 
         /**
