@@ -45,6 +45,7 @@ TEST_F(InterfaceTest, GetIPv4Addr)
     std::cout << "IPv4 addr = " << inetAddr.to_string() << '\n';
 }
 
+#if SUPPORTS_IPV6
 // Tests getting IPv6 address
 TEST_F(InterfaceTest, GetIPv6Addr)
 {
@@ -52,6 +53,7 @@ TEST_F(InterfaceTest, GetIPv6Addr)
     auto inetAddr = iface.getInetAddr(AF_INET6);
     std::cout << "IPv6 addr = " << inetAddr.to_string() << '\n';
 }
+#endif
 
 }  // namespace
 

@@ -64,5 +64,8 @@
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
+/* "Whether the system supports IPv6" */
+#undef SUPPORTS_IPV6
+
 /* Version number of package */
 #undef VERSION

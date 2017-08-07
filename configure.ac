@@ -44,6 +44,11 @@ AC_LINK_IFELSE(
   [AC_MSG_ERROR([libyaml-cpp is not installed.])])
 AC_LANG_POP()
 
+dnl Check for IPv6 support
+if ip addr | grep inet6 >/dev/null; then
+  AC_DEFINE([SUPPORTS_IPV6], [1], ["Whether the system supports IPv6"])
+fi
+
 AC_CONFIG_FILES(Makefile
                 main/Makefile
                 main/misc/Makefile
