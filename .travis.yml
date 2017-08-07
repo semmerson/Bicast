@@ -21,7 +21,7 @@ before_install:
   - autoreconf -i
   - sudo ip addr
   - sudo ip link
-  - ./configure CXXFLAGS=-O0
+  - ./configure CXXFLAGS=-g
 
 addons:
   coverity_scan:
