@@ -10,7 +10,6 @@
  */
 
 #include "ChunkInfo.h"
-#include "ClntSctpSock.h"
 #include "Completer.h"
 #include "error.h"
 #include "InetSockAddr.h"

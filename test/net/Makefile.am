@@ -1,5 +1,6 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc -I$(top_srcdir)/main/net 
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
+CLEANFILES	= *.vg
 
 check_PROGRAMS		= \
 	socket_test \
@@ -21,3 +22,7 @@ SctpSock_test_SOURCES		= SctpSock_test.cpp
 UdpSock_test_SOURCES		= UdpSock_test.cpp
 
 TESTS	= $(check_PROGRAMS)
+
+%.vg: %
+	$(TESTS_ENVIRONMENT) $(LIBTOOL) --mode=execute valgrind \
+	--leak-check=full --show-reachable=yes ./$< >$@ 2>&1

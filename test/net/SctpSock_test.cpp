@@ -7,11 +7,8 @@
  *
  *   @file: Socket_test.cpp
  * @author: Steven R. Emmerson
- *
- * This file tests class `Socket`.
  */
 
-#include "ClntSctpSock.h"
 #include "error.h"
 #include "InetSockAddr.h"
 #include "Interface.h"
@@ -47,7 +44,7 @@ void runServer(hycast::SrvrSctpSock serverSock)
     }
 }
 
-void runClient(hycast::ClntSctpSock sock)
+void runClient(hycast::SctpSock sock)
 {
     // Test Socket::send() and Socket::recv()
     for (int i = 0; i < 100; ++i) {
@@ -91,11 +88,13 @@ void runClient(hycast::ClntSctpSock sock)
 }
 
 // The fixture for testing class Socket.
-class SctpTest : public ::testing::Test {
+class SctpTest : public ::testing::Test
+{
 protected:
-    SctpTest() {
-		sock1 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-		sock2 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    SctpTest()
+    {
+        sock1 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+        sock2 = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
     }
 
     virtual ~SctpTest() {
@@ -105,15 +104,12 @@ protected:
 
     // Objects declared here can be used by all tests in the test case for Socket.
     const in_port_t         MY_PORT_NUM = 38800;
-    const uint16_t          numStreams = 5;
-    const hycast::Interface ethnetIfaceName{"lo"};
-    hycast::InetSockAddr    srvrAddr{ethnetIfaceName.getInetAddr(AF_INET),
-            MY_PORT_NUM};
+    const int               numStreams = 5;
+    const hycast::Interface nic{"lo"};
+    hycast::InetSockAddr    srvrAddr{nic.getInetAddr(AF_INET), MY_PORT_NUM};
     int                     sock1, sock2;
     std::thread             recvThread;
     std::thread             sendThread;
-    hycast::SrvrSctpSock    srvrSock{srvrAddr, numStreams};
-    hycast::ClntSctpSock    clntSock{srvrAddr, numStreams};
 
     bool is_open(int sock)
     {
@@ -124,11 +120,13 @@ protected:
     void startServer()
     {
         // Work done here so that socket is being listened to when client starts
+        hycast::SrvrSctpSock    srvrSock{srvrAddr, numStreams};
         recvThread = std::thread(runServer, srvrSock);
     }
 
     void startClient()
     {
+        hycast::SctpSock        clntSock{srvrAddr, numStreams};
         sendThread = std::thread(runClient, clntSock);
     }
 
@@ -145,85 +143,84 @@ protected:
 
 // Tests invalid argument
 TEST_F(SctpTest, InvalidArgument) {
-    EXPECT_THROW(hycast::SctpSock s(-1), hycast::InvalidArgument);
+    EXPECT_THROW(hycast::SctpSock(srvrAddr, -1), hycast::InvalidArgument);
+    EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, -1), hycast::RuntimeError);
+    EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, 1, -1), hycast::RuntimeError);
 }
 
 // Tests destruction
 TEST_F(SctpTest, CloseOnDestruction) {
-    hycast::SctpSock s(sock1);
-    EXPECT_EQ(true, is_open(sock1));
-    s.~SctpSock();
-    EXPECT_EQ(false, is_open(sock1));
+    int sd;
+    {
+        hycast::SrvrSctpSock s{srvrAddr};
+        sd = s.getSock();
+        EXPECT_EQ(true, is_open(sd));
+    }
+    EXPECT_EQ(false, is_open(sd));
 }
 
 // Tests copy-construction
 TEST_F(SctpTest, CopyConstruction) {
-    hycast::SctpSock s1(sock1);
-    EXPECT_EQ(true, is_open(sock1));
-    hycast::SctpSock s2(s1);
-    s1.~SctpSock();
-    EXPECT_EQ(true, is_open(sock1));
-    s2.~SctpSock();
-    EXPECT_EQ(false, is_open(sock1));
+    hycast::SrvrSctpSock s1{srvrAddr};
+    auto sd1 = s1.getSock();
+    EXPECT_TRUE(is_open(sd1));
+    hycast::SrvrSctpSock s2(s1);
+    s1.~SrvrSctpSock();
+    EXPECT_TRUE(sd1);
+    EXPECT_EQ(sd1, s2.getSock());
+    s2.~SrvrSctpSock();
+    EXPECT_FALSE(is_open(sd1));
 }
 
 // Tests move-assignment
 TEST_F(SctpTest, MoveAssignment) {
-    hycast::SctpSock s1 = hycast::SctpSock(sock1);
-    EXPECT_EQ(true, is_open(sock1));
-    s1.~SctpSock();
-    EXPECT_EQ(false, is_open(sock1));
+    hycast::SrvrSctpSock s1 = hycast::SrvrSctpSock{srvrAddr};
+    auto sd = s1.getSock();
+    EXPECT_TRUE(is_open(sd));
+    s1.~SrvrSctpSock();
+    EXPECT_FALSE(is_open(sd));
 }
 
 // Tests copy-assignment to empty instance
 TEST_F(SctpTest, CopyAssignmentToEmpty) {
-    hycast::SctpSock s1(sock1);
-    EXPECT_EQ(true, is_open(sock1));
-    hycast::SctpSock s2;
+    hycast::SrvrSctpSock s1{srvrAddr};
+    auto sd1 = s1.getSock();
+    EXPECT_TRUE(is_open(sd1));
+    hycast::SrvrSctpSock s2{};
+    EXPECT_FALSE(is_open(s2.getSock()));
     s2 = s1;
-    EXPECT_EQ(true, is_open(sock1));
-    s1.~SctpSock();
-    EXPECT_EQ(true, is_open(sock1));
-    s2.~SctpSock();
-    EXPECT_EQ(false, is_open(sock1));
-}
-
-// Tests copy-assignment to non-empty instance
-TEST_F(SctpTest, CopyAssignmentToNonEmpty) {
-    hycast::SctpSock s1(sock1);
-    EXPECT_EQ(true, is_open(sock1));
-    hycast::SctpSock s2(sock2);
-    EXPECT_EQ(true, is_open(sock2));
-    s2 = s1;
-    EXPECT_EQ(true, is_open(sock1));
-    EXPECT_EQ(false, is_open(sock2));
-    s1.~SctpSock();
-    EXPECT_EQ(true, is_open(sock1));
-    s2.~SctpSock();
-    EXPECT_EQ(false, is_open(sock1));
+    EXPECT_TRUE(is_open(sd1));
+    EXPECT_EQ(sd1, s2.getSock());
+    s1.~SrvrSctpSock();
+    EXPECT_TRUE(is_open(sd1));
+    s2.~SrvrSctpSock();
+    EXPECT_FALSE(is_open(sd1));
 }
 
 // Tests copy-assignment to self
 TEST_F(SctpTest, CopyAssignmentToSelf) {
-    hycast::SctpSock s1(sock1);
-    EXPECT_EQ(true, is_open(sock1));
+    hycast::SrvrSctpSock s1{srvrAddr};
+    auto sd1 = s1.getSock();
     s1 = s1;
-    EXPECT_EQ(true, is_open(sock1));
+    EXPECT_EQ(sd1, s1.getSock());
+    EXPECT_TRUE(is_open(sd1));
 }
 
 // Tests equality operator
 TEST_F(SctpTest, EqualityOperator) {
-    hycast::SctpSock s1(sock1);
+    hycast::SrvrSctpSock s1{srvrAddr};
     EXPECT_EQ(true, s1 == s1);
-    hycast::SctpSock s2(sock2);
+    hycast::SrvrSctpSock s2{};
     EXPECT_EQ(false, s2 == s1);
 }
 
 // Tests to_string()
 TEST_F(SctpTest, ToString) {
-    hycast::SctpSock s1(sock1);
-    EXPECT_STREQ((std::string("SocketImpl{sock=") + std::to_string(sock1) + "}").data(),
-            s1.to_string().data());
+    hycast::SrvrSctpSock s1{srvrAddr};
+    //std::cout << s1.to_string() << '\n';
+    std::string expect{"SrvrSctpSock{sd: " + std::to_string(s1.getSock()) +
+            ", numStreams: " + std::to_string(s1.getNumStreams()) + "}"};
+    EXPECT_STREQ(expect.data(), s1.to_string().data());
 }
 
 // Tests whether a read() on a socket returns when the remote end is closed.
@@ -231,18 +228,55 @@ TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
     struct Server {
         hycast::SrvrSctpSock srvrSock;
         hycast::SctpSock     peerSock;
-        Server(hycast::SrvrSctpSock& serverSock) : srvrSock{serverSock} {}
+        Server(hycast::SrvrSctpSock&& serverSock) : srvrSock{serverSock} {}
         void operator()() {
             peerSock = srvrSock.accept();
             uint32_t nbytes = peerSock.getSize();
             EXPECT_EQ(0, nbytes);
         }
-    } server{srvrSock};
-    std::thread srvrThread = std::thread([&server](){server();});
+    } server{hycast::SrvrSctpSock{srvrAddr, numStreams}};
+    std::thread srvrThread = std::thread(server);
+    hycast::SctpSock clntSock{srvrAddr, numStreams};
     clntSock.close();
     srvrThread.join();
 }
 
+#if 0
+// Tests clean closing of receive socket
+// THIS DOESN'T WORK. Closing a socket doesn't cause a read() on it to return
+TEST_F(SctpTest, CleanReceiveClose) {
+    hycast::SrvrSctpSock srvrSock(srvrAddr, numStreams);
+    struct Server {
+        hycast::SrvrSctpSock srvrSock;
+        hycast::SctpSock     peerSock;
+        std::mutex           mutex;
+        Server(hycast::SrvrSctpSock& srvrSock)
+            : srvrSock{srvrSock}
+            , peerSock{}
+            , mutex{}
+        {}
+        int operator()()
+        {
+            mutex.lock();
+            peerSock = srvrSock.accept();
+            mutex.unlock();
+            peerSock.getSize();
+            return 0;
+        }
+    } server{srvrSock};
+    server.mutex.lock();
+    auto future = std::async(std::launch::async,
+            [&server]{ return server(); });
+    server.mutex.unlock();
+    hycast::SctpSock clientSock(srvrAddr, numStreams);
+    server.mutex.lock();
+    ::sleep(1);
+    server.peerSock.close();
+    EXPECT_EQ(0, future.get());
+}
+#endif
+
+#if 0
 /*
  * Tests whether an exception is thrown when the server's listening socket is
  * closed
@@ -265,40 +299,6 @@ TEST_F(SctpTest, ServersCloseThrowsException) {
     EXPECT_THROW(future.get(), std::system_error);
 }
 
-#if 0
-// Tests clean closing of receive socket
-TEST_F(SctpTest, CleanReceiveClose) {
-    hycast::InetSockAddr serverSockAddr(INET_ADDR, MY_PORT_NUM);
-    hycast::SrvrSctpSock srvrSock(serverSockAddr, numStreams);
-    struct Server {
-        hycast::SrvrSctpSock srvrSock;
-        hycast::SctpSock       peerSock;
-        std::mutex           mutex;
-        Server(hycast::SrvrSctpSock& srvrSock)
-            : srvrSock{srvrSock}
-            , peerSock{}
-            , mutex{}
-        {}
-        int run() {
-            mutex.lock();
-            peerSock = srvrSock.accept();
-            mutex.unlock();
-            peerSock.getSize();
-            return 0;
-        }
-    } server{srvrSock};
-    server.mutex.lock();
-    auto future = std::async(std::launch::async,
-            [&server]{ return server.run(); });
-    server.mutex.unlock();
-    hycast::ClntSctpSock clientSock(serverSockAddr, numStreams);
-    server.mutex.lock();
-    ::sleep(1);
-    server.peerSock.close();
-    EXPECT_EQ(0, future.get());
-}
-#endif
-
 // Tests send() and recv()
 TEST_F(SctpTest, SendRecv) {
     startServer();
@@ -306,6 +306,7 @@ TEST_F(SctpTest, SendRecv) {
     stopClient();
     stopServer();
 }
+#endif
 
 }  // namespace
 

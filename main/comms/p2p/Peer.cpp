@@ -12,7 +12,6 @@
 #include "Channel.h"
 #include "Chunk.h"
 #include "ChunkInfo.h"
-#include "ClntSctpSock.h"
 #include "error.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
@@ -160,13 +159,13 @@ public:
     Impl(   Peer*               peer,
             PeerMsgRcvr&        msgRcvr,
             const InetSockAddr& peerAddr)
-        : Impl{peer, msgRcvr, ClntSctpSock{peerAddr, getNumStreams()}}
+        : Impl{peer, msgRcvr, SctpSock{peerAddr, getNumStreams()}}
     {}
 
     /**
      * Returns the number of streams.
      */
-    static unsigned getNumStreams()
+    static int getNumStreams()
     {
         return NUM_STREAM_IDS;
     }

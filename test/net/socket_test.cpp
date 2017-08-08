@@ -133,6 +133,19 @@ protected:
     }
 };
 
+static size_t size(struct sockaddr_storage& storage)
+{
+    return (sizeof(storage));
+}
+
+// Tests sizeof(struct sockaddr_storage)
+TEST_F(SocketTest, sizeofSockaddrStorage)
+{
+    struct sockaddr_storage storage;
+    EXPECT_EQ(sizeof(struct sockaddr_storage), sizeof(storage));
+    EXPECT_EQ(sizeof(struct sockaddr_storage), size(storage));
+}
+
 // Tests multicasting
 TEST_F(SocketTest, Multicasting) {
     int recvSock = makeRecvSocket();

@@ -34,18 +34,63 @@ namespace hycast {
 
 class SctpSock::Impl
 {
-protected:
-    std::atomic_int sock;
-
 private:
+    std::atomic_int         sock;
     unsigned                streamId;
     uint32_t                size;
     bool                    haveCurrMsg;
-    unsigned                numStreams;
+    int                     numStreams;
     std::mutex              readMutex;
     std::mutex              writeMutex;
     InetSockAddr            remoteAddr;
     static struct sigaction sigact;
+
+    /**
+     * Initializes.
+     * @param[in] sd           SCTP-compatible Socket descriptor
+     * @param[in] numStream    Number of SCTP streams
+     * @throw InvalidArgument  `sd < 0`
+     * @throw InvalidArgument  `numStreams < 0`
+     * @throw SystemError      Required memory can't be allocated
+     * @throw SystemError      `:;setsockopt()` failure
+     */
+    void init(
+            const int sd,
+            const int numStreams)
+    {
+        if (sd < 0)
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid socket descriptor: " + std::to_string(sd));
+        sock = sd;
+        if (numStreams < 0)
+            throw InvalidArgument(__FILE__, __LINE__,
+                    "Invalid number of SCTP streams: " +
+                    std::to_string(numStreams));
+        this->numStreams = numStreams;
+        struct sctp_event_subscribe events = {0};
+        events.sctp_data_io_event = 1;
+        int status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
+                sizeof(events));
+        if (status)
+            throw SystemError(__FILE__, __LINE__,
+                    "setsockopt() failure: Couldn't subscribe to SCTP data I/O "
+                    "events: sock=" + std::to_string(sd));
+        struct sctp_initmsg sinit = {0};
+        sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
+        status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
+                sizeof(sinit));
+        if (status)
+            throw SystemError(__FILE__, __LINE__,
+                    "setsockopt() failure: Couldn't configure number of SCTP "
+                    "streams: sock=" + std::to_string(sd) + ", numStreams=" +
+                    std::to_string(numStreams));
+        struct sockaddr addr;
+        socklen_t       len = sizeof(addr);
+        status = ::getpeername(sd, &addr, &len);
+        remoteAddr = status
+                        ? std::move(InetSockAddr())
+                        : std::move(InetSockAddr(addr));
+    }
 
     /**
      * Checks the return status of an I/O function.
@@ -158,7 +203,7 @@ private:
 
 public:
     /**
-     * Constructs from nothing.
+     * Default constructs.
      * @throws SystemError if required memory can't be allocated
      */
     Impl()
@@ -175,50 +220,45 @@ public:
     }
 
     /**
-     * Constructs from a socket and the number of SCTP streams. If the socket
-     * isn't connected to a remote endpoint, then getRemoteAddr() will return
-     * a default-constructed `InetSockAddr`.
-     * @param[in] sd            Socket descriptor
-     * @param[in] numStreams    Number of SCTP streams
-     * @throws InvalidArgument  `sock < 0 || numStreams > UINT16_MAX`
-     * @throws SystemError      Socket couldn't be configured
-     * @see getRemoteAddr()
+     * Constructs.
+     * @param[in] sd         SCTP-compatible socket descriptor
+     * @param[in] numStream  Number of SCTP streams
+     * @throws SystemError if required memory can't be allocated
      */
-    Impl(   const int      sd,
-            const unsigned numStreams)
+    Impl(   const int sd,
+            const int numStreams)
         : Impl()
     {
-        if (sd < 0)
+        init(sd, numStreams);
+    }
+
+    /**
+     * Constructs a client-side SCTP socket. Blocks until connected.
+     * @param[in] addr         Internet address of the server
+     * @param[in] numStreams   Number of SCTP streams
+     * @return                 Corresponding SCTP socket
+     * @throw InvalidArgument  `numStreams <= 0`
+     * @see ~Impl()
+     * @see operator=(Impl& socket)
+     * @see operator=(Impl&& socket)
+     */
+    Impl(   const InetSockAddr& addr,
+            const int           numStreams)
+        : Impl()
+    {
+        if (numStreams <= 0)
             throw InvalidArgument(__FILE__, __LINE__,
-                    "Invalid socket: " + std::to_string(sd));
-        if (numStreams > UINT16_MAX)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Invalid number of streams: " + std::to_string(numStreams));
-        sock = sd;
-        this->numStreams = numStreams;
-        struct sctp_event_subscribe events = {0};
-        events.sctp_data_io_event = 1;
-        int status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_EVENTS, &events,
-                sizeof(events));
-        if (status)
-            throw SystemError(__FILE__, __LINE__,
-                    "setsockopt() failure: Couldn't subscribe to SCTP data I/O "
-                    "events: sock=" + std::to_string(sd));
-        struct sctp_initmsg sinit = {0};
-        sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
-        status = ::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
-                sizeof(sinit));
-        if (status)
-            throw SystemError(__FILE__, __LINE__,
-                    "setsockopt() failure: Couldn't configure number of SCTP "
-                    "streams: sock=" + std::to_string(sd) + ", numStreams=" +
+                    "Invalid number of SCTP streams: " +
                     std::to_string(numStreams));
-        struct sockaddr addr;
-        socklen_t       len = sizeof(addr);
-        status = ::getpeername(sd, &addr, &len);
-        remoteAddr = status
-                        ? std::move(InetSockAddr())
-                        : std::move(InetSockAddr(addr));
+        auto sd = createSocket();
+        try {
+            addr.connect(sd);
+            init(sd, numStreams);
+        }
+        catch (const std::exception& e) {
+            ::close(sd);
+            throw;
+        }
     }
 
     /**
@@ -239,14 +279,11 @@ public:
      */
     ~Impl() noexcept
     {
-        int sd = sock.load();
-        if (sd >= 0) {
-            auto status = ::close(sd);
-            if (status)
-                log_what(SystemError(__FILE__, __LINE__,
-                        "Couldn't close socket: sd=" + std::to_string(sd),
-                        status));
-            sock = -1;
+        try {
+            close();
+        }
+        catch (const std::exception& e) {
+            log_what(e);
         }
     }
 
@@ -265,19 +302,19 @@ public:
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
      */
-    unsigned getNumStreams()
-	{
-		return numStreams;
-	}
+    unsigned getNumStreams() const noexcept
+    {
+        return numStreams;
+    }
 
     /**
      * Returns the Internet socket address of the remote end.
      * @return Internet socket address of the remote end
      */
-    const InetSockAddr& getRemoteAddr()
-	{
-		return remoteAddr;
-	}
+    const InetSockAddr& getRemoteAddr() const noexcept
+    {
+        return remoteAddr;
+    }
 
     /**
      * Indicates if this instance equals another.
@@ -287,9 +324,9 @@ public:
      * @exceptionsafety Nothrow
      */
     bool operator==(const Impl& that) const noexcept
-	{
-		return sock.load() == that.sock.load();
-	}
+    {
+        return sock.load() == that.sock.load();
+    }
 
     /**
      * Returns a string representation of this instance's socket.
@@ -299,9 +336,9 @@ public:
      * @threadsafety    Safe
      */
     std::string to_string() const
-	{
-		return std::string("SocketImpl{sock=") + std::to_string(sock.load()) + "}";
-	}
+    {
+        return std::string("SocketImpl{sock=") + std::to_string(sock.load()) + "}";
+    }
 
     /**
      * Sends a message.
@@ -316,17 +353,17 @@ public:
             const unsigned streamId,
             const void*    msg,
             const size_t   len)
-	{
-		struct sctp_sndrcvinfo sinfo;
-		sndrcvinfoInit(sinfo, streamId, len);
-		int sendStatus;
-		{
-			std::lock_guard<std::mutex> lock(writeMutex);
-			int sd = sock.load();
-			sendStatus = sctp_send(sd, msg, len, &sinfo, MSG_EOR);
-		}
-		checkIoStatus(__LINE__, "sctp_send()", len, sendStatus);
-	}
+    {
+        struct sctp_sndrcvinfo sinfo;
+        sndrcvinfoInit(sinfo, streamId, len);
+        int sendStatus;
+        {
+            std::lock_guard<std::mutex> lock(writeMutex);
+            int sd = sock.load();
+            sendStatus = sctp_send(sd, msg, len, &sinfo, MSG_EOR);
+        }
+        checkIoStatus(__LINE__, "sctp_send()", len, sendStatus);
+    }
 
     /**
      * Sends a message.
@@ -341,32 +378,32 @@ public:
             const unsigned      streamId,
             const struct iovec* iovec,
             const int           iovcnt)
-	{
-		ssize_t numExpected = iovLen(iovec, iovcnt);
-		struct {
-			struct cmsghdr         cmsghdr;
-			struct sctp_sndrcvinfo sinfo;
-		} msg_control;
-		msg_control.cmsghdr.cmsg_len = sizeof(msg_control);
-		msg_control.cmsghdr.cmsg_level = IPPROTO_SCTP;
-		msg_control.cmsghdr.cmsg_type = SCTP_SNDRCV;
-		sndrcvinfoInit(msg_control.sinfo, streamId, numExpected);
-		struct msghdr msghdr = {0};
-		msghdr.msg_iov = const_cast<struct iovec*>(iovec);
-		msghdr.msg_iovlen = iovcnt;
-		msghdr.msg_control = &msg_control;
-		msghdr.msg_controllen = sizeof(msg_control);
-		ssize_t sendStatus;
-		{
-			std::lock_guard<std::mutex> lock(writeMutex);
-			int sd = sock.load();
-			struct sigaction oact;
-			::sigaction(SIGPIPE, &sigact, &oact);
-			sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR);
-			::sigaction(SIGPIPE, &oact, nullptr);
-		}
-		checkIoStatus(__LINE__, "sendmsg()", numExpected, sendStatus);
-	}
+    {
+        ssize_t numExpected = iovLen(iovec, iovcnt);
+        struct {
+            struct cmsghdr         cmsghdr;
+            struct sctp_sndrcvinfo sinfo;
+        } msg_control;
+        msg_control.cmsghdr.cmsg_len = sizeof(msg_control);
+        msg_control.cmsghdr.cmsg_level = IPPROTO_SCTP;
+        msg_control.cmsghdr.cmsg_type = SCTP_SNDRCV;
+        sndrcvinfoInit(msg_control.sinfo, streamId, numExpected);
+        struct msghdr msghdr = {0};
+        msghdr.msg_iov = const_cast<struct iovec*>(iovec);
+        msghdr.msg_iovlen = iovcnt;
+        msghdr.msg_control = &msg_control;
+        msghdr.msg_controllen = sizeof(msg_control);
+        ssize_t sendStatus;
+        {
+            std::lock_guard<std::mutex> lock(writeMutex);
+            int sd = sock.load();
+            struct sigaction oact;
+            ::sigaction(SIGPIPE, &sigact, &oact);
+            sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR);
+            ::sigaction(SIGPIPE, &oact, nullptr);
+        }
+        checkIoStatus(__LINE__, "sendmsg()", numExpected, sendStatus);
+    }
 
     /**
      * Returns the size, in bytes, of the current SCTP message. Waits for the
@@ -375,10 +412,10 @@ public:
      *         the socket.
      */
     uint32_t getSize()
-	{
-		ensureMsg();
-		return size;
-	}
+    {
+        ensureMsg();
+        return size;
+    }
 
     /**
      * Returns the SCTP stream number of the current SCTP message. Waits for the
@@ -387,10 +424,10 @@ public:
      * @throws std::system_error if an I/O error occurs
      */
     unsigned getStreamId()
-	{
-		ensureMsg();
-		return streamId;
-	}
+    {
+        ensureMsg();
+        return streamId;
+    }
 
     /**
      * Receives a message.
@@ -409,25 +446,25 @@ public:
             void*        msg,
             const size_t len,
             const int    flags = 0)
-	{
-		/*
-		 * NB: If the current message exists and `len` is less than the size of the
-		 * message, then the message will continue to be the current message --
-		 * regardless of whether or not MSG_PEEK is specified. See `discard()`.
-		 */
-		struct sctp_sndrcvinfo  sinfo;
-		int                     numRead;
-		socklen_t               socklen = 0;
-		{
-			int tmpFlags = flags;
-			std::lock_guard<std::mutex> lock(readMutex);
-			int sd = sock.load();
-			numRead = sctp_recvmsg(sd, msg, len, nullptr, &socklen, &sinfo,
-					&tmpFlags);
-		}
-		checkIoStatus(__LINE__, "sctp_recvmsg()", len, numRead);
-		haveCurrMsg = (flags & MSG_PEEK) != 0;
-	}
+    {
+        /*
+         * NB: If the current message exists and `len` is less than the size of the
+         * message, then the message will continue to be the current message --
+         * regardless of whether or not MSG_PEEK is specified. See `discard()`.
+         */
+        struct sctp_sndrcvinfo  sinfo;
+        int                     numRead;
+        socklen_t               socklen = 0;
+        {
+            int tmpFlags = flags;
+            std::lock_guard<std::mutex> lock(readMutex);
+            int sd = sock.load();
+            numRead = sctp_recvmsg(sd, msg, len, nullptr, &socklen, &sinfo,
+                    &tmpFlags);
+        }
+        checkIoStatus(__LINE__, "sctp_recvmsg()", len, numRead);
+        haveCurrMsg = (flags & MSG_PEEK) != 0;
+    }
 
     /**
      * Receives a message.
@@ -446,21 +483,21 @@ public:
             const struct iovec* iovec,
             const int           iovcnt,
             const int           flags = 0)
-	{
-		ssize_t numExpected = iovLen(iovec, iovcnt);
-		struct msghdr msghdr = {};
-		msghdr.msg_iov = const_cast<struct iovec*>(iovec);
-		msghdr.msg_iovlen = iovcnt;
-		ssize_t numRead;
-		{
-			std::lock_guard<std::mutex> lock(readMutex);
-			int sd = sock.load();
-			numRead = ::recvmsg(sd, &msghdr, flags);
-		}
-		checkIoStatus(__LINE__, "recvmsg()", numExpected, numRead);
-		haveCurrMsg = (flags & MSG_PEEK) != 0;
-		return numRead;
-	}
+    {
+        ssize_t numExpected = iovLen(iovec, iovcnt);
+        struct msghdr msghdr = {};
+        msghdr.msg_iov = const_cast<struct iovec*>(iovec);
+        msghdr.msg_iovlen = iovcnt;
+        ssize_t numRead;
+        {
+            std::lock_guard<std::mutex> lock(readMutex);
+            int sd = sock.load();
+            numRead = ::recvmsg(sd, &msghdr, flags);
+        }
+        checkIoStatus(__LINE__, "recvmsg()", numExpected, numRead);
+        haveCurrMsg = (flags & MSG_PEEK) != 0;
+        return numRead;
+    }
 
     /**
      * Indicates if this instance has a current message.
@@ -468,9 +505,9 @@ public:
      * @retval false  No
      */
     bool hasMessage()
-	{
-		return haveCurrMsg;
-	}
+    {
+        return haveCurrMsg;
+    }
 
     /**
      * Discards the current message.
@@ -478,19 +515,19 @@ public:
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void discard()
-	{
-		if (haveCurrMsg) {
-			/*
-			 * A message on an SCTP socket must be read in its entirety in order for
-			 * it to be discarded. This is in contrast to a message on a
-			 * "message-based" socket, such as SOCK_DGRAM, in which excess bytes
-			 * beyond the requested are discarded. Recall that the SCTP socket-type
-			 * is SOCK_STREAM. See `recv()`.
-			 */
-			char msg[getSize()];
-			recv(msg, sizeof(msg));
-		}
-	}
+    {
+        if (haveCurrMsg) {
+            /*
+             * A message on an SCTP socket must be read in its entirety in order for
+             * it to be discarded. This is in contrast to a message on a
+             * "message-based" socket, such as SOCK_DGRAM, in which excess bytes
+             * beyond the requested are discarded. Recall that the SCTP socket-type
+             * is SOCK_STREAM. See `recv()`.
+             */
+            char msg[getSize()];
+            recv(msg, sizeof(msg));
+        }
+    }
 
     /**
      * Closes the underlying BSD socket. Idempotent.
@@ -501,21 +538,26 @@ public:
     {
         int sd = sock.load();
         if (sd >= 0) {
-            (void)::close(sd);
+            auto status = ::close(sd);
+            if (status)
+                throw SystemError(__FILE__, __LINE__,
+                        "Couldn't close socket: sd=" + std::to_string(sd));
             sock = -1;
         }
     }
 };
 
+/******************************************************************************/
+
 struct sigaction SctpSock::Impl::sigact;
 
 int SctpSock::createSocket()
 {
-      auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
-      if (sd == -1)
+    auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    if (sd == -1)
           throw SystemError(__FILE__, __LINE__, "Couldn't create SCTP socket",
                   sd);
-      return sd;
+    return sd;
 }
 
 SctpSock::SctpSock()
@@ -523,9 +565,15 @@ SctpSock::SctpSock()
 {}
 
 SctpSock::SctpSock(
-        const int      sd,
-        const uint16_t numStreams)
+        const int sd,
+        const int numStreams)
     : pImpl(new Impl(sd, numStreams))
+{}
+
+SctpSock::SctpSock(
+        const InetSockAddr& addr,
+        const int           numStreams)
+    : pImpl(new Impl(addr, numStreams))
 {}
 
 SctpSock::SctpSock(Impl* impl)
@@ -536,9 +584,16 @@ SctpSock::SctpSock(std::shared_ptr<Impl> sptr)
     : pImpl(sptr)
 {}
 
+SctpSock& SctpSock::operator =(const SctpSock& rhs)
+{
+    if (pImpl.get() != rhs.pImpl.get())
+        pImpl = rhs.pImpl;
+    return *this;
+}
+
 int SctpSock::getSock() const noexcept
 {
-	return pImpl->getSock();
+    return pImpl->getSock();
 }
 
 uint16_t SctpSock::getNumStreams() const

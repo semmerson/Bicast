@@ -298,7 +298,7 @@ public:
                 sizeof(storage));
         if (status)
             throw SystemError(__FILE__, __LINE__, "bind() failure: sd=" +
-					std::to_string(sd) + ", sockAddr=" + to_string());
+                    std::to_string(sd) + ", sockAddr=" + to_string());
         return *this;
     }
 

@@ -9,7 +9,6 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"

@@ -13,17 +13,22 @@
 #include "ClntSctpSock.h"
 #include "error.h"
 
+#include <unistd.h>
+
 namespace hycast {
 
 ClntSctpSock::ClntSctpSock(
         const InetSockAddr& addr,
         const unsigned      numStreams)
-    : SctpSock(createSocket(), numStreams)
+    : SctpSock(numStreams)
 {
+    auto sd = createSocket();
     try {
-        addr.connect(getSock());
+        addr.connect(sd);
+        setSock(sd);
     }
     catch (const std::exception& e) {
+        (void)::close(sd);
         std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                 "Couldn't connect SCTP socket to remote endpoint"));
     }

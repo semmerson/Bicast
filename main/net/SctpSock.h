@@ -18,10 +18,35 @@
 
 namespace hycast {
 
-class SctpSock {
-protected:
+class SrvrSctpSock;
+
+class SctpSock final
+{
+    friend SrvrSctpSock;
+
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
+
+    /**
+     * Constructs.
+     * @param[in] sd                 SCTP-compatible socket descriptor as if
+     *                               from `::socket()` or `::accept()`
+     * @param[in] numStreams         Number of SCTP streams
+     * @throws std::InvalidArgument  `numStreams < 0 || numStreams > UINT16_MAX`
+     * @throws std::system_error     `getpeername(sd)` failed
+     * @see Socket::~Socket()
+     * @see Socket::operator=(Socket& socket)
+     * @see Socket::operator=(Socket&& socket)
+     */
+    SctpSock(
+            const int sd,
+            const int numStreams);
+
+    /**
+     * Constructs from a shared pointer to an SCTP socket implementation.
+     * @param[in] sptr  Shared pointer to implementation
+     */
+    explicit SctpSock(std::shared_ptr<Impl> sptr);
 
     /**
      * Constructs from a socket implementation.
@@ -30,59 +55,56 @@ protected:
     explicit SctpSock(Impl* impl);
 
     /**
-     * Returns the socket descriptor.
-     * @return socket descriptor
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    int getSock() const noexcept;
-
-    /**
-     * Creates an SCTP socket.
-     * @return An SCTP socket
+     * Creates an SCTP-compatible BSD socket.
+     * @return Corresponding socket descriptor
      */
     static int createSocket();
 
 public:
     /**
-     * Constructs from nothing.
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
+     * Default constructs.
      */
     SctpSock();
 
     /**
-     * Constructs from a BSD socket and the number of SCTP streams. Only do this
-     * once per socket because the destructor might close the socket.
-     * @param[in] sd                  Socket descriptor
-     * @param[in] numStreams          Number of SCTP streams
-     * @throws std::invalid_argument  `sock < 0 || numStreams > UINT16_MAX`
-     * @throws std::system_error      Socket couldn't be configured
-     * @throws std::system_error      `getpeername(sd)` failed
+     * Constructs a client-side SCTP socket. Blocks until connected.
+     * @param[in] addr        Internet address of the server
+     * @param[in] numStreams  Number of SCTP streams
+     * @return                Corresponding SCTP socket
      * @see Socket::~Socket()
      * @see Socket::operator=(Socket& socket)
      * @see Socket::operator=(Socket&& socket)
      */
-    SctpSock(
-            const int      sd,
-            const uint16_t numStreams = 1);
+    explicit SctpSock(
+            const InetSockAddr& addr,
+            const int           numStreams = 1);
 
     /**
-     * Constructs from a shared pointer to a socket implementation.
-     * @param[in] sptr  Shared pointer to implementation
-     */
-    explicit SctpSock(std::shared_ptr<Impl> sptr);
-
-    /**
-     * Destroys. Closes the underlying BSD socket if it's open.
+     * Destroys. Closes the underlying BSD socket if this instance holds the
+     * last reference to it.
      */
     ~SctpSock() noexcept =default;
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  Other instance
+     * @return         This instance
+     */
+    SctpSock& operator=(const SctpSock& rhs);
 
     /**
      * Returns the number of SCTP streams.
      * @return the number of SCTP streams
      */
     uint16_t getNumStreams() const;
+
+    /**
+     * Returns the socket descriptor.
+     * @return socket descriptor
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    int getSock() const noexcept;
 
     /**
      * Returns the Internet socket address of the remote end.
