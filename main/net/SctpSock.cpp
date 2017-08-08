@@ -534,7 +534,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    void close() noexcept
+    void close()
     {
         int sd = sock.load();
         if (sd >= 0) {

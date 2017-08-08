@@ -192,7 +192,7 @@ private:
 
         inline bool isCompleted() const
         {
-            isStateBitSet(State::completed);
+            return isStateBitSet(State::completed);
         }
 
         inline void setBeingJoined()
@@ -202,7 +202,7 @@ private:
 
         inline bool isBeingJoined() const
         {
-            isStateBitSet(State::beingJoined);
+            return isStateBitSet(State::beingJoined);
         }
 
         inline void setJoined()
@@ -212,7 +212,7 @@ private:
 
         inline bool isJoined() const
         {
-            isStateBitSet(State::joined);
+            return isStateBitSet(State::joined);
         }
 
         /**
