@@ -116,6 +116,7 @@ TEST_F(ThreadTest, Construction)
 
 #if 0
 // Tests copy construction
+// THERE IS NO COPY CONSTRUCTOR
 TEST_F(ThreadTest, CopyConstruction)
 {
     ASSERT_EQ(0, hycast::Thread::size());

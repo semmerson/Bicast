@@ -28,49 +28,49 @@ namespace {
 class ReceivingTest : public ::testing::Test, public hycast::Processing
 {
 protected:
-	void process(hycast::Product prod)
-	{
-		EXPECT_EQ(this->prod, prod);
-	}
+    void process(hycast::Product prod)
+    {
+        EXPECT_EQ(this->prod, prod);
+    }
 
-	ReceivingTest()
-	{
-		// gcc 4.8 doesn't support non-trivial designated initializers
-		p2pInfo.peerCount = maxPeers;
-		p2pInfo.peerAddrs = &peerSource;
-		p2pInfo.serverSockAddr = serverAddr;
-		p2pInfo.stasisDuration = stasisDuration;
+    ReceivingTest()
+    {
+        // gcc 4.8 doesn't support non-trivial designated initializers
+        p2pInfo.peerCount = maxPeers;
+        p2pInfo.peerAddrs = &peerSource;
+        p2pInfo.serverSockAddr = serverAddr;
+        p2pInfo.stasisDuration = stasisDuration;
 
-		// gcc 4.8 doesn't support non-trivial designated initializers
-		srcMcastInfo.mcastAddr = mcastAddr;
-		srcMcastInfo.srcAddr = hycast::InetAddr(serverInetAddr);
+        // gcc 4.8 doesn't support non-trivial designated initializers
+        srcMcastInfo.mcastAddr = mcastAddr;
+        srcMcastInfo.srcAddr = hycast::InetAddr(serverInetAddr);
 
-		unsigned char data[128000];
-		for (size_t i = 0; i < sizeof(data); ++i)
-			data[i] = i % UCHAR_MAX;
+        unsigned char data[128000];
+        for (size_t i = 0; i < sizeof(data); ++i)
+                data[i] = i % UCHAR_MAX;
 
-		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
-	}
+        prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
+    }
 
-	hycast::PeerSet            peerSet{[](hycast::Peer&){}};
-    hycast::ProdStore          prodStore{};
-    const in_port_t            port{38800};
-    const hycast::InetSockAddr mcastAddr{"232.0.0.0", port};
-    const std::string          serverInetAddr{"192.168.132.128"};
-    hycast::InetSockAddr       serverAddr{serverInetAddr, port};
-    const unsigned             protoVers{0};
-    hycast::McastSender        mcastSender{mcastAddr, protoVers};
-    hycast::YamlPeerSource     peerSource{"[{inetAddr: " + serverInetAddr +
+    hycast::PeerSet                 peerSet{1};
+    hycast::ProdStore               prodStore{};
+    const in_port_t                 port{38800};
+    const hycast::InetSockAddr      mcastAddr{"232.0.0.0", port};
+    const std::string               serverInetAddr{"192.168.132.128"};
+    hycast::InetSockAddr            serverAddr{serverInetAddr, port};
+    const unsigned                  protoVers{0};
+    hycast::McastSender             mcastSender{mcastAddr, protoVers};
+    hycast::YamlPeerSource          peerSource{"[{inetAddr: " + serverInetAddr +
     	    ", port: " + std::to_string(port) + "}]"};
-    hycast::ProdIndex          prodIndex{0};
-    const unsigned             maxPeers = 1;
-    const unsigned             stasisDuration = 2;
+    hycast::ProdIndex               prodIndex{0};
+    const unsigned                  maxPeers = 1;
+    const hycast::PeerSet::TimeUnit stasisDuration{2};
     // gcc 4.8 doesn't support non-trivial designated initializers
-    hycast::P2pInfo            p2pInfo;
+    hycast::P2pInfo                 p2pInfo;
     // gcc 4.8 doesn't support non-trivial designated initializers
-    hycast::SrcMcastInfo       srcMcastInfo;
-    const unsigned             version = 0;
-    hycast::Product            prod{};
+    hycast::SrcMcastInfo            srcMcastInfo;
+    const unsigned                  version = 0;
+    hycast::Product                 prod{};
 };
 
 // Tests construction

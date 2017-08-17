@@ -10,7 +10,6 @@
  */
 
 #include "ChunkInfo.h"
-#include "ClntSctpSock.h"
 #include "HycastTypes.h"
 #include "InetSockAddr.h"
 #include "ProdInfo.h"
@@ -67,19 +66,19 @@ protected:
     public:
         TestMsgRcvr(PeerTest& peerTest)
             : peerTest{&peerTest} {}
-        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
+        void recvNotice(const hycast::ProdInfo& info, const hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodInfo == info);
         }
-        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+        void recvNotice(const hycast::ChunkInfo& info, const hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo == info);
         }
-        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
+        void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->prodIndex == index);
         }
-        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+        void recvRequest(const hycast::ChunkInfo& info, const hycast::Peer& peer) {
             EXPECT_TRUE(peerTest->chunkInfo == info);
         }
-        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
+        void recvData(hycast::LatentChunk chunk, const hycast::Peer& peer) {
             hycast::ChunkSize expectedSize =
                     peerTest->prodInfo.getChunkSize(chunk.getIndex());
             char data2[expectedSize];
@@ -99,7 +98,7 @@ protected:
 
     void runTestSender()
     {
-        hycast::ClntSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         peer.sendNotice(prodInfo);
@@ -128,12 +127,12 @@ protected:
         class PerfMsgRcvr final : public hycast::PeerMsgRcvr {
         public:
             void recvNotice(const hycast::ProdInfo& info) {}
-            void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {}
-            void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
-            void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {}
-            void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {}
+            void recvNotice(const hycast::ProdInfo& info, const hycast::Peer& peer) {}
+            void recvNotice(const hycast::ChunkInfo& info, const hycast::Peer& peer) {}
+            void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer) {}
+            void recvRequest(const hycast::ChunkInfo& info, const hycast::Peer& peer) {}
             void recvData(hycast::LatentChunk chunk) {}
-            void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
+            void recvData(hycast::LatentChunk chunk, const hycast::Peer& peer) {
                 chunk.discard();
             }
         };
@@ -144,7 +143,7 @@ protected:
 
     void runPerfSender()
     {
-        hycast::ClntSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;

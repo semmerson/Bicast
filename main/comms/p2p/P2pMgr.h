@@ -7,7 +7,7 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: P2PMgrImpl.h
+ *   @file: P2pMgr.h
  * @author: Steven R. Emmerson
  */
 
@@ -28,22 +28,21 @@ namespace hycast {
 struct P2pInfo final
 {
     /// Socket address to be used by the server that remote peers connect to
-	InetSockAddr             serverSockAddr;
+    InetSockAddr             serverSockAddr;
 
-	/// Canonical number of active peers
-	unsigned                 peerCount;
+    /// Canonical number of active peers
+    unsigned                 peerCount;
 
-	/**
-     * Source of potential replacement peers or `nullptr`, in which case no
-     * replacement is performed
+    /**
+     * Source of potential replacement peers.
      */
-	DelayQueue<InetSockAddr> peerAddrs;
+    DelayQueue<InetSockAddr> peerAddrs;
 
-	/**
+    /**
      * Time interval, in seconds, over which the set of active peers must be
      * unchanged before the worst performing peer may be replaced
      */
-	PeerSet::TimeUnit       stasisDuration;
+    PeerSet::TimeUnit       stasisDuration;
 };
 
 class P2pMgr final : public Notifier
@@ -67,8 +66,7 @@ public:
      *                            worst performing peer may be replaced. Default
      *                            is 60 seconds.
      */
-    P2pMgr(
-            const InetSockAddr&      serverSockAddr,
+    P2pMgr( const InetSockAddr&      serverSockAddr,
             PeerMsgRcvr&             msgRcvr,
             const unsigned           maxPeers = PeerSet::defaultMaxPeers,
             DelayQueue<InetSockAddr> peerAddrs = DelayQueue<InetSockAddr>(),
@@ -80,7 +78,7 @@ public:
      * @param[in] msgRcvr  Receiver of messages from remote peers
      */
     P2pMgr( const P2pInfo& p2pInfo,
-			PeerMsgRcvr&   msgRcvr)
+            PeerMsgRcvr&   msgRcvr)
     	: P2pMgr(p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerCount,
     	        p2pInfo.peerAddrs, p2pInfo.stasisDuration)
     {}
@@ -102,7 +100,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo);
+    void sendNotice(const ProdInfo& prodInfo) const;
 
     /**
      * Sends information about a product to the remote peers except for one.
@@ -112,7 +110,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo, const Peer& except);
+    void sendNotice(const ProdInfo& prodInfo, const Peer& except) const;
 
     /**
      * Sends information about a chunk-of-data to the remote peers.
@@ -121,7 +119,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo);
+    void sendNotice(const ChunkInfo& chunkInfo) const;
 
     /**
      * Sends information about a chunk-of-data to the remote peers except for
@@ -132,7 +130,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except);
+    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except) const;
 };
 
 } // namespace

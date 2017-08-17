@@ -383,7 +383,7 @@ public:
         struct {
             struct cmsghdr         cmsghdr;
             struct sctp_sndrcvinfo sinfo;
-        } msg_control;
+        } msg_control = {0};
         msg_control.cmsghdr.cmsg_len = sizeof(msg_control);
         msg_control.cmsghdr.cmsg_level = IPPROTO_SCTP;
         msg_control.cmsghdr.cmsg_type = SCTP_SNDRCV;

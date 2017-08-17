@@ -19,10 +19,4 @@ ProdFactory_test_SOURCES	= ProdFactory_test.cpp
 UnknownProd_test_SOURCES	= UnknownProd_test.cpp
 ProdStore_test_SOURCES		= ProdStore_test.cpp
 
-TESTS		= ProdIndex_test \
-		  ProdInfo_test \
-		  ChunkInfo_test \
-		  Product_test \
-		  ProdFactory_test \
-		  UnknownProd_test \
-		  ProdStore_test
+TESTS		= $(check_PROGRAMS)

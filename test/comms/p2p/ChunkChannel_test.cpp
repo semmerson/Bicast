@@ -10,7 +10,6 @@
  */
 
 #include "Chunk.h"
-#include "ClntSctpSock.h"
 #include "InetSockAddr.h"
 #include "ProdInfo.h"
 #include "SrvrSctpSock.h"
@@ -41,7 +40,7 @@ void runServer(hycast::SrvrSctpSock serverSock)
 
 void runClient()
 {
-    hycast::ClntSctpSock sock(serverSockAddr, numStreams);
+    hycast::SctpSock sock(serverSockAddr, numStreams);
 
     hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
     uint8_t data1[hycast::ChunkInfo::getCanonSize()];

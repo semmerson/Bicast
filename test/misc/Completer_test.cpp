@@ -11,6 +11,7 @@
 
 #include "Completer.h"
 #include "error.h"
+#include "Thread.h"
 
 #include <array>
 #include <gtest/gtest.h>
@@ -26,7 +27,7 @@ protected:
     {
         hycast::Completer<void> completer{};
         completer.submit(&::pause);
-        auto future = completer.get();
+        auto future = completer.take();
     }
 };
 
@@ -44,7 +45,7 @@ TEST_F(CompleterTest, IntConstruction) {
 TEST_F(CompleterTest, VoidExecution) {
     hycast::Completer<void> completer{};
     auto future1 = completer.submit([]{});
-    auto future2 = completer.get();
+    auto future2 = completer.take();
     EXPECT_TRUE(future1 == future2);
     EXPECT_FALSE(future2.wasCanceled());
     EXPECT_NO_THROW(future2.getResult());
@@ -54,7 +55,7 @@ TEST_F(CompleterTest, VoidExecution) {
 TEST_F(CompleterTest, IntExecution) {
     hycast::Completer<int> completer{};
     auto future1 = completer.submit([]{return 1;});
-    auto future2 = completer.get();
+    auto future2 = completer.take();
     EXPECT_TRUE(future1 == future2);
     EXPECT_FALSE(future2.wasCanceled());
     EXPECT_EQ(1, future2.getResult());
@@ -69,7 +70,7 @@ TEST_F(CompleterTest, MultipleVoidExecution) {
         futures[i] = future;
     }
     for (unsigned i = 0; i < futures.size(); ++i) {
-        auto future = completer.get();
+        auto future = completer.take();
         EXPECT_FALSE(future.wasCanceled());
         EXPECT_NO_THROW(future.getResult());
     }
@@ -79,15 +80,13 @@ TEST_F(CompleterTest, MultipleVoidExecution) {
 TEST_F(CompleterTest, MultipleIntExecution) {
     hycast::Completer<int> completer{};
     std::array<hycast::Future<int>, 8> futures;
+    for (unsigned i = 0; i < futures.size(); ++i)
+        futures[i] = completer.submit([i]{return i;});
     for (unsigned i = 0; i < futures.size(); ++i) {
-        auto future = completer.submit([i]{return i;});
-        futures[i] = future;
-    }
-    for (unsigned i = 0; i < futures.size(); ++i) {
-        auto future = completer.get();
+        auto future = completer.take();
         EXPECT_FALSE(future.wasCanceled());
         int j = future.getResult();
-        EXPECT_TRUE(futures[j] == future);
+        EXPECT_EQ(futures[j], future);
     }
 }
 
@@ -138,7 +137,49 @@ TEST_F(CompleterTest, BunchOfJobs) {
         completer.submit([&generator,&distribution]() mutable
                 {::usleep(distribution(generator));});
     for (int i = 0; i < 100; ++i)
-        completer.get();
+        completer.take();
+}
+
+// Tests completer destruction with a bunch of outstanding jobs
+TEST_F(CompleterTest, DestructionWithOutstandingJobs) {
+    hycast::Completer<void> completer{};
+    for (int i = 0; i < 200; ++i)
+        completer.submit(::pause);
+}
+
+static void subCompleter(hycast::Thread::Barrier& barrier) {
+    hycast::Completer<void> completer{};
+    auto future1 = completer.submit([]{::pause();});
+    auto future2 = completer.submit([]{::pause();});
+    barrier.wait();
+    completer.take();
+}
+
+// Tests PeerSet completer usage
+TEST_F(CompleterTest, PeerSetUsage) {
+    hycast::Thread::Barrier barrier{2};
+    hycast::Completer<void> completer{};
+    completer.submit([&barrier]{subCompleter(barrier);});
+    barrier.wait();
+}
+
+static void testDestructionTermination(useconds_t sleep) {
+    {
+        hycast::Completer<void> completer{};
+        int n;
+        for (n = 0; n < 10; ++n)
+            completer.submit(::pause);
+        if (sleep)
+            ::usleep(sleep);
+        EXPECT_EQ(n, hycast::Thread::size());
+    }
+    EXPECT_EQ(0, hycast::Thread::size());
+}
+
+// Tests guarantee that destruction terminates all threads
+TEST_F(CompleterTest, DestructionTerminatesThreads) {
+    testDestructionTermination(0);
+    testDestructionTermination(200000);
 }
 
 }  // namespace

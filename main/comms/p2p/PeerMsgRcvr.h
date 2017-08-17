@@ -31,25 +31,25 @@ public:
      * @param[in]     info  Information about the product
      * @param[in,out] peer  Peer that received the notice
      */
-    virtual void recvNotice(const ProdInfo& info, Peer& peer) =0;
+    virtual void recvNotice(const ProdInfo& info, const Peer& peer) =0;
     /**
      * Receives a notice about a chunk-of-data.
      * @param[in]     info  Information about the chunk
      * @param[in,out] peer  Peer that received the notice
      */
-    virtual void recvNotice(const ChunkInfo& info, Peer& peer) =0;
+    virtual void recvNotice(const ChunkInfo& info, const Peer& peer) =0;
     /**
      * Receives a request for information about a product.
      * @param[in]     index Index of the product
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ProdIndex& index, Peer& peer) =0;
+    virtual void recvRequest(const ProdIndex& index, const Peer& peer) =0;
     /**
      * Receives a request for a chunk-of-data.
      * @param[in]     info  Information on the chunk
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
+    virtual void recvRequest(const ChunkInfo& info, const Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data
@@ -61,7 +61,7 @@ public:
      * because `LatentChunk` uses the pImpl idiom. See
      * `PeerImpl::runReceiver()`.
      */
-    virtual void recvData(LatentChunk chunk, Peer& peer) =0;
+    virtual void recvData(LatentChunk chunk, const Peer& peer) =0;
 };
 
 } // namespace

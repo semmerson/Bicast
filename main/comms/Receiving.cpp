@@ -29,16 +29,18 @@ namespace hycast {
 
 class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
 {
-    std::exception_ptr                       exception;
-    ProdStore                                prodStore;
-    std::unordered_set<ChunkInfo>            requestedChunks;
-    std::mutex                               mutex;
-    Processing*                              processing;
-    P2pMgr                                   p2pMgr;
-    std::thread                              p2pMgrThread;
-    McastReceiver                            mcastRcvr;
-    std::thread                              mcastRcvrThread;
-    typedef std::lock_guard<decltype(mutex)> LockGuard;
+    typedef std::mutex             Mutex;
+    typedef std::lock_guard<Mutex> LockGuard;
+
+    std::exception_ptr            exception;
+    ProdStore                     prodStore;
+    std::unordered_set<ChunkInfo> requestedChunks;
+    mutable Mutex                 mutex;
+    Processing*                   processing;
+    P2pMgr                        p2pMgr;
+    std::thread                   p2pMgrThread;
+    McastReceiver                 mcastRcvr;
+    std::thread                   mcastRcvrThread;
 
     /**
      * Runs the peer-to-peer manager. Intended to run on its own thread.
@@ -46,12 +48,12 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
     void runP2pMgr()
     {
     	try {
-    		p2pMgr();
-    		throw LogicError(__FILE__, __LINE__,
-    				"Peer-to-peer manager stopped");
+            p2pMgr();
+            throw LogicError(__FILE__, __LINE__,
+                    "Peer-to-peer manager stopped");
     	}
     	catch (const std::exception& e) {
-    		exception = std::current_exception();
+            exception = std::current_exception();
     	}
     }
 
@@ -61,11 +63,11 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
     void runMcastRcvr()
     {
     	try {
-    		mcastRcvr();
-    		throw LogicError(__FILE__, __LINE__, "Multicast receiver stopped");
+            mcastRcvr();
+            throw LogicError(__FILE__, __LINE__, "Multicast receiver stopped");
     	}
     	catch (const std::exception& e) {
-    		exception = std::current_exception();
+            exception = std::current_exception();
     	}
     }
 
@@ -120,10 +122,10 @@ public:
      * @see ProdStore::ProdStore()
      */
     Impl(   const SrcMcastInfo& srcMcastInfo,
-    		const P2pInfo&      p2pInfo,
+            const P2pInfo&      p2pInfo,
             const std::string&  pathname,
-			Processing&         processing,
-			const unsigned      version)
+            Processing&         processing,
+            const unsigned      version)
         : exception{}
         , prodStore{pathname}
         , requestedChunks{}
@@ -138,19 +140,19 @@ public:
     ~Impl()
     {
     	try {
-    		int status = ::pthread_cancel(mcastRcvrThread.native_handle());
-			if (status)
-				throw SystemError(__FILE__, __LINE__,
-						"Couldn't cancel multicast receiver thread", status);
-			mcastRcvrThread.join();
+            int status = ::pthread_cancel(mcastRcvrThread.native_handle());
+            if (status)
+                throw SystemError(__FILE__, __LINE__,
+                        "Couldn't cancel multicast receiver thread", status);
+            mcastRcvrThread.join();
 
-			/*
-    		status = ::pthread_cancel(p2pMgrThread.native_handle());
-			if (status)
-				throw SystemError(__FILE__, __LINE__,
-						"Couldn't cancel P2P manager thread", status);
-			p2pMgrThread.join();
-			*/
+            /*
+            status = ::pthread_cancel(p2pMgrThread.native_handle());
+            if (status)
+                throw SystemError(__FILE__, __LINE__,
+                        "Couldn't cancel P2P manager thread", status);
+            p2pMgrThread.join();
+            */
     	}
     	catch (const std::exception& e) {
     		log_what(e); // Because a destructor shouldn't throw an exception
@@ -165,10 +167,10 @@ public:
     void recvNotice(const ProdInfo& info)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         Product prod;
         if (prodStore.add(info, prod))
-        	processing->process(prod);
+            processing->process(prod);
     }
 
     /**
@@ -179,13 +181,13 @@ public:
      */
     void recvNotice(
             const ProdInfo& info,
-            Peer&           peer)
+            const Peer&     peer)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         Product prod;
         if (prodStore.add(info, prod))
-        	processing->process(prod);
+            processing->process(prod);
     }
 
     /**
@@ -197,10 +199,10 @@ public:
      */
     void recvNotice(
             const ChunkInfo& info,
-            Peer&            peer)
+            const Peer&      peer)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         if (need(info))
             peer.sendRequest(info);
     }
@@ -213,10 +215,10 @@ public:
      */
     void recvRequest(
             const ProdIndex& index,
-            Peer&            peer)
+            const Peer&      peer)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         ProdInfo info;
         if (prodStore.getProdInfo(index, info))
             peer.sendNotice(info);
@@ -230,10 +232,10 @@ public:
      */
     void recvRequest(
             const ChunkInfo& info,
-            Peer&            peer)
+            const Peer&      peer)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         ActualChunk chunk;
         if (prodStore.getChunk(info, chunk))
             peer.sendData(chunk);
@@ -247,7 +249,7 @@ public:
     void recvData(LatentChunk chunk)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         accept(chunk);
         p2pMgr.sendNotice(chunk.getInfo());
     }
@@ -260,65 +262,65 @@ public:
      */
     void recvData(
             LatentChunk chunk,
-            Peer&       peer)
+            const Peer& peer)
     {
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         accept(chunk);
         p2pMgr.sendNotice(chunk.getInfo(), peer);
     }
 };
 
 Receiving::Receiving(
-		const SrcMcastInfo&  srcMcastInfo,
+        const SrcMcastInfo&  srcMcastInfo,
         const P2pInfo&       p2pInfo,
-		Processing&          processing,
-		const unsigned       version,
+        Processing&          processing,
+        const unsigned       version,
         const std::string&   pathname)
     : pImpl{new Impl(srcMcastInfo, p2pInfo, pathname, processing, version)}
 {}
 
-void Receiving::recvNotice(const ProdInfo& info)
+void Receiving::recvNotice(const ProdInfo& info) const
 {
     pImpl->recvNotice(info);
 }
 
-void Receiving::recvData(LatentChunk chunk)
+void Receiving::recvData(LatentChunk chunk) const
 {
     pImpl->recvData(chunk);
 }
 
 void Receiving::recvNotice(
         const ProdInfo& info,
-        Peer&           peer)
+        const Peer&     peer) const
 {
     pImpl->recvNotice(info, peer);
 }
 
 void Receiving::recvNotice(
         const ChunkInfo& info,
-        Peer&            peer)
+        const Peer&      peer) const
 {
     pImpl->recvNotice(info, peer);
 }
 
 void Receiving::recvRequest(
         const ProdIndex& index,
-        Peer&            peer)
+        const Peer&      peer) const
 {
     pImpl->recvRequest(index, peer);
 }
 
 void Receiving::recvRequest(
         const ChunkInfo& info,
-        Peer&            peer)
+        const Peer&      peer) const
 {
     pImpl->recvRequest(info, peer);
 }
 
 void Receiving::recvData(
         LatentChunk chunk,
-        Peer&       peer)
+        const Peer& peer) const
 {
     pImpl->recvData(chunk, peer);
 }

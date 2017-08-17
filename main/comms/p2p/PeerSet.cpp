@@ -181,11 +181,9 @@ class PeerSet::Impl final
                 LockGuard lock{mutex};
                 if (isDisabled)
                     return false;
-                while (!queue.empty()) {
-                    if (Clock::now() - queue.front()->getCreateTime() >
-                            maxResideTime)
-                        queue.pop();
-                }
+                while (!queue.empty() && (Clock::now() -
+                        queue.front()->getCreateTime() > maxResideTime))
+                    queue.pop();
                 queue.push(action);
                 cond.notify_one();
                 return true;
@@ -217,9 +215,11 @@ class PeerSet::Impl final
         };
 
         typedef int32_t            PeerValue;
+
         SendQ                      sendQ;
         Peer                       peer;
         std::atomic<PeerValue>     value;
+        Completer<void>            completer;
 
         /**
          * Processes send-actions queued-up for a peer. Doesn't return unless an
@@ -263,7 +263,7 @@ public:
         static const PeerValue VALUE_MIN{INT32_MIN};
 
         /**
-         * Constructs from the peer. Immediately starts receiving and sending.
+         * Constructs from the peer.
          * @param[in] peer           The peer
          * @throw     RuntimeError   Instance couldn't be constructed
          */
@@ -271,6 +271,7 @@ public:
             : sendQ{}
             , peer{peer}
             , value{0}
+            , completer{}
         {}
 
         /// Prevents copy and move construction and assignment.
@@ -284,10 +285,9 @@ public:
          */
         void operator()()
         {
-            Completer<void> completer{};
             completer.submit([this]{runReceiver();});
             completer.submit([this]{runSender();});
-            completer.get().getResult(); // Will rethrow any task exception
+            completer.take().getResult(); // Will rethrow any task exception
         }
 
         /**
@@ -360,8 +360,8 @@ public:
     /// The future of a peer
     typedef Future<void>                        PeerFuture;
 
-    std::unordered_map<InetSockAddr, PeerEntry> addrToEntry;
-    std::unordered_map<PeerFuture, PeerEntry>   futureToEntry;
+    std::unordered_map<InetSockAddr, PeerEntry> addrToEntryMap;
+    std::unordered_map<PeerFuture, PeerEntry>   futureToEntryMap;
     mutable std::mutex                          mutex;
     mutable std::condition_variable             cond;
     const TimeUnit                              stasisDuration;
@@ -380,7 +380,7 @@ public:
     inline bool full() const
     {
         assert(isLocked(mutex));
-        return addrToEntry.size() >= maxPeers;
+        return addrToEntryMap.size() >= maxPeers;
     }
 
     /**
@@ -396,9 +396,10 @@ public:
     {
         assert(isLocked(mutex));
         PeerEntry entry{new PeerWrapper(peer)};
-        addrToEntry.insert({peer.getRemoteAddr(), entry});
-        auto peerFuture = completer.submit([entry]{entry->operator()();});
-        futureToEntry.insert({peerFuture, entry});
+        addrToEntryMap.insert({peer.getRemoteAddr(), entry});
+        auto peerFuture = completer.submit([entry]() mutable {
+                entry->operator()();});
+        futureToEntryMap.insert({peerFuture, entry});
         timeLastInsert = Clock::now();
         if (full())
             resetValues();
@@ -407,11 +408,11 @@ public:
     std::pair<bool, InetSockAddr> erasePeer(PeerFuture& future)
     {
         assert(isLocked(mutex));
-        auto iter = futureToEntry.find(future);
-        if (iter != futureToEntry.end()) {
+        auto iter = futureToEntryMap.find(future);
+        if (iter != futureToEntryMap.end()) {
             auto peerAddr = iter->second->getPeer().getRemoteAddr();
-            addrToEntry.erase(peerAddr);
-            futureToEntry.erase(iter);
+            addrToEntryMap.erase(peerAddr);
+            futureToEntryMap.erase(iter);
             return {true, peerAddr};
         }
         return {false, InetSockAddr()};
@@ -427,10 +428,10 @@ public:
     InetSockAddr stopAndRemoveWorstPeer()
     {
         assert(isLocked(mutex));
-        assert(futureToEntry.size() > 0);
+        assert(futureToEntryMap.size() > 0);
         std::pair<PeerFuture, PeerEntry> pair;
         auto minValue = PeerWrapper::VALUE_MAX;
-        for (const auto& elt : futureToEntry) {
+        for (const auto& elt : futureToEntryMap) {
             auto value = elt.second->getValue();
             if (value < minValue) {
                 minValue = value;
@@ -450,7 +451,7 @@ public:
     void resetValues() noexcept
     {
         assert(isLocked(mutex));
-        for (const auto& elt : addrToEntry)
+        for (const auto& elt : addrToEntryMap)
             elt.second->resetValue();
     }
 
@@ -465,7 +466,7 @@ public:
     	    try {
                 for (;;) {
                     Thread::enableCancel();
-                    auto future = completer.get(); // Blocks
+                    auto future = completer.take(); // Blocks
                     Thread::disableCancel();
                     mutex.lock();
                     std::pair<bool, InetSockAddr> pair = erasePeer(future);
@@ -488,7 +489,7 @@ public:
 public:
     /**
      * Constructs from the maximum number of peers. The set will be empty.
-     * @param[in] statisDuration  Minimum amount of time that the set must be
+     * @param[in] stasisDuration  Minimum amount of time that the set must be
      *                            full and unchanged before the worst-performing
      *                            peer may be removed
      * @param[in] maxPeers        Maximum number of peers
@@ -498,8 +499,8 @@ public:
     Impl(   const TimeUnit                     stasisDuration,
             const unsigned                     maxPeers,
             std::function<void(InetSockAddr&)> peerStopped)
-        : addrToEntry{}
-        , futureToEntry{}
+        : addrToEntryMap{}
+        , futureToEntryMap{}
         , mutex{}
         , cond{}
         , stasisDuration{stasisDuration}
@@ -560,7 +561,7 @@ public:
                     timeNextAttempt = timeLastInsert + stasisDuration)
                 cond.wait_until(lock, timeNextAttempt);
             cancelEnabled = Thread::disableCancel();
-            if (addrToEntry.find(peer.getRemoteAddr()) != addrToEntry.end()) {
+            if (addrToEntryMap.find(peer.getRemoteAddr()) != addrToEntryMap.end()) {
                 inserted = false;
             }
             else {
@@ -587,7 +588,7 @@ public:
         LockGuard lock{mutex};
     	if (exception)
     		std::rethrow_exception(exception);
-        return addrToEntry.find(peerAddr) != addrToEntry.end();
+        return addrToEntryMap.find(peerAddr) != addrToEntryMap.end();
     }
 
     /**
@@ -603,7 +604,7 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
-        for (const auto& elt : addrToEntry)
+        for (const auto& elt : addrToEntryMap)
             elt.second->push(action, maxResideTime);
     }
 
@@ -623,7 +624,7 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
-        for (const auto& elt : addrToEntry) {
+        for (const auto& elt : addrToEntryMap) {
             if (elt.first == except)
                 continue;
             elt.second->push(action, maxResideTime);
@@ -643,7 +644,7 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
-        for (const auto& elt : addrToEntry)
+        for (const auto& elt : addrToEntryMap)
             elt.second->push(action, maxResideTime);
     }
 
@@ -662,7 +663,7 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
-        for (const auto& elt : addrToEntry) {
+        for (const auto& elt : addrToEntryMap) {
             if (elt.first == except)
                 continue;
             elt.second->push(action, maxResideTime);
@@ -681,8 +682,8 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
-            auto iter = addrToEntry.find(peer.getRemoteAddr());
-            if (iter != addrToEntry.end())
+            auto iter = addrToEntryMap.find(peer.getRemoteAddr());
+            if (iter != addrToEntryMap.end())
                 iter->second->incValue();
         }
     }
@@ -699,8 +700,8 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
-            auto iter = addrToEntry.find(peer.getRemoteAddr());
-            if (iter != addrToEntry.end())
+            auto iter = addrToEntryMap.find(peer.getRemoteAddr());
+            if (iter != addrToEntryMap.end())
                 iter->second->decValue();
         }
     }
@@ -714,7 +715,7 @@ public:
         LockGuard lock{mutex};
     	if (exception)
             std::rethrow_exception(exception);
-        return addrToEntry.size();
+        return addrToEntryMap.size();
     }
 
     /**
@@ -745,22 +746,22 @@ bool PeerSet::contains(const InetSockAddr& peerAddr) const
     return pImpl->contains(peerAddr);
 }
 
-void PeerSet::sendNotice(const ProdInfo& prodInfo)
+void PeerSet::sendNotice(const ProdInfo& prodInfo) const
 {
     pImpl->sendNotice(prodInfo);
 }
 
-void PeerSet::sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except)
+void PeerSet::sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except) const
 {
     pImpl->sendNotice(prodInfo, except);
 }
 
-void PeerSet::sendNotice(const ChunkInfo& chunkInfo)
+void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
 {
     pImpl->sendNotice(chunkInfo);
 }
 
-void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except)
+void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except) const
 {
     pImpl->sendNotice(chunkInfo, except);
 }

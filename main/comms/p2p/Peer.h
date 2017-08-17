@@ -31,6 +31,9 @@ class Peer final : public Notifier
     std::shared_ptr<Impl> pImpl; // `pImpl` idiom
 
 public:
+    void* getPimpl() const {
+        return pImpl.get();
+    }
     /**
      * Constructs from nothing. Any attempt to use the resulting instance will
      * throw an exception.
@@ -114,7 +117,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo);
+    void sendNotice(const ProdInfo& prodInfo) const;
 
     /**
      * Sends information about a chunk-of-data to the remote peer.
@@ -123,7 +126,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo);
+    void sendNotice(const ChunkInfo& chunkInfo) const;
 
     /**
      * Sends a product-index to the remote peer.
@@ -132,7 +135,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ProdIndex& prodIndex);
+    void sendRequest(const ProdIndex& prodIndex) const;
 
     /**
      * Sends a chunk specification to the remote peer.
@@ -141,7 +144,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ChunkInfo& info);
+    void sendRequest(const ChunkInfo& info) const;
 
     /**
      * Sends a chunk-of-data to the remote peer.
@@ -150,7 +153,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendData(ActualChunk& chunk);
+    void sendData(ActualChunk& chunk) const;
 
     /**
      * Returns the number of streams.

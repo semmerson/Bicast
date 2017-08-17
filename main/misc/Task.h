@@ -51,9 +51,19 @@ public:
      * Executes this task.
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
+     * @guarantee          The task's future will be set if the task completes
      */
     void operator()() const;
 
+    /**
+     * Cancels this task. The completion of the tasks's thread-of-execution is
+     * asynchronous with respect to this function.
+     * @param[in] mayInterrupt  May the thread on which the task is executing be
+     *                          canceled if the task hasn't already started?
+     * @guarantee               Upon return, the task's future will indicate
+     *                          that the task was canceled if `mayInterrupt` is
+     *                          `true` or the task hasn't started
+     */
     void cancel(const bool mayInterrupt = true) const;
 };
 

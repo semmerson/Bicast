@@ -10,7 +10,6 @@
  */
 
 #include "ChunkInfo.h"
-#include "ClntSctpSock.h"
 #include "error.h"
 #include "ProdInfo.h"
 #include "SrvrSctpSock.h"
@@ -42,7 +41,7 @@ void runServer(hycast::SrvrSctpSock serverSock)
 void runClient()
 {
     try {
-        hycast::ClntSctpSock sock(serverSockAddr, numStreams);
+        hycast::SctpSock sock(serverSockAddr, numStreams);
 
         hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
         EXPECT_EQ(sock, prodInfoChannel.getSocket());

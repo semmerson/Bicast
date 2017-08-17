@@ -20,8 +20,10 @@
 #include "SctpSock.h"
 #include "VersionMsg.h"
 
+#include <cassert>
 #include <cstddef>
 #include <functional>
+#include <iostream>
 #include <thread>
 #include <utility>
 
@@ -46,32 +48,29 @@ class Peer::Impl final {
     Channel<ActualChunk,LatentChunk>  chunkChan;
     PeerMsgRcvr&                      msgRcvr;
     SctpSock                          sock;
-    Peer*                             peer;
 
     class : public PeerMsgRcvr
     {
         void recvNotice(const ProdInfo& info) {}
-        void recvNotice(const ProdInfo& info, Peer& peer) {}
-        void recvNotice(const ChunkInfo& info, Peer& peer) {}
-        void recvRequest(const ProdIndex& index, Peer& peer) {}
-        void recvRequest(const ChunkInfo& info, Peer& peer) {}
+        void recvNotice(const ProdInfo& info, const Peer& peer) {}
+        void recvNotice(const ChunkInfo& info, const Peer& peer) {}
+        void recvRequest(const ProdIndex& index, const Peer& peer) {}
+        void recvRequest(const ChunkInfo& info, const Peer& peer) {}
         void recvData(LatentChunk chunk) {}
-        void recvData(LatentChunk chunk, Peer& peer) {}
+        void recvData(LatentChunk chunk, const Peer& peer) {}
     }                      defaultMsgRcvr;
 
     /**
      * Constructs. Blocks connecting to remote server and exchanging protocol
      * version with remote peer.
-     * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
      * @throw LogicError       Unknown protocol version from remote peer
      * @see Impl(Peer*, PeerMsgRcvr&, const InetSockAddr&)
      */
-    Impl(   Peer*         peer,
-            PeerMsgRcvr&  msgRcvr,
+    Impl(   PeerMsgRcvr&  msgRcvr,
             SctpSock&&    sock)
-        : Impl(peer, msgRcvr, std::ref<SctpSock>(sock))
+        : Impl(msgRcvr, std::ref<SctpSock>(sock))
     {}
 
     /**
@@ -97,11 +96,10 @@ class Peer::Impl final {
 
 public:
     /**
-     * Constructs from the containing peer object. Any attempt to use use the
-     * resulting instance will throw an exception.
-     * @param[in,out] peer  The containing peer object
+     * Default constructs. Any attempt to use use the resulting instance will
+     * throw an exception.
      */
-    Impl(Peer* peer)
+    Impl()
         : version(0),
           versionChan(),
           prodNoticeChan(),
@@ -110,22 +108,18 @@ public:
           chunkReqChan(),
           chunkChan(),
           msgRcvr(defaultMsgRcvr),
-          sock(),
-          peer{peer}
+          sock()
     {}
 
     /**
      * Constructs from the containing peer object, an object to receive messages
      * from the remote peer, and a socket. Blocks connecting to remote server
      * and exchanging protocol version with remote peer.
-     * @param[in,out] peer     The containing peer object
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
      * @throw LogicError       Unknown protocol version from remote peer
      */
-    Impl(
-            Peer*          peer,
-            PeerMsgRcvr&   msgRcvr,
+    Impl(   PeerMsgRcvr&   msgRcvr,
             SctpSock&      sock)
         : version(0),
           versionChan(sock, VERSION_STREAM_ID, version),
@@ -135,8 +129,7 @@ public:
           chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
           chunkChan(sock, CHUNK_STREAM_ID, version),
           msgRcvr(msgRcvr),
-          sock(sock),
-          peer(peer)
+          sock(sock)
     {
         VersionMsg msg(version);
         versionChan.send(msg);
@@ -150,16 +143,14 @@ public:
     /**
      * Constructs. Blocks connecting to remote server and exchanging protocol
      * version with remote peer.
-     * @param[in,out] peer      The containing peer object
      * @param[in,out] msgRcvr   Object to receive messages from remote peer
      * @param[in]     peerAddr  Socket address of remote peer
      * @throw LogicError        Unknown protocol version from remote peer
      * @throw RuntimeError      Other error
      */
-    Impl(   Peer*               peer,
-            PeerMsgRcvr&        msgRcvr,
+    Impl(   PeerMsgRcvr&        msgRcvr,
             const InetSockAddr& peerAddr)
-        : Impl{peer, msgRcvr, SctpSock{peerAddr, getNumStreams()}}
+        : Impl{msgRcvr, SctpSock{peerAddr, getNumStreams()}}
     {}
 
     /**
@@ -188,7 +179,7 @@ public:
      * @exceptionsafety    Basic guarantee
      * @threadsafefy       Thread-compatible but not thread-safe
      */
-    void runReceiver()
+    void runReceiver(const Peer& peer)
     {
         int entryCancelState;
         (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
@@ -200,16 +191,16 @@ public:
                 break;
             switch (sock.getStreamId()) {
                 case PROD_NOTICE_STREAM_ID:
-                    msgRcvr.recvNotice(prodNoticeChan.recv(), *peer);
+                    msgRcvr.recvNotice(prodNoticeChan.recv(), peer);
                     break;
                 case CHUNK_NOTICE_STREAM_ID:
-                    msgRcvr.recvNotice(chunkNoticeChan.recv(), *peer);
+                    msgRcvr.recvNotice(chunkNoticeChan.recv(), peer);
                     break;
                 case PROD_REQ_STREAM_ID:
-                    msgRcvr.recvRequest(prodReqChan.recv(), *peer);
+                    msgRcvr.recvRequest(prodReqChan.recv(), peer);
                     break;
                 case CHUNK_REQ_STREAM_ID:
-                    msgRcvr.recvRequest(chunkReqChan.recv(), *peer);
+                    msgRcvr.recvRequest(chunkReqChan.recv(), peer);
                     break;
                 case CHUNK_STREAM_ID: {
                     /*
@@ -220,7 +211,7 @@ public:
                      * `PeerMgr::recvData()`.
                      */
                     LatentChunk chunk = chunkChan.recv();
-                    msgRcvr.recvData(chunk, *peer);
+                    msgRcvr.recvData(chunk, peer);
                     if (chunk.hasData())
                         throw LogicError(__FILE__, __LINE__,
                                 "Latent chunk-of-data still has data");
@@ -350,47 +341,47 @@ public:
 };
 
 Peer::Peer()
-    : pImpl(new Impl(this))
+    : pImpl(new Impl())
 {}
 
 Peer::Peer(
         PeerMsgRcvr& msgRcvr,
         SctpSock&    sock)
-    : pImpl(new Impl(this, msgRcvr, sock))
+    : pImpl(new Impl(msgRcvr, sock))
 {}
 
 Peer::Peer(
         PeerMsgRcvr&        msgRcvr,
         const InetSockAddr& peerAddr)
-    : pImpl(new Impl(this, msgRcvr, peerAddr))
+    : pImpl(new Impl(msgRcvr, peerAddr))
 {}
 
 void Peer::runReceiver() const
 {
-    pImpl->runReceiver();
+    pImpl->runReceiver(*this);
 }
 
-void Peer::sendNotice(const ProdInfo& prodInfo)
+void Peer::sendNotice(const ProdInfo& prodInfo) const
 {
     pImpl->sendProdInfo(prodInfo);
 }
 
-void Peer::sendNotice(const ChunkInfo& chunkInfo)
+void Peer::sendNotice(const ChunkInfo& chunkInfo) const
 {
     pImpl->sendChunkInfo(chunkInfo);
 }
 
-void Peer::sendRequest(const ProdIndex& prodIndex)
+void Peer::sendRequest(const ProdIndex& prodIndex) const
 {
     pImpl->sendProdRequest(prodIndex);
 }
 
-void Peer::sendRequest(const ChunkInfo& info)
+void Peer::sendRequest(const ChunkInfo& info) const
 {
     pImpl->sendRequest(info);
 }
 
-void Peer::sendData(ActualChunk& chunk)
+void Peer::sendData(ActualChunk& chunk) const
 {
     pImpl->sendData(chunk);
 }

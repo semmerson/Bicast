@@ -29,7 +29,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    virtual void sendNotice(const ProdInfo& prodInfo) =0;
+    virtual void sendNotice(const ProdInfo& prodInfo) const =0;
     /**
      * Sends information about a chunk-of-data.
      * @param[in] chunkInfo       Chunk information
@@ -37,7 +37,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    virtual void sendNotice(const ChunkInfo& chunkInfo) =0;
+    virtual void sendNotice(const ChunkInfo& chunkInfo) const =0;
 };
 
 } // namespace

@@ -34,6 +34,7 @@ protected:
     McastReceiverTest()
         : asmGroupAddr("234.128.117.0", 38800)
         , ssmGroupAddr("232.0.0.0", 38800)
+        //, srcAddr{"127.0.0.1"} // DOESN'T WORK
         , srcAddr{hycast::Interface{"ens33"}.getInetAddr(AF_INET)}
         , version{0}
         , prodName("product")
@@ -141,9 +142,9 @@ TEST_F(McastReceiverTest, SourceConstruction) {
 TEST_F(McastReceiverTest, SourceReception) {
     hycast::McastReceiver mcastRcvr(ssmGroupAddr, srcAddr, *this, version);
     std::thread           rcvrThread =
-            std::thread([&]{runReceiver(mcastRcvr);});
+            std::thread([this,mcastRcvr]() mutable {runReceiver(mcastRcvr);});
     sendProduct(ssmGroupAddr);
-    ::sleep(1);
+    ::usleep(100000);
     ::pthread_cancel(rcvrThread.native_handle());
     rcvrThread.join();
     EXPECT_EQ(prod.getInfo().getNumChunks(), chunkIndex);

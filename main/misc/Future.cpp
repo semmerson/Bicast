@@ -12,6 +12,7 @@
 
 #include "error.h"
 #include "Future.h"
+#include "Thread.h"
 
 #include <bitset>
 #include <cassert>
@@ -139,8 +140,7 @@ protected:
         if (exception)
             std::rethrow_exception(exception);
         if (canceled)
-            throw LogicError(__FILE__, __LINE__,
-                    "Future::cancel() was canceled");
+            throw LogicError(__FILE__, __LINE__, "Future::cancel() was called");
         return; // `haveResult` must be true
     }
 
@@ -230,7 +230,16 @@ BasicFuture::BasicFuture(Impl* ptr)
 {}
 
 BasicFuture::~BasicFuture()
-{}
+{
+    try {
+        auto enabled = Thread::disableCancel();
+        pImpl.reset();
+        Thread::enableCancel(enabled);
+    }
+    catch (const std::exception& e) {
+        log_what(e, __FILE__, __LINE__, "Couldn't destroy future");
+    }
+}
 
 BasicFuture::operator bool() const noexcept
 {

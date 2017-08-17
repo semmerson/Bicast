@@ -174,7 +174,6 @@ class Executor<Ret>::Impl final
         const auto currThreadId = Thread::getId();
         if (doneThreadId != emptyThreadId) {
             Thread thread = threads.remove(doneThreadId);
-            assert(thread.joinable());
             assert(thread.id() != currThreadId);
             assert(thread.id() == doneThreadId);
             thread.join();
@@ -185,11 +184,11 @@ class Executor<Ret>::Impl final
 
     /**
      * Purges any previously completed thread and saves the current
-     * thread-of-execution.
+     * thread-of-execution. Executed on a task's thread.
      */
-    void purgeDoneThreadAndSaveThisThread() {
+    void purge() {
         LockGuard lock{mutex};
-        purgeDoneThread();
+        purgeDoneThread(); // Eliminates previous so only need one element
         /*
          * The thread object associated with the current thread-of-execution is
          * not destroyed because that causes undefined behavior.
@@ -202,12 +201,12 @@ class Executor<Ret>::Impl final
 
     /**
      * Thread cleanup function. Purges any previously-completed thread and saves
-     * the current thread-of-execution.
+     * the current thread-of-execution. Executed on a task's thread.
      * @param[in] arg  Pointer to `Executor::Impl`
      */
     static void purgeDoneThreadAndSaveThisThread(void* arg) {
         auto impl = static_cast<Impl*>(arg);
-        impl->purgeDoneThreadAndSaveThisThread();
+        impl->purge();
     }
 
     /**
@@ -228,7 +227,8 @@ class Executor<Ret>::Impl final
                 try {
                     /*
                      * Block parent thread until thread-cleanup routine pushed
-                     * and until `getFuture()` will find the future.
+                     * and to ensure visibility of changes to `threads` and
+                     * `tasks`, which are accessed on this thread.
                      */
                     barrier.wait();
                     // task.cancel() held pending until task() entered
@@ -263,8 +263,7 @@ class Executor<Ret>::Impl final
         purgeDoneThread();
         Thread::Barrier barrier{2};
         auto            thread = newThread(task, barrier); // RAII object
-        barrier.wait();
-        ThreadId threadId = thread.id();
+        auto            threadId = thread.id();
         tasks.add(threadId, task);
         try {
             threads.add(thread);
@@ -274,6 +273,7 @@ class Executor<Ret>::Impl final
             std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                     "Couldn't add new thread"));
         }
+        barrier.wait(); // Synchronize `tasks` & `threads` changes with thread
         return task.getFuture();
     }
 
@@ -297,11 +297,13 @@ public:
     ~Impl()
     {
         try {
+            bool enabled = Thread::disableCancel();
             shutdown(true);
             awaitTermination();
+            Thread::enableCancel(enabled);
         }
         catch (const std::exception& e) {
-            log_what(e);
+            log_what(e, __FILE__, __LINE__, "Couldn't destroy executor");
         }
     }
 
@@ -380,7 +382,7 @@ Executor<Ret>::Executor()
 {}
 
 template<class Ret>
-Executor<Ret>::~Executor()
+Executor<Ret>::~Executor() noexcept
 {}
 
 template<class Ret>

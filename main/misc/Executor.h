@@ -41,7 +41,7 @@ public:
     /**
      * Destroys. Cancels all active tasks and waits for them to complete.
      */
-    ~Executor();
+    ~Executor() noexcept;
 
     /**
      * Submits a callable for execution.

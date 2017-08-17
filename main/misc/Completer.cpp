@@ -62,22 +62,23 @@ class Completer<Ret>::Impl
         }
     };
 
-    /// Queue of futures of completed tasks
-    FutureQueue              completedFutures;
     /// Executor
     Executor<Ret>            executor;
+    /// Queue of futures of completed tasks
+    FutureQueue              completedFutures;
 
-    void finish() {
+    void add() {
         auto threadId = Thread::getId();
         auto future = executor.getFuture();
         completedFutures.push(future);
     }
 
-protected:
-    static void finishTask(void* arg) {
-        static_cast<Impl*>(arg)->finish();
+    static void addFutureToQueue(void* arg) {
+        auto impl = static_cast<Impl*>(arg);
+        impl->add();
     }
 
+protected:
     /**
      * Wraps a callable in a callable that adds the associated future to the
      * queue of completed futures.
@@ -88,7 +89,7 @@ protected:
     {
         return [this,func] {
             Ret result{};
-            THREAD_CLEANUP_PUSH(finishTask, this);
+            THREAD_CLEANUP_PUSH(addFutureToQueue, this);
             result = func();
             THREAD_CLEANUP_POP(true);
             return result;
@@ -100,18 +101,31 @@ public:
      * Constructs from nothing.
      */
     Impl()
-        : completedFutures{}
-        , executor{}
+        : executor{}
+        , completedFutures{}
     {}
+
+    ~Impl()
+    {
+        try {
+            bool wasEnabled = Thread::disableCancel();
+            executor.shutdown(true);
+            executor.awaitTermination();
+            Thread::enableCancel(wasEnabled);
+        }
+        catch (const std::exception& e) {
+            log_what(e, __FILE__, __LINE__, "Couldn't destroy completer");
+        }
+    }
 
     /**
      * Submits a callable for execution. The callable's future will also be
-     * returned by get(), eventually.
+     * returned by take(), eventually.
      * @param[in,out] func  Callable to be executed
      * @return              Callable's future
      * @exceptionsafety     Basic guarantee
      * @threadsafety        Safe
-     * @see                 get()
+     * @see                 take()
      */
     Future<Ret> submit(const std::function<Ret()>& func) {
         auto callable = getCallable(func);
@@ -125,7 +139,7 @@ public:
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    Future<Ret> get() {
+    Future<Ret> take() {
         return completedFutures.pop();
     }
 };
@@ -143,7 +157,7 @@ template<>
 std::function<void()> Completer<void>::Impl::getCallable(
         const std::function<void()>& func) {
     return [this,func] {
-        THREAD_CLEANUP_PUSH(finishTask, this);
+        THREAD_CLEANUP_PUSH(addFutureToQueue, this);
         func();
         THREAD_CLEANUP_POP(true);
     };
@@ -167,9 +181,9 @@ Future<Ret> Completer<Ret>::submit(const std::function<Ret()>& func)
 }
 
 template<class Ret>
-Future<Ret> Completer<Ret>::get()
+Future<Ret> Completer<Ret>::take()
 {
-    return pImpl->get();
+    return pImpl->take();
 }
 
 template class Completer<int>;

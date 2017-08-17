@@ -37,10 +37,11 @@ class PeerSet final : public Notifier
     std::shared_ptr<Impl> pImpl;
 
 public:
-    /// Default maximum number of peers
-    static const unsigned             defaultMaxPeers = 8;
     typedef std::chrono::seconds      TimeUnit;
     typedef std::chrono::steady_clock Clock;
+
+    /// Default maximum number of peers
+    static const unsigned             defaultMaxPeers = 8;
 
     /**
      * Constructs. The set will be empty.
@@ -111,7 +112,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo);
+    void sendNotice(const ProdInfo& prodInfo) const;
 
     /**
      * Sends information about a product to all peers in the set except one.
@@ -121,7 +122,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except);
+    void sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except) const;
 
     /**
      * Sends information about a chunk-of-data to all peers in the set.
@@ -130,7 +131,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo);
+    void sendNotice(const ChunkInfo& chunkInfo) const;
 
     /**
      * Sends information about a chunk-of-data to all peers in the set except
@@ -141,7 +142,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except);
+    void sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except) const;
 
     /**
      * Increments the value of a peer.

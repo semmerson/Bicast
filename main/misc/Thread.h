@@ -155,6 +155,27 @@ public:
 private:
     class Impl final
     {
+    public:
+        /// Thread identifier
+        typedef std::thread::id ThreadId;
+
+    private:
+        class ThreadMap {
+            typedef std::mutex                Mutex;
+            typedef std::lock_guard<Mutex>    LockGuard;
+            typedef std::map<ThreadId, Impl*> Map;
+
+            mutable Mutex mutex;
+            Map           threads;
+
+        public:
+            ThreadMap();
+            void add(Impl* impl);
+            bool contains(const ThreadId& threadId);
+            Impl* get(const ThreadId& threadId);
+            Map::size_type erase(const ThreadId& threadId);
+            Map::size_type size();
+        };
         typedef enum {
             unset = 0,
             completed = 1,
@@ -173,15 +194,37 @@ private:
         Barrier             barrier;
         mutable std::thread stdThread;
         std::thread::native_handle_type native_handle;
+        /// Set of joinable threads:
+        static ThreadMap    threads;
+
+        /**
+         * Indicates if the mutex is locked or not.
+         *
+         * NB: Only assert this in the affirmative (i.e., `assert(isLocked());`
+         * because the negative can't be known a priori in a multi-threaded
+         * environment.
+         *
+         * @retval `true`   The mutex is locked
+         * @retval `false`  The mutex is not locked
+         */
+        bool isLocked() const;
+
+        /**
+         * Adds a joinable thread object to the set of such objects.
+         * @param[in] thread  Joinable thread object to be added
+         */
+        void add();
 
         inline void setStateBit(const State bit)
         {
+            assert(isLocked());
             state |= bit;
             cond.notify_all(); // Notify of all state changes
         }
 
         inline bool isStateBitSet(const State bit) const
         {
+            assert(isLocked());
             return (state & bit) != 0;
         }
 
@@ -216,6 +259,14 @@ private:
         }
 
         /**
+         * Indicates if this instance is joinable or not. The mutex must be
+         * locked.
+         * @return `true`   Instance is joinable
+         * @return `false`  Instance is not joinable
+         */
+        bool lockedJoinable() const noexcept;
+
+        /**
          * Thread cleanup routine for when the thread-of-execution is canceled.
          * @param[in] arg  Pointer to an instance of this class.
          */
@@ -245,17 +296,7 @@ private:
          */
         void ensureJoined();
 
-        /**
-         * Indicates whether or not the mutex is locked. Upon return, the state
-         * of the mutex is the same as upon entry.
-         * @retval `true`    Iff the mutex is locked
-         */
-        bool isLocked() const;
-
     public:
-        /// Thread identifier
-        typedef std::thread::id ThreadId;
-
         Impl() =delete;
         Impl(const Impl& that) = delete;
         Impl(Impl&& that) =delete;
@@ -312,6 +353,7 @@ private:
         {
             barrier.wait();
             native_handle = stdThread.native_handle();
+            threads.add(this);
         }
 
         /**
@@ -330,7 +372,17 @@ private:
         ThreadId id() const noexcept;
 
         /**
-         * Cancels the thread. Idempotent.
+         * Returns the identifier of the current thread. Non-joinable instances
+         * all return the same identifier.
+         * @return           Identifier of the current thread
+         * @exceptionsafety  Nothrow
+         * @threadsafety     Safe
+         */
+        static ThreadId getId() noexcept;
+
+        /**
+         * Cancels the thread. Idempotent. The completion of the
+         * thread-of-execution is asynchronous with respect to this function.
          * @throw SystemError  Thread couldn't be canceled
          * @exceptionsafety    Strong guarantee
          * @threadsafety       Safe
@@ -338,13 +390,35 @@ private:
         void cancel();
 
         /**
-         * Joins the thread. Idempotent. This call is necessary to ensure that
-         * all thread cleanup routines have completed.
+         * Cancels a thread. Idempotent. Does nothing if the thread isn't
+         * joinable. The completion of the thread-of-execution is asynchronous
+         * with respect to this function.
+         * @throw OutOfRange   Thread doesn't exist
+         * @throw SystemError  Thread couldn't be canceled
+         * @threadsafety       Safe
+         */
+        static void cancel(const ThreadId& threadId);
+
+        /**
+         * Indicates if this instance is joinable or not.
+         * @return `true`   Instance is joinable
+         * @return `false`  Instance is not joinable
+         */
+        bool joinable() const;
+
+        /**
+         * Joins the thread. Idempotent.
          * @throw SystemError  Thread couldn't be joined
          * @exceptionsafety    Strong guarantee
          * @threadsafety       Safe
          */
         void join();
+
+        /**
+         * Returns the number of joinable threads.
+         * @return Number of joinable threads
+         */
+        static size_t size();
     };
 
 public:
@@ -352,45 +426,10 @@ public:
     typedef Impl::ThreadId             Id;
 
 private:
-    class ThreadMap
-    {
-        typedef std::mutex             Mutex;
-        typedef std::lock_guard<Mutex> LockGuard;
-        typedef std::map<Id, Impl*>    Map;
-
-        Mutex mutex;
-        Map   threads;
-
-    public:
-        ThreadMap();
-        void add(Impl* impl);
-        bool contains(const Id& threadId);
-        Impl* get(const Id& threadId);
-        void erase(const Id& threadId);
-        Map::size_type size();
-    };
-
     typedef std::shared_ptr<Impl>      Pimpl;
 
-    /// Set of joinable threads:
-    static ThreadMap                   threads;
     /// Pointer to the implementation:
     Pimpl                              pImpl;
-
-    /**
-     * Checks invariants.
-     * @invariant        `pImpl` <=> thread's ID isn't default
-     * @invariant        `Thread` object is joinable <=> its ID isn't default
-     * @invariant        `Thread` object is in `threads` <=> it's joinable
-     * @exceptionsafety  Strong guarantee
-     */
-    void checkInvariants() const;
-
-    /**
-     * Adds a thread object to the set of such objects.
-     * @param[in] thread  Thread object to be added
-     */
-    void add();
 
 public:
     friend class std::hash<Thread>;
@@ -403,7 +442,7 @@ public:
 
     /**
      * Copy constructs. This constructor is deleted because the compiler
-     * confuses is with `Thread(Callable, ...)`.
+     * confuses it with `Thread(Callable, ...)`.
      * @param[in] that  Other instance
      */
     Thread(const Thread& that) =delete;
@@ -419,18 +458,19 @@ public:
      * @param[in] callable  Object to be executed by calling it's
      *                      `operator()` method
      * @param[in] args      Arguments of the `operator()` method
+     * @see                 ~Thread
+     * @guarantee           The associated thread-of-execution will have been
+     *                      joined when the destructor returns
      */
     template<class Callable, class... Args>
     explicit Thread(Callable&& callable, Args&&... args)
         : pImpl{new Impl(callable, std::forward<Args>(args)...)}
-    {
-        add();
-    }
+    {}
 
     /**
      * Destroys. Because this is a RAII class, the associated
-     * thread-of-execution is canceled if it hasn't completed and joined if it
-     * hasn't been joined.
+     * thread-of-execution -- if it exists -- will be canceled if it hasn't
+     * completed and joined if it hasn't been joined.
      */
     ~Thread() noexcept;
 
@@ -497,7 +537,8 @@ public:
 
     /**
      * Cancels this thread. Idempotent. Does nothing if the thread isn't
-     * joinable.
+     * joinable. The completion of the thread-of-execution is asynchronous with
+     * respect to this function.
      * @throw SystemError  Thread couldn't be canceled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
@@ -506,6 +547,8 @@ public:
 
     /**
      * Cancels a thread. Idempotent. Does nothing if the thread isn't joinable.
+     * The completion of the thread-of-execution is asynchronous with respect to
+     * this function.
      * @throw OutOfRange   Thread doesn't exist
      * @throw SystemError  Thread couldn't be canceled
      * @threadsafety       Safe
@@ -519,9 +562,9 @@ public:
     bool joinable() const noexcept;
 
     /**
-     * Joins this thread. Idempotent. If the thread wasn't canceled, then this
-     * call is necessary to ensure that all thread cleanup routines have
-     * completed. Does nothing if the thread isn't joinable.
+     * Joins this thread. Idempotent. Calling this function is necessary to
+     * ensure that all thread cleanup routines have completed. Does nothing if
+     * the thread isn't joinable.
      * @throw SystemError  Thread couldn't be joined
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
@@ -530,7 +573,9 @@ public:
 
     /**
      * Returns the number of joinable threads.
-     * @return Number of joinable threads
+     * @return           Number of joinable threads
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
     static size_t size();
 };

@@ -9,7 +9,6 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ClntSctpSock.h"
 #include "error.h"
 #include "HycastTypes.h"
 #include "Interface.h"
@@ -45,18 +44,18 @@ protected:
             , chunkInfo{chunkInfo}
         {}
         void recvNotice(const hycast::ProdInfo& info) {}
-        void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer) {
+        void recvNotice(const hycast::ProdInfo& info, const hycast::Peer& peer) {
             EXPECT_EQ(prodInfo, info);
         }
-        void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+        void recvNotice(const hycast::ChunkInfo& info, const hycast::Peer& peer) {
             EXPECT_EQ(chunkInfo, info);
         }
-        void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer) {
+        void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer) {
         }
-        void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer) {
+        void recvRequest(const hycast::ChunkInfo& info, const hycast::Peer& peer) {
         }
         void recvData(hycast::LatentChunk chunk) {}
-        void recvData(hycast::LatentChunk chunk, hycast::Peer& peer) {
+        void recvData(hycast::LatentChunk chunk, const hycast::Peer& peer) {
             chunk.discard();
         }
     };
@@ -72,15 +71,15 @@ protected:
         class ServerMsgRcvr final : public hycast::PeerMsgRcvr {
             hycast::ProdInfo prodInfo;
         public:
-            void recvNotice(const hycast::ProdInfo& info, hycast::Peer& peer)
+            void recvNotice(const hycast::ProdInfo& info, const hycast::Peer& peer)
             {}
-            void recvNotice(const hycast::ChunkInfo& info, hycast::Peer& peer)
+            void recvNotice(const hycast::ChunkInfo& info, const hycast::Peer& peer)
             {}
-            void recvRequest(const hycast::ProdIndex& index, hycast::Peer& peer)
+            void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer)
             {}
-            void recvRequest(const hycast::ChunkInfo& info, hycast::Peer& peer)
+            void recvRequest(const hycast::ChunkInfo& info, const hycast::Peer& peer)
             {}
-            void recvData(hycast::LatentChunk latentChunk, hycast::Peer& peer)
+            void recvData(hycast::LatentChunk latentChunk, const hycast::Peer& peer)
             {
             	latentChunk.discard();
             }
@@ -112,7 +111,10 @@ protected:
         }
         ~Server() {
             if (thread.joinable()) {
-                ::pthread_cancel(thread.native_handle());
+                auto status = ::pthread_cancel(thread.native_handle());
+                if (status)
+                    hycast::log_what(hycast::SystemError(__FILE__, __LINE__,
+                            "Couldn't cancel server thread", status));
                 thread.join();
             }
         }
@@ -125,7 +127,7 @@ protected:
     {}
 
     hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
-        hycast::ClntSctpSock sock{serverSockAddr, hycast::Peer::getNumStreams()};
+        hycast::SctpSock sock{serverSockAddr, hycast::Peer::getNumStreams()};
         return hycast::Peer(clntMsgRcvr, sock);
     }
 
@@ -137,7 +139,6 @@ protected:
     ClientMsgRcvr              clntMsgRcvr{prodInfo, chunkInfo};
 };
 
-#if 0
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction) {
     hycast::PeerSet peerSet{2};
@@ -147,7 +148,6 @@ TEST_F(PeerSetTest, DefaultConstruction) {
 TEST_F(PeerSetTest, InvalidConstruction) {
     EXPECT_THROW(hycast::PeerSet(2, 0), std::invalid_argument);
 }
-#endif
 
 // Tests inserting a peer and incrementing its value
 TEST_F(PeerSetTest, IncrementPeerValue) {
@@ -165,7 +165,6 @@ TEST_F(PeerSetTest, IncrementPeerValue) {
     }
 }
 
-#if 0
 // Tests removing the worst peer from a 1-peer set
 TEST_F(PeerSetTest, RemoveWorst) {
     try {
@@ -194,7 +193,7 @@ TEST_F(PeerSetTest, PeerInsertionAndNotices) {
     EXPECT_TRUE(peerSet.tryInsert(peer));
     peerSet.sendNotice(prodInfo);
     peerSet.sendNotice(chunkInfo);
-    ::sleep(1);
+    ::usleep(100000);
 }
 
 // Tests inserting the same peer twice
@@ -205,7 +204,6 @@ TEST_F(PeerSetTest, DuplicatePeerInsertion) {
     EXPECT_TRUE(peerSet.tryInsert(peer));
     EXPECT_FALSE(peerSet.tryInsert(peer));
 }
-#endif
 
 }  // namespace
 

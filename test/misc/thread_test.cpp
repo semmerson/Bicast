@@ -110,6 +110,19 @@ TEST_F(ThreadTest, CancelThread)
     EXPECT_FALSE(thread.joinable());
 }
 
+// Tests canceling a bunch of threads
+TEST_F(ThreadTest, CancelBunchOfThread)
+{
+    for (int i = 0; i < 1000; ++i) {
+        std::thread thread{&::pause};
+        EXPECT_TRUE(thread.joinable());
+        EXPECT_EQ(0, ::pthread_cancel(thread.native_handle()));
+        EXPECT_TRUE(thread.joinable());
+        EXPECT_NO_THROW(thread.join());
+        EXPECT_FALSE(thread.joinable());
+    }
+}
+
 #if 0
 // THIS DOESN'T WORK
 // Tests passing argument reference to a reference member function

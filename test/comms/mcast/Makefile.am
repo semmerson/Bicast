@@ -13,5 +13,4 @@ check_PROGRAMS	= McastSender_test \
 McastSender_test_SOURCES	= McastSender_test.cpp
 McastReceiver_test_SOURCES	= McastReceiver_test.cpp
 
-TESTS	= McastSender_test \
-	  McastReceiver_test
+TESTS	= $(check_PROGRAMS)

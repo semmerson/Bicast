@@ -59,7 +59,7 @@ class Shipping::Impl final
              * @param[in]     info  Information about the product
              * @param[in,out] peer  Peer that sent the notice
              */
-            void recvNotice(const ProdInfo& info, Peer& peer)
+            void recvNotice(const ProdInfo& info, const Peer& peer)
             {}
 
             /**
@@ -67,7 +67,7 @@ class Shipping::Impl final
              * @param[in]     info  Information about the chunk
              * @param[in,out] peer  Peer that sent the notice
              */
-            void recvNotice(const ChunkInfo& info, Peer& peer)
+            void recvNotice(const ChunkInfo& info, const Peer& peer)
             {}
 
             /**
@@ -76,7 +76,7 @@ class Shipping::Impl final
              * @param[in]     index Index of the product
              * @param[in,out] peer  Peer that sent the request
              */
-            void recvRequest(const ProdIndex& index, Peer& peer)
+            void recvRequest(const ProdIndex& index, const Peer& peer)
             {
                 ProdInfo info;
                 if (prodStore.getProdInfo(index, info))
@@ -89,7 +89,7 @@ class Shipping::Impl final
              * @param[in]     info  Information on the chunk
              * @param[in,out] peer  Peer that sent the request
              */
-            void recvRequest(const ChunkInfo& info, Peer& peer)
+            void recvRequest(const ChunkInfo& info, const Peer& peer)
             {
                 ActualChunk chunk;
                 if (prodStore.getChunk(info, chunk))
@@ -102,7 +102,7 @@ class Shipping::Impl final
              * @param[in]     chunk  Chunk-of-data
              * @param[in,out] peer   Peer that sent the chunk
              */
-            void recvData(LatentChunk chunk, Peer& peer)
+            void recvData(LatentChunk chunk, const Peer& peer)
             {}
         };
 

@@ -40,7 +40,7 @@ public:
 
     /**
      * Submits a callable for execution. The callable's future will, eventually,
-     * be returned by get().
+     * be returned by take().
      * @param[in,out] func       Task to be executed
      * @return                   Task's future
      * @throws std::logic_error  cancel() has been called
@@ -56,7 +56,7 @@ public:
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    Future<Ret> get();
+    Future<Ret> take();
 };
 
 } // namespace

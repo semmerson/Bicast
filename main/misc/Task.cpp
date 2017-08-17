@@ -75,7 +75,14 @@ public:
 
     ~Impl() noexcept
     {
-        assert(future.hasCompleted());
+        try {
+            auto enabled = Thread::disableCancel();
+            assert(future.hasCompleted());
+            Thread::enableCancel(enabled);
+        }
+        catch (const std::exception& e) {
+            log_what(e, __FILE__, __LINE__, "Couldn't destroy task0");
+        }
     }
 
     Future<Ret> getFuture() const
@@ -111,37 +118,42 @@ public:
         THREAD_CLEANUP_POP(false);
     }
 
+    /**
+     * The completion of the task's thread-of-execution is asynchronous with
+     * respect to this function.
+     * @param[in] mayInterrupt  May the task be canceled if it's already
+     *                          started?
+     * @guarantee               Upon return, the task's future will indicate
+     *                          that the task was canceled if `mayInterrupt` is
+     *                          `true` or the task hadn't started
+     */
     void cancel(const bool mayInterrupt)
     {
         // Might be called (e.g., by `future`) before `threadId` is set
-        UniqueLock lock{};
-        try {
-            lock = UniqueLock{mutex};
-        }
-        catch (const std::exception& e) {
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                    "Couldn't lock mutex"));
-        }
-        if (haveThreadId) {
-            try {
-                lock.unlock();
-                if (mayInterrupt)
-                    Thread::cancel(threadId);
-            }
-            catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                        "Couldn't cancel thread"));
-            }
-        }
-        else {
+        UniqueLock lock{mutex};
+        if (!haveThreadId) {
+            // Task hasn't started
             try {
                 cancelCalled = true;
-                lock.unlock();
                 future.setCanceled();
             }
             catch (const std::exception& e) {
                 std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
                         "Couldn't cancel future"));
+            }
+        }
+        else {
+            // Task has started
+            if (mayInterrupt) {
+                try {
+                    lock.unlock();
+                    Thread::cancel(threadId);
+                    future.setCanceled();
+                }
+                catch (const std::exception& e) {
+                    std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                            "Couldn't cancel thread"));
+                }
             }
         }
     }

@@ -58,7 +58,7 @@ static const char* IPV4_ADDR2 = "128.117.140.57";
 static const char* IPV6_ADDR1 = "2001:db8::ff00:42:8329";
 static const char* IPV6_ADDR2 = "2001:db8::ff00:42:8330";
 
-static const char* HOSTNAME = "zero.unidata.ucar.edu";
+static const char* HOSTNAME = "www.unidata.ucar.edu";
 
 // Tests default construction
 TEST_F(InetAddrTest, DefaultConstruction) {
@@ -76,6 +76,22 @@ TEST_F(InetAddrTest, ConstructionFromIPv4String) {
 TEST_F(InetAddrTest, ConstructionFromIPv6String) {
     hycast::InetAddr addr2{IPV6_ADDR1};
     EXPECT_STREQ(IPV6_ADDR1, addr2.to_string().data());
+}
+
+// Tests construction from "lo"
+TEST_F(InetAddrTest, ConstructionFromLo) {
+    const std::string lo{"lo"};
+    hycast::InetAddr addr1{lo};
+    auto name = addr1.to_string();
+    EXPECT_STREQ(lo.data(), name.data());
+}
+
+// Tests construction from "localhost"
+TEST_F(InetAddrTest, ConstructionFromLocalhost) {
+    const std::string localhost{"localhost"};
+    hycast::InetAddr addr1{localhost};
+    auto name = addr1.to_string();
+    EXPECT_STREQ(localhost.data(), name.data());
 }
 
 // Tests construction from a hostname

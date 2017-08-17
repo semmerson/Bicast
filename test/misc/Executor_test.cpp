@@ -248,6 +248,39 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
     }
 }
 
+static void subExecutor(hycast::Thread::Barrier& barrier) {
+    hycast::Executor<void> executor{};
+    auto future1 = executor.submit([]{::usleep(100000);});
+    //auto future2 = executor.submit([]{::pause();});
+    future1.getResult();
+    barrier.wait();
+}
+
+// Tests PeerSet executor usage
+TEST_F(ExecutorTest, PeerSetUsage) {
+    hycast::Thread::Barrier barrier{2};
+    hycast::Executor<void> executor{};
+    executor.submit([&barrier]{subExecutor(barrier);});
+    barrier.wait();
+}
+
+// Tests guarantee that executor destruction terminates all threads
+TEST_F(ExecutorTest, DestructionTerminatesThreads) {
+    std::default_random_engine                generator{};
+    std::uniform_int_distribution<useconds_t> distribution{0, 10000};
+    for (int i = 0; i < 100; ++i) {
+        {
+            hycast::Executor<void> executor{};
+            int n;
+            for (n = 0; n < 10; ++n)
+                executor.submit(::pause);
+            EXPECT_EQ(n, hycast::Thread::size());
+            ::usleep(distribution(generator));
+        }
+        EXPECT_EQ(0, hycast::Thread::size());
+    }
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {

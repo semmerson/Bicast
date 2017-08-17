@@ -42,11 +42,11 @@ public:
 
     /**
      * Adds a value to the queue.
-     * @param[in] value The value to be added
+     * @param[in] value  The value to be added
      * @param[in] delay  The delay for the element before it becomes available
      *                   in units of the template parameter
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
     void push(
             const Value&    value,

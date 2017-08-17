@@ -81,7 +81,9 @@ public:
     void setException(const std::exception_ptr& ptr) const;
 
     /**
-     * Cancels the task if the task hasn't already completed. Idempotent.
+     * Cancels the associated task if the task hasn't already completed.
+     * Idempotent. The completion of the associated task's thread-of-execution
+     * is asynchronous with respect to this function.
      * @param[in] mayInterrupt  Whether the task may be interrupted if it's
      *                          being executed
      * @exceptionsafety  Strong guarantee
@@ -96,9 +98,9 @@ public:
     void wait() const;
 
     /**
-     * Indicates if the task's thread was cancelled. Blocks until the task
-     * completes if necessary. Should always be called before getResult() if
-     * having that function throw an exception is undesirable.
+     * Indicates if the associated task's thread was cancelled. Blocks until the
+     * task completes if necessary. Should always be called before getResult()
+     * if having that function throw an exception is undesirable.
      * @retval `true`   iff the task's thread was cancelled.
      * @exceptionsafety Strong guarantee
      * @threadsafety    Safe
