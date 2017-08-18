@@ -8,7 +8,7 @@
  *   @file: McastReceiver_test.cpp
  * @author: Steven R. Emmerson
  */
-
+#include "config.h"
 
 #include "error.h"
 #include "InetSockAddr.h"
@@ -35,7 +35,7 @@ protected:
         : asmGroupAddr("234.128.117.0", 38800)
         , ssmGroupAddr("232.0.0.0", 38800)
         //, srcAddr{"127.0.0.1"} // DOESN'T WORK
-        , srcAddr{hycast::Interface{"ens33"}.getInetAddr(AF_INET)}
+        , srcAddr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)}
         , version{0}
         , prodName("product")
         , chunkSize{hycast::ChunkInfo::getCanonSize()}

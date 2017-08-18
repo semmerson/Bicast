@@ -8,6 +8,7 @@
  *   @file: PeerSet_test.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "error.h"
 #include "HycastTypes.h"
@@ -122,7 +123,7 @@ protected:
 
     PeerSetTest()
         : server1SockAddr{"127.0.0.1", 38800}
-        , server2SockAddr{hycast::Interface{"ens33"}.getInetAddr(AF_INET),
+        , server2SockAddr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET),
                 38800}
     {}
 

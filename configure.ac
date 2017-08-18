@@ -49,6 +49,11 @@ if ip addr | grep inet6 >/dev/null; then
   AC_DEFINE([SUPPORTS_IPV6], [1], ["Whether the system supports IPv6"])
 fi
 
+dnl Determine the name of the ethernet interface
+name=`ip link | awk '/,MULTICAST,/ && /,UP,/ {print $2; exit}' | sed 's/://'`
+AC_DEFINE_UNQUOTED([ETHNET_IFACE_NAME], ["$name"],
+        ["Name of the ethernet interface"])
+
 AC_CONFIG_FILES(Makefile
                 main/Makefile
                 main/misc/Makefile
