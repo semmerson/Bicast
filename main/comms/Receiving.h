@@ -47,19 +47,19 @@ public:
             const unsigned      version,
             const std::string&  pathname = "");
 
-    void recvNotice(const ProdInfo& info) const;
+    void recvNotice(const ProdInfo& info);
 
-    void recvData(LatentChunk chunk) const;
+    void recvData(LatentChunk chunk);
 
-    void recvNotice(const ProdInfo& info, const Peer& peer) const;
+    void recvNotice(const ProdInfo& info, const Peer& peer);
 
-    void recvNotice(const ChunkInfo& info, const Peer& peer) const;
+    void recvNotice(const ChunkInfo& info, const Peer& peer);
 
-    void recvRequest(const ProdIndex& index, const Peer& peer) const;
+    void recvRequest(const ProdIndex& index, const Peer& peer);
 
-    void recvRequest(const ChunkInfo& info, const Peer& peer) const;
+    void recvRequest(const ChunkInfo& info, const Peer& peer);
 
-    void recvData(LatentChunk chunk, const Peer& peer) const;
+    void recvData(LatentChunk chunk, const Peer& peer);
 };
 
 } /* namespace hycast */

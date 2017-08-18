@@ -280,47 +280,47 @@ Receiving::Receiving(
     : pImpl{new Impl(srcMcastInfo, p2pInfo, pathname, processing, version)}
 {}
 
-void Receiving::recvNotice(const ProdInfo& info) const
+void Receiving::recvNotice(const ProdInfo& info)
 {
     pImpl->recvNotice(info);
 }
 
-void Receiving::recvData(LatentChunk chunk) const
+void Receiving::recvData(LatentChunk chunk)
 {
     pImpl->recvData(chunk);
 }
 
 void Receiving::recvNotice(
         const ProdInfo& info,
-        const Peer&     peer) const
+        const Peer&     peer)
 {
     pImpl->recvNotice(info, peer);
 }
 
 void Receiving::recvNotice(
         const ChunkInfo& info,
-        const Peer&      peer) const
+        const Peer&      peer)
 {
     pImpl->recvNotice(info, peer);
 }
 
 void Receiving::recvRequest(
         const ProdIndex& index,
-        const Peer&      peer) const
+        const Peer&      peer)
 {
     pImpl->recvRequest(index, peer);
 }
 
 void Receiving::recvRequest(
         const ChunkInfo& info,
-        const Peer&      peer) const
+        const Peer&      peer)
 {
     pImpl->recvRequest(info, peer);
 }
 
 void Receiving::recvData(
         LatentChunk chunk,
-        const Peer& peer) const
+        const Peer& peer)
 {
     pImpl->recvData(chunk, peer);
 }
