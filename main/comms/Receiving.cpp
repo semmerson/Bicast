@@ -122,7 +122,7 @@ public:
      * @see ProdStore::ProdStore()
      */
     Impl(   const SrcMcastInfo& srcMcastInfo,
-            const P2pInfo&      p2pInfo,
+            P2pInfo&            p2pInfo,
             const std::string&  pathname,
             Processing&         processing,
             const unsigned      version)
@@ -273,7 +273,7 @@ public:
 
 Receiving::Receiving(
         const SrcMcastInfo&  srcMcastInfo,
-        const P2pInfo&       p2pInfo,
+        P2pInfo&             p2pInfo,
         Processing&          processing,
         const unsigned       version,
         const std::string&   pathname)

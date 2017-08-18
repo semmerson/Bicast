@@ -1,9 +1,8 @@
 /**
- * This file declares the interface for a source of potential peers, which are
- * identified by the Internet socket address of their servers that listen for
- * connections by remote peers.
+ * This file declares the interface for a source of potential peers. Each
+ * potential peer is identified by the Internet socket address of its server.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -16,22 +15,53 @@
 
 #include "InetSockAddr.h"
 
+#include <chrono>
+
 namespace hycast {
 
 class PeerSource {
-public:
-    typedef const std::set<InetSockAddr>::iterator Iterator;
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
-    virtual ~PeerSource() {};
+public:
+    typedef std::chrono::seconds Duration;
+
+    PeerSource();
+
+    virtual ~PeerSource() =0;
 
     /**
-     * Returns an iterator over the potential peers. Blocks if no peers are
-     * available.
-     * @return Iterator over potential peers
+     * Adds a potential peer.
+     * @param[in] peerAddr  Internet socket address of the remote peer
+     * @param[in] delay     The delay for the potential peer before it becomes
+     *                      available
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
      */
-    virtual Iterator getPeers() =0;
+    void push(
+            const InetSockAddr& peerAddr,
+            const Duration&     delay = Duration(0));
 
-    virtual Iterator end() =0;
+    /**
+     * Returns the potential peer whose reveal-time is the earliest and not
+     * later than the current time and removes it from the set of potential
+     * peers. Blocks until such a value is available.
+     * @return          The Internet socket address of the potential peer with
+     *                  the earliest reveal-time that's not later than the
+     *                  current time.
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Safe
+     */
+    InetSockAddr pop();
+
+    /**
+     * Indicates if the source has any potential peers
+     * @retval `true`   The source has potential peers
+     * @retval `false`  The source has no potential peers
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    bool empty() const noexcept;
 };
 
 } // namespace

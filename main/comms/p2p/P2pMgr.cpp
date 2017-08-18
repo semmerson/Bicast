@@ -13,7 +13,6 @@
 #include "config.h"
 
 #include "Completer.h"
-#include "DelayQueue.h"
 #include "error.h"
 #include "Future.h"
 #include "InetSockAddr.h"
@@ -71,10 +70,10 @@ class P2pMgr::Impl final : public Notifier
 
     static NilMsgRcvr         nilMsgRcvr;
 
-    /// Delay-queue for initiated peers
-    DelayQueue<InetSockAddr>  peerAddrs;
+    /// Source of potential remote peers
+    PeerSource&               peerSource;
 
-    /// Internet address of peer-server
+    /// Internet address of local peer-server
     InetSockAddr              serverSockAddr;
 
     /// Object to receive incoming messages
@@ -101,7 +100,7 @@ class P2pMgr::Impl final : public Notifier
     TimeUnit                  stasisDuration;
 
     /// Remote socket address of initiated peers
-    std::set<InetSockAddr>    initiated;
+    std::set<InetSockAddr>    initiatedPeers;
 
     /// Is `msgRcvr` set?
     bool                      msgRcvrSet;
@@ -204,19 +203,19 @@ class P2pMgr::Impl final : public Notifier
             try {
                 for (;;) {
                     Thread::enableCancel();
-                    auto peerAddr = peerAddrs.pop(); // Blocks
+                    auto peerAddr = peerSource.pop(); // Blocks
                     Thread::disableCancel();
                     try {
                         if (tryInsert(peerAddr, *msgRcvr)) { // Blocks
                             // Peer wasn't a member of active set
-                            initiated.insert(peerAddr);
+                            initiatedPeers.insert(peerAddr);
                         }
                     }
                     catch (const LogicError& e) {
                         // Unknown protocol from remote peer
                         log_what(e);
                         // Try again later
-                        peerAddrs.push(peerAddr, stasisDuration);
+                        peerSource.push(peerAddr, stasisDuration);
                     }
                 }
             }
@@ -241,8 +240,8 @@ class P2pMgr::Impl final : public Notifier
     void handleStoppedPeer(const InetSockAddr& peerAddr)
     {
         LockGuard lock(peerSetMutex);
-        initiated.erase(peerAddr);
-        peerAddrs.push(peerAddr, stasisDuration);
+        initiatedPeers.erase(peerAddr);
+        peerSource.push(peerAddr, stasisDuration);
         peerSetCond.notify_one();
     }
 
@@ -262,9 +261,7 @@ public:
      * @param[in]     serverSockAddr  Socket address to be used by the server
      *                                that remote peers connect to
      * @param[in]     maxPeers        Maximum number of active peers
-     * @param[in]     peerAddrs       Potential remote peers to contact or
-     *                                `nullptr`, in which case no remote peers
-     *                                are contacted
+     * @param[in]     peerSource      Source of potential remote peers
      * @param[in]     stasisDuration  Time interval over which the set of active
      *                                peers must be unchanged before the worst
      *                                performing peer may be replaced
@@ -272,10 +269,10 @@ public:
      */
     Impl(   const InetSockAddr&       serverSockAddr,
             const unsigned            maxPeers,
-            DelayQueue<InetSockAddr>  peerAddrs,
+            PeerSource&               peerSource,
             const PeerSet::TimeUnit   stasisDuration,
             PeerMsgRcvr&              msgRcvr)
-        : peerAddrs{peerAddrs}
+        : peerSource(peerSource)
         , serverSockAddr{serverSockAddr}
         , msgRcvr(&msgRcvr)
         , peerSet{stasisDuration*2, maxPeers,
@@ -307,7 +304,7 @@ public:
     void operator()()
     {
         UniqueLock lock(exceptMutex);
-        if (peerAddrs.size())
+        if (!peerSource.empty())
             peerAddrThread = Thread{[this]{runPeerAdder();}};
         try {
             THREAD_CLEANUP_PUSH(stopThreads, this);
@@ -391,10 +388,10 @@ P2pMgr::Impl::NilMsgRcvr P2pMgr::Impl::nilMsgRcvr;
 P2pMgr::P2pMgr(
         const InetSockAddr&      serverSockAddr,
         PeerMsgRcvr&             msgRcvr,
+        PeerSource&              peerSource,
         const unsigned           maxPeers,
-        DelayQueue<InetSockAddr> peerAddrs,
         const PeerSet::TimeUnit  stasisDuration)
-    : pImpl{new Impl(serverSockAddr, maxPeers, peerAddrs, stasisDuration,
+    : pImpl{new Impl(serverSockAddr, maxPeers, peerSource, stasisDuration,
             msgRcvr)}
 {}
 

@@ -37,7 +37,6 @@ protected:
                 data[i] = i % UCHAR_MAX;
         prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
         auto peerAddr = hycast::InetSockAddr(srvrInetAddr, srcPort);
-        peerAddrs.push(peerAddr);
     }
 
     /**
@@ -64,8 +63,8 @@ protected:
     const hycast::InetSockAddr      srcSrvrAddr{srvrInetAddr, srcPort};
     const hycast::InetSockAddr      snkSrvrAddr{srvrInetAddr, snkPort};
     const unsigned                  maxPeers{2};
-    hycast::DelayQueue<hycast::InetSockAddr>
-                                    peerAddrs{};
+    hycast::YamlPeerSource          peerSource{"[{inetAddr: " + srvrInetAddr +
+    	    ", port: " + std::to_string(srcPort) + "}]"};
     const hycast::PeerSet::TimeUnit stasisDuration{2};
     hycast::ProdIndex               prodIndex{0};
     unsigned char                   data[3000];
@@ -110,22 +109,16 @@ public:
     }
 };
 
-// Tests invalid construction argument
-TEST_F(P2pMgrTest, InvalidConstruction) {
-    hycast::InetSockAddr serverAddr("localhost", 38800);
-    EXPECT_THROW(hycast::P2pMgr(serverAddr, *this, 0), std::invalid_argument);
-}
-
 // Tests construction
 TEST_F(P2pMgrTest, Construction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    hycast::P2pMgr(serverAddr, *this);
+    hycast::P2pMgr(serverAddr, *this, peerSource);
 }
 
 // Tests execution
 TEST_F(P2pMgrTest, Execution) {
     hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
-    hycast::P2pMgr   p2pMgr{snkSrvrAddr, *this, maxPeers, peerAddrs,
+    hycast::P2pMgr   p2pMgr{snkSrvrAddr, *this, peerSource, maxPeers,
             stasisDuration};
     std::thread p2pMgrThread{[&]{runP2pMgr(p2pMgr);}};
     ::sleep(1);

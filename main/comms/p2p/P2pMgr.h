@@ -14,7 +14,6 @@
 #ifndef MAIN_P2P_P2PMGR_H_
 #define MAIN_P2P_P2PMGR_H_
 
-#include "DelayQueue.h"
 #include "InetSockAddr.h"
 #include "MsgRcvr.h"
 #include "Notifier.h"
@@ -28,21 +27,19 @@ namespace hycast {
 struct P2pInfo final
 {
     /// Socket address to be used by the server that remote peers connect to
-    InetSockAddr             serverSockAddr;
+    InetSockAddr      serverSockAddr;
 
     /// Canonical number of active peers
-    unsigned                 peerCount;
+    unsigned          peerCount;
 
-    /**
-     * Source of potential replacement peers.
-     */
-    DelayQueue<InetSockAddr> peerAddrs;
+    /// Source of potential replacement peers.
+    PeerSource&       peerSource;
 
     /**
      * Time interval, in seconds, over which the set of active peers must be
      * unchanged before the worst performing peer may be replaced
      */
-    PeerSet::TimeUnit       stasisDuration;
+    PeerSet::TimeUnit stasisDuration;
 };
 
 class P2pMgr final : public Notifier
@@ -56,10 +53,9 @@ public:
      * @param[in] serverSockAddr  Socket address to be used by the server that
      *                            remote peers connect to
      * @param[in] msgRcvr         Receiver of messages from remote peers
+     * @param[in] peerSource      Source of potential remote peers
      * @param[in] maxPeers        Maximum number of active peers. Default is
      *                            `PeerSet::defaultMaxPeers`.
-     * @param[in] peerAddrs       Addresses of potential peers. Default is an
-     *                            empty set.
      * @param[in] stasisDuration  Time interval, in units of
      *                            `PeerSet::TimeUnit`, over which the set
      *                            of active peers must be unchanged before the
@@ -68,8 +64,8 @@ public:
      */
     P2pMgr( const InetSockAddr&      serverSockAddr,
             PeerMsgRcvr&             msgRcvr,
+            PeerSource&              peerSource,
             const unsigned           maxPeers = PeerSet::defaultMaxPeers,
-            DelayQueue<InetSockAddr> peerAddrs = DelayQueue<InetSockAddr>(),
             const PeerSet::TimeUnit  stasisDuration = PeerSet::TimeUnit{60});
 
     /**
@@ -77,10 +73,10 @@ public:
      * @param[in] p2pInfo  Information for the peer-to-peer component
      * @param[in] msgRcvr  Receiver of messages from remote peers
      */
-    P2pMgr( const P2pInfo& p2pInfo,
+    P2pMgr( P2pInfo& p2pInfo,
             PeerMsgRcvr&   msgRcvr)
-    	: P2pMgr(p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerCount,
-    	        p2pInfo.peerAddrs, p2pInfo.stasisDuration)
+    	: P2pMgr(p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerSource,
+                p2pInfo.peerCount, p2pInfo.stasisDuration)
     {}
 
     /**

@@ -42,7 +42,7 @@ public:
      */
     Receiving(
             const SrcMcastInfo& srcMcastInfo,
-            const P2pInfo&      p2pInfo,
+            P2pInfo&            p2pInfo,
             Processing&         processing,
             const unsigned      version,
             const std::string&  pathname = "");

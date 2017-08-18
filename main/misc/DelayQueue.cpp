@@ -149,7 +149,7 @@ public:
     Value pop()
     {
         UniqueLock lock{mutex};
-        while (queue.size() == 0)
+        while (queue.empty())
             cond.wait(lock);
         for (TimePoint time = queue.top().getTime(); time > Clock::now();
                 time = queue.top().getTime())
@@ -159,16 +159,17 @@ public:
         return value;
     }
 
-    /**
-     * Returns the number of values in the queue.
-     * @return  The number of values in the queue.
-     * @exceptionsafety Nothrow
-     * @threadsafety    Safe
-     */
-    size_t size() const noexcept
+    bool empty() const noexcept
     {
         LockGuard lock{mutex};
-        return queue.size();
+        return queue.empty();
+    }
+
+    void clear() noexcept
+    {
+        LockGuard lock{mutex};
+        while (!queue.empty())
+            queue.pop();
     }
 };
 
@@ -192,9 +193,15 @@ Value DelayQueue<Value, Dur>::pop() const
 }
 
 template<typename Value, typename Dur>
-size_t DelayQueue<Value, Dur>::size() const noexcept
+bool DelayQueue<Value, Dur>::empty() const noexcept
 {
-    return pImpl->size();
+    return pImpl->empty();
+}
+
+template<typename Value, typename Dur>
+void DelayQueue<Value, Dur>::clear() noexcept
+{
+    return pImpl->clear();
 }
 
 } // namespace

@@ -40,3 +40,4 @@ script: if [ ${COVERITY_SCAN_BRANCH} != 1 ]; then make all check >&make.log; fi
 after_failure:
   - cat config.log
   - cat make.log
+  - files=`find . -name test-suite.log`; if -n "$files" && cat $files

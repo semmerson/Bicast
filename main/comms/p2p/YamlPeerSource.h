@@ -1,11 +1,12 @@
 /**
- * This file declares a source of peers based on a YAML document.
+ * This file declares a source of potential remote peers based on a YAML
+ * document.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: JsonPeerSource.h
+ *   @file: YamlPeerSource.h
  * @author: Steven R. Emmerson
  */
 
@@ -21,18 +22,15 @@ namespace hycast {
 
 class YamlPeerSource : public PeerSource
 {
-    class Impl;
-    std::shared_ptr<Impl> pImpl;
-
 public:
     /**
      * Constructs.
-     * @param[in] node          YAML node containing peer specifications
-     * @throws InvalidArgument  Node isn't a sequence
-     * @throws InvalidArgument  Sequence element isn't a map
-     * @exceptionsafety         Strong guarantee
+     * @param[in] peerAddrs        YAML node containing peer addresses
+     * @throws    InvalidArgument  Node isn't a sequence
+     * @throws    InvalidArgument  Sequence element isn't a map
+     * @exceptionsafety            Strong guarantee
      */
-    YamlPeerSource(YAML::Node node);
+    YamlPeerSource(YAML::Node peerAddrs);
 
     /**
      * Constructs.
@@ -53,19 +51,6 @@ public:
      * @exceptionsafety         Strong guarantee
      */
     YamlPeerSource(std::istream& istream);
-
-    /**
-     * Returns an iterator over the potential peers. Blocks if no peers are
-     * available.
-     * @return Iterator over potential peers
-     */
-    Iterator getPeers();
-
-    /**
-     * Returns the "end" iterator.
-     * @return End iterator
-     */
-    Iterator end();
 };
 
 } // namespace

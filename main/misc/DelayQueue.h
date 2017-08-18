@@ -64,12 +64,20 @@ public:
     Value pop() const;
 
     /**
-     * Returns the number of values in the queue.
-     * @return  The number of values in the queue.
+     * Indicates if the queue is empty.
+     * @return `true`   The queue is empty
+     * @return `false`  The queue is not empty
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    size_t size() const noexcept;
+    bool empty() const noexcept;
+
+    /**
+     * Clears the queue of all elements.
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    void clear() noexcept;
 };
 
 } // namespace

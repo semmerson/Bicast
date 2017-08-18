@@ -17,7 +17,7 @@ lib_la_SOURCES 	= \
 	MsgRcvrImpl.h \
 	MsgRcvr.h \
 	PeerSet.cpp PeerSet.h \
-	PeerSource.h \
+	PeerSource.cpp PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
 	ChunkGram.cpp ChunkGram.h \
 	YamlPeerSource.cpp YamlPeerSource.h
