@@ -32,7 +32,7 @@ struct P2pInfo final
     /// Canonical number of active peers
     unsigned          peerCount;
 
-    /// Source of potential replacement peers.
+    /// Source of potential remote peers.
     PeerSource&       peerSource;
 
     /**
@@ -40,6 +40,16 @@ struct P2pInfo final
      * unchanged before the worst performing peer may be replaced
      */
     PeerSet::TimeUnit stasisDuration;
+
+    P2pInfo(const InetSockAddr&      serverSockAddr,
+            const unsigned           maxPeers,
+            PeerSource&              peerSource,
+            const PeerSet::TimeUnit  stasisDuration)
+    : serverSockAddr{serverSockAddr}
+    , peerCount{maxPeers}
+    , peerSource(peerSource)
+    , stasisDuration{stasisDuration}
+    {}
 };
 
 class P2pMgr final : public Notifier

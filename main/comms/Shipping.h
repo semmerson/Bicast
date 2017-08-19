@@ -45,10 +45,10 @@ public:
     Shipping(
             ProdStore&              prodStore,
             const InetSockAddr&     mcastAddr,
-			const unsigned          version,
-			const unsigned          maxPeers,
-			const PeerSet::TimeUnit stasisDuration,
-			const InetSockAddr&     serverAddr);
+            const unsigned          version,
+            const unsigned          maxPeers,
+            const PeerSet::TimeUnit stasisDuration,
+            const InetSockAddr&     serverAddr);
 
     /**
      * Constructs. The default maximum number of peers and default stasis
@@ -64,10 +64,10 @@ public:
     Shipping(
             ProdStore&          prodStore,
             const InetSockAddr& mcastAddr,
-			const unsigned      version,
-			const InetSockAddr& serverAddr)
+            const unsigned      version,
+            const InetSockAddr& serverAddr)
     	: Shipping(prodStore, mcastAddr, version, PeerSet::defaultMaxPeers,
-    			PeerSet::TimeUnit{60}, serverAddr)
+                PeerSet::TimeUnit{60}, serverAddr)
     {}
 
     /**

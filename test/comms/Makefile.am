@@ -9,11 +9,11 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main \
                   -I$(top_srcdir)/main/comms/p2p
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 
-check_PROGRAMS	= Shipping_test
-#	          Receiving_test
+check_PROGRAMS	= Shipping_test \
+	          Receiving_test
 
 Shipping_test_SOURCES		= Shipping_test.cpp
-#Receiving_test_SOURCES		= Receiving_test.cpp
+Receiving_test_SOURCES		= Receiving_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

@@ -8,7 +8,9 @@
  *   @file: Receiving_test.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
+#include "Interface.h"
 #include "McastSender.h"
 #include "P2pMgr.h"
 #include "PeerSet.h"
@@ -34,16 +36,11 @@ protected:
     }
 
     ReceivingTest()
+        : p2pInfo{serverAddr, maxPeers, peerSource, stasisDuration}
     {
         // gcc 4.8 doesn't support non-trivial designated initializers
-        p2pInfo.peerCount = maxPeers;
-        p2pInfo.peerSource = &peerSource;
-        p2pInfo.serverSockAddr = serverAddr;
-        p2pInfo.stasisDuration = stasisDuration;
-
-        // gcc 4.8 doesn't support non-trivial designated initializers
         srcMcastInfo.mcastAddr = mcastAddr;
-        srcMcastInfo.srcAddr = hycast::InetAddr(serverInetAddr);
+        srcMcastInfo.srcAddr = serverInetAddr;
 
         unsigned char data[128000];
         for (size_t i = 0; i < sizeof(data); ++i)
@@ -56,12 +53,14 @@ protected:
     hycast::ProdStore               prodStore{};
     const in_port_t                 port{38800};
     const hycast::InetSockAddr      mcastAddr{"232.0.0.0", port};
-    const std::string               serverInetAddr{"192.168.132.128"};
+    const hycast::InetAddr          serverInetAddr{
+            hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)};
     hycast::InetSockAddr            serverAddr{serverInetAddr, port};
     const unsigned                  protoVers{0};
     hycast::McastSender             mcastSender{mcastAddr, protoVers};
-    hycast::YamlPeerSource          peerSource{"[{inetAddr: " + serverInetAddr +
-    	    ", port: " + std::to_string(port) + "}]"};
+    hycast::YamlPeerSource          peerSource{"[{inetAddr: " +
+            serverInetAddr.to_string() + ", port: " + std::to_string(port) +
+            "}]"};
     hycast::ProdIndex               prodIndex{0};
     const unsigned                  maxPeers = 1;
     const hycast::PeerSet::TimeUnit stasisDuration{2};
@@ -81,20 +80,20 @@ TEST_F(ReceivingTest, Construction) {
 // Tests shipping and receiving a product
 TEST_F(ReceivingTest, ShippingAndReceiving) {
 	// Create shipper
-    hycast::Shipping shipping{prodStore, mcastAddr, version, peerSet,
-    	serverAddr};
+    hycast::Shipping shipping{prodStore, mcastAddr, version, maxPeers,
+    	stasisDuration, serverAddr};
 
-    ::sleep(1);
+    ::usleep(100000);
 
     // Create receiver
     hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, version};
 
-    ::sleep(1);
+    ::usleep(100000);
 
     // Ship product
     shipping.ship(prod);
 
-    ::sleep(1);
+    ::usleep(100000);
 }
 
 }  // namespace

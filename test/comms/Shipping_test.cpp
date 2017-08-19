@@ -8,7 +8,9 @@
  *   @file: Shipping.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
+#include "Interface.h"
 #include "Shipping.h"
 #include "YamlPeerSource.h"
 
@@ -25,7 +27,8 @@ protected:
     hycast::ProdStore          prodStore{};
     const in_port_t            port{38800};
     const hycast::InetSockAddr mcastAddr{"232.0.0.0", port};
-    const hycast::InetAddr     serverInetAddr{"192.168.132.131"};
+    const hycast::InetAddr     serverInetAddr{
+            hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)};
     hycast::InetSockAddr       serverAddr{serverInetAddr, port};
     const unsigned             protoVers{0};
 };
