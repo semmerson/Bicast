@@ -1,11 +1,11 @@
 /**
- * This file tests class hycast::Receiving.
+ * This file tests classes hycast::Shipping and hycast::Receiving.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- *   @file: Receiving_test.cpp
+ *   @file: ShipRecv_test.cpp
  * @author: Steven R. Emmerson
  */
 #include "config.h"
@@ -27,7 +27,7 @@
 namespace {
 
 // The fixture for testing class Receiving.
-class ReceivingTest : public ::testing::Test, public hycast::Processing
+class ShipRecvTest : public ::testing::Test, public hycast::Processing
 {
 protected:
     void process(hycast::Product prod)
@@ -35,7 +35,7 @@ protected:
         EXPECT_EQ(this->prod, prod);
     }
 
-    ReceivingTest()
+    ShipRecvTest()
         : p2pInfo{serverAddr, maxPeers, peerSource, stasisDuration}
     {
         // gcc 4.8 doesn't support non-trivial designated initializers
@@ -68,25 +68,29 @@ protected:
     hycast::P2pInfo                 p2pInfo;
     // gcc 4.8 doesn't support non-trivial designated initializers
     hycast::SrcMcastInfo            srcMcastInfo;
-    const unsigned                  version = 0;
     hycast::Product                 prod{};
 };
 
-// Tests construction
-TEST_F(ReceivingTest, Construction) {
-    hycast::Receiving{srcMcastInfo, p2pInfo, *this, version};
+// Tests shipping construction
+TEST_F(ShipRecvTest, ShippingConstruction) {
+    hycast::Shipping(prodStore, mcastAddr, protoVers, serverAddr);
+}
+
+// Tests receiving construction
+TEST_F(ShipRecvTest, ReceivingConstruction) {
+    hycast::Receiving{srcMcastInfo, p2pInfo, *this, protoVers};
 }
 
 // Tests shipping and receiving a product
-TEST_F(ReceivingTest, ShippingAndReceiving) {
+TEST_F(ShipRecvTest, ShippingAndReceiving) {
 	// Create shipper
-    hycast::Shipping shipping{prodStore, mcastAddr, version, maxPeers,
+    hycast::Shipping shipping{prodStore, mcastAddr, protoVers, maxPeers,
     	stasisDuration, serverAddr};
 
     ::usleep(100000);
 
     // Create receiver
-    hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, version};
+    hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, protoVers};
 
     ::usleep(100000);
 
