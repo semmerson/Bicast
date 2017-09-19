@@ -13,7 +13,6 @@
 #include "InetSockAddr.h"
 #include "Interface.h"
 #include "SctpSock.h"
-#include "SrvrSctpSock.h"
 
 #include <arpa/inet.h>
 #include <atomic>
@@ -83,8 +82,6 @@ void runClient(hycast::SctpSock sock)
     sock.recvv(iov, sizeof(iov)/sizeof(iov[0]), 0);
     for (unsigned i = 0; i < sizeof(outBuf); ++i)
         EXPECT_EQ(outBuf[i], inBuf[i]);
-
-    sock.close();
 }
 
 // The fixture for testing class Socket.
@@ -143,9 +140,8 @@ protected:
 
 // Tests invalid argument
 TEST_F(SctpTest, InvalidArgument) {
-    EXPECT_THROW(hycast::SctpSock(srvrAddr, -1), hycast::InvalidArgument);
-    EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, -1), hycast::RuntimeError);
-    EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, 1, -1), hycast::RuntimeError);
+    EXPECT_THROW(hycast::SctpSock(srvrAddr, -1), std::exception);
+    EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, -1), std::exception);
 }
 
 // Tests destruction
@@ -206,6 +202,12 @@ TEST_F(SctpTest, CopyAssignmentToSelf) {
     EXPECT_TRUE(is_open(sd1));
 }
 
+// Tests setting buffer sizes
+TEST_F(SctpTest, BufferSizes) {
+    hycast::SrvrSctpSock s{srvrAddr};
+    auto size = s.getSendBufSize();
+}
+
 // Tests equality operator
 TEST_F(SctpTest, EqualityOperator) {
     hycast::SrvrSctpSock s1{srvrAddr};
@@ -218,8 +220,8 @@ TEST_F(SctpTest, EqualityOperator) {
 TEST_F(SctpTest, ToString) {
     hycast::SrvrSctpSock s1{srvrAddr};
     //std::cout << s1.to_string() << '\n';
-    std::string expect{"SrvrSctpSock{sd: " + std::to_string(s1.getSock()) +
-            ", numStreams: " + std::to_string(s1.getNumStreams()) + "}"};
+    std::string expect{"{sd=" + std::to_string(s1.getSock()) +
+            ", numStreams=" + std::to_string(s1.getNumStreams()) + "}"};
     EXPECT_STREQ(expect.data(), s1.to_string().data());
 }
 
@@ -236,8 +238,9 @@ TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
         }
     } server{hycast::SrvrSctpSock{srvrAddr, numStreams}};
     std::thread srvrThread = std::thread(server);
-    hycast::SctpSock clntSock{srvrAddr, numStreams};
-    clntSock.close();
+    {
+        hycast::SctpSock clntSock{srvrAddr, numStreams};
+    }
     srvrThread.join();
 }
 

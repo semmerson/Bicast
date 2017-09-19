@@ -23,35 +23,39 @@ namespace hycast {
 template<class T>
 class SyncQueue<T>::Impl final
 {
-	std::mutex              mutex;
-	std::condition_variable cond;
-	T                       obj;
-	bool                    haveObj;
+    std::mutex              mutex;
+    std::condition_variable cond;
+    T                       obj;
+    bool                    haveObj;
 
 public:
-	Impl()
-		: haveObj{false}
-	{}
+    Impl()
+        : haveObj{false}
+    {}
 
-	void push(T obj)
-	{
-		std::unique_lock<decltype(mutex)> lock{mutex};
-		this->obj = obj;
-		haveObj = true;
-		cond.notify_one();
-		while (haveObj)
-			cond.wait(lock);
-	}
+    void push(T obj)
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        this->obj = obj;
+        haveObj = true;
+        cond.notify_one();
+        while (haveObj) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+    }
 
-	T pop()
-	{
-		std::unique_lock<decltype(mutex)> lock{mutex};
-		while (!haveObj)
-			cond.wait(lock);
-		haveObj = false;
-		cond.notify_one();
-		return obj;
-	}
+    T pop()
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (!haveObj) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+        haveObj = false;
+        cond.notify_one();
+        return obj;
+    }
 };
 
 } // namespace

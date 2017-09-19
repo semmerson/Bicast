@@ -191,10 +191,10 @@ public:
     /**
      * Connects a socket to this instance's endpoint.
      * @param[in] sd        Socket descriptor
-     * @returns  This instance
-     * @throws std::system_error
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
+     * @returns             This instance
+     * @throws SystemError  Connection failure
+     * @exceptionsafety     Strong
+     * @threadsafety        Safe
      */
     const InetSockAddr& connect(int sd) const;
 

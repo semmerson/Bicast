@@ -59,7 +59,7 @@ public:
         , size(size)
     {
         if (name.size() > UINT16_MAX)
-            throw InvalidArgument(__FILE__, __LINE__, "Name too long: " +
+            throw INVALID_ARGUMENT("Name too long: " +
                     std::to_string(name.size()) + " bytes");
     }
 
@@ -69,8 +69,8 @@ public:
      */
     std::string to_string() const
     {
-        return "ProdInfo(name=\"" + name + "\", index=" + std::to_string(index)
-                + ", size=" + std::to_string(size) + ")";
+        return "{name=\"" + name + "\", index=" + std::to_string(index)
+                + ", size=" + std::to_string(size) + "}";
     }
 
     /**
@@ -148,8 +148,7 @@ public:
     ChunkSize getChunkSize(ChunkIndex index) const
     {
         if (index >= getNumChunks())
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Invalid chunk-index: max=" +
+            throw INVALID_ARGUMENT("Invalid chunk-index: max=" +
                     std::to_string(getNumChunks()-1) + ", index=" +
                     std::to_string(index));
         return (index + 1 < getNumChunks())
@@ -179,9 +178,9 @@ public:
     ChunkOffset getOffset(const ChunkIndex chunkIndex) const
     {
         if (chunkIndex >= getNumChunks())
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Chunk-index is too great: index=" + std::to_string(chunkIndex)
-                    + ", numChunks=" + std::to_string(getNumChunks()));
+            throw INVALID_ARGUMENT("Chunk-index is too great: index=" +
+                    std::to_string(chunkIndex) + ", numChunks=" +
+                    std::to_string(getNumChunks()));
         return ChunkInfo::getOffset(chunkIndex);
     }
 
@@ -200,12 +199,11 @@ public:
             const ChunkSize  chunkSize) const
     {
         if (chunkInfo.getProdIndex() != index)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Wrong product-index: expected=" + std::to_string(index) +
-                    ", actual=" + std::to_string(chunkInfo.getProdIndex()));
+            throw INVALID_ARGUMENT("Wrong product-index: expected=" +
+                    std::to_string(index) + ", actual=" +
+                    std::to_string(chunkInfo.getProdIndex()));
         if (chunkSize != chunkInfo.getSize())
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Unexpected chunk size: expected=" +
+            throw INVALID_ARGUMENT("Unexpected chunk size: expected=" +
                     std::to_string(chunkInfo.getSize()) +
                     ", actual=" + std::to_string(chunkSize));
     }

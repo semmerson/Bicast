@@ -13,7 +13,7 @@
 #include "InetSockAddr.h"
 #include "ProdIndex.h"
 #include "SctpSock.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 
 #include <arpa/inet.h>
 #include <cstring>

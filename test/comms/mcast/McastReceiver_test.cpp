@@ -107,7 +107,7 @@ protected:
             mcastRcvr();
         }
         catch (std::exception& e) {
-            hycast::log_what(e);
+            hycast::log_error(e);
         }
     }
 

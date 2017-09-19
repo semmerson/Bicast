@@ -1,7 +1,7 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/net \
 		  -I$(top_srcdir)/main/prod \
 		  -I$(top_srcdir)/main/misc
-AM_LDFLAGS	= $(top_builddir)/main/libhycast.la -lgtest -lsctp
+LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 
 check_PROGRAMS	= ProdIndex_test \
 		  ProdInfo_test \

@@ -11,6 +11,7 @@
 #include "config.h"
 
 #include "FixedDelayQueue.h"
+#include "Thread.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -126,10 +127,15 @@ public:
     Value pop()
     {
         std::unique_lock<std::mutex> lock(mutex);
-        while (queue.size() == 0)
+        while (queue.size() == 0) {
+            Canceler canceler{};
             cond.wait(lock);
-        for (const TimePoint time = queue.front().getTime(); time > Clock::now(); )
+        }
+        for (const TimePoint time = queue.front().getTime();
+                time > Clock::now(); ) {
+            Canceler canceler{};
             cond.wait_until(lock, time);
+        }
         Value value = queue.front().getValue();
         queue.pop();
         cond.notify_one();

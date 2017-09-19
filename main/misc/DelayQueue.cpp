@@ -12,6 +12,7 @@
 #include "config.h"
 
 #include "DelayQueue.h"
+#include "Thread.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -149,11 +150,15 @@ public:
     Value pop()
     {
         UniqueLock lock{mutex};
-        while (queue.empty())
+        while (queue.empty()) {
+            Canceler canceler{};
             cond.wait(lock);
+        }
         for (TimePoint time = queue.top().getTime(); time > Clock::now();
-                time = queue.top().getTime())
+                time = queue.top().getTime()) {
+            Canceler canceler{};
             cond.wait_until(lock, time);
+        }
         auto value = queue.top().getValue();
         queue.pop();
         return value;

@@ -18,7 +18,6 @@
 #include "PeerSet.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
-#include "SrvrSctpSock.h"
 
 #include <gtest/gtest.h>
 #include <pthread.h>
@@ -98,7 +97,7 @@ protected:
                     peerSet.tryInsert(peer);
                 }
                 catch (const std::exception& e) {
-                    hycast::log_what(e);
+                    hycast::log_warn(e);
                 }
             }
         }
@@ -114,7 +113,7 @@ protected:
             if (thread.joinable()) {
                 auto status = ::pthread_cancel(thread.native_handle());
                 if (status)
-                    hycast::log_what(hycast::SystemError(__FILE__, __LINE__,
+                    hycast::log_error(hycast::SYSTEM_ERROR(
                             "Couldn't cancel server thread", status));
                 thread.join();
             }
@@ -162,7 +161,7 @@ TEST_F(PeerSetTest, IncrementPeerValue) {
         EXPECT_NO_THROW(peerSet.incValue(peer));
     }
     catch (const std::exception& e) {
-        hycast::log_what(e);
+        hycast::log_error(e);
     }
 }
 
@@ -182,13 +181,13 @@ TEST_F(PeerSetTest, RemoveWorst) {
         EXPECT_EQ(1, peerSet.size());
     }
     catch (const std::exception& e) {
-        hycast::log_what(e);
+        hycast::log_error(e);
     }
 }
 
 // Tests inserting a peer and sending notices
 TEST_F(PeerSetTest, PeerInsertionAndNotices) {
-    Server server{server1SockAddr};
+    Server           server{server1SockAddr};
     hycast::Peer     peer{getClientPeer(server1SockAddr)};
     hycast::PeerSet  peerSet{2};
     EXPECT_TRUE(peerSet.tryInsert(peer));

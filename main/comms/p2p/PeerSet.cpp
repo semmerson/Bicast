@@ -192,8 +192,10 @@ class PeerSet::Impl final
             std::shared_ptr<PeerSet::Impl::SendAction> pop()
             {
                 UniqueLock lock{mutex};
-                while (queue.empty())
+                while (queue.empty()) {
+                    Canceler canceler{};
                     cond.wait(lock);
+                }
                 auto action = queue.front();
                 queue.pop();
                 return action;
@@ -236,7 +238,7 @@ class PeerSet::Impl final
                 }
             }
             catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                std::throw_with_nested(RUNTIME_ERROR(
                         "Can no longer send to remote peer"));
             }
         }
@@ -252,7 +254,7 @@ class PeerSet::Impl final
                 peer.runReceiver();
             }
             catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                std::throw_with_nested(RUNTIME_ERROR(
                         "Can no longer receive from remote peer: " +
                         peer.to_string()));
             }
@@ -465,9 +467,13 @@ public:
     	try {
     	    try {
                 for (;;) {
-                    Thread::enableCancel();
                     auto future = completer.take(); // Blocks
-                    Thread::disableCancel();
+                    try {
+                        future.getResult();
+                    }
+                    catch (const std::exception& ex) {
+                        log_warn(ex);
+                    }
                     mutex.lock();
                     std::pair<bool, InetSockAddr> pair = erasePeer(future);
                     mutex.unlock();
@@ -476,7 +482,7 @@ public:
                 }
             }
     	    catch (const std::exception& e) {
-    	        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+    	        std::throw_with_nested(RUNTIME_ERROR(
     	                "Error handling stopped peers"));
     	    }
     	}
@@ -513,11 +519,9 @@ public:
         , timeLastInsert{Clock::now()}
     {
         if (maxPeers == 0)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Maximum number of peers can't be zero");
+            throw INVALID_ARGUMENT("Maximum number of peers can't be zero");
         if (stasisDuration < TimeUnit{0})
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Stasis duration can't be negative");
+            throw INVALID_ARGUMENT("Stasis duration can't be negative");
     }
 
     /**
@@ -550,7 +554,6 @@ public:
     bool tryInsert(Peer& peer)
     {
         bool         inserted;
-        bool         cancelEnabled;
         InetSockAddr peerAddr{};
         {
             UniqueLock lock{mutex};
@@ -558,9 +561,10 @@ public:
                 std::rethrow_exception(exception);
             for (auto timeNextAttempt = timeLastInsert + stasisDuration;
                     full() && Clock::now() < timeNextAttempt;
-                    timeNextAttempt = timeLastInsert + stasisDuration)
+                    timeNextAttempt = timeLastInsert + stasisDuration) {
+                Canceler canceler{};
                 cond.wait_until(lock, timeNextAttempt);
-            cancelEnabled = Thread::disableCancel();
+            }
             if (addrToEntryMap.find(peer.getRemoteAddr()) != addrToEntryMap.end()) {
                 inserted = false;
             }
@@ -571,7 +575,6 @@ public:
                 inserted = true;
             }
         }
-        Thread::enableCancel(cancelEnabled);
         if (peerAddr)
             peerStopped(peerAddr);
         return inserted;

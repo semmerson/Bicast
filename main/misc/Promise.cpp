@@ -52,8 +52,10 @@ protected:
      */
     void wait(UniqueLock& lock) const
     {
-        while (!done())
+        while (!done()) {
+            Canceler canceler{};
             cond.wait(lock);
+        }
     }
 
 public:
@@ -111,8 +113,7 @@ public:
         if (exception)
             std::rethrow_exception(exception);
         if (canceled)
-            throw LogicError(__FILE__, __LINE__,
-                    "Asynchronous task was cancelled");
+            throw LogicError("Asynchronous task was cancelled");
     }
 };
 

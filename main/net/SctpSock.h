@@ -18,19 +18,126 @@
 
 namespace hycast {
 
-class SrvrSctpSock;
-
-class SctpSock final
+/**
+ * Abstract base class for an SCTP socket.
+ */
+class BaseSctpSock
 {
-    friend SrvrSctpSock;
-
+protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
     /**
+     * Constructs from the implementation of a derived class.
+     * @param[in] impl  Implementation of a derived class
+     */
+    explicit BaseSctpSock(Impl* impl);
+
+public:
+    /**
+     * Creates an SCTP-compatible BSD socket.
+     * @return SCTP-compatible socket descriptor
+     */
+    static int createSocket();
+
+    /**
+     * Default constructs.
+     */
+    BaseSctpSock() =default;
+
+    /**
+     * Destroys. Closes the underlying BSD socket if this instance holds the
+     * last reference to it.
+     */
+    virtual ~BaseSctpSock() noexcept =0;
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  Other instance
+     * @return         This instance
+     */
+    BaseSctpSock& operator=(const BaseSctpSock& rhs);
+
+    /**
+     * Returns the number of SCTP streams.
+     * @return the number of SCTP streams
+     */
+    uint16_t getNumStreams() const;
+
+    /**
+     * Returns the size of the send buffer.
+     * @return  Size of the send buffer in bytes
+     */
+    int getSendBufSize() const;
+
+    /**
+     * Sets the size of the send buffer.
+     * @param[in] size     Send buffer size in bytes
+     * @return             Reference to this instance
+     * @throw SystemError  Size couldn't be set
+     */
+    BaseSctpSock& setSendBufSize(const int size);
+
+    /**
+     * Returns the size of the receive buffer.
+     * @return  Size of the receive buffer in bytes
+     */
+    int getRecvBufSize() const;
+
+    /**
+     * Sets the size of the receive buffer.
+     * @param[in] size     Receive buffer size in bytes
+     * @return             Reference to this instance
+     * @throw SystemError  Size couldn't be set
+     */
+    BaseSctpSock& setRecvBufSize(const int size);
+
+    /**
+     * Returns the socket descriptor.
+     * @return socket descriptor
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Safe
+     */
+    int getSock() const noexcept;
+
+    /**
+     * Indicates if this instance equals another.
+     * @param[in] that  Other instance
+     * @retval `true`   This instance equals the other
+     * @retval `false`  This instance doesn't equal the other
+     * @exceptionsafety Nothrow
+     */
+    bool operator==(const BaseSctpSock& that) const noexcept;
+
+    /**
+     * Returns a string representation of this instance's socket.
+     * @return String representation of this instance's socket
+     * @throws std::bad_alloc if required memory can't be allocated
+     * @exceptionsafety Strong
+     * @threadsafety    Safe
+     */
+    std::string to_string() const;
+};
+
+/******************************************************************************/
+
+/**
+ * An established SCTP socket (i.e., one with an SCTP association).
+ */
+class SctpSock final : public BaseSctpSock
+{
+    class Impl;
+
+public:
+    /**
+     * Default constructs.
+     */
+    SctpSock();
+
+    /**
      * Constructs.
-     * @param[in] sd                 SCTP-compatible socket descriptor as if
-     *                               from `::socket()` or `::accept()`
+     * @param[in] sd                 SCTP-compatible socket descriptor from
+     *                               `::socket()` or `::accept()`
      * @param[in] numStreams         Number of SCTP streams
      * @throws std::InvalidArgument  `numStreams < 0 || numStreams > UINT16_MAX`
      * @throws std::system_error     `getpeername(sd)` failed
@@ -43,34 +150,11 @@ class SctpSock final
             const int numStreams);
 
     /**
-     * Constructs from a shared pointer to an SCTP socket implementation.
-     * @param[in] sptr  Shared pointer to implementation
-     */
-    explicit SctpSock(std::shared_ptr<Impl> sptr);
-
-    /**
-     * Constructs from a socket implementation.
-     * @param[in] impl  The implementation
-     */
-    explicit SctpSock(Impl* impl);
-
-    /**
-     * Creates an SCTP-compatible BSD socket.
-     * @return Corresponding socket descriptor
-     */
-    static int createSocket();
-
-public:
-    /**
-     * Default constructs.
-     */
-    SctpSock();
-
-    /**
      * Constructs a client-side SCTP socket. Blocks until connected.
      * @param[in] addr        Internet address of the server
      * @param[in] numStreams  Number of SCTP streams
      * @return                Corresponding SCTP socket
+     * @throw SystemError     Connection failure
      * @see Socket::~Socket()
      * @see Socket::operator=(Socket& socket)
      * @see Socket::operator=(Socket&& socket)
@@ -93,42 +177,10 @@ public:
     SctpSock& operator=(const SctpSock& rhs);
 
     /**
-     * Returns the number of SCTP streams.
-     * @return the number of SCTP streams
-     */
-    uint16_t getNumStreams() const;
-
-    /**
-     * Returns the socket descriptor.
-     * @return socket descriptor
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    int getSock() const noexcept;
-
-    /**
      * Returns the Internet socket address of the remote end.
      * @return Internet socket address of the remote end
      */
-    const InetSockAddr& getRemoteAddr();
-
-    /**
-     * Indicates if this instance equals another.
-     * @param[in] that  Other instance
-     * @retval `true`   This instance equals the other
-     * @retval `false`  This instance doesn't equal the other
-     * @exceptionsafety Nothrow
-     */
-    bool operator==(const SctpSock& that) const noexcept;
-
-    /**
-     * Returns a string representation of this instance's socket.
-     * @return String representation of this instance's socket
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @exceptionsafety Strong
-     * @threadsafety    Safe
-     */
-    std::string to_string() const;
+    InetSockAddr getRemoteAddr() const;
 
     /**
      * Sends a message.
@@ -221,13 +273,54 @@ public:
      * @threadsafety    Thread-compatible but not thread-safe
      */
     void discard() const;
+};
+
+/******************************************************************************/
+
+/**
+ * Server-side SCTP socket. One that listens for incoming association attempts.
+ */
+class SrvrSctpSock final : public BaseSctpSock
+{
+    class                 Impl;
+
+public:
+    /**
+     * Default constructs. On return
+     * - `getSock()` will return `-1`
+     * - `getNumStreams() will return `0`
+     * - `accept()` will throw an exception
+     */
+    SrvrSctpSock();
 
     /**
-     * Closes the underlying BSD socket.
-     * @exceptionsafety Nothrow
-     * @threadsafety    Compatible but not safe
+     * Constructs.
+     * @param[in] addr        Internet socket address on which to listen
+     * @param[in] numStreams  Number of SCTP streams
+     * @param[in] queueSize   Limit on the number of outstanding connections
+     *                        in the `listen()` queue
+     * @throw RuntimeError    Couldn't construct server-size SCTP socket
+     * @see   `listen()`
      */
-    void close() const;
+    SrvrSctpSock(
+            const InetSockAddr& addr,
+            const int           numStreams = 1,
+            const int           queueSize = 5);
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  Other instance
+     * @return         This instance
+     */
+    SrvrSctpSock& operator=(const SrvrSctpSock& rhs);
+
+    /**
+     * Accepts an incoming connection on the socket.
+     * @return          The accepted connection
+     * @exceptionsafety Basic guarantee
+     * @threadsafety    Thread-compatible but not thread-safe
+     */
+    SctpSock accept() const;
 };
 
 } // namespace

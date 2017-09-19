@@ -27,9 +27,7 @@ public:
     /**
      * Constructs from nothing.
      */
-    Product()
-        : pImpl{}
-    {}
+    Product();
 
     /**
      * Constructs from information on a product.

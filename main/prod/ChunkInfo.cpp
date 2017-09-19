@@ -27,14 +27,21 @@ ChunkInfo::ChunkInfo(
     : prodIndex(prodIndex)
     , prodSize(prodSize)
     , chunkIndex(chunkIndex)
+    , hashCode{0}
 {
     auto numChunks = (prodSize+getCanonSize()-1)/getCanonSize();
     if (chunkIndex && chunkIndex >= numChunks)
-        throw InvalidArgument(__FILE__, __LINE__,
-                "Chunk-index is greater than or equal to number of chunks: "
-                "index=" + std::to_string(chunkIndex) + ", numChunks=" +
-                std::to_string(numChunks));
+        throw INVALID_ARGUMENT("Chunk-index is greater than or equal to number "
+                "of chunks: index=" + std::to_string(chunkIndex) +
+                ", numChunks=" + std::to_string(numChunks));
 }
+
+ChunkInfo::ChunkInfo(const ChunkInfo& info)
+    : prodIndex{info.prodIndex}
+    , prodSize{info.prodSize}
+    , chunkIndex{info.chunkIndex}
+    , hashCode{info.hashCode.load()}
+{}
 
 ChunkInfo::ChunkInfo(
         const ProdInfo&  prodInfo,
@@ -45,8 +52,7 @@ ChunkInfo::ChunkInfo(
 void ChunkInfo::setCanonSize(const ChunkSize size)
 {
     if (size == 0)
-        throw InvalidArgument(__FILE__, __LINE__,
-                "Cannot set canonical chunk size to zero");
+        throw INVALID_ARGUMENT("Cannot set canonical chunk size to zero");
     canonSize = size;
 }
 
@@ -106,6 +112,12 @@ ChunkInfo ChunkInfo::deserialize(
     ChunkInfo chunkInfo(decoder, version);
     return ChunkInfo(chunkInfo.prodIndex, chunkInfo.prodSize,
             chunkInfo.chunkIndex);
+}
+
+std::string ChunkInfo::to_string() const
+{
+    return "{prodIndex=" + prodIndex.to_string() + ", chunkIndex=" +
+            std::to_string(chunkIndex) + "}";
 }
 
 } // namespace

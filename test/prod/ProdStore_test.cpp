@@ -22,18 +22,19 @@ class ProdStoreTest : public ::testing::Test {
 protected:
     ProdStoreTest()
     {
-		unsigned char data[128000];
-		for (size_t i = 0; i < sizeof(data); ++i)
-			data[i] = i % UCHAR_MAX;
+        unsigned char data[128000];
+        for (size_t i = 0; i < sizeof(data); ++i)
+                data[i] = i % UCHAR_MAX;
 
-		prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
+        prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
     }
 
     void addChunks(
-    		const hycast::ProdInfo prodInfo,
-			const char*            data,
-			hycast::ProdStore&     ps)
+            const hycast::ProdInfo prodInfo,
+            const char*            data,
+            hycast::ProdStore&     ps)
     {
+        hycast::Product     prod2{};
         for (hycast::ChunkIndex chunkIndex = 0;
                 chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
             // Serialize chunk
@@ -49,10 +50,10 @@ protected:
             hycast::MemDecoder  decoder(buf, sizeof(buf));
             decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
             hycast::LatentChunk latentChunk(decoder, version);
-            hycast::Product     prod2;
+            const bool complete = ps.add(latentChunk, prod2);
             const bool isLast = chunkIndex == prodInfo.getNumChunks() - 1;
             EXPECT_EQ(isLast && prod2.getInfo().getName().length() > 0,
-                    ps.add(latentChunk, prod2));
+                    complete);
             hycast::ActualChunk actualChunk2;
             EXPECT_TRUE(ps.haveChunk(chunkInfo));
             EXPECT_TRUE(ps.getChunk(chunkInfo, actualChunk2));
@@ -97,7 +98,7 @@ TEST_F(ProdStoreTest, InitialEntry) {
 // Tests adding latent chunks
 TEST_F(ProdStoreTest, AddingLatentChunks) {
     hycast::ProdStore ps{};
-    hycast::Product   prod2;
+    hycast::Product   prod2{}; // Empty
     EXPECT_FALSE(ps.add(prodInfo, prod2));
     addChunks(prodInfo, prod.getData(), ps);
     EXPECT_EQ(prodInfo, prod2.getInfo());
@@ -128,7 +129,7 @@ TEST_F(ProdStoreTest, ProductDeletion) {
     hycast::Product   prod;
     EXPECT_FALSE(ps.add(prodInfo, prod));
     EXPECT_EQ(1, ps.size());
-    ::sleep(1);
+    ::usleep(200000);
     EXPECT_EQ(0, ps.size());
 }
 

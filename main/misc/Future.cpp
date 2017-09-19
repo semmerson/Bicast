@@ -44,7 +44,7 @@ class BasicFuture::Impl
 
     void cantStop(const bool mayInterrupt)
     {
-        throw LogicError(__FILE__, __LINE__, "No stop function specified");
+        throw LOGIC_ERROR("No stop function specified");
     }
 
     /**
@@ -127,8 +127,10 @@ protected:
     void wait(UniqueLock& lock)
     {
         assert(lock.owns_lock());
-        while (!isDone())
+        while (!isDone()) {
+            Canceler canceler{};
             cond.wait(lock);
+        }
         //::fprintf(stderr, "haveResult=%d, exception=%d, canceled=%d\n",
                 //haveResult, exception ? 1 : 0, canceled);
     }
@@ -140,7 +142,7 @@ protected:
         if (exception)
             std::rethrow_exception(exception);
         if (canceled)
-            throw LogicError(__FILE__, __LINE__, "Future::cancel() was called");
+            throw LOGIC_ERROR("Future::cancel() was called");
         return; // `haveResult` must be true
     }
 
@@ -232,12 +234,16 @@ BasicFuture::BasicFuture(Impl* ptr)
 BasicFuture::~BasicFuture()
 {
     try {
-        auto enabled = Thread::disableCancel();
         pImpl.reset();
-        Thread::enableCancel(enabled);
     }
     catch (const std::exception& e) {
-        log_what(e, __FILE__, __LINE__, "Couldn't destroy future");
+        try {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't destroy future"));
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+        }
     }
 }
 
@@ -264,14 +270,14 @@ bool BasicFuture::operator<(const BasicFuture& that) const noexcept
 void BasicFuture::cancel(bool mayInterrupt) const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Future is empty");
+        throw LOGIC_ERROR("Future is empty");
     pImpl->cancel(mayInterrupt);
 }
 
 void BasicFuture::setCanceled() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Future is empty");
+        throw LOGIC_ERROR("Future is empty");
     pImpl->setCanceled();
 }
 
@@ -294,14 +300,14 @@ bool BasicFuture::wasCanceled() const
 void BasicFuture::setException() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Future is empty");
+        throw LOGIC_ERROR("Future is empty");
     pImpl->setException();
 }
 
 void BasicFuture::setException(const std::exception_ptr& ptr) const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Future is empty");
+        throw LOGIC_ERROR("Future is empty");
     pImpl->setException(ptr);
 }
 
@@ -380,7 +386,7 @@ template<class Ret>
 void Future<Ret>::setResult(Ret result) const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty future");
+        throw LOGIC_ERROR("Empty future");
     return reinterpret_cast<Impl*>(pImpl.get())->setResult(result);
 }
 
@@ -388,7 +394,7 @@ template<class Ret>
 Ret Future<Ret>::getResult() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty future");
+        throw LOGIC_ERROR("Empty future");
     return reinterpret_cast<Impl*>(pImpl.get())->getResult();
 }
 
@@ -455,14 +461,14 @@ Future<void>::Future(Stop&& stop)
 void Future<void>::setResult() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty future");
+        throw LOGIC_ERROR("Empty future");
     reinterpret_cast<Impl*>(pImpl.get())->setResult();
 }
 
 void Future<void>::getResult() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty future");
+        throw LOGIC_ERROR("Empty future");
     reinterpret_cast<Impl*>(pImpl.get())->getResult();
 }
 

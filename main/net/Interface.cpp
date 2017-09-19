@@ -44,7 +44,7 @@ public:
      */
     Impl(const int index)
     {
-        throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+        throw LOGIC_ERROR("Not implemented yet");
     }
 
     /**
@@ -74,11 +74,11 @@ public:
          * semantics.
          */
         if (family != AF_INET && family != AF_INET6)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Unsupported address family: " + std::to_string(family));
+            throw INVALID_ARGUMENT("Unsupported address family: " +
+                    std::to_string(family));
         struct ifaddrs* list;
         if (::getifaddrs(&list))
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     "Couldn't get information on network interfaces");
         try {
             for (struct ifaddrs* entry = list; entry != NULL;
@@ -100,11 +100,11 @@ public:
         }
         catch (const std::exception& e) {
             ::freeifaddrs(list);
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+            std::throw_with_nested(RUNTIME_ERROR(
                     "Couldn't construct Internet address"));
         }
-        throw LogicError(__FILE__, __LINE__, "No relevant information: "
-                        "iface=" + name + ", addrFamily=" + std::to_string(family));
+        throw LOGIC_ERROR("No relevant information: iface=" + name +
+                ", addrFamily=" + std::to_string(family));
     }
 };
 
@@ -115,7 +115,7 @@ Interface::Interface(const std::string& name)
 Interface::Interface(const int number)
     : pImpl{new Impl(number)}
 {
-    throw LogicError(__FILE__, __LINE__, "Not implemented yet");
+    throw LOGIC_ERROR("Not implemented yet");
 }
 
 InetAddr hycast::Interface::getInetAddr(const int family) const

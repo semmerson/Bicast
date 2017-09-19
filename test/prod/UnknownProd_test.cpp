@@ -48,7 +48,7 @@ protected:
 
 // Tests construction
 TEST_F(UnknownProdTest, Construction) {
-    hycast::UnknownProd unkProd();
+    hycast::UnknownProd unkProd{};
 }
 
 // Tests addition of orphaned chunk

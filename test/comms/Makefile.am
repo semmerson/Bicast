@@ -8,13 +8,20 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main \
                   -I$(top_srcdir)/main/comms/mcast \
                   -I$(top_srcdir)/main/comms/p2p
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
+CLEANFILES	= *.vg *.cg
 
 check_PROGRAMS	= ShipRecv_test
 
 ShipRecv_test_SOURCES		= ShipRecv_test.cpp
 
-TESTS	= $(check_PROGRAMS)
+TESTS		= $(check_PROGRAMS)
 
-%.vg: %
+%.vg:	%
 	$(TESTS_ENVIRONMENT) $(LIBTOOL) --mode=execute valgrind \
 	--leak-check=full --show-reachable=yes ./$< >$@ 2>&1
+	
+ShipRecv_test.cg: ShipRecv_test
+	$(LIBTOOL) --mode=execute valgrind --tool=callgrind \
+                --callgrind-out-file=$@ ./$<
+	kcachegrind $@
+	

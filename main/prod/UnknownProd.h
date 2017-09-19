@@ -27,7 +27,7 @@ class UnknownProd final
 {
     class Chunk final
     {
-        std::shared_ptr<void> data; // Chunk's actual data
+        std::shared_ptr<char> data; // Chunk's actual data
         ChunkSize             size; // Size of actual data in bytes
     public:
         Chunk();

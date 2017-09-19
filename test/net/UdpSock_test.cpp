@@ -13,6 +13,7 @@
 #include "UdpSock.h"
 
 #include <cstdint>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <thread>
@@ -34,16 +35,15 @@ void runReceiver(hycast::McastUdpSock sock)
         }
     }
     catch (const std::exception& e) {
-        hycast::log_what(e, __FILE__, __LINE__,
-                "Error running UDP multicast receiver");
+        hycast::log_error(e);
+        LOG_ERROR("Error running UDP multicast receiver");
     }
 }
 
 void runSender(hycast::OutUdpSock sock)
 {
     try {
-        for (size_t size = 1; size < hycast::UdpSock::maxPayload;
-                size *= 2) {
+        for (size_t size = 1; size < hycast::UdpSock::maxPayload; size *= 2) {
             uint8_t buf[size];
             int value = size | 0xff;
             ::memset(buf, value, size);
@@ -51,8 +51,8 @@ void runSender(hycast::OutUdpSock sock)
         }
     }
     catch (const std::exception& e) {
-        hycast::log_what(e, __FILE__, __LINE__,
-                "Error running UDP multicast sender");
+        hycast::log_error(e);
+        LOG_ERROR("Error running UDP multicast sender");
     }
 }
 
@@ -95,24 +95,24 @@ protected:
 };
 
 // Tests input socket construction
-TEST_F(UdpSockTest, ServerConstruction) {
+TEST_F(UdpSockTest, InputConstruction) {
     hycast::InUdpSock sock(localSockAddr);
     /*
      * Can't get std::regex to work correctly due to problems with escapes. This
      * occurs when using either ECMAScript and POSIX BRE grammars.
      */
-    if (std::string("InUdpSock(addr=localhost:38800, sock=3)") !=
-            sock.to_string()) {
+    if (::strstr(sock.to_string().c_str(),
+            "InUdpSock(addr=localhost:38800, sock=") == nullptr) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
 }
 
 // Tests output socket construction
-TEST_F(UdpSockTest, ClientConstruction) {
+TEST_F(UdpSockTest, OutputConstruction) {
     hycast::OutUdpSock sock(remoteSockAddr);
-    if (std::string("OutUdpSock(addr=zero.unidata.ucar.edu:38800, "
-            "sock=3)") != sock.to_string()) {
+    if (::strstr(sock.to_string().c_str(),
+            "OutUdpSock(addr=zero.unidata.ucar.edu:38800, sock=") == nullptr) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
@@ -121,10 +121,10 @@ TEST_F(UdpSockTest, ClientConstruction) {
 }
 
 // Tests output socket construction to the local host
-TEST_F(UdpSockTest, LocalhostConstruction) {
+TEST_F(UdpSockTest, LocalhostOutputConstruction) {
     hycast::OutUdpSock sock(localSockAddr);
-    if (std::string("OutUdpSock(addr=localhost:38800, sock=3)") !=
-            sock.to_string()) {
+    if (::strstr(sock.to_string().c_str(),
+            "OutUdpSock(addr=localhost:38800, sock=") == nullptr) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
@@ -133,30 +133,30 @@ TEST_F(UdpSockTest, LocalhostConstruction) {
 }
 
 // Tests source-independent multicast socket construction
-TEST_F(UdpSockTest, MulticastConstruction) {
+TEST_F(UdpSockTest, AnySourceConstruction) {
     hycast::McastUdpSock sock(mcastSockAddr);
-    if (std::string("McastUdpSock(addr=234.128.117.0:38800, sock=3)") !=
-            sock.to_string()) {
+    if (::strstr(sock.to_string().c_str(),
+            "McastUdpSock(addr=234.128.117.0:38800, sock=") == nullptr) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
 }
 
 // Tests source-specific multicast socket construction
-TEST_F(UdpSockTest, SourceMulticastConstruction) {
+TEST_F(UdpSockTest, SourceSpecificConstruction) {
     hycast::McastUdpSock sock(mcastSockAddr, "localhost");
-    if (std::string("McastUdpSock(addr=234.128.117.0:38800, sock=3)") !=
-            sock.to_string()) {
+    if (::strstr(sock.to_string().c_str(),
+            "McastUdpSock(addr=234.128.117.0:38800, sock=") == nullptr) {
         std::cerr << "sock.to_string()=\"" << sock.to_string() << "\"\n";
         ADD_FAILURE();
     }
 }
 
 // Tests source-independent multicasting
-TEST_F(UdpSockTest, Multicasting) {
+TEST_F(UdpSockTest, AnySourceMulticasting) {
     hycast::McastUdpSock recvSock(mcastSockAddr);
     std::thread recvThread{runReceiver, recvSock};
-    ::sleep(1);
+    ::usleep(100000);
     hycast::OutUdpSock sendSock(mcastSockAddr);
     std::thread sendThread{runSender, sendSock};
     sendThread.join();
@@ -164,12 +164,12 @@ TEST_F(UdpSockTest, Multicasting) {
 }
 
 // Tests source-specific multicasting
-TEST_F(UdpSockTest, SourceMulticasting) {
+TEST_F(UdpSockTest, SourceSpecificMulticasting) {
     hycast::OutUdpSock   sendSock(mcastSockAddr);
     auto                 sourceAddr = sendSock.getLocalAddr().getInetAddr();
     hycast::McastUdpSock recvSock(mcastSockAddr, sourceAddr);
     std::thread recvThread{runReceiver, recvSock};
-    ::sleep(1);
+    ::usleep(100000);
     std::thread sendThread{runSender, sendSock};
     sendThread.join();
     recvThread.join();

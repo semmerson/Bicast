@@ -76,12 +76,15 @@ public:
     ~Impl() noexcept
     {
         try {
-            auto enabled = Thread::disableCancel();
             assert(future.hasCompleted());
-            Thread::enableCancel(enabled);
         }
         catch (const std::exception& e) {
-            log_what(e, __FILE__, __LINE__, "Couldn't destroy task0");
+            try {
+                std::throw_with_nested(RUNTIME_ERROR("Couldn't destroy task"));
+            }
+            catch (const std::exception& ex) {
+                log_error(ex);
+            }
         }
     }
 
@@ -101,15 +104,12 @@ public:
             UniqueLock lock{mutex};
             if (!cancelCalled) {
                 if (haveThreadId)
-                    throw LogicError(__FILE__, __LINE__,
-                            "operator() already called");
+                    throw LOGIC_ERROR("operator() already called");
                 threadId = Thread::getId();
                 assert(threadId != Thread::Id{});
                 haveThreadId = true;
                 lock.unlock();
-                Thread::enableCancel();
                 setResult();
-                Thread::disableCancel();
             }
         }
         catch (const std::exception& e) {
@@ -138,7 +138,7 @@ public:
                 future.setCanceled();
             }
             catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                std::throw_with_nested(RUNTIME_ERROR(
                         "Couldn't cancel future"));
             }
         }
@@ -151,7 +151,7 @@ public:
                     future.setCanceled();
                 }
                 catch (const std::exception& e) {
-                    std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    std::throw_with_nested(RUNTIME_ERROR(
                             "Couldn't cancel thread"));
                 }
             }
@@ -188,7 +188,7 @@ template<class Ret>
 Future<Ret> Task<Ret>::getFuture() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty task");
+        throw LOGIC_ERROR("Empty task");
     return pImpl->getFuture();
 }
 
@@ -196,7 +196,7 @@ template<class Ret>
 void Task<Ret>::operator()() const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty task");
+        throw LOGIC_ERROR("Empty task");
     pImpl->operator()();
 }
 
@@ -204,7 +204,7 @@ template<class Ret>
 void Task<Ret>::cancel(const bool mayInterrupt) const
 {
     if (!pImpl)
-        throw LogicError(__FILE__, __LINE__, "Empty task");
+        throw LOGIC_ERROR("Empty task");
     pImpl->cancel(mayInterrupt);
 }
 

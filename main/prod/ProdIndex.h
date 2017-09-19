@@ -31,9 +31,17 @@ public:
      * Constructs. NB: Not explicit.
      * @param[in] index  Product index
      */
-    ProdIndex(uint32_t index = 0) noexcept
+    ProdIndex(const uint32_t index = 0) noexcept
         : index{index}
     {}
+
+    /**
+     * Constructs. NB: Not explicit.
+     * @param[in] index  Product index
+    ProdIndex(const int index)
+        : index{static_cast<type>(index)}
+    {}
+     */
 
     /**
      * Copy constructs.

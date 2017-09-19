@@ -98,13 +98,12 @@ public:
                     auto chunk = LatentChunk::deserialize(decoder, version);
                     msgRcvr->recvData(chunk);
                     if (chunk.hasData())
-                        throw LogicError(__FILE__, __LINE__,
-                                "Latent chunk-of-data not drained");
+                        throw LOGIC_ERROR("Latent chunk-of-data not drained");
                     break;
                 }
                 default:
-                    throw RuntimeError(__FILE__, __LINE__,
-                            "Invalid message type: " + std::to_string(msgId));
+                    throw RUNTIME_ERROR("Invalid message type: " +
+                            std::to_string(msgId));
             }
             decoder.clear();
         }

@@ -8,11 +8,11 @@
  *   @file: McastSender.cpp
  * @author: Steven R. Emmerson
  */
-
-#include <mcast/McastSender.h>
 #include "config.h"
 
+#include "error.h"
 #include "Codec.h"
+#include "McastSender.h"
 #include "UdpSock.h"
 
 namespace hycast {
@@ -47,6 +47,8 @@ class McastSender::Impl final
      */
     void send(const ProdInfo prodInfo)
     {
+        LOG_DEBUG("Multicasting product-info: prodIndex=%s",
+                std::to_string(prodInfo.getIndex()).c_str());
         encoder.encode(prodInfoId);
         prodInfo.serialize(encoder, version);
         encoder.flush();
@@ -68,6 +70,9 @@ class McastSender::Impl final
             ChunkInfo  chunkInfo(prodInfo, chunkIndex);
             chunkInfo.serialize(encoder, version);
             const auto chunkSize = prodInfo.getChunkSize(chunkIndex);
+            LOG_DEBUG("Multicasting chunk: prodIndex=%s, chunkIndex=%s",
+                    std::to_string(prodIndex).c_str(),
+                    std::to_string(chunkIndex).c_str());
             encoder.encode(data, chunkSize);
             encoder.flush();
             data += chunkSize;

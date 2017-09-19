@@ -26,7 +26,7 @@ protected:
     void cancelGet()
     {
         hycast::Completer<void> completer{};
-        completer.submit(&::pause);
+        completer.submit([]{hycast::Canceler canceler{}; ::pause();});
         auto future = completer.take();
     }
 };
@@ -93,7 +93,8 @@ TEST_F(CompleterTest, MultipleIntExecution) {
 // Tests cancellation of void task
 TEST_F(CompleterTest, VoidCancellation) {
     hycast::Completer<void> completer{};
-    auto future = completer.submit([]{::pause();});
+    auto future = completer.submit([]{hycast::Canceler canceler{};
+            ::pause();});
     future.cancel();
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
@@ -102,7 +103,8 @@ TEST_F(CompleterTest, VoidCancellation) {
 // Tests cancellation of int task
 TEST_F(CompleterTest, IntCancellation) {
     hycast::Completer<int> completer{};
-    auto future = completer.submit([]{::pause(); return 1;});
+    auto future = completer.submit([]{hycast::Canceler canceler{}; ::pause();
+            return 1;});
     future.cancel();
     EXPECT_TRUE(future.wasCanceled());
     EXPECT_THROW(future.getResult(), hycast::LogicError);
@@ -111,13 +113,13 @@ TEST_F(CompleterTest, IntCancellation) {
 // Tests destruction of completer with active task
 TEST_F(CompleterTest, DestructionWithTask) {
     hycast::Completer<void> completer{};
-    completer.submit([]{::pause();});
+    completer.submit([]{hycast::Canceler canceler{}; ::pause();});
 }
 
 // Tests destruction of completer with active future
 TEST_F(CompleterTest, DestructionWithFuture) {
     hycast::Completer<void> completer{};
-    auto future = completer.submit([]{::pause();});
+    auto future = completer.submit([]{hycast::Canceler canceler{}; ::pause();});
 }
 
 // Tests cancellation of nested Completer::get()
@@ -129,7 +131,8 @@ TEST_F(CompleterTest, CancelNestedGet) {
 
 // Tests execution of a bunch of tasks
 TEST_F(CompleterTest, BunchOfJobs) {
-    //std::set_terminate([]{std::cout << "terminate() called\n"; ::pause();});
+    //std::set_terminate([]{std::cout << "terminate() called\n";
+    //          hycast::Canceler canceler{}; ::pause();});
     hycast::Completer<void> completer{};
     std::default_random_engine generator{};
     std::uniform_int_distribution<useconds_t> distribution{0, 100000};
@@ -144,20 +147,20 @@ TEST_F(CompleterTest, BunchOfJobs) {
 TEST_F(CompleterTest, DestructionWithOutstandingJobs) {
     hycast::Completer<void> completer{};
     for (int i = 0; i < 200; ++i)
-        completer.submit(::pause);
+        completer.submit([]{hycast::Canceler canceler{}; ::pause();});
 }
 
-static void subCompleter(hycast::Thread::Barrier& barrier) {
+static void subCompleter(hycast::Barrier& barrier) {
     hycast::Completer<void> completer{};
-    auto future1 = completer.submit([]{::pause();});
-    auto future2 = completer.submit([]{::pause();});
+    auto future1 = completer.submit([]{hycast::Canceler canceler{}; ::pause();});
+    auto future2 = completer.submit([]{hycast::Canceler canceler{}; ::pause();});
     barrier.wait();
     completer.take();
 }
 
 // Tests PeerSet completer usage
 TEST_F(CompleterTest, PeerSetUsage) {
-    hycast::Thread::Barrier barrier{2};
+    hycast::Barrier barrier{2};
     hycast::Completer<void> completer{};
     completer.submit([&barrier]{subCompleter(barrier);});
     barrier.wait();
@@ -168,7 +171,7 @@ static void testDestructionTermination(useconds_t sleep) {
         hycast::Completer<void> completer{};
         int n;
         for (n = 0; n < 10; ++n)
-            completer.submit(::pause);
+            completer.submit([]{hycast::Canceler canceler{}; ::pause();});
         if (sleep)
             ::usleep(sleep);
         EXPECT_EQ(n, hycast::Thread::size());

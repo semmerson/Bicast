@@ -14,10 +14,13 @@
 #include "McastSender.h"
 #include "P2pMgr.h"
 #include "PeerSet.h"
+#include "PerfMeter.h"
 #include "Processing.h"
+#include "ProdIndex.h"
 #include "ProdStore.h"
 #include "Receiving.h"
 #include "Shipping.h"
+#include "Thread.h"
 #include "YamlPeerSource.h"
 
 #include <gtest/gtest.h>
@@ -26,54 +29,64 @@
 
 namespace {
 
-// The fixture for testing class Receiving.
+// The fixture for testing classes Shipping and Receiving.
 class ShipRecvTest : public ::testing::Test, public hycast::Processing
 {
 protected:
     void process(hycast::Product prod)
     {
-        EXPECT_EQ(this->prod, prod);
+        static int n = 0;
+        auto info = prod.getInfo();
+        perfMeter.product(info);
+        LOG_INFO("product#=%d, prodIndex=%s", n,
+                std::to_string(info.getIndex()).c_str());
+        if (++n == NUM_PRODUCTS)
+            cue.cue();
     }
 
     ShipRecvTest()
-        : p2pInfo{serverAddr, maxPeers, peerSource, stasisDuration}
     {
         // gcc 4.8 doesn't support non-trivial designated initializers
         srcMcastInfo.mcastAddr = mcastAddr;
-        srcMcastInfo.srcAddr = serverInetAddr;
+        srcMcastInfo.srcAddr = localInetAddr;
 
-        unsigned char data[128000];
         for (size_t i = 0; i < sizeof(data); ++i)
                 data[i] = i % UCHAR_MAX;
-
-        prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
     }
 
+    const double                    drop = 0.2;
+    const int                       NUM_PRODUCTS = 50;
+    unsigned char                   data[10000];
+    //unsigned char                   data[1];
     hycast::PeerSet                 peerSet{1};
     hycast::ProdStore               prodStore{};
-    const in_port_t                 port{38800};
-    const hycast::InetSockAddr      mcastAddr{"232.0.0.0", port};
-    const hycast::InetAddr          serverInetAddr{
+    const in_port_t                 srcPort{38800};
+    const in_port_t                 snkPort{38801};
+    const hycast::InetSockAddr      mcastAddr{"232.0.0.0", srcPort};
+    const hycast::InetAddr          localInetAddr{
             hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)};
-    hycast::InetSockAddr            serverAddr{serverInetAddr, port};
+    hycast::InetSockAddr            srcSrvrAddr{localInetAddr, srcPort};
+    hycast::InetSockAddr            snkSrvrAddr{localInetAddr, snkPort};
     const unsigned                  protoVers{0};
     hycast::McastSender             mcastSender{mcastAddr, protoVers};
     hycast::YamlPeerSource          peerSource{"[{inetAddr: " +
-            serverInetAddr.to_string() + ", port: " + std::to_string(port) +
+            localInetAddr.to_string() + ", port: " + std::to_string(srcPort) +
             "}]"};
     hycast::ProdIndex               prodIndex{0};
     const unsigned                  maxPeers = 1;
     const hycast::PeerSet::TimeUnit stasisDuration{2};
     // gcc 4.8 doesn't support non-trivial designated initializers
-    hycast::P2pInfo                 p2pInfo;
+    hycast::P2pInfo                 p2pInfo{snkSrvrAddr, maxPeers, peerSource,
+            stasisDuration};
     // gcc 4.8 doesn't support non-trivial designated initializers
     hycast::SrcMcastInfo            srcMcastInfo;
-    hycast::Product                 prod{};
+    hycast::PerfMeter               perfMeter{};
+    hycast::Cue                     cue{};
 };
 
 // Tests shipping construction
 TEST_F(ShipRecvTest, ShippingConstruction) {
-    hycast::Shipping(prodStore, mcastAddr, protoVers, serverAddr);
+    hycast::Shipping(prodStore, mcastAddr, protoVers, srcSrvrAddr);
 }
 
 // Tests receiving construction
@@ -81,23 +94,29 @@ TEST_F(ShipRecvTest, ReceivingConstruction) {
     hycast::Receiving{srcMcastInfo, p2pInfo, *this, protoVers};
 }
 
-// Tests shipping and receiving a product
+// Tests shipping and receiving products
 TEST_F(ShipRecvTest, ShippingAndReceiving) {
-	// Create shipper
+    hycast::logLevel = hycast::LOG_INFO;
+    // Create shipper
     hycast::Shipping shipping{prodStore, mcastAddr, protoVers, maxPeers,
-    	stasisDuration, serverAddr};
-
-    ::usleep(100000);
+    	stasisDuration, srcSrvrAddr};
 
     // Create receiver
-    hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, protoVers};
+    hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, protoVers, "",
+        drop};
 
-    ::usleep(100000);
+    ::sleep(1);
 
-    // Ship product
-    shipping.ship(prod);
+    // Ship products
+    for (hycast::ProdIndex i = 0; NUM_PRODUCTS > i; ++i) {
+        std::string name = std::string{"product " } + std::to_string(i);
+        hycast::Product prod{name, i, data, sizeof(data)};
+        shipping.ship(prod);
+    }
 
-    ::usleep(100000);
+    cue.wait();
+    perfMeter.stop();
+    std::cout << perfMeter << '\n';
 }
 
 }  // namespace

@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cassert>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <pthread.h>
@@ -26,6 +27,57 @@
 #include <utility>
 
 namespace hycast {
+
+class Cue::Impl
+{
+    typedef std::mutex              Mutex;
+    typedef std::lock_guard<Mutex>  LockGuard;
+    typedef std::unique_lock<Mutex> UniqueLock;
+    typedef std::condition_variable Cond;
+
+    Mutex mutex;
+    Cond  cond;
+    bool  cued;
+
+public:
+    Impl()
+        : mutex{}
+        , cond{}
+        , cued{false}
+    {}
+
+    void cue()
+    {
+        LockGuard lock{mutex};
+        cued = true;
+        cond.notify_all();
+    }
+
+    void wait()
+    {
+        UniqueLock lock(mutex);
+        while (!cued) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+    }
+};
+
+hycast::Cue::Cue()
+    : pImpl{new Impl()}
+{}
+
+void hycast::Cue::cue() const
+{
+    pImpl->cue();
+}
+
+void hycast::Cue::wait() const
+{
+    pImpl->wait();
+}
+
+/******************************************************************************/
 
 Thread::Impl::ThreadMap::ThreadMap()
     : mutex{}
@@ -38,6 +90,7 @@ void Thread::Impl::ThreadMap::add(Impl* const impl)
     assert(impl->joinable());
     assert(threads.find(impl->id()) == threads.end());
     threads[impl->id()] = impl;
+    //std::clog << "Added thread " << impl->id() << std::endl;
 }
 
 bool Thread::Impl::ThreadMap::contains(const ThreadId& threadId)
@@ -69,27 +122,27 @@ Thread::Impl::ThreadMap::Map::size_type Thread::Impl::ThreadMap::size()
 
 /******************************************************************************/
 
-Thread::Barrier::Barrier(const int numThreads)
+Barrier::Barrier(const int numThreads)
 {
     int status = ::pthread_barrier_init(&barrier, nullptr, numThreads);
     if (status)
-        throw SystemError(__FILE__, __LINE__, "pthread_barrier_init() failure",
+        throw SYSTEM_ERROR("pthread_barrier_init() failure",
                 status);
 }
 
-void Thread::Barrier::wait()
+void Barrier::wait()
 {
     int status = ::pthread_barrier_wait(&barrier);
     if (status && status != PTHREAD_BARRIER_SERIAL_THREAD)
-        throw SystemError(__FILE__, __LINE__, "pthread_barrier_wait() failure",
+        throw SYSTEM_ERROR("pthread_barrier_wait() failure",
                 status);
 }
 
-Thread::Barrier::~Barrier() noexcept
+Barrier::~Barrier() noexcept
 {
     int status = ::pthread_barrier_destroy(&barrier);
     if (status)
-        log_what(SystemError(__FILE__, __LINE__,
+        log_error(SYSTEM_ERROR(
                 "pthread_barrier_destroy() failure", status));
 }
 
@@ -127,7 +180,7 @@ void Thread::Impl::privateCancel()
         assert(false);
     int status = ::pthread_cancel(stdThread.native_handle());
     if (status)
-        throw SystemError(__FILE__, __LINE__, "Couldn't cancel thread: "
+        throw SYSTEM_ERROR("Couldn't cancel thread: "
                 "native_handle=" + std::to_string(stdThread.native_handle()),
                 status);
 }
@@ -144,10 +197,20 @@ void Thread::Impl::privateJoin()
          * Entry in `threads` erased while the identifier returned by `id()` is
          * valid.
          */
-        const auto n = threads.erase(id());
+        auto threadId = id();
+        {
+            /*
+             * Canceling the current thread causes misbehavior when the current
+             * thread is from a nested `Executor`. Thread termination must occur
+             * from the leaf threads inward.
+             */
+            //Canceler canceler{};
+            stdThread.join(); // Cancellation point
+            // `id()` will now return an invalid identifier
+        }
+        //std::clog << "Removing thread " << threadId << std::endl;
+        const auto n = threads.erase(threadId);
         assert(n == 1);
-        stdThread.join();
-        // `id()` will now return an invalid identifier
     }
     catch (const std::system_error& e) {
         /*
@@ -155,16 +218,19 @@ void Thread::Impl::privateJoin()
          * `std::errc::invalid_argument` if thread is canceled
          */
         if (e.code() != std::errc::invalid_argument)
-            std::throw_with_nested(RuntimeError{__FILE__, __LINE__,
-                    "std::thread::join() failure"});
-        auto status = ::pthread_join(stdThread.native_handle(), nullptr);
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "std::thread::join() failure"));
+        int status;
+        {
+            Canceler canceler{};
+            status = ::pthread_join(stdThread.native_handle(), nullptr);
+        }
         if (status)
-            throw SystemError(__FILE__, __LINE__, "pthread_join() failure",
-                    status);
+            throw SYSTEM_ERROR("pthread_join() failure", status);
     }
     catch (const std::exception& e) {
-        std::throw_with_nested(RuntimeError{__FILE__, __LINE__,
-                "std::thread::join() failure"});
+        std::throw_with_nested(RUNTIME_ERROR(
+                "std::thread::join() failure"));
     }
 }
 
@@ -177,22 +243,32 @@ void Thread::Impl::ensureCompleted()
     }
 }
 
+void Thread::Impl::clearBeingJoined(void* const arg) noexcept
+{
+    auto impl = static_cast<Impl*>(arg);
+    LockGuard lock{impl->mutex};
+    impl->clearStateBit(State::beingJoined);
+}
+
 void Thread::Impl::ensureJoined()
 {
     UniqueLock lock{mutex};
     if (!isBeingJoined()) {
         setBeingJoined();
+        THREAD_CLEANUP_PUSH(clearBeingJoined, this);
         /*
          * Unlock because Thread::Impl::setCompletedAndNotify() might be
          * executing
          */
         lock.unlock();
-        privateJoin(); // Blocks until thread-of-execution joined
+        privateJoin(); // Blocks until thread-of-execution terminates
         lock.lock();
         //cond.notify_all();
         setJoined();
+        THREAD_CLEANUP_POP(false);
     }
     else while (!isJoined()) {
+        Canceler canceler{};
         cond.wait(lock);
     }
 }
@@ -201,13 +277,19 @@ Thread::Impl::~Impl() noexcept
 {
     try {
         if (Thread::getId() == id())
-            throw LogicError(__FILE__, __LINE__,
-                    "Thread object being destroyed on associated thread");
+            throw LOGIC_ERROR("Thread object being destroyed on associated "
+                    "thread");
         ensureCompleted();
         ensureJoined();
     }
     catch (const std::exception& e){
-        log_what(e, __FILE__, __LINE__, "Couldn't destroy thread object");
+        try {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't destroy thread object"));
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+        }
     }
 }
 
@@ -271,16 +353,20 @@ Thread::Thread(Thread&& that)
 
 Thread& Thread::operator=(const Thread& rhs)
 {
+#if 0
     if (pImpl)
         throw LogicError(__FILE__, __LINE__, "Target is not empty");
+#endif
     pImpl = rhs.pImpl;
     return *this;
 }
 
 Thread& Thread::operator=(Thread&& rhs)
 {
+#if 0
     if (pImpl)
         throw LogicError(__FILE__, __LINE__, "Target is not empty");
+#endif
     pImpl = std::move(rhs.pImpl);
     return *this;
 }
@@ -288,12 +374,15 @@ Thread& Thread::operator=(Thread&& rhs)
 Thread::~Thread() noexcept
 {
     try {
-        auto enabled = disableCancel();
         pImpl.reset();
-        enableCancel(enabled);
     }
     catch (const std::exception& e) {
-        log_what(e, __FILE__, __LINE__, "Couldn't destroy thread");
+        try {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't destroy thread"));
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+        }
     }
 }
 
@@ -308,15 +397,12 @@ Thread::Id Thread::id() const
     return pImpl ? pImpl->id() : Thread::Id{};
 }
 
-bool Thread::enableCancel(const bool enable)
+bool Thread::enableCancel(const bool enable) noexcept
 {
+    //std::clog << "Thread " << getId() << ": enableCancel(" << enable << ")\n";
     int  previous;
-    auto status = ::pthread_setcancelstate(
-            enable ? PTHREAD_CANCEL_ENABLE : PTHREAD_CANCEL_DISABLE, &previous);
-    if (status)
-        throw SystemError(__FILE__, __LINE__,
-                "pthread_setcancelstate() failure: enable=" +
-                std::to_string(enable), status);
+    ::pthread_setcancelstate(enable ? PTHREAD_CANCEL_ENABLE :
+            PTHREAD_CANCEL_DISABLE, &previous);
     return previous == PTHREAD_CANCEL_ENABLE;
 }
 
@@ -345,7 +431,9 @@ void Thread::join()
 {
     if (pImpl) {
         pImpl->join();
+#if 0
         pImpl.reset();
+#endif
     }
 }
 

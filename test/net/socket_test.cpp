@@ -166,29 +166,51 @@ TEST_F(SocketTest, Multicasting) {
 TEST_F(SocketTest, LocallyTerminatingRead)
 {
     int recvSock = makeRecvSocket();
-	struct Reader {
-		int sd;
-		Reader(int sd) : sd{sd} {}
-		int operator()() {
-			char buf[1];
-			struct pollfd fd;
-			fd.fd = sd;
-			fd.events = POLLIN;
-			::poll(&fd, 1, -1);
-			if (fd.revents & (POLLHUP | POLLERR))
-				return -2;
-			return ::read(sd, buf, sizeof(buf));
-		}
-		void stop() {
-			::stop(sd);
-		}
-	} reader{recvSock};
+    struct Reader {
+        int sd;
+        Reader(int sd) : sd{sd} {}
+        int operator()() {
+            char buf[1];
+            struct pollfd fd;
+            fd.fd = sd;
+            fd.events = POLLIN;
+            ::poll(&fd, 1, -1);
+            if (fd.revents & (POLLHUP | POLLERR))
+                return -2;
+            return ::read(sd, buf, sizeof(buf));
+        }
+        void stop() {
+            ::stop(sd);
+        }
+    } reader{recvSock};
     std::future<int> future = std::async([&reader]{return reader();});
     ::sleep(1);
-	reader.stop();
-	EXPECT_EQ(-2, future.get());
+    reader.stop();
+    EXPECT_EQ(-2, future.get());
 }
 #endif
+
+// Tests signaling poll(2) by closing a pipe's read-end
+TEST_F(SocketTest, SignalPollByClosingPipeRead) {
+    int pipeFds[2];
+    int status = pipe(pipeFds);
+    EXPECT_EQ(0, status);
+    const int fd = pipeFds[0];
+    ::close(pipeFds[1]);
+    std::thread thread{[fd]{
+        struct pollfd pollfd;
+        pollfd.fd = fd;
+        pollfd.events = POLLIN;
+        int status = ::poll(&pollfd, 1, -1); // -1 => indefinite wait
+        EXPECT_EQ(1, status);
+        EXPECT_EQ(POLLHUP, pollfd.revents);
+        //::fprintf(stderr, "pollfd.revents=%#x\n", pollfd.revents);
+    }};
+    ::usleep(100000);
+    status = ::close(fd);
+    EXPECT_EQ(0, status);
+    thread.join();
+}
 
 /**
  * A server that is stopped by polling a signaling pipe.
@@ -415,14 +437,20 @@ public:
         THREAD_CLEANUP_PUSH(acceptCleanup, this);
         struct sockaddr clntAddr = {};
         socklen_t       clntAddrLen = sizeof(clntAddr);
-        clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
+        {
+            hycast::Canceler canceler{};
+            clntSd = ::accept(srvrSd, &clntAddr, &clntAddrLen);
+        }
         accepted = true;
         THREAD_CLEANUP_PUSH(readCleanup, this);
         ASSERT_EQ(sizeof(struct sockaddr_in), clntAddrLen);
         ASSERT_TRUE(clntSd >= 0);
         for (;;) {
             char buf[1];
-            auto nbytes = read(clntSd, buf, sizeof(buf));
+            {
+                hycast::Canceler canceler{};
+                auto nbytes = read(clntSd, buf, sizeof(buf));
+            }
         }
         THREAD_CLEANUP_POP(true);
         THREAD_CLEANUP_POP(false);

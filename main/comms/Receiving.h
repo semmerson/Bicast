@@ -38,6 +38,8 @@ public:
      * @param[in] version       Protocol version
      * @param[in] pathname      Pathname of product-store persistence-file or
      *                          the empty string to indicate no persistence
+     * @param[in] drop          Proportion of multicast packets to drop. From 0
+     *                          through 1, inclusive.
      * @see ProdStore::ProdStore()
      */
     Receiving(
@@ -45,7 +47,8 @@ public:
             P2pInfo&            p2pInfo,
             Processing&         processing,
             const unsigned      version,
-            const std::string&  pathname = "");
+            const std::string&  pathname = "",
+            const double        drop = 0);
 
     void recvNotice(const ProdInfo& info);
 

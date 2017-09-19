@@ -105,7 +105,7 @@ IpAddrImpl* InetNameAddr::getIpAddr(const int family) const
     hints.ai_socktype = SOCK_DGRAM;
     struct addrinfo* list;
     if (::getaddrinfo(name.data(), nullptr, &hints, &list))
-        throw SystemError(__FILE__, __LINE__,
+        throw SYSTEM_ERROR(
                 std::string("::getaddrinfo() failure for host \"") +
                 name.data() + "\"", errno);
     try {

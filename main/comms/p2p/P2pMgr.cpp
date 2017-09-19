@@ -22,7 +22,7 @@
 #include "PeerMsgRcvr.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 #include "Thread.h"
 
 #include <atomic>
@@ -86,8 +86,8 @@ class P2pMgr::Impl final : public Notifier
     Completer<void>           completer;
 
     /// Concurrent access variables for fatal exceptions:
-    Mutex                     exceptMutex;
-    std::condition_variable   exceptCond;
+    mutable Mutex                   exceptMutex;
+    mutable std::condition_variable exceptCond;
 
     /// Concurrent access variables for the peer-set:
     Mutex                     peerSetMutex;
@@ -105,7 +105,7 @@ class P2pMgr::Impl final : public Notifier
     /// Is `msgRcvr` set?
     bool                      msgRcvrSet;
 
-    /// Has `operator()()` been called?
+    /// Has `run()` been called?
     bool                      isRunning;
 
     /// Exception that caused failure:
@@ -116,6 +116,20 @@ class P2pMgr::Impl final : public Notifier
 
     /// Thread on which remote peers are accepted:
     Thread                    serverThread;
+
+    void setException()
+    {
+        LockGuard lock{exceptMutex};
+        exception = std::current_exception();
+        exceptCond.notify_one();
+    }
+
+    void checkException() const
+    {
+        LockGuard lock{exceptMutex};
+        if (exception)
+            std::rethrow_exception(exception);
+    }
 
     /**
      * Runs the server for connections from remote peers. Creates a
@@ -137,35 +151,34 @@ class P2pMgr::Impl final : public Notifier
                     Peer peer;
                     try {
                         peer = Peer(*msgRcvr, sock);
-                        peerSet.tryInsert(peer); // Might block
+                        if (peerSet.tryInsert(peer)) // Might block
+                            LOG_NOTE("Accepted connection from remote peer %s",
+                                    sock.to_string().c_str());
                     }
                     catch (const std::exception& e) {
-                        log_what(e); // Possibly incompatible protocol versions
+                        log_warn(e); // Possibly incompatible protocol versions
                     }
                 }
             }
             catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                std::throw_with_nested(RUNTIME_ERROR(
                         "Server for remote peers failed"));
             }
         }
         catch (const std::exception& e) {
-            exception = std::current_exception();
-            exceptCond.notify_one();
+            setException();
         }
     }
 
     /**
      * Tries to insert a remote peer given its Internet socket address. The peer
-     * will be an *initiated* peer (i.e., one that was initiated by this
-     * instance).
+     * will be an *initiated* peer (i.e., one whose connection was initiated by
+     * this instance).
      * @param[in]     peerAddr   Socket address of remote peer candidate
      * @param[in,out] msgRcvr    Receiver of messages from the remote peer
      * @return `true`            Peer was added
      * @return `false`           Peer wasn't added because it's already a member
-     * @throw LogicError         Unknown protocol version from remote peer. Peer
-     *                           not added to set.
-     * @throw RuntimeError       Other error
+     * @throw RuntimeError       Couldn't add peer
      * @exceptionsafety          Strong guarantee
      * @threadsafety             Safe
      */
@@ -175,19 +188,14 @@ class P2pMgr::Impl final : public Notifier
     {
         bool success;
     	try {
-            bool enabled = Thread::enableCancel();
-            Peer peer(msgRcvr, peerAddr); // Blocks
-            Thread::enableCancel(enabled);
+            // Blocks until connected and versions exchanged
+            Peer peer(msgRcvr, peerAddr);
             success = peerSet.tryInsert(peer); // Might block
         }
-        catch (const LogicError& e) {
-            // Unknown protocol version from remote peer
-            throw;
-        }
         catch (const std::exception& e) {
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+            std::throw_with_nested(RuntimeError{__FILE__, __LINE__,
                     "Couldn't add remote peer " + peerAddr.to_string() +
-                    " to set of active peers"));
+                    " to set of active peers"});
         }
         return success; // Eclipse wants to see return
     }
@@ -200,34 +208,32 @@ class P2pMgr::Impl final : public Notifier
     void runPeerAdder()
     {
         try {
-            try {
-                for (;;) {
-                    Thread::enableCancel();
-                    auto peerAddr = peerSource.pop(); // Blocks
-                    Thread::disableCancel();
-                    try {
-                        if (tryInsert(peerAddr, *msgRcvr)) { // Blocks
-                            // Peer wasn't a member of active set
-                            initiatedPeers.insert(peerAddr);
-                        }
-                    }
-                    catch (const LogicError& e) {
-                        // Unknown protocol from remote peer
-                        log_what(e);
-                        // Try again later
-                        peerSource.push(peerAddr, stasisDuration);
+            for (;;) {
+                auto peerAddr = peerSource.pop(); // Blocks. Cancellation point
+                try {
+                    if (tryInsert(peerAddr, *msgRcvr)) { // Blocks
+                        LOG_NOTE("Initiated connection to remote peer " +
+                                peerAddr.to_string());
+                        // Peer wasn't a member of active set
+                        initiatedPeers.insert(peerAddr);
                     }
                 }
-            }
-            catch (const std::exception& e) {
-                std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-                        "Peer-adder failed"));
+                catch (const std::exception& e) {
+                    log_warn(e);
+                    // Try again later
+                    peerSource.push(peerAddr, stasisDuration);
+                }
             }
         }
-        catch (const std::exception& e) {
-            log_what(e); // Because end of thread
-        	exception = std::current_exception();
-        	exceptCond.notify_one();
+        catch (std::exception& e) {
+            try {
+                std::throw_with_nested(RUNTIME_ERROR("Peer-adder failed"));
+            }
+            catch (const std::exception& ex) {
+                // Because end of thread
+                log_error(ex);
+                setException();
+            }
         }
     }
 
@@ -239,6 +245,8 @@ class P2pMgr::Impl final : public Notifier
      */
     void handleStoppedPeer(const InetSockAddr& peerAddr)
     {
+        LOG_NOTE("Connection with remote peer terminated: peer=%s",
+                peerAddr.to_string().c_str());
         LockGuard lock(peerSetMutex);
         initiatedPeers.erase(peerAddr);
         peerSource.push(peerAddr, stasisDuration);
@@ -250,9 +258,13 @@ class P2pMgr::Impl final : public Notifier
      */
     static void stopThreads(void* arg)
     {
-    	auto pImpl = reinterpret_cast<Impl*>(arg);
+    	auto pImpl = static_cast<Impl*>(arg);
+
         pImpl->serverThread.cancel();
+        pImpl->serverThread.join();
+
         pImpl->peerAddrThread.cancel();
+        pImpl->peerAddrThread.join();
     }
 
 public:
@@ -293,6 +305,11 @@ public:
         , serverThread{}
     {}
 
+    ~Impl()
+    {
+        stopThreads(this);
+    }
+
     /**
      * Runs this instance. Starts receiving connection requests from remote
      * peers. Adds peers to the set of active peers. Replaces the worst
@@ -301,26 +318,20 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Compatible but not safe
      */
-    void operator()()
+    void run()
     {
         UniqueLock lock(exceptMutex);
+        THREAD_CLEANUP_PUSH(stopThreads, this);
         if (!peerSource.empty())
             peerAddrThread = Thread{[this]{runPeerAdder();}};
-        try {
-            THREAD_CLEANUP_PUSH(stopThreads, this);
-            serverThread = Thread{[this]{runServer();}};
-            isRunning = true;
-            Thread::enableCancel();
-            while (!exception)
-                exceptCond.wait(lock);
-            Thread::disableCancel();
-            THREAD_CLEANUP_POP(1);
-            std::rethrow_exception(exception);
+        serverThread = Thread{[this]{runServer();}};
+        isRunning = true;
+        while (!exception) {
+            Canceler canceler{};
+            exceptCond.wait(lock);
         }
-        catch (const std::exception& e) {
-            stopThreads(this);
-            throw;
-        }
+        std::rethrow_exception(exception);
+        THREAD_CLEANUP_POP(true);
     }
 
     /**
@@ -332,8 +343,7 @@ public:
      */
     void sendNotice(const ProdInfo& prodInfo) const
     {
-    	if (exception)
-            std::rethrow_exception(exception);
+        checkException();
         peerSet.sendNotice(prodInfo);
     }
 
@@ -347,8 +357,7 @@ public:
      */
     void sendNotice(const ProdInfo& prodInfo, const Peer& except) const
     {
-    	if (exception)
-            std::rethrow_exception(exception);
+        checkException();
         peerSet.sendNotice(prodInfo, except.getRemoteAddr());
     }
 
@@ -361,8 +370,7 @@ public:
      */
     void sendNotice(const ChunkInfo& chunkInfo) const
     {
-    	if (exception)
-            std::rethrow_exception(exception);
+        checkException();
         peerSet.sendNotice(chunkInfo);
     }
 
@@ -377,8 +385,7 @@ public:
      */
     void sendNotice(const ChunkInfo& chunkInfo, const Peer& except) const
     {
-    	if (exception)
-            std::rethrow_exception(exception);
+        checkException();
         peerSet.sendNotice(chunkInfo, except.getRemoteAddr());
     }
 };
@@ -395,9 +402,9 @@ P2pMgr::P2pMgr(
             msgRcvr)}
 {}
 
-void P2pMgr::operator()()
+void P2pMgr::run()
 {
-    pImpl->operator()();
+    pImpl->run();
 }
 
 void P2pMgr::sendNotice(const ProdInfo& prodInfo) const

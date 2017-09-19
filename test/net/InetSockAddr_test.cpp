@@ -58,7 +58,7 @@ class InetSockAddrTest : public ::testing::Test {
 
 // Tests default construction
 TEST_F(InetSockAddrTest, DefaultConstruction) {
-    hycast::InetSockAddr sockaddr;
+    hycast::InetSockAddr sockaddr{};
     EXPECT_FALSE(sockaddr);
 }
 

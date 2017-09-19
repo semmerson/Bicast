@@ -20,12 +20,11 @@ YamlPeerSource::YamlPeerSource(YAML::Node peerAddrs)
     : PeerSource{}
 {
     if (!peerAddrs.IsSequence())
-        throw InvalidArgument(__FILE__, __LINE__,
-                "YAML node is not a sequence");
+        throw INVALID_ARGUMENT("YAML node is not a sequence");
     for (size_t i = 0; i < peerAddrs.size(); ++i) {
         if (!peerAddrs[i].IsMap())
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Element " + std::to_string(i) + " is not a map");
+            throw INVALID_ARGUMENT("Element " + std::to_string(i) +
+                    " is not a map");
         auto inetAddr = peerAddrs[i]["inetAddr"].as<std::string>();
         auto port = peerAddrs[i]["port"].as<in_port_t>();
         push(InetSockAddr(inetAddr, port));

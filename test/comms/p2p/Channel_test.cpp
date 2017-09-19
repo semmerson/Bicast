@@ -12,7 +12,7 @@
 #include "ChunkInfo.h"
 #include "error.h"
 #include "ProdInfo.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -60,7 +60,7 @@ void runClient()
         EXPECT_TRUE(chunkInfo1 == chunkInfo2);
     }
     catch (const std::exception& e) {
-        hycast::log_what(e);
+        hycast::log_error(e);
     }
 }
 
@@ -120,7 +120,7 @@ protected:
 
 // Tests default construction
 TEST_F(ChannelTest, DefaultConstruction) {
-    hycast::Channel<hycast::ProdInfo> prodInfoChannel();
+    hycast::Channel<hycast::ProdInfo> prodInfoChannel{};
 }
 
 // Tests end-to-end execution.

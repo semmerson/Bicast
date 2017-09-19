@@ -77,7 +77,7 @@ public:
     /**
      * Constructs from an Internet address string.
      */
-    explicit InetAddr(const std::string addr = "localhost")
+    explicit InetAddr(const std::string addr = "")
         : pImpl{create(addr).pImpl} {}
 
     /**
@@ -85,10 +85,10 @@ public:
      * a port number.
      * @param[out] storage   Storage structure
      * @param[in]  port      Port number in host byte order
-     * @param[in]  sockType  Socket type hint as for `socket()`. 0 => unspecified.
-     * @return Socket address as a `struct sockaddr_storage`
-     * @exceptionsafety  Nothrow
-     * @threadsafety     Safe
+     * @param[in]  sockType  Socket-type hint as for `socket()`. 0 =>
+     *                       unspecified.
+     * @exceptionsafety      Nothrow
+     * @threadsafety         Safe
      */
     void setSockAddrStorage(
             sockaddr_storage& storage,

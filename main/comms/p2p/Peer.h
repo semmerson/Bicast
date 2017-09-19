@@ -51,9 +51,11 @@ public:
          SctpSock&    sock);
 
     /**
-     * Constructs. Doesn't receive anything until `runReceiver()` is called.
+     * Constructs. Blocks until connected and versions exchanged. Doesn't
+     * receive other messages until `runReceiver()` is called.
      * @param[in,out] msgRcvr   Object to receive messages from the remote peer
      * @param[in]     peerAddr  Socket address of remote peer
+     * @throw SystemError       Connection failure
      * @see runReceiver()
      */
     Peer(PeerMsgRcvr&        msgRcvr,
@@ -63,7 +65,7 @@ public:
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
      */
-    const InetSockAddr& getRemoteAddr() const;
+    InetSockAddr getRemoteAddr() const;
 
     /**
      * Returns the hash code of this instance.

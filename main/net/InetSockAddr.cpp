@@ -1,7 +1,7 @@
 /**
  * This file defines an Internet socket address.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -13,6 +13,7 @@
 #include "InetAddr.h"
 #include "InetSockAddr.h"
 #include "PortNumber.h"
+#include "Thread.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -207,6 +208,11 @@ public:
         inetAddr.setSockAddrStorage(storage, port, sockType);
     }
 
+    operator bool()
+    {
+        return port != 0;
+    }
+
     /**
      * Returns the hash code of this instance.
      * @return This instance's hash code
@@ -273,11 +279,15 @@ public:
     {
         struct sockaddr_storage storage;
         setSockAddrStorage(sd, storage);
-        int status = ::connect(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                sizeof(storage));
+        int status;
+        {
+            Canceler canceler{};
+            status = ::connect(sd, reinterpret_cast<struct sockaddr*>(&storage),
+                    sizeof(struct sockaddr));
+        }
         if (status)
-            throw SystemError(__FILE__, __LINE__, "connect() failure: sd=" +
-					std::to_string(sd) + ", sockAddr=" + to_string());
+            throw SYSTEM_ERROR("connect() failure: sd=" +
+                    std::to_string(sd) + ", sockAddr=" + to_string());
         return *this;
     }
 
@@ -297,7 +307,7 @@ public:
         int status = ::bind(sd, reinterpret_cast<struct sockaddr*>(&storage),
                 sizeof(storage));
         if (status)
-            throw SystemError(__FILE__, __LINE__, "bind() failure: sd=" +
+            throw SYSTEM_ERROR("bind() failure: sd=" +
                     std::to_string(sd) + ", sockAddr=" + to_string());
         return *this;
     }
@@ -360,7 +370,7 @@ public:
         req.gr_interface = 0; // Use default multicast interface
         int level = familyToLevel(req.gr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_GROUP, &req, sizeof(req)))
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     std::string("Couldn't join multicast group: sock=") +
                     std::to_string(sd) + ", group=" + to_string());
         return *this;
@@ -380,14 +390,14 @@ public:
             const int       sd,
             const InetAddr& srcAddr) const
     {
-        struct group_source_req req;
+        struct group_source_req req = {};
         setSockAddrStorage(sd, req.gsr_group);
         req.gsr_interface = 0; // Let kernel choose multicast interface
         int sockType = getSockType(sd);
         srcAddr.setSockAddrStorage(req.gsr_source, port, sockType);
         int level = familyToLevel(req.gsr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_SOURCE_GROUP, &req, sizeof(req)))
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     std::string("Couldn't join source-specific multicast group: "
                     "sock=") + std::to_string(sd) + ", group=" + to_string() +
                     ", source=" + srcAddr.to_string());
@@ -411,7 +421,7 @@ bool operator==(
 
 
 InetSockAddr::InetSockAddr()
-    : pImpl{}
+    : pImpl{new InetSockAddrImpl()}
 {}
 
 InetSockAddr::InetSockAddr(
@@ -454,12 +464,12 @@ InetSockAddr::InetSockAddr(const InetSockAddr& that) noexcept
     : pImpl(that.pImpl)
 {}
 
-InetSockAddr::~InetSockAddr()
+InetSockAddr::~InetSockAddr() noexcept
 {}
 
 InetSockAddr::operator bool() const noexcept
 {
-    return pImpl.operator bool();
+    return pImpl->operator bool();
 }
 
 InetAddr InetSockAddr::getInetAddr() const noexcept

@@ -13,7 +13,7 @@
 #include "HycastTypes.h"
 #include "InetSockAddr.h"
 #include "ProdInfo.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -211,7 +211,7 @@ TEST_F(PeerTest, DefaultConstruction) {
 
 // Tests to_string
 TEST_F(PeerTest, ToString) {
-    EXPECT_STREQ("Peer::Impl{sock=SocketImpl{sock=-1}, version=0}",
+    EXPECT_STREQ("{addr=:0, version=0, sock={sd=-1, numStreams=0}}",
             hycast::Peer().to_string().data());
 }
 

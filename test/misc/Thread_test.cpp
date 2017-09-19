@@ -11,32 +11,117 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "Thread.h"
 
 #include <atomic>
 #include <climits>
 #include <condition_variable>
+#include <exception>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <mutex>
 #include <random>
+#include <unistd.h>
 
 namespace {
+
+static int arg = 0;
 
 /// The fixture for testing class `Thread`
 class ThreadTest : public ::testing::Test
 {
 protected:
-    typedef hycast::Thread::Id ThreadId;
+    typedef hycast::Thread::Id       ThreadId;
     typedef std::mutex               Mutex;
     typedef std::lock_guard<Mutex>   LockGuard;
     typedef std::unique_lock<Mutex>  UniqueLock;
+    typedef std::condition_variable  Cond;
+    class Receiving {
+        hycast::Thread     p2pMgrThread;
+        hycast::Thread     peerAddrThread;
+        std::exception_ptr exception;
+        Mutex              mutex;
+        Cond               cond;
+    public:
+        Receiving() :
+            p2pMgrThread{},
+            peerAddrThread{},
+            exception{}
+        {
+            hycast::Cue cue{};
+            p2pMgrThread = hycast::Thread{&Receiving::runP2pMgr, this, cue};
+            hycast::Canceler canceler{};
+            cue.wait();
+        }
+        ~Receiving() {
+            p2pMgrThread.cancel();
+            p2pMgrThread.join();
+        }
+        static void stopPeerAddr(void* arg) {
+            auto pImpl = static_cast<Receiving*>(arg);
+            pImpl->peerAddrThread.cancel();
+            pImpl->peerAddrThread.join();
+        }
+        void runPeerAddr() {
+            try {
+                try {
+                    try {
+#if 0
+                        {
+                            hycast::Canceler canceler{};
+                            ::sleep(1);
+                        }
+#endif
+                        /*
+                         * If the current thread is canceled while its handling
+                         * the exception, then terminate() will be called.
+                         */
+                        throw hycast::SystemError(__FILE__, __LINE__,
+                                "Faux system error", 1);
+                    }
+                    catch (const std::exception& ex) {
+                        std::throw_with_nested(hycast::RuntimeError(__FILE__,
+                                __LINE__, "Faux outer exception"));
+                    }
+                }
+                catch (const std::exception& ex) {
+                    hycast::log_error(ex);
+                }
+            }
+            catch (std::exception& ex) {
+                hycast::log_error(ex);
+                LOG_ERROR("runPeerAddr() failed");
+                LockGuard lock{mutex};
+                exception = std::current_exception();
+                cond.notify_all();
+            }
+#if 0
+            catch (...) {
+                hycast::log_log(__FILE__, __LINE__, "Non-std::exception thrown");
+                throw;
+            }
+#endif
+        }
+        void runP2pMgr(hycast::Cue& cue) {
+            cue.cue();
+            THREAD_CLEANUP_PUSH(stopPeerAddr, this);
+            peerAddrThread = hycast::Thread{[this]{runPeerAddr();}};
+            UniqueLock lock{mutex};
+            while (!exception) {
+                hycast::Canceler canceler{};
+                cond.wait(lock);
+            }
+            THREAD_CLEANUP_POP(true);
+        }
+    };
 
     std::mutex                mutex;
     std::condition_variable   cond;
-    hycast::Thread::Id  threadId;
+    hycast::Thread::Id        threadId;
     std::atomic_bool          cleanupCalled;
     bool                      callableCalled;
+    hycast::Thread            p2pMgrThread;
 
     ThreadTest()
         : mutex{}
@@ -45,6 +130,11 @@ protected:
         , cleanupCalled{false}
         , callableCalled{false}
     {}
+
+    void memberFunc(const int i)
+    {
+        arg = i;
+    }
 
     void markAndNotify()
     {
@@ -65,23 +155,27 @@ protected:
     void markNotifyAndPause()
     {
         markAndNotify();
+        hycast::Canceler canceler{};
         ::pause();
     }
 
     void waitOnCallable()
     {
         UniqueLock lock(mutex);
-        while (!callableCalled)
+        while (!callableCalled) {
+            hycast::Canceler canceler{};
             cond.wait(lock);
+        }
     }
 
     void testCancelState()
     {
-        bool enabled = hycast::Thread::enableCancel(false);
-        EXPECT_TRUE(enabled);
-        enabled = hycast::Thread::enableCancel(true);
+        bool enabled = hycast::Thread::enableCancel(true);
         EXPECT_FALSE(enabled);
+        enabled = hycast::Thread::enableCancel(false);
+        EXPECT_TRUE(enabled);
         markAndNotify();
+        hycast::Canceler canceler{};
         ::pause();
     }
 
@@ -94,16 +188,60 @@ protected:
     }
 };
 
+// Tests cancelability state
+TEST_F(ThreadTest, CancelState)
+{
+    bool enabled = hycast::Thread::enableCancel(false);
+    EXPECT_TRUE(enabled);
+    enabled = hycast::Thread::enableCancel(true);
+    EXPECT_FALSE(enabled);
+}
+
 // Tests default construction
 TEST_F(ThreadTest, DefaultConstruction)
 {
     ASSERT_EQ(0, hycast::Thread::size());
     hycast::Thread thread{};
-    std::cout << "Default thread-ID: " << hycast::Thread::Id{} << '\n';
+    std::cout << "Default p2pMgrThread-ID: " << hycast::Thread::Id{} << '\n';
     EXPECT_EQ(0, hycast::Thread::size());
     EXPECT_NO_THROW(thread.id());
     EXPECT_EQ(ThreadId{}, thread.id());
     EXPECT_NO_THROW(thread.cancel());
+}
+
+static void staticFunc(const int i)
+{
+    arg = i;
+}
+
+// Tests static function construction
+TEST_F(ThreadTest, StaticFuncConstruction)
+{
+    ASSERT_EQ(0, hycast::Thread::size());
+    hycast::Thread thread{&staticFunc, 1};
+    EXPECT_EQ(1, hycast::Thread::size());
+    thread.join();
+    EXPECT_EQ(1, arg);
+}
+
+// Tests member function construction
+TEST_F(ThreadTest, MemberFuncConstruction)
+{
+    ASSERT_EQ(0, hycast::Thread::size());
+
+    hycast::Thread thread{&::ThreadTest_MemberFuncConstruction_Test::memberFunc,
+            this, 1};
+    EXPECT_EQ(1, hycast::Thread::size());
+    thread.join();
+    EXPECT_EQ(1, arg);
+
+#if 0
+    // THE FOLLOWING LINE WON'T COMPILE. THE ABOVE FORM MUST BE USED.
+    p2pMgrThread = hycast::Thread{&this->memberFunc, this, 2};
+    EXPECT_EQ(1, hycast::Thread::size());
+    p2pMgrThread.join();
+    EXPECT_EQ(2, arg);
+#endif
 }
 
 // Tests construction
@@ -160,7 +298,7 @@ TEST_F(ThreadTest, MoveAssignment)
     EXPECT_EQ(1, hycast::Thread::size());
 }
 
-// Tests id() of joined thread
+// Tests id() of joined p2pMgrThread
 TEST_F(ThreadTest, IdOfJoinedThread)
 {
     ASSERT_EQ(0, hycast::Thread::size());
@@ -211,11 +349,11 @@ TEST_F(ThreadTest, StaticCancellation)
 TEST_F(ThreadTest, DestructorCancellation)
 {
     ASSERT_EQ(0, hycast::Thread::size());
-    hycast::Thread thread{[]{::pause();}};
+    hycast::Thread thread{[]{hycast::Canceler canceler{}; ::pause();}};
     EXPECT_EQ(1, hycast::Thread::size());
 }
 
-// Tests canceling completed thread
+// Tests canceling completed p2pMgrThread
 TEST_F(ThreadTest, CancelDoneThread)
 {
     ASSERT_EQ(0, hycast::Thread::size());
@@ -252,7 +390,7 @@ TEST_F(ThreadTest, SettingCancelability)
     EXPECT_EQ(0, hycast::Thread::size());
 }
 
-// Tests thread cleanup routine
+// Tests p2pMgrThread cleanup routine
 TEST_F(ThreadTest, ThreadCleanupRoutine)
 {
     ASSERT_EQ(0, hycast::Thread::size());
@@ -260,6 +398,7 @@ TEST_F(ThreadTest, ThreadCleanupRoutine)
     thread = hycast::Thread{[this] {
             THREAD_CLEANUP_PUSH(cleanup, this);
             markAndNotify();
+            hycast::Canceler canceler{};
             ::pause();
             THREAD_CLEANUP_POP(false);
     }};
@@ -314,6 +453,11 @@ TEST_F(ThreadTest, BunchOfThreads) {
         threads[i] = hycast::Thread([&generator,&distribution]() mutable
                 {::usleep(distribution(generator));});
     usleep(50000);
+}
+
+// Simulates problem in ShipRecv_test.cpp
+TEST_F(ThreadTest, Receiving) {
+    Receiving{};
 }
 
 }  // namespace

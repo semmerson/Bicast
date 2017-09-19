@@ -29,6 +29,76 @@ namespace hycast {
 
 class ProdStore::Impl final
 {
+    /// Product entry
+    class ProdEntry
+    {
+        bool    processed;
+        Product prod;
+
+    public:
+        ProdEntry(const ProdInfo& prodInfo)
+            : processed{false}
+            , prod{prodInfo}
+        {}
+
+        ProdEntry(ProdInfo&& prodInfo)
+            : processed{false}
+            , prod{prodInfo}
+        {}
+
+        ProdEntry(LatentChunk& chunk)
+            : ProdEntry{ProdInfo{"", chunk.getProdIndex(), chunk.getProdSize()}}
+        {
+            prod.add(chunk);
+        }
+
+        ProdEntry(Product& prod)
+            : processed{false}
+            , prod{prod}
+        {}
+
+        inline void set(const ProdInfo& prodInfo)
+        {
+            prod.set(prodInfo);
+        }
+
+        inline void add(LatentChunk& chunk)
+        {
+            prod.add(chunk);
+        }
+
+        inline const ProdInfo& getInfo() const
+        {
+            return prod.getInfo();
+        }
+
+        inline bool isReady() const
+        {
+            return !processed && prod.isComplete() &&
+                    prod.getInfo().getName().length() > 0;
+        }
+
+        inline Product& getProduct()
+        {
+            return prod;
+        }
+
+        inline void setProcessed()
+        {
+            processed = true;
+        }
+
+        inline bool haveChunk(ChunkIndex index) const
+        {
+            return prod.haveChunk(index);
+        }
+
+        inline bool getChunk(ChunkIndex index, ActualChunk& chunk) const
+        {
+            return prod.getChunk(index, chunk);
+        }
+    };
+
     /// Pathname of persistence file
     std::string                                pathname;
     /// Pathname of temporary persistence file
@@ -36,7 +106,7 @@ class ProdStore::Impl final
     /// Persistence file
     std::ofstream                              file;
     /// Map of products
-    std::unordered_map<ProdIndex, Product>     prods;
+    std::unordered_map<ProdIndex, ProdEntry>   prods;
     /// Concurrent-access mutex
     std::mutex mutable                         mutex;
     /// Type of unit of residence-time
@@ -63,7 +133,7 @@ class ProdStore::Impl final
             file.close();
         }
         catch (std::exception& e) {
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     "Couldn't close temporary output product-store \"" +
                     tempPathname + "\"");
         }
@@ -75,7 +145,7 @@ class ProdStore::Impl final
     void renameTempFile()
     {
         if (::rename(tempPathname.data(), pathname.data()))
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     "Couldn't rename temporary output product-store \"" +
                     tempPathname + "\" to \"" + pathname + "\"");
     }
@@ -86,7 +156,7 @@ class ProdStore::Impl final
     void deleteTempFile()
     {
         if (::remove(tempPathname.data()))
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     "Couldn't remove temporary output product-store \"" +
                     tempPathname);
     }
@@ -105,7 +175,7 @@ class ProdStore::Impl final
                 deleteTempFile();
             }
             catch (std::exception& e2) {
-                log_what(e1);
+                log_error(e1);
                 throw;
             }
             throw;
@@ -120,15 +190,15 @@ class ProdStore::Impl final
     void deleteOldProds()
     {
     	try {
-			for (;;) {
-				auto                             prodIndex = delayQ.pop();
-				std::lock_guard<decltype(mutex)> lock(mutex);
-				prods.erase(prodIndex);
-			}
+            for (;;) {
+                auto                             prodIndex = delayQ.pop();
+                std::lock_guard<decltype(mutex)> lock(mutex);
+                prods.erase(prodIndex);
+            }
     	}
     	catch (const std::exception& e) {
-			std::lock_guard<decltype(mutex)> lock(mutex);
-    		exception = std::current_exception();
+            std::lock_guard<decltype(mutex)> lock(mutex);
+            exception = std::current_exception();
     	}
     }
 
@@ -138,6 +208,7 @@ public:
      * @param[in] pathname   Pathname of the persistence-file or the empty
      *                       string to indicate no persistence.
      * @param[in] residence  Minimum residence-time for a product in the store
+     *                       in seconds
      */
     Impl(   const std::string& pathname,
             const double       residence)
@@ -154,13 +225,13 @@ public:
             file.open(tempPathname, std::ofstream::binary |
                     std::ofstream::trunc);
             if (file.fail())
-                throw SystemError(__FILE__, __LINE__,
+                throw SYSTEM_ERROR(
                         "Couldn't open temporary output product-store \"" +
                         tempPathname + "\"");
         }
         if (residence < 0)
-            throw InvalidArgument(__FILE__, __LINE__,
-                    "Residence-time is negative: " + std::to_string(residence));
+            throw INVALID_ARGUMENT("Residence-time is negative: " +
+                    std::to_string(residence));
     }
 
     /**
@@ -174,14 +245,14 @@ public:
                 persist();
         }
         catch (const std::exception& e) {
-            log_what(e);
+            log_error(e);
         }
         try {
             ::pthread_cancel(deletionThread.native_handle());
             deletionThread.join();
         }
         catch (const std::exception& e) {
-            log_what(e);
+            log_error(e);
         }
     }
 
@@ -197,9 +268,10 @@ public:
     {
         std::lock_guard<decltype(mutex)>  lock(mutex);
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         auto prodIndex = prod.getIndex();
-        auto pair = prods.insert(std::pair<ProdIndex, Product>(prodIndex, prod));
+        auto pair = prods.insert(std::pair<ProdIndex, ProdEntry>
+                (prodIndex, ProdEntry{prod}));
         if (pair.second)
             delayQ.push(prodIndex);
     }
@@ -218,19 +290,23 @@ public:
     {
         std::lock_guard<decltype(mutex)>  lock(mutex);
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
+        ProdEntry* entry;
         auto prodIndex = prodInfo.getIndex();
         auto iter = prods.find(prodIndex);
-        if (iter != prods.end()) {
-            prod = iter->second;
-            prod.set(prodInfo);
+        if (iter == prods.end()) {
+            entry = &prods.emplace(prodIndex, ProdEntry{prodInfo}).first->second;
         }
         else {
-            prod = Product(prodInfo);
-            prods.emplace(prodIndex, prod);
-            delayQ.push(prodIndex);
+            entry = &iter->second;
+            entry->set(prodInfo);
         }
-        return prod.isComplete();
+        prod = entry->getProduct();
+        delayQ.push(prodIndex);
+        if (!entry->isReady())
+            return false;
+        entry->setProcessed();
+        return true;
     }
 
     /**
@@ -247,19 +323,23 @@ public:
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
+    	ProdEntry* entry;
         auto prodIndex = chunk.getProdIndex();
         auto iter = prods.find(prodIndex);
-        if (iter != prods.end()) {
-            prod = iter->second;
-            prod.add(chunk);
-            return prod.isComplete() && prod.getInfo().getName().length() > 0;
+        if (iter == prods.end()) {
+            entry = &prods.emplace(prodIndex, ProdEntry{chunk}).first->second;
         }
-        prod = Product(ProdInfo("", prodIndex, chunk.getProdSize()));
-        prods.emplace(prodIndex, prod);
-        prod.add(chunk);
+        else {
+            entry = &iter->second;
+            entry->add(chunk);
+        }
+        prod = entry->getProduct();
         delayQ.push(prodIndex);
-        return false;
+        if (!entry->isReady())
+            return false;
+        entry->setProcessed();
+        return true;
     }
 
     /**
@@ -286,7 +366,7 @@ public:
     {
         std::lock_guard<decltype(mutex)> lock(mutex);
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         auto iter = prods.find(index);
         if (iter == prods.end())
             return false;
@@ -306,8 +386,7 @@ public:
         auto                             iter = prods.find(info.getProdIndex());
         if (iter == prods.end())
             return false;
-        auto prod = iter->second;
-        return prod.haveChunk(info.getIndex());
+        return iter->second.haveChunk(info.getIndex());
     }
 
     /**
@@ -325,9 +404,7 @@ public:
         auto                             iter = prods.find(info.getProdIndex());
         if (iter == prods.end())
             return false;
-        auto prod = iter->second;
-        prod.getChunk(info.getIndex(), chunk);
-        return true;
+        return iter->second.getChunk(info.getIndex(), chunk);
     }
 };
 

@@ -11,6 +11,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "Thread.h"
 #include "UdpSock.h"
 
 #include <cerrno>
@@ -95,7 +96,7 @@ class InUdpSock::Impl : public UdpSock::Impl
         int       status = ::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes,
                 sizeof(yes));
         if (status)
-            throw SystemError(__FILE__, __LINE__,
+            throw SYSTEM_ERROR(
                     "Couldn't share local port number for incoming packets: "
                     "sock=" + std::to_string(sd));
     }
@@ -103,8 +104,7 @@ class InUdpSock::Impl : public UdpSock::Impl
     void checkReadStatus(const ssize_t nbytes)
     {
         if (nbytes < 0)
-            throw SystemError(__FILE__, __LINE__,
-                    std::string{"recvmsg() failure: sock="} +
+            throw SYSTEM_ERROR(std::string{"recvmsg() failure: sock="} +
                     std::to_string(sd));
     }
 
@@ -138,14 +138,14 @@ public:
         , localSockAddr{localSockAddr}
     {
     	try {
-			init();
-			if (sharePort)
-				shareLocalPort(); // Must be before `bind()`
-			bind(); // Set address of local endpoint
+            init();
+            if (sharePort)
+                shareLocalPort(); // Must be before `bind()`
+            bind(); // Set address of local endpoint
     	}
     	catch (const std::exception& e) {
-    		std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-    				"Couldn't construct input UDP socket"));
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't construct input UDP socket"));
     	}
     }
 
@@ -192,7 +192,16 @@ public:
         struct msghdr msghdr = {};
         msghdr.msg_iov = const_cast<struct iovec*>(iovec);
         msghdr.msg_iovlen = iovcnt;
-        ssize_t nbytes = ::recvmsg(sd, &msghdr, peek ? MSG_PEEK : 0);
+        ssize_t nbytes;
+        {
+            Canceler canceler{};
+            nbytes = ::recvmsg(sd, &msghdr, peek ? MSG_PEEK : 0);
+        }
+#if 0
+        ::printf("UdpSock::recv(): iovcnt=%d, iovec[0].iov_len=%zu, "
+                "peek=%d, nbytes=%zd\n", iovcnt, iovec[0].iov_len, peek,
+                nbytes);
+#endif
         checkReadStatus(nbytes);
         haveCurrRec = peek;
         return nbytes;
@@ -266,17 +275,17 @@ public:
         , remoteSockAddr{remoteSockAddr}
     {
     	try {
-			remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
-			/*
-			 * Sets address of remote endpoint for function `::send()` (but not
-			 * `::sendmsg()`)
-			 */
-			remoteSockAddr.connect(sd);
+            remoteSockAddr.setSockAddrStorage(sd, sockAddrStorage);
+            /*
+             * Sets address of remote endpoint for function `::send()` (but not
+             * `::sendmsg()`)
+             */
+            remoteSockAddr.connect(sd);
     	}
-		catch (const std::exception& e) {
-			std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
-					"Couldn't create outgoing UDP socket"));
-		}
+        catch (const std::exception& e) {
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't create outgoing UDP socket"));
+        }
     }
 
     /**
@@ -313,8 +322,7 @@ public:
         struct sockaddr sockAddr;
         socklen_t       len = sizeof(sockAddr);
         if (::getsockname(sd, &sockAddr, &len))
-            throw SystemError(__FILE__, __LINE__,
-                    "Couldn't get local socket address");
+            throw SYSTEM_ERROR("Couldn't get local socket address");
         return InetSockAddr(sockAddr);
     }
 
@@ -355,6 +363,10 @@ public:
         msghdr.msg_namelen = sizeof(sockAddrStorage);
         msghdr.msg_iov = const_cast<struct iovec*>(iovec);
         msghdr.msg_iovlen = iovcnt;
+#if 0
+        ::printf("UdpSock::send(): iovcnt=%d, iovec[0].iov_len=%zu\n",
+                iovcnt, iovec[0].iov_len);
+#endif
         if (::sendmsg(sd, &msghdr, 0) == -1)
             throw std::system_error(errno, std::system_category(),
                     std::string{"Couldn't send on UDP socket: sd="} +

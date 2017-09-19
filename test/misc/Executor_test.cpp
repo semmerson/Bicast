@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "error.h"
 #include "Executor.h"
 #include "Thread.h"
 
@@ -64,7 +65,7 @@ TEST_F(ExecutorTest, IntExecution) {
 TEST_F(ExecutorTest, CancelVoid) {
     {
         hycast::Executor<void> executor{};
-        auto future = executor.submit([]{::pause();});
+        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
         EXPECT_EQ(1, hycast::Thread::size());
         future.cancel();
         EXPECT_TRUE(future.wasCanceled());
@@ -77,7 +78,7 @@ TEST_F(ExecutorTest, CancelVoid) {
 TEST_F(ExecutorTest, CancelInt) {
     {
         hycast::Executor<int> executor{};
-        auto future = executor.submit([]{::pause(); return 1;});
+        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause(); return 1;});
         EXPECT_EQ(1, hycast::Thread::size());
         future.cancel();
         EXPECT_TRUE(future.wasCanceled());
@@ -104,7 +105,7 @@ TEST_F(ExecutorTest, SoftVoidShutdown) {
 TEST_F(ExecutorTest, HardVoidShutdown) {
     {
         hycast::Executor<void> executor{};
-        auto future = executor.submit([]{::pause();});
+        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
         EXPECT_EQ(1, hycast::Thread::size());
         executor.shutdown();
         executor.awaitTermination();
@@ -119,7 +120,7 @@ TEST_F(ExecutorTest, DestructionWithTask) {
     hycast::Future<void> future{};
     {
         hycast::Executor<void> executor{};
-        future = executor.submit([]{::pause();});
+        future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
         EXPECT_EQ(1, hycast::Thread::size());
     }
     EXPECT_EQ(0, hycast::Thread::size());
@@ -219,7 +220,6 @@ TEST_F(ExecutorTest, BunchOfJobs) {
 
 // Tests construction and cancellation performance
 TEST_F(ExecutorTest, CtorAndCancelPerformance) {
-    std::set_terminate([]{::pause();}); // For debugging
     typedef std::chrono::microseconds      TimeUnit;
     typedef std::chrono::steady_clock      Clock;
     typedef std::chrono::time_point<Clock> TimePoint;
@@ -231,7 +231,7 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
     try {
         for (i = 0; i < numExec; ++i) {
             hycast::Executor<void> executor{};
-            auto future = executor.submit([]{::pause();});
+            auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
             future.cancel();
             EXPECT_TRUE(future.wasCanceled());
         }
@@ -243,22 +243,27 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
                 " Hz\n";
     }
     catch (const std::exception& e) {
-        hycast::log_what(e, __FILE__, __LINE__, "Failed on iteration " +
-                std::to_string(i));
+        try {
+            std::throw_with_nested(hycast::RUNTIME_ERROR("Failed on iteration "
+                    + std::to_string(i)));
+        }
+        catch (const std::exception& ex) {
+            hycast::log_error(ex);
+        }
     }
 }
 
-static void subExecutor(hycast::Thread::Barrier& barrier) {
+static void subExecutor(hycast::Barrier& barrier) {
     hycast::Executor<void> executor{};
     auto future1 = executor.submit([]{::usleep(100000);});
-    //auto future2 = executor.submit([]{::pause();});
+    //auto future2 = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
     future1.getResult();
     barrier.wait();
 }
 
 // Tests PeerSet executor usage
 TEST_F(ExecutorTest, PeerSetUsage) {
-    hycast::Thread::Barrier barrier{2};
+    hycast::Barrier barrier{2};
     hycast::Executor<void> executor{};
     executor.submit([&barrier]{subExecutor(barrier);});
     barrier.wait();
@@ -273,7 +278,7 @@ TEST_F(ExecutorTest, DestructionTerminatesThreads) {
             hycast::Executor<void> executor{};
             int n;
             for (n = 0; n < 10; ++n)
-                executor.submit(::pause);
+                executor.submit([]{hycast::Canceler canceler{}; ::pause();});
             EXPECT_EQ(n, hycast::Thread::size());
             ::usleep(distribution(generator));
         }

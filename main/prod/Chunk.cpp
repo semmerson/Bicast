@@ -149,8 +149,7 @@ public:
             const size_t size)
     {
         if (drained)
-            throw LogicError(__FILE__, __LINE__,
-                    "Latent chunk-of-data already drained");
+            throw LOGIC_ERROR("Latent chunk-of-data already drained");
         const size_t nbytes = decoder->decode(data, size);
         drained = true;
         return nbytes;

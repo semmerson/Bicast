@@ -31,6 +31,48 @@
 
 namespace hycast {
 
+/******************************************************************************/
+
+class Cue
+{
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+public:
+    Cue();
+    void cue() const;
+    /**
+     * NB: A cancellation point.
+     */
+    void wait() const;
+};
+
+/******************************************************************************/
+
+class Barrier
+{
+    pthread_barrier_t barrier;
+
+public:
+    Barrier(const int numThreads);
+
+    Barrier(const Barrier& that) =delete;
+    Barrier(Barrier&& that) =delete;
+    Barrier& operator=(const Barrier& rhs) =delete;
+    Barrier& operator=(Barrier&& rhs) =delete;
+
+    /**
+     * Blocks until the number of threads given to the constructor have called
+     * this function, then resets. NB: Not a cancellation point.
+     * @throws SystemError  `pthread_barrier_wait()` failure
+     */
+    void wait();
+
+    ~Barrier() noexcept;
+};
+
+/******************************************************************************/
+
 class Thread final
 {
 public:
@@ -52,8 +94,7 @@ public:
         {
             auto status = ::pthread_key_create(&key, nullptr);
             if (status)
-                throw SystemError(__FILE__, __LINE__,
-                        "pthread_key_create() failure", status);
+                throw SYSTEM_ERROR("pthread_key_create() failure", status);
         }
 
         /**
@@ -101,8 +142,7 @@ public:
         {
             auto status = ::pthread_key_create(&key, &deletePtr);
             if (status)
-                throw SystemError(__FILE__, __LINE__,
-                        "pthread_key_create() failure", status);
+                throw SYSTEM_ERROR("pthread_key_create() failure", status);
         }
 
         /**
@@ -130,26 +170,9 @@ public:
         {
             auto ptr = static_cast<std::shared_ptr<T>*>(::pthread_getspecific(key));
             if (ptr == nullptr)
-                throw LogicError(__FILE__, __LINE__, "Key is not set");
+                throw LOGIC_ERROR("Key is not set");
             return *(*ptr).get();
         }
-    };
-
-    class Barrier
-    {
-        pthread_barrier_t barrier;
-
-    public:
-        Barrier(const int numThreads);
-
-        Barrier(const Barrier& that) =delete;
-        Barrier(Barrier&& that) =delete;
-        Barrier& operator=(const Barrier& rhs) =delete;
-        Barrier& operator=(Barrier&& rhs) =delete;
-
-        void wait();
-
-        ~Barrier() noexcept;
     };
 
 private:
@@ -219,6 +242,13 @@ private:
         {
             assert(isLocked());
             state |= bit;
+            cond.notify_all(); // Notify of all state changes
+        }
+
+        inline void clearStateBit(const State bit)
+        {
+            assert(isLocked());
+            state &= ~bit;
             cond.notify_all(); // Notify of all state changes
         }
 
@@ -296,6 +326,8 @@ private:
          */
         void ensureJoined();
 
+        static void clearBeingJoined(void* arg) noexcept;
+
     public:
         Impl() =delete;
         Impl(const Impl& that) = delete;
@@ -305,10 +337,15 @@ private:
 
         /**
          * Constructs. Either `callable()` will be called or `terminate()` will
-         * be called.
+         * be called. The cancellation state of the resulting thread will be
+         * disabled and deferred. The RAII class `Canceler` should be used
+         * around statements that might block and for which thread cancellation
+         * is desired.
+         *
          * @param[in] callable  Object to be executed by calling it's
          *                      `operator()` function
          * @param[in] args      Arguments of the `operator()` method
+         * @see `Canceler`
          */
         template<class Callable, class... Args>
         explicit Impl(Callable& callable, Args&&... args)
@@ -323,35 +360,27 @@ private:
                 THREAD_CLEANUP_PUSH(setCompletedAndNotify, this);
                 try {
                     Thread::disableCancel();
-                    // Ensure deferred cancelability
+                    // Ensure deferred cancelability when enabled
                     int  previous;
-                    auto status = ::pthread_setcanceltype(
-                            PTHREAD_CANCEL_DEFERRED, &previous);
-                    if (status)
-                        throw SystemError(__FILE__, __LINE__,
-                                "pthread_setcanceltype() failure", status);
+                    ::pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &previous);
+                    barrier.wait();
                     try {
-                        barrier.wait();
-                        Thread::enableCancel();
-                        Thread::testCancel();
                         boundCallable();
-                        Thread::disableCancel(); // Disables Thread::testCancel()
                     }
                     catch (const std::exception& e) {
-                        Thread::disableCancel();
-                        std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                        std::throw_with_nested(RUNTIME_ERROR(
                                 "Task threw an exception"));
                     }
                 }
                 catch (const std::exception& e) {
-                    Thread::disableCancel();
                     exception = std::current_exception();
-                    throw;
                 }
                 THREAD_CLEANUP_POP(true);
             }, std::bind(callable, std::forward<Args>(args)...)}
         {
             barrier.wait();
+            if (exception)
+                std::rethrow_exception(exception);
             native_handle = stdThread.native_handle();
             threads.add(this);
         }
@@ -509,22 +538,22 @@ public:
     /**
      * Sets the cancelability of the current thread.
      * @param[in] enable   Whether or not to enable cancelability
-     * @return             Previous state
-     * @throw SystemError  Cancelability couldn't be set
+     * @retval    `true`   Cancelability was enabled
+     * @retval    `false`  Cancelability was not enabled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      */
-    static bool enableCancel(const bool enable = true);
+    static bool enableCancel(const bool enable = true) noexcept;
 
     /**
      * Disables cancelability of the current thread. Disables `testCancel()`.
-     * @return             Previous state
-     * @throw SystemError  Cancelability couldn't be set
+     * @retval    `true`   Cancelability was enabled
+     * @retval    `false`  Cancelability was not enabled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      * @see testCancel()
      */
-    inline static bool disableCancel()
+    inline static bool disableCancel() noexcept
     {
         return enableCancel(false);
     }
@@ -580,7 +609,34 @@ public:
     static size_t size();
 };
 
+/**
+ * RAII class that enables thread cancellation on construction and returns it
+ * to its previous state on destruction.
+ */
+class Canceler
+{
+    const bool previous;
+
+public:
+    /**
+     * Enables thread cancellation.
+     */
+    inline Canceler()
+        : previous{Thread::enableCancel(true)}
+    {}
+
+    /**
+     * Returns thread cancellation to previous state.
+     */
+    inline ~Canceler()
+    {
+        Thread::enableCancel(previous);
+    }
+};
+
 } // namespace
+
+/******************************************************************************/
 
 namespace std {
     template<> struct hash<hycast::Thread>

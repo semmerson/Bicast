@@ -41,6 +41,17 @@ class Product::Impl final
 
 public:
     /**
+     * Default constructs.
+     */
+    Impl()
+        : prodInfo{}
+        , chunkVec{}
+        , data{nullptr}
+        , numChunks{0}
+        , complete{true}
+    {}
+
+    /**
      * Constructs from information on a product.
      * @param[in] info Information on a product
      */
@@ -103,7 +114,7 @@ public:
         if (info.getIndex() != prodInfo.getIndex() ||
                 info.getSize() != prodInfo.getSize() ||
                 info.getChunkSize() != prodInfo.getChunkSize())
-            throw RuntimeError(__FILE__, __LINE__,
+            throw RUNTIME_ERROR(
                     "Replacement product-information is inconsistent: curr=" +
                     prodInfo.to_string() + ", new=" + info.to_string());
         prodInfo = info;
@@ -156,34 +167,39 @@ public:
 
     /**
      * Adds a latent chunk-of-data.
-     * @param[in] chunk  The latent chunk
-     * @return `true`    if the chunk of data was added
-     * @return `false`   if the chunk of data had already been added. The
-     *                   instance is unchanged.
-     * @throws std::invalid_argument if the chunk is inconsistent with this
-     *                               instance
-     * @throws std::system_error     if an I/O error occurs
-     * @execptionsafety  Strong guarantee
-     * @threadsafety     Compatible but not safe
+     * @param[in] chunk      The latent chunk. `chunk.hasData()` will return
+     *                       `false` on return.
+     * @retval `true`        The chunk of data was added
+     * @retval `false`       The chunk of data had already been added. This
+     *                       instance is unchanged. The data in `chunk` has been
+     *                       discarded.
+     * @throws RuntimeError  `chunk` is inconsistent with this instance
+     * @throws SystemError    An I/O error occurred
+     * @execptionsafety      Strong guarantee
+     * @threadsafety         Compatible but not safe
      */
     bool add(LatentChunk& chunk)
     {
         const auto chunkInfo = chunk.getInfo();
         const auto chunkIndex = chunkInfo.getIndex();
-        if (complete || chunkVec[chunkIndex])
+        if (complete || chunkVec[chunkIndex]) {
+            chunk.discard();
             return false;
+        }
         const auto expectedChunkSize = prodInfo.getChunkSize(chunkIndex);
         const auto chunkOffset = chunkInfo.getOffset();
-        if (chunkOffset + expectedChunkSize > prodInfo.getSize())
-            throw RuntimeError(__FILE__, __LINE__,
+        if (chunkOffset + expectedChunkSize > prodInfo.getSize()) {
+            chunk.discard();
+            throw RUNTIME_ERROR(
                     "Chunk offset + chunk size > product size: offset=" +
-					std::to_string(chunkOffset) + ", chunkSize=" +
-					std::to_string(expectedChunkSize) + ", prodSize=" +
-					std::to_string(prodInfo.getSize()));
+                    std::to_string(chunkOffset) + ", chunkSize=" +
+                    std::to_string(expectedChunkSize) + ", prodSize=" +
+                    std::to_string(prodInfo.getSize()));
+        }
         const auto actualChunkSize = chunk.drainData(data+chunkOffset,
-				expectedChunkSize);
+                expectedChunkSize);
         if (actualChunkSize != expectedChunkSize)
-            throw RuntimeError(__FILE__, __LINE__,
+            throw RUNTIME_ERROR(
                     "Unexpected chunk size: expected=" +
                     std::to_string(expectedChunkSize) +
                     ", actual=" + std::to_string(actualChunkSize));
@@ -229,8 +245,8 @@ public:
     bool haveChunk(const ChunkIndex index) const
     {
         if (index >= chunkVec.size())
-            throw OutOfRange(__FILE__, __LINE__, "Chunk-index is too great: "
-                    "index=" + std::to_string(index) + ", max=" +
+            throw OUT_OF_RANGE("Chunk-index is too great: index=" +
+                    std::to_string(index) + ", max=" +
                     std::to_string(chunkVec.size()-1));
         return complete || chunkVec[index];
     }
@@ -255,6 +271,10 @@ public:
         return true;
     }
 };
+
+Product::Product()
+    : pImpl{new Impl()}
+{}
 
 Product::Product(const ProdInfo& info)
     : pImpl{new Impl(info)}

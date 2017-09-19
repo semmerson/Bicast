@@ -13,7 +13,7 @@ lib_la_SOURCES 	= \
 	error.cpp error.h \
 	DelayQueue.h \
 	MapOfLists.cpp MapOfLists.h \
-	Thread.cpp Thread.h \
+	Thread.h Thread.cpp \
 	Future.cpp Future.h \
 	Task.cpp Task.h \
 	Executor.cpp Executor.h \

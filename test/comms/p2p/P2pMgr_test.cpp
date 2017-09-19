@@ -45,12 +45,11 @@ protected:
     static void runP2pMgr(hycast::P2pMgr& p2pMgr)
     {
     	try {
-            p2pMgr();
-            throw hycast::LogicError(__FILE__, __LINE__,
-                    "Peer-to-peer manager stopped");
+            p2pMgr.run();
+            throw hycast::LOGIC_ERROR("Peer-to-peer manager stopped");
     	}
     	catch (const std::exception& e) {
-            hycast::log_what(e);
+            hycast::log_error(e);
     	}
     }
 

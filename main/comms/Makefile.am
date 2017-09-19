@@ -14,7 +14,8 @@ lib_la_SOURCES 	= Receiving.cpp Receiving.h \
 		  MsgRcvrImpl.h MsgRcvr.h \
 		  Notifier.h \
 		  Shipping.cpp Shipping.h \
-		  Processing.h
+		  Processing.h \
+		  PerfMeter.cpp PerfMeter.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

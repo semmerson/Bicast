@@ -15,8 +15,6 @@
 
 #include "UnknownProd.h"
 
-#include <cstring>
-
 namespace hycast {
 
 UnknownProd::Chunk::Chunk()
@@ -26,7 +24,7 @@ UnknownProd::Chunk::Chunk()
 
 bool UnknownProd::Chunk::setIfNot(LatentChunk& latentChunk)
 {
-    void* buf = data.get();
+    char* buf = data.get();
     if (buf != nullptr)
         return false;
     size = latentChunk.getSize();

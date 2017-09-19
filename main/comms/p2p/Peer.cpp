@@ -18,6 +18,7 @@
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
+#include "Thread.h"
 #include "VersionMsg.h"
 
 #include <cassert>
@@ -60,17 +61,9 @@ class Peer::Impl final {
         void recvData(LatentChunk chunk, const Peer& peer) {}
     }                      defaultMsgRcvr;
 
-    /**
-     * Constructs. Blocks connecting to remote server and exchanging protocol
-     * version with remote peer.
-     * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
-     * @param[in,out] sock     Socket
-     * @throw LogicError       Unknown protocol version from remote peer
-     * @see Impl(Peer*, PeerMsgRcvr&, const InetSockAddr&)
-     */
-    Impl(   PeerMsgRcvr&  msgRcvr,
-            SctpSock&&    sock)
-        : Impl(msgRcvr, std::ref<SctpSock>(sock))
+    Impl(   PeerMsgRcvr&   msgRcvr,
+            SctpSock&&     sock)
+        : Impl{msgRcvr, std::ref<SctpSock>(sock)}
     {}
 
     /**
@@ -135,8 +128,7 @@ public:
         versionChan.send(msg);
         const unsigned vers = getVersion();
         if (vers != version)
-            throw LogicError(__FILE__, __LINE__,
-            		"Remote peer uses unsupported protocol version: " +
+            throw LOGIC_ERROR("Remote peer uses unsupported protocol version: " +
                     std::to_string(vers));
     }
 
@@ -146,6 +138,7 @@ public:
      * @param[in,out] msgRcvr   Object to receive messages from remote peer
      * @param[in]     peerAddr  Socket address of remote peer
      * @throw LogicError        Unknown protocol version from remote peer
+     * @throw SystemError       Connection failure
      * @throw RuntimeError      Other error
      */
     Impl(   PeerMsgRcvr&        msgRcvr,
@@ -165,7 +158,7 @@ public:
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
      */
-    const InetSockAddr& getRemoteAddr()
+    InetSockAddr getRemoteAddr()
     {
         return sock.getRemoteAddr();
     }
@@ -181,12 +174,12 @@ public:
      */
     void runReceiver(const Peer& peer)
     {
-        int entryCancelState;
-        (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryCancelState);
         for (;;) {
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-            uint32_t size = sock.getSize(); // Blocks waiting for input
-            (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+            uint32_t size;
+            {
+                Canceler canceler{};
+                size = sock.getSize(); // Blocks waiting for input
+            }
             if (size == 0)
                 break;
             switch (sock.getStreamId()) {
@@ -213,15 +206,13 @@ public:
                     LatentChunk chunk = chunkChan.recv();
                     msgRcvr.recvData(chunk, peer);
                     if (chunk.hasData())
-                        throw LogicError(__FILE__, __LINE__,
-                                "Latent chunk-of-data still has data");
+                        throw LOGIC_ERROR("Latent chunk-of-data still has data");
                     break;
                 }
                 default:
                     sock.discard();
             }
         }
-        (void)pthread_setcancelstate(entryCancelState, nullptr);
     }
 
     /**
@@ -335,8 +326,9 @@ public:
      */
     std::string to_string() const
     {
-        return std::string("Peer::Impl{sock=") + sock.to_string() + ", version=" +
-                std::to_string(version) + "}";
+        return std::string("{addr=" + sock.getRemoteAddr().to_string() +
+                ", version=" + std::to_string(version) + ", sock=" +
+                sock.to_string() + "}");
     }
 };
 
@@ -406,7 +398,7 @@ uint16_t Peer::getNumStreams()
     return Impl::getNumStreams();
 }
 
-const InetSockAddr& Peer::getRemoteAddr() const
+InetSockAddr Peer::getRemoteAddr() const
 {
     return pImpl->getRemoteAddr();
 }

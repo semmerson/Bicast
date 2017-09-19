@@ -24,40 +24,44 @@ namespace hycast {
 template<class T>
 class SyncQueue final
 {
-	std::mutex              mutex;
-	std::condition_variable cond;
-	T                       obj;
-	bool                    haveObj;
+    std::mutex              mutex;
+    std::condition_variable cond;
+    T                       obj;
+    bool                    haveObj;
 
 public:
-	SyncQueue()
-		: haveObj{false}
-	{}
+    SyncQueue()
+        : haveObj{false}
+    {}
 
-	SyncQueue(const SyncQueue& that) = delete;
-	SyncQueue(const SyncQueue&& that) = delete;
-	SyncQueue& operator =(const SyncQueue& rhs) = delete;
-	SyncQueue& operator =(const SyncQueue&& rhs) = delete;
+    SyncQueue(const SyncQueue& that) = delete;
+    SyncQueue(const SyncQueue&& that) = delete;
+    SyncQueue& operator =(const SyncQueue& rhs) = delete;
+    SyncQueue& operator =(const SyncQueue&& rhs) = delete;
 
-	void push(T obj)
-	{
-		std::unique_lock<decltype(mutex)> lock{mutex};
-		while (haveObj)
-			cond.wait(lock);
-		this->obj = obj;
-		haveObj = true;
-		cond.notify_one();
-	}
+    void push(T obj)
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (haveObj) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+        this->obj = obj;
+        haveObj = true;
+        cond.notify_one();
+    }
 
-	T pop()
-	{
-		std::unique_lock<decltype(mutex)> lock{mutex};
-		while (!haveObj)
-			cond.wait(lock);
-		haveObj = false;
-		cond.notify_one();
-		return obj;
-	}
+    T pop()
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (!haveObj) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+        haveObj = false;
+        cond.notify_one();
+        return obj;
+    }
 };
 
 } // namespace

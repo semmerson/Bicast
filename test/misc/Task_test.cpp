@@ -71,14 +71,17 @@ protected:
     void markNotifyAndPause()
     {
         markAndNotify();
+        hycast::Canceler canceler{};
         ::pause();
     }
 
     void waitOnCallable()
     {
         UniqueLock lock(mutex);
-        while (!callableCalled)
+        while (!callableCalled) {
+            hycast::Canceler canceler{};
             cond.wait(lock);
+        }
     }
 };
 
@@ -126,7 +129,7 @@ TEST_F(TaskTest, VoidTaskException)
 TEST_F(TaskTest, VoidTaskCancellation)
 {
     hycast::Thread thread;
-    hycast::Task<void> task{::pause};
+    hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
     auto future = task.getFuture();
     thread = hycast::Thread{task};
     EXPECT_FALSE(future.hasCompleted());
@@ -141,7 +144,7 @@ TEST_F(TaskTest, VoidTaskCancellation)
 TEST_F(TaskTest, VoidFutureCancellation)
 {
     hycast::Thread thread;
-    hycast::Task<void> task{::pause};
+    hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
     auto future = task.getFuture();
     thread = hycast::Thread{task};
     EXPECT_FALSE(future.hasCompleted());
@@ -157,7 +160,7 @@ TEST_F(TaskTest, VoidTaskCancellationLoop)
 {
     hycast::Thread thread;
     for (int i = 0; i < 1000; ++i) {
-        hycast::Task<void> task{::pause};
+        hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
         auto future = task.getFuture();
         thread = hycast::Thread{task};
         future.cancel();

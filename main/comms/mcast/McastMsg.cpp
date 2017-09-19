@@ -49,8 +49,7 @@ public:
     ProdInfo getProdInfo() const
     {
         if (!isProdInfo)
-            throw LogicError(__FILE__, __LINE__,
-                    "Message isn't product information");
+            throw LogicError("Message isn't product information");
         return msg.prodInfo;
     }
 
@@ -62,8 +61,7 @@ public:
     LatentChunk getLatentChunk() const
     {
         if (!isLatentChunk)
-            throw LogicError(__FILE__, __LINE__,
-                    "Message isn't product information");
+            throw LogicError("Message isn't product information");
         return msg.latentChunk;
     }
 }

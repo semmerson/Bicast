@@ -53,8 +53,7 @@ int Ipv4Addr::getSocket(const int sockType) const
 void Ipv4Addr::setInterface(const int sd) const
 {
     if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &ipAddr, sizeof(ipAddr)))
-        throw SystemError(__FILE__, __LINE__,
-                "Couldn't set output interface to " + to_string());
+        throw SYSTEM_ERROR("Couldn't set output interface to " + to_string());
 }
 
 void Ipv4Addr::setHopLimit(

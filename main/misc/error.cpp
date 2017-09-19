@@ -13,48 +13,39 @@
 
 namespace hycast {
 
-std::string placeStamp(
-        const char*       file,
-        const int         line)
-{
-    char name[::strlen(file)+1];
-    ::strcpy(name, file);
-    return std::string(::basename(name)) + ":" + std::to_string(line);
-}
-
 InvalidArgument::InvalidArgument(
         const char*       file,
         const int         line,
         const std::string msg)
-    : std::invalid_argument{placeStamp(file, line) + ": " + msg}
+    : std::invalid_argument{makeWhat(file, line, msg)}
 {}
 
 LogicError::LogicError(
         const char*       file,
         const int         line,
         const std::string msg)
-    : std::logic_error{placeStamp(file, line) + ": " + msg}
+    : std::logic_error{makeWhat(file, line, msg)}
 {}
 
 NotFoundError::NotFoundError(
         const char*       file,
         const int         line,
         const std::string msg)
-    : std::runtime_error{placeStamp(file, line) + ": " + msg}
+    : std::runtime_error{makeWhat(file, line, msg)}
 {}
 
 OutOfRange::OutOfRange(
         const char*       file,
         const int         line,
         const std::string msg)
-    : std::out_of_range{placeStamp(file, line) + ": " + msg}
+    : std::out_of_range{makeWhat(file, line, msg)}
 {}
 
 RuntimeError::RuntimeError(
         const char*       file,
         const int         line,
         const std::string msg)
-    : std::runtime_error{placeStamp(file, line) + ": " + msg}
+    : std::runtime_error{makeWhat(file, line, msg)}
 {}
 
 SystemError::SystemError(
@@ -63,22 +54,7 @@ SystemError::SystemError(
         const std::string msg,
         const int         errnum)
     : std::system_error{errnum, std::system_category(),
-            placeStamp(file, line) + ": " + msg}
+            makeWhat(file, line, msg)}
 {}
 
-#if 0
-NestedError::NestedError(
-        const char*       file,
-        const int         line,
-        const std::string msg)
-    : std::nested_exception{}
-	, RuntimeError{file, line, msg}
-{
-}
-#endif
-
-}
- // namespace
-
-void log_log(const std::string& msg) {
-}
+} // namespace

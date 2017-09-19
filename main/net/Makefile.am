@@ -22,7 +22,6 @@ lib_la_SOURCES 	= \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddr.cpp InetSockAddr.h \
 	SctpSock.cpp SctpSock.h \
-	SrvrSctpSock.cpp SrvrSctpSock.h \
 	Serializable.cpp Serializable.h \
 	RecStream.cpp RecStream.h \
 	UdpSock.cpp UdpSock.h

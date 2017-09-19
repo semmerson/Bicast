@@ -13,6 +13,7 @@
 #include "Completer.h"
 #include "Executor.h"
 #include "Future.h"
+#include "Thread.h"
 
 #include <assert.h>
 #include <condition_variable>
@@ -54,8 +55,10 @@ class Completer<Ret>::Impl
         Future<Ret> pop()
         {
             UniqueLock lock{mutex};
-            while (futures.empty())
+            while (futures.empty()) {
+                Canceler canceler{};
                 cond.wait(lock);
+            }
             auto future = futures.front();
             futures.pop();
             return future;
@@ -108,13 +111,17 @@ public:
     ~Impl()
     {
         try {
-            bool wasEnabled = Thread::disableCancel();
             executor.shutdown(true);
             executor.awaitTermination();
-            Thread::enableCancel(wasEnabled);
         }
         catch (const std::exception& e) {
-            log_what(e, __FILE__, __LINE__, "Couldn't destroy completer");
+            try {
+                std::throw_with_nested(RUNTIME_ERROR(
+                        "Couldn't destroy completer"));
+            }
+            catch (const std::exception& ex) {
+                log_error(ex);
+            }
         }
     }
 

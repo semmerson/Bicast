@@ -30,7 +30,8 @@ class Shipping final
 
 public:
     /**
-     * Constructs.
+     * Constructs. Blocks until ready to accept an incoming connection from a
+     * remote peer.
      * @param[in] prodStore       Product store
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version
@@ -52,7 +53,8 @@ public:
 
     /**
      * Constructs. The default maximum number of peers and default stasis
-     * duration for the set of active peers will be used.
+     * duration for the set of active peers will be used. Blocks until ready to
+     * accept an incoming connection from a remote peer.
      * @param[in] prodStore       Product store
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version

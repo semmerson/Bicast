@@ -11,6 +11,7 @@
  */
 #include "config.h"
 
+#include <atomic>
 #include <condition_variable>
 #include "gtest/gtest.h"
 #include <mutex>
@@ -132,6 +133,39 @@ TEST_F(ThreadTest, RefMemberFunctionWithArgRef)
     std::thread thread{&ThreadTest::runRefArg, this, std::ref(arg)};
     thread.join();
     EXPECT_TRUE(callableCalled);
+}
+#endif
+
+#if 0
+/*
+ * The following verifies that `terminate()` is called when a thread that's
+ * handling an exception responds to being canceled. Unfortunately, running this
+ * test necessarily terminates the program.
+ */
+static void myTerminate()
+{
+    std::cerr << "myTerminate() called\n"; // Must be printed for verification
+    ::abort();
+}
+
+static void throwAndPause()
+{
+    try {
+        throw std::runtime_error("Faux runtime error");
+    }
+    catch (const std::exception& ex) {
+        ::pause();
+    }
+}
+
+// Verifies that `terminate()` is called when a thread that's handling an
+// exception responds to being canceled
+TEST_F(ThreadTest, CancelExceptionHandling)
+{
+    std::set_terminate(&myTerminate);
+    std::thread thread{throwAndPause};
+    ::pthread_cancel(thread.native_handle());
+    GTEST_FAIL(); // Never reached
 }
 #endif
 

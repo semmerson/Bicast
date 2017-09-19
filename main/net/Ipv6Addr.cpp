@@ -72,8 +72,7 @@ unsigned Ipv6Addr::getIfaceIndex(const int sd) const
         struct ifconf ifc;
         if (ioctl(sd, SIOCGIFCONF, &ifc) < 0) {
             if (errno != EINVAL || lastlen != 0)
-                throw SystemError(__FILE__, __LINE__,
-                        "Couldn't get interface configurations");
+                throw SYSTEM_ERROR("Couldn't get interface configurations");
         }
         else if (ifc.ifc_len != lastlen) {
             lastlen = ifc.ifc_len;
@@ -105,16 +104,15 @@ unsigned Ipv6Addr::getIfaceIndex(const int sd) const
                         == 0) {
                     unsigned index = if_nametoindex(ifr->ifr_name);
                     if (index == 0)
-                        throw SystemError(__FILE__, __LINE__,
-                                "Couldn't convert interface name \"" +
-                                std::string(ifr->ifr_name) + "\" to index");
+                        throw SYSTEM_ERROR("Couldn't convert interface name \""
+                                + std::string(ifr->ifr_name) + "\" to index");
                     return index;
                 } // Found matching entry
             } // Interface entry loop
         } // Have interface entries
     } // Interface entries buffer-size increment loop
-    throw NotFoundError(__FILE__, __LINE__, "Couldn't find interface entry "
-            "corresponding to " + to_string());
+    throw NOT_FOUND_ERROR("Couldn't find interface entry corresponding to " +
+            to_string());
 }
 
 void Ipv6Addr::setInterface(const int sd) const
@@ -122,8 +120,7 @@ void Ipv6Addr::setInterface(const int sd) const
     unsigned ifaceIndex = getIfaceIndex(sd);
     if (setsockopt(sd, IPPROTO_IP, IPV6_MULTICAST_IF, &ifaceIndex,
             sizeof(ifaceIndex)))
-        throw SystemError(__FILE__, __LINE__,
-                "Couldn't set output interface to " + to_string());
+        throw SYSTEM_ERROR("Couldn't set output interface to " + to_string());
 }
 
 void Ipv6Addr::setHopLimit(

@@ -12,7 +12,7 @@
 #include "Chunk.h"
 #include "InetSockAddr.h"
 #include "ProdInfo.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
@@ -115,7 +115,7 @@ protected:
 
 // Tests default construction
 TEST_F(ChunkChannelTest, DefaultConstruction) {
-    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel();
+    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel{};
 }
 
 // Tests end-to-end Chunk transmission

@@ -183,12 +183,12 @@ class Executor<Ret>::Impl final
     }
 
     /**
-     * Purges any previously completed thread and saves the current
-     * thread-of-execution. Executed on a task's thread.
+     * Purges any previously completed thread and saves a reference to the
+     * current thread-of-execution. Executed on a task's thread.
      */
     void purge() {
         LockGuard lock{mutex};
-        purgeDoneThread(); // Eliminates previous so only need one element
+        purgeDoneThread(); // Eliminates any previous so only need one element
         /*
          * The thread object associated with the current thread-of-execution is
          * not destroyed because that causes undefined behavior.
@@ -201,7 +201,8 @@ class Executor<Ret>::Impl final
 
     /**
      * Thread cleanup function. Purges any previously-completed thread and saves
-     * the current thread-of-execution. Executed on a task's thread.
+     * a reference to the current thread-of-execution. Executed on a task's
+     * thread.
      * @param[in] arg  Pointer to `Executor::Impl`
      */
     static void purgeDoneThreadAndSaveThisThread(void* arg) {
@@ -218,8 +219,8 @@ class Executor<Ret>::Impl final
      * @return             The thread object
      */
     Thread newThread(
-            Task<Ret>&       task,
-            Thread::Barrier& barrier)
+            Task<Ret>& task,
+            Barrier&   barrier)
     {
         return Thread{
             [this,task,&barrier]() mutable {
@@ -235,9 +236,14 @@ class Executor<Ret>::Impl final
                     task();
                 }
                 catch (const std::exception& e) {
-                    log_what(e, __FILE__, __LINE__, "Task threw an exception");
+                    try {
+                        std::throw_with_nested(
+                                RUNTIME_ERROR("Task threw an exception"));
+                    }
+                    catch (const std::exception& ex) {
+                        log_error(ex);
+                    }
                 }
-                Thread::disableCancel(); // To prevent cleanup interruption
                 THREAD_CLEANUP_POP(true);
             }
         };
@@ -256,12 +262,12 @@ class Executor<Ret>::Impl final
     Future<Ret> submitTask(Task<Ret>& task)
     {
         if (!task)
-            throw InvalidArgument(__FILE__, __LINE__, "Empty task");
+            throw INVALID_ARGUMENT("Empty task");
         LockGuard lock{mutex};
         if (closed)
-            throw LogicError(__FILE__, __LINE__, "Executor is shut down");
+            throw LOGIC_ERROR("Executor is shut down");
         purgeDoneThread();
-        Thread::Barrier barrier{2};
+        Barrier barrier{2};
         auto            thread = newThread(task, barrier); // RAII object
         auto            threadId = thread.id();
         tasks.add(threadId, task);
@@ -270,7 +276,7 @@ class Executor<Ret>::Impl final
         }
         catch (const std::exception& e) {
             tasks.erase(threadId);
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+            std::throw_with_nested(RUNTIME_ERROR(
                     "Couldn't add new thread"));
         }
         barrier.wait(); // Synchronize `tasks` & `threads` changes with thread
@@ -297,13 +303,17 @@ public:
     ~Impl()
     {
         try {
-            bool enabled = Thread::disableCancel();
             shutdown(true);
             awaitTermination();
-            Thread::enableCancel(enabled);
         }
         catch (const std::exception& e) {
-            log_what(e, __FILE__, __LINE__, "Couldn't destroy executor");
+            try {
+                std::throw_with_nested(
+                        RUNTIME_ERROR("Couldn't destroy executor"));
+            }
+            catch (const std::exception& ex) {
+                log_error(ex);
+            }
         }
     }
 
@@ -321,7 +331,7 @@ public:
             return submitTask(task);
         }
         catch (const std::exception& e) {
-            std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+            std::throw_with_nested(RUNTIME_ERROR(
                     "Couldn't submit job"));
         }
     }
@@ -366,11 +376,13 @@ public:
     {
         UniqueLock lock{mutex};
         if (!closed)
-            throw LogicError(__FILE__, __LINE__,
-                    "Executor hasn't been shut down");
+            throw LOGIC_ERROR("Executor hasn't been shut down");
         while (!threads.empty()) {
-            while (doneThreadId == emptyThreadId)
+            while (doneThreadId == emptyThreadId) {
+                // Thread cancellation must occur from the leaf threads inward
+                //Canceler canceler{};
                 cond.wait(lock);
+            }
             purgeDoneThread();
         }
     }

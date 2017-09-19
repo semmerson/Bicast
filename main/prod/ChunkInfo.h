@@ -16,6 +16,7 @@
 #include "ProdIndex.h"
 #include "Serializable.h"
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 
@@ -27,17 +28,21 @@ class ChunkInfo final : public Serializable<ChunkInfo> {
     /**
      * Index of the associated data-product.
      */
-    ProdIndex   prodIndex;
+    ProdIndex                   prodIndex;
     /**
      * The product-size is included in a chunk's information so that the
      * necessary space for a data-product can be completely allocated based on
      * an incoming chunk for which no product-information exists.
      */
-    ProdSize    prodSize;
+    ProdSize                    prodSize;
     /**
      * Origin-0 index of the chunk.
      */
-    ChunkIndex  chunkIndex;
+    ChunkIndex                  chunkIndex;
+    /**
+     * Hash-code of this instance.
+     */
+    mutable std::atomic<size_t> hashCode;
 
     /**
      * Constructs.
@@ -57,6 +62,12 @@ public:
     ChunkInfo()
         : ChunkInfo(0, 0, 0)
     {}
+
+    /**
+     * Copy constructs.
+     * @param[in] info  Rvalue chunk information
+     */
+    ChunkInfo(const ChunkInfo& info);
 
     /**
      * Constructs.
@@ -162,13 +173,15 @@ public:
     bool operator==(const ChunkInfo& that) const noexcept;
 
     /**
-     * Returns the hash code of this instance.
-     * @return This instance's hash code
+     * Returns the hash-code of this instance.
+     * @return This instance's hash-code
      * @execeptionsafety Nothrow
      * @threadsafety     Safe
      */
     size_t hash() const noexcept {
-        return prodIndex.hash() | std::hash<ChunkIndex>()(chunkIndex);
+        if (hashCode.load() == 0)
+            hashCode = prodIndex.hash() | std::hash<ChunkIndex>()(chunkIndex);
+        return hashCode.load();
     }
 
     /**
@@ -235,6 +248,8 @@ public:
     static ChunkInfo deserialize(
             Decoder&          decoder,
             const unsigned    version);
+
+    std::string to_string() const;
 };
 
 } // namespace

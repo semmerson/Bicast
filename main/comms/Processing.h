@@ -22,20 +22,20 @@ namespace hycast {
 class Processing
 {
 public:
-	/**
-	 * Destroys.
-	 */
-	virtual ~Processing()
-	{}
+    /**
+     * Destroys.
+     */
+    virtual ~Processing()
+    {}
 
-	/**
-	 * Processes a data-product. Returns quickly.
-	 * @param[in] prod   Data-product to be processed
-	 * @exceptionsafety  Basic guarantee
-	 * @threadsafety     Safe
-	 * @throws           RuntimeError
-	 */
-	virtual void process(Product prod) =0;
+    /**
+     * Processes a data-product. Returns quickly.
+     * @param[in] prod   Data-product to be processed
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     * @throws           RuntimeError
+     */
+    virtual void process(Product prod) =0;
 };
 
 } // namespace

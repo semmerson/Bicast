@@ -18,7 +18,7 @@
 #include "PeerSet.h"
 #include "ProdStore.h"
 #include "Shipping.h"
-#include "SrvrSctpSock.h"
+#include "SctpSock.h"
 #include "Thread.h"
 
 #include <pthread.h>
@@ -106,10 +106,11 @@ class Shipping::Impl final
             {}
         };
 
-        PeerSet      peerSet; // Must be initialized before `msgRcvr`
-        MsgRcvr      msgRcvr; // Must be initialized after `peerSet`
-        InetSockAddr serverAddr;
-        Thread       serverThread;
+        Cue             serverReady; // Must initialize before `serverThread`
+        PeerSet         peerSet;     // Must initialized before `msgRcvr`
+        MsgRcvr         msgRcvr;     // Must initialized after `peerSet`
+        InetSockAddr    serverAddr;
+        Thread          serverThread;
 
         /**
          * Accepts a connection from a remote peer. Tries to add it to the set
@@ -126,15 +127,16 @@ class Shipping::Impl final
                 peerSet.tryInsert(peer);
             }
             catch (const std::exception& e) {
-                log_what(e); // Because end of thread
+                log_warn(e); // Because end of thread
             }
         }
 
         /**
-         * Runs the server for connections from remote peers. Creates a
-         * corresponding local peer and attempts to add it to the set of active
-         * peers. Doesn't return unless an exception is thrown. Intended to be
-         * run on a separate thread.
+         * Runs the server for connections from remote peers. For each remote
+         * peer that connects, a corresponding local peer is created and an
+         * attempt is made to add it to the set of active peers. Doesn't return
+         * unless an exception is thrown. Intended to be run on a separate
+         * thread.
          * @exceptionsafety       Basic guarantee
          * @threadsafety          Compatible but not safe
          */
@@ -143,12 +145,13 @@ class Shipping::Impl final
             try {
                 SrvrSctpSock serverSock{serverAddr, Peer::getNumStreams()};
                 for (;;) {
+                    serverReady.cue();
                     auto sock = serverSock.accept(); // Blocks
                     std::thread([=]{accept(sock);}).detach();
                 }
             }
             catch (const std::exception& e) {
-                log_what(e); // Because end of thread
+                log_error(e); // Because end of thread
             }
         }
 
@@ -164,11 +167,14 @@ class Shipping::Impl final
                 const unsigned          maxPeers,
                 const PeerSet::TimeUnit stasisDuration,
                 const InetSockAddr&     serverAddr)
-            : peerSet{stasisDuration*2, maxPeers, [](InetSockAddr&){}}
+            : serverReady{}
+            , peerSet{stasisDuration*2, maxPeers, [](InetSockAddr&){}}
             , msgRcvr{prodStore, peerSet}
             , serverAddr{serverAddr}
             , serverThread{[this]{runServer();}}
-        {}
+        {
+            serverReady.wait();
+        }
 
         ~PeerMgr()
         {
@@ -178,12 +184,12 @@ class Shipping::Impl final
                     serverThread.cancel();
                 }
                 catch (const std::exception& e) {
-                    std::throw_with_nested(RuntimeError(__FILE__, __LINE__,
+                    std::throw_with_nested(RUNTIME_ERROR(
                             "Couldn't destroy/join peer-server thread"));
                 }
             }
             catch (const std::exception& e) {
-                log_what(e); // Because destructors musn't throw
+                log_error(e); // Because destructors musn't throw
             }
         }
 
@@ -207,7 +213,8 @@ class Shipping::Impl final
 
 public:
     /**
-     * Constructs.
+     * Constructs. Blocks until ready to accept an incoming connection from a
+     * remote peer.
      * @param[in] prodStore       Product store
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version
@@ -219,10 +226,10 @@ public:
      */
     Impl(   ProdStore&              prodStore,
             const InetSockAddr&     mcastAddr,
-			unsigned                version,
-			unsigned                maxPeers,
-			const PeerSet::TimeUnit stasisDuration,
-			const InetSockAddr&     serverAddr)
+            unsigned                version,
+            unsigned                maxPeers,
+            const PeerSet::TimeUnit stasisDuration,
+            const InetSockAddr&     serverAddr)
         : prodStore{prodStore}
         , peerMgr{prodStore, maxPeers, stasisDuration, serverAddr}
         , mcastSender{mcastAddr, version}
@@ -234,6 +241,7 @@ public:
      */
     void ship(Product& prod)
     {
+        // Order is important
         mcastSender.send(prod);
         prodStore.add(prod);
         peerMgr.notify(prod);
@@ -243,10 +251,10 @@ public:
 Shipping::Shipping(
         ProdStore&              prodStore,
         const InetSockAddr&     mcastAddr,
-		const unsigned          version,
-		const unsigned          maxPeers,
-		const PeerSet::TimeUnit stasisDuration,
-		const InetSockAddr&     serverAddr)
+        const unsigned          version,
+        const unsigned          maxPeers,
+        const PeerSet::TimeUnit stasisDuration,
+        const InetSockAddr&     serverAddr)
     : pImpl{new Impl(prodStore, mcastAddr, version, maxPeers, stasisDuration,
     		serverAddr)}
 {}

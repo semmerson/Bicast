@@ -26,7 +26,7 @@ namespace hycast {
 
 struct P2pInfo final
 {
-    /// Socket address to be used by the server that remote peers connect to
+    /// Socket address of the local peer-server
     InetSockAddr      serverSockAddr;
 
     /// Canonical number of active peers
@@ -97,7 +97,7 @@ public:
      * @exceptionsafety Basic guarantee
      * @threadsafety    Compatible but not safe
      */
-    void operator()();
+    void run();
 
     /**
      * Sends information about a product to the remote peers.
