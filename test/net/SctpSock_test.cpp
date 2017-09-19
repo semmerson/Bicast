@@ -202,10 +202,20 @@ TEST_F(SctpTest, CopyAssignmentToSelf) {
     EXPECT_TRUE(is_open(sd1));
 }
 
-// Tests setting buffer sizes
-TEST_F(SctpTest, BufferSizes) {
+// Tests setting send buffer size
+TEST_F(SctpTest, SendBufferSize) {
     hycast::SrvrSctpSock s{srvrAddr};
     auto size = s.getSendBufSize();
+    s.setSendBufSize(size+1024);
+    EXPECT_TRUE(size < s.getSendBufSize());
+}
+
+// Tests setting receive buffer size
+TEST_F(SctpTest, ReceiveBufferSize) {
+    hycast::SrvrSctpSock s{srvrAddr};
+    auto size = s.getRecvBufSize();
+    s.setRecvBufSize(size+1024);
+    EXPECT_TRUE(size < s.getRecvBufSize());
 }
 
 // Tests equality operator
