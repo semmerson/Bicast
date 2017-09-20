@@ -54,7 +54,7 @@ protected:
                 data[i] = i % UCHAR_MAX;
     }
 
-    const double                    drop = 0.2;
+    const double                    drop = 0.0;
     const int                       NUM_PRODUCTS = 50;
     unsigned char                   data[10000];
     //unsigned char                   data[1];
