@@ -294,18 +294,17 @@ public:
     SrvrSctpSock();
 
     /**
-     * Constructs.
+     * Constructs. The socket is bound to the Internet socket address but
+     * `listen()` is not called to allow certain options to be set (e.g., buffer
+     * sizes).
      * @param[in] addr        Internet socket address on which to listen
      * @param[in] numStreams  Number of SCTP streams
-     * @param[in] queueSize   Limit on the number of outstanding connections
-     *                        in the `listen()` queue
      * @throw RuntimeError    Couldn't construct server-size SCTP socket
      * @see   `listen()`
      */
     SrvrSctpSock(
             const InetSockAddr& addr,
-            const int           numStreams = 1,
-            const int           queueSize = 5);
+            const int           numStreams = 1);
 
     /**
      * Copy assigns.
@@ -313,6 +312,14 @@ public:
      * @return         This instance
      */
     SrvrSctpSock& operator=(const SrvrSctpSock& rhs);
+
+    /**
+     * Configures the socket for accepting incoming association attempts.
+     * @param[in] queueSize  Size of the backlog queue
+     * @throw LogicError     Socket already configured for listening
+     * @throw SystemError    `::listen()` failure
+     */
+    void listen(const int queueSize = 5) const;
 
     /**
      * Accepts an incoming connection on the socket.

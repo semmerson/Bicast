@@ -113,6 +113,7 @@ protected:
     {
         // Server socket must exist before client connects
         hycast::SrvrSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        sock.listen();
         receiverThread = std::thread([=]{ this->runTestReceiver(sock); });
     }
 
@@ -177,6 +178,7 @@ protected:
     {
         // Server socket must exist before client connects
         hycast::SrvrSctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        sock.listen();
         receiverThread = std::thread(&PeerTest::runPerfReceiver, this, sock);
     }
 

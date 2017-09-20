@@ -145,6 +145,7 @@ class P2pMgr::Impl final : public Notifier
         try {
             try {
                 SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
+                serverSock.listen();
                 for (;;) {
                     auto sock = serverSock.accept(); // Blocks
                     LockGuard lock(peerSetMutex);

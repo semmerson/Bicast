@@ -56,7 +56,8 @@ public:
 
     /**
      * Constructs.
-     * @param[in] sd         SCTP-compatible socket descriptor
+     * @param[in] sd         SCTP-compatible socket descriptor from `socket()`
+     *                       or `accept()`
      * @param[in] numStream  Number of SCTP streams
      * @throws SystemError if required memory can't be allocated
      */
@@ -270,6 +271,122 @@ bool BaseSctpSock::operator ==(const BaseSctpSock& that) const noexcept
 std::string BaseSctpSock::to_string() const
 {
     return pImpl->to_string();
+}
+
+/******************************************************************************/
+
+/**
+ * Server-side SCTP socket implementation.
+ */
+class SrvrSctpSock::Impl : public BaseSctpSock::Impl
+{
+public:
+    Impl()
+        : BaseSctpSock::Impl{}
+    {}
+
+    /**
+     * Constructs. The socket is bound to the Internet socket address but
+     * `listen()` is not called to allow certain options to be set (e.g., buffer
+     * sizes).
+     * @param[in] addr        Internet socket address on which to listen
+     * @param[in] numStreams  Number of SCTP streams
+     * @throw RuntimeError    Couldn't construct server-size SCTP socket
+     * @see   `listen()`
+     */
+    Impl(   const InetSockAddr& addr,
+            const int           numStreams)
+        : BaseSctpSock::Impl{createSocket(), numStreams}
+    {
+        try {
+            const int enable = 1;
+            if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable,
+                    sizeof(enable)))
+                throw SYSTEM_ERROR(
+                        "setsockopt(SO_REUSEADDR) failure: sd=" +
+                        std::to_string(sd) + ", addr=" + addr.to_string());
+            addr.bind(sd);
+        }
+        catch (const std::exception& e) {
+            (void)::close(sd);
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't construct server-side SCTP socket"));
+        }
+    }
+
+    /**
+     * Configures the socket for accepting incoming association attempts.
+     * @param[in] queueSize  Limit on the number of outstanding attempts
+     *                       in the `::listen()` queue
+     * @throw LogicError     Socket already configured for listening
+     * @throw SystemError    `::listen()` failure
+     */
+    void listen(const int queueSize = 5)
+    {
+        if (::listen(sd, queueSize))
+            throw SYSTEM_ERROR(
+                    "listen() failure: sd=" + std::to_string(sd) +
+                    ", queueSize=" + std::to_string(queueSize));
+    }
+
+    /**
+     * Accepts an incoming connection on the socket. Calls `listen()` if that
+     * function hasn't been called.
+     * @return             The accepted connection
+     * @throw SystemError  `listen()` failure
+     * @throw SystemError  `accept()` failure
+     * @throw SystemError  Required memory can't be allocated
+     * @exceptionsafety    Basic guarantee
+     * @threadsafety       Thread-compatible but not thread-safe
+     */
+    SctpSock accept()
+    {
+        int newSd;
+        {
+            socklen_t len = 0;
+            Canceler  canceler{};
+            newSd = ::accept(sd, (struct sockaddr*)nullptr, &len);
+        }
+        if (newSd < 0)
+            throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd));
+        SctpSock sctpSock{};
+        try {
+            sctpSock = SctpSock{newSd, numStreams};
+        }
+        catch (const std::exception& e) {
+            (void)::close(newSd);
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't create an established SCTP socket"));
+        }
+        return sctpSock;
+    }
+};
+
+SrvrSctpSock::SrvrSctpSock()
+    : BaseSctpSock{new Impl()}
+{}
+
+SrvrSctpSock::SrvrSctpSock(
+        const InetSockAddr& addr,
+        const int           numStreams)
+    : BaseSctpSock{new Impl(addr, numStreams)}
+{}
+
+SrvrSctpSock& SrvrSctpSock::operator =(const SrvrSctpSock& rhs)
+{
+    if (pImpl.get() != rhs.pImpl.get())
+        pImpl = rhs.pImpl;
+    return *this;
+}
+
+void SrvrSctpSock::listen(const int queueSize) const
+{
+    (static_cast<Impl*>(pImpl.get()))->listen(queueSize);
+}
+
+SctpSock SrvrSctpSock::accept() const
+{
+    return (static_cast<Impl*>(pImpl.get()))->accept();
 }
 
 /******************************************************************************/
@@ -497,9 +614,10 @@ public:
 
     /**
      * Constructs.
-     * @param[in] sd         SCTP-compatible socket descriptor
+     * @param[in] sd         SCTP-compatible socket descriptor from `socket()`
+     *                       or `accept()`
      * @param[in] numStream  Number of SCTP streams
-     * @throws SystemError if required memory can't be allocated
+     * @throws SystemError   Required memory can't be allocated
      */
     Impl(   const int sd,
             const int numStreams)
@@ -519,19 +637,24 @@ public:
     }
 
     /**
-     * Constructs a client-side SCTP socket. Blocks until connected.
+     * Constructs a client-side SCTP socket (i.e., initiates the association).
+     * Blocks until the association is established.
      * @param[in] addr         Internet address of the server
      * @param[in] numStreams   Number of SCTP streams
      * @return                 Corresponding SCTP socket
      * @throw InvalidArgument  `numStreams <= 0`
      * @throw SystemError      Connection failure
-     * @see ~Impl()
      * @see operator=(Impl& socket)
      * @see operator=(Impl&& socket)
      */
     Impl(   const InetSockAddr& addr,
             const int           numStreams)
         : BaseSctpSock::Impl(createAndConnect(addr), numStreams)
+        , mutex{}
+        , streamId(0)
+        , size(0)
+        , haveCurrMsg(false)
+        , remoteAddr{addr}
     {
         sigact.sa_handler = SIG_IGN;
     }
@@ -808,89 +931,4 @@ bool SctpSock::hasMessage() const
 {
     return (static_cast<Impl*>(pImpl.get()))->hasMessage();
 }
-
-/******************************************************************************/
-
-/**
- * Server-side SCTP socket implementation.
- */
-class SrvrSctpSock::Impl : public BaseSctpSock::Impl
-{
-public:
-    Impl()
-        : BaseSctpSock::Impl{}
-    {}
-
-    Impl(   const InetSockAddr& addr,
-            const int           numStreams,
-            const int           queueSize)
-        : BaseSctpSock::Impl{createSocket(), numStreams}
-    {
-        try {
-            const int enable = 1;
-            if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable,
-                    sizeof(enable)))
-                throw SYSTEM_ERROR(
-                        "setsockopt(SO_REUSEADDR) failure: sock=" +
-                        std::to_string(sd) + ", addr=" +
-                        addr.to_string());
-            addr.bind(sd);
-            if (::listen(sd, queueSize))
-                throw SYSTEM_ERROR(
-                        "listen() failure: sock=" + std::to_string(sd) +
-                        ", addr=" + addr.to_string());
-        }
-        catch (const std::exception& e) {
-            (void)::close(sd);
-            std::throw_with_nested(RUNTIME_ERROR(
-                    "Couldn't construct server-side SCTP socket"));
-        }
-    }
-
-    SctpSock accept() const
-    {
-        int newSd;
-        {
-            socklen_t len = 0;
-            Canceler  canceler{};
-            newSd = ::accept(sd, (struct sockaddr*)nullptr, &len);
-        }
-        if (newSd < 0)
-            throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd));
-        SctpSock sctpSock{};
-        try {
-            sctpSock = SctpSock{newSd, numStreams};
-        }
-        catch (const std::exception& e) {
-            (void)::close(newSd);
-            std::throw_with_nested(RUNTIME_ERROR(
-                    "Couldn't create an established SCTP socket"));
-        }
-        return sctpSock;
-    }
-};
-
-SrvrSctpSock::SrvrSctpSock()
-    : BaseSctpSock{new Impl()}
-{}
-
-SrvrSctpSock::SrvrSctpSock(
-        const InetSockAddr& addr,
-        const int           numStreams,
-        const int           queueSize)
-    : BaseSctpSock{new Impl(addr, numStreams, queueSize)}
-{}
-
-SrvrSctpSock& SrvrSctpSock::operator =(const SrvrSctpSock& rhs)
-{
-    if (pImpl.get() != rhs.pImpl.get())
-        pImpl = rhs.pImpl;
-    return *this;
-}
-
-SctpSock SrvrSctpSock::accept() const
-{
-    return (static_cast<Impl*>(pImpl.get()))->accept();
-}
-
 } // namespace

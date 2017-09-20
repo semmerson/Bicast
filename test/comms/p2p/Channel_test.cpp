@@ -95,6 +95,7 @@ protected:
     {
         // Server socket must exist before client connects
         hycast::SrvrSctpSock sock(serverSockAddr, numStreams);
+        sock.listen();
         serverThread = std::thread(runServer, sock);
     }
 

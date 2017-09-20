@@ -118,6 +118,7 @@ protected:
     {
         // Work done here so that socket is being listened to when client starts
         hycast::SrvrSctpSock    srvrSock{srvrAddr, numStreams};
+        srvrSock.listen();
         recvThread = std::thread(runServer, srvrSock);
     }
 
@@ -158,6 +159,7 @@ TEST_F(SctpTest, CloseOnDestruction) {
 // Tests copy-construction
 TEST_F(SctpTest, CopyConstruction) {
     hycast::SrvrSctpSock s1{srvrAddr};
+    s1.listen();
     auto sd1 = s1.getSock();
     EXPECT_TRUE(is_open(sd1));
     hycast::SrvrSctpSock s2(s1);
@@ -171,6 +173,7 @@ TEST_F(SctpTest, CopyConstruction) {
 // Tests move-assignment
 TEST_F(SctpTest, MoveAssignment) {
     hycast::SrvrSctpSock s1 = hycast::SrvrSctpSock{srvrAddr};
+    s1.listen();
     auto sd = s1.getSock();
     EXPECT_TRUE(is_open(sd));
     s1.~SrvrSctpSock();
@@ -196,6 +199,7 @@ TEST_F(SctpTest, CopyAssignmentToEmpty) {
 // Tests copy-assignment to self
 TEST_F(SctpTest, CopyAssignmentToSelf) {
     hycast::SrvrSctpSock s1{srvrAddr};
+    s1.listen();
     auto sd1 = s1.getSock();
     s1 = s1;
     EXPECT_EQ(sd1, s1.getSock());
@@ -242,6 +246,7 @@ TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
         hycast::SctpSock     peerSock;
         Server(hycast::SrvrSctpSock&& serverSock) : srvrSock{serverSock} {}
         void operator()() {
+            srvrSock.listen();
             peerSock = srvrSock.accept();
             uint32_t nbytes = peerSock.getSize();
             EXPECT_EQ(0, nbytes);

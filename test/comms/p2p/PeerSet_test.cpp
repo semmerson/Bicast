@@ -107,6 +107,7 @@ protected:
         {
             hycast::SrvrSctpSock serverSock{serverSockAddr,
                 hycast::Peer::getNumStreams()};
+            serverSock.listen();
             thread = std::thread([this,serverSock]{runServer(serverSock);});
         }
         ~Server() {

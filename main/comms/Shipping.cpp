@@ -144,6 +144,7 @@ class Shipping::Impl final
         {
             try {
                 SrvrSctpSock serverSock{serverAddr, Peer::getNumStreams()};
+                serverSock.listen();
                 for (;;) {
                     serverReady.cue();
                     auto sock = serverSock.accept(); // Blocks
