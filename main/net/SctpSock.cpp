@@ -413,7 +413,7 @@ private:
     public:
         IgnoreSigPipe()
         {
-            struct sigaction ignoreSignal;
+            struct sigaction ignoreSignal = {};
             ignoreSignal.sa_handler = SIG_IGN;
             if (::sigaction(SIGPIPE, &ignoreSignal, &oldSigact))
                 throw SYSTEM_ERROR("Couldn't ignore SIGPIPE");

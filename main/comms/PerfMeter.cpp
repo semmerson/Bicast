@@ -50,6 +50,7 @@ public:
         , start{}
         , prodCount{0}
         , byteCount{0}
+        , duration{}
     {}
 
     void product(const ProdInfo& prodInfo)
@@ -93,24 +94,33 @@ public:
         YAML::Emitter out;
         out << YAML::BeginMap;
             out << YAML::Key << "Duration";
-                out << (std::to_string(seconds) + " s");
-            out << YAML::Key << "Products"; out << YAML::BeginMap;
-                out << YAML::Key << "count"; out << prodCount;
-                if (seconds != 0)
-                    out << YAML::Key << "rate"; out <<
-                        (std::to_string(prodCount/seconds) + "/s");
+            out << (std::to_string(seconds) + " s");
+            out << YAML::Key << "Products";
+            out << YAML::BeginMap;
+                out << YAML::Key << "count";
+                out << prodCount;
+                if (seconds != 0) {
+                    out << YAML::Key << "rate";
+                    out << (std::to_string(prodCount/seconds) + "/s");
+                }
             out << YAML::EndMap;
-            out << YAML::Key << "Bytes"; out << YAML::BeginMap;
-                out << YAML::Key << "count"; out << byteCount;
-                if (seconds != 0)
-                    out << YAML::Key << "rate"; out <<
-                            (std::to_string(byteCount/seconds) + "/s");
+            out << YAML::Key << "Bytes";
+            out << YAML::BeginMap;
+                out << YAML::Key << "count";
+                out << byteCount;
+                if (seconds != 0) {
+                    out << YAML::Key << "rate";
+                    out << (std::to_string(byteCount/seconds) + "/s");
+                }
             out << YAML::EndMap;
-            out << YAML::Key << "Bits"; out << YAML::BeginMap;
-                out << YAML::Key << "count"; out << 8*byteCount;
-                if (seconds != 0)
-                    out << YAML::Key << "rate"; out <<
-                            (std::to_string(8*byteCount/seconds) + "/s");
+            out << YAML::Key << "Bits";
+            out << YAML::BeginMap;
+                out << YAML::Key << "count";
+                out << 8*byteCount;
+                if (seconds != 0) {
+                    out << YAML::Key << "rate";
+                    out << (std::to_string(8*byteCount/seconds) + "/s");
+                }
             out << YAML::EndMap;
         out << YAML::EndMap;
         return ostream << out.c_str();

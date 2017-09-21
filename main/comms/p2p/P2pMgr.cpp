@@ -306,9 +306,14 @@ public:
         , serverThread{}
     {}
 
-    ~Impl()
+    ~Impl() noexcept
     {
-        stopThreads(this);
+        try {
+            stopThreads(this);
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+        }
     }
 
     /**
