@@ -46,12 +46,20 @@ protected:
 
 public:
     /**
+     * Constructs.
+     * @param[in] numStreams  Number of SCTP streams
+     */
+    Impl(const int numStreams)
+        : sd(-1)
+        , numStreams{numStreams}
+    {}
+
+    /**
      * Default constructs.
      * @throws SystemError if required memory can't be allocated
      */
     Impl()
-        : sd(-1)
-        , numStreams(0)
+        : Impl{0}
     {}
 
     /**
@@ -349,16 +357,15 @@ public:
         }
         if (newSd < 0)
             throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd));
-        SctpSock sctpSock{};
         try {
-            sctpSock = SctpSock{newSd, numStreams};
+            return SctpSock{newSd, numStreams};
         }
         catch (const std::exception& e) {
             (void)::close(newSd);
             std::throw_with_nested(RUNTIME_ERROR(
                     "Couldn't create an established SCTP socket"));
         }
-        return sctpSock;
+        return SctpSock{}; // NOTREACHED. Pacifies Eclipse
     }
 };
 
@@ -397,28 +404,34 @@ SctpSock SrvrSctpSock::accept() const
 class SctpSock::Impl : public BaseSctpSock::Impl
 {
 private:
+    /**
+     * RAII class for ignoring SIGPIPE.
+     */
+    class IgnoreSigPipe
+    {
+        struct sigaction oldSigact;
+    public:
+        IgnoreSigPipe()
+        {
+            struct sigaction ignoreSignal;
+            ignoreSignal.sa_handler = SIG_IGN;
+            if (::sigaction(SIGPIPE, &ignoreSignal, &oldSigact))
+                throw SYSTEM_ERROR("Couldn't ignore SIGPIPE");
+        }
+        ~IgnoreSigPipe() noexcept
+        {
+            if (::sigaction(SIGPIPE, &oldSigact, nullptr))
+                log_error(SYSTEM_ERROR("Couldn't restore SIGPIPE handling"));
+        }
+    };
     typedef std::mutex             Mutex;
     typedef std::lock_guard<Mutex> LockGuard;
 
-    Mutex                          mutex;       // For read state
-    unsigned                       streamId;    // Part of read state
-    uint32_t                       size;        // Part of read state
-    bool                           haveCurrMsg; // Part of read state
+    Mutex                          mutex;       // For input state
+    unsigned                       streamId;    // Part of input state
+    uint32_t                       size;        // Part of input state
+    bool                           haveCurrMsg; // Part of input state
     InetSockAddr                   remoteAddr;
-    static struct sigaction        sigact;
-
-    static int createAndConnect(const InetSockAddr& addr)
-    {
-        auto sd = createSocket();
-        try {
-            addr.connect(sd);
-        }
-        catch (const std::exception& e) {
-            ::close(sd);
-            throw;
-        }
-        return sd;
-    }
 
     /**
      * Throws an exception if the socket isn't ready for writing.
@@ -599,23 +612,42 @@ private:
 public:
     /**
      * Default constructs.
-     * @throws SystemError if required memory can't be allocated
      */
     Impl()
-        : BaseSctpSock::Impl{}
+        : BaseSctpSock::Impl{0}
         , mutex{}
         , streamId(0)
         , size(0)
         , haveCurrMsg(false)
         , remoteAddr{}
-    {
-        sigact.sa_handler = SIG_IGN;
-    }
+    {}
 
     /**
-     * Constructs.
-     * @param[in] sd         SCTP-compatible socket descriptor from `socket()`
-     *                       or `accept()`
+     * Constructs an SCTP socket from the client side. The caller must
+     * eventually call `connect()` to establish an SCTP association. `connect()`
+     * is not called here to allow socket configurations that must occur before
+     * that function is called (e.g., setting buffer sizes).
+     * @param[in] numStreams   Number of SCTP streams
+     * @return                 Corresponding SCTP socket
+     * @throw InvalidArgument  `numStreams <= 0`
+     * @throw SystemError      Socket couldn't be created
+     * @throw SystemError      Required memory couldn't be allocated
+     * @see `connect(InetSockAddr& addr)`
+     * @see `setSendBufSize()`
+     * @see `setRecvBufSize()`
+     */
+    Impl(const int numStreams)
+        : BaseSctpSock::Impl{createSocket(), numStreams}
+        , mutex{}
+        , streamId(0)
+        , size(0)
+        , haveCurrMsg(false)
+        , remoteAddr{}
+    {}
+
+    /**
+     * Constructs an SCTP socket from the server side.
+     * @param[in] sd         SCTP socket descriptor from `accept()`
      * @param[in] numStream  Number of SCTP streams
      * @throws SystemError   Required memory can't be allocated
      */
@@ -633,30 +665,26 @@ public:
         if (::getpeername(sd, &addr, &len))
             throw SYSTEM_ERROR("getpeername() failure");
         remoteAddr = InetSockAddr{addr};
-        sigact.sa_handler = SIG_IGN;
     }
 
     /**
-     * Constructs a client-side SCTP socket (i.e., initiates the association).
-     * Blocks until the association is established.
-     * @param[in] addr         Internet address of the server
-     * @param[in] numStreams   Number of SCTP streams
-     * @return                 Corresponding SCTP socket
-     * @throw InvalidArgument  `numStreams <= 0`
-     * @throw SystemError      Connection failure
-     * @see operator=(Impl& socket)
-     * @see operator=(Impl&& socket)
+     * Connects to a server. This function is separate from the constructor to
+     * allow socket configurations that must occur before `::connect()` is
+     * called (e.g., setting buffer sizes). Blocks until the association is
+     * established.
+     * @return              This instance
+     * @throws SystemError  Connection failure
+     * @exceptionsafety     Strong
+     * @threadsafety        Safe
+     * @see `Impl(int numStreams)`
+     * @see `setSendBufSize()`
+     * @see `setRecvBufSize()`
      */
-    Impl(   const InetSockAddr& addr,
-            const int           numStreams)
-        : BaseSctpSock::Impl(createAndConnect(addr), numStreams)
-        , mutex{}
-        , streamId(0)
-        , size(0)
-        , haveCurrMsg(false)
-        , remoteAddr{addr}
+    Impl& connect(const InetSockAddr& addr)
     {
-        sigact.sa_handler = SIG_IGN;
+        addr.connect(sd);
+        remoteAddr = addr;
+        return *this;
     }
 
     /**
@@ -725,14 +753,10 @@ public:
         msghdr.msg_controllen = sizeof(msg_control);
         ssize_t sendStatus;
         {
-            struct sigaction oact;
-            ::sigaction(SIGPIPE, &sigact, &oact);
-            {
-                Canceler canceler{};
-                throwIfNotWritable();
-                sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR);
-            }
-            ::sigaction(SIGPIPE, &oact, nullptr);
+            IgnoreSigPipe ignoreSigPipe{};
+            Canceler      canceler{};
+            throwIfNotWritable();
+            sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR);
         }
         checkIoStatus(__LINE__, "sendmsg()", numExpected, sendStatus);
     }
@@ -850,7 +874,6 @@ public:
     }
 };
 
-struct sigaction SctpSock::Impl::sigact;
 
 SctpSock::SctpSock()
     : BaseSctpSock{new Impl()}
@@ -862,10 +885,8 @@ SctpSock::SctpSock(
     : BaseSctpSock{new Impl(sd, numStreams)}
 {}
 
-SctpSock::SctpSock(
-        const InetSockAddr& addr,
-        const int           numStreams)
-    : BaseSctpSock{new Impl(addr, numStreams)}
+SctpSock::SctpSock(const int numStreams)
+    : BaseSctpSock{new Impl(numStreams)}
 {}
 
 SctpSock& SctpSock::operator =(const SctpSock& rhs)
@@ -878,6 +899,12 @@ SctpSock& SctpSock::operator =(const SctpSock& rhs)
 void SctpSock::discard() const
 {
     (static_cast<Impl*>(pImpl.get()))->discard();
+}
+
+SctpSock& SctpSock::connect(const InetSockAddr& addr)
+{
+    (static_cast<Impl*>(pImpl.get()))->connect(addr);
+    return *this;
 }
 
 InetSockAddr SctpSock::getRemoteAddr() const
@@ -931,4 +958,5 @@ bool SctpSock::hasMessage() const
 {
     return (static_cast<Impl*>(pImpl.get()))->hasMessage();
 }
+
 } // namespace

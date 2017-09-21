@@ -41,7 +41,8 @@ void runServer(hycast::SrvrSctpSock serverSock)
 void runClient()
 {
     try {
-        hycast::SctpSock sock(serverSockAddr, numStreams);
+        hycast::SctpSock sock(numStreams);
+        sock.connect(serverSockAddr);
 
         hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
         EXPECT_EQ(sock, prodInfoChannel.getSocket());

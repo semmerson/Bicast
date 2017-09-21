@@ -37,6 +37,7 @@ public:
     /**
      * Creates an SCTP-compatible BSD socket.
      * @return SCTP-compatible socket descriptor
+     * @throw SystemError  Socket couldn't be created
      */
     static int createSocket();
 
@@ -135,33 +136,30 @@ public:
     SctpSock();
 
     /**
-     * Constructs.
-     * @param[in] sd                 SCTP-compatible socket descriptor from
-     *                               `::socket()` or `::accept()`
-     * @param[in] numStreams         Number of SCTP streams
-     * @throws std::InvalidArgument  `numStreams < 0 || numStreams > UINT16_MAX`
-     * @throws std::system_error     `getpeername(sd)` failed
-     * @see Socket::~Socket()
-     * @see Socket::operator=(Socket& socket)
-     * @see Socket::operator=(Socket&& socket)
+     * Constructs an SCTP socket from the client side. The caller must
+     * eventually call `connect()` to establish an SCTP association. `connect()`
+     * is not called here to allow socket configurations that must occur before
+     * that function is called (e.g., setting buffer sizes).
+     * @param[in] numStreams   Number of SCTP streams
+     * @return                 Corresponding SCTP socket
+     * @throw InvalidArgument  `numStreams <= 0`
+     * @throw SystemError      Socket couldn't be created
+     * @throw SystemError      Required memory couldn't be allocated
+     * @see `connect(InetSockAddr& addr)`
+     * @see `setSendBufSize()`
+     * @see `setRecvBufSize()`
+     */
+    explicit SctpSock(const int numStreams);
+
+    /**
+     * Constructs an SCTP socket from the server side.
+     * @param[in] sd         SCTP socket descriptor from `accept()`
+     * @param[in] numStream  Number of SCTP streams
+     * @throws SystemError   Required memory can't be allocated
      */
     SctpSock(
             const int sd,
             const int numStreams);
-
-    /**
-     * Constructs a client-side SCTP socket. Blocks until connected.
-     * @param[in] addr        Internet address of the server
-     * @param[in] numStreams  Number of SCTP streams
-     * @return                Corresponding SCTP socket
-     * @throw SystemError     Connection failure
-     * @see Socket::~Socket()
-     * @see Socket::operator=(Socket& socket)
-     * @see Socket::operator=(Socket&& socket)
-     */
-    explicit SctpSock(
-            const InetSockAddr& addr,
-            const int           numStreams = 1);
 
     /**
      * Destroys. Closes the underlying BSD socket if this instance holds the
@@ -175,6 +173,21 @@ public:
      * @return         This instance
      */
     SctpSock& operator=(const SctpSock& rhs);
+
+    /**
+     * Connects to a server. This function is separate from the constructor to
+     * allow socket configurations that must occur before `::connect()` is
+     * called (e.g., setting buffer sizes). Blocks until the association is
+     * established.
+     * @return              This instance
+     * @throws SystemError  Connection failure
+     * @exceptionsafety     Strong
+     * @threadsafety        Safe
+     * @see `Impl(int numStreams)`
+     * @see `setSendBufSize()`
+     * @see `setRecvBufSize()`
+     */
+    SctpSock& connect(const InetSockAddr& addr);
 
     /**
      * Returns the Internet socket address of the remote end.

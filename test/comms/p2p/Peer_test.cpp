@@ -98,7 +98,8 @@ protected:
 
     void runTestSender()
     {
-        hycast::SctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SctpSock sock(hycast::Peer::getNumStreams());
+        sock.connect(serverSockAddr);
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         peer.sendNotice(prodInfo);
@@ -144,7 +145,8 @@ protected:
 
     void runPerfSender()
     {
-        hycast::SctpSock sock(serverSockAddr, hycast::Peer::getNumStreams());
+        hycast::SctpSock sock(hycast::Peer::getNumStreams());
+        sock.connect(serverSockAddr);
         TestMsgRcvr msgRcvr{*this};
         hycast::Peer peer(msgRcvr, sock);
         const size_t dataSize = 1000000;

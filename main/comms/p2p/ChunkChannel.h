@@ -40,7 +40,7 @@ public:
      * @param[in] version   Protocol version
      */
     ChunkChannel(
-            SctpSock&            sock,
+            SctpSock&          sock,
             const unsigned     streamId,
             const unsigned     version);
     /**

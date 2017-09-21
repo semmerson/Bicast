@@ -128,7 +128,8 @@ protected:
     {}
 
     hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
-        hycast::SctpSock sock{serverSockAddr, hycast::Peer::getNumStreams()};
+        hycast::SctpSock sock{hycast::Peer::getNumStreams()};
+        sock.connect(serverSockAddr);
         return hycast::Peer(clntMsgRcvr, sock);
     }
 

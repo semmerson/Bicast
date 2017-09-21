@@ -124,7 +124,8 @@ protected:
 
     void startClient()
     {
-        hycast::SctpSock        clntSock{srvrAddr, numStreams};
+        hycast::SctpSock clntSock{numStreams};
+        clntSock.connect(srvrAddr);
         sendThread = std::thread(runClient, clntSock);
     }
 
@@ -141,7 +142,7 @@ protected:
 
 // Tests invalid argument
 TEST_F(SctpTest, InvalidArgument) {
-    EXPECT_THROW(hycast::SctpSock(srvrAddr, -1), std::exception);
+    EXPECT_THROW(hycast::SctpSock(-1), std::exception);
     EXPECT_THROW(hycast::SrvrSctpSock(srvrAddr, -1), std::exception);
 }
 
@@ -254,7 +255,8 @@ TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
     } server{hycast::SrvrSctpSock{srvrAddr, numStreams}};
     std::thread srvrThread = std::thread(server);
     {
-        hycast::SctpSock clntSock{srvrAddr, numStreams};
+        hycast::SctpSock clntSock{numStreams};
+        clntSock.connect(srvrAddr);
     }
     srvrThread.join();
 }
@@ -286,7 +288,8 @@ TEST_F(SctpTest, CleanReceiveClose) {
     auto future = std::async(std::launch::async,
             [&server]{ return server(); });
     server.mutex.unlock();
-    hycast::SctpSock clientSock(srvrAddr, numStreams);
+    hycast::SctpSock clientSock(numStreams);
+    clientSock.connect(srvrAddr);
     server.mutex.lock();
     ::sleep(1);
     server.peerSock.close();

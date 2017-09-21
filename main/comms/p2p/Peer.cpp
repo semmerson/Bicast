@@ -61,6 +61,10 @@ class Peer::Impl final {
         void recvData(LatentChunk chunk, const Peer& peer) {}
     }                      defaultMsgRcvr;
 
+    /**
+     * @throw LogicError       Unknown protocol version from remote peer
+     * @throw RuntimeError     Couldn't construct peer
+     */
     Impl(   PeerMsgRcvr&   msgRcvr,
             SctpSock&&     sock)
         : Impl{msgRcvr, std::ref<SctpSock>(sock)}
@@ -111,6 +115,7 @@ public:
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer.
      * @param[in,out] sock     Socket
      * @throw LogicError       Unknown protocol version from remote peer
+     * @throw RuntimeError     Couldn't construct peer
      */
     Impl(   PeerMsgRcvr&   msgRcvr,
             SctpSock&      sock)
@@ -124,12 +129,18 @@ public:
           msgRcvr(msgRcvr),
           sock(sock)
     {
-        VersionMsg msg(version);
-        versionChan.send(msg);
-        const unsigned vers = getVersion();
-        if (vers != version)
-            throw LOGIC_ERROR("Remote peer uses unsupported protocol version: " +
-                    std::to_string(vers));
+        try {
+            VersionMsg msg(version);
+            versionChan.send(msg);
+            const unsigned vers = getVersion();
+            if (vers != version)
+                throw LOGIC_ERROR(
+                        "Remote peer uses unsupported protocol version: " +
+                        std::to_string(vers));
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't construct peer"));
+        }
     }
 
     /**
@@ -138,12 +149,12 @@ public:
      * @param[in,out] msgRcvr   Object to receive messages from remote peer
      * @param[in]     peerAddr  Socket address of remote peer
      * @throw LogicError        Unknown protocol version from remote peer
+     * @throw RuntimeError      Couldn't construct peer
      * @throw SystemError       Connection failure
-     * @throw RuntimeError      Other error
      */
     Impl(   PeerMsgRcvr&        msgRcvr,
             const InetSockAddr& peerAddr)
-        : Impl{msgRcvr, SctpSock{peerAddr, getNumStreams()}}
+        : Impl{msgRcvr, SctpSock{getNumStreams()}.connect(peerAddr)}
     {}
 
     /**

@@ -40,7 +40,8 @@ void runServer(hycast::SrvrSctpSock serverSock)
 
 void runClient()
 {
-    hycast::SctpSock sock(serverSockAddr, numStreams);
+    hycast::SctpSock sock(numStreams);
+    sock.connect(serverSockAddr);
 
     hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
     uint8_t data1[hycast::ChunkInfo::getCanonSize()];

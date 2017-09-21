@@ -45,6 +45,9 @@ public:
      * socket. Doesn't receive anything until `runReceiver()` is called.
      * @param[in,out] msgRcvr  Object to receive messages from the remote peer
      * @param[in,out] sock     Socket
+     * @throw LogicError       Unknown protocol version from remote peer
+     * @throw RuntimeError     Couldn't construct peer
+     * @throw SystemError      Connection failure
      * @see runReceiver()
      */
     Peer(PeerMsgRcvr& msgRcvr,
@@ -55,6 +58,8 @@ public:
      * receive other messages until `runReceiver()` is called.
      * @param[in,out] msgRcvr   Object to receive messages from the remote peer
      * @param[in]     peerAddr  Socket address of remote peer
+     * @throw LogicError        Unknown protocol version from remote peer
+     * @throw RuntimeError      Couldn't construct peer
      * @throw SystemError       Connection failure
      * @see runReceiver()
      */
