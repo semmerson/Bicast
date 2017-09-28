@@ -22,6 +22,7 @@
 #include "PeerMsgRcvr.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
+#include "ProdStore.h"
 #include "SctpSock.h"
 #include "Thread.h"
 
@@ -271,6 +272,7 @@ class P2pMgr::Impl final : public Notifier
 public:
     /**
      * Constructs.
+     * @param[in]     prodStore       Product storage
      * @param[in]     serverSockAddr  Socket address to be used by the server
      *                                that remote peers connect to
      * @param[in]     maxPeers        Maximum number of active peers
@@ -280,7 +282,8 @@ public:
      *                                performing peer may be replaced
      * @param[in,out] msgRcvr         Receiver of messages from remote peers
      */
-    Impl(   const InetSockAddr&       serverSockAddr,
+    Impl(   ProdStore&                prodStore,
+            const InetSockAddr&       serverSockAddr,
             const unsigned            maxPeers,
             PeerSource&               peerSource,
             const PeerSet::TimeUnit   stasisDuration,
@@ -288,7 +291,7 @@ public:
         : peerSource(peerSource)
         , serverSockAddr{serverSockAddr}
         , msgRcvr(&msgRcvr)
-        , peerSet{stasisDuration*2, maxPeers,
+        , peerSet{prodStore, stasisDuration*2, maxPeers,
                 [this](const InetSockAddr& peerAddr) {
                     handleStoppedPeer(peerAddr);
                 }}
@@ -399,13 +402,14 @@ public:
 P2pMgr::Impl::NilMsgRcvr P2pMgr::Impl::nilMsgRcvr;
 
 P2pMgr::P2pMgr(
+        ProdStore&               prodStore,
         const InetSockAddr&      serverSockAddr,
         PeerMsgRcvr&             msgRcvr,
         PeerSource&              peerSource,
         const unsigned           maxPeers,
         const PeerSet::TimeUnit  stasisDuration)
-    : pImpl{new Impl(serverSockAddr, maxPeers, peerSource, stasisDuration,
-            msgRcvr)}
+    : pImpl{new Impl(prodStore, serverSockAddr, maxPeers, peerSource,
+            stasisDuration, msgRcvr)}
 {}
 
 void P2pMgr::run()

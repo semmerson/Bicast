@@ -60,6 +60,7 @@ class P2pMgr final : public Notifier
 public:
     /**
      * Constructs.
+     * @param[in] prodStore       Product storage
      * @param[in] serverSockAddr  Socket address to be used by the server that
      *                            remote peers connect to
      * @param[in] msgRcvr         Receiver of messages from remote peers
@@ -72,7 +73,8 @@ public:
      *                            worst performing peer may be replaced. Default
      *                            is 60 seconds.
      */
-    P2pMgr( const InetSockAddr&      serverSockAddr,
+    P2pMgr( ProdStore&               prodStore,
+            const InetSockAddr&      serverSockAddr,
             PeerMsgRcvr&             msgRcvr,
             PeerSource&              peerSource,
             const unsigned           maxPeers = PeerSet::defaultMaxPeers,
@@ -80,12 +82,14 @@ public:
 
     /**
      * Constructs.
-     * @param[in] p2pInfo  Information for the peer-to-peer component
-     * @param[in] msgRcvr  Receiver of messages from remote peers
+     * @param[in] prodStore  Product storage
+     * @param[in] p2pInfo    Information for the peer-to-peer component
+     * @param[in] msgRcvr    Receiver of messages from remote peers
      */
-    P2pMgr( P2pInfo& p2pInfo,
-            PeerMsgRcvr&   msgRcvr)
-    	: P2pMgr(p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerSource,
+    P2pMgr( ProdStore&   prodStore,
+            P2pInfo&     p2pInfo,
+            PeerMsgRcvr& msgRcvr)
+    	: P2pMgr(prodStore, p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerSource,
                 p2pInfo.peerCount, p2pInfo.stasisDuration)
     {}
 

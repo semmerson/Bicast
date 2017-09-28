@@ -140,7 +140,7 @@ public:
         , requestedChunks{}
         , mutex{}
         , processing{&processing}
-        , p2pMgr{p2pInfo, *this}
+        , p2pMgr{prodStore, p2pInfo, *this}
         , p2pMgrThread{}
         , mcastRcvr(srcMcastInfo, *this, version)
         , mcastRcvrThread{}

@@ -169,7 +169,8 @@ class Shipping::Impl final
                 const PeerSet::TimeUnit stasisDuration,
                 const InetSockAddr&     serverAddr)
             : serverReady{}
-            , peerSet{stasisDuration*2, maxPeers, [](InetSockAddr&){}}
+            , peerSet{prodStore, stasisDuration*2, maxPeers,
+                    [](InetSockAddr&){}}
             , msgRcvr{prodStore, peerSet}
             , serverAddr{serverAddr}
             , serverThread{[this]{runServer();}}

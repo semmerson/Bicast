@@ -111,13 +111,15 @@ public:
 // Tests construction
 TEST_F(P2pMgrTest, Construction) {
     hycast::InetSockAddr serverAddr("localhost", 38800);
-    hycast::P2pMgr(serverAddr, *this, peerSource);
+    hycast::ProdStore prodStore{};
+    hycast::P2pMgr{prodStore, serverAddr, *this, peerSource};
 }
 
 // Tests execution
 TEST_F(P2pMgrTest, Execution) {
     hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
-    hycast::P2pMgr   p2pMgr{snkSrvrAddr, *this, peerSource, maxPeers,
+    hycast::ProdStore prodStore{};
+    hycast::P2pMgr   p2pMgr{prodStore, snkSrvrAddr, *this, peerSource, maxPeers,
             stasisDuration};
     std::thread p2pMgrThread{[&]{runP2pMgr(p2pMgr);}};
     ::sleep(1);

@@ -758,6 +758,7 @@ public:
 };
 
 PeerSet::PeerSet(
+        ProdStore&                         prodStore,
         const TimeUnit                     stasisDuration,
         const unsigned                     maxPeers,
         std::function<void(InetSockAddr&)> peerStopped)
