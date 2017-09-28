@@ -527,7 +527,8 @@ public:
      * @param[in] peerStopped     Function to call when a peer stops
      * @throws InvalidArgument    `maxPeers == 0 || stasisDuration <= 0`
      */
-    Impl(   const TimeUnit                     stasisDuration,
+    Impl(   ProdStore&                         prodStore,
+            const TimeUnit                     stasisDuration,
             const unsigned                     maxPeers,
             std::function<void(InetSockAddr&)> peerStopped)
         : addrToEntryMap{}
@@ -762,7 +763,7 @@ PeerSet::PeerSet(
         const TimeUnit                     stasisDuration,
         const unsigned                     maxPeers,
         std::function<void(InetSockAddr&)> peerStopped)
-    : pImpl(new Impl(stasisDuration, maxPeers, peerStopped))
+    : pImpl(new Impl(prodStore, stasisDuration, maxPeers, peerStopped))
 {}
 
 bool PeerSet::tryInsert(Peer& peer) const

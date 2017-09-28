@@ -56,8 +56,7 @@ public:
      *                            does nothing.
      * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
-    explicit PeerSet(
-            ProdStore&                         prodStore,
+    PeerSet(ProdStore&                         prodStore,
             const TimeUnit                     stasisDuration,
             unsigned                           maxPeers = defaultMaxPeers,
             std::function<void(InetSockAddr&)> peerStopped =
@@ -76,8 +75,7 @@ public:
      *                            does nothing.
      * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
-    explicit PeerSet(
-            ProdStore&                         prodStore,
+    PeerSet(ProdStore&                         prodStore,
             const unsigned                     stasisDuration,
             unsigned                           maxPeers = defaultMaxPeers,
             std::function<void(InetSockAddr&)> peerStopped =
