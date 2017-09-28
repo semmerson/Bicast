@@ -58,6 +58,14 @@ TEST_F(ChunkInfoTest, Construction) {
     EXPECT_EQ(1, info.getIndex());
 }
 
+// Tests operator bool
+TEST_F(ChunkInfoTest, OperatorBool) {
+    EXPECT_FALSE(hycast::ChunkInfo{});
+    hycast::ProdInfo prodInfo("product", 0, 38000);
+    hycast::ChunkInfo chunkInfo{prodInfo, 1};
+    EXPECT_TRUE(chunkInfo);
+}
+
 // Tests ChunkInfo::equals()
 TEST_F(ChunkInfoTest, Equals) {
     hycast::ProdInfo prodInfo("product", 0, 38000);

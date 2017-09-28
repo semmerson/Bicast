@@ -27,29 +27,6 @@ namespace {
 // The fixture for testing class ProdIndex.
 class ProdIndexTest : public ::testing::Test {
  protected:
-  // You can remove any or all of the following functions if its body
-  // is empty.
-
-  ProdIndexTest() {
-    // You can do set-up work for each test here.
-  }
-
-  virtual ~ProdIndexTest() {
-    // You can do clean-up work that doesn't throw exceptions here.
-  }
-
-  // If the constructor and destructor are not enough for setting up
-  // and cleaning up each test, you can define the following methods:
-
-  virtual void SetUp() {
-    // Code here will be called immediately after the constructor (right
-    // before each test).
-  }
-
-  virtual void TearDown() {
-    // Code here will be called immediately after each test (right
-    // before the destructor).
-  }
 };
 
 // Tests default construction
@@ -77,6 +54,17 @@ TEST_F(ProdIndexTest, Comparison) {
     EXPECT_TRUE(index1 <= index2);
     EXPECT_TRUE(index2 > index1);
     EXPECT_TRUE(index2 >= index1);
+
+    hycast::ProdIndex index3(hycast::ProdIndex::prodIndexMax-1);
+    hycast::ProdIndex index4(hycast::ProdIndex::prodIndexMax);
+    EXPECT_TRUE(index3 < index4);
+    EXPECT_TRUE(index3 <= index4);
+    EXPECT_TRUE(index3 <= index3);
+    EXPECT_TRUE(index4 > index3);
+    EXPECT_TRUE(index4 >= index3);
+    EXPECT_TRUE(index4 >= index4);
+    EXPECT_TRUE(index4 < index1);
+    EXPECT_TRUE(index1 > index4);
 }
 
 // Tests increment
@@ -94,7 +82,7 @@ TEST_F(ProdIndexTest, Decrement) {
 // Tests getSerialSize()
 TEST_F(ProdIndexTest, GetSerialSize) {
     hycast::ProdIndex index(1);
-    EXPECT_EQ(4, index.getSerialSize(0));
+    EXPECT_EQ(sizeof(hycast::ProdIndex::type), index.getSerialSize(0));
 }
 
 // Tests serialization/de-serialization

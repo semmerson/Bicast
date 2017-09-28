@@ -45,9 +45,29 @@ ChunkInfo::ChunkInfo(const ChunkInfo& info)
 
 ChunkInfo::ChunkInfo(
         const ProdInfo&  prodInfo,
-        const ChunkIndex chunkIndex)
+        const ChunkIndex chunkIndex) noexcept
     : ChunkInfo(prodInfo.getIndex(), prodInfo.getSize(), chunkIndex)
 {}
+
+const ChunkInfo& ChunkInfo::operator =(const ChunkInfo& rhs) noexcept
+{
+    prodIndex = rhs.prodIndex;
+    prodSize = rhs.prodSize;
+    chunkIndex = rhs.chunkIndex;
+    hashCode = rhs.hashCode.load();
+    return *this;
+}
+
+ChunkInfo::operator bool() const noexcept
+{
+    return prodSize != 0 && canonSize != 0;
+}
+
+bool ChunkInfo::isEarlierThan(const ChunkInfo& rhs) const noexcept
+{
+    return prodIndex < rhs.prodIndex ||
+            (prodIndex == rhs.prodIndex && chunkIndex < rhs.chunkIndex);
+}
 
 void ChunkInfo::setCanonSize(const ChunkSize size)
 {

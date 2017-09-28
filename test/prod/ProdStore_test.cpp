@@ -29,6 +29,27 @@ protected:
         prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
     }
 
+    void addChunk(
+            hycast::ProdStore&         ps,
+            hycast::ProdInfo&          prodInfo,
+            const hycast::ChunkIndex&  chunkIndex)
+    {
+        const auto chunkInfo = prodInfo.makeChunkInfo(chunkIndex);
+        char data[chunkInfo.getSize()];
+        ::memset(data, chunkIndex % UCHAR_MAX, sizeof(data));
+        hycast::ActualChunk actualChunk{chunkInfo, data};
+        char buf[actualChunk.getSerialSize(version)];
+        hycast::MemEncoder  encoder{buf, sizeof(buf)};
+        actualChunk.serialize(encoder, version);
+        encoder.flush();
+
+        hycast::MemDecoder  decoder{buf, sizeof(buf)};
+        decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
+        hycast::LatentChunk latentChunk{decoder, version};
+        hycast::Product prod{};
+        ps.add(latentChunk, prod);
+    }
+
     void addChunks(
             const hycast::ProdInfo prodInfo,
             const char*            data,
@@ -131,6 +152,16 @@ TEST_F(ProdStoreTest, ProductDeletion) {
     EXPECT_EQ(1, ps.size());
     ::usleep(200000);
     EXPECT_EQ(0, ps.size());
+}
+
+// Tests getting information on oldest missing chunk
+TEST_F(ProdStoreTest, OldestMissingChunk) {
+    hycast::ProdStore ps{""};
+    hycast::ProdInfo  prodInfo("Product 0", 0, 128000);
+    hycast::Product   prod;
+    ps.add(prodInfo, prod);
+    addChunk(ps, prodInfo, 1);
+    EXPECT_EQ(prodInfo.makeChunkInfo(0), ps.getOldestMissingChunk());
 }
 
 }  // namespace

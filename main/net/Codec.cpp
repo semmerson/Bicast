@@ -79,7 +79,7 @@ Decoder::Decoder(
 Decoder::~Decoder()
 {}
 
-size_t Encoder::encode(uint16_t value)
+size_t Encoder::encode(const uint16_t value)
 {
     const size_t len = sizeof(uint16_t);
     if (serialBufBytes + len > serialBufSize)
@@ -90,7 +90,7 @@ size_t Encoder::encode(uint16_t value)
     return len;
 }
 
-size_t Encoder::encode(uint32_t value)
+size_t Encoder::encode(const uint32_t value)
 {
     const size_t len = sizeof(uint32_t);
     if (serialBufBytes + len > serialBufSize)
@@ -99,6 +99,12 @@ size_t Encoder::encode(uint32_t value)
     serialBufBytes += len;
     nextSerial += len;
     return len;
+}
+
+size_t Encoder::encode(const uint64_t value)
+{
+    const uint32_t* ptr = reinterpret_cast<const uint32_t*>(&value);
+    return encode(ptr[0]) +  encode(ptr[1]);
 }
 
 void Decoder::decode(uint16_t& value)
@@ -119,6 +125,13 @@ void Decoder::decode(uint32_t& value)
     value = ntohl(*reinterpret_cast<uint32_t*>(nextSerial));
     serialBufBytes -= len;
     nextSerial += len;
+}
+
+void Decoder::decode(uint64_t& value)
+{
+    uint32_t* ptr = reinterpret_cast<uint32_t*>(&value);
+    decode(ptr[0]);
+    decode(ptr[1]);
 }
 
 size_t Encoder::encode(const std::string& string)

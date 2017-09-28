@@ -57,8 +57,8 @@ public:
      */
     explicit Impl(const ProdInfo& prodInfo)
         : prodInfo{prodInfo}
-        // `haveChunk{n}` means add `n` rather than have `n` elements
-        , chunkVec(prodInfo.getNumChunks())
+        // Parentheses are necessary in the following initialization
+        , chunkVec(prodInfo.getNumChunks(), false)
         , data{new char[prodInfo.getSize()]}
         , numChunks{0}
         , complete{false}
@@ -140,6 +140,36 @@ public:
     const ProdIndex getIndex() const noexcept
     {
         return prodInfo.getIndex();
+    }
+
+    /**
+     * Indicates if this instance is earlier than another.
+     * @param[in] that   Other instance
+     * @retval `true`    Yes
+     * @retval `false`   No
+     */
+    bool isEarlierThan(const Impl& that) const noexcept
+    {
+        return prodInfo.isEarlierThan(that.prodInfo);
+    }
+
+    /**
+     * Identifies the earliest missing chunk of data.
+     * @return           Information on the earliest missing chunk of data or
+     *                   empty information if the product is complete.
+     * @execptionsafety  Nothrow
+     * @threadsafety     Compatible but not safe
+     * @see `isComplete()`
+     * @see `ChunkInfo::operator bool()`
+     */
+    ChunkInfo identifyEarliestMissingChunk() const noexcept
+    {
+        auto n = chunkVec.size();
+        for (ChunkIndex i = 0; i < n; ++i) {
+            if (!chunkVec[i])
+                return ChunkInfo{prodInfo, i};
+        }
+        return ChunkInfo{};
     }
 
     /**
@@ -302,6 +332,16 @@ const ProdInfo& Product::getInfo() const noexcept
 const ProdIndex Product::getIndex() const noexcept
 {
     return pImpl->getIndex();
+}
+
+bool Product::isEarlierThan(const Product& that) const noexcept
+{
+    return pImpl->isEarlierThan(*that.pImpl.get());
+}
+
+ChunkInfo Product::identifyEarliestMissingChunk() const noexcept
+{
+    return pImpl->identifyEarliestMissingChunk();
 }
 
 bool Product::add(const ActualChunk& chunk)

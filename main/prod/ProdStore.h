@@ -40,23 +40,9 @@ public:
      * @throw SystemError     Couldn't open temporary persistence-file
      * @throw InvalidArgument Residence-time is negative
      */
-    ProdStore(
+    explicit ProdStore(
             const std::string& pathname,
-            const double       residence);
-
-    /**
-     * Constructs. If the given file isn't the empty string, then the
-     * product-store will be written to it upon destruction in order to persist
-     * the store between sessions when the instance is destroyed.
-     * @param[in] path        Pathname of file for persisting the product-store
-     *                        between sessions or the empty string to indicate
-     *                        no persistence.
-     * @throw SystemError     Couldn't open temporary persistence-file
-     * @see ProdStore(const std::string& pathname, double residence)
-     */
-    explicit ProdStore(const std::string& pathname)
-        : ProdStore(pathname, DEFAULT_MIN_RESIDENCE)
-    {}
+            const double       residence = DEFAULT_MIN_RESIDENCE);
 
     /**
      * Constructs. The product-store will not be written to a persistence-file
@@ -141,6 +127,12 @@ public:
     bool getChunk(
             const ChunkInfo& info,
             ActualChunk&     chunk) const;
+
+    /**
+     * Returns information on the oldest missing data-chunk.
+     * @return  Information on the oldest missing data-chunk
+     */
+    ChunkInfo getOldestMissingChunk() const;
 };
 
 } // namespace

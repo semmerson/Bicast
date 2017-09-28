@@ -67,7 +67,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdIndex getIndex() const;
+    ProdIndex getIndex() const noexcept;
 
     /**
      * Returns the size of the product in bytes.
@@ -75,7 +75,15 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdSize getSize() const;
+    ProdSize getSize() const noexcept;
+
+    /**
+     * Indicates if this instance is earlier than another.
+     * @param[in] that   Other instance
+     * @retval `true`    Yes
+     * @retval `false`   No
+     */
+    bool isEarlierThan(const ProdInfo& that) const noexcept;
 
     /**
      * Returns the canonical size of the product's data chunks in bytes.

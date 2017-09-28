@@ -1,7 +1,7 @@
 /**
  * This file declares the product-index.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -24,24 +24,26 @@ namespace hycast {
 class ProdIndex final : public Serializable<ProdIndex>
 {
 public:
-    typedef uint32_t  type;
-    static const type prodIndexMax = UINT32_MAX;
+    /**
+     * At 1 product per nanosecond, a 64-bit unsigned integer is good for 584
+     * years `(2**64-1)*1e-9/(86400*365.2524)` before it wraps around. This
+     * should be enough to tide-over an offline instance.
+     */
+    typedef uint64_t  type;
+
+private:
+    type index;
+
+public:
+    static const type prodIndexMax = UINT64_MAX;
 
     /**
      * Constructs. NB: Not explicit.
      * @param[in] index  Product index
      */
-    ProdIndex(const uint32_t index = 0) noexcept
+    ProdIndex(const type index = 0) noexcept
         : index{index}
     {}
-
-    /**
-     * Constructs. NB: Not explicit.
-     * @param[in] index  Product index
-    ProdIndex(const int index)
-        : index{static_cast<type>(index)}
-    {}
-     */
 
     /**
      * Copy constructs.
@@ -82,7 +84,7 @@ public:
     /**
      * Converts.
      */
-    operator uint32_t() const noexcept
+    operator uint64_t() const noexcept
     {
         return index;
     }
@@ -99,7 +101,7 @@ public:
      * @threadsafety    Safe
      */
     size_t hash() const noexcept {
-        return std::hash<decltype(index)>()(index);
+        return std::hash<type>()(index);
     }
 
     bool operator ==(const ProdIndex& that) const noexcept {
@@ -109,16 +111,16 @@ public:
         return index != that.index;
     }
     bool operator <(const ProdIndex& that) const noexcept {
-        return index < that.index;
+        return that.index - index < prodIndexMax/2 && that.index != index;
     }
     bool operator <=(const ProdIndex& that) const noexcept {
-        return index <= that.index;
+        return that.index - index < prodIndexMax/2;
     }
     bool operator >(const ProdIndex& that) const noexcept {
-        return index > that.index;
+        return index - that.index < prodIndexMax/2 && that.index != index;
     }
     bool operator >=(const ProdIndex& that) const noexcept {
-        return index >= that.index;
+        return index - that.index < prodIndexMax/2;
     }
     ProdIndex& operator ++() noexcept {
         ++index;
@@ -156,9 +158,6 @@ public:
     static ProdIndex deserialize(
             Decoder&       decoder,
             const unsigned version);
-
-private:
-    type index;
 };
 
 } // namespace

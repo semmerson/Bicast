@@ -62,6 +62,33 @@ TEST_F(ProductTest, AddChunk) {
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
 }
 
+// Tests identifying the earliest missing chunk of data
+TEST_F(ProductTest, IdentifyEarliestMissingChunk) {
+    char                data[2][hycast::ChunkInfo::getCanonSize()];
+    hycast::ProdIndex   prodIndex{0};
+    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
+    hycast::ProdInfo    prodInfo("product", prodIndex, prodSize);
+    hycast::Product     prod{prodInfo};
+
+    // Empty product:
+    auto              chunkInfo = prod.identifyEarliestMissingChunk();
+    hycast::ChunkInfo expect{prodInfo, 0};
+    EXPECT_EQ(expect, chunkInfo);
+
+    // Add first chunk:
+    auto actualChunk = hycast::ActualChunk{prodInfo.makeChunkInfo(0), data[0]};
+    prod.add(actualChunk);
+    chunkInfo = prod.identifyEarliestMissingChunk();
+    expect = hycast::ChunkInfo{prodInfo, 1};
+    EXPECT_EQ(expect, chunkInfo);
+
+    // Add last chunk:
+    actualChunk = hycast::ActualChunk{prodInfo.makeChunkInfo(1), data[1]};
+    prod.add(actualChunk);
+    chunkInfo = prod.identifyEarliestMissingChunk();
+    EXPECT_FALSE(chunkInfo);
+}
+
 // Tests construction from complete data
 TEST_F(ProductTest, DataConstruction) {
     char            data[128000];

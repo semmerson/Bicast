@@ -72,6 +72,25 @@ public:
     const ProdIndex getIndex() const noexcept;
 
     /**
+     * Indicates if this instance is earlier than another.
+     * @param[in] that   Other instance
+     * @retval `true`    Yes
+     * @retval `false`   No
+     */
+    bool isEarlierThan(const Product& that) const noexcept;
+
+    /**
+     * Identifies the earliest missing chunk of data.
+     * @return           Information on the earliest missing chunk of data or
+     *                   empty information if the product is complete.
+     * @execptionsafety  Nothrow
+     * @threadsafety     Compatible but not safe
+     * @see `isComplete()`
+     * @see `ChunkInfo::operator bool()`
+     */
+    ChunkInfo identifyEarliestMissingChunk() const noexcept;
+
+    /**
      * Adds a chunk-of-data.
      * @param[in] chunk  The chunk
      * @return `true`    if the chunk of data was added

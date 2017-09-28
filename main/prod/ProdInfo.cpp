@@ -127,6 +127,17 @@ public:
     }
 
     /**
+     * Indicates if this instance is earlier than another.
+     * @param[in] that   Other instance
+     * @retval `true`    Yes
+     * @retval `false`   No
+     */
+    bool isEarlierThan(const Impl& that) const noexcept
+    {
+        return index < that.index;
+    }
+
+    /**
      * Returns the size of the product's data chunks in bytes.
      * @return Size of the product's data chunks in bytes
      * @exceptionsafety Nothrow
@@ -293,14 +304,19 @@ const std::string& ProdInfo::getName() const
     return pImpl->getName();
 }
 
-ProdIndex ProdInfo::getIndex() const
+ProdIndex ProdInfo::getIndex() const noexcept
 {
     return pImpl->getIndex();
 }
 
-ProdSize ProdInfo::getSize() const
+ProdSize ProdInfo::getSize() const noexcept
 {
     return pImpl->getSize();
+}
+
+bool ProdInfo::isEarlierThan(const ProdInfo& that) const noexcept
+{
+    return pImpl->isEarlierThan(*that.pImpl.get());
 }
 
 ChunkSize ProdInfo::getChunkSize() const

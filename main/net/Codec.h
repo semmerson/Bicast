@@ -99,6 +99,13 @@ public:
     size_t encode(const uint32_t value);
 
     /**
+     * Serializes a 64-bit, unsigned integer into the serial buffer.
+     * @param[in] value  Value to serialize
+     * @return Number of bytes written
+     */
+    size_t encode(const uint64_t value);
+
+    /**
      * Serializes a string into the serial buffer.
      * @param[in] string  String to serialize
      * @return Number of bytes written
@@ -184,6 +191,13 @@ public:
      * @return Deserialized value
      */
     void decode(uint32_t& value);
+
+    /**
+     * Deserializes a 64-bit, unsigned integer from the serial buffer. Advances
+     * the location in the serial buffer.
+     * @return Deserialized value
+     */
+    void decode(uint64_t& value);
 
     /**
      * Deserializes a string from the serial buffer.

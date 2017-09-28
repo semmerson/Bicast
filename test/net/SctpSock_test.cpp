@@ -254,6 +254,7 @@ TEST_F(SctpTest, RemoteCloseCausesReadReturn) {
         }
     } server{hycast::SrvrSctpSock{srvrAddr, numStreams}};
     std::thread srvrThread = std::thread(server);
+    ::usleep(100000); // Allows server to start
     {
         hycast::SctpSock clntSock{numStreams};
         clntSock.connect(srvrAddr);

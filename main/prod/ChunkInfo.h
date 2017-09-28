@@ -59,7 +59,7 @@ public:
     /**
      * Default constructs.
      */
-    ChunkInfo()
+    ChunkInfo() noexcept
         : ChunkInfo(0, 0, 0)
     {}
 
@@ -73,14 +73,38 @@ public:
      * Constructs.
      * @param[in] prodInfo    Information on associated product
      * @param[in] chunkIndex  Origin-0 chunk index
+     * @exceptionsafety       Nothrow
      */
     ChunkInfo(
             const ProdInfo&   prodInfo,
-            const ChunkIndex  chunkIndex);
+            const ChunkIndex  chunkIndex) noexcept;
 
     ChunkInfo(
             Decoder& decoder,
             unsigned version);
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  Other instance
+     * @return         This instance
+     */
+    const ChunkInfo& operator =(const ChunkInfo& rhs) noexcept;
+
+    /**
+     * Indicates if this instance is meaningful or not (i.e. was it default
+     * constructed).
+     * @retval `true`   Meaningful
+     * @retval `false`  Not meaningful
+     */
+    operator bool() const noexcept;
+
+    /**
+     * Indicates if this instance is earlier than another.
+     * @param[in] that   Other instance
+     * @retval `true`    Yes
+     * @retval `false`   No
+     */
+    bool isEarlierThan(const ChunkInfo& that) const noexcept;
 
     /**
      * Sets the size of a canonical chunk of data (i.e., all chunks except,
@@ -151,16 +175,11 @@ public:
      */
     ChunkSize getSize() const noexcept
     {
-        try {
-            return getSize(prodSize, chunkIndex);
-        }
-        catch (const std::exception& e) {
-            /*
-             * The following can't happen because the product size and the chunk
-             * index are checked during construction.
-             */
-            ::abort();
-        }
+        /*
+         * An exception can't be thrown because the product size and the chunk
+         * index are checked during construction.
+         */
+        return getSize(prodSize, chunkIndex);
     }
 
     /**

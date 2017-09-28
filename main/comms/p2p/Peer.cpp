@@ -72,15 +72,15 @@ class Peer::Impl final {
 
     /**
      * Returns the protocol version of the remote peer.
-     * @pre `sock.getStreamId() == VERSION_STREAM_ID`
-     * @return Protocol version of the remote peer
-     * @throws std::logic_error if precondition not met
-     * @threadsafety Safe
+     * @pre                `sock.getStreamId() == VERSION_STREAM_ID`
+     * @return             Protocol version of the remote peer
+     * @throws LogicError  `sock.getStreamId() != VERSION_STREAM_ID`
+     * @threadsafety       Safe
      */
     unsigned getVersion()
     {
         if (sock.getStreamId() != VERSION_STREAM_ID)
-            throw std::logic_error("Current message isn't a version message");
+            throw LOGIC_ERROR("Current message isn't a version message");
         return versionChan.recv().getVersion();
     }
      /**

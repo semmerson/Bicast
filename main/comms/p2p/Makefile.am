@@ -20,7 +20,8 @@ lib_la_SOURCES 	= \
 	PeerSource.cpp PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
 	ChunkGram.cpp ChunkGram.h \
-	YamlPeerSource.cpp YamlPeerSource.h
+	YamlPeerSource.cpp YamlPeerSource.h \
+	Backlogger.cpp Backlogger.h
 
 #	ChannelImpl.h \
 	RegChannel.cpp RegChannel.h \
