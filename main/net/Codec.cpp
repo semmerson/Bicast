@@ -41,6 +41,7 @@ void Codec::reset() noexcept
     serialBufBytes = 0;
     nextSerial = serialBuf;
     dma.iov_len = 0;
+    dma.iov_base = nullptr;
 }
 
 size_t Codec::getSerialSize(const size_t size) noexcept

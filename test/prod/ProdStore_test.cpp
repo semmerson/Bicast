@@ -71,10 +71,10 @@ protected:
             hycast::MemDecoder  decoder(buf, sizeof(buf));
             decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
             hycast::LatentChunk latentChunk(decoder, version);
-            const bool complete = ps.add(latentChunk, prod2);
+            const auto status = ps.add(latentChunk, prod2);
             const bool isLast = chunkIndex == prodInfo.getNumChunks() - 1;
             EXPECT_EQ(isLast && prod2.getInfo().getName().length() > 0,
-                    complete);
+                    status.isComplete());
             hycast::ActualChunk actualChunk2;
             EXPECT_TRUE(ps.haveChunk(chunkInfo));
             EXPECT_TRUE(ps.getChunk(chunkInfo, actualChunk2));
@@ -107,7 +107,7 @@ TEST_F(ProdStoreTest, PathnameConstruction) {
 TEST_F(ProdStoreTest, InitialEntry) {
     hycast::ProdStore ps{};
     hycast::Product   prod2;
-    EXPECT_FALSE(ps.add(prodInfo, prod2));
+    EXPECT_FALSE(ps.add(prodInfo, prod2).isComplete());
     EXPECT_FALSE(prod2.isComplete());
     EXPECT_EQ(1, ps.size());
     hycast::ProdInfo prodInfo2;
@@ -120,7 +120,7 @@ TEST_F(ProdStoreTest, InitialEntry) {
 TEST_F(ProdStoreTest, AddingLatentChunks) {
     hycast::ProdStore ps{};
     hycast::Product   prod2{}; // Empty
-    EXPECT_FALSE(ps.add(prodInfo, prod2));
+    EXPECT_FALSE(ps.add(prodInfo, prod2).isComplete());
     addChunks(prodInfo, prod.getData(), ps);
     EXPECT_EQ(prodInfo, prod2.getInfo());
     EXPECT_EQ(0, ::memcmp(prod.getData(), prod2.getData(), prodSize));
@@ -128,7 +128,7 @@ TEST_F(ProdStoreTest, AddingLatentChunks) {
 
     hycast::ProdInfo prodInfo2{"product2", prodIndex+1, prodSize};
     addChunks(prodInfo2, prod.getData(), ps);
-    EXPECT_TRUE(ps.add(prodInfo2, prod2));
+    EXPECT_TRUE(ps.add(prodInfo2, prod2).isComplete());
     EXPECT_TRUE(prod2.isComplete());
     EXPECT_EQ(2, ps.size());
 }
@@ -148,7 +148,7 @@ TEST_F(ProdStoreTest, ProductDeletion) {
     hycast::ProdInfo  prodInfo("product", 0, 38000);
     hycast::ProdStore ps{"", 0.1};
     hycast::Product   prod;
-    EXPECT_FALSE(ps.add(prodInfo, prod));
+    EXPECT_FALSE(ps.add(prodInfo, prod).isComplete());
     EXPECT_EQ(1, ps.size());
     ::usleep(200000);
     EXPECT_EQ(0, ps.size());

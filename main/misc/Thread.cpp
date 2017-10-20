@@ -177,8 +177,8 @@ void Thread::Impl::privateCancel()
     assert(isLocked());
     assert(lockedJoinable());
     if (native_handle != stdThread.native_handle())
-        assert(false);
-    int status = ::pthread_cancel(stdThread.native_handle());
+        ::abort();
+    auto status = ::pthread_cancel(stdThread.native_handle());
     if (status)
         throw SYSTEM_ERROR("Couldn't cancel thread: "
                 "native_handle=" + std::to_string(stdThread.native_handle()),
@@ -236,7 +236,7 @@ void Thread::Impl::privateJoin()
 
 void Thread::Impl::ensureCompleted()
 {
-    UniqueLock lock{mutex};
+    LockGuard lock{mutex};
     if (!isCompleted()) {
         privateCancel();
         setCompleted();
@@ -253,17 +253,17 @@ void Thread::Impl::clearBeingJoined(void* const arg) noexcept
 void Thread::Impl::ensureJoined()
 {
     UniqueLock lock{mutex};
-    if (!isBeingJoined()) {
+    if (!isJoined() && !isBeingJoined()) {
         setBeingJoined();
         THREAD_CLEANUP_PUSH(clearBeingJoined, this);
-        /*
-         * Unlock because Thread::Impl::setCompletedAndNotify() might be
-         * executing
-         */
-        lock.unlock();
-        privateJoin(); // Blocks until thread-of-execution terminates
-        lock.lock();
-        //cond.notify_all();
+        {
+            /*
+             * Unlock because Thread::Impl::setCompletedAndNotify() might be
+             * executing
+             */
+            UnlockGuard unlock{mutex};
+            privateJoin(); // Blocks until thread-of-execution terminates
+        }
         setJoined();
         THREAD_CLEANUP_POP(false);
     }
@@ -353,21 +353,15 @@ Thread::Thread(Thread&& that)
 
 Thread& Thread::operator=(const Thread& rhs)
 {
-#if 0
-    if (pImpl)
-        throw LogicError(__FILE__, __LINE__, "Target is not empty");
-#endif
-    pImpl = rhs.pImpl;
+    if (pImpl.get() != rhs.pImpl.get())
+        pImpl = rhs.pImpl;
     return *this;
 }
 
 Thread& Thread::operator=(Thread&& rhs)
 {
-#if 0
-    if (pImpl)
-        throw LogicError(__FILE__, __LINE__, "Target is not empty");
-#endif
-    pImpl = std::move(rhs.pImpl);
+    if (pImpl.get() != rhs.pImpl.get())
+        pImpl = std::move(rhs.pImpl);
     return *this;
 }
 

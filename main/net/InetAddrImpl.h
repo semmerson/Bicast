@@ -62,6 +62,13 @@ public:
      */
     static InetAddrImpl* create(const std::string addr);
     /**
+     * Factory method that returns the default instance.
+     * @return          Default instance
+     * @exceptionsafety Strong guarantee
+     * @threadsafety    Thread-safe
+     */
+    static InetAddrImpl* create();
+    /**
      * Destructor.
      */
     virtual             ~InetAddrImpl() {};

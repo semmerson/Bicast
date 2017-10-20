@@ -20,7 +20,7 @@
 namespace hycast {
 
 class Product final {
-	class                 Impl;
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
@@ -48,12 +48,20 @@ public:
             const size_t       size);
 
     /**
+     * Indicates if this instance is empty.
+     */
+    operator bool() const noexcept;
+
+    /**
      * Sets the associated product-information providing it is consistent with
      * the information provided during construction (basically, only the name
      * can be changed).
-     * @param[in] info  New product-information
+     * @param[in] info      New product-information
+     * @retval `false`      Duplicate information
+     * @retval `true`       New information consistent with existing
+     * @throw RuntimeError  `info` is inconsistent with existing information
      */
-    void set(const ProdInfo& info);
+    bool set(const ProdInfo& info);
 
     /**
      * Returns information on the product.

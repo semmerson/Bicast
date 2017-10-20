@@ -83,13 +83,29 @@ public:
     }
 };
 
+/******************************************************************************/
+
 class LatentChunk::Impl final : public ChunkImpl
 {
+    typedef std::shared_ptr<Impl> SharedPimpl;
+
     Decoder*     decoder;
     unsigned     version;
     bool         drained;
 
 public:
+    inline static SharedPimpl& getEmptySharedPimpl()
+    {
+        static SharedPimpl pImpl{};     // Empty shared pointer
+        return pImpl;
+    }
+
+    inline static Impl* getEmptyPimpl()
+    {
+        static Impl emptyImpl{}; // Default-constructed implementation
+        return &emptyImpl;
+    }
+
     /**
      * Constructs from nothing.
      */
@@ -117,6 +133,14 @@ public:
     {}
 
     /**
+     * Destroys. Ensures that any and all data no longer exists.
+     */
+    ~Impl()
+    {
+        discard();
+    }
+
+    /**
      * Returns the byte-offset of the chunk-of-data.
      * @return Byte-offset of the chunk-of-data
      */
@@ -137,12 +161,12 @@ public:
     /**
      * Drains the chunk of data into a buffer. The latent data will no longer
      * be available.
-     * @param[in] data  Buffer to drain the chunk of data into
-     * @param[in] size  Size of the buffer in bytes
-     * @return Number of bytes actually transferred
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
+     * @param[in] data            Buffer to drain the chunk of data into
+     * @param[in] size            Size of the buffer in bytes
+     * @return                    Number of bytes actually transferred
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Safe
      */
     size_t drainData(
             void* const  data,
@@ -157,14 +181,17 @@ public:
 
     /**
      * Discards the chunk of data. The latent data will no longer be available.
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety Safe
+     * Idempotent.
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Safe
      */
     void discard()
     {
-        drained = true;
-        decoder->clear();
+        if (!drained) {
+            decoder->clear();
+            drained = true;
+        }
     }
 
     /**
@@ -178,6 +205,72 @@ public:
         return !drained;
     }
 };
+
+LatentChunk::LatentChunk()
+    : pImpl{Impl::getEmptySharedPimpl(), Impl::getEmptyPimpl()}
+{}
+
+LatentChunk::LatentChunk(
+        Decoder&       decoder,
+        const unsigned version)
+    : pImpl{new Impl(decoder, version)}
+{}
+
+LatentChunk LatentChunk::deserialize(
+        Decoder&       decoder,
+        const unsigned version)
+{
+    return LatentChunk(decoder, version);
+}
+
+const ChunkInfo& LatentChunk::getInfo() const noexcept
+{
+    return pImpl->getInfo();
+}
+
+ProdIndex LatentChunk::getProdIndex() const noexcept
+{
+    return pImpl->getProdIndex();
+}
+
+ProdSize LatentChunk::getProdSize() const noexcept
+{
+    return pImpl->getProdSize();
+}
+
+ChunkOffset LatentChunk::getOffset() const noexcept
+{
+    return pImpl->getOffset();
+}
+
+ChunkIndex LatentChunk::getIndex() const noexcept
+{
+    return pImpl->getIndex();
+}
+
+ChunkSize LatentChunk::getSize() const noexcept
+{
+    return pImpl->getSize();
+}
+
+size_t LatentChunk::drainData(
+        void* const  data,
+        const size_t size)
+{
+    return pImpl->drainData(data, size);
+}
+
+void LatentChunk::discard()
+{
+    pImpl->discard();
+}
+
+bool LatentChunk::hasData()
+{
+    return pImpl->hasData();
+}
+
+/******************************************************************************/
 
 class ActualChunk::Impl final : public ChunkImpl
 {
@@ -195,13 +288,14 @@ public:
     /**
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
-     * @param[in] data  Chunk data
+     * @param[in] data  Chunk data. Must exist for the duration of the
+     *                  constructed instance.
      */
     Impl(
             const ChunkInfo& info,
             const void*      data)
-        : ChunkImpl(info)
-        , data(data)
+        : ChunkImpl{info}
+        , data{data}
     {}
 
     /**
@@ -278,7 +372,7 @@ ActualChunk::ActualChunk()
 ActualChunk::ActualChunk(
         const ChunkInfo& info,
         const void*      data)
-    : pImpl(new Impl(info, data))
+    : pImpl{new Impl(info, data)}
 {}
 
 const ChunkInfo& ActualChunk::getInfo() const noexcept
@@ -321,70 +415,6 @@ size_t ActualChunk::serialize(
 bool ActualChunk::operator ==(const ActualChunk& that) const noexcept
 {
     return *pImpl == *that.pImpl;
-}
-
-LatentChunk::LatentChunk()
-    : pImpl(new Impl())
-{}
-
-LatentChunk::LatentChunk(
-        Decoder&       decoder,
-        const unsigned version)
-    : pImpl(new Impl(decoder, version))
-{}
-
-LatentChunk LatentChunk::deserialize(
-        Decoder&       decoder,
-        const unsigned version)
-{
-    return LatentChunk(decoder, version);
-}
-
-const ChunkInfo& LatentChunk::getInfo() const noexcept
-{
-    return pImpl->getInfo();
-}
-
-ProdIndex LatentChunk::getProdIndex() const noexcept
-{
-    return pImpl->getProdIndex();
-}
-
-ProdSize LatentChunk::getProdSize() const noexcept
-{
-    return pImpl->getProdSize();
-}
-
-ChunkOffset LatentChunk::getOffset() const noexcept
-{
-    return pImpl->getOffset();
-}
-
-ChunkIndex LatentChunk::getIndex() const noexcept
-{
-    return pImpl->getIndex();
-}
-
-ChunkSize LatentChunk::getSize() const noexcept
-{
-    return pImpl->getSize();
-}
-
-size_t LatentChunk::drainData(
-        void* const  data,
-        const size_t size)
-{
-    return pImpl->drainData(data, size);
-}
-
-void LatentChunk::discard()
-{
-    pImpl->discard();
-}
-
-bool LatentChunk::hasData()
-{
-    return pImpl->hasData();
 }
 
 } // namespace

@@ -76,7 +76,7 @@ public:
     void send(const unsigned value) const;
 
     /**
-     * Sends an object.
+     * Sends an object. This is a cancellation point.
      * @param[in] obj  Object to be sent
      * @throws std::system_error if an I/O error occurred
      * @execptionsafety Basic

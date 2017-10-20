@@ -9,6 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
+#include "Backlogger.h"
 #include "ChunkInfo.h"
 #include "Completer.h"
 #include "error.h"
@@ -16,6 +17,7 @@
 #include "logging.h"
 #include "MsgRcvr.h"
 #include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "PeerSet.h"
 #include "ProdInfo.h"
 #include "Thread.h"
@@ -62,7 +64,17 @@ class PeerSet::Impl final
     static const PeerValue VALUE_MAX{INT32_MAX};
     static const PeerValue VALUE_MIN{INT32_MIN};
 
-    /// An abstract base class for send-actions to be performed on a peer.
+    /**
+     * Interface for performing sending actions.
+     */
+    class Sender
+    {
+    public:
+        virtual void sendNotice(const ProdInfo& info) =0;
+        virtual void sendNotice(const ChunkInfo& info) =0;
+    };
+
+    /// Abstract base class for send-actions.
     class SendAction
     {
         const TimePoint whenCreated;
@@ -70,26 +82,24 @@ class PeerSet::Impl final
         SendAction()
             : whenCreated{Clock::now()}
         {}
-        virtual ~SendAction() =default;
+        virtual ~SendAction()
+        {}
         const TimePoint& getCreateTime() const
         {
             return whenCreated;
         }
         /**
-         * Acts upon a peer.
-         * @param[in,out] peer  Peer to be acted upon
-         * @return `true`       Iff processing should continue
-         * @exceptionsafety     No throw
-         * @threadsafety        Safe
+         * Acts upon a `Sender` (i.e., a `PeerEntry`).
+         * @param[in,out] sender  Peer entry implementation to be acted upon
+         * @return `true`         Processing should continue
+         * @return `false`        Processing should stop
+         * @exceptionsafety       Basic guarantee
+         * @threadsafety          Compatible but not safe
          */
-        virtual void actUpon(Peer& peer) =0;
-        virtual bool terminate() const noexcept
-        {
-            return false;
-        }
+        virtual void actUpon(Sender& sender) =0;
     };
 
-    /// A send-action notice of a new product.
+    /// Send-action notice of a new product.
     class SendProdNotice final : public SendAction
     {
         ProdInfo info;
@@ -99,17 +109,17 @@ class PeerSet::Impl final
         {}
         /**
          * Sends a notice of a data-product to a remote peer.
-         * @param[in,out] peer  Peer
-         * @exceptionsafety     Basic
+         * @param[in] sender    Peer-entry implementation
+         * @exceptionsafety     Basic guarantee
          * @threadsafety        Compatible but not safe
          */
-        void actUpon(Peer& peer)
+        void actUpon(Sender& sender)
         {
-            peer.sendNotice(info);
+            sender.sendNotice(info);
         }
     };
 
-    /// A send-action notice of a new chunk-of-data.
+    /// Send-action notice of a new chunk-of-data.
     class SendChunkNotice final : public SendAction
     {
         ChunkInfo info;
@@ -120,49 +130,41 @@ class PeerSet::Impl final
         /**
          * Sends a notice of the availability of a chunk-of-data to a remote
          * peer.
-         * @param[in,out] peer  Peer
-         * @exceptionsafety     Basic
+         * @param[in] sender    Peer-entry implementation
+         * @exceptionsafety     Basic guarantee
          * @threadsafety        Compatible but not safe
          */
-        void actUpon(Peer& peer)
+        void actUpon(Sender& sender)
         {
-            peer.sendNotice(info);
-        }
-    };
-
-    /// A send-action that terminates the peer.
-    class TerminatePeer final : public SendAction
-    {
-    public:
-        void actUpon(Peer& peer)
-        {}
-        bool terminate() const noexcept
-        {
-            return true;
+            sender.sendNotice(info);
         }
     };
 
     /**
-     * A class that adds behaviors to a peer. It adds attributes to the peer and
-     * manages threads on which the peer executes.
+     * An entry in the set of active peers. This class adds attributes to a
+     * peer and manages the threads on which the peer executes.
      */
     class PeerEntry final
     {
-        class Impl final
+        class Impl final : public Sender
         {
-            /// A queue of send-actions to be performed on a peer.
+            /**
+             * A queue of send-actions to be performed on an instance.
+             */
             class SendQ final
             {
-                std::queue<std::shared_ptr<SendAction>> queue;
-                std::mutex                              mutex;
-                std::condition_variable                 cond;
-                bool                                    isDisabled;
+                typedef std::shared_ptr<SendAction> Pimpl;
+
+                std::queue<Pimpl>        queue;
+                std::mutex               mutex;
+                std::condition_variable  cond;
+                const TimeUnit           maxResideTime;
             public:
-                SendQ()
+                SendQ(const TimeUnit& maxResideTime)
                     : queue{}
                     , mutex{}
                     , cond{}
-                    , isDisabled{false}
+                    , maxResideTime{maxResideTime}
                 {}
 
                 /// Prevents copy and move construction and assignment
@@ -175,27 +177,22 @@ class PeerSet::Impl final
                  * Adds an action to the queue. Entries older than the maximum
                  * residence time will be deleted.
                  * @param[in] action         Action to be added
-                 * @param[in] maxResideTime  Maximum residence time
-                 * @retval    true           Action was added
-                 * @retval    false          Action was not added because
-                 *                           `terminate()` was called
                  */
-                bool push(
-                        std::shared_ptr<SendAction> action,
-                        const TimeUnit&             maxResideTime)
+                void push(std::shared_ptr<SendAction> action)
                 {
                     LockGuard lock{mutex};
-                    if (isDisabled)
-                        return false;
                     while (!queue.empty() && (Clock::now() -
                             queue.front()->getCreateTime() > maxResideTime))
                         queue.pop();
                     queue.push(action);
                     cond.notify_one();
-                    return true;
                 }
 
-                std::shared_ptr<PeerSet::Impl::SendAction> pop()
+                /**
+                 * Removes the entry at the front of the queue and returns it.
+                 * @return Entry at front of queue
+                 */
+                Pimpl pop()
                 {
                     UniqueLock lock{mutex};
                     while (queue.empty()) {
@@ -206,39 +203,43 @@ class PeerSet::Impl final
                     queue.pop();
                     return action;
                 }
-
-                /**
-                 * Clears the queue and adds a send-action that will terminate
-                 * the associated peer. Causes `push()` to always fail. Idempotent.
-                 */
-                void terminate()
-                {
-                    UniqueLock lock{mutex};
-                    while (!queue.empty())
-                        queue.pop();
-                    queue.push(std::shared_ptr<SendAction>(new TerminatePeer()));
-                    isDisabled = true;
-                    cond.notify_one();
-                }
             };
 
             SendQ                      sendQ;
             Peer                       peer;
+            PeerMsgRcvr&               msgRcvr;
             std::atomic<PeerValue>     value;
+            Backlogger                 backlogger;
             Completer<void>            completer;
 
             /**
-             * Processes send-actions queued-up for a peer. Doesn't return unless an
-             * exception is thrown. Intended to run on its own thread.
+             * Returns the identity of the chunk of data with which the backlog
+             * of notices to the remote peer should start.
+             * @param[in] peer    Local peer associated with remote peer
+             * @return            Identity of chunk of data
+             * @throw LogicError  Next message from remote peer isn't a chunk
+             *                    request
+             */
+            ChunkInfo getStartWithFromRemote(Peer& peer)
+            {
+                Peer::Message msg = peer.getMessage();
+                if (msg.getType() != Peer::MsgType::CHUNK_REQUEST)
+                    throw LOGIC_ERROR(
+                            "Initial message from remote peer isn't a chunk-request: "
+                            "msgType=" + std::to_string(msg.getType()));
+                return msg.getChunkInfo();
+            }
+
+            /**
+             * Processes send-actions queued-up for a peer. Doesn't return
+             * unless an exception is thrown. Intended to run on its own thread.
              */
             void runSender()
             {
                 try {
                     for (;;) {
-                        std::shared_ptr<SendAction> action{sendQ.pop()};
-                        action->actUpon(peer);
-                        if (action->terminate())
-                            break;
+                        auto action = sendQ.pop();
+                        action->actUpon(*this); // E.g., `sendNotice()`
                     }
                 }
                 catch (const std::exception& e) {
@@ -248,34 +249,96 @@ class PeerSet::Impl final
             }
 
             /**
-             * Causes a peer to receive messages from its associated remote peer.
-             * Doesn't return until the remote peer disconnects or an exception is
-             * thrown. Intended to run on its own thread.
+             * Receives messages from the remote peer. Doesn't return until the
+             * remote peer disconnects or an exception is thrown. Intended to
+             * run on its own thread.
              */
             void runReceiver()
             {
                 try {
-                    peer.runReceiver();
+                    for (;;) {
+                        auto msg = peer.getMessage();
+                        switch (msg.getType()) {
+                        case Peer::PROD_NOTICE:
+                            msgRcvr.recvNotice(msg.getProdInfo(), peer);
+                            break;
+                        case Peer::CHUNK_NOTICE:
+                            msgRcvr.recvNotice(msg.getChunkInfo(), peer);
+                            break;
+                        case Peer::PROD_REQUEST:
+                            msgRcvr.recvRequest(msg.getProdIndex(), peer);
+                            break;
+                        case Peer::CHUNK_REQUEST:
+                            msgRcvr.recvRequest(msg.getChunkInfo(), peer);
+                            break;
+                        case Peer::CHUNK:
+                            msgRcvr.recvData(msg.getChunk(), peer);
+                            break;
+                        default: // Peer::EMPTY
+                            return;
+                        }
+                    }
                 }
                 catch (const std::exception& e) {
                     std::throw_with_nested(RUNTIME_ERROR(
-                            "Can no longer receive from remote peer: " +
+                            "Can't receive from remote peer: " +
                             peer.to_string()));
+                }
+            }
+
+            /**
+             * Notifies the remote peer of the backlog of available data.
+             * Intended to run on its own thread.
+             */
+            void runBacklogger()
+            {
+                try {
+                    backlogger();
+                }
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(RUNTIME_ERROR(
+                            "Error notifying remote peer " + peer.to_string() +
+                            + " of backlog"));
                 }
             }
 
         public:
             /**
-             * Constructs from the peer.
-             * @param[in] peer           The peer
-             * @throw     RuntimeError   Instance couldn't be constructed
+             * Constructs. Sends a (possibly empty) backlog request to the
+             * remote peer and receives the remote peer's backlog request.
+             * Creates an object to send backlog notices to the remote peer if
+             * appropriate.
+             * @param[in] peer           Local peer
+             * @param[in] msgRcvr        Receiver of message from remote peer
+             * @param[in] prodStore      Product storage
+             * @param[in] maxResideTime  Maximum residence time for send-actions
+             * @throw LogicError         First message from remote peer isn't
+             *                           chunk-request
+             * @throw RuntimeError       Instance couldn't be constructed
              */
-            Impl(Peer& peer)
-                : sendQ{}
+            Impl(   Peer&           peer,
+                    PeerMsgRcvr&    msgRcvr,
+                    ProdStore&      prodStore,
+                    const TimeUnit& maxResideTime)
+                : sendQ{maxResideTime}
                 , peer{peer}
+                , msgRcvr{msgRcvr}
                 , value{0}
+                , backlogger{}
                 , completer{}
-            {}
+            {
+                // Configure incoming notices of backlog of available chunks
+                auto chunkInfo = prodStore.getOldestMissingChunk();
+                peer.sendRequest(chunkInfo);
+                chunkInfo = getStartWithFromRemote(peer);
+                if (!chunkInfo) {
+                    LOG_INFO("Remote peer " + peer.to_string() +
+                            " didn't make a backlog request");
+                }
+                else {
+                    backlogger = Backlogger{peer, chunkInfo, prodStore};
+                }
+            }
 
             /// Prevents copy and move construction and assignment.
             Impl(const Impl& that) =delete;
@@ -289,12 +352,18 @@ class PeerSet::Impl final
             }
 
             /**
-             * Executes the peer. Doesn't return unless an exception is thrown.
+             * Executes the peer. Doesn't return unless the remote peer closes
+             * the connection or an exception is thrown. Intended to run on its
+             * own thread.
+             * @exceptionsafety     Basic guarantee
+             * @threadsafety        Unsafe
              */
             void operator()()
             {
                 completer.submit([this]{runReceiver();});
                 completer.submit([this]{runSender();});
+                if (backlogger)
+                    completer.submit(backlogger);
                 completer.take().getResult(); // Will rethrow any task exception
             }
 
@@ -348,18 +417,25 @@ class PeerSet::Impl final
                 value = 0;
             }
 
+            void sendNotice(const ProdInfo& info)
+            {
+                peer.sendNotice(info);
+            }
+
+            void sendNotice(const ChunkInfo& info)
+            {
+                // No need to include this one in the backlog of available chunks
+                backlogger.doNotNotifyOf(info);
+                peer.sendNotice(info);
+            }
+
             /**
              * Adds a send-action to the send-action queue.
              * @param[in] action         Send-action to be added
-             * @param[in] maxResideTime  Maximum residence time in the queue for
-             *                           send-actions
-             * @return
              */
-            bool push(
-                    std::shared_ptr<SendAction> action,
-                    const TimeUnit&             maxResideTime)
+            void push(std::shared_ptr<SendAction> action)
             {
-                return sendQ.push(action, maxResideTime);
+                sendQ.push(action);
             }
         };
 
@@ -367,9 +443,15 @@ class PeerSet::Impl final
 
     public:
         inline PeerEntry()
-            : pImpl{}                      {}
-        inline PeerEntry(Peer& peer)
-            : pImpl{new Impl(peer)}        {}
+            : pImpl{}
+        {}
+        inline PeerEntry(
+                Peer&           peer,
+                PeerMsgRcvr&    msgRcvr,
+                ProdStore&      prodStore,
+                const TimeUnit& maxResideTime)
+            : pImpl{new Impl(peer, msgRcvr, prodStore, maxResideTime)}
+        {}
         InetSockAddr getRemoteAddr() const { return pImpl->getRemoteAddr(); }
         inline void operator()()     const { pImpl->operator()(); }
         inline Peer getPeer()        const { return pImpl->getPeer(); }
@@ -377,28 +459,29 @@ class PeerSet::Impl final
         inline void decValue()       const { pImpl->decValue(); }
         inline PeerValue getValue()  const { return pImpl->getValue(); }
         inline void resetValue()     const { pImpl->resetValue(); }
-        inline bool push(
-                std::shared_ptr<SendAction> action,
-                const TimeUnit&             maxResideTime) const {
-            return pImpl->push(action, maxResideTime);
+        inline void push(
+                std::shared_ptr<SendAction> action) const {
+            pImpl->push(action);
         }
     };
 
     /// The future of a peer
     typedef Future<void>                        PeerFuture;
 
-    std::unordered_map<InetSockAddr, PeerEntry> addrToEntryMap;
-    std::unordered_map<PeerFuture, PeerEntry>   futureToEntryMap;
     mutable std::mutex                          mutex;
     mutable std::condition_variable             cond;
+    std::unordered_map<InetSockAddr, PeerEntry> addrToEntryMap;
+    std::unordered_map<PeerFuture, PeerEntry>   futureToEntryMap;
+    ProdStore                                   prodStore;
     const TimeUnit                              stasisDuration;
     const TimeUnit                              maxResideTime;
     std::function<void(InetSockAddr&)>          peerStopped;
     unsigned                                    maxPeers;
     std::exception_ptr                          exception;
+    TimePoint                                   timeLastInsert;
+    PeerMsgRcvr&                                msgRcvr;
     Completer<void>                             completer;
     Thread                                      stoppedPeerThread;
-    TimePoint                                   timeLastInsert;
 
     /**
      * Indicates if the set is full.
@@ -422,10 +505,13 @@ class PeerSet::Impl final
     void add(Peer& peer)
     {
         assert(isLocked(mutex));
-        PeerEntry entry{peer};
+        PeerEntry entry{peer, msgRcvr, prodStore, maxResideTime};
+        PeerFuture peerFuture{};
+        {
+            UnlockGuard unlock{mutex};
+            peerFuture = completer.submit([entry]() {entry.operator()();});
+        }
         addrToEntryMap.insert({peer.getRemoteAddr(), entry});
-        auto peerFuture = completer.submit([entry]() mutable {
-                entry.operator()();});
         futureToEntryMap.insert({peerFuture, entry});
         timeLastInsert = Clock::now();
         if (full())
@@ -455,7 +541,6 @@ class PeerSet::Impl final
     InetSockAddr stopAndRemoveWorstPeer()
     {
         assert(isLocked(mutex));
-        assert(futureToEntryMap.size() > 0);
         std::pair<PeerFuture, PeerEntry> pair;
         auto minValue = VALUE_MAX;
         for (const auto& elt : futureToEntryMap) {
@@ -465,8 +550,11 @@ class PeerSet::Impl final
                 pair = elt;
             }
         }
-        PeerFuture future = pair.first;
-        future.cancel();
+        auto future = pair.first;
+        if (future) {
+            UnlockGuard unlock{mutex};
+            future.cancel();
+        }
         return erasePeer(future).second;
     }
 
@@ -499,9 +587,11 @@ class PeerSet::Impl final
                     catch (const std::exception& ex) {
                         log_warn(ex);
                     }
-                    mutex.lock();
-                    std::pair<bool, InetSockAddr> pair = erasePeer(future);
-                    mutex.unlock();
+                    std::pair<bool, InetSockAddr> pair;
+                    {
+                        LockGuard lock{mutex};
+                        pair = erasePeer(future);
+                    }
                     if (pair.first)
                         peerStopped(pair.second);
                 }
@@ -520,6 +610,8 @@ class PeerSet::Impl final
 public:
     /**
      * Constructs from the maximum number of peers. The set will be empty.
+     * @param[in] prodStore       Product storage
+     * @param[in] msgRcvr         Receiver of messages from remote peer
      * @param[in] stasisDuration  Minimum amount of time that the set must be
      *                            full and unchanged before the worst-performing
      *                            peer may be removed
@@ -528,34 +620,41 @@ public:
      * @throws InvalidArgument    `maxPeers == 0 || stasisDuration <= 0`
      */
     Impl(   ProdStore&                         prodStore,
+            PeerMsgRcvr&                       msgRcvr,
             const TimeUnit                     stasisDuration,
             const unsigned                     maxPeers,
             std::function<void(InetSockAddr&)> peerStopped)
-        : addrToEntryMap{}
-        , futureToEntryMap{}
-        , mutex{}
+        : mutex{}
         , cond{}
+        , addrToEntryMap{}
+        , futureToEntryMap{}
+        , prodStore{prodStore}
         , stasisDuration{stasisDuration}
         , maxResideTime{stasisDuration*2}
         , peerStopped{peerStopped}
         , maxPeers{maxPeers}
         , exception{}
+        , timeLastInsert{Clock::now()}
+        , msgRcvr{msgRcvr}
         , completer{}
         , stoppedPeerThread{[this]{handleStoppedPeers();}}
-        , timeLastInsert{Clock::now()}
     {
         if (maxPeers == 0)
             throw INVALID_ARGUMENT("Maximum number of peers can't be zero");
         if (stasisDuration < TimeUnit{0})
             throw INVALID_ARGUMENT("Stasis duration can't be negative");
+        // Check whether a backlog of data-chunks will be requested
+        auto chunkInfo = prodStore.getOldestMissingChunk();
+        if (!chunkInfo)
+            LOG_NOTE("No oldest missing data-chunk => no backlog will "
+                    "be requested");
     }
 
     /**
      * Destroys. Cancels all threads and joins them. It is unspecified if peers
      * stopped as a result of this call still report.
      */
-    ~Impl()
-    {}
+    ~Impl() =default;
 
     /// Prevents copy and move construction and assignment
     Impl(const Impl& that) =delete;
@@ -591,7 +690,8 @@ public:
                 Canceler canceler{};
                 cond.wait_until(lock, timeNextAttempt);
             }
-            if (addrToEntryMap.find(peer.getRemoteAddr()) != addrToEntryMap.end()) {
+            if (addrToEntryMap.find(peer.getRemoteAddr()) !=
+                    addrToEntryMap.end()) {
                 inserted = false;
             }
             else {
@@ -600,7 +700,7 @@ public:
                 add(peer);
                 inserted = true;
             }
-        }
+        } // `mutex` locked
         if (peerAddr)
             peerStopped(peerAddr);
         return inserted;
@@ -616,7 +716,7 @@ public:
     {
         LockGuard lock{mutex};
     	if (exception)
-    		std::rethrow_exception(exception);
+            std::rethrow_exception(exception);
         return addrToEntryMap.find(peerAddr) != addrToEntryMap.end();
     }
 
@@ -634,7 +734,7 @@ public:
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(info)};
         for (const auto& elt : addrToEntryMap)
-            elt.second.push(action, maxResideTime);
+            elt.second.push(action);
     }
 
     /**
@@ -642,7 +742,7 @@ public:
      * @param[in] info            Product information
      * @param[in] except          Address of remote peer to exclude
      * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
+     * @exceptionsafety           Basic guarantee
      * @threadsafety              Safe
      */
     void sendNotice(
@@ -656,7 +756,7 @@ public:
         for (const auto& elt : addrToEntryMap) {
             if (elt.first == except)
                 continue;
-            elt.second.push(action, maxResideTime);
+            elt.second.push(action);
         }
     }
 
@@ -674,7 +774,7 @@ public:
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
         for (const auto& elt : addrToEntryMap)
-            elt.second.push(action, maxResideTime);
+            elt.second.push(action);
     }
 
     /**
@@ -695,7 +795,7 @@ public:
         for (const auto& elt : addrToEntryMap) {
             if (elt.first == except)
                 continue;
-            elt.second.push(action, maxResideTime);
+            elt.second.push(action);
         }
     }
 
@@ -760,10 +860,11 @@ public:
 
 PeerSet::PeerSet(
         ProdStore&                         prodStore,
+        PeerMsgRcvr&                       msgRcvr,
         const TimeUnit                     stasisDuration,
         const unsigned                     maxPeers,
         std::function<void(InetSockAddr&)> peerStopped)
-    : pImpl(new Impl(prodStore, stasisDuration, maxPeers, peerStopped))
+    : pImpl(new Impl(prodStore, msgRcvr, stasisDuration, maxPeers, peerStopped))
 {}
 
 bool PeerSet::tryInsert(Peer& peer) const

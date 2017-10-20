@@ -154,12 +154,14 @@ public:
     /**
      * Constructs an SCTP socket from the server side.
      * @param[in] sd         SCTP socket descriptor from `accept()`
+     * @param[in] addr       Address of remote SCTP socket
      * @param[in] numStream  Number of SCTP streams
      * @throws SystemError   Required memory can't be allocated
      */
     SctpSock(
-            const int sd,
-            const int numStreams);
+            const int              sd,
+            const struct sockaddr& addr,
+            const int              numStreams);
 
     /**
      * Destroys. Closes the underlying BSD socket if this instance holds the
@@ -210,7 +212,7 @@ public:
             const size_t   len) const;
 
     /**
-     * Sends a message.
+     * Sends a message. This is a cancellation point.
      * @param[in] streamId  SCTP stream number
      * @param[in] iovec     Vector comprising message to send
      * @param[in] iovcnt    Number of elements in `iovec`

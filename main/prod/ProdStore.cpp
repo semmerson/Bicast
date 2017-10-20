@@ -27,90 +27,409 @@
 
 namespace hycast {
 
+/// Product entry
+class ProdEntry
+{
+    Product prod;
+
+public:
+    ProdEntry(const ProdInfo& prodInfo)
+        : prod{prodInfo}
+    {}
+
+    ProdEntry(ProdInfo&& prodInfo)
+        : prod{prodInfo}
+    {}
+
+    ProdEntry(LatentChunk& chunk)
+        : ProdEntry{ProdInfo{"", chunk.getProdIndex(), chunk.getProdSize()}}
+    {
+        prod.add(chunk);
+    }
+
+    ProdEntry(Product& prod)
+        : prod{prod}
+    {}
+
+    inline bool isEarlierThan(ProdEntry& that)
+    {
+        return prod.isEarlierThan(that.prod);
+    }
+
+    inline ChunkInfo identifyEarliestMissingChunk() const
+    {
+        return prod.identifyEarliestMissingChunk();
+    }
+
+    inline bool set(const ProdInfo& prodInfo)
+    {
+        return prod.set(prodInfo);
+    }
+
+    inline bool add(LatentChunk& chunk)
+    {
+        return prod.add(chunk);
+    }
+
+    inline const ProdInfo& getInfo() const
+    {
+        return prod.getInfo();
+    }
+
+    inline bool isReady() const
+    {
+        return prod.isComplete() && (prod.getInfo().getName().length() > 0);
+    }
+
+    const inline Product& getProduct() const
+    {
+        return prod;
+    }
+
+    inline bool haveChunk(ChunkIndex index) const
+    {
+        return prod.haveChunk(index);
+    }
+
+    inline bool getChunk(ChunkIndex index, ActualChunk& chunk) const
+    {
+        return prod.getChunk(index, chunk);
+    }
+};
+
+/******************************************************************************/
+
+/// Map of products
+class ProdMap
+{
+    typedef std::mutex             Mutex;
+    typedef std::lock_guard<Mutex> LockGuard;
+
+    mutable Mutex                            mutex;
+    /// Map of products
+    std::unordered_map<ProdIndex, ProdEntry> prods;
+    /// Map of incomplete products
+    std::map<ProdIndex, ProdEntry*>          incomplete;
+    ProdIndex                                earliest;
+    ProdIndex                                latest;
+    static const ChunkInfo                   emptyChunkInfo;
+
+    /**
+     * Updates the indexes of the earliest and latest products that this
+     * instance contains.
+     * @pre `mutex` is locked
+     * @param[in] index  Product index
+     */
+    void updateEndIndexes(const ProdIndex& index)
+    {
+        if (prods.size() == 0) {
+            latest = earliest = index;
+        }
+        else {
+            if (index < earliest)
+                earliest = index;
+            if (index > latest)
+                latest = index;
+        }
+    }
+
+public:
+    ProdMap()
+        : mutex{}
+        , prods{}
+        , incomplete{}
+        , earliest{}
+        , latest{}
+    {}
+
+    /**
+     * Adds an entire product. Does nothing if the product has already been
+     * added.
+     * @param[in] prod   Product to be added
+     * @retval `true`    Product is new
+     * @retval `false`   Product is not new
+     * @exceptionsafety  Basic guarantee
+     * @threadsafety     Safe
+     */
+    bool add(Product& prod)
+    {
+        LockGuard  lock{mutex};
+        auto       prodIndex = prod.getIndex();
+        auto       pair = prods.insert(std::pair<ProdIndex, ProdEntry>
+                (prodIndex, ProdEntry{prod}));
+        const bool isNew = pair.second;
+        if (isNew)
+            updateEndIndexes(prodIndex);
+        incomplete.erase(prodIndex); // Just to make sure
+        return isNew;
+    }
+
+    /**
+     * Adds information on a product.
+     * @param[in]  prodInfo  Product information
+     * @param[out] prod      Associated product
+     * @return               Status of addition
+     * @see                  `ProdStore::AddStatus`
+     */
+    ProdStore::AddStatus add(
+            const ProdInfo&   prodInfo,
+            ProdEntry** const prodEntry)
+    {
+        LockGuard             lock{mutex};
+        ProdEntry*            entry;
+        ProdStore::AddStatus  status{};
+        const auto            prodIndex = prodInfo.getIndex();
+        auto                  iter = prods.find(prodIndex);
+        if (iter == prods.end()) {
+            status.setNew();
+            entry = &prods.emplace(prodIndex,
+                    ProdEntry{prodInfo}).first->second;
+            incomplete[prodIndex] = entry;
+            updateEndIndexes(prodIndex);
+        }
+        else {
+            entry = &iter->second;
+            if (entry->set(prodInfo)) {
+                status.setNew();
+            }
+            else {
+                status.setDuplicate();
+            }
+            if (entry->isReady()) {
+                status.setComplete();
+                incomplete.erase(prodIndex);
+            }
+        }
+        *prodEntry = entry;
+        return status;
+    }
+
+    /**
+     * Adds a chunk of data.
+     * @param[in]  chunk  Chunk of data
+     * @param[out] prod   Associated product
+     * @return            Status of addition
+     * @see               `ProdStore::AddStatus`
+     */
+    ProdStore::AddStatus add(
+            LatentChunk&      chunk,
+            ProdEntry** const prodEntry)
+    {
+        LockGuard            lock{mutex};
+        ProdEntry*           entry;
+        ProdStore::AddStatus status{};
+        const auto           prodIndex = chunk.getProdIndex();
+        auto                 iter = prods.find(prodIndex);
+        if (iter == prods.end()) {
+            status.setNew();
+            entry = &prods.emplace(prodIndex, ProdEntry{chunk}).first->second;
+            incomplete[prodIndex] = entry;
+            updateEndIndexes(prodIndex);
+        }
+        else {
+            entry = &iter->second;
+            if (entry->add(chunk)) {
+                status.setNew();
+            }
+            else {
+                status.setDuplicate();
+            }
+            if (entry->isReady()) {
+                status.setComplete();
+                incomplete.erase(prodIndex);
+            }
+        }
+        *prodEntry = entry;
+        return status;
+    }
+
+    /**
+     * Returns the number of products in the store -- both complete and
+     * incomplete.
+     * @return Number of products in the store
+     */
+    size_t size() const noexcept
+    {
+        LockGuard lock{mutex};
+        return prods.size();
+    }
+
+    ProdIndex getEarliest()
+    {
+        LockGuard lock{mutex};
+        return earliest;
+    }
+
+    ProdIndex getLatest()
+    {
+        LockGuard lock{mutex};
+        return latest;
+    }
+
+    /**
+     * Returns product-information on a given data-product.
+     * @param[in]  index  Index of the data-product
+     * @param[out] info   Information on the given product
+     * @retval `true`     Information found. `info` is set.
+     * @retval `false`    Information not found. `info` is not set.
+     */
+    bool getProdInfo(
+            const ProdIndex index,
+            ProdInfo&       info) const
+    {
+        LockGuard lock{mutex};
+        auto iter = prods.find(index);
+        if (iter == prods.end())
+            return false;
+        info = iter->second.getInfo();
+        return true;
+    }
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] info  Information on the chunk
+     * @retval `true`   Chunk exists
+     * @retval `false`  Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkInfo& info) const
+    {
+        LockGuard lock{mutex};
+        auto      iter = prods.find(info.getProdIndex());
+        if (iter == prods.end())
+            return false;
+        return iter->second.haveChunk(info.getIndex());
+    }
+
+    /**
+     * Returns the chunk of data corresponding to chunk-information.
+     * @param[in]  info   Information on the desired chunk
+     * @param[out] chunk  Corresponding chunk of data
+     * @retval `true`     Chunk found. `chunk` is set.
+     * @retval `false`    Chunk not found. `chunk` is not set.
+     */
+    bool getChunk(
+            const ChunkInfo& info,
+            ActualChunk&     chunk) const
+    {
+        LockGuard lock{mutex};
+        auto      iter = prods.find(info.getProdIndex());
+        if (iter == prods.end())
+            return false;
+        return iter->second.getChunk(info.getIndex(), chunk);
+    }
+
+    ChunkInfo identifyEarliestMissingChunk() const
+    {
+        LockGuard lock{mutex};
+        auto iter = incomplete.begin();
+        return (iter == incomplete.end())
+                ? emptyChunkInfo
+                : iter->second->identifyEarliestMissingChunk();
+    }
+
+    void erase(const ProdIndex& index)
+    {
+        LockGuard lock{mutex};
+        prods.erase(index);
+        incomplete.erase(index);
+    }
+};
+
+const ChunkInfo ProdMap::emptyChunkInfo{};
+
+/******************************************************************************/
+
+/// Implementation of an iterator over chunks of data in the product store
+class ProdStore::ChunkInfoIterator::Impl final
+{
+    ProdMap&               prods;
+    ProdIndex              prodIndex;
+    ChunkIndex             chunkIndex;
+    static const ChunkInfo emptyChunkInfo;
+
+public:
+    /**
+     * Constructs. Sets the current chunk of data to the given one.
+     * @pre                  `startWith == true`
+     * @param[in] prods      Collection of products
+     * @param[in] startWith  Information on data-chunk with which to start
+     * @see                  `ChunkInfo::operator bool()`
+     */
+    Impl(   ProdMap&         prods,
+            const ChunkInfo& startWith)
+        : prods{prods}
+        , prodIndex{}
+        , chunkIndex{}
+    {
+        if (!startWith)
+            throw INVALID_ARGUMENT("Empty data-chunk information");
+        prodIndex = startWith.getProdIndex();
+        chunkIndex = startWith.getIndex();
+        const auto earliest = prods.getEarliest();
+        if (prodIndex < earliest) {
+            prodIndex = earliest;
+            chunkIndex = 0;
+        }
+    }
+
+    /**
+     * Returns information on the chunk of data that the product-store
+     * contains and that is closest to but not earlier than the current
+     * chunk.
+     * @return  Information on the chunk or the empty chunk if such a chunk
+     *          doesn't exist
+     */
+    const ChunkInfo operator *()
+    {
+        ProdInfo prodInfo;
+        for (; prodIndex <= prods.getLatest(); ++prodIndex) {
+            if (prods.getProdInfo(prodIndex, prodInfo)) {
+                auto numChunks = prodInfo.getNumChunks();
+                for (; chunkIndex < numChunks; ++chunkIndex) {
+                    auto chunkInfo = prodInfo.makeChunkInfo(chunkIndex);
+                    if (prods.haveChunk(chunkInfo))
+                        return chunkInfo;
+                }
+            }
+            chunkIndex = 0;
+        }
+        return emptyChunkInfo;
+    }
+
+    /**
+     * Advances to the next chunk of data.
+     * @return  This instance
+     */
+    void operator ++()
+    {
+        ++chunkIndex;
+    }
+};
+
+const ChunkInfo ProdStore::ChunkInfoIterator::Impl::emptyChunkInfo{};
+
+ProdStore::ChunkInfoIterator::ChunkInfoIterator(Impl* impl)
+    : pImpl{impl}
+{}
+
+const ChunkInfo ProdStore::ChunkInfoIterator::operator *()
+{
+    return pImpl->operator *();
+}
+
+ProdStore::ChunkInfoIterator& ProdStore::ChunkInfoIterator::operator ++()
+{
+    pImpl->operator ++();
+    return *this;
+}
+
+/******************************************************************************/
+
 class ProdStore::Impl final
 {
-    /// Product entry
-    class ProdEntry
-    {
-        bool    processed;
-        Product prod;
-
-    public:
-        ProdEntry(const ProdInfo& prodInfo)
-            : processed{false}
-            , prod{prodInfo}
-        {}
-
-        ProdEntry(ProdInfo&& prodInfo)
-            : processed{false}
-            , prod{prodInfo}
-        {}
-
-        ProdEntry(LatentChunk& chunk)
-            : ProdEntry{ProdInfo{"", chunk.getProdIndex(), chunk.getProdSize()}}
-        {
-            prod.add(chunk);
-        }
-
-        ProdEntry(Product& prod)
-            : processed{false}
-            , prod{prod}
-        {}
-
-        inline bool isEarlierThan(ProdEntry& that)
-        {
-            return prod.isEarlierThan(that.prod);
-        }
-
-        inline ChunkInfo identifyEarliestMissingChunk() const
-        {
-            return prod.identifyEarliestMissingChunk();
-        }
-
-        inline void set(const ProdInfo& prodInfo)
-        {
-            prod.set(prodInfo);
-        }
-
-        inline void add(LatentChunk& chunk)
-        {
-            prod.add(chunk);
-        }
-
-        inline const ProdInfo& getInfo() const
-        {
-            return prod.getInfo();
-        }
-
-        inline bool isReady() const
-        {
-            return !processed && prod.isComplete() &&
-                    prod.getInfo().getName().length() > 0;
-        }
-
-        const inline Product& getProduct() const
-        {
-            return prod;
-        }
-
-        inline void setProcessed()
-        {
-            processed = true;
-        }
-
-        inline bool haveChunk(ChunkIndex index) const
-        {
-            return prod.haveChunk(index);
-        }
-
-        inline bool getChunk(ChunkIndex index, ActualChunk& chunk) const
-        {
-            return prod.getChunk(index, chunk);
-        }
-    };
-
     typedef std::mutex                 Mutex;
     typedef std::lock_guard<Mutex>     LockGuard;
+
     typedef std::chrono::milliseconds  Duration; /// Unit of residence-time
 
     /// Pathname of persistence file
@@ -120,16 +439,31 @@ class ProdStore::Impl final
     /// Persistence file
     std::ofstream                              file;
     /// Map of products
-    std::unordered_map<ProdIndex, ProdEntry>   prods;
-    /// Map of pending (i.e., incomplete) products
-    std::map<ProdIndex, ProdEntry*>            pending;
+    ProdMap                                    prods;
     /// Concurrent-access mutex
     mutable Mutex                              mutex;
     /// Product-deletion delay-queue
     FixedDelayQueue<ProdIndex, Duration>       delayQ;
     /// Thread for deleting products whose residence-time exceeds the minimum
     std::thread                                deletionThread;
-    std::exception_ptr                         exception;
+    mutable std::exception_ptr                 exception;
+    ProdIndex                                  earliest;
+    ProdIndex                                  latest;
+    static const ChunkInfo                     emptyChunkInfo;
+
+    void setAndThrowException() const
+    {
+        LockGuard lock{mutex};
+        exception = std::current_exception();
+        throw;
+    }
+
+    void throwIfException() const
+    {
+        LockGuard lock{mutex};
+    	if (exception)
+            std::rethrow_exception(exception);
+    }
 
     /**
      * Writes to the temporary persistence-file.
@@ -205,16 +539,11 @@ class ProdStore::Impl final
     void deleteOldProds()
     {
     	try {
-            for (;;) {
-                auto      prodIndex = delayQ.pop();
-                LockGuard lock{mutex};
-                prods.erase(prodIndex);
-                pending.erase(prodIndex);
-            }
+            for (;;)
+                prods.erase(delayQ.pop());
     	}
     	catch (const std::exception& e) {
-            LockGuard lock{mutex};
-            exception = std::current_exception();
+    	    setAndThrowException();
     	}
     }
 
@@ -232,11 +561,12 @@ public:
         , tempPathname{pathname + ".tmp"}
         , file{}
         , prods{}
-        , pending{}
         , mutex{}
         , delayQ{Duration(static_cast<Duration::rep>(residence*1000))}
         , deletionThread{std::thread([this]{deleteOldProds();})}
         , exception{}
+        , earliest{}
+        , latest{}
     {
         if (pathname.length()) {
             file.open(tempPathname, std::ofstream::binary |
@@ -258,15 +588,15 @@ public:
     ~Impl() noexcept
     {
         try {
-            if (file.is_open())
-                persist();
+            ::pthread_cancel(deletionThread.native_handle());
+            deletionThread.join();
         }
         catch (const std::exception& e) {
             log_error(e);
         }
         try {
-            ::pthread_cancel(deletionThread.native_handle());
-            deletionThread.join();
+            if (file.is_open())
+                persist();
         }
         catch (const std::exception& e) {
             log_error(e);
@@ -275,93 +605,60 @@ public:
 
     /**
      * Adds an entire product. Does nothing if the product has already been
-     * added. If added, the product will be removed when the minimum residence
-     * time has elapsed.
+     * added. If the product is added, then it will be removed after the minimum
+     * residence time has elapsed.
      * @param[in] prod   Product to be added
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
     void add(Product& prod)
     {
-        LockGuard lock{mutex};
-    	if (exception)
-            std::rethrow_exception(exception);
-        auto prodIndex = prod.getIndex();
-        auto pair = prods.insert(std::pair<ProdIndex, ProdEntry>
-                (prodIndex, ProdEntry{prod}));
-        if (pair.second)
-            delayQ.push(prodIndex);
+        throwIfException();
+        try {
+            const bool isNew = prods.add(prod);
+            if (isNew)
+                delayQ.push(prod.getIndex());
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
     }
 
     /**
-     * Adds information on a product. If the addition completes the product,
-     * then it will be removed from the map of pending products and removed from
-     * the map of products when the minimum residence time has elapsed.
-     * @param[in]  prodInfo  Product information
-     * @param[out] prod      Associated product
-     * @retval `true`        The product is complete
-     * @retval `false`       The product is incomplete
+     * Adds something to a product -- creating the product if necessary. Does
+     * nothing if the product already exists and already has the thing. If the
+     * product is created, then it will be removed after the minimum residence
+     * time has elapsed.
+     * @param[in]  thing      Thing to be added (e.g., `ProdInfo`,
+     *                       `LatentChunk`)
+     * @param[in]  prodIndex  Index of the corresponding product
+     * @param[out] prod       Corresponding product. Set iff return status
+     *                        indicates that product is complete.
+     * @return                Status of the addition
+     * @exceptionsafety       Basic guarantee
+     * @threadsafety          Safe
      */
-    bool add(
-            const ProdInfo& prodInfo,
+    template<class T>
+    AddStatus add(
+            T               thing,
+            const ProdIndex prodIndex,
             Product&        prod)
     {
-        LockGuard lock{mutex};
-    	if (exception)
-            std::rethrow_exception(exception);
+        throwIfException();
         ProdEntry* entry;
-        auto prodIndex = prodInfo.getIndex();
-        auto iter = prods.find(prodIndex);
-        if (iter == prods.end()) {
-            entry = &prods.emplace(prodIndex, ProdEntry{prodInfo}).first->second;
-            pending[prodIndex] = entry;
+        AddStatus  status{};
+        try {
+            status = prods.add(thing, &entry);
+            if (status.isNew())
+                delayQ.push(prodIndex);
+            prod = entry->getProduct();
         }
-        else {
-            entry = &iter->second;
-            entry->set(prodInfo);
+        catch (const std::exception& ex) {
+            setAndThrowException();
         }
-        prod = entry->getProduct();
-        delayQ.push(prodIndex);
-        if (!entry->isReady())
-            return false;
-        entry->setProcessed();
-        pending.erase(prodIndex);
-        return true;
-    }
-
-    /**
-     * Adds a chunk of data. If the addition completes the product, then it will
-     * be removed when the minimum residence time has elapsed.
-     * @param[in]  chunk  Chunk of data
-     * @param[out] prod   Associated product
-     * @retval `true`     The product is complete
-     * @retval `false`    The product is incomplete
-     */
-    bool add(
-            LatentChunk& chunk,
-            Product&     prod)
-    {
-        LockGuard lock{mutex};
-    	if (exception)
-            std::rethrow_exception(exception);
-    	ProdEntry* entry;
-        auto prodIndex = chunk.getProdIndex();
-        auto iter = prods.find(prodIndex);
-        if (iter == prods.end()) {
-            entry = &prods.emplace(prodIndex, ProdEntry{chunk}).first->second;
-            pending[prodIndex] = entry;
-        }
-        else {
-            entry = &iter->second;
-            entry->add(chunk);
-        }
-        prod = entry->getProduct();
-        delayQ.push(prodIndex);
-        if (!entry->isReady())
-            return false;
-        entry->setProcessed();
-        pending.erase(prodIndex);
-        return true;
+        if (entry->isReady())
+            status.setComplete();
+        return status;
     }
 
     /**
@@ -371,7 +668,6 @@ public:
      */
     size_t size() const noexcept
     {
-        LockGuard lock{mutex};
         return prods.size();
     }
 
@@ -386,14 +682,14 @@ public:
             const ProdIndex index,
             ProdInfo&       info) const
     {
-        LockGuard lock{mutex};
-    	if (exception)
-            std::rethrow_exception(exception);
-        auto iter = prods.find(index);
-        if (iter == prods.end())
-            return false;
-        info = iter->second.getInfo();
-        return true;
+        throwIfException();
+        try {
+            return prods.getProdInfo(index, info);
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
+        return false; // To accommodate Eclipse
     }
 
     /**
@@ -404,11 +700,14 @@ public:
      */
     bool haveChunk(const ChunkInfo& info) const
     {
-        LockGuard lock{mutex};
-        auto      iter = prods.find(info.getProdIndex());
-        if (iter == prods.end())
-            return false;
-        return iter->second.haveChunk(info.getIndex());
+        throwIfException();
+        try {
+            return prods.haveChunk(info);
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
+        return false; // To accommodate Eclipse
     }
 
     /**
@@ -422,30 +721,45 @@ public:
             const ChunkInfo& info,
             ActualChunk&     chunk) const
     {
-        LockGuard lock{mutex};
-        auto      iter = prods.find(info.getProdIndex());
-        if (iter == prods.end())
-            return false;
-        return iter->second.getChunk(info.getIndex(), chunk);
+        throwIfException();
+        try {
+            return prods.getChunk(info, chunk);
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
+        return false; // To accommodate Eclipse
     }
 
     /**
      * Returns information on the earliest missing chunk of data.
-     * @return  Information on the earliest missing data-chunk or empty
-     *          information if no such chunk exists
+     * @return           Information on the earliest missing data-chunk or empty
+     *                   information if no such chunk exists
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      * @see `ChunkInfo::operator bool()`
      */
     ChunkInfo identifyEarliestMissingChunk() const
     {
-        LockGuard lock{mutex};
-        auto iter = pending.begin();
-        return (iter == pending.end())
-                ? ChunkInfo{}
-                : iter->second->identifyEarliestMissingChunk();
+        throwIfException();
+        try {
+            return prods.identifyEarliestMissingChunk();
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
+        return emptyChunkInfo; // To accommodate Eclipse
+    }
+
+    ProdStore::ChunkInfoIterator getChunkInfoIterator(
+            const ChunkInfo& startWith)
+    {
+        return ProdStore::ChunkInfoIterator{
+            new ProdStore::ChunkInfoIterator::Impl(prods, startWith)};
     }
 };
+
+const ChunkInfo ProdStore::Impl::emptyChunkInfo{};
 
 ProdStore::ProdStore(
         const std::string& pathname,
@@ -458,18 +772,18 @@ void ProdStore::add(Product& prod)
     pImpl->add(prod);
 }
 
-bool ProdStore::add(
+ProdStore::AddStatus ProdStore::add(
         const ProdInfo& prodInfo,
         Product&        prod)
 {
-    return pImpl->add(prodInfo, prod);
+    return pImpl->add(prodInfo, prodInfo.getIndex(), prod);
 }
 
-bool ProdStore::add(
+ProdStore::AddStatus ProdStore::add(
         LatentChunk& chunk,
         Product&     prod)
 {
-    return pImpl->add(chunk, prod);
+    return pImpl->add(chunk, chunk.getProdIndex(), prod);
 }
 
 size_t ProdStore::size() const noexcept
@@ -499,6 +813,12 @@ bool ProdStore::getChunk(
 ChunkInfo ProdStore::getOldestMissingChunk() const
 {
     return pImpl->identifyEarliestMissingChunk();
+}
+
+ProdStore::ChunkInfoIterator ProdStore::getChunkInfoIterator(
+        const ChunkInfo& startWith) const
+{
+    return pImpl->getChunkInfoIterator(startWith);
 }
 
 } // namespace

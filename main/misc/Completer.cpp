@@ -71,7 +71,6 @@ class Completer<Ret>::Impl
     FutureQueue              completedFutures;
 
     void add() {
-        auto threadId = Thread::getId();
         auto future = executor.getFuture();
         completedFutures.push(future);
     }
@@ -84,18 +83,19 @@ class Completer<Ret>::Impl
 protected:
     /**
      * Wraps a callable in a callable that adds the associated future to the
-     * queue of completed futures.
+     * queue of completed futures when the task completes.
      * @param[in] func  Callable to be wrapped
      * @return          Wrapped callable
      */
     std::function<Ret()> getCallable(const std::function<Ret()>& func)
     {
         return [this,func] {
-            Ret result{};
+            Ret* result;
             THREAD_CLEANUP_PUSH(addFutureToQueue, this);
-            result = func();
+            Ret ret = func();
+            result = &ret;
             THREAD_CLEANUP_POP(true);
-            return result;
+            return *result;
         };
     }
 
@@ -114,14 +114,8 @@ public:
             executor.shutdown(true);
             executor.awaitTermination();
         }
-        catch (const std::exception& e) {
-            try {
-                std::throw_with_nested(RUNTIME_ERROR(
-                        "Couldn't destroy completer"));
-            }
-            catch (const std::exception& ex) {
-                log_error(ex);
-            }
+        catch (const std::exception& ex) {
+            LOG_ERROR(ex, "Couldn't destroy completer");
         }
     }
 

@@ -110,7 +110,7 @@ public:
     Impl& operator=(const Impl&& rhs) =delete;
 
     /**
-     * Destroys an instance. Closes the underlying BSD socket it it's open.
+     * Destroys an instance. Closes the underlying BSD socket if it's open.
      * @exceptionsafety Nothrow
      */
     virtual ~Impl() noexcept
@@ -338,10 +338,8 @@ public:
     }
 
     /**
-     * Accepts an incoming connection on the socket. Calls `listen()` if that
-     * function hasn't been called.
+     * Accepts an incoming connection on the socket.
      * @return             The accepted connection
-     * @throw SystemError  `listen()` failure
      * @throw SystemError  `accept()` failure
      * @throw SystemError  Required memory can't be allocated
      * @exceptionsafety    Basic guarantee
@@ -349,16 +347,17 @@ public:
      */
     SctpSock accept()
     {
-        int newSd;
+        int             newSd;
+        struct sockaddr addr;
         {
-            socklen_t len = 0;
-            Canceler  canceler{};
-            newSd = ::accept(sd, (struct sockaddr*)nullptr, &len);
+            socklen_t       len = sizeof(addr);
+            Canceler        canceler{};
+            newSd = ::accept(sd, &addr, &len);
         }
         if (newSd < 0)
             throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd));
         try {
-            return SctpSock{newSd, numStreams};
+            return SctpSock{newSd, addr, numStreams};
         }
         catch (const std::exception& e) {
             (void)::close(newSd);
@@ -413,11 +412,13 @@ private:
     public:
         IgnoreSigPipe()
         {
-            struct sigaction ignoreSignal = {};
+            struct sigaction ignoreSignal = {0};
             ignoreSignal.sa_handler = SIG_IGN;
             if (::sigaction(SIGPIPE, &ignoreSignal, &oldSigact))
                 throw SYSTEM_ERROR("Couldn't ignore SIGPIPE");
         }
+        IgnoreSigPipe(const IgnoreSigPipe& that) =delete;
+        IgnoreSigPipe& operator=(const IgnoreSigPipe& rhs) =delete;
         ~IgnoreSigPipe() noexcept
         {
             if (::sigaction(SIGPIPE, &oldSigact, nullptr))
@@ -440,6 +441,7 @@ private:
      */
     void throwIfNotWritable()
     {
+#if 0
         struct pollfd pollfd;
         pollfd.fd = sd;
         pollfd.events = POLLOUT;
@@ -448,6 +450,7 @@ private:
             throw SYSTEM_ERROR("poll() failure");
         if (status == 0)
             throw RUNTIME_ERROR("Socket not ready for writing");
+#endif
     }
 
     /**
@@ -648,24 +651,20 @@ public:
     /**
      * Constructs an SCTP socket from the server side.
      * @param[in] sd         SCTP socket descriptor from `accept()`
+     * @param[in] addr       Address of the remote SCTP socket
      * @param[in] numStream  Number of SCTP streams
      * @throws SystemError   Required memory can't be allocated
      */
-    Impl(   const int sd,
-            const int numStreams)
-        : BaseSctpSock::Impl{sd, numStreams}
+    Impl(   const int              sd,
+            const struct sockaddr& addr,
+            const int              numStreams)
+        : BaseSctpSock::Impl(sd, numStreams)
         , mutex{}
         , streamId(0)
         , size(0)
         , haveCurrMsg(false)
-        , remoteAddr{}
-    {
-        struct sockaddr addr;
-        socklen_t       len = sizeof(addr);
-        if (::getpeername(sd, &addr, &len))
-            throw SYSTEM_ERROR("getpeername() failure");
-        remoteAddr = InetSockAddr{addr};
-    }
+        , remoteAddr{InetSockAddr{addr}}
+    {}
 
     /**
      * Connects to a server. This function is separate from the constructor to
@@ -723,7 +722,7 @@ public:
     }
 
     /**
-     * Sends a message.
+     * Sends a message. This is a cancellation point.
      * @param[in] streamId   SCTP stream number
      * @param[in] iovec      Vector comprising message to send
      * @param[in] iovcnt     Number of elements in `iovec`
@@ -753,10 +752,10 @@ public:
         msghdr.msg_controllen = sizeof(msg_control);
         ssize_t sendStatus;
         {
-            IgnoreSigPipe ignoreSigPipe{};
+            // IgnoreSigPipe ignoreSigPipe{}; // Replaced by MSG_NOSIGNAL
             Canceler      canceler{};
             throwIfNotWritable();
-            sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR);
+            sendStatus = ::sendmsg(sd, &msghdr, MSG_EOR | MSG_NOSIGNAL);
         }
         checkIoStatus(__LINE__, "sendmsg()", numExpected, sendStatus);
     }
@@ -880,9 +879,10 @@ SctpSock::SctpSock()
 {}
 
 SctpSock::SctpSock(
-        const int sd,
-        const int numStreams)
-    : BaseSctpSock{new Impl(sd, numStreams)}
+        const int              sd,
+        const struct sockaddr& addr,
+        const int              numStreams)
+    : BaseSctpSock{new Impl(sd, addr, numStreams)}
 {}
 
 SctpSock::SctpSock(const int numStreams)

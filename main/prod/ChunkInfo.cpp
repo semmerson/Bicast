@@ -36,19 +36,6 @@ ChunkInfo::ChunkInfo(
                 ", numChunks=" + std::to_string(numChunks));
 }
 
-ChunkInfo::ChunkInfo(const ChunkInfo& info)
-    : prodIndex{info.prodIndex}
-    , prodSize{info.prodSize}
-    , chunkIndex{info.chunkIndex}
-    , hashCode{info.hashCode.load()}
-{}
-
-ChunkInfo::ChunkInfo(
-        const ProdInfo&  prodInfo,
-        const ChunkIndex chunkIndex) noexcept
-    : ChunkInfo(prodInfo.getIndex(), prodInfo.getSize(), chunkIndex)
-{}
-
 const ChunkInfo& ChunkInfo::operator =(const ChunkInfo& rhs) noexcept
 {
     prodIndex = rhs.prodIndex;
@@ -100,6 +87,12 @@ ChunkSize ChunkInfo::getSize(
 }
 
 ChunkInfo::ChunkInfo(
+        const ProdInfo&   prodInfo,
+        const ChunkIndex  chunkIndex) noexcept
+    : ChunkInfo{prodInfo.getIndex(), prodInfo.getSize(), chunkIndex}
+{}
+
+ChunkInfo::ChunkInfo(
         Decoder&       decoder,
         const unsigned version)
     : ChunkInfo()
@@ -137,7 +130,8 @@ ChunkInfo ChunkInfo::deserialize(
 std::string ChunkInfo::to_string() const
 {
     return "{prodIndex=" + prodIndex.to_string() + ", chunkIndex=" +
-            std::to_string(chunkIndex) + "}";
+            std::to_string(chunkIndex) + ", size=" + std::to_string(getSize()) +
+            "}";
 }
 
 } // namespace

@@ -52,20 +52,20 @@ TEST_F(BackloggerTest, DoNotRequest)
 
     const hycast::ProdInfo   prodInfo1{"Product 1", 1, 50};
     const hycast::ChunkInfo  chunkInfo1{prodInfo1, 0};
-    backlogger.doNotSend(chunkInfo1);
+    backlogger.doNotNotifyOf(chunkInfo1);
     EXPECT_EQ(chunkInfo1, backlogger.getEarliest());
 
     const hycast::ProdInfo prodInfo0{"Product 0", 0, 128000};
     const hycast::ChunkInfo chunkInfo2{prodInfo0, 1};
-    backlogger.doNotSend(chunkInfo2);
+    backlogger.doNotNotifyOf(chunkInfo2);
     EXPECT_EQ(chunkInfo2, backlogger.getEarliest());
 
     const hycast::ChunkInfo chunkInfo3{prodInfo0, 0};
-    backlogger.doNotSend(chunkInfo3);
+    backlogger.doNotNotifyOf(chunkInfo3);
     EXPECT_EQ(chunkInfo3, backlogger.getEarliest());
 
     const hycast::ChunkInfo chunkInfo4{prodInfo0, 2};
-    backlogger.doNotSend(chunkInfo4);
+    backlogger.doNotNotifyOf(chunkInfo4);
     EXPECT_EQ(chunkInfo3, backlogger.getEarliest());
 }
 

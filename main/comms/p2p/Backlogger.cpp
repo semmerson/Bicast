@@ -20,6 +20,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "Thread.h"
 
 #include "Backlogger.h"
 
@@ -27,18 +28,45 @@ namespace hycast {
 
 class Backlogger::Impl
 {
-    Peer      peer;
-    ChunkInfo startWith;
-    ChunkInfo earliest;
+    typedef std::mutex              Mutex;
+    typedef std::lock_guard<Mutex>  LockGuard;
+    typedef std::unique_lock<Mutex> UniqueLock;
+    typedef std::condition_variable Cond;
+
+    mutable Mutex mutex;
+    Cond          cond;
+    Peer          peer;
+    ChunkInfo     startWith;
+    ChunkInfo     stopAt;
+    ProdStore     prodStore;
+
+    /**
+     * Returns the identify of the chunk of data at which the sending of
+     * backlog notices to the remote peer should stop. Blocks until
+     * `doNotNotifyOf()` has been called with a non-empty `ChunkInfo`.
+     * @return  Identity of data-chunk at which backlog notices should stop
+     */
+    ChunkInfo& getStopAt()
+    {
+        UniqueLock lock{mutex};
+        while (!stopAt) {
+            Canceler canceler{};
+            cond.wait(lock);
+        }
+        return stopAt;
+    }
 
 public:
     /**
      * Default constructs.
      */
     Impl()
-        : peer{}
+        : mutex{}
+        , cond{}
+        , peer{}
         , startWith{}
-        , earliest{}
+        , stopAt{}
+        , prodStore{}
     {}
 
     /**
@@ -46,16 +74,26 @@ public:
      * @param[in] peer         Local peer associated with remote peer
      * @param[in] startWith    Identifies the chunk of data whose information
      *                         should be sent first
+     * @param[in] prodStore    Product storage
      * @throw InvalidArgument  `startWith` is empty
      */
-    Impl(   Peer& peer,
-            const ChunkInfo& startWith)
-        : peer{peer}
+    Impl(   Peer&            peer,
+            const ChunkInfo& startWith,
+            ProdStore&       prodStore)
+        : mutex{}
+        , cond{}
+        , peer{peer}
         , startWith{startWith}
-        , earliest{}
+        , stopAt{}
+        , prodStore{prodStore}
     {
         if (!startWith)
             throw INVALID_ARGUMENT("Chunk-information is empty");
+    }
+
+    operator bool() const noexcept
+    {
+        return static_cast<bool>(startWith);
     }
 
     /**
@@ -72,12 +110,15 @@ public:
      * be sent to the remote peer.
      * @param[in] doNotSend  Chunk-information that shouldn't be sent
      * @exceptionsafety      Nothrow
-     * @threadsafety         Compatible but not safe
+     * @threadsafety         Safe
      */
-    void doNotSend(const ChunkInfo& chunkInfo) noexcept
+    void doNotNotifyOf(const ChunkInfo& chunkInfo) noexcept
     {
-        if (!earliest || chunkInfo.isEarlierThan(earliest))
-            earliest = chunkInfo;
+        LockGuard lock{mutex};
+        if (chunkInfo.isEarlierThan(stopAt) || (!stopAt && chunkInfo)) {
+            stopAt = chunkInfo;
+            cond.notify_one();
+        }
     }
 
     /**
@@ -86,13 +127,44 @@ public:
      * @return           Earliest chunk-information that shouldn't be sent. Will
      *                   initially be empty.
      * @exceptionsafety  Nothrow
-     * @threadsafety     Compatible but not safe
+     * @threadsafety     Safe
      * @see `doNotRequest()`
      * @see `ChunkInfo::operator bool()`
      */
     const ChunkInfo& getEarliest() const noexcept
     {
-        return earliest;
+        LockGuard lock{mutex};
+        return stopAt;
+    }
+
+    /**
+     * Executes this instance. Returns immediately if this instance was default
+     * constructed; otherwise, doesn't start until `doNotNotifyOf()` has been
+     * called with a non-empty `ChunkInfo` and doesn't return until there are no
+     * more notices for the remote peer in the backlog.
+     * @see `doNotNotifyOf(ChunkInfo&)`
+     */
+    void operator()()
+    {
+        if (startWith) {
+            static ProdIndex prevProdIndex{};
+            static bool      prevProdIndexSet{false};
+            getStopAt(); // Don't start until `stopAt` is set
+            for (auto iter = prodStore.getChunkInfoIterator(startWith);; ++iter) {
+                auto chunkInfo = *iter;
+                auto prodIndex = chunkInfo.getProdIndex();
+                if (prodIndex != prevProdIndex || !prevProdIndexSet) {
+                    ProdInfo prodInfo{};
+                    if (prodStore.getProdInfo(prodIndex, prodInfo))
+                        peer.sendNotice(prodInfo);
+                    prevProdIndex = prodIndex;
+                    prevProdIndexSet = true;
+                }
+                if (!chunkInfo.isEarlierThan(getStopAt()))
+                    break;
+                peer.sendNotice(chunkInfo);
+            }
+        }
     }
 };
 
@@ -102,23 +174,33 @@ Backlogger::Backlogger()
 
 Backlogger::Backlogger(
         Peer&            peer,
-        const ChunkInfo& startWith)
-    : pImpl{new Impl(peer, startWith)}
+        const ChunkInfo& startWith,
+        ProdStore&       prodStore)
+    : pImpl{new Impl(peer, startWith, prodStore)}
 {}
+
+Backlogger::operator bool() const noexcept
+{
+    return pImpl->operator bool();
+}
 
 const ChunkInfo& Backlogger::getStart() const noexcept
 {
     return pImpl->getStart();
 }
 
-void Backlogger::doNotSend(const ChunkInfo& chunkInfo) noexcept
+void Backlogger::doNotNotifyOf(const ChunkInfo& chunkInfo) const noexcept
 {
-    pImpl->doNotSend(chunkInfo);
+    pImpl->doNotNotifyOf(chunkInfo);
 }
 
 const ChunkInfo& Backlogger::getEarliest() const noexcept
 {
     return pImpl->getEarliest();
+}
+
+void Backlogger::operator ()() {
+    pImpl->operator()();
 }
 
 } // namespace

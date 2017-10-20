@@ -34,13 +34,11 @@ class Shipping::Impl final
     class PeerMgr final
     {
         /**
-         * Handles messages from remote peers. Handles requests and ignores
-         * notices and data-chunks.
+         * Handles messages from remote peers. Only handles requests.
          */
         class MsgRcvr : public PeerMsgRcvr
         {
             ProdStore prodStore;
-            PeerSet   peerSet;
 
         public:
             /**
@@ -48,10 +46,8 @@ class Shipping::Impl final
              * @param[in] ProdStore  Store of data-products
              * @param[in] peerSet    Set of active remote peers
              */
-            MsgRcvr(ProdStore& prodStore,
-                    PeerSet&   peerSet)
+            MsgRcvr(ProdStore& prodStore)
                 : prodStore{prodStore}
-                , peerSet{peerSet}
             {}
 
             /**
@@ -107,8 +103,8 @@ class Shipping::Impl final
         };
 
         Cue             serverReady; // Must initialize before `serverThread`
-        PeerSet         peerSet;     // Must initialized before `msgRcvr`
-        MsgRcvr         msgRcvr;     // Must initialized after `peerSet`
+        MsgRcvr         msgRcvr;     // Must be initialized before `peerSet`
+        PeerSet         peerSet;     // Must be initialized after `msgRcvr`
         InetSockAddr    serverAddr;
         Thread          serverThread;
 
@@ -123,7 +119,7 @@ class Shipping::Impl final
         {
             try {
                 // Blocks exchanging protocol version; hence, separate thread
-                auto peer = Peer(msgRcvr, sock);
+                auto peer = Peer(sock);
                 peerSet.tryInsert(peer);
             }
             catch (const std::exception& e) {
@@ -160,6 +156,7 @@ class Shipping::Impl final
         /**
          * Constructs.
          * @param[in] prodStore   Store of data-products
+         * @param[in] msgRcvr     Receiver of messages from remote peers
          * @param[in] peerSet     Initially empty set of active remote peers
          * @param[in] serverAddr  Socket address of local server that listens
          *                        for connections from remote peers
@@ -169,9 +166,9 @@ class Shipping::Impl final
                 const PeerSet::TimeUnit stasisDuration,
                 const InetSockAddr&     serverAddr)
             : serverReady{}
-            , peerSet{prodStore, stasisDuration*2, maxPeers,
+            , msgRcvr{prodStore}
+            , peerSet{prodStore, msgRcvr, stasisDuration*2, maxPeers,
                     [](InetSockAddr&){}}
-            , msgRcvr{prodStore, peerSet}
             , serverAddr{serverAddr}
             , serverThread{[this]{runServer();}}
         {
@@ -248,7 +245,7 @@ public:
         prodStore.add(prod);
         peerMgr.notify(prod);
     }
-};
+}; // class Shipping::Impl
 
 Shipping::Shipping(
         ProdStore&              prodStore,

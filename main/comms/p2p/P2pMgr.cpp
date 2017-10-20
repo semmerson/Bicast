@@ -152,7 +152,7 @@ class P2pMgr::Impl final : public Notifier
                     LockGuard lock(peerSetMutex);
                     Peer peer;
                     try {
-                        peer = Peer(*msgRcvr, sock);
+                        peer = Peer(sock);
                         if (peerSet.tryInsert(peer)) // Might block
                             LOG_NOTE("Accepted connection from remote peer %s",
                                     sock.to_string().c_str());
@@ -191,7 +191,7 @@ class P2pMgr::Impl final : public Notifier
         bool success;
     	try {
             // Blocks until connected and versions exchanged
-            Peer peer(msgRcvr, peerAddr);
+            Peer peer(peerAddr);
             success = peerSet.tryInsert(peer); // Might block
         }
         catch (const std::exception& e) {
@@ -291,7 +291,7 @@ public:
         : peerSource(peerSource)
         , serverSockAddr{serverSockAddr}
         , msgRcvr(&msgRcvr)
-        , peerSet{prodStore, stasisDuration*2, maxPeers,
+        , peerSet{prodStore, msgRcvr, stasisDuration*2, maxPeers,
                 [this](const InetSockAddr& peerAddr) {
                     handleStoppedPeer(peerAddr);
                 }}

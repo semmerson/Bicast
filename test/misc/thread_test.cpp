@@ -124,6 +124,23 @@ TEST_F(ThreadTest, CancelBunchOfThread)
     }
 }
 
+// Tests detaching a thread
+// NB: A detached thread can't be canceled because it no longer has a valid ID.
+TEST_F(ThreadTest, DetachThread)
+{
+    std::thread thread{&::pause};
+    EXPECT_TRUE(thread.joinable());
+    auto id = thread.get_id();
+    auto nativeId = thread.native_handle();
+    EXPECT_NE(0, nativeId);
+    thread.detach();
+    EXPECT_FALSE(thread.joinable());
+    EXPECT_NE(id, thread.get_id()); // Oofta!
+    EXPECT_NE(nativeId, thread.native_handle()); // Oofta!
+    EXPECT_EQ(0, thread.native_handle());
+    EXPECT_THROW(thread.join(), std::exception);
+}
+
 #if 0
 // THIS DOESN'T WORK
 // Tests passing argument reference to a reference member function
@@ -139,8 +156,8 @@ TEST_F(ThreadTest, RefMemberFunctionWithArgRef)
 #if 0
 /*
  * The following verifies that `terminate()` is called when a thread that's
- * handling an exception responds to being canceled. Unfortunately, running this
- * test necessarily terminates the program.
+ * handling an exception is canceled. Unfortunately, running this test
+ * necessarily terminates the program.
  */
 static void myTerminate()
 {
@@ -159,7 +176,7 @@ static void throwAndPause()
 }
 
 // Verifies that `terminate()` is called when a thread that's handling an
-// exception responds to being canceled
+// exception is canceled
 TEST_F(ThreadTest, CancelExceptionHandling)
 {
     std::set_terminate(&myTerminate);

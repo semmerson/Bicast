@@ -44,4 +44,9 @@ InetAddrImpl* InetAddrImpl::create(const std::string addr)
     }
 }
 
+InetAddrImpl* InetAddrImpl::create()
+{
+    return new InetNameAddr("");
+}
+
 } // namespace

@@ -122,12 +122,31 @@ void log(
         const char*    file,
         const int      line,
         const char*    fmt,
+        va_list        argList);
+void log(
+        const LogLevel level,
+        const char*    file,
+        const int      line,
+        const char*    fmt,
+        ...);
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const std::exception& ex,
+        const char*           fmt,
         ...);
 void log(
         const LogLevel    level,
         const char*       file,
         const int         line,
         const std::string msg);
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const std::exception& ex,
+        const std::string     msg);
 
 inline void log_debug(const std::exception& ex) {
     if (logLevel <= LOG_DEBUG)

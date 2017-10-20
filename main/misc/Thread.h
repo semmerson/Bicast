@@ -33,6 +33,35 @@ namespace hycast {
 
 /******************************************************************************/
 
+/**
+ * RAII class for temporarily unlocking a mutex.
+ */
+class UnlockGuard final
+{
+    std::mutex& mutex;
+public:
+    /**
+     * Constructs. Unlocks the mutex.
+     * @param[in] mutex  Mutex to be unlocked. Must exist for the duration of
+     *                   this instance.
+     */
+    UnlockGuard(std::mutex& mutex)
+        : mutex{mutex}
+    {
+        mutex.unlock();
+    }
+    UnlockGuard(const UnlockGuard& unlock) =delete;
+    /**
+     * Destroys. Locks the mutex given to the constructor.
+     */
+    ~UnlockGuard()
+    {
+        mutex.lock();
+    }
+};
+
+/******************************************************************************/
+
 class Cue
 {
     class                 Impl;

@@ -65,7 +65,10 @@ TEST_F(ExecutorTest, IntExecution) {
 TEST_F(ExecutorTest, CancelVoid) {
     {
         hycast::Executor<void> executor{};
-        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+        auto future = executor.submit([] {
+                hycast::Canceler canceler{};
+                ::pause();
+        });
         EXPECT_EQ(1, hycast::Thread::size());
         future.cancel();
         EXPECT_TRUE(future.wasCanceled());
@@ -78,7 +81,11 @@ TEST_F(ExecutorTest, CancelVoid) {
 TEST_F(ExecutorTest, CancelInt) {
     {
         hycast::Executor<int> executor{};
-        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause(); return 1;});
+        auto future = executor.submit([] {
+                hycast::Canceler canceler{};
+                ::pause();
+                return 1;
+        });
         EXPECT_EQ(1, hycast::Thread::size());
         future.cancel();
         EXPECT_TRUE(future.wasCanceled());
@@ -105,7 +112,10 @@ TEST_F(ExecutorTest, SoftVoidShutdown) {
 TEST_F(ExecutorTest, HardVoidShutdown) {
     {
         hycast::Executor<void> executor{};
-        auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+        auto future = executor.submit([] {
+                hycast::Canceler canceler{};
+                ::pause();
+        });
         EXPECT_EQ(1, hycast::Thread::size());
         executor.shutdown();
         executor.awaitTermination();
@@ -120,7 +130,10 @@ TEST_F(ExecutorTest, DestructionWithTask) {
     hycast::Future<void> future{};
     {
         hycast::Executor<void> executor{};
-        future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+        future = executor.submit([] {
+                hycast::Canceler canceler{};
+                ::pause();
+        });
         EXPECT_EQ(1, hycast::Thread::size());
     }
     EXPECT_EQ(0, hycast::Thread::size());
@@ -206,16 +219,28 @@ TEST_F(ExecutorTest, CompareInt) {
     future2.getResult();
 }
 
-// Tests execution of a bunch of tasks
-TEST_F(ExecutorTest, BunchOfJobs) {
+// Tests completing a bunch of tasks
+TEST_F(ExecutorTest, CompletingBunchOfJobs) {
     hycast::Executor<void> executor{};
     std::default_random_engine generator{};
     std::uniform_int_distribution<useconds_t> distribution{0, 100000};
-    for (int i = 0; i < 200; ++i)
+    for (int i = 0; i < 5; ++i)
         executor.submit([&generator,&distribution]() mutable
                 {::usleep(distribution(generator));});
+    ::usleep(100000);
     executor.shutdown(false);
     executor.awaitTermination();
+}
+
+// Tests canceling a bunch of tasks
+TEST_F(ExecutorTest, CancelingBunchOfJobs) {
+    hycast::Executor<void> executor{};
+    for (int i = 0; i < 5; ++i)
+        executor.submit([]() {
+                hycast::Canceler canceler{};
+                ::pause();
+        });
+    ::usleep(500000);
 }
 
 // Tests construction and cancellation performance
@@ -225,13 +250,16 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
     typedef std::chrono::time_point<Clock> TimePoint;
 
     const TimePoint start = Clock::now();
-    const int       numExec = 1000;
+    const int       numExec = 5000;
     int             i;
 
     try {
+        hycast::Executor<void> executor{};
         for (i = 0; i < numExec; ++i) {
-            hycast::Executor<void> executor{};
-            auto future = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+            auto future = executor.submit([] {
+                    hycast::Canceler canceler{};
+                    ::pause();
+            });
             future.cancel();
             EXPECT_TRUE(future.wasCanceled());
         }
@@ -239,7 +267,7 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
         TimePoint stop = Clock::now();
         TimeUnit  duration = std::chrono::duration_cast<TimeUnit>(stop - start);
         std::cout << numExec << " executions in " << duration.count() <<
-                " microseconds = " << 1000000*numExec/duration.count() <<
+                " microseconds = " << 1000000ul*numExec/duration.count() <<
                 " Hz\n";
     }
     catch (const std::exception& e) {
@@ -256,7 +284,12 @@ TEST_F(ExecutorTest, CtorAndCancelPerformance) {
 static void subExecutor(hycast::Barrier& barrier) {
     hycast::Executor<void> executor{};
     auto future1 = executor.submit([]{::usleep(100000);});
-    //auto future2 = executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+    /*
+    auto future2 = executor.submit([] {
+            hycast::Canceler canceler{};
+            ::pause();
+    });
+    */
     future1.getResult();
     barrier.wait();
 }
@@ -278,7 +311,10 @@ TEST_F(ExecutorTest, DestructionTerminatesThreads) {
             hycast::Executor<void> executor{};
             int n;
             for (n = 0; n < 10; ++n)
-                executor.submit([]{hycast::Canceler canceler{}; ::pause();});
+                executor.submit([] {
+                        hycast::Canceler canceler{};
+                        ::pause();
+                });
             EXPECT_EQ(n, hycast::Thread::size());
             ::usleep(distribution(generator));
         }

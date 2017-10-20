@@ -16,6 +16,7 @@
 
 #include "ChunkInfo.h"
 #include "Peer.h"
+#include "ProdStore.h"
 
 #include <memory>
 
@@ -37,11 +38,21 @@ public:
      * @param[in] peer         Local peer associated with remote peer
      * @param[in] startWith    Identifies the chunk of data whose information
      *                         should be sent first
+     * @param[in] prodStore    Product storage
      * @throw InvalidArgument  `startWith` is empty
      */
     Backlogger(
             Peer&            peer,
-            const ChunkInfo& startWith);
+            const ChunkInfo& startWith,
+            ProdStore&       prodStore);
+
+    /**
+     * Indicates if this instance is meaningful (i.e., was constructed with
+     * arguments).
+     * @retval `true`   Is meaningful
+     * @retval `false`  Is not meaningful
+     */
+    operator bool() const noexcept;
 
     /**
      * Returns the first chunk-information to be sent.
@@ -56,7 +67,7 @@ public:
      * @exceptionsafety      Nothrow
      * @threadsafety         Compatible but not safe
      */
-    void doNotSend(const ChunkInfo& doNotSend) noexcept;
+    void doNotNotifyOf(const ChunkInfo& doNotSend) const noexcept;
 
     /**
      * Returns the earliest chunk-information that shouldn't be sent to the
@@ -69,6 +80,12 @@ public:
      * @see `ChunkInfo::operator bool()`
      */
     const ChunkInfo& getEarliest() const noexcept;
+
+    /**
+     * Executes this instance. Doesn't return until there are no more notices
+     * for the remote peer in the backlog.
+     */
+    void operator()();
 };
 
 } // namespace

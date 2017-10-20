@@ -75,13 +75,13 @@ class InetSockAddrImpl final
 
 public:
     /**
-     * Constructs from nothing. The resulting instance will have the default
-     * Internet address ("localhost") and the port number will be 0.
+     * Constructs from nothing. The resulting instance will have the empty
+     * string as the Internet address and the port number will be 0.
      * @throws std::bad_alloc if required memory can't be allocated
      */
     InetSockAddrImpl()
-        : inetAddr(),
-          port(0)
+        : inetAddr{},
+          port{0}
     {}
 
     /**

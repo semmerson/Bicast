@@ -23,17 +23,48 @@
 
 namespace hycast {
 
-class PeerMsgRcvr; // Eliminates mutual dependency with `PeerMsgRcvr.h`
-
 class Peer final : public Notifier
 {
-    class                 Impl;    // Forward declaration
+    class                 Impl;  // Forward declaration
     std::shared_ptr<Impl> pImpl; // `pImpl` idiom
 
 public:
+    /// Types of messages exchanged by peers
+    typedef enum {
+        EMPTY,         // Empty message
+        PROD_NOTICE,   // Notice of product
+        CHUNK_NOTICE,  // Notice of available chunk of data
+        PROD_REQUEST,  // Request for product information
+        CHUNK_REQUEST, // Request for chunk of data
+        CHUNK          // Chunk of data
+    } MsgType;
+
+    /// Union of all possible message types
+    class Message
+    {
+        class                 Impl;
+        std::shared_ptr<Impl> pImpl;
+    public:
+        Message();
+        explicit Message(const ProdInfo& prodInfo);
+        explicit Message(const ChunkInfo& chunkInfo,
+                         const bool       isRequest = false);
+        explicit Message(const ProdIndex& prodIndex);
+        explicit Message(const LatentChunk& chunk);
+
+        operator bool() const noexcept;
+        MsgType getType() const noexcept;
+
+        const ProdInfo& getProdInfo() const;
+        const ChunkInfo& getChunkInfo() const;
+        const ProdIndex& getProdIndex() const;
+        const LatentChunk& getChunk() const;
+    };
+
     void* getPimpl() const {
         return pImpl.get();
     }
+
     /**
      * Constructs from nothing. Any attempt to use the resulting instance will
      * throw an exception.
@@ -41,30 +72,24 @@ public:
     Peer();
 
     /**
-     * Constructs from an object to receive messages from the remote peer and a
-     * socket. Doesn't receive anything until `runReceiver()` is called.
-     * @param[in,out] msgRcvr  Object to receive messages from the remote peer
-     * @param[in,out] sock     Socket
-     * @throw LogicError       Unknown protocol version from remote peer
-     * @throw RuntimeError     Couldn't construct peer
-     * @throw SystemError      Connection failure
-     * @see runReceiver()
+     * Constructs a server-side instance. Blocks until connected and versions
+     * exchanged. This is a cancellation point.
+     * @param[in] sock          Socket (as from `accept()`)
+     * @throw     LogicError    Unknown protocol version from remote peer
+     * @throw     RuntimeError  Couldn't construct peer
+     * @throw     SystemError   Connection failure
      */
-    Peer(PeerMsgRcvr& msgRcvr,
-         SctpSock&    sock);
+    Peer(SctpSock& sock);
 
     /**
-     * Constructs. Blocks until connected and versions exchanged. Doesn't
-     * receive other messages until `runReceiver()` is called.
-     * @param[in,out] msgRcvr   Object to receive messages from the remote peer
-     * @param[in]     peerAddr  Socket address of remote peer
-     * @throw LogicError        Unknown protocol version from remote peer
-     * @throw RuntimeError      Couldn't construct peer
-     * @throw SystemError       Connection failure
-     * @see runReceiver()
+     * Constructs a client-side instance. Blocks until connected and versions
+     * exchanged.
+     * @param[in] peerAddr      Socket address of remote peer-server
+     * @throw     LogicError    Unknown protocol version from remote peer
+     * @throw     RuntimeError  Couldn't construct peer
+     * @throw     SystemError   Connection failure
      */
-    Peer(PeerMsgRcvr&        msgRcvr,
-         const InetSockAddr& peerAddr);
+    Peer(const InetSockAddr& peerAddr);
 
     /**
      * Returns the Internet socket address of the remote peer.
@@ -104,18 +129,12 @@ public:
     bool operator!=(const Peer& that) const noexcept;
 
     /**
-     * Runs the receiver. Objects are received from the socket and passed to the
-     * appropriate peer-manager methods. Doesn't return until either the socket
-     * is closed or an exception is thrown. Intended to run on its own
-     * thread.
-     * @throws std::logic_error  If the peer-manager didn't drain or discard the
-     *                           data of a latent chunk-of-data.
-     * @throws std::system_error If an I/O error occurred
-     * @throws Exceptions from the peer manager
-     * @exceptionsafety Basic guarantee
-     * @threadsafety    Thread-compatible but not thread-safe
+     * Returns the next message from the remote peer.
+     * @return           Next message from remote peer
+     * @exceptionsafety  Basic guarantee
+     * @threadsafefy     Thread-compatible but not thread-safe
      */
-    void runReceiver() const;
+    Message getMessage() const;
 
     /**
      * Sends information about a product to the remote peer.

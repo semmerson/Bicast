@@ -101,18 +101,21 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
 
     /**
      * Accepts a chunk of data. Adds it to the product-store and erases it from
-     * the set of outstanding chunk-requests.
+     * the set of outstanding chunk-requests. Processes the resulting product if
+     * it's complete.
      * @param chunk      Chunk of data to accept
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    void accept(LatentChunk chunk)
+    ProdStore::AddStatus accept(LatentChunk chunk)
     {
         LockGuard lock(mutex);
         requestedChunks.erase(chunk.getInfo());
         Product   prod;
-        if (prodStore.add(chunk, prod))
+        auto      status = prodStore.add(chunk, prod);
+        if (!status.isDuplicate() && status.isComplete())
             processing->process(prod);
+        return status;
     }
 
 public:
@@ -174,40 +177,50 @@ public:
 
     /**
      * Receives a notice about a product via multicast. Adds the information to
-     * the product-store.
-     * @param[in] info  Product information
+     * the product-store. If the product is new, then a product-information
+     * notice is sent to all peers. If the product is now complete, then it is
+     * processed.
+     * @param[in] prodInfo  Product information
      */
-    void recvNotice(const ProdInfo& info)
+    void recvNotice(const ProdInfo& prodInfo)
     {
     	if (exception)
             std::rethrow_exception(exception);
     	if (!controlTraffic || trafficControler(generator)) {
             LOG_DEBUG("Received product-notice from multicast: prodInfo=%s",
-                    info.to_string().c_str());
+                    prodInfo.to_string().c_str());
             Product prod;
-            if (prodStore.add(info, prod))
+            auto status = prodStore.add(prodInfo, prod);
+            if (status.isComplete())
                 processing->process(prod);
+            if (status.isNew())
+                p2pMgr.sendNotice(prodInfo);
     	}
     }
 
     /**
      * Receives a notice about a product from a peer. Adds the information to
-     * the product-store.
-     * @param[in] info  Product information
-     * @param[in] peer  Peer that received the information
+     * the product-store. If the product is new, then a product-information
+     * notice is sent to all peers. If the product is now complete, then it is
+     * processed.
+     * @param[in] prodInfo  Product information
+     * @param[in] peer      Peer that received the information
      */
     void recvNotice(
-            const ProdInfo& info,
+            const ProdInfo& prodInfo,
             const Peer&     peer)
     {
     	if (exception)
             std::rethrow_exception(exception);
     	LOG_DEBUG("Received product-notice from peer: prodInfo=%s, peer=%s",
-    	        info.to_string().c_str(),
+    	        prodInfo.to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
         Product prod;
-        if (prodStore.add(info, prod))
+        auto status = prodStore.add(prodInfo, prod);
+        if (!status.isDuplicate() && status.isComplete())
             processing->process(prod);
+        if (status.isNew())
+            p2pMgr.sendNotice(prodInfo);
     }
 
     /**
@@ -285,8 +298,8 @@ public:
     	else {
             LOG_DEBUG("Received chunk via multicast: chunkInfo=%s",
                     chunk.getInfo().to_string().c_str());
-            accept(chunk);
-            p2pMgr.sendNotice(chunk.getInfo());
+            if (accept(chunk).isNew())
+                p2pMgr.sendNotice(chunk.getInfo());
     	}
     }
 
@@ -305,8 +318,8 @@ public:
     	LOG_DEBUG("Received chunk from peer: chunkInfo=%s, peer=%s",
     	        chunk.getInfo().to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
-        accept(chunk);
-        p2pMgr.sendNotice(chunk.getInfo(), peer);
+        if (accept(chunk).isNew())
+            p2pMgr.sendNotice(chunk.getInfo(), peer);
     }
 };
 

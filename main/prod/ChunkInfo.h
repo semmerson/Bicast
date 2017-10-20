@@ -60,14 +60,21 @@ public:
      * Default constructs.
      */
     ChunkInfo() noexcept
-        : ChunkInfo(0, 0, 0)
+        : prodIndex{0}
+        , prodSize{0}
+        , chunkIndex{0}
     {}
 
     /**
      * Copy constructs.
-     * @param[in] info  Rvalue chunk information
+     * @param[in] info  Source instance
      */
-    ChunkInfo(const ChunkInfo& info);
+    ChunkInfo(const ChunkInfo& info)
+        : prodIndex{info.prodIndex}
+        , prodSize{info.prodSize}
+        , chunkIndex{info.chunkIndex}
+        , hashCode{info.hashCode.load()}
+    {}
 
     /**
      * Constructs.

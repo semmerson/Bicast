@@ -97,6 +97,14 @@ public:
     }
 
     /**
+     * Indicates if this instance is empty.
+     */
+    operator bool() const noexcept
+    {
+        return data == nullptr;
+    }
+
+    /**
      * Prevents copy and move assignment.
      */
     Impl& operator=(const Impl& rhs) =delete;
@@ -107,9 +115,11 @@ public:
      * the information provided during construction (basically, only the name
      * can be changed).
      * @param[in] info       New product-information
+     * @retval `false`       Duplicate information
+     * @retval `true`        New information consistent with existing
      * @throw RuntimeError  `info` is inconsistent with existing information
      */
-    void set(const ProdInfo& info)
+    bool set(const ProdInfo& info)
     {
         if (info.getIndex() != prodInfo.getIndex() ||
                 info.getSize() != prodInfo.getSize() ||
@@ -117,7 +127,10 @@ public:
             throw RUNTIME_ERROR(
                     "Replacement product-information is inconsistent: curr=" +
                     prodInfo.to_string() + ", new=" + info.to_string());
+        const bool isNew = prodInfo.getName().length() == 0 &&
+                info.getName().length() > 0;
         prodInfo = info;
+        return isNew;
     }
 
     /**
@@ -316,12 +329,16 @@ Product::Product(
         const void*        data,
         const size_t       size)
     : pImpl{new Impl(name, index, data, size)}
+{}
+
+Product::operator bool() const noexcept
 {
+    return pImpl->operator bool();
 }
 
-void Product::set(const ProdInfo& info)
+bool Product::set(const ProdInfo& info)
 {
-    pImpl->set(info);
+    return pImpl->set(info);
 }
 
 const ProdInfo& Product::getInfo() const noexcept

@@ -150,7 +150,8 @@ public:
     /**
      * Constructs from information on the chunk and a pointer to its data.
      * @param[in] info  Chunk information
-     * @param[in] data  Chunk data
+     * @param[in] data  Chunk data. Must exist for the duration of the
+     *                  constructed instance.
      */
     ActualChunk(
             const ChunkInfo& info,

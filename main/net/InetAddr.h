@@ -58,6 +58,11 @@ class InetAddr final
      * @return An Internet address instance
      */
     static InetAddr create(const std::string addr);
+    /**
+     * Returns the default instance.
+     * @return Default instance
+     */
+    static InetAddr create();
 
 public:
     /**
@@ -77,8 +82,14 @@ public:
     /**
      * Constructs from an Internet address string.
      */
-    explicit InetAddr(const std::string addr = "")
+    explicit InetAddr(const std::string addr)
         : pImpl{create(addr).pImpl} {}
+
+    /**
+     * Default constructs.
+     */
+    explicit InetAddr()
+        : pImpl{create().pImpl} {}
 
     /**
      * Returns the `struct sockaddr_storage` corresponding to this instance and

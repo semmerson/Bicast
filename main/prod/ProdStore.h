@@ -28,6 +28,43 @@ class ProdStore final
     std::shared_ptr<Impl> pImpl;
 
 public:
+    class ChunkInfoIterator
+    {
+        friend ProdStore::Impl;
+
+        class                 Impl;
+        std::shared_ptr<Impl> pImpl;
+
+        ChunkInfoIterator(Impl* impl);
+
+    public:
+        /**
+         * @retval ChunkInfo{}  No such chunk exists
+         * @return              Information on a chunk of data
+         */
+        const ChunkInfo operator *();
+        ChunkInfoIterator& operator ++();
+    };
+
+    /**
+     * Status of an addition to the product-store
+     */
+    class AddStatus
+    {
+        unsigned              status;
+        static const unsigned IS_COMPLETE = 1;
+        static const unsigned IS_NEW = 2;
+        static const unsigned IS_DUPLICATE = 4;
+    public:
+        inline AddStatus() : status{0}   {}
+        inline AddStatus& setNew()       { status |= IS_NEW; return *this; }
+        inline AddStatus& setComplete()  { status |= IS_COMPLETE; return *this; }
+        inline AddStatus& setDuplicate() { status |= IS_DUPLICATE; return *this; }
+        inline bool isNew()       const  { return status & IS_NEW; }
+        inline bool isComplete()  const  { return status & IS_COMPLETE; }
+        inline bool isDuplicate() const  { return status & IS_DUPLICATE; }
+    };
+
     /**
      * Constructs. If the given file isn't the empty string, then the
      * product-store will be written to it upon destruction in order to persist
@@ -70,13 +107,14 @@ public:
      * Adds product-information to an entry. Creates the entry if it doesn't
      * exist.
      * @param[in] prodInfo  Product information
-     * @param[out] prod     Associated product
-     * @retval true         Product is complete
-     * @retval false        Product is not complete
+     * @param[out] prod     Associated product. Set iff the return status
+     *                      indicates the product is complete.
+     * @return              Status of the addition
      * @exceptionsafety     Basic guarantee
      * @threadsafety        Safe
+     * @see                 `ProdStore::AddStatus`
      */
-    bool add(const ProdInfo& prodInfo, Product& prod);
+    AddStatus add(const ProdInfo& prodInfo, Product& prod);
 
     /**
      * Adds a latent chunk of data to a product. Creates the product if it
@@ -84,12 +122,12 @@ public:
      * the product.
      * @param[in]  chunk  Latent chunk of data to be added
      * @param[out] prod   Associated product
-     * @retval true       Product is complete
-     * @retval false      Product is not complete
+     * @return            Status of the addition
      * @exceptionsafety   Strong guarantee
      * @threadsafety      Safe
+     * @see               `ProdStore::AddStatus`
      */
-    bool add(LatentChunk& chunk, Product& prod);
+    AddStatus add(LatentChunk& chunk, Product& prod);
 
     /**
      * Returns the number of products in the store -- both complete and
@@ -133,6 +171,8 @@ public:
      * @return  Information on the oldest missing data-chunk
      */
     ChunkInfo getOldestMissingChunk() const;
+
+    ChunkInfoIterator getChunkInfoIterator(const ChunkInfo& startWith) const;
 };
 
 } // namespace

@@ -15,11 +15,11 @@
 
 #include "Chunk.h"
 #include "ChunkInfo.h"
+#include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 
 #include <memory>
-#include "../p2p/Peer.h"
 
 namespace hycast {
 

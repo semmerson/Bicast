@@ -71,7 +71,7 @@ public:
      * Constructs from a hostname.
      * @param[in] name  A hostname
      */
-    explicit InetNameAddr(const std::string name);
+    explicit InetNameAddr(const std::string name = "");
 
     /**
      * Returns the `struct sockaddr_storage` corresponding to this instance and

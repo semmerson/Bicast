@@ -16,6 +16,7 @@
 #include "MsgRcvr.h"
 #include "Notifier.h"
 #include "Peer.h"
+#include "PeerMsgRcvr.h"
 #include "ProdStore.h"
 
 #include <chrono>
@@ -47,6 +48,7 @@ public:
     /**
      * Constructs. The set will be empty.
      * @param[in] prodStore       Product storage
+     * @param[in] msgRcvr         Receiver of messages from remote peer
      * @param[in] stasisDuration  Minimum amount of time that the set must be
      *                            full and unchanged before the worst-performing
      *                            peer may be removed
@@ -57,6 +59,7 @@ public:
      * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
     PeerSet(ProdStore&                         prodStore,
+            PeerMsgRcvr&                       msgRcvr,
             const TimeUnit                     stasisDuration,
             unsigned                           maxPeers = defaultMaxPeers,
             std::function<void(InetSockAddr&)> peerStopped =
@@ -65,6 +68,7 @@ public:
     /**
      * Constructs. The set will be empty.
      * @param[in] prodStore       Product storage
+     * @param[in] msgRcvr         Receiver of messages from remote peer
      * @param[in] statisDuration  Minimum amount of time, in units of
      *                            `PeerSet::TimeUnit`, that the set must be full
      *                            and unchanged before the worst-performing peer
@@ -76,11 +80,13 @@ public:
      * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
      */
     PeerSet(ProdStore&                         prodStore,
+            PeerMsgRcvr&                       msgRcvr,
             const unsigned                     stasisDuration,
             unsigned                           maxPeers = defaultMaxPeers,
             std::function<void(InetSockAddr&)> peerStopped =
                     [](InetSockAddr&){})
-        : PeerSet{prodStore, TimeUnit{stasisDuration}, maxPeers, peerStopped}
+        : PeerSet{prodStore, msgRcvr, TimeUnit{stasisDuration}, maxPeers,
+                peerStopped}
     {}
 
     /**

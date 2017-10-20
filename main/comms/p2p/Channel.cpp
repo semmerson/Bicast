@@ -30,6 +30,11 @@ protected:
         SctpSock       sock;
         const unsigned streamId;
     protected:
+        /**
+         * This is a cancellation point.
+         * @param[in] iov     I/O vector
+         * @param[in] iovcnt  Size of I/O vector
+         */
         void write(
                 const struct iovec* iov,
                 const int           iovcnt)
@@ -143,6 +148,10 @@ public:
         : ImplBase{sock, streamId, version}
     {}
 
+    /**
+     * This is a cancellation point.
+     * @param[in] obj  The serializable object to be sent
+     */
     void send(const S& obj)
     {
         obj.serialize(encoder, version);

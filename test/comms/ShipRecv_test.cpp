@@ -59,7 +59,6 @@ protected:
     unsigned char                   data[10000];
     //unsigned char                   data[1];
     hycast::ProdStore               prodStore{};
-    hycast::PeerSet                 peerSet{prodStore, 1};
     const in_port_t                 srcPort{38800};
     const in_port_t                 snkPort{38801};
     const hycast::InetSockAddr      mcastAddr{"232.0.0.0", srcPort};

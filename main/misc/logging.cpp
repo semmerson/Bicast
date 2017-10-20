@@ -130,18 +130,45 @@ void log(
         const char*    file,
         const int      line,
         const char*    fmt,
-        ...)
+        va_list        argList)
 {
     std::lock_guard<decltype(mutex)> lock{mutex};
     timeStamp();
     ::fprintf(stderr, "%s %s ", logLevelNames[level],
             placeStamp(file, line).c_str());
-    va_list argList;
-    va_start(argList, fmt);
     ::vfprintf(stderr, fmt, argList);
-    va_end(argList);
     ::fputc('\n', stderr);
     ::fflush(stderr);
+}
+
+void log(
+        const LogLevel level,
+        const char*    file,
+        const int      line,
+        const char*    fmt,
+        ...)
+{
+    std::lock_guard<decltype(mutex)> lock{mutex};
+    va_list argList;
+    va_start(argList, fmt);
+    log(level, file, line, fmt, argList);
+    va_end(argList);
+}
+
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const std::exception& ex,
+        const char*           fmt,
+        ...)
+{
+    std::lock_guard<decltype(mutex)> lock{mutex};
+    log(level, ex);
+    va_list argList;
+    va_start(argList, fmt);
+    log(level, file, line, fmt, argList);
+    va_end(argList);
 }
 
 void log(
@@ -155,6 +182,18 @@ void log(
     std::cerr << logLevelNames[level] << " " << placeStamp(file, line).c_str()
             << " " << msg << std::endl;
     std::cerr.flush();
+}
+
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const std::exception& ex,
+        const std::string     msg)
+{
+    std::lock_guard<decltype(mutex)> lock{mutex};
+    log(level, ex);
+    log(level, file, line, msg);
 }
 
 } // namespace

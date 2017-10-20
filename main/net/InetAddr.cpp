@@ -35,6 +35,11 @@ InetAddr InetAddr::create(const std::string addr)
     return InetAddr(InetAddrImpl::create(addr));
 }
 
+InetAddr InetAddr::create()
+{
+    return InetAddr(InetAddrImpl::create());
+}
+
 void InetAddr::setSockAddrStorage(
         sockaddr_storage& storage,
         const int         port,
