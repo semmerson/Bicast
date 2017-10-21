@@ -180,6 +180,7 @@ public:
         auto n = chunkVec.size();
         for (ChunkIndex i = 0; i < n; ++i) {
             if (!chunkVec[i])
+                // Can't throw exception because `chunkVec` set by `prodInfo`
                 return ChunkInfo{prodInfo, i};
         }
         return ChunkInfo{};
