@@ -90,12 +90,11 @@ protected:
     std::function<Ret()> getCallable(const std::function<Ret()>& func)
     {
         return [this,func] {
-            Ret* result;
+            Ret result;
             THREAD_CLEANUP_PUSH(addFutureToQueue, this);
-            Ret ret = func();
-            result = &ret;
+            result = func();
             THREAD_CLEANUP_POP(true);
-            return *result;
+            return result;
         };
     }
 

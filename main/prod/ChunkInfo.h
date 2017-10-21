@@ -80,11 +80,10 @@ public:
      * Constructs.
      * @param[in] prodInfo    Information on associated product
      * @param[in] chunkIndex  Origin-0 chunk index
-     * @exceptionsafety       Nothrow
      */
     ChunkInfo(
             const ProdInfo&   prodInfo,
-            const ChunkIndex  chunkIndex) noexcept;
+            const ChunkIndex  chunkIndex);
 
     ChunkInfo(
             Decoder& decoder,

@@ -88,7 +88,7 @@ ChunkSize ChunkInfo::getSize(
 
 ChunkInfo::ChunkInfo(
         const ProdInfo&   prodInfo,
-        const ChunkIndex  chunkIndex) noexcept
+        const ChunkIndex  chunkIndex)
     : ChunkInfo{prodInfo.getIndex(), prodInfo.getSize(), chunkIndex}
 {}
 
