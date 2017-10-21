@@ -322,7 +322,8 @@ class PeerSet::Impl final
                     const TimeUnit& maxResideTime)
                 : sendQ{maxResideTime}
                 , peer{peer}
-                , msgRcvr{msgRcvr}
+                // g++ 4.8 doesn't support `{}` reference-initialization; clang does
+                , msgRcvr(msgRcvr)
                 , value{0}
                 , backlogger{}
                 , completer{}
@@ -635,7 +636,8 @@ public:
         , maxPeers{maxPeers}
         , exception{}
         , timeLastInsert{Clock::now()}
-        , msgRcvr{msgRcvr}
+        // g++ 4.8 doesn't support `{}` reference-initialization; clang does
+        , msgRcvr(msgRcvr)
         , completer{}
         , stoppedPeerThread{[this]{handleStoppedPeers();}}
     {

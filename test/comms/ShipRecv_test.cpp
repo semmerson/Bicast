@@ -54,8 +54,8 @@ protected:
                 data[i] = i % UCHAR_MAX;
     }
 
-    const double                    drop = 0.0;
-    const int                       NUM_PRODUCTS = 50;
+    const double                    drop = 0.2;
+    const int                       NUM_PRODUCTS = 100;
     unsigned char                   data[10000];
     //unsigned char                   data[1];
     hycast::ProdStore               prodStore{};

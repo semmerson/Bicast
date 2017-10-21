@@ -39,6 +39,7 @@ namespace hycast {
 class UnlockGuard final
 {
     std::mutex& mutex;
+
 public:
     /**
      * Constructs. Unlocks the mutex.
@@ -46,7 +47,7 @@ public:
      *                   this instance.
      */
     UnlockGuard(std::mutex& mutex)
-        : mutex{mutex}
+        : mutex(mutex) // g++ 4.8 doesn't support `mutex{mutex}`; clang does
     {
         mutex.unlock();
     }

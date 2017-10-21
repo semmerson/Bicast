@@ -357,7 +357,8 @@ public:
      */
     Impl(   ProdMap&         prods,
             const ChunkInfo& startWith)
-        : prods{prods}
+        // g++ 4.8 doesn't support `{}` reference-initialization; clang does
+        : prods(prods)
         , prodIndex{}
         , chunkIndex{}
     {

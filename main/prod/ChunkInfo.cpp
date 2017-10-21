@@ -17,8 +17,8 @@
 
 namespace hycast {
 
-// Arbitrary, but will fit in an ethernet packet
-static ChunkSize canonSize = 1400;
+// Arbitrary
+static ChunkSize canonSize = 32768 - 8;
 
 ChunkInfo::ChunkInfo(
         const ProdIndex   prodIndex,
