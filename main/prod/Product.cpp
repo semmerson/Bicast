@@ -15,7 +15,10 @@
 #include "Product.h"
 
 #include <cstring>
+#include <fcntl.h>
 #include <stdexcept>
+#include <sys/types.h>
+#include <unistd.h>
 #include <vector>
 
 namespace hycast {
@@ -82,6 +85,31 @@ public:
         ::memcpy(this->data, data, size);
     }
 
+#if 0
+    /**
+     * Constructs from a file.
+     * @param[in] pathname  Pathname of the file
+     * @param[in] index     Product index
+     */
+    Impl(   const std::string& pathname,
+            const ProdIndex    index)
+        : Impl{ProdInfo(pathname, index)}
+    {
+        numChunks = prodInfo.getNumChunks();
+        complete = true;
+        auto fd = ::open(pathname, O_RDONLY);
+        if (fd == -1)
+            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
+        auto status = ::read(fd, data, prodInfo.getSize());
+        if (status) {
+            ::close(fd);
+            throw SYSTEM_ERROR(std::string{"read() failure on \""} + pathname +
+                    "\"");
+        }
+        ::close(fd);
+    }
+#endif
+
     /**
      * Prevents copy and move construction.
      */
@@ -97,11 +125,11 @@ public:
     }
 
     /**
-     * Indicates if this instance is empty.
+     * Indicates if this instance is valid.
      */
     operator bool() const noexcept
     {
-        return data == nullptr;
+        return data != nullptr;
     }
 
     /**
@@ -180,7 +208,7 @@ public:
         auto n = chunkVec.size();
         for (ChunkIndex i = 0; i < n; ++i) {
             if (!chunkVec[i])
-                // Can't throw exception because `chunkVec` set by `prodInfo`
+                // Won't throw exception because `chunkVec` set by `prodInfo`
                 return ChunkInfo{prodInfo, i};
         }
         return ChunkInfo{};
@@ -331,6 +359,14 @@ Product::Product(
         const size_t       size)
     : pImpl{new Impl(name, index, data, size)}
 {}
+
+#if 0
+Product::Product(
+        const std::string& pathname,
+        const ProdIndex    index)
+    : pImpl{new Impl(pathname, index)}
+{}
+#endif
 
 Product::operator bool() const noexcept
 {

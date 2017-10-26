@@ -37,7 +37,7 @@ public:
 
     /**
      * Constructs from complete data.
-     * @param[in] name  Name of the product
+     * @param[in] name   Name of the product
      * @param[in] index  Product index
      * @param[in] data   Product data. Copied.
      * @param[in] size   Amount of data in bytes
@@ -48,7 +48,15 @@ public:
             const size_t       size);
 
     /**
-     * Indicates if this instance is empty.
+     * Constructs from a file.
+     * @param[in] pathname   Pathname of the file
+     * @param[in] index      Product index
+     */
+    Product(const std::string& pathname,
+            const ProdIndex    index);
+
+    /**
+     * Indicates if this instance is valid.
      */
     operator bool() const noexcept;
 

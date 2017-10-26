@@ -17,7 +17,9 @@ lib_la_SOURCES 	= HycastTypes.h \
 		  ProdFactory.cpp ProdFactory.h \
 		  ProdRcvr.h \
 		  ProdStore.cpp ProdStore.h \
-		  UnknownProd.cpp UnknownProd.h
+		  UnknownProd.cpp UnknownProd.h \
+		  Ingester.h \
+		  FileIngester.cpp FileIngester.h
 
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \

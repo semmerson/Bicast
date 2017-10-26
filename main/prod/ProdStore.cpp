@@ -331,7 +331,12 @@ public:
     {
         LockGuard lock{mutex};
         prods.erase(index);
-        incomplete.erase(index);
+        auto iter = incomplete.find(index);
+        if (iter != incomplete.end()) {
+            LOG_WARN("Deleting incomplete product " +
+                    iter->second->getInfo().to_string());
+            incomplete.erase(iter);
+        }
     }
 };
 
