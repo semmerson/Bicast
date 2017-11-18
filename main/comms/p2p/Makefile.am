@@ -19,13 +19,8 @@ lib_la_SOURCES 	= \
 	PeerSet.cpp PeerSet.h \
 	PeerSource.cpp PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
-	ChunkGram.cpp ChunkGram.h \
 	YamlPeerSource.cpp YamlPeerSource.h \
 	Backlogger.cpp Backlogger.h
-
-#	ChannelImpl.h \
-	RegChannel.cpp RegChannel.h \
-	ChunkChannel.cpp ChunkChannel.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

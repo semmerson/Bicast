@@ -8,10 +8,11 @@
  *   @file: P2pMgr_test.cpp
  * @author: Steven R. Emmerson
  */
+#include "config.h"
 
 #include "Completer.h"
 #include "error.h"
-#include "logging.h"
+#include "Interface.h"
 #include "P2pMgr.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
@@ -35,8 +36,9 @@ protected:
     {
         for (size_t i = 0; i < sizeof(data); ++i)
                 data[i] = i % UCHAR_MAX;
-        prod = hycast::Product{"product", prodIndex, data, sizeof(data)};
-        auto peerAddr = hycast::InetSockAddr(srvrInetAddr, srcPort);
+        prod = hycast::CompleteProduct{prodIndex, "product", sizeof(data),
+                data};
+        auto peerAddr = hycast::InetSockAddr(srcInetAddr, srcPort);
     }
 
     /**
@@ -58,16 +60,17 @@ protected:
     const unsigned                  protoVers{0};
     const in_port_t                 srcPort{38800};
     const in_port_t                 snkPort = srcPort + 1;
-    const std::string               srvrInetAddr{"127.0.0.1"};
-    const hycast::InetSockAddr      srcSrvrAddr{srvrInetAddr, srcPort};
-    const hycast::InetSockAddr      snkSrvrAddr{srvrInetAddr, snkPort};
+    const std::string               srcInetAddr{"127.0.0.1"};
+    const hycast::InetSockAddr      srcSrvrAddr{srcInetAddr, srcPort};
+    const hycast::InetSockAddr      snkSrvrAddr{
+            hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET), snkPort};
     const unsigned                  maxPeers{2};
-    hycast::YamlPeerSource          peerSource{"[{inetAddr: " + srvrInetAddr +
+    hycast::YamlPeerSource          peerSource{"[{inetAddr: " + srcInetAddr +
     	    ", port: " + std::to_string(srcPort) + "}]"};
     const hycast::PeerSet::TimeUnit stasisDuration{2};
     hycast::ProdIndex               prodIndex{0};
-    unsigned char                   data[3000];
-    hycast::ProdInfo                prodInfo{"product", prodIndex,
+    char                            data[3000];
+    hycast::ProdInfo                prodInfo{prodIndex, "product",
                                             sizeof(data)};
     hycast::Product                 prod{};
     std::atomic_long                numRcvdChunks{0};
@@ -78,11 +81,11 @@ public:
         EXPECT_EQ(prodInfo, info);
     }
 
-    void recvNotice(const hycast::ChunkInfo& info, const hycast::Peer& peer)
+    void recvNotice(const hycast::ChunkId& chunkId, const hycast::Peer& peer)
     {
-    	EXPECT_EQ(prodIndex, info.getProdIndex());
-    	EXPECT_TRUE(info.getIndex() < prodInfo.getNumChunks());
-        peer.sendRequest(info);
+    	EXPECT_EQ(prodIndex, chunkId.getProdIndex());
+    	EXPECT_TRUE(chunkId.getChunkIndex() < prodInfo.getNumChunks());
+        peer.sendRequest(chunkId);
     }
 
     void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer)
@@ -90,7 +93,7 @@ public:
     	GTEST_FAIL();
     }
 
-    void recvRequest(const hycast::ChunkInfo& info, const hycast::Peer& peer)
+    void recvRequest(const hycast::ChunkId& chunkId, const hycast::Peer& peer)
     {
     	GTEST_FAIL();
     }
@@ -100,7 +103,7 @@ public:
     	hycast::ChunkInfo chunkInfo{chunk.getInfo()};
     	EXPECT_EQ(prodIndex, chunkInfo.getProdIndex());
     	EXPECT_TRUE(chunkInfo.getIndex() < prodInfo.getNumChunks());
-    	unsigned char data[chunk.getSize()];
+    	unsigned char data[static_cast<size_t>(chunk.getSize())];
     	chunk.drainData(data, sizeof(data));
     	EXPECT_EQ(0, ::memcmp(data, this->data+chunk.getOffset(),
     			sizeof(data)));
@@ -117,11 +120,11 @@ TEST_F(P2pMgrTest, Construction) {
 
 // Tests execution
 TEST_F(P2pMgrTest, Execution) {
-    hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
+    hycast::Shipping  shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr};
     hycast::ProdStore prodStore{};
-    hycast::P2pMgr   p2pMgr{prodStore, snkSrvrAddr, *this, peerSource, maxPeers,
-            stasisDuration};
-    std::thread p2pMgrThread{[&]{runP2pMgr(p2pMgr);}};
+    hycast::P2pMgr    p2pMgr{prodStore, snkSrvrAddr, *this, peerSource,
+            maxPeers, stasisDuration};
+    std::thread       p2pMgrThread{[this,&p2pMgr]{runP2pMgr(p2pMgr);}};
     ::sleep(1);
     shipping.ship(prod);
     ::sleep(1);

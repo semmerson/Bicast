@@ -11,9 +11,9 @@
 
 #include "Chunk.h"
 #include "error.h"
-#include "HycastTypes.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
+#include "ProdSize.h"
 #include "Serializable.h"
 
 #include <arpa/inet.h>
@@ -29,39 +29,47 @@ namespace hycast {
 
 class ProdInfo::Impl final
 {
-    std::string name;
     ProdIndex   index;
     ProdSize    size;
+    ChunkSize   canonChunkSize;
+    ProdName    name;
 
 public:
     /**
      * Default constructs.
      */
     Impl()
-        : name()
-        , index(0)
-        , size(0)
+        : index{0}
+        , size{0}
+        , canonChunkSize{0}
+        , name{}
     {}
 
-    /**
-     * Constructs from information on a product.
-     * @param[in] name       Product name
-     * @param[in] index      Product index
-     * @param[in] size       Size of product in bytes
-     * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
-     */
-    Impl(
-            const std::string& name,
-            const ProdIndex    index,
-            const ProdSize     size)
-        : name(name)
-        , index(index)
-        , size(size)
+    Impl(   const ProdIndex index,
+            const ProdName& name,
+            const ProdSize  size,
+            const ChunkSize canonChunkSize)
+        : index{index}
+        , size{size}
+        , canonChunkSize{canonChunkSize}
+        , name{name}
+    {}
+
+    Impl(   Decoder&        decoder,
+            const unsigned  version)
+        : Impl{}
     {
-        if (name.size() > UINT16_MAX)
-            throw INVALID_ARGUMENT("Name too long: " +
-                    std::to_string(name.size()) + " bytes");
+        // Keep consonant with ProdInfo::serialize()
+        size = ProdSize::deserialize(decoder, version);
+        index = ProdIndex::deserialize(decoder, version);
+        canonChunkSize = ChunkSize::deserialize(decoder, version);
+        name = ProdName::deserialize(decoder, version);
     }
+
+    Impl(const Impl& impl) =delete;
+    Impl(const Impl&& impl) =delete;
+    Impl& operator=(const Impl& rhs) =delete;
+    Impl& operator=(const Impl&& rhs) =delete;
 
     /**
      * Returns a string representation of this instance.
@@ -69,28 +77,9 @@ public:
      */
     std::string to_string() const
     {
-        return "{name=\"" + name + "\", index=" + std::to_string(index)
-                + ", size=" + std::to_string(size) + "}";
-    }
-
-    /**
-     * Constructs by deserializing a serialized representation from a decoder.
-     * @param[in] decoder  Decoder
-     * @param[in] version  Serialization version
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not thread-safe
-     */
-    Impl(
-        Decoder&        decoder,
-        const unsigned  version)
-        : name()
-        , index(0)
-        , size(0)
-    {
-        // Keep consonant with ProdInfo::serialize()
-        index = ProdIndex::deserialize(decoder, version);
-        decoder.decode(size);
-        decoder.decode(name);
+        return "{index=" + index.to_string() + ", name=\"" + name.to_string() +
+                "\", size=" + std::to_string(size) + ", canonicalChunkSize=" +
+                canonChunkSize.to_string() + "}";
     }
 
     /**
@@ -99,7 +88,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    const std::string& getName() const
+    const ProdName getName() const
     {
         return name;
     }
@@ -116,8 +105,8 @@ public:
     }
 
     /**
-     * Returns the size of the product in bytes.
-     * @return Size of the product in bytes
+     * Returns the size of the product.
+     * @return          Size of the product
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
@@ -134,37 +123,26 @@ public:
      */
     bool isEarlierThan(const Impl& that) const noexcept
     {
-        return index < that.index;
+        return index.isEarlierThan(that.index);
     }
 
     /**
-     * Returns the size of the product's data chunks in bytes.
-     * @return Size of the product's data chunks in bytes
+     * Returns the size of the product's canonical data chunks.
+     * @return          Size of canonical data chunks
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkSize getChunkSize() const
+    ChunkSize getChunkSize() const noexcept
     {
-        return ChunkInfo::getCanonSize();
+        return canonChunkSize;
     }
 
-    /**
-     * Returns the size, in bytes, of a given chunk-of-data.
-     * @param[in] index  Index of the chunk
-     * @return           The size of the chunk in bytes
-     * @throws InvalidArgument  The chunk index is invalid
-     * @execeptionsafety Strong guarantee
-     * @threadsafety     Safe
-     */
-    ChunkSize getChunkSize(ChunkIndex index) const
+    ChunkSize getChunkSize(const ChunkIndex index) const
     {
-        if (index >= getNumChunks())
-            throw INVALID_ARGUMENT("Invalid chunk-index: max=" +
-                    std::to_string(getNumChunks()-1) + ", index=" +
-                    std::to_string(index));
-        return (index + 1 < getNumChunks())
-                ? ChunkInfo::getCanonSize()
-                : size - index*ChunkInfo::getCanonSize();
+        auto offset = getOffset(index);
+        return (offset + canonChunkSize <= size)
+                ? canonChunkSize
+                : ChunkSize{static_cast<ChunkSize::type>(size - offset)};
     }
 
     /**
@@ -173,64 +151,53 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkIndex getNumChunks() const
+    ChunkIndex getNumChunks() const noexcept
     {
-        return (size+ChunkInfo::getCanonSize()-1)/ChunkInfo::getCanonSize();
+        return (size + canonChunkSize - 1) / canonChunkSize;
     }
 
-    /**
-     * Returns the offset, in bytes, from the start of the data-product's data
-     * to the data of the chunk.
-     * @param[in] chunkIndex  Origin-0 index of a chunk of data
-     * @return Offset to chunk's data from start of product's data
-     * @throws InvalidArgument Chunk-index is greater than or equal to the
-     *                         number of chunks
-     */
-    ChunkOffset getOffset(const ChunkIndex chunkIndex) const
+    ChunkIndex getChunkIndex(const ChunkOffset offset) const
     {
-        if (chunkIndex >= getNumChunks())
-            throw INVALID_ARGUMENT("Chunk-index is too great: index=" +
+        if (offset % canonChunkSize)
+            throw INVALID_ARGUMENT("Invalid chunk-offset: offset=" +
+                    offset.to_string() + ", canonChunkSize=" +
+                    canonChunkSize.to_string());
+        return offset / canonChunkSize;
+    }
+
+    void vet(const ChunkIndex chunkIndex) const
+    {
+        auto numChunks = getNumChunks();
+        if (numChunks <= chunkIndex)
+            throw INVALID_ARGUMENT("Invalid chunk index: index=" +
                     std::to_string(chunkIndex) + ", numChunks=" +
-                    std::to_string(getNumChunks()));
-        return ChunkInfo::getOffset(chunkIndex);
+                    std::to_string(numChunks));
     }
 
-    /**
-     * Vets information on a chunk-of-data ostensibly belonging to this
-     * instance's associated product.
-     * @param[in] chunkInfo  Information on the chunk
-     * @param[in] chunkSize  Size of the chunk in bytes
-     * @throws std::invalid_argument if the chunk is inconsistent with this
-     *                               instance's product
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
-     */
-    void vet(
-            const ChunkInfo& chunkInfo,
-            const ChunkSize  chunkSize) const
+    ChunkOffset getOffset(const ChunkIndex index) const
     {
-        if (chunkInfo.getProdIndex() != index)
-            throw INVALID_ARGUMENT("Wrong product-index: expected=" +
-                    std::to_string(index) + ", actual=" +
-                    std::to_string(chunkInfo.getProdIndex()));
-        if (chunkSize != chunkInfo.getSize())
-            throw INVALID_ARGUMENT("Unexpected chunk size: expected=" +
-                    std::to_string(chunkInfo.getSize()) +
-                    ", actual=" + std::to_string(chunkSize));
+        vet(index);
+        return index * canonChunkSize;
+    }
+
+    bool equalsExceptName(const Impl& that) const noexcept
+    {
+        return (index == that.index) &&
+                (size == that.size) &&
+                (canonChunkSize == that.canonChunkSize);
     }
 
     /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  The other instance
-     * @retval true   This instance is equal to the other
-     * @retval false  This instance is not equal to the other
+     * Indicates if this instance is considered equal to another.
+     * @param[in] that  Other instance
+     * @retval true     Instance is equal to other
+     * @retval false    Instance is not equal to other
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
     bool operator==(const Impl& that) const noexcept
     {
-        return (index == that.index) &&
-                (size == that.size) &&
+        return equalsExceptName(that) &&
                 (name.compare(that.name) == 0);
     }
 
@@ -238,14 +205,15 @@ public:
      * Returns the number of bytes in the serial representation of this
      * instance.
      * @param[in] version  Protocol version
-     * @return the number of bytes in the serial representation
+     * @return             Number of bytes in serial representation
      */
     size_t getSerialSize(unsigned version) const noexcept
     {
         // Keep consonant with serialize()
-        return  index.getSerialSize(version) +
-                Codec::getSerialSize(&size) +
-                Codec::getSerialSize(name);
+        return  size.getSerialSize(version) +
+                index.getSerialSize(version) +
+                canonChunkSize.getSerialSize(version) +
+                name.getSerialSize(version);
     }
 
     /**
@@ -259,32 +227,51 @@ public:
             Encoder&       encoder,
             const unsigned version) const
     {
-        // Keep consonant with ProdInfo::ProdInfo()
-        return encoder.encode(index) +
-                encoder.encode(size) +
-                encoder.encode(name);
+        // Keep consonant with ProdInfo::deserialize()
+        return  size.serialize(encoder, version) +
+                index.serialize(encoder, version) +
+                canonChunkSize.serialize(encoder, version) +
+                name.serialize(encoder, version);
     }
 };
 
 ProdInfo::ProdInfo()
-    : pImpl(new Impl())
+    : pImpl{}
 {}
 
 ProdInfo::ProdInfo(
-        const std::string& name,
-        const ProdIndex    index,
-        const ProdSize     size)
-    : pImpl(new Impl(name, index, size))
+        const ProdIndex index,
+        const ProdName& name,
+        const ProdSize  size,
+        const ChunkSize canonChunkSize)
+    : pImpl(new Impl(index, name, size, canonChunkSize))
 {}
+
+ProdInfo::ProdInfo(
+        const ProdIndex index,
+        const ProdSize  size,
+        const ChunkSize canonChunkSize)
+    : ProdInfo{index, "", size, canonChunkSize}
+{}
+
+ProdInfo::operator bool() const noexcept
+{
+    return pImpl.operator bool();
+}
 
 std::string ProdInfo::to_string() const
 {
     return pImpl->to_string();
 }
 
+bool ProdInfo::equalsExceptName(const ProdInfo& that) const noexcept
+{
+    return pImpl->equalsExceptName(*that.pImpl.get());
+}
+
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept
 {
-    return *pImpl.get() == *that.pImpl.get();
+    return pImpl->operator==(*that.pImpl.get());
 }
 
 size_t ProdInfo::getSerialSize(unsigned version) const noexcept
@@ -299,7 +286,7 @@ size_t ProdInfo::serialize(
     return pImpl->serialize(encoder, version);
 }
 
-const std::string& ProdInfo::getName() const
+const ProdName ProdInfo::getName() const
 {
     return pImpl->getName();
 }
@@ -329,34 +316,58 @@ ChunkSize ProdInfo::getChunkSize(const ChunkIndex index) const
     return pImpl->getChunkSize(index);
 }
 
-ChunkIndex ProdInfo::getNumChunks() const
+ChunkIndex ProdInfo::getNumChunks() const noexcept
 {
     return pImpl->getNumChunks();
 }
 
-ChunkOffset ProdInfo::getOffset(const ChunkIndex chunkIndex) const
+ChunkIndex ProdInfo::getChunkIndex(const ChunkOffset offset) const
 {
-    return pImpl->getOffset(chunkIndex);
+    return pImpl->getChunkIndex(offset);
 }
 
-void ProdInfo::vet(
-        const ChunkInfo& chunkInfo,
-        const ChunkSize  chunkSize) const
+ChunkIndex ProdInfo::getChunkIndex(const ChunkId chunkId) const
 {
-    return pImpl->vet(chunkInfo, chunkSize);
+    return chunkId.getChunkIndex();
 }
 
-ChunkInfo ProdInfo::makeChunkInfo(const ChunkIndex chunkIndex) const
+ChunkOffset ProdInfo::getChunkOffset(const ChunkIndex index) const
+{
+    return pImpl->getOffset(index);
+}
+
+ChunkOffset ProdInfo::getChunkOffset(const ChunkId chunkId) const
+{
+    return pImpl->getOffset(chunkId.getChunkIndex());
+}
+
+void ProdInfo::vet(const ChunkIndex chunkIndex) const
+{
+    return pImpl->vet(chunkIndex);
+}
+
+ChunkInfo ProdInfo::getChunkInfo(const ChunkIndex chunkIndex) const
 {
     return ChunkInfo(*this, chunkIndex);
+}
+
+ChunkId ProdInfo::makeChunkId(const ChunkOffset offset) const
+{
+    return ChunkId{*this, getChunkIndex(offset)};
+}
+
+ChunkId ProdInfo::makeChunkId(const ChunkIndex index) const
+{
+    return ChunkId{*this, index};
 }
 
 ProdInfo ProdInfo::deserialize(
         Decoder&        decoder,
         const unsigned  version)
 {
-    auto impl = Impl(decoder, version);
-    return ProdInfo(impl.getName(), impl.getIndex(), impl.getSize());
+    Impl impl{decoder, version};
+    return ProdInfo{impl.getIndex(), impl.getName(), impl.getSize(),
+            impl.getChunkSize()};
 }
 
 } // namespace

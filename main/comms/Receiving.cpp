@@ -36,7 +36,7 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
 
     std::exception_ptr            exception;
     ProdStore                     prodStore;
-    std::unordered_set<ChunkInfo> requestedChunks;
+    std::unordered_set<ChunkId> requestedChunks;
     mutable Mutex                 mutex;
     Processing*                   processing;
     P2pMgr                        p2pMgr;
@@ -87,7 +87,7 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
-    bool need(ChunkInfo info)
+    bool need(ChunkId info)
     {
         LockGuard lock(mutex);
         if (prodStore.haveChunk(info))
@@ -103,17 +103,17 @@ class Receiving::Impl final : public McastMsgRcvr, public PeerMsgRcvr
      * Accepts a chunk of data. Adds it to the product-store and erases it from
      * the set of outstanding chunk-requests. Processes the resulting product if
      * it's complete.
+     * @pre              `mutex` is locked
      * @param chunk      Chunk of data to accept
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Safe
      */
     ProdStore::AddStatus accept(LatentChunk chunk)
     {
-        LockGuard lock(mutex);
-        requestedChunks.erase(chunk.getInfo());
+        requestedChunks.erase(chunk.getId());
         Product   prod;
         auto      status = prodStore.add(chunk, prod);
-        if (!status.isDuplicate() && status.isComplete())
+        if (status.isNew() && status.isComplete())
             processing->process(prod);
         return status;
     }
@@ -184,17 +184,19 @@ public:
      */
     void recvNotice(const ProdInfo& prodInfo)
     {
+        LockGuard lock(mutex);
     	if (exception)
             std::rethrow_exception(exception);
     	if (!controlTraffic || trafficControler(generator)) {
             LOG_DEBUG("Received product-notice from multicast: prodInfo=%s",
                     prodInfo.to_string().c_str());
             Product prod;
-            auto status = prodStore.add(prodInfo, prod);
-            if (status.isComplete())
-                processing->process(prod);
-            if (status.isNew())
+            auto    status = prodStore.add(prodInfo, prod);
+            if (status.isNew()) {
+                if (status.isComplete())
+                    processing->process(prod);
                 p2pMgr.sendNotice(prodInfo);
+            }
     	}
     }
 
@@ -210,17 +212,19 @@ public:
             const ProdInfo& prodInfo,
             const Peer&     peer)
     {
+        LockGuard lock(mutex);
     	if (exception)
             std::rethrow_exception(exception);
     	LOG_DEBUG("Received product-notice from peer: prodInfo=%s, peer=%s",
     	        prodInfo.to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
-        Product prod;
-        auto status = prodStore.add(prodInfo, prod);
-        if (!status.isDuplicate() && status.isComplete())
-            processing->process(prod);
-        if (status.isNew())
+        PartialProduct prod;
+        auto           status = prodStore.add(prodInfo, prod);
+        if (status.isNew()) {
+            if (status.isComplete())
+                processing->process(prod);
             p2pMgr.sendNotice(prodInfo);
+        }
     }
 
     /**
@@ -231,7 +235,7 @@ public:
      * @param[in] peer  Peer that received the chunk
      */
     void recvNotice(
-            const ChunkInfo& info,
+            const ChunkId& info,
             const Peer&      peer)
     {
     	if (exception)
@@ -258,8 +262,8 @@ public:
     	LOG_DEBUG("Received product-request from peer: prodIndex=%s, peer=%s",
     	        index.to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
-        ProdInfo info;
-        if (prodStore.getProdInfo(index, info))
+        auto info = prodStore.getProdInfo(index);
+        if (info)
             peer.sendNotice(info);
     }
 
@@ -270,26 +274,29 @@ public:
      * @param[in] peer   Peer that made the request
      */
     void recvRequest(
-            const ChunkInfo& info,
-            const Peer&      peer)
+            const ChunkId& id,
+            const Peer&    peer)
     {
     	if (exception)
             std::rethrow_exception(exception);
-    	LOG_DEBUG("Received chunk-request from peer: chunkInfo=%s, peer=%s",
-    	        info.to_string().c_str(),
+    	LOG_DEBUG("Received chunk-request from peer: chunkId=%s, peer=%s",
+    	        id.to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
-        ActualChunk chunk;
-        if (prodStore.getChunk(info, chunk))
+        auto chunk = prodStore.getChunk(id);
+        if (chunk)
             peer.sendData(chunk);
     }
 
     /**
-     * Receives a chunk of data via multicast. A notice about the chunk is sent
+     * Receives a chunk of data via multicast. Adds it to the product-store and
+     * erases it from the set of outstanding chunk-requests. Processes the
+     * resulting product if it's complete. A notice about the chunk is sent
      * to all peers.
      * @param[in] chunk  Chunk of data
      */
     void recvData(LatentChunk chunk)
     {
+        LockGuard lock(mutex);
     	if (exception)
             std::rethrow_exception(exception);
     	if (controlTraffic && !trafficControler(generator)) {
@@ -299,13 +306,15 @@ public:
             LOG_DEBUG("Received chunk via multicast: chunkInfo=%s",
                     chunk.getInfo().to_string().c_str());
             if (accept(chunk).isNew())
-                p2pMgr.sendNotice(chunk.getInfo());
+                p2pMgr.sendNotice(chunk.getId());
     	}
     }
 
     /**
-     * Receives a chunk of data from a peer. A notice about the chunk is sent
-     * to all other peers.
+     * Receives a chunk of data from a peer. Adds it to the product-store and
+     * erases it from the set of outstanding chunk-requests. Processes the
+     * resulting product if it's complete. A notice about the chunk is sent to
+     * all other peers.
      * @param[in] chunk  Chunk of data
      * @param[in] peer   Peer that sent the chunk
      */
@@ -313,13 +322,14 @@ public:
             LatentChunk chunk,
             const Peer& peer)
     {
+        LockGuard lock(mutex);
     	if (exception)
             std::rethrow_exception(exception);
     	LOG_DEBUG("Received chunk from peer: chunkInfo=%s, peer=%s",
     	        chunk.getInfo().to_string().c_str(),
     	        peer.getRemoteAddr().to_string().c_str());
         if (accept(chunk).isNew())
-            p2pMgr.sendNotice(chunk.getInfo(), peer);
+            p2pMgr.sendNotice(chunk.getId(), peer);
     }
 };
 
@@ -352,7 +362,7 @@ void Receiving::recvNotice(
 }
 
 void Receiving::recvNotice(
-        const ChunkInfo& info,
+        const ChunkId& info,
         const Peer&      peer)
 {
     pImpl->recvNotice(info, peer);
@@ -366,7 +376,7 @@ void Receiving::recvRequest(
 }
 
 void Receiving::recvRequest(
-        const ChunkInfo& info,
+        const ChunkId& info,
         const Peer&      peer)
 {
     pImpl->recvRequest(info, peer);

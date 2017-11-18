@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <exception>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <pthread.h>
 #include <thread>
@@ -34,15 +35,16 @@ class ProdEntry
 
 public:
     ProdEntry(const ProdInfo& prodInfo)
-        : prod{prodInfo}
+        : prod{PartialProduct{prodInfo}}
     {}
 
     ProdEntry(ProdInfo&& prodInfo)
-        : prod{prodInfo}
+        : prod{PartialProduct{prodInfo}}
     {}
 
     ProdEntry(LatentChunk& chunk)
-        : ProdEntry{ProdInfo{"", chunk.getProdIndex(), chunk.getProdSize()}}
+        : ProdEntry{ProdInfo{chunk.getProdIndex(), chunk.getProdSize(),
+                chunk.getCanonSize()}}
     {
         prod.add(chunk);
     }
@@ -56,7 +58,7 @@ public:
         return prod.isEarlierThan(that.prod);
     }
 
-    inline ChunkInfo identifyEarliestMissingChunk() const
+    inline ChunkId identifyEarliestMissingChunk() const
     {
         return prod.identifyEarliestMissingChunk();
     }
@@ -76,9 +78,9 @@ public:
         return prod.getInfo();
     }
 
-    inline bool isReady() const
+    inline bool isComplete() const
     {
-        return prod.isComplete() && (prod.getInfo().getName().length() > 0);
+        return prod.isComplete();
     }
 
     const inline Product& getProduct() const
@@ -86,14 +88,14 @@ public:
         return prod;
     }
 
-    inline bool haveChunk(ChunkIndex index) const
+    inline bool haveChunk(const ChunkIndex index) const
     {
         return prod.haveChunk(index);
     }
 
-    inline bool getChunk(ChunkIndex index, ActualChunk& chunk) const
+    inline ActualChunk getChunk(const ChunkIndex index) const
     {
-        return prod.getChunk(index, chunk);
+        return prod.getChunk(index);
     }
 };
 
@@ -112,7 +114,7 @@ class ProdMap
     std::map<ProdIndex, ProdEntry*>          incomplete;
     ProdIndex                                earliest;
     ProdIndex                                latest;
-    static const ChunkInfo                   emptyChunkInfo;
+    static const ChunkId                   emptyChunkInfo;
 
     /**
      * Updates the indexes of the earliest and latest products that this
@@ -126,9 +128,9 @@ class ProdMap
             latest = earliest = index;
         }
         else {
-            if (index < earliest)
+            if (index.isEarlierThan(earliest))
                 earliest = index;
-            if (index > latest)
+            if (latest.isEarlierThan(index))
                 latest = index;
         }
     }
@@ -189,13 +191,9 @@ public:
         }
         else {
             entry = &iter->second;
-            if (entry->set(prodInfo)) {
+            if (entry->set(prodInfo))
                 status.setNew();
-            }
-            else {
-                status.setDuplicate();
-            }
-            if (entry->isReady()) {
+            if (entry->isComplete()) {
                 status.setComplete();
                 incomplete.erase(prodIndex);
             }
@@ -228,13 +226,9 @@ public:
         }
         else {
             entry = &iter->second;
-            if (entry->add(chunk)) {
+            if (entry->add(chunk))
                 status.setNew();
-            }
-            else {
-                status.setDuplicate();
-            }
-            if (entry->isReady()) {
+            if (entry->isComplete()) {
                 status.setComplete();
                 incomplete.erase(prodIndex);
             }
@@ -269,56 +263,51 @@ public:
     /**
      * Returns product-information on a given data-product.
      * @param[in]  index  Index of the data-product
-     * @param[out] info   Information on the given product
-     * @retval `true`     Information found. `info` is set.
-     * @retval `false`    Information not found. `info` is not set.
+     * @return            Information on the given product. Will be invalid
+     *                    if no such product is found.
+     * @see `ProdInfo::operator bool()`
      */
-    bool getProdInfo(
-            const ProdIndex index,
-            ProdInfo&       info) const
+    ProdInfo getProdInfo(
+            const ProdIndex index) const
     {
         LockGuard lock{mutex};
         auto iter = prods.find(index);
-        if (iter == prods.end())
-            return false;
-        info = iter->second.getInfo();
-        return true;
+        return (iter == prods.end())
+            ? ProdInfo{}
+            : iter->second.getInfo();
     }
 
     /**
      * Indicates if this instance contains a given chunk of data.
-     * @param[in] info  Information on the chunk
+     * @param[in] id    Chunk Id
      * @retval `true`   Chunk exists
      * @retval `false`  Chunk doesn't exist
      */
-    bool haveChunk(const ChunkInfo& info) const
+    bool haveChunk(const ChunkId& id) const
     {
         LockGuard lock{mutex};
-        auto      iter = prods.find(info.getProdIndex());
+        auto      iter = prods.find(id.getProdIndex());
         if (iter == prods.end())
             return false;
-        return iter->second.haveChunk(info.getIndex());
+        return iter->second.haveChunk(id.getChunkIndex());
     }
 
     /**
-     * Returns the chunk of data corresponding to chunk-information.
-     * @param[in]  info   Information on the desired chunk
-     * @param[out] chunk  Corresponding chunk of data
-     * @retval `true`     Chunk found. `chunk` is set.
-     * @retval `false`    Chunk not found. `chunk` is not set.
+     * Returns the chunk of data corresponding to a chunk-ID.
+     * @param[in]  id     Chunk ID
+     * @return            Data-chunk. Will be invalid if no such chunk exists.
+     * @see `Chunk::operator bool()`
      */
-    bool getChunk(
-            const ChunkInfo& info,
-            ActualChunk&     chunk) const
+    ActualChunk getChunk(const ChunkId& id) const
     {
         LockGuard lock{mutex};
-        auto      iter = prods.find(info.getProdIndex());
-        if (iter == prods.end())
-            return false;
-        return iter->second.getChunk(info.getIndex(), chunk);
+        auto      iter = prods.find(id.getProdIndex());
+        return (iter == prods.end())
+                ? ActualChunk{}
+                : iter->second.getChunk(id.getChunkIndex());
     }
 
-    ChunkInfo identifyEarliestMissingChunk() const
+    ChunkId identifyEarliestMissingChunk() const
     {
         LockGuard lock{mutex};
         auto iter = incomplete.begin();
@@ -340,7 +329,7 @@ public:
     }
 };
 
-const ChunkInfo ProdMap::emptyChunkInfo{};
+const ChunkId ProdMap::emptyChunkInfo{};
 
 /******************************************************************************/
 
@@ -350,7 +339,7 @@ class ProdStore::ChunkInfoIterator::Impl final
     ProdMap&               prods;
     ProdIndex              prodIndex;
     ChunkIndex             chunkIndex;
-    static const ChunkInfo emptyChunkInfo;
+    static const ChunkId invalidChunkId;
 
 public:
     /**
@@ -360,8 +349,8 @@ public:
      * @param[in] startWith  Information on data-chunk with which to start
      * @see                  `ChunkInfo::operator bool()`
      */
-    Impl(   ProdMap&         prods,
-            const ChunkInfo& startWith)
+    Impl(   ProdMap&       prods,
+            const ChunkId& startWith)
         // g++ 4.8 doesn't support `{}` reference-initialization; clang does
         : prods(prods)
         , prodIndex{}
@@ -370,36 +359,46 @@ public:
         if (!startWith)
             throw INVALID_ARGUMENT("Empty data-chunk information");
         prodIndex = startWith.getProdIndex();
-        chunkIndex = startWith.getIndex();
+        const auto prodInfo = prods.getProdInfo(prodIndex);
         const auto earliest = prods.getEarliest();
-        if (prodIndex < earliest) {
+        if (!prodInfo) {
+            // `startWith` product not found
             prodIndex = earliest;
             chunkIndex = 0;
+        }
+        else {
+            // `startWith` product found
+            if (!prodIndex.isEarlierThan(earliest)) {
+                chunkIndex = prodInfo.getChunkIndex(startWith);
+            }
+            else {
+                prodIndex = earliest;
+                chunkIndex = 0;
+            }
         }
     }
 
     /**
-     * Returns information on the chunk of data that the product-store
-     * contains and that is closest to but not earlier than the current
-     * chunk.
-     * @return  Information on the chunk or the empty chunk if such a chunk
-     *          doesn't exist
+     * Identifies the chunk of data that the product-store contains and that is
+     * closest to but not earlier than the current chunk.
+     * @return  Chunk identifier. Will be invalid if such a chunk doesn't exist.
+     * @see `ChunkId::operator bool()`
      */
-    const ChunkInfo operator *()
+    const ChunkId operator *()
     {
-        ProdInfo prodInfo;
         for (; prodIndex <= prods.getLatest(); ++prodIndex) {
-            if (prods.getProdInfo(prodIndex, prodInfo)) {
+            auto prodInfo = prods.getProdInfo(prodIndex);
+            if (prodInfo) {
                 auto numChunks = prodInfo.getNumChunks();
                 for (; chunkIndex < numChunks; ++chunkIndex) {
-                    auto chunkInfo = prodInfo.makeChunkInfo(chunkIndex);
-                    if (prods.haveChunk(chunkInfo))
-                        return chunkInfo;
+                    auto chunkId = prodInfo.makeChunkId(chunkIndex);
+                    if (prods.haveChunk(chunkId))
+                        return chunkId;
                 }
             }
             chunkIndex = 0;
         }
-        return emptyChunkInfo;
+        return invalidChunkId;
     }
 
     /**
@@ -412,13 +411,13 @@ public:
     }
 };
 
-const ChunkInfo ProdStore::ChunkInfoIterator::Impl::emptyChunkInfo{};
+const ChunkId ProdStore::ChunkInfoIterator::Impl::invalidChunkId{};
 
 ProdStore::ChunkInfoIterator::ChunkInfoIterator(Impl* impl)
     : pImpl{impl}
 {}
 
-const ChunkInfo ProdStore::ChunkInfoIterator::operator *()
+const ChunkId ProdStore::ChunkInfoIterator::operator *()
 {
     return pImpl->operator *();
 }
@@ -455,7 +454,7 @@ class ProdStore::Impl final
     mutable std::exception_ptr                 exception;
     ProdIndex                                  earliest;
     ProdIndex                                  latest;
-    static const ChunkInfo                     emptyChunkInfo;
+    static const ChunkId                     emptyChunkId;
 
     void setAndThrowException() const
     {
@@ -662,7 +661,7 @@ public:
         catch (const std::exception& ex) {
             setAndThrowException();
         }
-        if (entry->isReady())
+        if (entry->isComplete())
             status.setComplete();
         return status;
     }
@@ -680,22 +679,20 @@ public:
     /**
      * Returns product-information on a given data-product.
      * @param[in]  index  Index of the data-product
-     * @param[out] info   Information on the given product
-     * @retval `true`     Information found. `info` is set.
-     * @retval `false`    Information not found. `info` is not set.
+     * @return            Product information. Will be invalid if no such
+     *                    data-product exists.
+     * @see `ProdInfo::operator bool()`
      */
-    bool getProdInfo(
-            const ProdIndex index,
-            ProdInfo&       info) const
+    ProdInfo getProdInfo(const ProdIndex index) const
     {
         throwIfException();
         try {
-            return prods.getProdInfo(index, info);
+            return prods.getProdInfo(index);
         }
         catch (const std::exception& ex) {
             setAndThrowException();
         }
-        return false; // To accommodate Eclipse
+        return ProdInfo{}; // To accommodate Eclipse
     }
 
     /**
@@ -704,7 +701,7 @@ public:
      * @retval `true`   Chunk exists
      * @retval `false`  Chunk doesn't exist
      */
-    bool haveChunk(const ChunkInfo& info) const
+    bool haveChunk(const ChunkId& info) const
     {
         throwIfException();
         try {
@@ -716,25 +713,16 @@ public:
         return false; // To accommodate Eclipse
     }
 
-    /**
-     * Returns the chunk of data corresponding to chunk-information.
-     * @param[in]  info   Information on the desired chunk
-     * @param[out] chunk  Corresponding chunk of data
-     * @retval `true`     Chunk found. `chunk` is set.
-     * @retval `false`    Chunk not found. `chunk` is not set.
-     */
-    bool getChunk(
-            const ChunkInfo& info,
-            ActualChunk&     chunk) const
+    ActualChunk getChunk(const ChunkId& id) const
     {
         throwIfException();
         try {
-            return prods.getChunk(info, chunk);
+            return prods.getChunk(id);
         }
         catch (const std::exception& ex) {
             setAndThrowException();
         }
-        return false; // To accommodate Eclipse
+        return ActualChunk{}; // To accommodate Eclipse
     }
 
     /**
@@ -745,7 +733,7 @@ public:
      * @threadsafety     Safe
      * @see `ChunkInfo::operator bool()`
      */
-    ChunkInfo identifyEarliestMissingChunk() const
+    ChunkId identifyEarliestMissingChunk() const
     {
         throwIfException();
         try {
@@ -754,18 +742,18 @@ public:
         catch (const std::exception& ex) {
             setAndThrowException();
         }
-        return emptyChunkInfo; // To accommodate Eclipse
+        return emptyChunkId; // To accommodate Eclipse
     }
 
     ProdStore::ChunkInfoIterator getChunkInfoIterator(
-            const ChunkInfo& startWith)
+            const ChunkId& startWith)
     {
         return ProdStore::ChunkInfoIterator{
             new ProdStore::ChunkInfoIterator::Impl(prods, startWith)};
     }
 };
 
-const ChunkInfo ProdStore::Impl::emptyChunkInfo{};
+const ChunkId ProdStore::Impl::emptyChunkId{};
 
 ProdStore::ProdStore(
         const std::string& pathname,
@@ -797,32 +785,28 @@ size_t ProdStore::size() const noexcept
     return pImpl->size();
 }
 
-bool ProdStore::getProdInfo(
-        const ProdIndex index,
-        ProdInfo&       info) const
+ProdInfo ProdStore::getProdInfo(const ProdIndex index) const
 {
-    return pImpl->getProdInfo(index, info);
+    return pImpl->getProdInfo(index);
 }
 
-bool ProdStore::haveChunk(const ChunkInfo& info) const
+bool ProdStore::haveChunk(const ChunkId& id) const
 {
-    return pImpl->haveChunk(info);
+    return pImpl->haveChunk(id);
 }
 
-bool ProdStore::getChunk(
-        const ChunkInfo& info,
-        ActualChunk&     chunk) const
+ActualChunk ProdStore::getChunk(const ChunkId& id) const
 {
-    return pImpl->getChunk(info, chunk);
+    return pImpl->getChunk(id);
 }
 
-ChunkInfo ProdStore::getOldestMissingChunk() const
+ChunkId ProdStore::getOldestMissingChunk() const
 {
     return pImpl->identifyEarliestMissingChunk();
 }
 
 ProdStore::ChunkInfoIterator ProdStore::getChunkInfoIterator(
-        const ChunkInfo& startWith) const
+        const ChunkId& startWith) const
 {
     return pImpl->getChunkInfoIterator(startWith);
 }

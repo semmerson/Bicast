@@ -10,7 +10,7 @@
  */
 
 
-#include "ChunkInfo.h"
+#include <Chunk.h>
 #include "Product.h"
 
 #include <gtest/gtest.h>
@@ -26,37 +26,36 @@ protected:
 // Tests construction from product-information
 TEST_F(ProductTest, ProdInfoConstruction) {
     // 2 chunks
-    hycast::ProdInfo info("product", 0, 2*hycast::ChunkInfo::getCanonSize());
-    hycast::Product prod{info};
+    hycast::ProdInfo info{0, "product", 2*hycast::ChunkSize::defaultChunkSize};
+    hycast::PartialProduct prod{info};
     EXPECT_FALSE(prod.isComplete());
     EXPECT_EQ(info, prod.getInfo());
-    hycast::ActualChunk chunk;
-    EXPECT_FALSE(prod.getChunk(0, chunk));
+    EXPECT_FALSE(prod.getChunk(0));
 }
 
 // Tests adding chunks
 TEST_F(ProductTest, AddChunk) {
-    char                data[2][hycast::ChunkInfo::getCanonSize()];
-    hycast::ProdIndex   prodIndex{0};
-    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
-    hycast::ProdInfo    info("product", prodIndex, prodSize);
-    hycast::Product     prod{info};
-    hycast::ActualChunk actualChunk;
-    EXPECT_FALSE(prod.getChunk(0, actualChunk));
+    char                   data[2][hycast::ChunkSize::defaultChunkSize];
+    hycast::ProdSize       prodSize{sizeof(data)};
+    hycast::ProdIndex      prodIndex{0};
+    hycast::ProdInfo       info{prodIndex, "product", prodSize};
+    hycast::PartialProduct prod{info};
+    EXPECT_FALSE(prod.getChunk(0));
 
-    actualChunk = hycast::ActualChunk{info.makeChunkInfo(0), data[0]};
+    hycast::ActualChunk    actualChunk{info, 0, data[0]};
     EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_FALSE(prod.isComplete());
     EXPECT_FALSE(prod.add(actualChunk));
-    hycast::ActualChunk actualChunk2;
-    EXPECT_TRUE(prod.getChunk(0, actualChunk2));
+    auto actualChunk2 = prod.getChunk(0);
+    EXPECT_TRUE(actualChunk2);
     EXPECT_EQ(actualChunk, actualChunk2);
 
-    actualChunk = hycast::ActualChunk(info.makeChunkInfo(1), data[1]);
+    actualChunk = hycast::ActualChunk{info, 1, data[1]};
     EXPECT_TRUE(prod.add(actualChunk));
     EXPECT_TRUE(prod.isComplete());
     EXPECT_EQ(prodSize, prod.getInfo().getSize());
-    EXPECT_TRUE(prod.getChunk(1, actualChunk2));
+    actualChunk2 = prod.getChunk(1);
+    EXPECT_TRUE(actualChunk2);
     EXPECT_EQ(actualChunk, actualChunk2);
 
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), prodSize));
@@ -64,38 +63,38 @@ TEST_F(ProductTest, AddChunk) {
 
 // Tests identifying the earliest missing chunk of data
 TEST_F(ProductTest, IdentifyEarliestMissingChunk) {
-    char                data[2][hycast::ChunkInfo::getCanonSize()];
-    hycast::ProdIndex   prodIndex{0};
-    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
-    hycast::ProdInfo    prodInfo("product", prodIndex, prodSize);
-    hycast::Product     prod{prodInfo};
+    char                   data[2][hycast::ChunkSize::defaultChunkSize];
+    hycast::ProdIndex      prodIndex{0};
+    hycast::ProdSize       prodSize{sizeof(data)};
+    hycast::ProdInfo       prodInfo{prodIndex, "product", prodSize};
+    hycast::PartialProduct prod{prodInfo};
 
     // Empty product:
-    auto              chunkInfo = prod.identifyEarliestMissingChunk();
-    hycast::ChunkInfo expect{prodInfo, 0};
-    EXPECT_EQ(expect, chunkInfo);
+    auto chunkId = prod.identifyEarliestMissingChunk();
+    hycast::ChunkId expect(prodInfo, 0);
+    EXPECT_EQ(expect, chunkId);
 
     // Add first chunk:
-    auto actualChunk = hycast::ActualChunk{prodInfo.makeChunkInfo(0), data[0]};
+    hycast::ActualChunk actualChunk{prodInfo, 0, data[0]};
     prod.add(actualChunk);
-    chunkInfo = prod.identifyEarliestMissingChunk();
-    expect = hycast::ChunkInfo{prodInfo, 1};
-    EXPECT_EQ(expect, chunkInfo);
+    chunkId = prod.identifyEarliestMissingChunk();
+    expect = hycast::ChunkId{prodInfo, 1};
+    EXPECT_EQ(expect, chunkId);
 
     // Add last chunk:
-    actualChunk = hycast::ActualChunk{prodInfo.makeChunkInfo(1), data[1]};
+    actualChunk = hycast::ActualChunk{prodInfo, 1, data[1]};
     prod.add(actualChunk);
-    chunkInfo = prod.identifyEarliestMissingChunk();
-    EXPECT_FALSE(chunkInfo);
+    chunkId = prod.identifyEarliestMissingChunk();
+    EXPECT_FALSE(chunkId);
 }
 
 // Tests construction from complete data
 TEST_F(ProductTest, DataConstruction) {
-    char            data[128000];
+    char                    data[128000];
     ::memset(data, 0xbd, sizeof(data));
-    hycast::Product prod("product", 1, data, sizeof(data));
-    auto            prodInfo = prod.getInfo();
-    EXPECT_EQ("product", prodInfo.getName());
+    hycast::CompleteProduct prod{1, "product", sizeof(data), data};
+    auto                    prodInfo = prod.getInfo();
+    EXPECT_STREQ("product", prodInfo.getName().c_str());
     EXPECT_EQ(1, prodInfo.getIndex());
     ASSERT_EQ(sizeof(data), prodInfo.getSize());
     EXPECT_EQ(0, ::memcmp(data, prod.getData(), sizeof(data)));
@@ -103,27 +102,27 @@ TEST_F(ProductTest, DataConstruction) {
 
 // Tests serialization
 TEST_F(ProductTest, Serialization) {
-    unsigned           version{0};
-    hycast::ProdIndex  prodIndex{0};
-    const auto         chunkSize = hycast::ChunkInfo::getCanonSize();
-    char               data[2][chunkSize];
-    hycast::ProdSize   prodSize{static_cast<hycast::ProdSize>(sizeof(data))};
-    hycast::ProdInfo   prodInfo("product", prodIndex, prodSize);
-    hycast::Product    prod{prodInfo};
+    unsigned               version{0};
+    hycast::ProdIndex      prodIndex{0};
+    const auto             chunkSize = hycast::ChunkSize::defaultChunkSize;
+    char                   data[2][chunkSize];
+    hycast::ProdSize       prodSize{sizeof(data)};
+    hycast::ProdInfo       prodInfo{prodIndex, "product", prodSize};
+    hycast::PartialProduct prod{prodInfo};
     for (hycast::ChunkIndex chunkIndex = 0;
             chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
-        hycast::ChunkInfo   chunkInfo{prodInfo.makeChunkInfo(chunkIndex)};
-        hycast::ActualChunk actualChunk(chunkInfo, data[chunkIndex]);
+        hycast::ChunkId     chunkId{prodInfo, chunkIndex};
+        hycast::ActualChunk actualChunk{prodInfo, chunkIndex, data[chunkIndex]};
         char                buf[actualChunk.getSerialSize(version)];
         hycast::MemEncoder  encoder(buf, sizeof(buf));
         size_t              nbytes = actualChunk.serialize(encoder, version);
         EXPECT_EQ(sizeof(buf), nbytes);
         encoder.flush();
         hycast::MemDecoder decoder(buf, nbytes);
-        decoder.fill(hycast::ChunkInfo::getStaticSerialSize(version));
+        decoder.fill(hycast::LatentChunk::getMetadataSize(version));
         hycast::LatentChunk latentChunk{decoder, version};
-        EXPECT_EQ(chunkInfo, latentChunk.getInfo());
-        char latentData[latentChunk.getSize()];
+        EXPECT_EQ(chunkId, latentChunk.getId());
+        char latentData[static_cast<size_t>(latentChunk.getSize())];
         EXPECT_EQ(chunkSize, latentChunk.drainData(latentData,
                 sizeof(latentData)));
         EXPECT_EQ(0, ::memcmp(data[chunkIndex], latentData, chunkSize));

@@ -63,9 +63,9 @@ class P2pMgr::Impl final : public Notifier
     {
     public:
         void recvNotice(const ProdInfo& info, const Peer& peer) {}
-        void recvNotice(const ChunkInfo& info, const Peer& peer) {}
+        void recvNotice(const ChunkId& info, const Peer& peer) {}
         void recvRequest(const ProdIndex& index, const Peer& peer) {}
-        void recvRequest(const ChunkInfo& info, const Peer& peer) {}
+        void recvRequest(const ChunkId& info, const Peer& peer) {}
         void recvData(LatentChunk chunk, const Peer& peer) {}
     };
 
@@ -377,7 +377,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const
+    void sendNotice(const ChunkId& chunkInfo) const
     {
         checkException();
         peerSet.sendNotice(chunkInfo);
@@ -392,7 +392,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except) const
+    void sendNotice(const ChunkId& chunkInfo, const Peer& except) const
     {
         checkException();
         peerSet.sendNotice(chunkInfo, except.getRemoteAddr());
@@ -427,12 +427,12 @@ void P2pMgr::sendNotice(const ProdInfo& prodInfo, const Peer& except) const
     pImpl->sendNotice(prodInfo, except);
 }
 
-void P2pMgr::sendNotice(const ChunkInfo& chunkInfo) const
+void P2pMgr::sendNotice(const ChunkId& chunkInfo) const
 {
     pImpl->sendNotice(chunkInfo);
 }
 
-void P2pMgr::sendNotice(const ChunkInfo& chunkInfo, const Peer& except) const
+void P2pMgr::sendNotice(const ChunkId& chunkInfo, const Peer& except) const
 {
     pImpl->sendNotice(chunkInfo, except);
 }

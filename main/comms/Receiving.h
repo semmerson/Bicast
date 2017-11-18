@@ -56,11 +56,11 @@ public:
 
     void recvNotice(const ProdInfo& info, const Peer& peer);
 
-    void recvNotice(const ChunkInfo& info, const Peer& peer);
+    void recvNotice(const ChunkId& info, const Peer& peer);
 
     void recvRequest(const ProdIndex& index, const Peer& peer);
 
-    void recvRequest(const ChunkInfo& info, const Peer& peer);
+    void recvRequest(const ChunkId& info, const Peer& peer);
 
     void recvData(LatentChunk chunk, const Peer& peer);
 };

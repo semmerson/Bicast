@@ -13,7 +13,6 @@
 #define PEER_H_
 
 #include "Chunk.h"
-#include "ChunkInfo.h"
 #include "Notifier.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
@@ -47,8 +46,8 @@ public:
     public:
         Message();
         explicit Message(const ProdInfo& prodInfo);
-        explicit Message(const ChunkInfo& chunkInfo,
-                         const bool       isRequest = false);
+        explicit Message(const ChunkId& chunkInfo,
+                         const bool     isRequest = false);
         explicit Message(const ProdIndex& prodIndex);
         explicit Message(const LatentChunk& chunk);
 
@@ -56,7 +55,7 @@ public:
         MsgType getType() const noexcept;
 
         const ProdInfo& getProdInfo() const;
-        const ChunkInfo& getChunkInfo() const;
+        const ChunkId& getChunkId() const;
         const ProdIndex& getProdIndex() const;
         const LatentChunk& getChunk() const;
     };
@@ -152,7 +151,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkId& chunkInfo) const;
 
     /**
      * Sends a product-index to the remote peer.
@@ -170,7 +169,7 @@ public:
      * @exceptionsafety Basic
      * @threadsafety    Compatible but not safe
      */
-    void sendRequest(const ChunkInfo& info) const;
+    void sendRequest(const ChunkId& info) const;
 
     /**
      * Sends a chunk-of-data to the remote peer.

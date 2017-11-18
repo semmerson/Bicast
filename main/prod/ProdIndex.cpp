@@ -17,20 +17,4 @@
 
 namespace hycast {
 
-size_t ProdIndex::serialize(
-        Encoder&       encoder,
-        const unsigned version) const
-{
-    return encoder.encode(index);
-}
-
-ProdIndex ProdIndex::deserialize(
-        Decoder&       decoder,
-        const unsigned version)
-{
-    ProdIndex::type netIndex;
-    decoder.decode(netIndex);
-    return ProdIndex(netIndex);
-}
-
 } // namespace

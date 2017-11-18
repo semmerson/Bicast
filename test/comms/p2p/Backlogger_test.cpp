@@ -24,11 +24,11 @@ class BackloggerTest : public ::testing::Test
 protected:
     BackloggerTest() {
         hycast::ProdInfo   prodInfo{"Product 0", 0,
-                2u*hycast::ChunkInfo::getCanonSize()};
-        startWith = hycast::ChunkInfo{prodInfo, 1};
+                2u*hycast::ChunkId::getCanonSize()};
+        startWith = hycast::ChunkId{prodInfo, 1};
     }
 
-    hycast::ChunkInfo  startWith;
+    hycast::ChunkId  startWith;
 };
 
 // Tests construction
@@ -51,20 +51,20 @@ TEST_F(BackloggerTest, DoNotRequest)
     hycast::Backlogger backlogger{startWith};
 
     const hycast::ProdInfo   prodInfo1{"Product 1", 1, 50};
-    const hycast::ChunkInfo  chunkInfo1{prodInfo1, 0};
+    const hycast::ChunkId  chunkInfo1{prodInfo1, 0};
     backlogger.doNotNotifyOf(chunkInfo1);
     EXPECT_EQ(chunkInfo1, backlogger.getEarliest());
 
     const hycast::ProdInfo prodInfo0{"Product 0", 0, 128000};
-    const hycast::ChunkInfo chunkInfo2{prodInfo0, 1};
+    const hycast::ChunkId chunkInfo2{prodInfo0, 1};
     backlogger.doNotNotifyOf(chunkInfo2);
     EXPECT_EQ(chunkInfo2, backlogger.getEarliest());
 
-    const hycast::ChunkInfo chunkInfo3{prodInfo0, 0};
+    const hycast::ChunkId chunkInfo3{prodInfo0, 0};
     backlogger.doNotNotifyOf(chunkInfo3);
     EXPECT_EQ(chunkInfo3, backlogger.getEarliest());
 
-    const hycast::ChunkInfo chunkInfo4{prodInfo0, 2};
+    const hycast::ChunkId chunkInfo4{prodInfo0, 2};
     backlogger.doNotNotifyOf(chunkInfo4);
     EXPECT_EQ(chunkInfo3, backlogger.getEarliest());
 }

@@ -13,9 +13,9 @@
 #ifndef MSGRCVRIMPL_H_
 #define MSGRCVRIMPL_H_
 
-#include "../p2p/Peer.h"
+#include "Peer.h"
+#include "ChunkId.h"
 #include "Chunk.h"
-#include "ChunkInfo.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 
@@ -35,7 +35,7 @@ public:
      * @param[in]     info  Information about the chunk
      * @param[in,out] peer  Peer that received the notice
      */
-    virtual void recvNotice(const ChunkInfo& info, Peer& peer) =0;
+    virtual void recvNotice(const ChunkId& info, Peer& peer) =0;
     /**
      * Receives a request for information about a product.
      * @param[in]     index Index of the product
@@ -47,7 +47,7 @@ public:
      * @param[in]     info  Information on the chunk
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ChunkInfo& info, Peer& peer) =0;
+    virtual void recvRequest(const ChunkId& info, Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data

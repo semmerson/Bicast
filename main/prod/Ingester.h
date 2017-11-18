@@ -1,6 +1,6 @@
 /**
- * This file declares an ingester of data-products. One that returns to a source
- * of hycast products a sequence of products to be transmitted.
+ * This file declares the abstract base class for an ingester of data-products.
+ * An ingester provides a sequence of products for a source-node to transmit.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
@@ -32,18 +32,19 @@ protected:
         virtual Product getProduct() =0;
     };
 
-private:
-    std::shared_ptr<Impl> pImpl;
-
-protected:
     Ingester(Impl* impl)
         : pImpl{impl}
     {}
+
+private:
+    std::shared_ptr<Impl> pImpl;
 
 public:
     Ingester()
         : pImpl{}
     {}
+
+    virtual ~Ingester() =0;
 
     inline operator bool()
     {

@@ -11,7 +11,6 @@
 
 #include "Channel.h"
 #include "Chunk.h"
-#include "ChunkInfo.h"
 #include "error.h"
 #include "Peer.h"
 #include "PeerMsgRcvr.h"
@@ -35,14 +34,14 @@ class Peer::Message::Impl
 {
     ProdIndex   prodIndex;  // Product index
     ProdInfo    prodInfo;   // Product information
-    ChunkInfo   chunkInfo;  // Information on chunk of data
+    ChunkId     chunkId;    // Data-chunk identifier
     LatentChunk chunk;      // Latent chunk of data
     MsgType     type;
 
     Impl(const MsgType type)
         : prodIndex{}
         , prodInfo{}
-        , chunkInfo{}
+        , chunkId{}
         , chunk{}
         , type{type}
     {}
@@ -54,11 +53,11 @@ public:
     {
         this->prodInfo = prodInfo;
     }
-    Impl(const ChunkInfo& chunkInfo,
+    Impl(const ChunkId& chunkInfo,
          const bool       isRequest) : Impl{isRequest ? CHUNK_REQUEST
                                                       : CHUNK_NOTICE}
     {
-        this->chunkInfo = chunkInfo;
+        this->chunkId = chunkInfo;
     }
     Impl(const ProdIndex& prodIndex)     : Impl{PROD_REQUEST}
     {
@@ -89,10 +88,10 @@ public:
             throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
         return prodInfo;
     }
-    const ChunkInfo& getChunkInfo() const {
+    const ChunkId& getChunkId() const {
         if (type != CHUNK_NOTICE && type != CHUNK_REQUEST)
             throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
-        return chunkInfo;
+        return chunkId;
     }
     const LatentChunk& getChunk() const {
         if (type != CHUNK)
@@ -105,7 +104,7 @@ Peer::Message::Message()
     : pImpl{new Impl()} {}
 Peer::Message::Message(const ProdInfo& prodInfo)
     : pImpl{new Impl(prodInfo)} {}
-Peer::Message::Message(const ChunkInfo& chunkInfo, const bool isRequest)
+Peer::Message::Message(const ChunkId& chunkInfo, const bool isRequest)
     : pImpl{new Impl(chunkInfo, isRequest)} {}
 Peer::Message::Message(const ProdIndex& prodIndex)
     : pImpl{new Impl(prodIndex)} {}
@@ -125,8 +124,8 @@ const ProdIndex& Peer::Message::getProdIndex()  const {
 const ProdInfo& Peer::Message::getProdInfo()    const {
     return pImpl->getProdInfo();
 }
-const ChunkInfo& Peer::Message::getChunkInfo()  const {
-    return pImpl->getChunkInfo();
+const ChunkId& Peer::Message::getChunkId()  const {
+    return pImpl->getChunkId();
 }
 const LatentChunk& Peer::Message::getChunk()    const {
     return pImpl->getChunk();
@@ -147,9 +146,9 @@ class Peer::Impl final {
     unsigned                          version;
     Channel<VersionMsg>               versionChan;
     Channel<ProdInfo>                 prodNoticeChan;
-    Channel<ChunkInfo>                chunkNoticeChan;
+    Channel<ChunkId>                  chunkNoticeChan;
     Channel<ProdIndex>                prodReqChan;
-    Channel<ChunkInfo>                chunkReqChan;
+    Channel<ChunkId>                  chunkReqChan;
     Channel<ActualChunk,LatentChunk>  chunkChan;
     SctpSock                          sock;
 
@@ -157,9 +156,9 @@ class Peer::Impl final {
     {
         void recvNotice(const ProdInfo& info) {}
         void recvNotice(const ProdInfo& info, const Peer& peer) {}
-        void recvNotice(const ChunkInfo& info, const Peer& peer) {}
+        void recvNotice(const ChunkId& info, const Peer& peer) {}
         void recvRequest(const ProdIndex& index, const Peer& peer) {}
-        void recvRequest(const ChunkInfo& info, const Peer& peer) {}
+        void recvRequest(const ChunkId& info, const Peer& peer) {}
         void recvData(LatentChunk chunk) {}
         void recvData(LatentChunk chunk, const Peer& peer) {}
     }                      defaultMsgRcvr;
@@ -313,19 +312,33 @@ public:
      */
     void sendProdInfo(const ProdInfo& prodInfo) const
     {
-        prodNoticeChan.send(prodInfo);
+        try {
+            prodNoticeChan.send(prodInfo);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send product notice "
+                    + prodInfo.to_string() + " to " +
+                    sock.getRemoteAddr().to_string()));
+        }
     }
 
     /**
      * Sends information about a chunk-of-data to the remote peer.
-     * @param[in] chunkInfo  Chunk information
-     * @throws std::system_error if an I/O error occurred
-     * @exceptionsafety  Basic
-     * @threadsafety     Compatible but not safe
+     * @param[in] chunkId         Data-chunk identifier
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendChunkInfo(const ChunkInfo& chunkInfo)
+    void sendChunkInfo(const ChunkId& chunkId)
     {
-        chunkNoticeChan.send(chunkInfo);
+        try {
+            chunkNoticeChan.send(chunkId);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send chunk notice "
+                    + chunkId.to_string() + " to " +
+                    sock.getRemoteAddr().to_string()));
+        }
     }
 
     /**
@@ -337,19 +350,33 @@ public:
      */
     void sendProdRequest(const ProdIndex& prodIndex)
     {
-        prodReqChan.send(prodIndex);
+        try {
+            prodReqChan.send(prodIndex);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send product "
+                    + prodIndex.to_string() + " request to " +
+                    sock.getRemoteAddr().to_string()));
+        }
     }
 
     /**
      * Sends a request for a chunk-of-data to the remote peer.
-     * @param[in] info  Chunk specification
-     * @throws std::system_error if an I/O error occurred
-     * @exceptionsafety  Basic
-     * @threadsafety     Compatible but not safe
+     * @param[in] chunkId         Data-chunk identifier
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendRequest(const ChunkInfo& info)
+    void sendRequest(const ChunkId& chunkId)
     {
-        chunkReqChan.send(info);
+        try {
+            chunkReqChan.send(chunkId);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send chunk request "
+                    + chunkId.to_string() + " to " +
+                    sock.getRemoteAddr().to_string()));
+        }
     }
 
     /**
@@ -366,7 +393,8 @@ public:
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't send data-chunk " +
-                    chunk.getInfo().to_string()));
+                    std::to_string(chunk.getInfo()) + " to " +
+                    sock.getRemoteAddr().to_string()));
         }
     }
 
@@ -449,7 +477,7 @@ void Peer::sendNotice(const ProdInfo& prodInfo) const
     pImpl->sendProdInfo(prodInfo);
 }
 
-void Peer::sendNotice(const ChunkInfo& chunkInfo) const
+void Peer::sendNotice(const ChunkId& chunkInfo) const
 {
     pImpl->sendChunkInfo(chunkInfo);
 }
@@ -459,7 +487,7 @@ void Peer::sendRequest(const ProdIndex& prodIndex) const
     pImpl->sendProdRequest(prodIndex);
 }
 
-void Peer::sendRequest(const ChunkInfo& info) const
+void Peer::sendRequest(const ChunkId& info) const
 {
     pImpl->sendRequest(info);
 }

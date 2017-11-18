@@ -36,8 +36,8 @@ class Backlogger::Impl
     mutable Mutex mutex;
     Cond          cond;
     Peer          peer;
-    ChunkInfo     startWith;
-    ChunkInfo     stopAt;
+    ChunkId     startWith;
+    ChunkId     stopAt;
     ProdStore     prodStore;
 
     /**
@@ -46,7 +46,7 @@ class Backlogger::Impl
      * `doNotNotifyOf()` has been called with a non-empty `ChunkInfo`.
      * @return  Identity of data-chunk at which backlog notices should stop
      */
-    ChunkInfo& getStopAt()
+    ChunkId& getStopAt()
     {
         UniqueLock lock{mutex};
         while (!stopAt) {
@@ -78,7 +78,7 @@ public:
      * @throw InvalidArgument  `startWith` is empty
      */
     Impl(   Peer&            peer,
-            const ChunkInfo& startWith,
+            const ChunkId& startWith,
             ProdStore&       prodStore)
         : mutex{}
         , cond{}
@@ -100,7 +100,7 @@ public:
      * Returns the first chunk-information to be sent.
      * @return First chunk-information to be sent
      */
-    const ChunkInfo& getStart()
+    const ChunkId& getStart()
     {
         return startWith;
     }
@@ -112,7 +112,7 @@ public:
      * @exceptionsafety      Nothrow
      * @threadsafety         Safe
      */
-    void doNotNotifyOf(const ChunkInfo& chunkInfo) noexcept
+    void doNotNotifyOf(const ChunkId& chunkInfo) noexcept
     {
         LockGuard lock{mutex};
         if (chunkInfo.isEarlierThan(stopAt) || (!stopAt && chunkInfo)) {
@@ -131,7 +131,7 @@ public:
      * @see `doNotRequest()`
      * @see `ChunkInfo::operator bool()`
      */
-    const ChunkInfo& getEarliest() const noexcept
+    const ChunkId& getEarliest() const noexcept
     {
         LockGuard lock{mutex};
         return stopAt;
@@ -154,8 +154,8 @@ public:
                 auto chunkInfo = *iter;
                 auto prodIndex = chunkInfo.getProdIndex();
                 if (prodIndex != prevProdIndex || !prevProdIndexSet) {
-                    ProdInfo prodInfo{};
-                    if (prodStore.getProdInfo(prodIndex, prodInfo))
+                    auto prodInfo = prodStore.getProdInfo(prodIndex);
+                    if (prodInfo)
                         peer.sendNotice(prodInfo);
                     prevProdIndex = prodIndex;
                     prevProdIndexSet = true;
@@ -174,7 +174,7 @@ Backlogger::Backlogger()
 
 Backlogger::Backlogger(
         Peer&            peer,
-        const ChunkInfo& startWith,
+        const ChunkId& startWith,
         ProdStore&       prodStore)
     : pImpl{new Impl(peer, startWith, prodStore)}
 {}
@@ -184,17 +184,17 @@ Backlogger::operator bool() const noexcept
     return pImpl->operator bool();
 }
 
-const ChunkInfo& Backlogger::getStart() const noexcept
+const ChunkId& Backlogger::getStart() const noexcept
 {
     return pImpl->getStart();
 }
 
-void Backlogger::doNotNotifyOf(const ChunkInfo& chunkInfo) const noexcept
+void Backlogger::doNotNotifyOf(const ChunkId& chunkInfo) const noexcept
 {
     pImpl->doNotNotifyOf(chunkInfo);
 }
 
-const ChunkInfo& Backlogger::getEarliest() const noexcept
+const ChunkId& Backlogger::getEarliest() const noexcept
 {
     return pImpl->getEarliest();
 }

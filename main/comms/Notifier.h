@@ -12,7 +12,6 @@
 #ifndef MAIN_COMMS_NOTIFIER_H_
 #define MAIN_COMMS_NOTIFIER_H_
 
-#include "ChunkInfo.h"
 #include "ProdInfo.h"
 
 namespace hycast {
@@ -37,7 +36,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    virtual void sendNotice(const ChunkInfo& chunkInfo) const =0;
+    virtual void sendNotice(const ChunkId& chunkInfo) const =0;
 };
 
 } // namespace

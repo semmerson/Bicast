@@ -1,7 +1,7 @@
 /**
  * This file declares a data-product.
  *
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
@@ -19,57 +19,42 @@
 
 namespace hycast {
 
-class Product final {
+class Product
+{
+protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
+    // The following constructor must not be defined here.
+    Product(Impl* ptr);
+
 public:
     /**
-     * Constructs from nothing.
+     * Default constructs.
      */
-    Product();
+    Product()
+        : pImpl{}
+    {}
 
     /**
-     * Constructs from information on a product.
-     * @param[in] info Information on a product
+     * Copy constructs.
+     * @param[in] prod  Other instance
      */
-    explicit Product(const ProdInfo& info);
+    Product(const Product& prod)
+        : pImpl{prod.pImpl}
+    {}
+
+    virtual ~Product();
 
     /**
-     * Constructs from complete data.
-     * @param[in] name   Name of the product
-     * @param[in] index  Product index
-     * @param[in] data   Product data. Copied.
-     * @param[in] size   Amount of data in bytes
+     * Indicates if this instance is valid (i.e., wasn't default-constructed).
+     * @retval `true`   Instance is valid
+     * @retval `false`  Instance is not valid
      */
-    Product(const std::string& name,
-            const ProdIndex    index,
-            const void*        data,
-            const size_t       size);
-
-    /**
-     * Constructs from a file.
-     * @param[in] pathname   Pathname of the file
-     * @param[in] index      Product index
-     */
-    Product(const std::string& pathname,
-            const ProdIndex    index);
-
-    /**
-     * Indicates if this instance is valid.
-     */
-    operator bool() const noexcept;
-
-    /**
-     * Sets the associated product-information providing it is consistent with
-     * the information provided during construction (basically, only the name
-     * can be changed).
-     * @param[in] info      New product-information
-     * @retval `false`      Duplicate information
-     * @retval `true`       New information consistent with existing
-     * @throw RuntimeError  `info` is inconsistent with existing information
-     */
-    bool set(const ProdInfo& info);
+    inline operator bool() const noexcept
+    {
+        return pImpl.operator bool();
+    }
 
     /**
      * Returns information on the product.
@@ -88,6 +73,30 @@ public:
     const ProdIndex getIndex() const noexcept;
 
     /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] offset  Chunk offset
+     * @retval `true`     Chunk exists
+     * @retval `false`    Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkOffset offset) const;
+
+    /**
+     * Indicates if this instance contains a given chunk of data.
+     * @param[in] offset  Chunk index
+     * @retval `true`     Chunk exists
+     * @retval `false`    Chunk doesn't exist
+     */
+    bool haveChunk(const ChunkIndex index) const;
+
+    /**
+     * Returns the chunk of data corresponding to an index.
+     * @param[in] index   Chunk index
+     * @return            Data-chunk. Will be invalid if no such chunk exists.
+     * @see `Chunk::operator bool()`
+     */
+    ActualChunk getChunk(const ChunkIndex index) const;
+
+    /**
      * Indicates if this instance is earlier than another.
      * @param[in] that   Other instance
      * @retval `true`    Yes
@@ -104,7 +113,18 @@ public:
      * @see `isComplete()`
      * @see `ChunkInfo::operator bool()`
      */
-    ChunkInfo identifyEarliestMissingChunk() const noexcept;
+    ChunkId identifyEarliestMissingChunk() const noexcept;
+
+    /**
+     * Sets the associated product-information providing it is consistent with
+     * the information provided during construction (basically, only the name
+     * can be changed).
+     * @param[in] info      New product-information
+     * @retval `false`      Duplicate information
+     * @retval `true`       New information consistent with existing
+     * @throw RuntimeError  `info` is inconsistent with existing information
+     */
+    bool set(const ProdInfo& info);
 
     /**
      * Adds a chunk-of-data.
@@ -133,46 +153,56 @@ public:
     bool add(LatentChunk& chunk);
 
     /**
-     * Indicates if this instance is complete (i.e., contains all
-     * chunks-of-data).
+     * Indicates if this instance is complete (i.e., contains
+     * product-information and all chunks-of-data).
      * @return `true` iff this instance is complete
      */
-    bool isComplete() const;
+    bool isComplete() const noexcept;
 
     /**
-     * Returns a pointer to the data.
-     * @return a pointer to the data
-     * @exceptionsafety Nothrow
-     * @threadsafety    Safe
+     * Returns a pointer to the data, which might contain garbage if
+     * `isComplete()` is false.
+     * @return  Pointer to data
      */
     const char* getData() const noexcept;
+};
+
+/******************************************************************************/
+
+class CompleteProduct final : public Product
+{
+    class Impl;
+
+public:
+    CompleteProduct();
 
     /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  Other instance
-     * @retval `true`   Yes
-     * @retval `false`  No
+     * Constructs from complete data.
+     * @param[in] index      Data-product index
+     * @param[in] name       Name of data-product
+     * @param[in] size       Size of data-product
+     * @param[in] data       Product data. Not copied. *Must* exist for the
+     *                       lifetime of the constructed instance.
+     * @param[in] chunkSize  Canonical size of a data-chunk
      */
-    bool operator==(const Product& that) const;
+    CompleteProduct(
+            const ProdIndex index,
+            const ProdName& name,
+            const ProdSize  size,
+            const char*     data,
+            const ChunkSize chunkSize = ChunkSize::defaultChunkSize);
+};
 
-    /**
-     * Indicates if this instance contains a given chunk of data.
-     * @param[in] index  Chunk index
-     * @retval `true`    Chunk exists
-     * @retval `false`   Chunk doesn't exist
-     */
-    bool haveChunk(const ChunkIndex index) const;
+/******************************************************************************/
 
-    /**
-     * Returns the chunk of data corresponding to a chunk index.
-     * @param[in] index   Chunk index
-     * @param[out] chunk  Corresponding chunk of data
-     * @retval `true`     Chunk exists. `chunk` is set.
-     * @retval `false`    Chunk doesn't exist. `chunk` isn't set.
-     */
-    bool getChunk(
-            const ChunkIndex index,
-            ActualChunk&     chunk) const;
+class PartialProduct final : public Product
+{
+    class Impl;
+
+public:
+    PartialProduct();
+
+    PartialProduct(const ProdInfo& prodInfo);
 };
 
 } // namespace

@@ -14,7 +14,6 @@
 
 // The following are for template instantiations
 #include "Chunk.h"
-#include "ChunkInfo.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include <memory>
@@ -55,10 +54,6 @@ protected:
     {
         SctpSock sock;
     protected:
-        size_t getSize()
-        {
-            return sock.getSize();
-        }
         size_t read(
                 const struct iovec* iov,
                 const int           iovcnt,
@@ -79,11 +74,36 @@ protected:
         {
             sock.discard();
         }
+        size_t numRemainingBytes() const noexcept
+        {
+
+        }
+        size_t getSize()
+        {
+            return sock.getSize();
+        }
         bool hasRecord()
         {
             return sock.hasMessage();
         }
-    };
+        bool operator==(const Dec& that) const noexcept
+        {
+            return (this == &that) || (
+                    (serialBufSize == that.serialBufSize) &&
+                    (serialBuf == that.serialBuf) &&
+                    (nextSerial == that.nextSerial) &&
+                    (serialBufBytes == that.serialBufBytes) &&
+                    (dma.iov_base == that.dma.iov_base) &&
+                    (dma.iov_len == that.dma.iov_len) &&
+                    (sock == that.sock)
+            );
+        }
+        bool operator==(const Decoder& that) const noexcept
+        {
+            auto dec = dynamic_cast<const Dec*>(&that);
+            return dec ? operator==(*dec) : false;
+        }
+    }; // `Dec`
 
     SctpSock       sock;
     const unsigned streamId;
@@ -154,8 +174,14 @@ public:
      */
     void send(const S& obj)
     {
-        obj.serialize(encoder, version);
-        encoder.flush();
+        try {
+            obj.serialize(encoder, version);
+            encoder.flush();
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send object over "
+                    "SCTP socket " + std::to_string(sock)));
+        }
     }
 
     R recv();
@@ -173,9 +199,8 @@ R Channel<S,R>::Impl::recv()
 template<>
 LatentChunk Channel<ActualChunk,LatentChunk>::Impl::recv()
 {
-    ImplBase::fill(ChunkInfo::getStaticSerialSize(version));
-    auto obj = LatentChunk::deserialize(decoder, version);
-    return obj;
+    ImplBase::fill(LatentChunk::getMetadataSize(version));
+    return LatentChunk::deserialize(decoder, version);
 }
 
 template<class S, class R>
@@ -213,7 +238,7 @@ R Channel<S,R>::recv() const
 template class Channel<VersionMsg>;
 template class Channel<ProdIndex>;
 template class Channel<ProdInfo>;
-template class Channel<ChunkInfo>;
+template class Channel<ChunkId>;
 template class Channel<ActualChunk, LatentChunk>;
 
 } // namespace

@@ -38,10 +38,10 @@ protected:
         , srcAddr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)}
         , version{0}
         , prodName("product")
-        , chunkSize{hycast::ChunkInfo::getCanonSize()}
+        , chunkSize{hycast::ChunkSize::defaultChunkSize}
         , prodIndex(0)
         , prodSize{38000}
-        , prodInfo(prodName, prodIndex, prodSize)
+        , prodInfo{prodIndex, prodName, prodSize}
         , prod(prodInfo)
         , data{new char[chunkSize]}
         , datum{static_cast<char>(0xbd)}
@@ -80,10 +80,10 @@ protected:
         EXPECT_EQ(prodIndex, chunk.getProdIndex());
         EXPECT_EQ(chunkIndex, chunk.getIndex());
         const hycast::ChunkSize expectedSize =
-                prodInfo.getChunkSize(chunkIndex);
-        char data[expectedSize];
+                prodInfo.getChunkSize(chunkIndex.load());
+        char data[static_cast<size_t>(expectedSize)];
         const size_t actualSize = chunk.drainData(data, sizeof(data));
-        EXPECT_EQ(expectedSize, actualSize);
+        EXPECT_EQ(static_cast<size_t>(expectedSize), actualSize);
         for (unsigned i = 0; i < actualSize; ++i)
             ASSERT_EQ(datum, data[i]);
         ++chunkIndex;
@@ -112,20 +112,20 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for McastReceiver.
-    hycast::InetSockAddr  asmGroupAddr; // Any-source multicast-group address
-    hycast::InetSockAddr  ssmGroupAddr; // Source-specific multicast-group address
-    hycast::InetAddr      srcAddr; // IP address of source
-    unsigned              version;
-    std::string           prodName;
-    hycast::ChunkSize     chunkSize;
-    hycast::ProdIndex     prodIndex;
-    hycast::ProdSize      prodSize;
-    hycast::ProdInfo      prodInfo;
-    hycast::Product       prod;
-    char*                 data;
-    char                  datum;
-    volatile hycast::ChunkIndex    chunkIndex;
-    volatile hycast::ChunkIndex    numChunks;
+    hycast::InetSockAddr   asmGroupAddr; // Any-source multicast-group address
+    hycast::InetSockAddr   ssmGroupAddr; // Source-specific multicast-group address
+    hycast::InetAddr       srcAddr; // IP address of source
+    unsigned               version;
+    std::string            prodName;
+    hycast::ChunkSize      chunkSize;
+    hycast::ProdIndex      prodIndex;
+    hycast::ProdSize       prodSize;
+    hycast::ProdInfo       prodInfo;
+    hycast::PartialProduct prod;
+    char*                  data;
+    char                   datum;
+    std::atomic<hycast::ChunkIndex::type>     chunkIndex;
+    std::atomic<hycast::ChunkIndex::type>     numChunks;
 };
 
 // Tests construction of any-source multicast receiver
@@ -134,12 +134,12 @@ TEST_F(McastReceiverTest, Construction) {
 }
 
 // Tests construction of source-specific multicast receiver
-TEST_F(McastReceiverTest, SourceConstruction) {
+TEST_F(McastReceiverTest, SourceSpecificConstruction) {
     hycast::McastReceiver mcastRcvr(ssmGroupAddr, srcAddr, *this, version);
 }
 
 // Tests source-specific reception
-TEST_F(McastReceiverTest, SourceReception) {
+TEST_F(McastReceiverTest, SourceSpecificReception) {
     hycast::McastReceiver mcastRcvr(ssmGroupAddr, srcAddr, *this, version);
     std::thread           rcvrThread =
             std::thread([this,mcastRcvr]() mutable {runReceiver(mcastRcvr);});

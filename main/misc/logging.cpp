@@ -10,6 +10,7 @@
  */
 
 #include "error.h"
+#include "Thread.h"
 
 #include <chrono>
 #include <cstdarg>
@@ -39,7 +40,8 @@ std::string placeStamp(
 {
     char name[::strlen(file)+1];
     ::strcpy(name, file);
-    return std::string(::basename(name)) + ":" + std::to_string(line);
+    return std::string(::basename(name)) + ":" + std::to_string(line) + "#" +
+            std::to_string(Thread::getThreadNumber());
 }
 
 std::string placeStamp(
@@ -50,7 +52,7 @@ std::string placeStamp(
     char name[::strlen(file)+1];
     ::strcpy(name, file);
     return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
-            func + "()";
+            func + "()#" + std::to_string(Thread::getThreadNumber());
 }
 
 std::string makeWhat(

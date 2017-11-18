@@ -207,7 +207,7 @@ public:
      */
     bool operator==(const Impl& that) const noexcept
     {
-        return sd == that.sd;
+        return (sd == that.sd) && (numStreams == that.numStreams);
     }
 
     /**
@@ -222,7 +222,7 @@ public:
         return "{sd=" + std::to_string(sd) + ", numStreams=" +
                 std::to_string(numStreams) + "}";
     }
-};
+}; // `BaseSctpSock::Impl`
 
 int BaseSctpSock::createSocket()
 {
@@ -273,7 +273,7 @@ BaseSctpSock& BaseSctpSock::setRecvBufSize(const int size)
 
 bool BaseSctpSock::operator ==(const BaseSctpSock& that) const noexcept
 {
-    return pImpl == that.pImpl;
+    return pImpl->operator==(*that.pImpl.get());
 }
 
 std::string BaseSctpSock::to_string() const
@@ -316,7 +316,6 @@ public:
             addr.bind(sd);
         }
         catch (const std::exception& e) {
-            (void)::close(sd);
             std::throw_with_nested(RUNTIME_ERROR(
                     "Couldn't construct server-side SCTP socket"));
         }
@@ -520,7 +519,7 @@ private:
      * Returns the size, in bytes, of the current SCTP message while the mutex
      * is locked. Waits for the next message if necessary.
      * @pre    `mutex` is locked
-     * @return Size of current message in bytes or 0 if the remove peer closed
+     * @return Size of current message in bytes or 0 if the remote peer closed
      *         the socket.
      */
     uint32_t lockedGetSize()
@@ -763,7 +762,7 @@ public:
     /**
      * Returns the size, in bytes, of the current SCTP message. Waits for the
      * next message if necessary.
-     * @return Size of current message in bytes or 0 if the remove peer closed
+     * @return Size of current message in bytes or 0 if the remote peer closed
      *         the socket.
      */
     uint32_t getSize()

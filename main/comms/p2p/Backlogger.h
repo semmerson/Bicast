@@ -14,7 +14,6 @@
 #ifndef MAIN_COMMS_P2P_BACKLOGGER_H_
 #define MAIN_COMMS_P2P_BACKLOGGER_H_
 
-#include "ChunkInfo.h"
 #include "Peer.h"
 #include "ProdStore.h"
 
@@ -43,7 +42,7 @@ public:
      */
     Backlogger(
             Peer&            peer,
-            const ChunkInfo& startWith,
+            const ChunkId& startWith,
             ProdStore&       prodStore);
 
     /**
@@ -58,7 +57,7 @@ public:
      * Returns the first chunk-information to be sent.
      * @return First chunk-information to be sent
      */
-    const ChunkInfo& getStart() const noexcept;
+    const ChunkId& getStart() const noexcept;
 
     /**
      * Tells this instance that information on the given data-chunk should not
@@ -67,7 +66,7 @@ public:
      * @exceptionsafety      Nothrow
      * @threadsafety         Compatible but not safe
      */
-    void doNotNotifyOf(const ChunkInfo& doNotSend) const noexcept;
+    void doNotNotifyOf(const ChunkId& doNotSend) const noexcept;
 
     /**
      * Returns the earliest chunk-information that shouldn't be sent to the
@@ -79,7 +78,7 @@ public:
      * @see `doNotRequest()`
      * @see `ChunkInfo::operator bool()`
      */
-    const ChunkInfo& getEarliest() const noexcept;
+    const ChunkId& getEarliest() const noexcept;
 
     /**
      * Executes this instance. Doesn't return until there are no more notices

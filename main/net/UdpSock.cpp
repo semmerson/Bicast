@@ -79,11 +79,11 @@ public:
  */
 class InUdpSock::Impl : public UdpSock::Impl
 {
-    bool         haveCurrRec; /// Current datagram exists?
+    UdpPayloadSize currRecSize;
 
     void init()
     {
-        haveCurrRec = false;
+        currRecSize = 0;
     }
 
     /**
@@ -184,7 +184,7 @@ public:
      * @return              Actual number of bytes read into the buffers.
      * @throws SystemError  I/O error reading from socket
      */
-    size_t recv(
+    UdpPayloadSize recv(
            const struct iovec* iovec,
            const int           iovcnt,
            const bool          peek = false)
@@ -203,7 +203,7 @@ public:
                 nbytes);
 #endif
         checkReadStatus(nbytes);
-        haveCurrRec = peek;
+        currRecSize = peek ? nbytes : 0;
         return nbytes;
     }
 
@@ -238,9 +238,10 @@ public:
      */
     void discard()
     {
-        if (haveCurrRec) {
+        if (currRecSize) {
             char         buf;
             recv(&buf, sizeof(buf));
+            currRecSize = 0;
         }
     }
 
@@ -249,7 +250,12 @@ public:
      */
     bool hasRecord()
     {
-        return haveCurrRec;
+        return currRecSize != 0;
+    }
+
+    UdpPayloadSize getSize() const noexcept
+    {
+        return currRecSize;
     }
 };
 
@@ -538,6 +544,11 @@ const InetSockAddr InUdpSock::getLocalAddr() const noexcept
 bool InUdpSock::hasRecord()
 {
     return getPimpl()->hasRecord();
+}
+
+UdpSock::UdpPayloadSize InUdpSock::getSize() const noexcept
+{
+    return getPimpl()->getSize();
 }
 
 OutUdpSock::Impl* OutUdpSock::getPimpl() const noexcept

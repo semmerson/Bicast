@@ -10,7 +10,7 @@
  */
 
 
-#include "ChunkInfo.h"
+#include "Chunk.h"
 #include "ProdInfo.h"
 
 #include <cstddef>
@@ -23,7 +23,7 @@ namespace {
 class ChunkInfoTest : public ::testing::Test {
 protected:
     ChunkInfoTest()
-        : prodSize{4u*hycast::ChunkInfo::getCanonSize()}
+        : prodSize{4u*hycast::ChunkSize::defaultChunkSize}
     {}
 
     hycast::ProdSize prodSize;
@@ -31,8 +31,8 @@ protected:
 
 // Tests construction
 TEST_F(ChunkInfoTest, Construction) {
-    hycast::ProdInfo prodInfo("product", 0, prodSize);
-    hycast::ChunkInfo info(prodInfo, 1);
+    hycast::ProdInfo prodInfo{0, "product", prodSize};
+    hycast::ChunkInfo info{prodInfo, 1};
     EXPECT_EQ(0, info.getProdIndex());
     EXPECT_EQ(1, info.getIndex());
 }
@@ -40,40 +40,24 @@ TEST_F(ChunkInfoTest, Construction) {
 // Tests operator bool
 TEST_F(ChunkInfoTest, OperatorBool) {
     EXPECT_FALSE(hycast::ChunkInfo{});
-    hycast::ProdInfo prodInfo("product", 0, prodSize);
+    hycast::ProdInfo prodInfo{0, "product", prodSize};
     hycast::ChunkInfo chunkInfo{prodInfo, 1};
     EXPECT_TRUE(chunkInfo);
 }
 
 // Tests ChunkInfo::equals()
 TEST_F(ChunkInfoTest, Equals) {
-    hycast::ProdInfo prodInfo("product", 0, prodSize);
-    hycast::ChunkInfo info1(prodInfo, 3);
+    hycast::ProdInfo prodInfo{0, "product", prodSize};
+    hycast::ChunkInfo info1{prodInfo, 3};
     EXPECT_TRUE(info1 == info1);
-    hycast::ProdInfo prodInfo2("product", 1, prodSize);
-    hycast::ChunkInfo info2(prodInfo2, 3);
+    hycast::ProdInfo prodInfo2{1, "product", prodSize};
+    hycast::ChunkInfo info2{prodInfo2, 3};
     EXPECT_FALSE(info1 == info2);
-    hycast::ProdInfo prodInfo3("product", 0, prodSize-1);
-    hycast::ChunkInfo info3(prodInfo3, 3);
+    hycast::ProdInfo prodInfo3{0, "product", prodSize-1};
+    hycast::ChunkInfo info3{prodInfo3, 3};
     EXPECT_FALSE(info1 == info3);
-    hycast::ChunkInfo info4(prodInfo, 2);
+    hycast::ChunkInfo info4{prodInfo, 2};
     EXPECT_FALSE(info1 == info4);
-}
-
-// Tests serialization/de-serialization
-TEST_F(ChunkInfoTest, Serialization) {
-    const unsigned version = 0;
-    hycast::ProdInfo prodInfo("product", 1, prodSize);
-    hycast::ChunkInfo info1(prodInfo, 2);
-    const size_t nbytes = info1.getSerialSize(version);
-    alignas(alignof(max_align_t)) char bytes[nbytes];
-    hycast::MemEncoder encoder(bytes, nbytes);
-    info1.serialize(encoder, version);
-    encoder.flush();
-    hycast::MemDecoder decoder(bytes, nbytes);
-    decoder.fill(0);
-    auto info2 = hycast::ChunkInfo::deserialize(decoder, version);
-    EXPECT_TRUE(info1 == info2);
 }
 
 }  // namespace

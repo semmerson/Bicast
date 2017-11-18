@@ -47,35 +47,17 @@ class McastSender::Impl final
      */
     void send(const ProdInfo prodInfo)
     {
-        LOG_DEBUG("Multicasting product-info: prodIndex=%s",
-                std::to_string(prodInfo.getIndex()).c_str());
-        encoder.encode(prodInfoId);
-        prodInfo.serialize(encoder, version);
-        encoder.flush();
-    }
-
-    /**
-     * Multicasts the data of a data-product.
-     * @param[in] prodInfo   Product information
-     * @param[in] data       Pointer to the data-product's data
-     */
-    void send(
-            const ProdInfo  prodInfo,
-            const char*     data)
-    {
-        const auto prodIndex = prodInfo.getIndex();
-        const auto numChunks = prodInfo.getNumChunks();
-        for (ChunkIndex chunkIndex = 0; chunkIndex < numChunks; ++chunkIndex) {
-            encoder.encode(chunkId);
-            ChunkInfo  chunkInfo(prodInfo, chunkIndex);
-            chunkInfo.serialize(encoder, version);
-            const auto chunkSize = prodInfo.getChunkSize(chunkIndex);
-            LOG_DEBUG("Multicasting chunk: prodIndex=%s, chunkIndex=%s",
-                    std::to_string(prodIndex).c_str(),
-                    std::to_string(chunkIndex).c_str());
-            encoder.encode(data, chunkSize);
+        try {
+            LOG_DEBUG("Multicasting product-info: prodIndex=%s",
+                    std::to_string(prodInfo.getIndex()).c_str());
+            encoder.encode(prodInfoMsgId);
+            prodInfo.serialize(encoder, version);
             encoder.flush();
-            data += chunkSize;
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't multicast product-info " +
+                    std::to_string(prodInfo)));
         }
     }
 
@@ -100,10 +82,27 @@ public:
      */
     void send(Product& prod)
     {
-        // Keep consistent with McastReceiver::operator()()
-        const ProdInfo prodInfo = prod.getInfo();
-        send(prodInfo);
-        send(prodInfo, prod.getData());
+        try {
+            // Keep consistent with McastReceiver::operator()()
+            const ProdInfo prodInfo = prod.getInfo();
+            send(prodInfo);
+
+            const auto prodIndex = prodInfo.getIndex();
+            const auto numChunks = prodInfo.getNumChunks();
+            for (ChunkIndex chunkIndex = 0; chunkIndex < numChunks; ++chunkIndex) {
+                encoder.encode(chunkMsgId);
+                auto chunk = prod.getChunk(chunkIndex);
+                if (!chunk)
+                    throw RUNTIME_ERROR("Chunk " + std::to_string(chunkIndex) +
+                            " doesn't exist");
+                chunk.serialize(encoder, version);
+                encoder.flush();
+            }
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't multicast product " +
+                    std::to_string(prod.getInfo())));
+        }
     }
 };
 

@@ -41,7 +41,8 @@ protected:
     UdpSock(Impl* const pImpl);
 
 public:
-    static const size_t maxPayload = 65507;
+    typedef uint16_t            UdpPayloadSize;
+    static const UdpPayloadSize maxPayload = 65507;
 
     /**
      * Destroys.
@@ -250,7 +251,12 @@ public:
      * Indicates if there's a current datagram.
      */
     bool hasRecord();
-};
+
+    /**
+     * Returns the size of the current datagram.
+     */
+    UdpPayloadSize getSize() const noexcept;
+}; // InUdpSock
 
 /**
  * Multicast UDP socket. The remote endpoint of such a socket is bound to a

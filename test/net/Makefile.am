@@ -10,7 +10,8 @@ check_PROGRAMS		= \
 	InetAddr_test \
 	InetSockAddr_test \
 	SctpSock_test \
-	UdpSock_test
+	UdpSock_test \
+	SerialInt_test
 
 socket_test_SOURCES		= socket_test.cpp
 Interface_test_SOURCES		= Interface_test.cpp
@@ -20,6 +21,7 @@ InetAddr_test_SOURCES		= InetAddr_test.cpp
 InetSockAddr_test_SOURCES	= InetSockAddr_test.cpp
 SctpSock_test_SOURCES		= SctpSock_test.cpp
 UdpSock_test_SOURCES		= UdpSock_test.cpp
+SerialInt_test_SOURCES		= SerialInt_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

@@ -142,7 +142,7 @@ protected:
         if (exception)
             std::rethrow_exception(exception);
         if (canceled)
-            throw LOGIC_ERROR("Future::cancel() was called");
+            throw LOGIC_ERROR("checkResult() called on canceled future");
         return; // `haveResult` must be true
     }
 

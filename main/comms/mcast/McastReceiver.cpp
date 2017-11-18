@@ -50,6 +50,10 @@ class McastReceiver::Impl final
         {
             return sock.hasRecord();
         }
+        size_t getSize()
+        {
+            return sock.getSize();
+        }
     };
 
     Dec            decoder;
@@ -87,14 +91,14 @@ public:
                  * completely consumed; otherwise, its tail might be read in the
                  * next iteration.
                  */
-                case McastSender::prodInfoId: {
+                case McastSender::prodInfoMsgId: {
                     decoder.fill(0);
                     auto prodInfo = ProdInfo::deserialize(decoder, version);
                     msgRcvr->recvNotice(prodInfo);
                     break;
                 }
-                case McastSender::chunkId: {
-                    decoder.fill(ChunkInfo::getStaticSerialSize(version));
+                case McastSender::chunkMsgId: {
+                    decoder.fill(LatentChunk::getMetadataSize(version));
                     auto chunk = LatentChunk::deserialize(decoder, version);
                     msgRcvr->recvData(chunk);
                     if (chunk.hasData())

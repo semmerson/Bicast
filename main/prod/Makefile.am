@@ -9,16 +9,14 @@ noinst_LTLIBRARIES = lib.la
 
 # Sources for libhycast
 lib_la_SOURCES 	= HycastTypes.h \
-		  ProdIndex.cpp ProdIndex.h \
+		  ProdIndex.h \
 		  ProdInfo.cpp ProdInfo.h \
-		  ChunkInfo.cpp ChunkInfo.h \
+		  ProdSize.h \
 		  Chunk.cpp Chunk.h \
 		  Product.cpp Product.h \
-		  ProdFactory.cpp ProdFactory.h \
 		  ProdRcvr.h \
 		  ProdStore.cpp ProdStore.h \
-		  UnknownProd.cpp UnknownProd.h \
-		  Ingester.h \
+		  Ingester.cpp Ingester.h \
 		  FileIngester.cpp FileIngester.h
 
 AM_CPPFLAGS = -I$(srcdir)/.. \

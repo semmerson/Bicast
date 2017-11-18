@@ -24,4 +24,5 @@ lib_la_SOURCES 	= \
 	SctpSock.cpp SctpSock.h \
 	Serializable.cpp Serializable.h \
 	RecStream.cpp RecStream.h \
-	UdpSock.cpp UdpSock.h
+	UdpSock.cpp UdpSock.h \
+	SerialInt.h

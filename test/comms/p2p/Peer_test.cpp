@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ChunkInfo.h"
+#include <Chunk.h>
 #include "Completer.h"
 #include "error.h"
 #include "HycastTypes.h"
@@ -44,9 +44,10 @@ protected:
     typedef std::chrono::duration<double>      Duration;
 
     PeerTest()
-        : data{new char[hycast::ChunkInfo::getCanonSize()]}
+        : data{new char[hycast::ChunkSize::defaultChunkSize]}
+        , barrier{2}
     {
-        ::memset(data, 0xbd, hycast::ChunkInfo::getCanonSize());
+        ::memset(data, 0xbd, hycast::ChunkSize::defaultChunkSize);
     }
 
     virtual ~PeerTest()
@@ -63,11 +64,11 @@ protected:
             LOG_INFO("Sending product notice");
             peer.sendNotice(prodInfo);
             LOG_INFO("Sending chunk notice");
-            peer.sendNotice(chunkInfo);
+            peer.sendNotice(chunkInfo.getId());
             LOG_INFO("Sending product request");
             peer.sendRequest(prodIndex);
             LOG_INFO("Sending chunk request");
-            peer.sendRequest(chunkInfo);
+            peer.sendRequest(chunkInfo.getId());
             hycast::ActualChunk actualChunk(chunkInfo, data);
             LOG_INFO("Sending chunk");
             peer.sendData(actualChunk);
@@ -100,7 +101,7 @@ protected:
 
             msg = peer.getMessage();
             EXPECT_EQ(peer.CHUNK_NOTICE, msg.getType());
-            EXPECT_EQ(chunkInfo, msg.getChunkInfo());
+            EXPECT_EQ(chunkInfo, msg.getChunkId());
             LOG_INFO("Received chunk notice");
 
             msg = peer.getMessage();
@@ -110,14 +111,14 @@ protected:
 
             msg = peer.getMessage();
             EXPECT_EQ(peer.CHUNK_REQUEST, msg.getType());
-            EXPECT_EQ(chunkInfo, msg.getChunkInfo());
+            EXPECT_EQ(chunkInfo, msg.getChunkId());
             LOG_INFO("Received chunk request");
 
             msg = peer.getMessage();
             EXPECT_EQ(peer.CHUNK, msg.getType());
             auto chunk = msg.getChunk();
-            EXPECT_EQ(chunkInfo, chunk.getInfo());
-            char data[chunk.getSize()];
+            EXPECT_TRUE(chunkInfo.equalsExceptName(chunk.getInfo()));
+            char data[static_cast<size_t>(chunk.getSize())];
             auto actualSize = chunk.drainData(data, sizeof(data));
             ASSERT_EQ(sizeof(data), actualSize);
             EXPECT_EQ(0, ::memcmp(this->data, data, sizeof(data)));
@@ -140,46 +141,35 @@ protected:
     void runPerfSrvr(hycast::SrvrSctpSock& srvrSock)
     {
         try {
-            auto             sock = srvrSock.accept();
-            hycast::Peer     peer(sock);
-            const size_t     dataSize = 1000000;
-            hycast::ProdInfo prodInfo("product", 0, dataSize);
-            char             data[hycast::chunkSizeMax];
-            ::memset(data, 0xbd, sizeof(data));
-            for (hycast::ChunkSize chunkSize = hycast::chunkSizeMax - 8;
-                    chunkSize > 1000; chunkSize /= 2) {
-                hycast::ChunkInfo::setCanonSize(chunkSize);
-                TimePoint start = Clock::now();
-                peer.sendNotice(prodInfo);
-                size_t remaining = dataSize;
-                auto numChunks = prodInfo.getNumChunks();
-                for (hycast::ChunkIndex chunkIndex = 0; chunkIndex < numChunks;
-                        ++chunkIndex) {
-                    try {
-                        hycast::ActualChunk chunk{
-                                hycast::ChunkInfo{prodInfo, chunkIndex}, data};
-                        peer.sendData(chunk);
-                        remaining -= chunk.getSize();
+            char             chunkData[hycast::ChunkSize::chunkSizeMax];
+            const size_t     prodSize = 1000000;
+            ::memset(chunkData, 0xbd, sizeof(chunkData));
+            for (hycast::ChunkSize chunkSize : chunkSizes) {
+                {
+                    auto             sock = srvrSock.accept();
+                    hycast::Peer     peer(sock);
+                    hycast::ProdInfo prodInfo{0, "product", prodSize,
+                            chunkSize};
+                    TimePoint start = Clock::now();
+                    peer.sendNotice(prodInfo);
+                    size_t remaining = prodSize;
+                    auto numChunks = prodInfo.getNumChunks();
+                    for (hycast::ChunkIndex chunkIndex = 0;
+                            chunkIndex < numChunks; ++chunkIndex) {
+                        try {
+                            hycast::ActualChunk chunk{
+                                    hycast::ChunkInfo{prodInfo, chunkIndex},
+                                    chunkData};
+                            peer.sendData(chunk);
+                            remaining -= chunk.getSize();
+                        }
+                        catch (const std::exception& ex) {
+                            std::throw_with_nested(hycast::RUNTIME_ERROR(
+                                    "Couldn't send chunk"));
+                        }
                     }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(hycast::RUNTIME_ERROR(
-                                "Couldn't send chunk"));
-                    }
-                }
-#if 0
-                std::chrono::high_resolution_clock::time_point stop =
-                        std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> time_span =
-                        std::chrono::duration_cast<
-                        std::chrono::duration<double>>(stop - start);
-                double seconds = time_span.count()*
-                        decltype(time_span)::period::num/
-                        decltype(time_span)::period::den;
-                std::cerr << "Chunk size=" + std::to_string(chunkSize) +
-                        " bytes, duration=" + std::to_string(seconds) +
-                        " s, byte rate=" + std::to_string(dataSize/seconds) +
-                        " Hz" << std::endl;
-#endif
+                } // Connection closed
+                barrier.wait();
             }
         }
         catch (const std::exception& ex) {
@@ -198,59 +188,33 @@ protected:
             this->runPerfSrvr(srvrSock); });
     }
 
-    void runPerfClnt(hycast::SctpSock& sock)
+    void runPerfClnt()
     {
         try {
-            hycast::Peer peer{sock};
-            for (;;) {
-                // Get product information
-                auto msg = peer.getMessage();
-                if (!msg)
-                    break;
+            for (hycast::ChunkSize chunkSize : chunkSizes) {
+                hycast::SctpSock sock{hycast::Peer::getNumStreams()};
+                sock.connect(srvrSockAddr);
+                hycast::Peer peer{sock};
                 auto start = Clock::now();
-                hycast::ProdInfo prodInfo{};
-                try {
-                    prodInfo = msg.getProdInfo();
-                }
-                catch (const std::exception& ex) {
-                    std::throw_with_nested(hycast::RUNTIME_ERROR(
-                            "Couldn't get product-info"));
-                }
+                // Receive product information
+                prodInfo = peer.getMessage().getProdInfo();
                 auto prodSize = prodInfo.getSize();
-                // Get first chunk and canonical chunk size
-                hycast::LatentChunk chunk{};
-                try {
-                    chunk = peer.getMessage().getChunk();
-                    chunk.discard();
-                }
-                catch (const std::exception& ex) {
-                    std::throw_with_nested(hycast::RUNTIME_ERROR(
-                            "Couldn't get first chunk"));
-                }
-                auto canonChunkSize = chunk.getSize();
-                // Get remaining chunks
-                auto lastChunkIndex = (prodSize + canonChunkSize - 1)
-                            / canonChunkSize - 1;
-                while (chunk.getIndex() < lastChunkIndex) {
-                    try {
-                        chunk = peer.getMessage().getChunk();
-                        chunk.discard();
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(hycast::RUNTIME_ERROR(
-                                "Couldn't get chunk " +
-                                std::to_string(chunk.getIndex()+1)));
-                    }
+                // Receive data-chunks
+                for (auto msg = peer.getMessage(); msg;
+                        msg = peer.getMessage()) {
+                    msg.getChunk().discard();
                 }
                 TimePoint stop = Clock::now();
                 Duration  duration = std::chrono::duration_cast<Duration>
                         (stop - start);
-                auto      seconds = duration.count() *
+                auto seconds = duration.count() *
                         Duration::period::num / Duration::period::den;
-                std::cerr << "Chunk size=" + std::to_string(canonChunkSize)
+                std::cerr << "Chunk size=" +
+                        std::to_string(chunkSize)
                         + " bytes, duration=" + std::to_string(seconds) +
                         " s, byte rate=" + std::to_string(prodSize/seconds)
                         + " Hz" << std::endl;
+                barrier.wait();
             }
         }
         catch (const std::exception& ex) {
@@ -261,20 +225,20 @@ protected:
 
     void startPerfClnt()
     {
-        hycast::SctpSock sock{hycast::Peer::getNumStreams()};
-        sock.connect(srvrSockAddr);
-        receiverFuture = completer.submit([this,sock]() mutable {
-            this->runPerfClnt(sock); });
+        receiverFuture = completer.submit([this]() mutable {
+            this->runPerfClnt(); });
     }
 
     // Objects declared here can be used by all tests in the test case for Peer.
     hycast::Future<void>    senderFuture;
     hycast::Future<void>    receiverFuture;
-    hycast::ProdInfo        prodInfo{"product", 1, 100000};
+    hycast::ProdInfo        prodInfo{1, "product", 100000};
     hycast::ChunkInfo       chunkInfo{prodInfo, 3};
     hycast::ProdIndex       prodIndex{1};
     char*                   data;
     hycast::Completer<void> completer{};
+    hycast::ChunkSize       chunkSizes[6] = {8000, 16000, 24000, 32000, 40000, 48000};
+    hycast::Barrier         barrier;
 };
 
 // Tests default construction

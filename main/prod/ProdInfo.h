@@ -12,9 +12,10 @@
 #ifndef PRODINFO_H_
 #define PRODINFO_H_
 
-#include "ChunkInfo.h"
-#include "HycastTypes.h"
+#include "Chunk.h"
 #include "ProdIndex.h"
+#include "ProdName.h"
+#include "ProdSize.h"
 #include "Serializable.h"
 
 #include <cstddef>
@@ -23,10 +24,9 @@
 
 namespace hycast {
 
-class ProdInfo : public Serializable<ProdInfo>
+class ProdInfo final : public Serializable<ProdInfo>
 {
-    class Impl; // Forward declaration
-
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
@@ -36,16 +36,36 @@ public:
     ProdInfo();
 
     /**
-     * Constructs from information on a product.
-     * @param[in] name       Product name
-     * @param[in] index      Product index
-     * @param[in] size       Size of product in bytes
-     * @throws std::invalid_argument if `name.size() > prodNameSizeMax`
+     * Constructs.
+     * @param[in] index        Product index
+     * @param[in] name         Product name
+     * @param[in] size         Size of product in bytes
+     * @param[in] chunkSize    Size of canonical data-chunk in bytes
+     * @throws InvalidArgument `name.size() > prodNameSizeMax`
      */
     ProdInfo(
-            const std::string& name,
-            const ProdIndex    index,
-            const ProdSize     size);
+            const ProdIndex index,
+            const ProdName& name,
+            const ProdSize  size,
+            const ChunkSize chunkSize = ChunkSize::defaultChunkSize);
+
+    /**
+     * Constructs a partial instance. The name will be the empty string.
+     * @param[in] index           Product index
+     * @param[in] size            Size of product
+     * @param[in] canonChunkSize  Size of a canonical data-chunk
+     */
+    ProdInfo(
+            const ProdIndex index,
+            const ProdSize  size,
+            const ChunkSize canonChunkSize);
+
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval `true`   Instance is valid
+     * @retval `false`  Instance is not valid
+     */
+    operator bool() const noexcept;
 
     /**
      * Returns a string representation of this instance.
@@ -59,7 +79,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    const std::string& getName() const;
+    const ProdName getName() const;
 
     /**
      * Returns the index of the product.
@@ -86,8 +106,8 @@ public:
     bool isEarlierThan(const ProdInfo& that) const noexcept;
 
     /**
-     * Returns the canonical size of the product's data chunks in bytes.
-     * @return Canonical size of the product's data chunks in bytes
+     * Returns the size of a canonical data-chunk.
+     * @return          Size of canonical data-chunk
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
@@ -95,13 +115,13 @@ public:
 
     /**
      * Returns the size, in bytes, of a given chunk-of-data.
-     * @param[in] index  Index of the chunk
-     * @return           The size of the chunk in bytes
-     * @throws std::invalid_argument if the index is invalid
-     * @execeptionsafety Strong guarantee
-     * @threadsafety     Safe
+     * @param[in] index        Index of data-chunk
+     * @return                 Size of chunk in bytes
+     * @throws InvalidArgument Index is invalid
+     * @execeptionsafety       Strong guarantee
+     * @threadsafety           Safe
      */
-    ChunkSize getChunkSize(ChunkIndex index) const;
+    ChunkSize getChunkSize(const ChunkIndex index) const;
 
     /**
      * Returns the number of chunks in the product.
@@ -109,46 +129,89 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkIndex getNumChunks() const;
+    ChunkIndex getNumChunks() const noexcept;
 
     /**
-     * Returns the offset, in bytes, from the start of the data-product's data
-     * to the data of the chunk.
-     * @param[in] chunkIndex  Origin-0 index of a chunk of data
-     * @return Offset to chunk's data from start of product's data
-     * @throws InvalidArgument Chunk-index is greater than or equal to the
-     *                         number of chunks
+     * Returns the index of the chunk with a given offset.
+     * @param[in] offset       Chunk-offset
+     * @return                 Chunk-index
+     * @throw InvalidArgument  Offset is invalid
      */
-    ChunkOffset getOffset(const ChunkIndex chunkIndex) const;
+    ChunkIndex getChunkIndex(const ChunkOffset offset) const;
 
     /**
-     * Vets information on a chunk-of-data ostensibly belonging to this
-     * instance's associated product.
-     * @param[in] chunkInfo  Information to be vetted
-     * @param[in] chunkSize  Size of the chunk in bytes
-     * @throws std::invalid_argument if the information is inconsistent with
-     *                               this instance's product
-     * @exceptionsafety Strong guarantee
+     * Returns the origin-0 index of a data-chunk.
+     * @param[in] chunkId      Chunk identifier
+     * @return                 Origin-0 index of data-chunk
+     * @throw InvalidArgument  Invalid chunk identifier
+     */
+    ChunkIndex getChunkIndex(const ChunkId chunkId) const;
+
+    /**
+     * Returns the offset to a given data-chunk.
+     * @param[in] index        Chunk index
+     * @return                 Offset to data-chunk
+     * @throw InvalidArgument  Chunk index is invalid
+     */
+    ChunkOffset getChunkOffset(const ChunkIndex index) const;
+
+    /**
+     * Returns the offset to a given data-chunk.
+     * @param[in] chunkId  Chunk identifier
+     * @return             Byte-offset to data-chunk
+     */
+    ChunkOffset getChunkOffset(const ChunkId chunkId) const;
+
+    /**
+     * Vets a chunk index.
+     * @param[in] chunkIndex   Chunk index
+     * @throw InvalidArgument  Chunk index is invalid
+     */
+    void vet(const ChunkIndex chunkIndex) const;
+
+    /**
+     * Returns information on a chunk.
+     * @param chunkIndex  Chunk index
+     * @return            Information on the chunk
+     */
+    ChunkInfo getChunkInfo(const ChunkIndex chunkIndex) const;
+
+    /**
+     * Returns chunk identifier.
+     * @param[in] offset        Chunk offset
+     * @return                  Chunk identifier
+     * @throws InvalidArgument  Chunk offset is invalid
+     * @execeptionsafety        Strong guarantee
+     * @threadsafety            Safe
+     */
+    ChunkId makeChunkId(const ChunkOffset chunkOffset) const;
+
+    /**
+     * Returns chunk identifier.
+     * @param[in] index         Chunk index
+     * @return                  Chunk identifier
+     * @throws InvalidArgument  Chunk index is invalid
+     * @execeptionsafety        Strong guarantee
+     * @threadsafety            Safe
+     */
+    ChunkId makeChunkId(const ChunkIndex index) const;
+
+    /**
+     * Indicates if this instance is considered equal to another except for,
+     * perhaps, the name.
+     * @param[in] that  Other instance
+     * @retval true     Instances are equal
+     * @retval false    Instances are not equal
+     * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    void vet(const ChunkInfo& chunkInfo,
-            const ChunkSize   chunkSize) const;
+    bool equalsExceptName(const ProdInfo& that) const noexcept;
 
     /**
-     * Returns information on a chunk of data corresponding to a chunk index.
-     * @param[in] chunkIndex  Chunk index
-     * @return Corresponding chunk information
-     * @throws InvalidArgument  The chunk index is invalid
-     * @execeptionsafety Strong guarantee
-     * @threadsafety     Safe
-     */
-    ChunkInfo makeChunkInfo(const ChunkIndex chunkIndex) const;
-
-    /**
-     * Indicates if this instance is equal to another.
-     * @param[in] that  The other instance
-     * @retval true   This instance is equal to the other
-     * @retval false  This instance is not equal to the other
+     * Indicates if this instance is considered equal to another.
+     * @param[in] that  Other instance
+     * @retval true     Instance is equal to other
+     * @retval false    Instance is not equal to other
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */

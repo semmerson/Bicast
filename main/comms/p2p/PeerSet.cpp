@@ -10,7 +10,6 @@
  */
 
 #include "Backlogger.h"
-#include "ChunkInfo.h"
 #include "Completer.h"
 #include "error.h"
 #include "InetSockAddr.h"
@@ -71,7 +70,7 @@ class PeerSet::Impl final
     {
     public:
         virtual void sendNotice(const ProdInfo& info) =0;
-        virtual void sendNotice(const ChunkInfo& info) =0;
+        virtual void sendNotice(const ChunkId& id) =0;
     };
 
     /// Abstract base class for send-actions.
@@ -122,10 +121,10 @@ class PeerSet::Impl final
     /// Send-action notice of a new chunk-of-data.
     class SendChunkNotice final : public SendAction
     {
-        ChunkInfo info;
+        ChunkId id;
     public:
-        SendChunkNotice(const ChunkInfo& info)
-            : info{info}
+        SendChunkNotice(const ChunkId& id)
+            : id{id}
         {}
         /**
          * Sends a notice of the availability of a chunk-of-data to a remote
@@ -136,7 +135,7 @@ class PeerSet::Impl final
          */
         void actUpon(Sender& sender)
         {
-            sender.sendNotice(info);
+            sender.sendNotice(id);
         }
     };
 
@@ -220,14 +219,14 @@ class PeerSet::Impl final
              * @throw LogicError  Next message from remote peer isn't a chunk
              *                    request
              */
-            ChunkInfo getStartWithFromRemote(Peer& peer)
+            ChunkId getStartWithFromRemote(Peer& peer)
             {
                 Peer::Message msg = peer.getMessage();
                 if (msg.getType() != Peer::MsgType::CHUNK_REQUEST)
                     throw LOGIC_ERROR(
                             "Initial message from remote peer isn't a chunk-request: "
                             "msgType=" + std::to_string(msg.getType()));
-                return msg.getChunkInfo();
+                return msg.getChunkId();
             }
 
             /**
@@ -263,13 +262,13 @@ class PeerSet::Impl final
                             msgRcvr.recvNotice(msg.getProdInfo(), peer);
                             break;
                         case Peer::CHUNK_NOTICE:
-                            msgRcvr.recvNotice(msg.getChunkInfo(), peer);
+                            msgRcvr.recvNotice(msg.getChunkId(), peer);
                             break;
                         case Peer::PROD_REQUEST:
                             msgRcvr.recvRequest(msg.getProdIndex(), peer);
                             break;
                         case Peer::CHUNK_REQUEST:
-                            msgRcvr.recvRequest(msg.getChunkInfo(), peer);
+                            msgRcvr.recvRequest(msg.getChunkId(), peer);
                             break;
                         case Peer::CHUNK:
                             msgRcvr.recvData(msg.getChunk(), peer);
@@ -280,8 +279,9 @@ class PeerSet::Impl final
                     }
                 }
                 catch (const std::exception& e) {
+                    //LOG_ERROR(e, "Error receiving from remote peer");
                     std::throw_with_nested(RUNTIME_ERROR(
-                            "Can't receive from remote peer: " +
+                            "Can't receive from remote peer " +
                             peer.to_string()));
                 }
             }
@@ -329,15 +329,15 @@ class PeerSet::Impl final
                 , completer{}
             {
                 // Configure incoming notices of backlog of available chunks
-                auto chunkInfo = prodStore.getOldestMissingChunk();
-                peer.sendRequest(chunkInfo);
-                chunkInfo = getStartWithFromRemote(peer);
-                if (!chunkInfo) {
+                auto chunkId = prodStore.getOldestMissingChunk();
+                peer.sendRequest(chunkId);
+                chunkId = getStartWithFromRemote(peer);
+                if (!chunkId) {
                     LOG_INFO("Remote peer " + peer.to_string() +
                             " didn't make a backlog request");
                 }
                 else {
-                    backlogger = Backlogger{peer, chunkInfo, prodStore};
+                    backlogger = Backlogger{peer, chunkId, prodStore};
                 }
             }
 
@@ -423,7 +423,7 @@ class PeerSet::Impl final
                 peer.sendNotice(info);
             }
 
-            void sendNotice(const ChunkInfo& info)
+            void sendNotice(const ChunkId& info)
             {
                 // No need to include this one in the backlog of available chunks
                 backlogger.doNotNotifyOf(info);
@@ -499,7 +499,9 @@ class PeerSet::Impl final
      * messages from its associated remote peer and is ready to send messages.
      * If the inserted peer makes the set of peers full, then all peer values
      * are reset.
+     * @pre              `mutex` is locked
      * @param[in] peer   Peer to be inserted
+     * @post             `mutex` is locked
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Compatible but not safe
      */
@@ -769,12 +771,12 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Safe
      */
-    void sendNotice(const ChunkInfo& info)
+    void sendNotice(const ChunkId& id)
     {
         LockGuard lock{mutex};
     	if (exception)
             std::rethrow_exception(exception);
-        std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
+        std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
         for (const auto& elt : addrToEntryMap)
             elt.second.push(action);
     }
@@ -782,18 +784,18 @@ public:
     /**
      * Sends information about a chunk-of-data to the remote peers except for
      * one.
-     * @param[in] info            Chunk information
+     * @param[in] id              Chunk-ID
      * @param[in] except          Address of remote peer to exclude
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Safe
      */
-    void sendNotice(const ChunkInfo& info, const InetSockAddr& except)
+    void sendNotice(const ChunkId& id, const InetSockAddr& except)
     {
         LockGuard lock{mutex};
     	if (exception)
             std::rethrow_exception(exception);
-        std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(info)};
+        std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
         for (const auto& elt : addrToEntryMap) {
             if (elt.first == except)
                 continue;
@@ -889,12 +891,12 @@ void PeerSet::sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except) c
     pImpl->sendNotice(prodInfo, except);
 }
 
-void PeerSet::sendNotice(const ChunkInfo& chunkInfo) const
+void PeerSet::sendNotice(const ChunkId& chunkId) const
 {
-    pImpl->sendNotice(chunkInfo);
+    pImpl->sendNotice(chunkId);
 }
 
-void PeerSet::sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except) const
+void PeerSet::sendNotice(const ChunkId& chunkInfo, const InetSockAddr& except) const
 {
     pImpl->sendNotice(chunkInfo, except);
 }

@@ -82,13 +82,27 @@ void hycast::Cue::wait() const
 Thread::Impl::ThreadMap::ThreadMap()
     : mutex{}
     , threads{}
+    , threadIndexes(0, false)
 {}
+
+long Thread::Impl::ThreadMap::setAndGetLowestUnusedIndex() noexcept
+{
+    long size = threadIndexes.size();
+    long num;
+    for (num = 0; num < size && threadIndexes[num]; ++num)
+        ;
+    if (num + 1 > threadIndexes.size())
+        threadIndexes.resize(num+1);
+    threadIndexes[num] = true;
+    return num;
+}
 
 void Thread::Impl::ThreadMap::add(Impl* const impl)
 {
     LockGuard lock{mutex};
     assert(impl->joinable());
     assert(threads.find(impl->id()) == threads.end());
+    impl->threadIndex = setAndGetLowestUnusedIndex();
     threads[impl->id()] = impl;
     //std::clog << "Added thread " << impl->id() << std::endl;
 }
@@ -99,10 +113,17 @@ bool Thread::Impl::ThreadMap::contains(const ThreadId& threadId)
     return threads.find(threadId) != threads.end();
 }
 
+/**
+ * Returns the `Thread` corresponding to a thread identifier.
+ * @param[in] threadId       Thread identifier
+ * @retval    `nullptr`      No such `Thread`
+ * @return                   Corresponding thread
+ */
 Thread::Impl* Thread::Impl::ThreadMap::get(const ThreadId& threadId)
 {
     LockGuard lock{mutex};
-    return threads.at(threadId);
+    auto iter = threads.find(threadId);
+    return (iter == threads.end()) ? nullptr : iter->second;
 }
 
 Thread::Impl::ThreadMap::Map::size_type
@@ -110,8 +131,12 @@ Thread::Impl::ThreadMap::erase(const ThreadId& threadId)
 {
     assert(threadId != ThreadId{});
     LockGuard lock{mutex};
-    const auto n = threads.erase(threadId);
-    return n;
+    auto iter = threads.find(threadId);
+    if (iter == threads.end())
+        return 0;
+    threadIndexes[iter->second->threadIndex] = false;
+    threads.erase(iter);
+    return 1;
 }
 
 Thread::Impl::ThreadMap::Map::size_type Thread::Impl::ThreadMap::size()
@@ -304,6 +329,17 @@ Thread::Impl::ThreadId Thread::Impl::getId() noexcept
     return std::this_thread::get_id();
 }
 
+long Thread::Impl::threadNumber() const noexcept
+{
+    return threadIndex;
+}
+
+long Thread::Impl::getThreadNumber() noexcept
+{
+    Impl* impl = threads.get(std::this_thread::get_id());
+    return impl ? impl->threadIndex : -1;
+}
+
 void Thread::Impl::cancel()
 {
     ensureCompleted();
@@ -311,7 +347,13 @@ void Thread::Impl::cancel()
 
 void Thread::Impl::cancel(const Id& threadId)
 {
-    threads.get(threadId)->cancel();
+    Impl* impl = threads.get(threadId);
+    if (impl) {
+        impl->cancel();
+    }
+    else {
+        throw OUT_OF_RANGE("No such `Thread`");
+    }
 }
 
 bool Thread::Impl::joinable() const
@@ -381,14 +423,23 @@ Thread::~Thread() noexcept
 }
 
 Thread::Id Thread::getId() noexcept
-
 {
     return Impl::getId();
+}
+
+long Thread::getThreadNumber() noexcept
+{
+    return Impl::getThreadNumber();
 }
 
 Thread::Id Thread::id() const
 {
     return pImpl ? pImpl->id() : Thread::Id{};
+}
+
+long Thread::threadNumber() const noexcept
+{
+    return pImpl ? pImpl->threadNumber() : -1;
 }
 
 bool Thread::enableCancel(const bool enable) noexcept

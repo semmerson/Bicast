@@ -27,8 +27,8 @@ class McastSender final
 public:
     typedef uint16_t MsgIdType;
 
-    static const MsgIdType prodInfoId = 0;
-    static const MsgIdType chunkId = 1;
+    static const MsgIdType prodInfoMsgId = 0;
+    static const MsgIdType chunkMsgId = 1;
 
     /**
      * Constructs.

@@ -9,8 +9,8 @@
  * @author: Steven R. Emmerson
  */
 
-#ifndef SOCKET_H_
-#define SOCKET_H_
+#ifndef SCTPSOCK_H_
+#define SCTPSOCK_H_
 
 #include "InetSockAddr.h"
 
@@ -346,5 +346,11 @@ public:
 };
 
 } // namespace
+
+namespace std {
+    inline string to_string(const hycast::BaseSctpSock& sock) {
+        return sock.to_string();
+    }
+}
 
 #endif

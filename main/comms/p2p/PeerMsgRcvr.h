@@ -14,7 +14,6 @@
 #define PEERMSGRCVR_H_
 
 #include "Chunk.h"
-#include "ChunkInfo.h"
 #include "Peer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
@@ -33,11 +32,11 @@ public:
      */
     virtual void recvNotice(const ProdInfo& info, const Peer& peer) =0;
     /**
-     * Receives a notice about a chunk-of-data.
-     * @param[in]     info  Information about the chunk
-     * @param[in,out] peer  Peer that received the notice
+     * Receives a notice about an available chunk-of-data.
+     * @param[in]     chunkId  Data-chunk identifier
+     * @param[in,out] peer     Peer that received the notice
      */
-    virtual void recvNotice(const ChunkInfo& info, const Peer& peer) =0;
+    virtual void recvNotice(const ChunkId& chunkId, const Peer& peer) =0;
     /**
      * Receives a request for information about a product.
      * @param[in]     index Index of the product
@@ -49,7 +48,7 @@ public:
      * @param[in]     info  Information on the chunk
      * @param[in,out] peer  Peer that received the request
      */
-    virtual void recvRequest(const ChunkInfo& info, const Peer& peer) =0;
+    virtual void recvRequest(const ChunkId& info, const Peer& peer) =0;
     /**
      * Receives a chunk-of-data.
      * @param[in]     chunk  Chunk-of-data

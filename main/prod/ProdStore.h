@@ -14,7 +14,7 @@
 #define MAIN_PROD_PRODSTORE_H_
 
 #include "Chunk.h"
-#include "ProdInfo.h"
+#include "Product.h"
 #include "ProdRcvr.h"
 
 #include <memory>
@@ -42,7 +42,7 @@ public:
          * @retval ChunkInfo{}  No such chunk exists
          * @return              Information on a chunk of data
          */
-        const ChunkInfo operator *();
+        const ChunkId operator *();
         ChunkInfoIterator& operator ++();
     };
 
@@ -54,15 +54,12 @@ public:
         unsigned              status;
         static const unsigned IS_COMPLETE = 1;
         static const unsigned IS_NEW = 2;
-        static const unsigned IS_DUPLICATE = 4;
     public:
         inline AddStatus() : status{0}   {}
         inline AddStatus& setNew()       { status |= IS_NEW; return *this; }
         inline AddStatus& setComplete()  { status |= IS_COMPLETE; return *this; }
-        inline AddStatus& setDuplicate() { status |= IS_DUPLICATE; return *this; }
         inline bool isNew()       const  { return status & IS_NEW; }
         inline bool isComplete()  const  { return status & IS_COMPLETE; }
-        inline bool isDuplicate() const  { return status & IS_DUPLICATE; }
     };
 
     /**
@@ -121,7 +118,8 @@ public:
      * doesn't already exist. Will not overwrite an existing chunk of data in
      * the product.
      * @param[in]  chunk  Latent chunk of data to be added
-     * @param[out] prod   Associated product
+     * @param[out] prod   Associated product. Set iff the return status
+     *                    indicates the product is complete.
      * @return            Status of the addition
      * @exceptionsafety   Strong guarantee
      * @threadsafety      Safe
@@ -139,13 +137,11 @@ public:
     /**
      * Returns product-information on a given data-product.
      * @param[in]  index  Index of the data-product
-     * @param[out] info   Information on the given product
-     * @retval `true`     Information found. `info` is set.
-     * @retval `false`    Information not found. `info` is not set.
+     * return             Product information. Will be invalid if no such
+     *                    data-product exists.
+     * @see `ProdInfo::operator bool()`
      */
-    bool getProdInfo(
-            const ProdIndex index,
-            ProdInfo&       info) const;
+    ProdInfo getProdInfo(const ProdIndex index) const;
 
     /**
      * Indicates if this instance contains a given chunk of data.
@@ -153,26 +149,23 @@ public:
      * @retval `true`   Chunk exists
      * @retval `false`  Chunk doesn't exist
      */
-    bool haveChunk(const ChunkInfo& info) const;
+    bool haveChunk(const ChunkId& info) const;
 
     /**
-     * Returns the chunk of data corresponding to chunk-information.
-     * @param[in]  info   Information on the desired chunk
-     * @param[out] chunk  Corresponding chunk of data
-     * @retval `true`     Chunk found. `chunk` is set.
-     * @retval `false`    Chunk not found. `chunk` is not set.
+     * Returns the identified chunk of data.
+     * @param[in]  id     Chunk identifier
+     * @return            Data-chunk. Will be invalid if no such chunk exists.
+     * @see `Chunk::operator bool()`
      */
-    bool getChunk(
-            const ChunkInfo& info,
-            ActualChunk&     chunk) const;
+    ActualChunk getChunk(const ChunkId& id) const;
 
     /**
      * Returns information on the oldest missing data-chunk.
      * @return  Information on the oldest missing data-chunk
      */
-    ChunkInfo getOldestMissingChunk() const;
+    ChunkId getOldestMissingChunk() const;
 
-    ChunkInfoIterator getChunkInfoIterator(const ChunkInfo& startWith) const;
+    ChunkInfoIterator getChunkInfoIterator(const ChunkId& startWith) const;
 };
 
 } // namespace

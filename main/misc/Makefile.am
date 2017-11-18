@@ -12,6 +12,7 @@ lib_la_SOURCES 	= \
 	logging.cpp logging.h \
 	error.cpp error.h \
 	DelayQueue.h \
+	FixedDelayQueue.h \
 	MapOfLists.cpp MapOfLists.h \
 	Thread.h Thread.cpp \
 	Future.cpp Future.h \

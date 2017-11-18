@@ -165,8 +165,8 @@ class FileIngester::Impl : public Ingester::Impl
         return Product{};
     }
 
-    explicit Impl(const std::string& dirPathname)
-        : dirPathname{dirPathname}
+    explicit Impl(const std::string& rootDirPathname)
+        : dirPathname{rootDirPathname}
         , fd{::inotify_init1(IN_CLOEXEC)}
         , start{}
         , scanDir{true}
@@ -175,11 +175,10 @@ class FileIngester::Impl : public Ingester::Impl
         if (fd == -1)
             throw SYSTEM_ERROR("inotify_init1() failure");
         try {
-            dirStack.push(dirPathname);
+            dirStack.push(rootDirPathname);
 
-            auto wd = ::inotify_add_watch(fd, dirPathname.data(),
-                    IN_CLOSE_WRITE | IN_CREATE | IN_DELETE_SELF |
-                    IN_MOVED_TO);
+            auto wd = ::inotify_add_watch(fd, rootDirPathname.data(),
+                    IN_CLOSE_WRITE | IN_CREATE | IN_DELETE_SELF | IN_MOVED_TO);
             if (wd == -1)
                 throw SYSTEM_ERROR("inotify_add_watch() failure");
 
@@ -207,7 +206,7 @@ class FileIngester::Impl : public Ingester::Impl
         }
         return getInotifyProd();
     }
-};
+}; // FileIngester::Impl
 
 FileIngester::FileIngester()
     : Ingester{}

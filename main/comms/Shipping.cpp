@@ -8,6 +8,32 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
+ * Current Protocol:
+ *      Product Notice = ProdInfo
+ *           ProdIndex       8
+ *           ProdSize        4
+ *           CanonChunkSize  2
+ *           ProdName
+ *              length       2
+ *              char         ?
+ *
+ *      ProdInfo Request = ProdIndex
+ *           ProdIndex       8
+ *
+ *      Chunk Notice = ChunkId
+ *           ProdIndex       8
+ *           ChunkIndex      4
+ *
+ *      Chunk Request = ChunkId:
+ *
+ *      Chunk = ActualChunk -> LatentChunk
+ *           ChunkId        12
+ *           ProdSize        4
+ *           CanonChunkSize  2
+ *           ChunkData
+ *              ChunkSize    2 (transient; encoded in payload protocol ID)
+ *              char         ?
+ *
  *   @file: Shipping.cpp
  * @author: Steven R. Emmerson
  */
@@ -63,7 +89,7 @@ class Shipping::Impl final
              * @param[in]     info  Information about the chunk
              * @param[in,out] peer  Peer that sent the notice
              */
-            void recvNotice(const ChunkInfo& info, const Peer& peer)
+            void recvNotice(const ChunkId& info, const Peer& peer)
             {}
 
             /**
@@ -74,8 +100,8 @@ class Shipping::Impl final
              */
             void recvRequest(const ProdIndex& index, const Peer& peer)
             {
-                ProdInfo info;
-                if (prodStore.getProdInfo(index, info))
+                auto info = prodStore.getProdInfo(index);
+                if (info)
                     peer.sendNotice(info);
                 //peerSet.decValue(peer); // Needy peers are bad?
             }
@@ -85,10 +111,10 @@ class Shipping::Impl final
              * @param[in]     info  Information on the chunk
              * @param[in,out] peer  Peer that sent the request
              */
-            void recvRequest(const ChunkInfo& info, const Peer& peer)
+            void recvRequest(const ChunkId& id, const Peer& peer)
             {
-                ActualChunk chunk;
-                if (prodStore.getChunk(info, chunk))
+                auto chunk = prodStore.getChunk(id);
+                if (chunk)
                     peer.sendData(chunk);
                 //peerSet.decValue(peer); // Needy peers are bad?
             }
@@ -202,7 +228,7 @@ class Shipping::Impl final
             peerSet.sendNotice(prodInfo);
             ChunkIndex numChunks = prodInfo.getNumChunks();
             for (ChunkIndex i = 0; i < numChunks; ++i)
-                peerSet.sendNotice(ChunkInfo{prodInfo, i});
+                peerSet.sendNotice(ChunkId{prodInfo, i});
         }
     }; // Class `PeerMgr`
 

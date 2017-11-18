@@ -298,6 +298,19 @@ TEST_F(ThreadTest, MoveAssignment)
     EXPECT_EQ(1, hycast::Thread::size());
 }
 
+// Tests thread number
+TEST_F(ThreadTest, ThreadNumber)
+{
+    ASSERT_EQ(0, hycast::Thread::size());
+    auto thread1 = hycast::Thread{[]{hycast::Canceler canceler{}; ::pause();}};
+    auto thread2 = hycast::Thread{[]{hycast::Canceler canceler{}; ::pause();}};
+    EXPECT_LT(thread1.threadNumber(), thread2.threadNumber());
+    thread1.cancel();
+    thread1.join();
+    auto thread3 = hycast::Thread{[]{hycast::Canceler canceler{}; ::pause();}};
+    EXPECT_LT(thread3.threadNumber(), thread2.threadNumber());
+}
+
 // Tests id() of joined p2pMgrThread
 TEST_F(ThreadTest, IdOfJoinedThread)
 {

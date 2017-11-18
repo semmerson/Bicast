@@ -9,7 +9,7 @@
  * @author: Steven R. Emmerson
  */
 
-#include "ChunkInfo.h"
+#include <Chunk.h>
 #include "error.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
@@ -46,18 +46,18 @@ void runClient()
 
         hycast::Channel<hycast::ProdInfo> prodInfoChannel(sock, 0, 0);
         EXPECT_EQ(sock, prodInfoChannel.getSocket());
-        hycast::ProdInfo prodInfo1("product", 1, 5);
+        hycast::ProdInfo prodInfo1(1, "product", 5);
         prodInfoChannel.send(prodInfo1);
         EXPECT_EQ(0, sock.getStreamId());
         hycast::ProdInfo prodInfo2(prodInfoChannel.recv());
         EXPECT_TRUE(prodInfo1 == prodInfo2);
 
-        hycast::Channel<hycast::ChunkInfo> chunkInfoChannel(sock, 1, 0);
+        hycast::Channel<hycast::ChunkId> chunkInfoChannel(sock, 1, 0);
         EXPECT_EQ(sock, chunkInfoChannel.getSocket());
-        hycast::ChunkInfo chunkInfo1(prodInfo1, 0);
+        hycast::ChunkId chunkInfo1(prodInfo1, 0);
         chunkInfoChannel.send(chunkInfo1);
         EXPECT_EQ(1, sock.getStreamId());
-        hycast::ChunkInfo chunkInfo2(chunkInfoChannel.recv());
+        hycast::ChunkId chunkInfo2(chunkInfoChannel.recv());
         EXPECT_TRUE(chunkInfo1 == chunkInfo2);
     }
     catch (const std::exception& e) {

@@ -10,6 +10,7 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "Interface.h"
 #include "McastSender.h"
 #include "P2pMgr.h"
@@ -23,9 +24,11 @@
 #include "Thread.h"
 #include "YamlPeerSource.h"
 
+#include <atomic>
+#include <climits>
 #include <gtest/gtest.h>
 #include <iostream>
-#include <climits>
+#include <mutex>
 
 namespace {
 
@@ -35,12 +38,22 @@ class ShipRecvTest : public ::testing::Test, public hycast::Processing
 protected:
     void process(hycast::Product prod)
     {
-        static int n = 0;
-        auto info = prod.getInfo();
+        // Parentheses must be used in the following statement
+        static std::vector<bool>    rcvdProdIndexes(NUM_PRODUCTS, false);
+        static std::mutex           mutex;
+        static unsigned long        rcvdUniqueProds = 0;
+        static int                  seqIndex{0};
+        std::lock_guard<std::mutex> lock{mutex};
+        auto                        info = prod.getInfo();
+        size_t                      prodIndex =
+                static_cast<uint64_t>(info.getIndex());
         perfMeter.product(info);
-        LOG_INFO("product#=%d, prodIndex=%s", n,
-                std::to_string(info.getIndex()).c_str());
-        if (++n == NUM_PRODUCTS)
+        LOG_INFO("product#=%d, prodIndex=%zu", seqIndex++, prodIndex);
+        if (rcvdProdIndexes.at(prodIndex))
+            throw hycast::LOGIC_ERROR("Duplicate product: index=" +
+                    std::to_string(prodIndex));
+        rcvdProdIndexes[prodIndex] = true;
+        if (++rcvdUniqueProds == NUM_PRODUCTS)
             cue.cue();
     }
 
@@ -51,12 +64,12 @@ protected:
         srcMcastInfo.srcAddr = localInetAddr;
 
         for (size_t i = 0; i < sizeof(data); ++i)
-                data[i] = i % UCHAR_MAX;
+            data[i] = i % UCHAR_MAX;
     }
 
     const double                    drop = 0.2;
     const int                       NUM_PRODUCTS = 100;
-    unsigned char                   data[10000];
+    char                            data[10000];
     //unsigned char                   data[1];
     hycast::ProdStore               prodStore{};
     const in_port_t                 srcPort{38800};
@@ -109,7 +122,7 @@ TEST_F(ShipRecvTest, ShippingAndReceiving) {
     // Ship products
     for (hycast::ProdIndex i = 0; NUM_PRODUCTS > i; ++i) {
         std::string name = std::string{"product " } + std::to_string(i);
-        hycast::Product prod{name, i, data, sizeof(data)};
+        hycast::CompleteProduct prod{i, name, sizeof(data), data};
         shipping.ship(prod);
     }
 

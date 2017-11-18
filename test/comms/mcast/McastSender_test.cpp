@@ -55,16 +55,16 @@ TEST_F(McastSenderTest, Construction) {
 TEST_F(McastSenderTest, SendDataProduct) {
     hycast::InetSockAddr    mcastAddr("234.128.117.0", 38800);
     hycast::McastSender     sender(mcastAddr, 0);
-    const std::string       prodName("product");
+    const hycast::ProdName  prodName("product");
     const hycast::ProdIndex prodIndex(0);
 //    const hycast::ProdSize  prodSize{38000};
     const hycast::ProdSize  prodSize{2800};
-    hycast::ProdInfo        prodInfo(prodName, prodIndex, prodSize);
-    hycast::Product         prod(prodInfo);
+    hycast::ProdInfo        prodInfo{prodIndex, prodName, prodSize};
+    hycast::PartialProduct  prod(prodInfo);
     for (hycast::ChunkIndex chunkIndex = 0;
             chunkIndex < prodInfo.getNumChunks(); ++chunkIndex) {
         auto dataSize = prodInfo.getChunkSize(chunkIndex);
-        char data[dataSize];
+        char data[static_cast<size_t>(dataSize)];
         ::memset(data, 0xbd, dataSize);
         hycast::ChunkInfo   chunkInfo(prodInfo, chunkIndex);
         hycast::ActualChunk chunk(chunkInfo, data);

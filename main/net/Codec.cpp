@@ -13,6 +13,7 @@
 #include "config.h"
 
 #include "Codec.h"
+#include "error.h"
 
 #include <climits>
 #include <cstring>
@@ -49,6 +50,11 @@ size_t Codec::getSerialSize(const size_t size) noexcept
     return size;
 }
 
+size_t Codec::getSerialSize(const bool* value)
+{
+    return sizeof(bool);
+}
+
 size_t Codec::getSerialSize(const uint16_t* value)
 {
     return sizeof(uint16_t);
@@ -80,6 +86,28 @@ Decoder::Decoder(
 Decoder::~Decoder()
 {}
 
+size_t Encoder::encode(const bool value)
+{
+    const size_t len = sizeof(bool);
+    if (serialBufBytes + len > serialBufSize)
+        throw std::runtime_error("Buffer-write overflow");
+    *reinterpret_cast<uint8_t*>(nextSerial) = value;
+    serialBufBytes += len;
+    nextSerial += len;
+    return len;
+}
+
+size_t Encoder::encode(const uint8_t value)
+{
+    const size_t len = sizeof(uint8_t);
+    if (serialBufBytes + len > serialBufSize)
+        throw std::runtime_error("Buffer-write overflow");
+    *reinterpret_cast<uint8_t*>(nextSerial) = value;
+    serialBufBytes += len;
+    nextSerial += len;
+    return len;
+}
+
 size_t Encoder::encode(const uint16_t value)
 {
     const size_t len = sizeof(uint16_t);
@@ -106,6 +134,26 @@ size_t Encoder::encode(const uint64_t value)
 {
     const uint32_t* ptr = reinterpret_cast<const uint32_t*>(&value);
     return encode(ptr[0]) +  encode(ptr[1]);
+}
+
+void Decoder::decode(bool& value)
+{
+    const size_t len = sizeof(bool);
+    if (serialBufBytes < len)
+        throw std::runtime_error("Buffer-read overflow");
+    value = *reinterpret_cast<bool*>(nextSerial);
+    serialBufBytes -= len;
+    nextSerial += len;
+}
+
+void Decoder::decode(uint8_t& value)
+{
+    const size_t len = sizeof(uint8_t);
+    if (serialBufBytes < len)
+        throw std::runtime_error("Buffer-read overflow");
+    value = *reinterpret_cast<uint8_t*>(nextSerial);
+    serialBufBytes -= len;
+    nextSerial += len;
 }
 
 void Decoder::decode(uint16_t& value)
@@ -188,12 +236,17 @@ size_t Decoder::decode(
 
 void Encoder::flush()
 {
-    struct iovec iov[2];
-    iov[0].iov_base = serialBuf;
-    iov[0].iov_len = nextSerial - serialBuf;
-    iov[1] = dma;
-    reset();
-    write(iov, 2);
+    try {
+        struct iovec iov[2];
+        iov[0].iov_base = serialBuf;
+        iov[0].iov_len = nextSerial - serialBuf;
+        iov[1] = dma;
+        reset();
+        write(iov, 2);
+    }
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Couldn't flush I/O"));
+    }
 }
 
 size_t Decoder::fill(size_t nbytes)
@@ -216,10 +269,27 @@ size_t Decoder::fill(size_t nbytes)
     return nbytes;
 }
 
+size_t Decoder::numRemainingBytes()
+{
+    return getSize() - (nextSerial - serialBuf);
+}
+
 void Decoder::clear()
 {
     discard();
     reset();
+}
+
+bool Decoder::operator==(const Decoder& that) const noexcept
+{
+    return (this == &that) || (
+            (serialBufSize == that.serialBufSize) &&
+            (serialBuf == that.serialBuf) &&
+            (nextSerial == that.nextSerial) &&
+            (serialBufBytes == that.serialBufBytes) &&
+            (dma.iov_base == that.dma.iov_base) &&
+            (dma.iov_len == that.dma.iov_len)
+        );
 }
 
 MemEncoder::MemEncoder(
@@ -246,10 +316,10 @@ void MemEncoder::write(
 }
 
 MemDecoder::MemDecoder(
-        const char* const  memBuf,
-        const size_t       bufLen)
-    : Decoder(bufLen)
-    , memBuf{memBuf}
+        const char* const  msg,
+        const size_t       msgLen)
+    : Decoder(msgLen)
+    , memBuf{msg}
     , memRead{0}
 {}
 
@@ -280,6 +350,26 @@ size_t MemDecoder::read(
 bool MemDecoder::hasRecord()
 {
     return memRead < serialBufSize;
+}
+
+bool MemDecoder::operator==(const MemDecoder& that) const noexcept
+{
+    return (this == &that) || (
+            (serialBufSize == that.serialBufSize) &&
+            (serialBuf == that.serialBuf) &&
+            (nextSerial == that.nextSerial) &&
+            (serialBufBytes == that.serialBufBytes) &&
+            (dma.iov_base == that.dma.iov_base) &&
+            (dma.iov_len == that.dma.iov_len) &&
+            (memBuf == that.memBuf) &&
+            (memRead == that.memRead)
+        );
+}
+
+bool MemDecoder::operator==(const Decoder& that) const noexcept
+{
+    auto memDecoder = dynamic_cast<const MemDecoder*>(&that);
+    return memDecoder ? operator==(*memDecoder) : false;
 }
 
 } // namespace

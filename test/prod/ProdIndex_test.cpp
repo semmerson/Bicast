@@ -64,7 +64,9 @@ TEST_F(ProdIndexTest, Comparison) {
     EXPECT_TRUE(index4 >= index3);
     EXPECT_TRUE(index4 >= index4);
     EXPECT_TRUE(index4 < index1);
-    EXPECT_TRUE(index1 > index4);
+    EXPECT_FALSE(index1 < index4);
+    EXPECT_TRUE(index4.isEarlierThan(index1));
+    EXPECT_FALSE(index1.isEarlierThan(index4));
 }
 
 // Tests increment

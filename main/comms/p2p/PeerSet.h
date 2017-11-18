@@ -135,12 +135,12 @@ public:
 
     /**
      * Sends information about a chunk-of-data to all peers in the set.
-     * @param[in] chunkInfo       Chunk information
+     * @param[in] chunkId         Chunk-ID
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkId& chunkId) const;
 
     /**
      * Sends information about a chunk-of-data to all peers in the set except
@@ -151,7 +151,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const InetSockAddr& except) const;
+    void sendNotice(const ChunkId& chunkInfo, const InetSockAddr& except) const;
 
     /**
      * Increments the value of a peer.

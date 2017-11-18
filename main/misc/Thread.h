@@ -25,6 +25,7 @@
 #include <memory>
 #include <pthread.h>
 #include <thread>
+#include <vector>
 
 #define THREAD_CLEANUP_PUSH(func, arg) pthread_cleanup_push(func, arg)
 #define THREAD_CLEANUP_POP(execute)    pthread_cleanup_pop(execute)
@@ -218,8 +219,11 @@ private:
             typedef std::lock_guard<Mutex>    LockGuard;
             typedef std::map<ThreadId, Impl*> Map;
 
-            mutable Mutex mutex;
-            Map           threads;
+            mutable Mutex      mutex;
+            Map                threads;
+            std::vector<bool>  threadIndexes;
+
+            long setAndGetLowestUnusedIndex() noexcept;
 
         public:
             ThreadMap();
@@ -240,15 +244,16 @@ private:
         typedef std::unique_lock<Mutex> UniqueLock;
         typedef std::condition_variable Cond;
 
-        mutable Mutex       mutex;
-        mutable Cond        cond;
-        std::exception_ptr  exception;
-        unsigned            state;
-        Barrier             barrier;
-        mutable std::thread stdThread;
+        mutable Mutex                   mutex;
+        mutable Cond                    cond;
+        std::exception_ptr              exception;
+        unsigned                        state;
+        Barrier                         barrier;
+        long                            threadIndex;
+        mutable std::thread             stdThread;
         std::thread::native_handle_type native_handle;
         /// Set of joinable threads:
-        static ThreadMap    threads;
+        static ThreadMap                threads;
 
         /**
          * Indicates if the mutex is locked or not.
@@ -261,12 +266,6 @@ private:
          * @retval `false`  The mutex is not locked
          */
         bool isLocked() const;
-
-        /**
-         * Adds a joinable thread object to the set of such objects.
-         * @param[in] thread  Joinable thread object to be added
-         */
-        void add();
 
         inline void setStateBit(const State bit)
         {
@@ -384,6 +383,7 @@ private:
             , exception{}
             , state{State::unset}
             , barrier{2}
+            , threadIndex{-1} // Unknown thread number
             , stdThread{[this](decltype(
                     std::bind(callable, std::forward<Args>(args)...))&&
                             boundCallable) mutable {
@@ -412,7 +412,7 @@ private:
             if (exception)
                 std::rethrow_exception(exception);
             native_handle = stdThread.native_handle();
-            threads.add(this);
+            threads.add(this); // Sets `this->threadIndex`
         }
 
         /**
@@ -438,6 +438,21 @@ private:
          * @threadsafety     Safe
          */
         static ThreadId getId() noexcept;
+
+        /**
+         * Returns the thread-number. This is useful in,
+         * for example, logging to identify messages from the same thread.
+         * @return     Thread number
+         */
+        long threadNumber() const noexcept;
+
+        /**
+         * Returns the thread-number of the current thread. This is useful in,
+         * for example, logging to identify messages from the same thread.
+         * @retval -1  Current thread isn't a `Thread`
+         * @return     Thread number of the current thread
+         */
+        static long getThreadNumber() noexcept;
 
         /**
          * Cancels the thread. Idempotent. The completion of the
@@ -557,6 +572,14 @@ public:
     static Id getId() noexcept;
 
     /**
+     * Returns the thread-number of the current thread. This is useful in,
+     * for example, logging to identify messages from the same thread.
+     * @retval -1  Current thread isn't a `Thread`
+     * @return     Thread number of the current thread
+     */
+    static long getThreadNumber() noexcept;
+
+    /**
      * Returns the identifier of this instance.
      * @return                 Identifier of this instance
      * @throw InvalidArgument  This instance was default constructed or joined
@@ -564,6 +587,13 @@ public:
      * @threadsafety           Safe
      */
     Id id() const;
+
+    /**
+     * Returns the thread-number. This is useful in,
+     * for example, logging to identify messages from the same thread.
+     * @return     Thread number
+     */
+    long threadNumber() const noexcept;
 
     /**
      * Sets the cancelability of the current thread.

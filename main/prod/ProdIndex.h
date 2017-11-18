@@ -1,5 +1,5 @@
 /**
- * This file declares the product-index.
+ * This file declares the index of a data-product.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -12,8 +12,7 @@
 #ifndef PRODINDEX_H_
 #define PRODINDEX_H_
 
-#include "HycastTypes.h"
-#include "RecStream.h"
+#include "SerialInt.h"
 #include "Serializable.h"
 
 #include <cstdint>
@@ -32,7 +31,7 @@ public:
     typedef uint64_t  type;
 
 private:
-    type index;
+    SerialInt<type> index;
 
 public:
     static const type prodIndexMax = UINT64_MAX;
@@ -41,98 +40,78 @@ public:
      * Constructs. NB: Not explicit.
      * @param[in] index  Product index
      */
-    ProdIndex(const type index = 0) noexcept
+    inline ProdIndex(const type index = 0) noexcept
         : index{index}
     {}
 
     /**
-     * Copy constructs.
-     * @param[in] that  Other instance
-     */
-    ProdIndex(const ProdIndex& that) noexcept
-        : index{that.index}
-    {}
-
-    /**
-     * Move constructs.
-     * @param[in] that  Other instance
-     */
-    ProdIndex(const ProdIndex&& that) noexcept
-        : index{that.index}
-    {}
-
-    /**
-     * Copy assigns.
-     * @param[in] that  Other instance
-     */
-    ProdIndex& operator =(const ProdIndex& rhs) noexcept
-    {
-        index = rhs.index;
-        return *this;
-    }
-
-    /**
-     * Move assigns.
-     * @param[in] that  Other instance
-     */
-    ProdIndex& operator =(const ProdIndex&& rhs) noexcept
-    {
-        index = rhs.index;
-        return *this;
-    }
-
-    /**
      * Converts.
      */
-    operator uint64_t() const noexcept
+    inline operator type() const noexcept
     {
-        return index;
+        return static_cast<type>(index);
     }
 
-    std::string to_string() const
+    inline std::string to_string() const
     {
-        return std::to_string(index);
+        return index.to_string();
     }
 
     /**
      * Returns the hash code of this instance.
-     * @return This instance's hash cod
+     * @return          This instance's hash code
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    size_t hash() const noexcept {
-        return std::hash<type>()(index);
+    inline size_t hash() const noexcept {
+        return index.hash();
     }
 
-    bool operator ==(const ProdIndex& that) const noexcept {
+    inline bool operator ==(const ProdIndex& that) const noexcept {
         return index == that.index;
     }
-    bool operator !=(const ProdIndex& that) const noexcept {
+    inline bool operator !=(const ProdIndex& that) const noexcept {
         return index != that.index;
     }
-    bool operator <(const ProdIndex& that) const noexcept {
+    /**
+     * NB: Circular nature accounted for.
+     */
+    inline bool operator <(const ProdIndex& that) const noexcept {
         return that.index - index < prodIndexMax/2 && that.index != index;
     }
-    bool operator <=(const ProdIndex& that) const noexcept {
+    /**
+     * NB: Circular nature accounted for.
+     */
+    inline bool operator <=(const ProdIndex& that) const noexcept {
         return that.index - index < prodIndexMax/2;
     }
-    bool operator >(const ProdIndex& that) const noexcept {
+    /**
+     * NB: Circular nature accounted for.
+     */
+    inline bool operator >(const ProdIndex& that) const noexcept {
         return index - that.index < prodIndexMax/2 && that.index != index;
     }
-    bool operator >=(const ProdIndex& that) const noexcept {
+    /**
+     * NB: Circular nature accounted for.
+     */
+    inline bool operator >=(const ProdIndex& that) const noexcept {
         return index - that.index < prodIndexMax/2;
     }
-    ProdIndex& operator ++() noexcept {
+    inline ProdIndex& operator ++() noexcept {
         ++index;
         return *this;
     }
-    ProdIndex& operator --() noexcept {
+    inline ProdIndex& operator --() noexcept {
         --index;
         return *this;
     }
 
+    inline bool isEarlierThan(const ProdIndex& that) const noexcept {
+        return (that.index - index) <= prodIndexMax/2;
+    }
+
     /**
-     * Returns the number of bytes in the serial representation of this
+     * Returns the number of bytes in the serial representation of an
      * instance.
      * @param[in] version  Protocol version
      * @return the number of bytes in the serial representation
@@ -147,17 +126,23 @@ public:
      * @param[in] version  Protocol version
      * @return the number of bytes in the serial representation
      */
-    size_t getSerialSize(unsigned version) const noexcept {
-        return getStaticSerialSize(version);
+    inline size_t getSerialSize(unsigned version) const noexcept {
+        return index.getSerialSize(version);
     }
 
-    size_t serialize(
+    inline size_t serialize(
             Encoder&       encoder,
-            const unsigned version) const;
+            const unsigned version) const
+    {
+        return index.serialize(encoder, version);
+    }
 
-    static ProdIndex deserialize(
+    inline static ProdIndex deserialize(
             Decoder&       decoder,
-            const unsigned version);
+            const unsigned version)
+    {
+        return SerialInt<type>::deserialize(decoder, version);
+    }
 };
 
 } // namespace

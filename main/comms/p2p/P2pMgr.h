@@ -129,7 +129,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo) const;
+    void sendNotice(const ChunkId& chunkInfo) const;
 
     /**
      * Sends information about a chunk-of-data to the remote peers except for
@@ -140,7 +140,7 @@ public:
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkInfo& chunkInfo, const Peer& except) const;
+    void sendNotice(const ChunkId& chunkInfo, const Peer& except) const;
 };
 
 } // namespace
