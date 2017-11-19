@@ -90,6 +90,8 @@ public:
      */
     Peer(const InetSockAddr& peerAddr);
 
+    void runReceiver() const;
+
     /**
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer

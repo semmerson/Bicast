@@ -151,17 +151,7 @@ class Peer::Impl final {
     Channel<ChunkId>                  chunkReqChan;
     Channel<ActualChunk,LatentChunk>  chunkChan;
     SctpSock                          sock;
-
-    class : public PeerMsgRcvr
-    {
-        void recvNotice(const ProdInfo& info) {}
-        void recvNotice(const ProdInfo& info, const Peer& peer) {}
-        void recvNotice(const ChunkId& info, const Peer& peer) {}
-        void recvRequest(const ProdIndex& index, const Peer& peer) {}
-        void recvRequest(const ChunkId& info, const Peer& peer) {}
-        void recvData(LatentChunk chunk) {}
-        void recvData(LatentChunk chunk, const Peer& peer) {}
-    }                      defaultMsgRcvr;
+    PeerMsgRcvr*                      msgRcvr;
 
     /**
      * @throw LogicError       Unknown protocol version from remote peer
@@ -170,6 +160,14 @@ class Peer::Impl final {
     Impl(SctpSock&& sock)
         : Impl{std::ref<SctpSock>(sock)}
     {}
+
+    /**
+     * Every peer implementation is unique.
+     */
+    Impl(const Impl& impl) =delete;
+    Impl(const Impl&& impl) =delete;
+    Impl& operator=(const Impl& impl) =delete;
+    Impl& operator=(const Impl&& impl) =delete;
 
     /**
      * Returns the protocol version of the remote peer.
@@ -184,13 +182,12 @@ class Peer::Impl final {
             throw LOGIC_ERROR("Current message isn't a version message");
         return versionChan.recv().getVersion();
     }
-     /**
-      * Every peer implementation is unique.
-      */
-     Impl(const Impl& impl) =delete;
-     Impl(const Impl&& impl) =delete;
-     Impl& operator=(const Impl& impl) =delete;
-     Impl& operator=(const Impl&& impl) =delete;
+
+    void sendVersion()
+    {
+        VersionMsg msg(version);
+        versionChan.send(msg);
+    }
 
 public:
     /**
@@ -205,7 +202,8 @@ public:
           prodReqChan(),
           chunkReqChan(),
           chunkChan(),
-          sock()
+          sock(),
+          msgRcvr{nullptr}
     {}
 
     /**
@@ -268,6 +266,39 @@ public:
     {
         return sock.getRemoteAddr();
     }
+
+#if 0
+    void runReceiver()
+    {
+        for (;;) {
+            if (sock.getSize() == 0) // Blocks waiting for input
+                break;
+            switch (sock.getStreamId()) {
+                case PROD_NOTICE_STREAM_ID:
+                    msgRcvr->recvNotice(prodNoticeChan.recv(), *peer);
+                    break;
+                case CHUNK_NOTICE_STREAM_ID:
+                    msgRcvr->recvNotice(chunkNoticeChan.recv(), *peer);
+                    break;
+                case PROD_REQ_STREAM_ID:
+                    msgRcvr->recvRequest(prodReqChan.recv(), *peer);
+                    break;
+                case CHUNK_REQ_STREAM_ID:
+                    msgRcvr->recvRequest(chunkReqChan.recv(), *peer);
+                    break;
+                case CHUNK_STREAM_ID: {
+                    msgRcvr->recvData(chunkChan.recv(), *peer);
+                    break;
+                }
+                default:
+                    LOG_WARN("Discarding unknown message type " +
+                            std::to_string(sock.getStreamId()) + " from peer " +
+                            to_string());
+                    sock.discard();
+            }
+        }
+    }
+#endif
 
     /**
      * Returns the next message from the remote peer.
