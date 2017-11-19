@@ -38,7 +38,7 @@ public:
             Encoder&       encoder,
             const unsigned version) const
     {
-        encoder.encode(value);
+        return encoder.encode(value);
     }
 
     inline operator T() const noexcept

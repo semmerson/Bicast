@@ -284,11 +284,13 @@ public:
 
     ChunkSize getSize() const noexcept
     {
+        // Can't throw because `index` has been vetted by constructor
         return prodInfo.getChunkSize(index);
     }
 
-    ChunkOffset getOffset() const
+    ChunkOffset getOffset() const noexcept
     {
+        // Can't throw because `index` has been vetted by constructor
         return prodInfo.getChunkOffset(index);
     }
 
@@ -834,7 +836,7 @@ bool LatentChunk::hasData()
 
 bool LatentChunk::operator==(const LatentChunk& that) const noexcept
 {
-    pImpl->operator==(*that.pImpl.get());
+    return pImpl->operator==(*that.pImpl.get());
 }
 
 } // namespace
