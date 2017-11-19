@@ -98,7 +98,7 @@ public:
 
     virtual ActualChunk getChunk(const ChunkIndex index) const =0;
 
-    virtual ChunkId identifyEarliestMissingChunk() const noexcept =0;
+    virtual ChunkId identifyEarliestMissingChunk() const =0;
 
     virtual bool set(const ProdInfo& info) =0;
 
@@ -138,7 +138,7 @@ bool Product::isEarlierThan(const Product& that) const noexcept
     return pImpl->isEarlierThan(*that.pImpl.get());
 }
 
-ChunkId Product::identifyEarliestMissingChunk() const noexcept
+ChunkId Product::identifyEarliestMissingChunk() const
 {
     return pImpl->identifyEarliestMissingChunk();
 }
@@ -194,7 +194,7 @@ public:
         , data{data}
     {}
 
-    ChunkId identifyEarliestMissingChunk() const noexcept
+    ChunkId identifyEarliestMissingChunk() const
     {
         throw LOGIC_ERROR(
                 "Complete product doesn't have earliest missing chunk");

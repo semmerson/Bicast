@@ -113,7 +113,7 @@ public:
      * @see `isComplete()`
      * @see `ChunkInfo::operator bool()`
      */
-    ChunkId identifyEarliestMissingChunk() const noexcept;
+    ChunkId identifyEarliestMissingChunk() const;
 
     /**
      * Sets the associated product-information providing it is consistent with

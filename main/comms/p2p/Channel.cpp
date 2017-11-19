@@ -74,10 +74,6 @@ protected:
         {
             sock.discard();
         }
-        size_t numRemainingBytes() const noexcept
-        {
-
-        }
         size_t getSize()
         {
             return sock.getSize();
