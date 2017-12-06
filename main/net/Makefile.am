@@ -14,11 +14,6 @@ lib_la_SOURCES 	= \
 	Interface.cpp Interface.h \
 	Codec.cpp Codec.h \
 	PortNumber.h \
-	InetAddrImpl.cpp InetAddrImpl.h \
-	IpAddrImpl.cpp IpAddrImpl.h \
-	Ipv4Addr.cpp Ipv4Addr.h \
-	Ipv6Addr.cpp Ipv6Addr.h \
-	InetNameAddr.cpp InetNameAddr.h \
 	InetAddr.cpp InetAddr.h \
 	InetSockAddr.cpp InetSockAddr.h \
 	SctpSock.cpp SctpSock.h \

@@ -1,15 +1,15 @@
 /**
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * This file tests IPv4 support in class `InetAddr`.
+ *
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYRIGHT in the top-level source-directory for
  * licensing conditions.
  *
  *   @file: Ipv4Addr_test.cpp
  * @author: Steven R. Emmerson
- *
- * This file tests class `Ipv4Addr`.
  */
 
-#include "Ipv4Addr.h"
+#include "InetAddr.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -51,33 +51,33 @@ class Ipv4AddrTest : public ::testing::Test {
 static const char* ADDR1 = "128.117.140.56";
 static const char* ADDR2 = "128.117.140.57";
 
-// Tests construction from an in_addr_t
-TEST_F(Ipv4AddrTest, InAddrTConstruction) {
-  EXPECT_STREQ(ADDR1,
-          hycast::Ipv4Addr(inet_addr(ADDR1)).to_string().data());
-}
-
 // Tests construction from a struct in_addr
 TEST_F(Ipv4AddrTest, in_addr_Construction) {
     struct in_addr inAddr;
     inAddr.s_addr = inet_addr(ADDR1);
-    EXPECT_STREQ(ADDR1, hycast::Ipv4Addr(inAddr).to_string().data());
+    EXPECT_STREQ(ADDR1, hycast::InetAddr(inAddr).to_string().data());
 }
 
 // Tests copy construction
 TEST_F(Ipv4AddrTest, CopyConstruction) {
-    hycast::Ipv4Addr a1{inet_addr(ADDR1)};
-    hycast::Ipv4Addr a2{a1};
+    struct in_addr inAddr;
+    inAddr.s_addr = inet_addr(ADDR1);
+    hycast::InetAddr a1{inAddr};
+    hycast::InetAddr a2{a1};
     EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
 
 // Tests copy assignment
 TEST_F(Ipv4AddrTest, CopyAssignment) {
-    hycast::Ipv4Addr a1{inet_addr(ADDR1)};
-    hycast::Ipv4Addr a2{inet_addr(ADDR2)};
+    struct in_addr inAddr;
+    inAddr.s_addr = inet_addr(ADDR1);
+    hycast::InetAddr a1{inAddr};
+    inAddr.s_addr = inet_addr(ADDR1);
+    hycast::InetAddr a2{inAddr};
     a2 = a1;
     EXPECT_STREQ(ADDR1, a2.to_string().data());
-    hycast::Ipv4Addr a3{inet_addr(ADDR1)};
+    inAddr.s_addr = inet_addr(ADDR1);
+    hycast::InetAddr a3{inAddr};
     a1 = a3;
     EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
@@ -85,8 +85,8 @@ TEST_F(Ipv4AddrTest, CopyAssignment) {
 #if 0
 // Tests hash()
 TEST_F(Ipv4AddrTest, hash) {
-    hycast::Ipv4Addr inAddr1{ADDR1};
-    hycast::Ipv4Addr inAddr2{ADDR2};
+    hycast::InetAddr inAddr1{ADDR1};
+    hycast::InetAddr inAddr2{ADDR2};
     EXPECT_TRUE(inAddr1.hash() != inAddr2.hash());
 }
 #endif

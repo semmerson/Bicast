@@ -23,42 +23,41 @@ namespace {
 
 // The fixture for testing class InetAddr.
 class InetAddrTest : public ::testing::Test {
- protected:
-  // You can remove any or all of the following functions if its body
-  // is empty.
+protected:
+    static const char* IPV4_ADDR1;
+    static const char* IPV4_ADDR2;
 
-  InetAddrTest()
-  {
-  }
+    static const char* IPV6_ADDR1;
+    static const char* IPV6_ADDR2;
 
-  virtual ~InetAddrTest() {
-    // You can do clean-up work that doesn't throw exceptions here.
-  }
+    static const char* HOSTNAME1;
+    static const char* HOSTNAME2;
 
-  // If the constructor and destructor are not enough for setting up
-  // and cleaning up each test, you can define the following methods:
+    hycast::InetAddr ipv4Addr1;
+    hycast::InetAddr ipv4Addr2;
+    hycast::InetAddr ipv6Addr1;
+    hycast::InetAddr ipv6Addr2;
+    hycast::InetAddr nameAddr1;
+    hycast::InetAddr nameAddr2;
 
-  virtual void SetUp() {
-    // Code here will be called immediately after the constructor (right
-    // before each test).
-  }
-
-  virtual void TearDown() {
-    // Code here will be called immediately after each test (right
-    // before the destructor).
-  }
-
-  // Objects declared here can be used by all tests in the test case for
-  // SockAddrInet.
+    InetAddrTest()
+        : ipv4Addr1{IPV4_ADDR1}
+        , ipv4Addr2{IPV4_ADDR2}
+        , ipv6Addr1{IPV6_ADDR1}
+        , ipv6Addr2{IPV6_ADDR2}
+        , nameAddr1{HOSTNAME1}
+        , nameAddr2{HOSTNAME2}
+    {}
 };
 
-static const char* IPV4_ADDR1 = "128.117.140.56";
-static const char* IPV4_ADDR2 = "128.117.140.57";
+const char* InetAddrTest::IPV4_ADDR1 = "128.117.140.56";
+const char* InetAddrTest::IPV4_ADDR2 = "128.117.140.57";
 
-static const char* IPV6_ADDR1 = "2001:db8::ff00:42:8329";
-static const char* IPV6_ADDR2 = "2001:db8::ff00:42:8330";
+const char* InetAddrTest::IPV6_ADDR1 = "2001:db8::ff00:42:8329";
+const char* InetAddrTest::IPV6_ADDR2 = "2001:db8::ff00:42:8330";
 
-static const char* HOSTNAME = "www.unidata.ucar.edu";
+const char* InetAddrTest::HOSTNAME1 = "idd.unidata.ucar.edu";
+const char* InetAddrTest::HOSTNAME2 = "www.unidata.ucar.edu";
 
 // Tests default construction
 TEST_F(InetAddrTest, DefaultConstruction) {
@@ -96,8 +95,8 @@ TEST_F(InetAddrTest, ConstructionFromLocalhost) {
 
 // Tests construction from a hostname
 TEST_F(InetAddrTest, ConstructionFromHostname) {
-    hycast::InetAddr addr1{HOSTNAME};
-    EXPECT_STREQ(HOSTNAME, addr1.to_string().data());
+    hycast::InetAddr addr1{HOSTNAME1};
+    EXPECT_STREQ(HOSTNAME1, addr1.to_string().data());
 }
 
 // Tests copy construction
@@ -136,6 +135,40 @@ TEST_F(InetAddrTest, HostnameToSocketAddress) {
     in_port_t p = htons(port);
     EXPECT_EQ(p, sockAddrIn->sin_port);
     EXPECT_EQ(inet_addr("127.0.0.1"), sockAddrIn->sin_addr.s_addr);
+}
+
+// Tests comparisons
+TEST_F(InetAddrTest, Comparisons) {
+    EXPECT_EQ(ipv4Addr1, ipv4Addr1);
+    EXPECT_EQ(ipv6Addr1, ipv6Addr1);
+    EXPECT_EQ(nameAddr1, nameAddr1);
+
+    EXPECT_NE(ipv4Addr1, ipv4Addr2);
+    EXPECT_NE(ipv6Addr1, ipv6Addr2);
+    EXPECT_NE(nameAddr1, nameAddr2);
+
+    EXPECT_NE(ipv4Addr1, ipv6Addr1);
+    EXPECT_NE(ipv4Addr1, nameAddr1);
+    EXPECT_NE(ipv6Addr1, ipv4Addr1);
+    EXPECT_NE(ipv6Addr1, nameAddr1);
+    EXPECT_NE(nameAddr1, ipv4Addr1);
+    EXPECT_NE(nameAddr1, ipv6Addr1);
+
+    EXPECT_LT(ipv4Addr1, ipv4Addr2);
+    EXPECT_LT(ipv6Addr1, ipv6Addr2);
+    EXPECT_LT(nameAddr1, nameAddr2);
+
+    EXPECT_GT(ipv4Addr2, ipv4Addr1);
+    EXPECT_GT(ipv6Addr2, ipv6Addr1);
+    EXPECT_GT(nameAddr2, nameAddr1);
+
+    EXPECT_LT(ipv4Addr1, ipv6Addr1);
+    EXPECT_LT(ipv4Addr1, nameAddr1);
+    EXPECT_LT(ipv6Addr1, nameAddr1);
+
+    EXPECT_GT(ipv6Addr1, ipv4Addr1);
+    EXPECT_GT(nameAddr1, ipv4Addr1);
+    EXPECT_GT(nameAddr1, ipv6Addr1);
 }
 
 }  // namespace

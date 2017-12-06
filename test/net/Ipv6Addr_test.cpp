@@ -1,15 +1,15 @@
 /**
- * Copyright 2016 University Corporation for Atmospheric Research. All rights
+ * This file tests IPv6 support in class `InetAddr`
+ *
+ * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYRIGHT in the top-level source-directory for
  * licensing conditions.
  *
  *   @file: Ipv4Addr_test.cpp
  * @author: Steven R. Emmerson
- *
- * This file tests class `Ipv6Addr`.
  */
 
-#include "Ipv6Addr.h"
+#include "InetAddr.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -55,15 +55,15 @@ static const char* ADDR2 = "2001:db8::ff00:42:8330";
 TEST_F(Ipv6AddrTest, in_addr_Construction) {
     struct in6_addr inAddr;
     EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
-    EXPECT_STREQ(ADDR1, hycast::Ipv6Addr(inAddr).to_string().data());
+    EXPECT_STREQ(ADDR1, hycast::InetAddr(inAddr).to_string().data());
 }
 
 // Tests copy construction
 TEST_F(Ipv6AddrTest, CopyConstruction) {
     struct in6_addr inAddr;
     EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
-    hycast::Ipv6Addr a1{inAddr};
-    hycast::Ipv6Addr a2{a1};
+    hycast::InetAddr a1{inAddr};
+    hycast::InetAddr a2{a1};
     EXPECT_STREQ(ADDR1, a2.to_string().data());
 }
 
@@ -71,9 +71,9 @@ TEST_F(Ipv6AddrTest, CopyConstruction) {
 TEST_F(Ipv6AddrTest, CopyAssignment) {
     struct in6_addr inAddr;
     EXPECT_EQ(1, inet_pton(AF_INET6, ADDR1, &inAddr.s6_addr));
-    hycast::Ipv6Addr a1{inAddr};
+    hycast::InetAddr a1{inAddr};
     EXPECT_EQ(1, inet_pton(AF_INET6, ADDR2, &inAddr.s6_addr));
-    hycast::Ipv6Addr a2{inAddr};;
+    hycast::InetAddr a2{inAddr};;
     EXPECT_STREQ(ADDR2, a2.to_string().data());
     a2 = a1;
     EXPECT_STREQ(ADDR1, a2.to_string().data());

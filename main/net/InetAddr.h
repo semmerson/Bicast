@@ -12,84 +12,49 @@
 #ifndef INETADDR_H_
 #define INETADDR_H_
 
+#include <cstring>
 #include <memory>
 #include <netinet/in.h>
-#include <set>
-#include <string>
-#include <sys/socket.h>
 
 namespace hycast {
 
-class InetAddrImpl; // Forward declaration of implementation
-
 class InetAddr final
 {
-    std::shared_ptr<InetAddrImpl> pImpl;
+public:
+    class Impl;
+
+private:
+    std::shared_ptr<Impl> pImpl;
+
     /**
      * Constructs from an implementation.
      * @param[in] impl  implementation
      */
-    InetAddr(InetAddrImpl* impl);
-    /**
-     * Factory method that returns a new instance based on an IPv4 address.
-     * @param[in] addr  IPv4 address in network byte order
-     * @return A new instance
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @throws std::invalid_argument if the string representation is invalid
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Thread-safe
-     */
-    static InetAddr create(const in_addr_t addr);
-    /**
-     * Factory method that returns a new instance based on an IPv6 address.
-     * @param[in] addr  IPv6 address
-     * @return A new instance
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @throws std::invalid_argument if the string representation is invalid
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Thread-safe
-     */
-    static InetAddr create(const struct in6_addr& addr);
-    /**
-     * Returns a new instance based on a string specification of an Internet
-     * address.
-     * @param[in] addr  Internet address specification. Can be a hostname, an
-     *                  IPv4 specification, or an IPv6 specification.
-     * @return An Internet address instance
-     */
-    static InetAddr create(const std::string addr);
-    /**
-     * Returns the default instance.
-     * @return Default instance
-     */
-    static InetAddr create();
+    InetAddr(Impl* impl);
 
 public:
     /**
-     * Constructs from an IPv4 address.
+     * Default constructs.
+     */
+    InetAddr();
+
+    /**
+     * Constructs from an IPv4 address in network byte order.
      * @param[in] addr  IPv4 address in network byte order
      */
-    explicit InetAddr(const in_addr_t addr)
-        : pImpl{create(addr).pImpl} {}
+    InetAddr(const struct in_addr& addr);
 
     /**
      * Constructs from an IPv6 address.
      * @param[in] addr  IPv6 address
      */
-    explicit InetAddr(const struct in6_addr& addr)
-        : pImpl{create(addr).pImpl} {}
+    InetAddr(const struct in6_addr& addr);
 
     /**
-     * Constructs from an Internet address string.
+     * Constructs from a string representation of an Internet address.
+     * @param[in] addr  String representation of Internet address
      */
-    explicit InetAddr(const std::string addr)
-        : pImpl{create(addr).pImpl} {}
-
-    /**
-     * Default constructs.
-     */
-    explicit InetAddr()
-        : pImpl{create().pImpl} {}
+    InetAddr(const std::string& addr);
 
     /**
      * Returns the `struct sockaddr_storage` corresponding to this instance and
@@ -113,12 +78,49 @@ public:
      * @threadsafety    Safe
      */
     size_t hash() const noexcept;
+
+    /**
+     * Indicates if this instance is considered equal to another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff instance is equal to other
+     */
+    bool operator==(const InetAddr& that) const noexcept;
+
+    /**
+     * Indicates if this instance is not considered equal to another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff instance is not equal to other
+     */
+    bool operator!=(const InetAddr& that) const noexcept;
+
     /**
      * Indicates if this instance is considered less than another.
      * @param[in] that  Other instance
-     * @retval `true`   Iff this instance is considered less than the other
+     * @retval `true`   Iff instance is less than the other
      */
     bool operator<(const InetAddr& that) const noexcept;
+
+    /**
+     * Indicates if this instance is considered less than or equal to another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff instance is less than or equal to other
+     */
+    bool operator<=(const InetAddr& that) const noexcept;
+
+    /**
+     * Indicates if this instance is considered greater than or equal to another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff instance is greater than or equal to other
+     */
+    bool operator>=(const InetAddr& that) const noexcept;
+
+    /**
+     * Indicates if this instance is considered greater than another.
+     * @param[in] that  Other instance
+     * @retval `true`   Iff instance is greater than other
+     */
+    bool operator>(const InetAddr& that) const noexcept;
+
     /**
      * Returns the string representation of the Internet address.
      * @return The string representation of the Internet address
@@ -182,18 +184,6 @@ public:
             const int  sd,
             const bool enable) const;
 };
-
-/**
- * Indicates if two Internet addresses are considered equal.
- * @param[in] that  Other instance
- * @retval `true`   Iff this instance is considered equal to the other
- */
-inline bool operator==(
-        const InetAddr& o1,
-        const InetAddr& o2) noexcept
-{
-    return !(o1 < o2) && !(o2 < o1);
-}
 
 } // namespace
 
