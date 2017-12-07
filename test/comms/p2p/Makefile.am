@@ -13,7 +13,8 @@ check_PROGRAMS	= Channel_test \
                   ChunkChannel_test \
                   Peer_test \
                   PeerSet_test \
-                  P2pMgr_test
+                  P2pMgr_test \
+                  PeerAddrSet_test
 #                  Backlogger_test
 #                  CancelDestroy_test
 
@@ -22,8 +23,9 @@ ChunkChannel_test_SOURCES	= ChunkChannel_test.cpp
 Peer_test_SOURCES		= Peer_test.cpp
 PeerSet_test_SOURCES		= PeerSet_test.cpp
 P2pMgr_test_SOURCES		= P2pMgr_test.cpp
-#CancelDestroy_test_SOURCES      = CancelDestroy_test.cpp
-#Backlogger_test_SOURCES		= Backlogger_test.cpp
+PeerAddrSet_test_SOURCES	= PeerAddrSet_test.cpp
+#CancelDestroy_test_SOURCES     = CancelDestroy_test.cpp
+#Backlogger_test_SOURCES	= Backlogger_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

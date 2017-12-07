@@ -20,7 +20,8 @@ lib_la_SOURCES 	= \
 	PeerSource.cpp PeerSource.h \
 	P2pMgr.cpp P2pMgr.h \
 	YamlPeerSource.cpp YamlPeerSource.h \
-	Backlogger.cpp Backlogger.h
+	Backlogger.cpp Backlogger.h \
+	PeerAddrSet.cpp PeerAddrSet.h
 
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.

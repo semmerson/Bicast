@@ -832,9 +832,9 @@ public:
 }; // `PeerSet::Impl`
 
 PeerSet::PeerSet(
-        PeerSetServer&                     peerSetServer,
-        const unsigned                     maxPeers,
-        const unsigned                     stasisDuration)
+        PeerSetServer& peerSetServer,
+        const unsigned maxPeers,
+        const unsigned stasisDuration)
     : pImpl(new Impl(peerSetServer, maxPeers, stasisDuration))
 {}
 
