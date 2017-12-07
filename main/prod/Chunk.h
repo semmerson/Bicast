@@ -258,11 +258,6 @@ public:
         return index < rhs.index;
     }
 
-    inline bool operator ==(const ChunkIndex& rhs) const noexcept
-    {
-        return index == rhs.index;
-    }
-
     /**
      * Returns the number of bytes in the serial representation of any
      * instance.
