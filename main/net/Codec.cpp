@@ -301,8 +301,8 @@ MemEncoder::MemEncoder(
 {}
 
 void MemEncoder::write(
-        const struct iovec* iov,
-        const int           iovcnt)
+        struct iovec* iov,
+        const int     iovcnt)
 {
     char* next = buf + size;
     size_t left = serialBufSize - size;

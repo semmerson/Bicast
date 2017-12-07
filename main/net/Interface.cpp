@@ -88,7 +88,7 @@ public:
                     if (sockaddr && sockaddr->sa_family == family) {
                         auto inetAddr = (family == AF_INET)
                                 ? InetAddr{reinterpret_cast<struct sockaddr_in*>
-                                                (sockaddr)->sin_addr.s_addr}
+                                                (sockaddr)->sin_addr}
                                 : InetAddr{reinterpret_cast<struct sockaddr_in6*>
                                                 (sockaddr)->sin6_addr};
                         ::freeifaddrs(list);

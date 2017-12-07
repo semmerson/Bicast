@@ -21,6 +21,14 @@
 
 namespace hycast {
 
+/******************************************************************************/
+
+// Following initialized where declared; hence, no value specified here
+const ChunkSize::type ChunkSize::maxSize;
+const ChunkSize::type ChunkSize::defaultSize;
+
+/******************************************************************************/
+
 class ChunkId::Impl
 {
     /**
@@ -301,20 +309,20 @@ public:
 
     bool equalsExceptName(const Impl& that)
     {
-        return (index == that.index) &&
-                prodInfo.equalsExceptName(that.prodInfo);
+        const bool result = ((index == that.index) &&
+                prodInfo.equalsExceptName(that.prodInfo));
+        return result;
     }
 
     bool operator==(const Impl& that)
     {
-        return (index == that.index) &&
-                (prodInfo.equalsExceptName(that.prodInfo));
+        return (index == that.index) && (prodInfo == that.prodInfo);
     }
 
     std::string to_string() const
     {
-        return "{prodInfo=" + std::to_string(prodInfo) + ", index=" +
-                std::to_string(index) + "}";
+        return "{prodInfo=" + prodInfo.to_string() + ", index=" +
+                index.to_string() + "}";
     }
 };
 
@@ -375,7 +383,8 @@ ChunkIndex ChunkInfo::getIndex() const noexcept
 
 bool ChunkInfo::equalsExceptName(const ChunkInfo& that) const noexcept
 {
-    return pImpl->equalsExceptName(*that.pImpl.get());
+    const bool result = pImpl->equalsExceptName(*that.pImpl.get());
+    return result;
 }
 
 bool ChunkInfo::operator==(const ChunkInfo& that) const noexcept

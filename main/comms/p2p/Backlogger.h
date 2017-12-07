@@ -41,13 +41,13 @@ public:
      * @throw InvalidArgument  `startWith` is empty
      */
     Backlogger(
-            Peer&            peer,
+            Peer&          peer,
             const ChunkId& startWith,
-            ProdStore&       prodStore);
+            ProdStore&     prodStore);
 
     /**
-     * Indicates if this instance is meaningful (i.e., was constructed with
-     * arguments).
+     * Indicates if this instance is meaningful (i.e., wasn't
+     * default-constructed).
      * @retval `true`   Is meaningful
      * @retval `false`  Is not meaningful
      */

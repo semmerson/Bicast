@@ -57,12 +57,12 @@ class McastReceiver::Impl final
     };
 
     Dec            decoder;
-    McastMsgRcvr*  msgRcvr;
+    McastContentRcvr*  msgRcvr;
     const unsigned version;
 
 public:
     Impl(   const InetSockAddr& mcastAddr,
-            McastMsgRcvr&       msgRcvr,
+            McastContentRcvr&       msgRcvr,
             const unsigned      version)
         : decoder(mcastAddr)
         , msgRcvr(&msgRcvr)
@@ -71,7 +71,7 @@ public:
 
     Impl(   const InetSockAddr& mcastAddr,
             const InetAddr&     srcAddr,
-            McastMsgRcvr&       msgRcvr,
+            McastContentRcvr&       msgRcvr,
             const unsigned      version)
         : decoder{mcastAddr, srcAddr}
         , msgRcvr{&msgRcvr}
@@ -94,13 +94,13 @@ public:
                 case McastSender::prodInfoMsgId: {
                     decoder.fill(0);
                     auto prodInfo = ProdInfo::deserialize(decoder, version);
-                    msgRcvr->recvNotice(prodInfo);
+                    msgRcvr->receive(prodInfo);
                     break;
                 }
                 case McastSender::chunkMsgId: {
                     decoder.fill(LatentChunk::getMetadataSize(version));
                     auto chunk = LatentChunk::deserialize(decoder, version);
-                    msgRcvr->recvData(chunk);
+                    msgRcvr->receive(chunk);
                     if (chunk.hasData())
                         throw LOGIC_ERROR("Latent chunk-of-data not drained");
                     break;
@@ -116,7 +116,7 @@ public:
 
 McastReceiver::McastReceiver(
         const InetSockAddr& mcastAddr,
-        McastMsgRcvr&       msgRcvr,
+        McastContentRcvr&       msgRcvr,
         const unsigned      version)
     : pImpl{new Impl(mcastAddr, msgRcvr, version)}
 {}
@@ -124,7 +124,7 @@ McastReceiver::McastReceiver(
 McastReceiver::McastReceiver(
         const InetSockAddr& mcastAddr,
         const InetAddr&     srcAddr,
-        McastMsgRcvr&       msgRcvr,
+        McastContentRcvr&       msgRcvr,
         const unsigned      version)
     : pImpl{new Impl(mcastAddr, srcAddr, msgRcvr, version)}
 {}

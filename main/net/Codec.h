@@ -71,8 +71,8 @@ protected:
      * @param[in] iovcnt  Size of vector
      */
     virtual void write(
-            const struct iovec* iov,
-            const int           iovcnt) =0;
+            struct iovec* iov,
+            const int     iovcnt) =0;
 
 public:
     /**
@@ -287,8 +287,8 @@ public:
             const size_t maxSize);
 
     void write(
-            const struct iovec* iov,
-            const int           iovcnt);
+            struct iovec* iov,
+            const int     iovcnt);
 };
 
 class MemDecoder final : public Decoder

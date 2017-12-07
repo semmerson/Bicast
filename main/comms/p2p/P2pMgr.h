@@ -1,7 +1,8 @@
 /**
  * This file declares the implementation of a manager of peer-to-peer
  * connections, which is responsible for processing incoming connection
- * requests, creating peers, and replacing peers.
+ * requests, creating peers, processing peer-to-peer messages, and replacing
+ * peers.
  *
  * Copyright 2016 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -14,9 +15,8 @@
 #ifndef MAIN_P2P_P2PMGR_H_
 #define MAIN_P2P_P2PMGR_H_
 
-#include "InetSockAddr.h"
-#include "MsgRcvr.h"
 #include "Notifier.h"
+#include "P2pMgrServer.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
 
@@ -39,12 +39,12 @@ struct P2pInfo final
      * Time interval, in seconds, over which the set of active peers must be
      * unchanged before the worst performing peer may be replaced
      */
-    PeerSet::TimeUnit stasisDuration;
+    unsigned          stasisDuration;
 
     P2pInfo(const InetSockAddr&      serverSockAddr,
             const unsigned           maxPeers,
             PeerSource&              peerSource,
-            const PeerSet::TimeUnit  stasisDuration)
+            const unsigned           stasisDuration)
     : serverSockAddr{serverSockAddr}
     , peerCount{maxPeers}
     , peerSource(peerSource)
@@ -59,11 +59,12 @@ class P2pMgr final : public Notifier
 
 public:
     /**
-     * Constructs.
-     * @param[in] prodStore       Product storage
+     * Constructs. Upon return, the server's socket is not listening and
+     * connections won't be accepted until `run()` is called.
      * @param[in] serverSockAddr  Socket address to be used by the server that
      *                            remote peers connect to
-     * @param[in] msgRcvr         Receiver of messages from remote peers
+     * @param[in] p2pMgrServer    Higher-level component used by constructed
+     *                            instance
      * @param[in] peerSource      Source of potential remote peers
      * @param[in] maxPeers        Maximum number of active peers. Default is
      *                            `PeerSet::defaultMaxPeers`.
@@ -72,24 +73,23 @@ public:
      *                            of active peers must be unchanged before the
      *                            worst performing peer may be replaced. Default
      *                            is 60 seconds.
+     * @see `run()`
      */
-    P2pMgr( ProdStore&               prodStore,
-            const InetSockAddr&      serverSockAddr,
-            PeerMsgRcvr&             msgRcvr,
-            PeerSource&              peerSource,
-            const unsigned           maxPeers = PeerSet::defaultMaxPeers,
-            const PeerSet::TimeUnit  stasisDuration = PeerSet::TimeUnit{60});
+    P2pMgr( const InetSockAddr& serverSockAddr,
+            P2pMgrServer&       p2pMgrServer,
+            PeerSource&         peerSource,
+            const unsigned      maxPeers = PeerSet::defaultMaxPeers,
+            const unsigned      stasisDuration = PeerSet::defaultStasisDuration);
 
     /**
      * Constructs.
-     * @param[in] prodStore  Product storage
-     * @param[in] p2pInfo    Information for the peer-to-peer component
-     * @param[in] msgRcvr    Receiver of messages from remote peers
+     * @param[in] p2pInfo        Information for the peer-to-peer component
+     * @param[in] p2pMgrServer   Higher-level component used by constructed
+     *                           instance
      */
-    P2pMgr( ProdStore&   prodStore,
-            P2pInfo&     p2pInfo,
-            PeerMsgRcvr& msgRcvr)
-    	: P2pMgr(prodStore, p2pInfo.serverSockAddr, msgRcvr, p2pInfo.peerSource,
+    P2pMgr( P2pInfo&      p2pInfo,
+            P2pMgrServer& p2pMgrServer)
+    	: P2pMgr(p2pInfo.serverSockAddr, p2pMgrServer, p2pInfo.peerSource,
                 p2pInfo.peerCount, p2pInfo.stasisDuration)
     {}
 
@@ -104,43 +104,22 @@ public:
     void run();
 
     /**
-     * Sends information about a product to the remote peers.
-     * @param[in] prodInfo        Product information
+     * Notifies all active peers about available information on a product.
+     * @param[in] prodIndex       Product index
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void notify(const ProdIndex& prodIndex) const;
 
     /**
-     * Sends information about a product to the remote peers except for one.
-     * @param[in] prodInfo        Product information
-     * @param[in] except          Peer to exclude
+     * Notifies all active peers about an available chunk-of-data.
+     * @param[in] chunkId         Chunk identifier
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo, const Peer& except) const;
-
-    /**
-     * Sends information about a chunk-of-data to the remote peers.
-     * @param[in] chunkInfo       Chunk information
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ChunkId& chunkInfo) const;
-
-    /**
-     * Sends information about a chunk-of-data to the remote peers except for
-     * one.
-     * @param[in] chunkInfo       Chunk information
-     * @param[in] except          Peer to exclude
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ChunkId& chunkInfo, const Peer& except) const;
+    void notify(const ChunkId& chunkId) const;
 };
 
 } // namespace

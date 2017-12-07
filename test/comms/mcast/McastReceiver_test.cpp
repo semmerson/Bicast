@@ -16,9 +16,9 @@
 
 #include <atomic>
 #include <gtest/gtest.h>
-#include <mcast/McastMsgRcvr.h>
 #include <mcast/McastReceiver.h>
 #include <mcast/McastSender.h>
+#include <McastContentRcvr.h>
 #include <pthread.h>
 #include <thread>
 #include <unistd.h>
@@ -26,7 +26,7 @@
 namespace {
 
 // The fixture for testing class McastReceiver.
-class McastReceiverTest : public ::testing::Test, public hycast::McastMsgRcvr {
+class McastReceiverTest : public ::testing::Test, public hycast::McastContentRcvr {
 protected:
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -38,7 +38,7 @@ protected:
         , srcAddr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)}
         , version{0}
         , prodName("product")
-        , chunkSize{hycast::ChunkSize::defaultChunkSize}
+        , chunkSize{hycast::ChunkSize::defaultSize}
         , prodIndex(0)
         , prodSize{38000}
         , prodInfo{prodIndex, prodName, prodSize}
@@ -69,13 +69,13 @@ protected:
         // before the destructor).
     }
 
-    void recvNotice(const hycast::ProdInfo& info)
+    void receive(const hycast::ProdInfo& info)
     {
         EXPECT_TRUE(info == prodInfo);
         numChunks = info.getNumChunks();
     }
 
-    void recvData(hycast::LatentChunk chunk)
+    void receive(hycast::LatentChunk chunk)
     {
         EXPECT_EQ(prodIndex, chunk.getProdIndex());
         EXPECT_EQ(chunkIndex, chunk.getIndex());

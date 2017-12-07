@@ -70,13 +70,6 @@ TEST_F(InetSockAddrTest, StringIpAndPortConstruction) {
     EXPECT_STREQ("[2001:db8::ff00:42:8329]:388", sockaddr2.to_string().data());
 }
 
-// Tests construction from in_addr_t and port number
-TEST_F(InetSockAddrTest, InAddrTAndPortConstruction) {
-    hycast::InetSockAddr sockaddr{inet_addr("128.117.140.56"),
-        hycast::PortNumber(388)};
-    EXPECT_STREQ("128.117.140.56:388", sockaddr.to_string().data());
-}
-
 // Tests construction from IPv4 socket address
 TEST_F(InetSockAddrTest, Ipv4SockAddrConstruction) {
     struct sockaddr_in ipv4SockAddr;

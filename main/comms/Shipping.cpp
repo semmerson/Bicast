@@ -8,7 +8,7 @@
  * reserved. See the file COPYING in the top-level source-directory for
  * licensing conditions.
  *
- * Current Protocol:
+ * Current P2P Protocol:
  *      Product Notice = ProdInfo
  *           ProdIndex       8
  *           ProdSize        4
@@ -40,8 +40,8 @@
 #include "config.h"
 
 #include "error.h"
-#include "PeerMsgRcvr.h"
 #include "PeerSet.h"
+#include "PeerSetServer.h"
 #include "ProdStore.h"
 #include "Shipping.h"
 #include "SctpSock.h"
@@ -55,16 +55,17 @@ namespace hycast {
 class Shipping::Impl final
 {
     /**
-     * Manages active remote peers which request missed chunks-of-data.
+     * Manages active remote peers, which request missed chunks-of-data.
      */
-    class PeerMgr final
+    class P2pSender final
     {
         /**
-         * Handles messages from remote peers. Only handles requests.
+         * Higher-level component that serves the set of active peers.
          */
-        class MsgRcvr : public PeerMsgRcvr
+        class PeerSetSrvr : public PeerSetServer
         {
-            ProdStore prodStore;
+            ProdStore         prodStore;
+            static RecvStatus nilRecvStatus;
 
         public:
             /**
@@ -72,65 +73,92 @@ class Shipping::Impl final
              * @param[in] ProdStore  Store of data-products
              * @param[in] peerSet    Set of active remote peers
              */
-            MsgRcvr(ProdStore& prodStore)
+            PeerSetSrvr(ProdStore& prodStore)
                 : prodStore{prodStore}
             {}
 
             /**
-             * Receives a notice about a new product from a remote peer.
-             * @param[in]     info  Information about the product
-             * @param[in,out] peer  Peer that sent the notice
+             * Returns the ID of the earliest missing chunk-of-data.
+             * @return ID of earliest missing data-chunk
              */
-            void recvNotice(const ProdInfo& info, const Peer& peer)
-            {}
-
-            /**
-             * Receives a notice about a chunk-of-data from a remote peer.
-             * @param[in]     info  Information about the chunk
-             * @param[in,out] peer  Peer that sent the notice
-             */
-            void recvNotice(const ChunkId& info, const Peer& peer)
-            {}
-
-            /**
-             * Receives a request for information about a product from a remote
-             * peer.
-             * @param[in]     index Index of the product
-             * @param[in,out] peer  Peer that sent the request
-             */
-            void recvRequest(const ProdIndex& index, const Peer& peer)
+            ChunkId getEarliestMissingChunkId()
             {
-                auto info = prodStore.getProdInfo(index);
-                if (info)
-                    peer.sendNotice(info);
-                //peerSet.decValue(peer); // Needy peers are bad?
+                return ChunkId{};
+            }
+
+            Backlogger getBacklogger(
+                    const ChunkId& earliest,
+                    Peer&          peer)
+            {
+                return Backlogger{peer, earliest, prodStore};
+            }
+
+            /// Do nothing because this node is the source
+            void peerStopped(const InetSockAddr& peerAddr)
+            {}
+
+            /**
+             * Receives product information from a peer.
+             * @param[in] prodInfo  Product information
+             * @param[in] peerAddr  Address of remote peer
+             */
+            RecvStatus receive(
+                    const ProdInfo&     prodInfo,
+                    const InetSockAddr& peerAddr)
+            {
+                return nilRecvStatus;
             }
 
             /**
-             * Receives a request for a chunk-of-data from a remote peer.
-             * @param[in]     info  Information on the chunk
-             * @param[in,out] peer  Peer that sent the request
+             * Receives a chunk-of-data from a peer.
+             * @param[in] chunk     Data-chunk
+             * @param[in] peerAddr  Address of remote peer
              */
-            void recvRequest(const ChunkId& id, const Peer& peer)
+            RecvStatus receive(
+                    LatentChunk&        chunk,
+                    const InetSockAddr& peerAddr)
             {
-                auto chunk = prodStore.getChunk(id);
-                if (chunk)
-                    peer.sendData(chunk);
-                //peerSet.decValue(peer); // Needy peers are bad?
+                return nilRecvStatus;
+            }
+
+            bool shouldRequest(const ProdIndex& prodIndex)
+            {
+                return false;
             }
 
             /**
-             * Receives a chunk-of-data from a remote peer.
-             * @param[in]     chunk  Chunk-of-data
-             * @param[in,out] peer   Peer that sent the chunk
+             * Indicates if a given chunk of data should be requested.
+             * @param[in] id     Chunk identifier
+             * @retval `true`    Chunk should be requested
+             * @retval `false`   Chunk should not be requested
+             * @exceptionsafety  Basic guarantee
+             * @threadsafety     Safe
              */
-            void recvData(LatentChunk chunk, const Peer& peer)
-            {}
+            bool shouldRequest(const ChunkId& id)
+            {
+                return false;
+            }
+
+            bool get(
+                    const ProdIndex& prodIndex,
+                    ProdInfo&        prodInfo)
+            {
+                prodInfo = prodStore.getProdInfo(prodIndex);
+                return prodInfo.operator bool();
+            }
+
+            bool get(
+                    const ChunkId& id,
+                    ActualChunk&   chunk)
+            {
+                chunk = prodStore.getChunk(id);
+                return chunk.operator bool();
+            }
         };
 
         Cue             serverReady; // Must initialize before `serverThread`
-        MsgRcvr         msgRcvr;     // Must be initialized before `peerSet`
-        PeerSet         peerSet;     // Must be initialized after `msgRcvr`
+        PeerSetSrvr     peerSetSrvr; // Must initialize before `peerSet`
+        PeerSet         peerSet;     // Must initialize after `peerSetSrvr`
         InetSockAddr    serverAddr;
         Thread          serverThread;
 
@@ -181,27 +209,30 @@ class Shipping::Impl final
     public:
         /**
          * Constructs.
-         * @param[in] prodStore   Store of data-products
-         * @param[in] msgRcvr     Receiver of messages from remote peers
-         * @param[in] peerSet     Initially empty set of active remote peers
-         * @param[in] serverAddr  Socket address of local server that listens
-         *                        for connections from remote peers
+         * @param[in] prodStore       Store of data-products
+         * @param[in] serverAddr      Socket address of local server that
+         *                            listens for connections from remote peers
+         * @param[in] maxPeers        Maximum number of active peers
+         * @param[in] stasisDuration  Minimum amount of time, in seconds, that
+         *                            the set of active peers must be full and
+         *                            unchanged before the worst-performing peer
+         *                            may be removed
          */
-        PeerMgr(ProdStore&              prodStore,
+        P2pSender(
+                ProdStore&              prodStore,
+                const InetSockAddr&     serverAddr,
                 const unsigned          maxPeers,
-                const PeerSet::TimeUnit stasisDuration,
-                const InetSockAddr&     serverAddr)
+                const unsigned          stasisDuration)
             : serverReady{}
-            , msgRcvr{prodStore}
-            , peerSet{prodStore, msgRcvr, stasisDuration*2, maxPeers,
-                    [](InetSockAddr&){}}
+            , peerSetSrvr{prodStore}
+            , peerSet{peerSetSrvr, maxPeers, stasisDuration}
             , serverAddr{serverAddr}
             , serverThread{[this]{runServer();}}
         {
             serverReady.wait();
         }
 
-        ~PeerMgr()
+        ~P2pSender()
         {
             try {
                 try {
@@ -225,15 +256,15 @@ class Shipping::Impl final
         void notify(const Product& prod)
         {
             auto prodInfo = prod.getInfo();
-            peerSet.sendNotice(prodInfo);
+            peerSet.notify(prodInfo.getIndex());
             ChunkIndex numChunks = prodInfo.getNumChunks();
             for (ChunkIndex i = 0; i < numChunks; ++i)
-                peerSet.sendNotice(ChunkId{prodInfo, i});
+                peerSet.notify(ChunkId{prodInfo, i});
         }
     }; // Class `PeerMgr`
 
     ProdStore   prodStore;
-    PeerMgr     peerMgr;
+    P2pSender   p2pSender;
     McastSender mcastSender;
 
 public:
@@ -243,20 +274,21 @@ public:
      * @param[in] prodStore       Product store
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version
-     * @param[in] stasisDuration  Duration over which the set of active peers
-     *                            must be unchanged before the worst-performing
-     *                            peer may be removed
+     * @param[in] stasisDuration  Minimum amount of time, in seconds, over which
+     *                            the set of active peers must be unchanged
+     *                            before the worst-performing peer may be
+     *                            removed
      * @param[in] serverAddr      Socket address of local server for remote
      *                            peers
      */
     Impl(   ProdStore&              prodStore,
             const InetSockAddr&     mcastAddr,
             unsigned                version,
+            const InetSockAddr&     serverAddr,
             unsigned                maxPeers,
-            const PeerSet::TimeUnit stasisDuration,
-            const InetSockAddr&     serverAddr)
+            const unsigned          stasisDuration)
         : prodStore{prodStore}
-        , peerMgr{prodStore, maxPeers, stasisDuration, serverAddr}
+        , p2pSender{prodStore, serverAddr, maxPeers, stasisDuration}
         , mcastSender{mcastAddr, version}
     {}
 
@@ -266,22 +298,24 @@ public:
      */
     void ship(Product& prod)
     {
-        // Order is important
         mcastSender.send(prod);
+        // Following order is necessary
         prodStore.add(prod);
-        peerMgr.notify(prod);
+        p2pSender.notify(prod);
     }
-}; // class Shipping::Impl
+}; // `Shipping::Impl`
+
+RecvStatus Shipping::Impl::P2pSender::PeerSetSrvr::nilRecvStatus;
 
 Shipping::Shipping(
         ProdStore&              prodStore,
         const InetSockAddr&     mcastAddr,
         const unsigned          version,
+        const InetSockAddr&     serverAddr,
         const unsigned          maxPeers,
-        const PeerSet::TimeUnit stasisDuration,
-        const InetSockAddr&     serverAddr)
-    : pImpl{new Impl(prodStore, mcastAddr, version, maxPeers, stasisDuration,
-    		serverAddr)}
+        const unsigned          stasisDuration)
+    : pImpl{new Impl(prodStore, mcastAddr, version, serverAddr, maxPeers,
+            stasisDuration)}
 {}
 
 void Shipping::ship(Product& prod)

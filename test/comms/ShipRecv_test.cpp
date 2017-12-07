@@ -12,22 +12,15 @@
 
 #include "error.h"
 #include "Interface.h"
-#include "McastSender.h"
 #include "P2pMgr.h"
-#include "PeerSet.h"
 #include "PerfMeter.h"
 #include "Processing.h"
-#include "ProdIndex.h"
-#include "ProdStore.h"
 #include "Receiving.h"
 #include "Shipping.h"
 #include "Thread.h"
 #include "YamlPeerSource.h"
 
-#include <atomic>
-#include <climits>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <mutex>
 
 namespace {
@@ -67,33 +60,33 @@ protected:
             data[i] = i % UCHAR_MAX;
     }
 
-    const double                    drop = 0.2;
-    const int                       NUM_PRODUCTS = 100;
-    char                            data[10000];
-    //unsigned char                   data[1];
-    hycast::ProdStore               prodStore{};
-    const in_port_t                 srcPort{38800};
-    const in_port_t                 snkPort{38801};
-    const hycast::InetSockAddr      mcastAddr{"232.0.0.0", srcPort};
-    const hycast::InetAddr          localInetAddr{
+    const double               drop = 0.2;
+    const int                  NUM_PRODUCTS = 100;
+    char                       data[100000];
+    hycast::ProdStore          prodStore{};
+    const in_port_t            srcPort{38800};
+    const in_port_t            snkPort{38801};
+    const hycast::InetSockAddr mcastAddr{"232.0.0.0", srcPort};
+    const hycast::InetAddr     localInetAddr{
             hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET)};
-    hycast::InetSockAddr            srcSrvrAddr{localInetAddr, srcPort};
-    hycast::InetSockAddr            snkSrvrAddr{localInetAddr, snkPort};
-    const unsigned                  protoVers{0};
-    hycast::McastSender             mcastSender{mcastAddr, protoVers};
-    hycast::YamlPeerSource          peerSource{"[{inetAddr: " +
+    hycast::InetSockAddr       srcSrvrAddr{localInetAddr, srcPort};
+    hycast::InetSockAddr       snkSrvrAddr{localInetAddr, snkPort};
+    const unsigned             protoVers{0};
+    hycast::McastSender        mcastSender{mcastAddr, protoVers};
+    hycast::YamlPeerSource     peerSource{"[{inetAddr: " +
             localInetAddr.to_string() + ", port: " + std::to_string(srcPort) +
             "}]"};
-    hycast::ProdIndex               prodIndex{0};
-    const unsigned                  maxPeers = 1;
-    const hycast::PeerSet::TimeUnit stasisDuration{2};
+    hycast::ProdIndex          prodIndex{0};
+    const unsigned             maxPeers = 1;
+    const unsigned             stasisDuration =
+            hycast::PeerSet::defaultStasisDuration;
     // gcc 4.8 doesn't support non-trivial designated initializers
-    hycast::P2pInfo                 p2pInfo{snkSrvrAddr, maxPeers, peerSource,
+    hycast::P2pInfo            p2pInfo{snkSrvrAddr, maxPeers, peerSource,
             stasisDuration};
     // gcc 4.8 doesn't support non-trivial designated initializers
-    hycast::SrcMcastInfo            srcMcastInfo;
-    hycast::PerfMeter               perfMeter{};
-    hycast::Cue                     cue{};
+    hycast::SrcMcastInfo       srcMcastInfo;
+    hycast::PerfMeter          perfMeter{};
+    hycast::Cue                cue{};
 };
 
 // Tests shipping construction
@@ -108,10 +101,11 @@ TEST_F(ShipRecvTest, ReceivingConstruction) {
 
 // Tests shipping and receiving products
 TEST_F(ShipRecvTest, ShippingAndReceiving) {
-    hycast::logLevel = hycast::LOG_INFO;
+    auto logLevelOnEntry = hycast::logLevel;
+    hycast::logLevel = hycast::LOG_NOTE;
     // Create shipper
-    hycast::Shipping shipping{prodStore, mcastAddr, protoVers, maxPeers,
-    	stasisDuration, srcSrvrAddr};
+    hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr,
+            maxPeers, stasisDuration};
 
     // Create receiver
     hycast::Receiving receiving{srcMcastInfo, p2pInfo, *this, protoVers, "",
@@ -129,6 +123,7 @@ TEST_F(ShipRecvTest, ShippingAndReceiving) {
     cue.wait();
     perfMeter.stop();
     std::cout << perfMeter << '\n';
+    hycast::logLevel = logLevelOnEntry;
 }
 
 }  // namespace

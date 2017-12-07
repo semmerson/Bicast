@@ -77,9 +77,9 @@ public:
      * @param[in] prodStore    Product storage
      * @throw InvalidArgument  `startWith` is empty
      */
-    Impl(   Peer&            peer,
+    Impl(   Peer&          peer,
             const ChunkId& startWith,
-            ProdStore&       prodStore)
+            ProdStore&     prodStore)
         : mutex{}
         , cond{}
         , peer{peer}
@@ -93,7 +93,7 @@ public:
 
     operator bool() const noexcept
     {
-        return static_cast<bool>(startWith);
+        return startWith.operator bool();
     }
 
     /**
@@ -155,14 +155,14 @@ public:
                 auto prodIndex = chunkInfo.getProdIndex();
                 if (prodIndex != prevProdIndex || !prevProdIndexSet) {
                     auto prodInfo = prodStore.getProdInfo(prodIndex);
-                    if (prodInfo)
-                        peer.sendNotice(prodInfo);
+                    if (prodInfo.isComplete())
+                        peer.notify(prodIndex);
                     prevProdIndex = prodIndex;
                     prevProdIndexSet = true;
                 }
                 if (!chunkInfo.isEarlierThan(getStopAt()))
                     break;
-                peer.sendNotice(chunkInfo);
+                peer.notify(chunkInfo);
             }
         }
     }
@@ -189,9 +189,9 @@ const ChunkId& Backlogger::getStart() const noexcept
     return pImpl->getStart();
 }
 
-void Backlogger::doNotNotifyOf(const ChunkId& chunkInfo) const noexcept
+void Backlogger::doNotNotifyOf(const ChunkId& chunkId) const noexcept
 {
-    pImpl->doNotNotifyOf(chunkInfo);
+    pImpl->doNotNotifyOf(chunkId);
 }
 
 const ChunkId& Backlogger::getEarliest() const noexcept

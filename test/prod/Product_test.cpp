@@ -26,7 +26,7 @@ protected:
 // Tests construction from product-information
 TEST_F(ProductTest, ProdInfoConstruction) {
     // 2 chunks
-    hycast::ProdInfo info{0, "product", 2*hycast::ChunkSize::defaultChunkSize};
+    hycast::ProdInfo info{0, "product", 2*hycast::ChunkSize::defaultSize};
     hycast::PartialProduct prod{info};
     EXPECT_FALSE(prod.isComplete());
     EXPECT_EQ(info, prod.getInfo());
@@ -35,7 +35,7 @@ TEST_F(ProductTest, ProdInfoConstruction) {
 
 // Tests adding chunks
 TEST_F(ProductTest, AddChunk) {
-    char                   data[2][hycast::ChunkSize::defaultChunkSize];
+    char                   data[2][hycast::ChunkSize::defaultSize];
     hycast::ProdSize       prodSize{sizeof(data)};
     hycast::ProdIndex      prodIndex{0};
     hycast::ProdInfo       info{prodIndex, "product", prodSize};
@@ -63,7 +63,7 @@ TEST_F(ProductTest, AddChunk) {
 
 // Tests identifying the earliest missing chunk of data
 TEST_F(ProductTest, IdentifyEarliestMissingChunk) {
-    char                   data[2][hycast::ChunkSize::defaultChunkSize];
+    char                   data[2][hycast::ChunkSize::defaultSize];
     hycast::ProdIndex      prodIndex{0};
     hycast::ProdSize       prodSize{sizeof(data)};
     hycast::ProdInfo       prodInfo{prodIndex, "product", prodSize};
@@ -104,7 +104,7 @@ TEST_F(ProductTest, DataConstruction) {
 TEST_F(ProductTest, Serialization) {
     unsigned               version{0};
     hycast::ProdIndex      prodIndex{0};
-    const auto             chunkSize = hycast::ChunkSize::defaultChunkSize;
+    const auto             chunkSize = hycast::ChunkSize::defaultSize;
     char                   data[2][chunkSize];
     hycast::ProdSize       prodSize{sizeof(data)};
     hycast::ProdInfo       prodInfo{prodIndex, "product", prodSize};

@@ -218,9 +218,9 @@ public:
      * @param[in] iovcnt    Number of elements in `iovec`
      */
     void sendv(
-            const unsigned      streamId,
-            const struct iovec* iovec,
-            const int           iovcnt) const;
+            const unsigned streamId,
+            struct iovec*  iovec,
+            const int      iovcnt) const;
 
     /**
      * Returns the SCTP stream number of the current message. Waits for the

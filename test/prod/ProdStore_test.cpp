@@ -172,7 +172,7 @@ TEST_F(ProdStoreTest, ProductDeletion) {
 TEST_F(ProdStoreTest, OldestMissingChunk) {
     hycast::ProdStore ps{""};
     hycast::ProdInfo  prodInfo(0, "Product 0",
-            2*hycast::ChunkSize::defaultChunkSize);
+            2*hycast::ChunkSize::defaultSize);
     hycast::Product   prod;
     ps.add(prodInfo, prod);
     addChunk(ps, prodInfo, 1);

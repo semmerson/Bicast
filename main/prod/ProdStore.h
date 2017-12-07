@@ -16,8 +16,8 @@
 #include "Chunk.h"
 #include "Product.h"
 #include "ProdRcvr.h"
-
 #include <memory>
+#include "../comms/RecvStatus.h"
 
 namespace hycast {
 
@@ -44,22 +44,6 @@ public:
          */
         const ChunkId operator *();
         ChunkInfoIterator& operator ++();
-    };
-
-    /**
-     * Status of an addition to the product-store
-     */
-    class AddStatus
-    {
-        unsigned              status;
-        static const unsigned IS_COMPLETE = 1;
-        static const unsigned IS_NEW = 2;
-    public:
-        inline AddStatus() : status{0}   {}
-        inline AddStatus& setNew()       { status |= IS_NEW; return *this; }
-        inline AddStatus& setComplete()  { status |= IS_COMPLETE; return *this; }
-        inline bool isNew()       const  { return status & IS_NEW; }
-        inline bool isComplete()  const  { return status & IS_COMPLETE; }
     };
 
     /**
@@ -111,7 +95,7 @@ public:
      * @threadsafety        Safe
      * @see                 `ProdStore::AddStatus`
      */
-    AddStatus add(const ProdInfo& prodInfo, Product& prod);
+    RecvStatus add(const ProdInfo& prodInfo, Product& prod);
 
     /**
      * Adds a latent chunk of data to a product. Creates the product if it
@@ -125,7 +109,7 @@ public:
      * @threadsafety      Safe
      * @see               `ProdStore::AddStatus`
      */
-    AddStatus add(LatentChunk& chunk, Product& prod);
+    RecvStatus add(LatentChunk& chunk, Product& prod);
 
     /**
      * Returns the number of products in the store -- both complete and
@@ -133,6 +117,15 @@ public:
      * @return Number of products in the store
      */
     size_t size() const noexcept;
+
+    /**
+     * Indicates if this instance contains information on a given product.
+     * @param[in] index  Index of relevant product
+     * @retval `true`    Information exists
+     * @retval `false`   Information doesn't exist
+     * @threadsafety     Safe
+     */
+    bool haveProdInfo(const ProdIndex index) const;
 
     /**
      * Returns product-information on a given data-product.
@@ -145,11 +138,12 @@ public:
 
     /**
      * Indicates if this instance contains a given chunk of data.
-     * @param[in] info  Information on the chunk
+     * @param[in] id    Identifier of chunk
      * @retval `true`   Chunk exists
      * @retval `false`  Chunk doesn't exist
+     * @threadsafety    Safe
      */
-    bool haveChunk(const ChunkId& info) const;
+    bool haveChunk(const ChunkId& id) const;
 
     /**
      * Returns the identified chunk of data.

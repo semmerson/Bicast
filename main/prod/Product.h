@@ -190,7 +190,7 @@ public:
             const ProdName& name,
             const ProdSize  size,
             const char*     data,
-            const ChunkSize chunkSize = ChunkSize::defaultChunkSize);
+            const ChunkSize chunkSize = ChunkSize::defaultSize);
 };
 
 /******************************************************************************/

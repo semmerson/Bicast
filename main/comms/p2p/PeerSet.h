@@ -13,11 +13,9 @@
 #define PEERSET_H_
 
 #include "InetSockAddr.h"
-#include "MsgRcvr.h"
 #include "Notifier.h"
 #include "Peer.h"
-#include "PeerMsgRcvr.h"
-#include "ProdStore.h"
+#include "PeerSetServer.h"
 
 #include <chrono>
 #include <functional>
@@ -35,59 +33,35 @@ public:
 
 class PeerSet final : public Notifier
 {
-    class                 Impl;
-    std::shared_ptr<Impl> pImpl;
+    class                             Impl;
+
+    std::shared_ptr<Impl>             pImpl;
 
 public:
-    typedef std::chrono::seconds      TimeUnit;
-    typedef std::chrono::steady_clock Clock;
-
     /// Default maximum number of peers
     static const unsigned             defaultMaxPeers = 8;
 
-    /**
-     * Constructs. The set will be empty.
-     * @param[in] prodStore       Product storage
-     * @param[in] msgRcvr         Receiver of messages from remote peer
-     * @param[in] stasisDuration  Minimum amount of time that the set must be
-     *                            full and unchanged before the worst-performing
-     *                            peer may be removed
-     * @param[in] maxPeers        Maximum number of peers. Default is
-     *                            `PeerSet::defaultMaxPeers`.
-     * @param[in] peerStopped     Function to call when a peer stops. Default
-     *                            does nothing.
-     * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
+    /*
+     * Default minimum amount of time, in seconds, that the set of active peers
+     * must be full and unchanged before the worst-performing peer may be
+     * removed.
      */
-    PeerSet(ProdStore&                         prodStore,
-            PeerMsgRcvr&                       msgRcvr,
-            const TimeUnit                     stasisDuration,
-            unsigned                           maxPeers = defaultMaxPeers,
-            std::function<void(InetSockAddr&)> peerStopped =
-                    [](InetSockAddr&){});
+    static const unsigned             defaultStasisDuration = 60u;
 
     /**
      * Constructs. The set will be empty.
-     * @param[in] prodStore       Product storage
-     * @param[in] msgRcvr         Receiver of messages from remote peer
-     * @param[in] statisDuration  Minimum amount of time, in units of
-     *                            `PeerSet::TimeUnit`, that the set must be full
-     *                            and unchanged before the worst-performing peer
-     *                            may be removed
+     * @param[in] peerSetServer   Higher-level component
      * @param[in] maxPeers        Maximum number of peers. Default is
      *                            `PeerSet::defaultMaxPeers`.
-     * @param[in] peerStopped     Function to call when a peer stops. Default
-     *                            does nothing.
-     * @throws InvalidArgument  ` maxPeers == 0 || stasisDuration <= 0`
+     * @param[in] stasisDuration  Minimum amount of time, in seconds, that the
+     *                            set must be full and unchanged before the
+     *                            worst-performing peer may be removed. Default
+     *                            is `PeerSet::defaultStasisDuration`.
+     * @throws InvalidArgument    `maxPeers == 0 || stasisDuration <= 0`
      */
-    PeerSet(ProdStore&                         prodStore,
-            PeerMsgRcvr&                       msgRcvr,
-            const unsigned                     stasisDuration,
-            unsigned                           maxPeers = defaultMaxPeers,
-            std::function<void(InetSockAddr&)> peerStopped =
-                    [](InetSockAddr&){})
-        : PeerSet{prodStore, msgRcvr, TimeUnit{stasisDuration}, maxPeers,
-                peerStopped}
-    {}
+    PeerSet(PeerSetServer& peerSetServer,
+            unsigned       maxPeers = defaultMaxPeers,
+            const unsigned stasisDuration = defaultStasisDuration);
 
     /**
      * Tries to insert a peer. The attempt will fail if the peer is already a
@@ -115,43 +89,22 @@ public:
     bool contains(const InetSockAddr& peerAddr) const;
 
     /**
-     * Sends information about a product to all peers in the set.
-     * @param[in] prodInfo        Product information
+     * Notifies all remote peers about available information on a product.
+     * @param[in] prodIndex       Product index
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void notify(const ProdIndex& prodIndex) const;
 
     /**
-     * Sends information about a product to all peers in the set except one.
-     * @param[in] prodInfo        Product information
-     * @param[in] except          Address of peer to exclude
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ProdInfo& prodInfo, const InetSockAddr& except) const;
-
-    /**
-     * Sends information about a chunk-of-data to all peers in the set.
+     * Notifies all remote peers about an available chunk-of-data.
      * @param[in] chunkId         Chunk-ID
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkId& chunkId) const;
-
-    /**
-     * Sends information about a chunk-of-data to all peers in the set except
-     * one.
-     * @param[in] chunkInfo       Chunk information
-     * @param[in] except          Address of peer to exclude
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ChunkId& chunkInfo, const InetSockAddr& except) const;
+    void notify(const ChunkId& chunkId) const;
 
     /**
      * Increments the value of a peer.

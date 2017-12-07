@@ -22,21 +22,21 @@ public:
     virtual ~Notifier()
     {}
     /**
-     * Sends information about a product.
-     * @param[in] prodInfo        Product information
+     * Notifies about available information on a product.
+     * @param[in] prodIndex       Relevant product index
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    virtual void sendNotice(const ProdInfo& prodInfo) const =0;
+    virtual void notify(const ProdIndex& prodIndex) const =0;
     /**
-     * Sends information about a chunk-of-data.
-     * @param[in] chunkInfo       Chunk information
+     * Notifies about an available chunk-of-data.
+     * @param[in] chunkId         Relevant chunk identifier
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    virtual void sendNotice(const ChunkId& chunkInfo) const =0;
+    virtual void notify(const ChunkId& chunkId) const =0;
 };
 
 } // namespace

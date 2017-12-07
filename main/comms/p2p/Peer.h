@@ -14,6 +14,7 @@
 
 #include "Chunk.h"
 #include "Notifier.h"
+#include "PeerServer.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
 
@@ -78,7 +79,7 @@ public:
      * @throw     RuntimeError  Couldn't construct peer
      * @throw     SystemError   Connection failure
      */
-    Peer(SctpSock& sock);
+    Peer(SctpSock&  sock);
 
     /**
      * Constructs a client-side instance. Blocks until connected and versions
@@ -89,8 +90,6 @@ public:
      * @throw     SystemError   Connection failure
      */
     Peer(const InetSockAddr& peerAddr);
-
-    void runReceiver() const;
 
     /**
      * Returns the Internet socket address of the remote peer.
@@ -130,57 +129,36 @@ public:
     bool operator!=(const Peer& that) const noexcept;
 
     /**
-     * Returns the next message from the remote peer.
-     * @return           Next message from remote peer
-     * @exceptionsafety  Basic guarantee
-     * @threadsafefy     Thread-compatible but not thread-safe
+     * Receives messages from the socket and calls a higher-level component.
+     * Doesn't return until the connection is closed. Intended to run on its own
+     * thread.
+     * @param[in] peerServer  Higher-level component
      */
-    Message getMessage() const;
+    void runReceiver(PeerServer& peerServer) const;
 
     /**
-     * Sends information about a product to the remote peer.
-     * @param[in] prodInfo  Product information
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
+     * Requests the backlog of data-chunks from the remote peer.
+     * @param[in] chunkId  Identifier of earliest data-chunk in backlog
      */
-    void sendNotice(const ProdInfo& prodInfo) const;
+    void requestBacklog(const ChunkId& chunkId) const;
 
     /**
-     * Sends information about a chunk-of-data to the remote peer.
-     * @param[in] chunkInfo  Chunk information
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
+     * Notifies the remote peer about available product information.
+     * @param[in] prodIndex       Product index
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ChunkId& chunkInfo) const;
+    void notify(const ProdIndex& prodIndex) const;
 
     /**
-     * Sends a product-index to the remote peer.
-     * @param[in] prodIndex  Product-index
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
+     * Notifies the remote peer about an available chunk-of-data.
+     * @param[in] chunkId         Relevant chunk index
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendRequest(const ProdIndex& prodIndex) const;
-
-    /**
-     * Sends a chunk specification to the remote peer.
-     * @param[in] prodIndex  Product-index
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     */
-    void sendRequest(const ChunkId& info) const;
-
-    /**
-     * Sends a chunk-of-data to the remote peer.
-     * @param[in] chunk  Chunk-of-data
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     */
-    void sendData(ActualChunk& chunk) const;
+    void notify(const ChunkId& chunkId) const;
 
     /**
      * Returns the number of streams.

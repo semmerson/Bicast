@@ -22,14 +22,14 @@
 
 namespace hycast {
 
-class InetSockAddrImpl; // Forward declaration
-
 class InetSockAddr final {
-    std::shared_ptr<InetSockAddrImpl> pImpl;
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
-     * Constructs from nothing. The resulting object will not have a socket
+     * Default constructs. The resulting object will not have a socket
      * address: it will be empty.
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
@@ -38,39 +38,10 @@ public:
     InetSockAddr();
 
     /**
-     * Constructs from an Internet address and a port number.
-     * @param[in] inetAddr Internet address
-     * @param[in] port     Port number
-     * @throws std::bad_alloc if necessary memory can't be allocated
-     * @exceptionsafety Strong
+     * Constructs from a generic socket address.
+     * @param[in] addr  Generic socket address
      */
-    InetSockAddr(
-            const InetAddr   inetAddr,
-            const in_port_t  port);
-
-    /**
-     * Constructs from a string representation of an IP address and a port
-     * number.
-     * @param[in] ip_addr  IP address (either IPv4 or IPv6)
-     * @param[in] port     Port number
-     * @throws std::invalid_argument if the IP address is invalid
-     * @throws std::bad_alloc if necessary memory can't be allocated
-     * @exceptionsafety Strong
-     */
-    InetSockAddr(
-            const std::string ip_addr,
-            const in_port_t   port);
-
-    /**
-     * Constructs from an IPv4 address.
-     * @param[in] addr  IPv4 address in _network_ byte order
-     * @param[in] port  Port number in _host_ bytes order
-     * @throws std::bad_alloc if necessary memory can't be allocated
-     * @exceptionsafety Strong
-     */
-    InetSockAddr(
-            const in_addr_t  addr,
-            const PortNumber port);
+    InetSockAddr(const struct sockaddr& sockaddr);
 
     /**
      * Constructs from an IPv4 socket address.
@@ -81,17 +52,6 @@ public:
     InetSockAddr(const struct sockaddr_in& addr);
 
     /**
-     * Constructs from an IPv6 address.
-     * @param[in] addr  IPv6 address in _network_ byte order
-     * @param[in] port  Port number in _host_ bytes order
-     * @throws std::bad_alloc if necessary memory can't be allocated
-     * @exceptionsafety Strong
-     */
-    InetSockAddr(
-            const struct in6_addr& addr,
-            const in_port_t        port);
-
-    /**
      * Constructs from an IPv6 socket address.
      * @param[in] addr  IPv6 socket address
      * @throws std::bad_alloc if necessary memory can't be allocated
@@ -100,10 +60,27 @@ public:
     InetSockAddr(const struct sockaddr_in6& sockaddr);
 
     /**
-     * Constructs from a generic socket address.
-     * @param[in] addr  Generic socket address
+     * Constructs from a generic Internet address and port number.
+     * @param[in] inetAddr Internet address
+     * @param[in] port     Port number
+     * @throws std::bad_alloc if necessary memory can't be allocated
+     * @exceptionsafety Strong
      */
-    InetSockAddr(const struct sockaddr& sockaddr);
+    InetSockAddr(
+            const InetAddr   inetAddr,
+            const PortNumber port);
+
+    /**
+     * Constructs from an Internet address specification and a port number.
+     * @param[in] inetAddr Internet address specification. May be a hostname,
+     *                     an IPv4 specification, or an IPv6 specification.
+     * @param[in] port     Port number
+     * @throws std::bad_alloc if necessary memory can't be allocated
+     * @exceptionsafety Strong
+     */
+    InetSockAddr(
+            const std::string& inetAddr,
+            const PortNumber   port);
 
     /**
      * Copy constructs from another instance.

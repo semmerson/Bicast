@@ -33,14 +33,14 @@ public:
     /**
      * Adds a potential peer.
      * @param[in] peerAddr  Internet socket address of the remote peer
-     * @param[in] delay     The delay for the potential peer before it becomes
-     *                      available
+     * @param[in] delay     The delay, in seconds, for the potential peer before
+     *                      it becomes available
      * @exceptionsafety     Strong guarantee
      * @threadsafety        Safe
      */
     void push(
             const InetSockAddr& peerAddr,
-            const Duration&     delay = Duration(0));
+            const unsigned      delay = 0);
 
     /**
      * Returns the potential peer whose reveal-time is the earliest and not
@@ -62,6 +62,23 @@ public:
      * @threadsafety    Safe
      */
     bool empty() const noexcept;
+};
+
+class NilPeerSource final : public PeerSource
+{
+public:
+    inline void push(
+            const InetSockAddr& peerAddr,
+            const Duration&     delay = Duration(0))
+    {};
+    inline InetSockAddr pop()
+    {
+        return InetSockAddr{};
+    }
+    inline bool empty() const noexcept
+    {
+        return true;
+    }
 };
 
 } // namespace

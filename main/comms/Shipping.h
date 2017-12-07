@@ -35,42 +35,23 @@ public:
      * @param[in] prodStore       Product store
      * @param[in] mcastAddr       Multicast group socket address
      * @param[in] version         Protocol version
-     * @param[in] maxPeers        Maximum number of peers
-     * @param[in] stasisDuration  Minimum amount of time that the set of active
-     *                            peers must be unchanged before the
-     *                            worst-performing peer may be replaced
      * @param[in] serverAddr      Socket address of local server for remote
      *                            peers
+     * @param[in] maxPeers        Maximum number of peers.
+     * @param[in] stasisDuration  Minimum amount of time, in seconds, over which
+     *                            the set of active peers must be unchanged
+     *                            before the worst-performing peer may be
+     *                            replaced
      * @see PeerSet(std::function<Peer&>, unsigned, unsigned)
      */
     Shipping(
             ProdStore&              prodStore,
             const InetSockAddr&     mcastAddr,
             const unsigned          version,
-            const unsigned          maxPeers,
-            const PeerSet::TimeUnit stasisDuration,
-            const InetSockAddr&     serverAddr);
-
-    /**
-     * Constructs. The default maximum number of peers and default stasis
-     * duration for the set of active peers will be used. Blocks until ready to
-     * accept an incoming connection from a remote peer.
-     * @param[in] prodStore       Product store
-     * @param[in] mcastAddr       Multicast group socket address
-     * @param[in] version         Protocol version
-     * @param[in] serverAddr      Socket address of local server for remote
-     *                            peers
-     * @see Shipping(ProdStore, InetSockAddr, unsigned, unsigned, unsigned,
-     * 			     InetSockAddr)
-     */
-    Shipping(
-            ProdStore&          prodStore,
-            const InetSockAddr& mcastAddr,
-            const unsigned      version,
-            const InetSockAddr& serverAddr)
-    	: Shipping(prodStore, mcastAddr, version, PeerSet::defaultMaxPeers,
-                PeerSet::TimeUnit{60}, serverAddr)
-    {}
+            const InetSockAddr&     serverAddr,
+            const unsigned          maxPeers = PeerSet::defaultMaxPeers,
+            const unsigned          stasisDuration =
+                    PeerSet::defaultStasisDuration);
 
     /**
      * Ships a product.

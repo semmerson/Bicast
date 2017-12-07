@@ -15,16 +15,19 @@
 #define MAIN_RECEIVING_RECEIVING_H_
 
 #include "McastReceiver.h"
-#include "McastMsgRcvr.h"
-#include "P2pMgr.h"
-#include "PeerMsgRcvr.h"
+#include "P2pContentRcvr.h"
 
 #include <memory>
 #include <string>
 
+#include "mcast/McastContentRcvr.h"
+
 namespace hycast {
 
-class Receiving final : public McastMsgRcvr, public PeerMsgRcvr
+/**
+ * Class that receives content from both the multicast and P2P networks.
+ */
+class Receiving final
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
@@ -49,20 +52,6 @@ public:
             const unsigned      version,
             const std::string&  pathname = "",
             const double        drop = 0);
-
-    void recvNotice(const ProdInfo& info);
-
-    void recvData(LatentChunk chunk);
-
-    void recvNotice(const ProdInfo& info, const Peer& peer);
-
-    void recvNotice(const ChunkId& info, const Peer& peer);
-
-    void recvRequest(const ProdIndex& index, const Peer& peer);
-
-    void recvRequest(const ChunkId& info, const Peer& peer);
-
-    void recvData(LatentChunk chunk, const Peer& peer);
 };
 
 } /* namespace hycast */

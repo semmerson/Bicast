@@ -13,9 +13,9 @@
 #ifndef MAIN_MCAST_MCASTRECEIVER_H_
 #define MAIN_MCAST_MCASTRECEIVER_H_
 
-#include "McastMsgRcvr.h"
-
 #include <memory>
+
+#include "McastContentRcvr.h"
 
 namespace hycast {
 
@@ -43,7 +43,7 @@ public:
      */
     McastReceiver(
             const InetSockAddr& mcastAddr,
-            McastMsgRcvr&       msgRcvr,
+            McastContentRcvr&       msgRcvr,
             const unsigned      version);
 
     /**
@@ -58,7 +58,7 @@ public:
     McastReceiver(
             const InetSockAddr& mcastAddr,
             const InetAddr&     srcAddr,
-            McastMsgRcvr&       msgRcvr,
+            McastContentRcvr&       msgRcvr,
             const unsigned      version);
 
     /**
@@ -70,7 +70,7 @@ public:
      */
     McastReceiver(
             const SrcMcastInfo& srcMcastInfo,
-            McastMsgRcvr&       msgRcvr,
+            McastContentRcvr&       msgRcvr,
             const unsigned      version)
     	: McastReceiver(srcMcastInfo.mcastAddr, srcMcastInfo.srcAddr, msgRcvr,
     			version)

@@ -45,8 +45,8 @@ private:
     type             size;
 
 public:
-    static const type chunkSizeMax     = UINT16_MAX;
-    static const type defaultChunkSize = INT16_MAX;
+    static const type maxSize     = UINT16_MAX;
+    static const type defaultSize = INT16_MAX;
 
     /**
      * Constructs. NB: Not explicit.
@@ -258,6 +258,11 @@ public:
         return index < rhs.index;
     }
 
+    inline bool operator ==(const ChunkIndex& rhs) const noexcept
+    {
+        return index == rhs.index;
+    }
+
     /**
      * Returns the number of bytes in the serial representation of any
      * instance.
@@ -291,7 +296,12 @@ public:
     {
         return SerialInt<type>::deserialize(decoder, version);
     }
-};
+
+    inline std::string to_string() const
+    {
+        return std::to_string(index);
+    }
+}; // `ChunkIndex`
 
 /******************************************************************************/
 
@@ -318,7 +328,7 @@ public:
 
     /**
      * Constructs.
-     * @param[in] prodIndex   Product index
+     * @param[in] prodInfo     Product information
      * @param[in] chunkIndex   Chunk index
      * @throw InvalidArgument  Product information and chunk index are
      *                         incompatible
@@ -452,7 +462,7 @@ public:
             const ChunkIndex chunkIndex);
 
     /**
-     * Returns the product-information.
+     * Returns the product-information. The product name will be empty.
      * @return Product-information
      */
     const ProdInfo& getProdInfo() const noexcept;

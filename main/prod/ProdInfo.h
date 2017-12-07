@@ -47,7 +47,7 @@ public:
             const ProdIndex index,
             const ProdName& name,
             const ProdSize  size,
-            const ChunkSize chunkSize = ChunkSize::defaultChunkSize);
+            const ChunkSize chunkSize = ChunkSize::defaultSize);
 
     /**
      * Constructs a partial instance. The name will be the empty string.
@@ -66,6 +66,13 @@ public:
      * @retval `false`  Instance is not valid
      */
     operator bool() const noexcept;
+
+    /**
+     * Indicates if this instance is complete (i.e., contains all information).
+     * @retval `true`   Instance is complete
+     * @retval `false`  Instance is not complete
+     */
+    bool isComplete() const noexcept;
 
     /**
      * Returns a string representation of this instance.

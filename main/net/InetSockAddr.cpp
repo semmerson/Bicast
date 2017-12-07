@@ -26,10 +26,10 @@
 
 namespace hycast {
 
-class InetSockAddrImpl final
+class InetSockAddr::Impl final
 {
-    InetAddr  inetAddr; /// IP address
-    in_port_t port;     /// Port number in host byte-order
+    InetAddr   inetAddr; /// IP address
+    PortNumber port;     /// Port number
 
     /**
      * Returns the type of a socket.
@@ -79,7 +79,7 @@ public:
      * string as the Internet address and the port number will be 0.
      * @throws std::bad_alloc if required memory can't be allocated
      */
-    InetSockAddrImpl()
+    Impl()
         : inetAddr{},
           port{0}
     {}
@@ -91,72 +91,18 @@ public:
      * @throws std::bad_alloc if necessary memory can't be allocated
      * @exceptionsafety Strong
      */
-    InetSockAddrImpl(
+    Impl(
             const InetAddr   inetAddr,
-            const in_port_t  port)
+            const PortNumber port)
         : inetAddr(inetAddr)
         , port(port)
     {}
 
-    /**
-     * Constructs from a string representation of an Internet address and a port
-     * number.
-     * @param[in] ipAddr  String representation of Internet address
-     * @param[in] port    Port number in host byte-order
-     * @throws std::bad_alloc if required memory can't be allocated
-     * @throws std::invalid_argument if the string representation is invalid
-     */
-    InetSockAddrImpl(
-            const std::string ipAddr,
-            const in_port_t   port)
-        : inetAddr(ipAddr),
-          port(port)
-    {}
-
-    /**
-     * Constructs from an IPV4 address and a port number.
-     * @param[in] addr  IPv4 address
-     * @param[in] port  Port number
-     * @throws std::bad_alloc if required memory can't be allocated
-     */
-    InetSockAddrImpl(
-            const in_addr_t  addr,
-            const PortNumber port)
-        : inetAddr{addr},
-          port{port.get_host()}
-    {}
-
-    /**
-     * Constructs from an IPV6 address and a port number.
-     * @param[in] addr  IPv6 address
-     * @param[in] port  Port number in host byte-order
-     * @throws std::bad_alloc if required memory can't be allocated
-     */
-    InetSockAddrImpl(
-            const struct in6_addr& addr,
-            const in_port_t        port)
-        : inetAddr(addr),
-          port(port)
-    {}
-
-    /**
-     * Constructs from an IPv4 socket address.
-     * @param[in] addr  IPv4 socket address
-     * @throws std::bad_alloc if required memory can't be allocated
-     */
-    InetSockAddrImpl(const struct sockaddr_in& addr)
-        : inetAddr(addr.sin_addr.s_addr),
-          port(ntohs(addr.sin_port))
-    {}
-
-    /**
-     * Constructs from an IPv6 socket address.
-     * @param[in] addr  IPv6 socket address
-     * @throws std::bad_alloc if required memory can't be allocated
-     */
-    InetSockAddrImpl(const struct sockaddr_in6& sockaddr)
-        : inetAddr(sockaddr.sin6_addr),
-          port(ntohs(sockaddr.sin6_port))
+    Impl(
+            const std::string& inetAddr,
+            const PortNumber   port)
+        : inetAddr(inetAddr)
+        , port(port)
     {}
 
     /**
@@ -165,20 +111,20 @@ public:
      *                                IPv4 or IPv6
      * @throws std::invalid_argument  `addr` is neither IPv4 nor IPv6
      */
-    InetSockAddrImpl(const struct sockaddr& sockaddr)
-        : InetSockAddrImpl()
+    Impl(const struct sockaddr& sockaddr)
+        : Impl()
     {
         if (sockaddr.sa_family == AF_INET) {
             const struct sockaddr_in* addr =
                     reinterpret_cast<const struct sockaddr_in*>(&sockaddr);
-            inetAddr = std::move(InetAddr(addr->sin_addr.s_addr));
-            port = ntohs(addr->sin_port);
+            inetAddr = InetAddr{addr->sin_addr};
+            port = PortNumber{ntohs(addr->sin_port)};
         }
         else if (sockaddr.sa_family == AF_INET6) {
             const struct sockaddr_in6* addr =
                     reinterpret_cast<const struct sockaddr_in6*>(&sockaddr);
             inetAddr = std::move(InetAddr(addr->sin6_addr));
-            port = ntohs(addr->sin6_port);
+            port = PortNumber{ntohs(addr->sin6_port)};
         }
         else {
             throw std::invalid_argument("Socket address neither IPv4 nor IPv6: "
@@ -205,12 +151,12 @@ public:
             struct sockaddr_storage& storage) const
     {
         int sockType = getSockType(sd);
-        inetAddr.setSockAddrStorage(storage, port, sockType);
+        inetAddr.setSockAddrStorage(storage, port.get_host(), sockType);
     }
 
     operator bool()
     {
-        return port != 0;
+        return port.operator bool();
     }
 
     /**
@@ -221,7 +167,7 @@ public:
      */
     size_t hash() const noexcept
     {
-        return inetAddr.hash() ^ std::hash<uint16_t>()(port);
+        return inetAddr.hash() ^ port.hash();
     }
 
     /**
@@ -231,11 +177,24 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    bool operator<(const InetSockAddrImpl& that) const noexcept
+    bool operator<(const Impl& that) const noexcept
     {
         return (inetAddr < that.inetAddr)
                 ? true
                 : inetAddr == that.inetAddr && port < that.port;
+    }
+
+    /**
+     * Indicates if this instance is considered equal to another.
+     * @param[in] rhs   Other instance
+     * @retval `true`   Instance is considered equal to the other
+     * @retval `false`  Instance is not considered equal to the other
+     * @exceptionsafety Nothrow
+     * @threadsafety    Safe
+     */
+    bool operator==(const Impl& rhs) const noexcept
+    {
+        return (inetAddr == rhs.inetAddr) && (port == rhs.port);
     }
 
     /**
@@ -248,8 +207,8 @@ public:
     {
         std::string addr = inetAddr.to_string();
         return (addr.find(':') == std::string::npos)
-                ? addr + ":" + std::to_string(port)
-                : std::string("[") + addr + "]:" + std::to_string(port);
+                ? addr + ":" + port.to_string()
+                : std::string("[") + addr + "]:" + port.to_string();
     }
 
     /**
@@ -275,7 +234,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    const InetSockAddrImpl& connect(const int sd) const
+    const Impl& connect(const int sd) const
     {
         struct sockaddr_storage storage;
         setSockAddrStorage(sd, storage);
@@ -300,7 +259,7 @@ public:
      * @exceptionsafety Strong
      * @threadsafety    Safe
      */
-    const InetSockAddrImpl& bind(const int sd) const
+    const Impl& bind(const int sd) const
     {
         struct sockaddr_storage storage;
         setSockAddrStorage(sd, storage);
@@ -330,7 +289,7 @@ public:
      * @execptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const InetSockAddrImpl& setHopLimit(
+    const Impl& setHopLimit(
             const int      sd,
             const unsigned limit) const
     {
@@ -347,7 +306,7 @@ public:
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const InetSockAddrImpl& setMcastLoop(
+    const Impl& setMcastLoop(
             const int  sd,
             const bool enable) const
     {
@@ -363,7 +322,7 @@ public:
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const InetSockAddrImpl& joinMcastGroup(const int sd) const
+    const Impl& joinMcastGroup(const int sd) const
     {
         struct group_req req;
         setSockAddrStorage(sd, req.gr_group);
@@ -386,7 +345,7 @@ public:
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    const InetSockAddrImpl& joinSourceGroup(
+    const Impl& joinSourceGroup(
             const int       sd,
             const InetAddr& srcAddr) const
     {
@@ -394,7 +353,7 @@ public:
         setSockAddrStorage(sd, req.gsr_group);
         req.gsr_interface = 0; // Let kernel choose multicast interface
         int sockType = getSockType(sd);
-        srcAddr.setSockAddrStorage(req.gsr_source, port, sockType);
+        srcAddr.setSockAddrStorage(req.gsr_source, port.get_host(), sockType);
         int level = familyToLevel(req.gsr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_SOURCE_GROUP, &req, sizeof(req)))
             throw SYSTEM_ERROR(
@@ -405,59 +364,34 @@ public:
     }
 };
 
-/**
- * Indicates if an instance is equal to another.
- * @param[in] that  Other instance
- * @retval `true`   Iff this instance is considered equal to the other
- * @exceptionsafety Nothrow
- * @threadsafety    Safe
- */
-bool operator==(
-       const InetSockAddrImpl& o1,
-        const InetSockAddrImpl& o2) noexcept
-{
-    return !(o1 < o2) && !(o2 < o1);
-}
-
-
 InetSockAddr::InetSockAddr()
-    : pImpl{new InetSockAddrImpl()}
-{}
-
-InetSockAddr::InetSockAddr(
-        const InetAddr  inetAddr,
-        const in_port_t port)
-    : pImpl{new InetSockAddrImpl(inetAddr, port)}
-{}
-
-InetSockAddr::InetSockAddr(
-        const std::string ip_addr,
-        const in_port_t   port)
-    : pImpl(new InetSockAddrImpl(ip_addr, port))
-{}
-
-InetSockAddr::InetSockAddr(
-        const in_addr_t  addr,
-        const PortNumber port)
-    : pImpl{new InetSockAddrImpl(addr, port)}
-{}
-
-InetSockAddr::InetSockAddr(
-        const struct in6_addr& addr,
-        const in_port_t        port)
-    : pImpl{new InetSockAddrImpl(addr, port)}
-{}
-
-InetSockAddr::InetSockAddr(const struct sockaddr_in& addr)
-    : pImpl{new InetSockAddrImpl(addr)}
-{}
-
-InetSockAddr::InetSockAddr(const struct sockaddr_in6& sockaddr)
-    : pImpl{new InetSockAddrImpl(sockaddr)}
+    : pImpl{new Impl()}
 {}
 
 InetSockAddr::InetSockAddr(const struct sockaddr& sockaddr)
-    : pImpl{new InetSockAddrImpl(sockaddr)}
+    : pImpl{new Impl(sockaddr)}
+{}
+
+InetSockAddr::InetSockAddr(const struct sockaddr_in& sockaddr)
+    : pImpl{new Impl(
+            *reinterpret_cast<const struct sockaddr*>(&sockaddr))}
+{}
+
+InetSockAddr::InetSockAddr(const struct sockaddr_in6& sockaddr)
+    : pImpl{new Impl(
+            *reinterpret_cast<const struct sockaddr*>(&sockaddr))}
+{}
+
+InetSockAddr::InetSockAddr(
+        const InetAddr   inetAddr,
+        const PortNumber port)
+    : pImpl{new Impl(inetAddr, port)}
+{}
+
+InetSockAddr::InetSockAddr(
+        const std::string& inetAddr,
+        const PortNumber   port)
+    : pImpl{new Impl(inetAddr, port)}
 {}
 
 InetSockAddr::InetSockAddr(const InetSockAddr& that) noexcept
@@ -513,7 +447,7 @@ size_t InetSockAddr::hash() const noexcept
 
 bool InetSockAddr::operator<(const InetSockAddr& that) const noexcept
 {
-    return pImpl.get() < that.pImpl.get();
+    return *pImpl.get() < *that.pImpl.get();
 }
 
 const InetSockAddr& InetSockAddr::bind(int sd) const

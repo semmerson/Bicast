@@ -23,7 +23,7 @@ namespace {
 class ChunkInfoTest : public ::testing::Test {
 protected:
     ChunkInfoTest()
-        : prodSize{4u*hycast::ChunkSize::defaultChunkSize}
+        : prodSize{4u*hycast::ChunkSize::defaultSize}
     {}
 
     hycast::ProdSize prodSize;

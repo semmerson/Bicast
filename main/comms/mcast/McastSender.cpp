@@ -25,8 +25,8 @@ class McastSender::Impl final
 
     protected:
         virtual void write(
-                const struct iovec* iov,
-                const int           iovcnt)
+                struct iovec* iov,
+                const int     iovcnt)
         {
             sock.send(iov, iovcnt);
         }

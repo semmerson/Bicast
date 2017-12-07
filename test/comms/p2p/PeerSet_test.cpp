@@ -11,61 +11,36 @@
 #include "config.h"
 
 #include "error.h"
-#include "HycastTypes.h"
 #include "Interface.h"
-#include "logging.h"
-#include "PeerMsgRcvr.h"
 #include "PeerSet.h"
-#include "ProdInfo.h"
-#include "ProdStore.h"
-#include "SctpSock.h"
+#include "Thread.h"
 
 #include <gtest/gtest.h>
-#include <pthread.h>
-#include <thread>
-#include <unistd.h>
 
 namespace {
 
 // The fixture for testing class PeerSet.
-class PeerSetTest : public ::testing::Test
+class PeerSetTest : public ::testing::Test, public hycast::PeerSetServer
 {
 protected:
     /**
-     * Thread-safe receiver of peer-messages that's a black hole.
-     */
-    class MsgRcvr final : public hycast::PeerMsgRcvr
-    {
-    public:
-        void recvNotice(const hycast::ProdInfo& info, const hycast::Peer& peer)
-        {}
-        void recvNotice(const hycast::ChunkId& id, const hycast::Peer& peer)
-        {}
-        void recvRequest(const hycast::ProdIndex& index, const hycast::Peer& peer)
-        {}
-        void recvRequest(const hycast::ChunkId& info, const hycast::Peer& peer)
-        {}
-        void recvData(hycast::LatentChunk latentChunk, const hycast::Peer& peer)
-        {
-                latentChunk.discard();
-        }
-    };
-
-    /**
-     * Data-source that's a receiving black hole.
+     * Data-source.
      */
     class Source {
-        std::thread thread;
-        void runSource(hycast::SrvrSctpSock sourceSock) {
+        hycast::PeerSetServer& peerSetServer;
+        hycast::SrvrSctpSock   srvrSock;
+        hycast::Thread         thread;
+        hycast::PeerSet        peerSet;
+        hycast::Cue            cue;
+
+        void runSource() {
             try {
-                MsgRcvr  srvrMsgRcvr{};
-                hycast::ProdStore prodStore{};
-                hycast::PeerSet   peerSet{prodStore, srvrMsgRcvr, 2};
                 for (;;) {
-                    auto sock = sourceSock.accept();
+                    auto sock = srvrSock.accept();
                     try {
                         hycast::Peer peer{sock};
-                        peerSet.tryInsert(peer);
+                        EXPECT_TRUE(peerSet.tryInsert(peer));
+                        cue.cue();
                     }
                     catch (const std::exception& ex) {
                         LOG_WARN(ex, "Couldn't accept remote peer " +
@@ -77,32 +52,71 @@ protected:
                 LOG_ERROR(ex, "Data-source threw an exception");
             }
         }
+
     public:
-        Source(const hycast::InetSockAddr& sourceSockAddr)
-            : thread{}
+        Source( const hycast::InetSockAddr& sourceSockAddr,
+                hycast::PeerSetServer&      peerSetServer)
+            : peerSetServer(peerSetServer)
+            , srvrSock{sourceSockAddr, hycast::Peer::getNumStreams()}
+            , thread{}
+            , peerSet{peerSetServer, 2}
+            , cue{}
         {
-            hycast::SrvrSctpSock sourceSock{sourceSockAddr,
-                hycast::Peer::getNumStreams()};
-            sourceSock.listen();
-            thread = std::thread([this,sourceSock]{runSource(sourceSock);});
+            srvrSock.listen();
+            thread = hycast::Thread([this]{runSource();});
         }
-        ~Source() {
-            if (thread.joinable()) {
-                auto status = ::pthread_cancel(thread.native_handle());
-                if (status)
-                    hycast::log_error(hycast::SYSTEM_ERROR(
-                            "Couldn't cancel data-source thread", status));
-                thread.join();
+
+        void send(const hycast::ProdInfo& prodInfo)
+        {
+            cue.wait();
+            peerSet.notify(prodInfo.getIndex());
+            auto numChunks = prodInfo.getNumChunks();
+            for (hycast::ChunkIndex chunkIndex = 0;
+                    chunkIndex < numChunks; ++chunkIndex) {
+                try {
+                    hycast::ChunkId chunkId{prodInfo, chunkIndex};
+                    peerSet.notify(chunkId);
+                }
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(hycast::RUNTIME_ERROR(
+                            "Couldn't notify about chunk " +
+                            chunkIndex.to_string()));
+                }
             }
         }
     };
 
+    hycast::ProdStore        prodStore;
+    hycast::ProdIndex        prodIndex;
+    hycast::ProdSize         prodSize;
+    hycast::ProdInfo         prodInfo;
+    hycast::ChunkIndex::type numChunks;
+    char                     chunkData[hycast::ChunkSize::maxSize];
+    hycast::PortNumber       srvrPortNum;
+    hycast::InetSockAddr     srvr1Addr;
+    hycast::InetSockAddr     srvr2Addr;
+    hycast::ChunkIndex::type numRcvdChunks;
+    hycast::Barrier          barrier;
+    Source                   source1;
+    Source                   source2;
+
     PeerSetTest()
-        : source1SockAddr{"127.0.0.1", 38800}
-        , source2SockAddr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET),
-                38800}
-        , prodStore{}
-    {}
+        : prodStore{}
+        , prodIndex{1}
+        , prodSize{1000000}
+        , prodInfo{prodIndex, "product", prodSize}
+        , numChunks{prodInfo.getNumChunks()}
+        , srvrPortNum{38800}
+        , srvr1Addr{"127.0.0.1", srvrPortNum}
+        , srvr2Addr{hycast::Interface{ETHNET_IFACE_NAME}.getInetAddr(AF_INET),
+                srvrPortNum}
+        , numRcvdChunks{0}
+        , barrier{2}
+        , source1{srvr1Addr, *this}
+        , source2{srvr2Addr, *this}
+    {
+        ::memset(chunkData, 0xbd, sizeof(chunkData));
+    }
 
     hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
         hycast::SctpSock sock{hycast::Peer::getNumStreams()};
@@ -110,35 +124,91 @@ protected:
         return hycast::Peer{sock};
     }
 
-    // Objects declared here can be used in all TEST_F tests
-    const hycast::InetSockAddr source1SockAddr;
-    const hycast::InetSockAddr source2SockAddr;
-    const hycast::ProdInfo     prodInfo{1, "product", 100000};
-    const hycast::ChunkInfo    chunkInfo{prodInfo, 2};
-    MsgRcvr                    msgRcvr{};
-    hycast::ProdStore          prodStore;
+    // Begin implementation of `PeerSetServer` interface
+
+    hycast::ChunkId getEarliestMissingChunkId() {
+        return hycast::ChunkId{};
+    }
+
+    hycast::Backlogger getBacklogger(
+            const hycast::ChunkId& earliest,
+            hycast::Peer&          peer)
+    {
+        return hycast::Backlogger(peer, earliest, prodStore);
+    }
+    void peerStopped(const hycast::InetSockAddr& peerAddr)
+    {}
+    bool shouldRequest(const hycast::ProdIndex& index)
+    {
+        EXPECT_EQ(prodIndex, index);
+        return true;
+    }
+    bool shouldRequest(const hycast::ChunkId& chunkId)
+    {
+        EXPECT_EQ(prodIndex, chunkId.getProdIndex());
+        EXPECT_GT(numChunks, chunkId.getChunkIndex());
+        return true;
+    }
+    bool get(const hycast::ProdIndex& index, hycast::ProdInfo& info)
+    {
+        EXPECT_EQ(prodIndex, index);
+        info = prodInfo;
+        return true;
+    }
+    bool get(const hycast::ChunkId& chunkId, hycast::ActualChunk& chunk)
+    {
+        EXPECT_EQ(prodIndex, chunkId.getProdIndex());
+        auto chunkIndex = chunkId.getChunkIndex();
+        EXPECT_GT(numChunks, chunkIndex);
+        const hycast::ChunkInfo chunkInfo{prodInfo, chunkIndex};
+        chunk = hycast::ActualChunk(chunkInfo, chunkData);
+        return true;
+    }
+    hycast::RecvStatus receive(
+            const hycast::ProdInfo&     info,
+            const hycast::InetSockAddr& peerAddr)
+    {
+        EXPECT_EQ(prodInfo, info);
+        EXPECT_TRUE((srvr1Addr == peerAddr) || (srvr2Addr == peerAddr));
+        return hycast::RecvStatus{};
+    }
+    hycast::RecvStatus receive(
+            hycast::LatentChunk&        chunk,
+            const hycast::InetSockAddr& peerAddr)
+    {
+        EXPECT_TRUE((srvr1Addr == peerAddr) || (srvr2Addr == peerAddr));
+        auto chunkIndex = chunk.getIndex();
+        EXPECT_GT(numChunks, chunkIndex);
+        EXPECT_EQ(prodIndex, chunk.getProdIndex());
+        EXPECT_EQ(prodSize, chunk.getProdSize());
+        EXPECT_EQ(hycast::ChunkSize::defaultSize, chunk.getCanonSize());
+        auto chunkSize = chunk.getSize();
+        EXPECT_EQ(prodInfo.getChunkSize(chunkIndex), chunkSize);
+        char data[static_cast<size_t>(chunkSize)];
+        chunk.drainData(data, chunkSize);
+        EXPECT_EQ(0, ::memcmp(chunkData, data, chunkSize)); // Most time here
+        if (++numRcvdChunks == numChunks)
+            barrier.wait();
+        return hycast::RecvStatus{};
+    }
 };
 
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction) {
-    MsgRcvr         msgRcvr{};
-    hycast::PeerSet peerSet{prodStore, msgRcvr, 1}; // 1 second maximum residence
+    hycast::PeerSet peerSet{*this, 1}; // 1 second maximum residence
 }
 
 // Tests construction with invalid argument
 TEST_F(PeerSetTest, InvalidConstruction) {
-    MsgRcvr msgRcvr{};
-    EXPECT_THROW(hycast::PeerSet(prodStore, msgRcvr, 2, 0), std::invalid_argument);
+    EXPECT_THROW(hycast::PeerSet(*this, 0, 2), std::invalid_argument);
 }
 
 // Tests inserting a peer and incrementing its value
 TEST_F(PeerSetTest, IncrementPeerValue) {
     try {
         //std::set_terminate([]{std::cerr << "In terminate()\n"; ::pause();});
-        Source           source{source1SockAddr};
-        MsgRcvr          msgRcvr{};
-        hycast::PeerSet  peerSet{prodStore, msgRcvr, 2};
-        auto             peer = getClientPeer(source1SockAddr);
+        hycast::PeerSet  peerSet{*this, 2};
+        auto             peer = getClientPeer(srvr1Addr);
         EXPECT_TRUE(peerSet.tryInsert(peer));
         EXPECT_EQ(1, peerSet.size());
         EXPECT_NO_THROW(peerSet.incValue(peer));
@@ -148,18 +218,23 @@ TEST_F(PeerSetTest, IncrementPeerValue) {
     }
 }
 
+// Tests inserting the same peer twice
+TEST_F(PeerSetTest, DuplicatePeerInsertion) {
+    hycast::Peer     peer{getClientPeer(srvr1Addr)};
+    hycast::PeerSet  peerSet{*this, 2};
+    EXPECT_TRUE(peerSet.tryInsert(peer));
+    EXPECT_FALSE(peerSet.tryInsert(peer));
+}
+
 // Tests removing the worst peer from a 1-peer set
 TEST_F(PeerSetTest, RemoveWorst) {
     try {
-        Source           source1{source1SockAddr};
-        MsgRcvr          msgRcvr{};
-        hycast::PeerSet  peerSet{prodStore, msgRcvr, 0, 1};
+        hycast::PeerSet  peerSet{*this, 0, 1};
 
-        hycast::Peer peer1{getClientPeer(source1SockAddr)};
+        hycast::Peer peer1{getClientPeer(srvr1Addr)};
         EXPECT_TRUE(peerSet.tryInsert(peer1));
 
-        Source       source2{source2SockAddr};
-        hycast::Peer peer2{getClientPeer(source2SockAddr)};
+        hycast::Peer peer2{getClientPeer(srvr2Addr)};
         EXPECT_TRUE(peerSet.tryInsert(peer2));
 
         EXPECT_EQ(1, peerSet.size());
@@ -169,26 +244,13 @@ TEST_F(PeerSetTest, RemoveWorst) {
     }
 }
 
-// Tests inserting a peer and sending notices
-TEST_F(PeerSetTest, PeerInsertionAndNotices) {
-    Source           source{source1SockAddr};
-    hycast::Peer     peer{getClientPeer(source1SockAddr)};
-    MsgRcvr          msgRcvr{};
-    hycast::PeerSet  peerSet{prodStore, msgRcvr, 2};
+// Tests transmitting a product
+TEST_F(PeerSetTest, Transmit) {
+    hycast::Peer     peer = getClientPeer(srvr1Addr);
+    hycast::PeerSet  peerSet{*this, 2};
     EXPECT_TRUE(peerSet.tryInsert(peer));
-    peerSet.sendNotice(prodInfo);
-    peerSet.sendNotice(chunkInfo.getId());
-    ::usleep(100000);
-}
-
-// Tests inserting the same peer twice
-TEST_F(PeerSetTest, DuplicatePeerInsertion) {
-    Source server{source1SockAddr};
-    hycast::Peer     peer{getClientPeer(source1SockAddr)};
-    MsgRcvr          msgRcvr{};
-    hycast::PeerSet  peerSet{prodStore, msgRcvr, 2};
-    EXPECT_TRUE(peerSet.tryInsert(peer));
-    EXPECT_FALSE(peerSet.tryInsert(peer));
+    source1.send(prodInfo);
+    barrier.wait();
 }
 
 }  // namespace

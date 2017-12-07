@@ -44,7 +44,7 @@ void runClient()
     sock.connect(serverSockAddr);
 
     hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
-    uint8_t data1[hycast::ChunkSize::defaultChunkSize];
+    uint8_t data1[hycast::ChunkSize::defaultSize];
     (void)memset(data1, 0xbd, sizeof(data1));
     hycast::ProdInfo  prodInfo(0, "product", sizeof(data1));
     hycast::ChunkInfo chunkInfo(prodInfo, 0);

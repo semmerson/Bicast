@@ -689,7 +689,7 @@ public:
      * Returns the Internet socket address of the remote end.
      * @return Internet socket address of the remote end
      */
-    InetSockAddr getRemoteAddr() const noexcept
+    inline InetSockAddr getRemoteAddr() const noexcept
     {
         return remoteAddr;
     }
@@ -731,9 +731,9 @@ public:
      * @threadsafety         Safe
      */
     void sendv(
-            const unsigned      streamId,
-            const struct iovec* iovec,
-            const int           iovcnt)
+            const unsigned streamId,
+            struct iovec*  iovec,
+            const int      iovcnt)
     {
         ssize_t numExpected = iovLen(iovec, iovcnt);
         struct {
@@ -745,7 +745,7 @@ public:
         msg_control.cmsghdr.cmsg_type = SCTP_SNDRCV;
         sndrcvinfoInit(msg_control.sinfo, streamId, numExpected);
         struct msghdr msghdr = {0};
-        msghdr.msg_iov = const_cast<struct iovec*>(iovec);
+        msghdr.msg_iov = iovec;
         msghdr.msg_iovlen = iovcnt;
         msghdr.msg_control = &msg_control;
         msghdr.msg_controllen = sizeof(msg_control);
@@ -930,9 +930,9 @@ void SctpSock::send(
 }
 
 void SctpSock::sendv(
-        const unsigned      streamId,
-        const struct iovec* iovec,
-        const int           iovcnt) const
+        const unsigned streamId,
+        struct iovec*  iovec,
+        const int      iovcnt) const
 {
     (static_cast<Impl*>(pImpl.get()))->sendv(streamId, iovec, iovcnt);
 }

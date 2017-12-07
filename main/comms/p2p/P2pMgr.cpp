@@ -1,7 +1,7 @@
 /**
- * This file implements a manager of peer-to-peer connections, which is
- * responsible for processing incoming connection requests, creating peers, and
- * replacing peers.
+ * This file implements a manager of peer-to-peer connections. It runs the
+ * server for incoming connections from remote peers, creates local peers from
+ * a source of peers, and manages the set of active peers.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the file COPYING in the top-level source-directory for
@@ -14,27 +14,18 @@
 
 #include "Completer.h"
 #include "error.h"
-#include "Future.h"
-#include "InetSockAddr.h"
-#include "MsgRcvr.h"
-#include "Notifier.h"
+#include "PeerSetServer.h"
 #include "P2pMgr.h"
-#include "PeerMsgRcvr.h"
+#include "P2pMgrServer.h"
 #include "PeerSet.h"
 #include "PeerSource.h"
-#include "ProdStore.h"
-#include "SctpSock.h"
 #include "Thread.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <future>
 #include <mutex>
-#include <pthread.h>
-#include <queue>
 #include <set>
-#include <thread>
 
 namespace hycast {
 
@@ -51,34 +42,21 @@ namespace hycast {
  *   - This class accepts connections only if it has at least one initiated peer.
  *   - This class closes all connections when it has no initiated peers.
  */
-class P2pMgr::Impl final : public Notifier
+class P2pMgr::Impl final : public Notifier, public PeerSetServer
 {
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  LockGuard;
     typedef std::unique_lock<Mutex> UniqueLock;
-    typedef PeerSet::TimeUnit       TimeUnit;
-    typedef PeerSet::Clock          Clock;
+    typedef std::condition_variable Cond;
 
-    class NilMsgRcvr : public PeerMsgRcvr
-    {
-    public:
-        void recvNotice(const ProdInfo& info, const Peer& peer) {}
-        void recvNotice(const ChunkId& info, const Peer& peer) {}
-        void recvRequest(const ProdIndex& index, const Peer& peer) {}
-        void recvRequest(const ChunkId& info, const Peer& peer) {}
-        void recvData(LatentChunk chunk, const Peer& peer) {}
-    };
-
-    static NilMsgRcvr         nilMsgRcvr;
-
-    /// Source of potential remote peers
+    /// Source of potential locally-initiated peers
     PeerSource&               peerSource;
 
     /// Internet address of local peer-server
     InetSockAddr              serverSockAddr;
 
-    /// Object to receive incoming messages
-    PeerMsgRcvr*              msgRcvr;
+    /// Higher-level component used by a manager of peers.
+    P2pMgrServer&             p2pMgrServer;
 
     /// Set of active peers
     PeerSet                   peerSet;
@@ -87,27 +65,21 @@ class P2pMgr::Impl final : public Notifier
     Completer<void>           completer;
 
     /// Concurrent access variables for fatal exceptions:
-    mutable Mutex                   exceptMutex;
-    mutable std::condition_variable exceptCond;
+    mutable Mutex             exceptMutex;
+    mutable Cond              exceptCond;
 
-    /// Concurrent access variables for the peer-set:
+    /// Concurrent access variables for the set of active peers:
     Mutex                     peerSetMutex;
-    std::condition_variable   peerSetCond;
+    Cond                      peerSetCond;
 
     /// Maximum number of peers:
     unsigned                  maxPeers;
 
     /// Duration to wait before trying to replace the worst-performing peer.
-    TimeUnit                  stasisDuration;
+    unsigned                  stasisDuration;
 
     /// Remote socket address of initiated peers
     std::set<InetSockAddr>    initiatedPeers;
-
-    /// Is `msgRcvr` set?
-    bool                      msgRcvrSet;
-
-    /// Has `run()` been called?
-    bool                      isRunning;
 
     /// Exception that caused failure:
     std::exception_ptr        exception;
@@ -117,6 +89,9 @@ class P2pMgr::Impl final : public Notifier
 
     /// Thread on which remote peers are accepted:
     Thread                    serverThread;
+
+    /// Socket for server that listens for connections from remote peers
+    SrvrSctpSock              serverSock;
 
     void setException()
     {
@@ -150,12 +125,11 @@ class P2pMgr::Impl final : public Notifier
                 for (;;) {
                     auto sock = serverSock.accept(); // Blocks
                     LockGuard lock(peerSetMutex);
-                    Peer peer;
                     try {
-                        peer = Peer(sock);
+                        Peer peer{sock};
                         if (peerSet.tryInsert(peer)) // Might block
-                            LOG_NOTE("Accepted connection from remote peer %s",
-                                    sock.to_string().c_str());
+                            LOG_NOTE("Accepted connection from remote peer " +
+                                    peer.getRemoteAddr().to_string());
                     }
                     catch (const std::exception& e) {
                         log_warn(e); // Possibly incompatible protocol versions
@@ -177,21 +151,18 @@ class P2pMgr::Impl final : public Notifier
      * will be an *initiated* peer (i.e., one whose connection was initiated by
      * this instance).
      * @param[in]     peerAddr   Socket address of remote peer candidate
-     * @param[in,out] msgRcvr    Receiver of messages from the remote peer
      * @return `true`            Peer was added
      * @return `false`           Peer wasn't added because it's already a member
      * @throw RuntimeError       Couldn't add peer
      * @exceptionsafety          Strong guarantee
      * @threadsafety             Safe
      */
-    bool tryInsert(
-            const InetSockAddr& peerAddr,
-            PeerMsgRcvr&        msgRcvr)
+    bool tryInsert(const InetSockAddr& peerAddr)
     {
         bool success;
     	try {
             // Blocks until connected and versions exchanged
-            Peer peer(peerAddr);
+            Peer peer{peerAddr};
             success = peerSet.tryInsert(peer); // Might block
         }
         catch (const std::exception& e) {
@@ -213,7 +184,7 @@ class P2pMgr::Impl final : public Notifier
             for (;;) {
                 auto peerAddr = peerSource.pop(); // Blocks. Cancellation point
                 try {
-                    if (tryInsert(peerAddr, *msgRcvr)) { // Blocks
+                    if (tryInsert(peerAddr)) { // Blocks
                         LOG_NOTE("Initiated connection to remote peer " +
                                 peerAddr.to_string());
                         // Peer wasn't a member of active set
@@ -271,8 +242,8 @@ class P2pMgr::Impl final : public Notifier
 
 public:
     /**
-     * Constructs.
-     * @param[in]     prodStore       Product storage
+     * Constructs. Upon return, the server's socket is not listening and connections
+     * won't be accepted until `run()` is called.
      * @param[in]     serverSockAddr  Socket address to be used by the server
      *                                that remote peers connect to
      * @param[in]     maxPeers        Maximum number of active peers
@@ -280,21 +251,19 @@ public:
      * @param[in]     stasisDuration  Time interval over which the set of active
      *                                peers must be unchanged before the worst
      *                                performing peer may be replaced
-     * @param[in,out] msgRcvr         Receiver of messages from remote peers
+     * @param[in,out] peerSetServer   Higher-level component for the set of
+     *                                active peers
+     * @see `run()`
      */
-    Impl(   ProdStore&                prodStore,
-            const InetSockAddr&       serverSockAddr,
+    Impl(   const InetSockAddr&       serverSockAddr,
             const unsigned            maxPeers,
             PeerSource&               peerSource,
-            const PeerSet::TimeUnit   stasisDuration,
-            PeerMsgRcvr&              msgRcvr)
+            const unsigned            stasisDuration,
+            P2pMgrServer&             p2pMgrServer)
         : peerSource(peerSource)
         , serverSockAddr{serverSockAddr}
-        , msgRcvr(&msgRcvr)
-        , peerSet{prodStore, msgRcvr, stasisDuration*2, maxPeers,
-                [this](const InetSockAddr& peerAddr) {
-                    handleStoppedPeer(peerAddr);
-                }}
+        , p2pMgrServer(p2pMgrServer)
+        , peerSet{*this, maxPeers, stasisDuration*2}
         , completer{}
         , exceptMutex{}
         , exceptCond{}
@@ -302,11 +271,10 @@ public:
         , peerSetCond{}
         , maxPeers{maxPeers}
         , stasisDuration{stasisDuration}
-        , msgRcvrSet{true}
-        , isRunning{false}
         , exception{}
         , peerAddrThread{}
         , serverThread{}
+        , serverSock{serverSockAddr, Peer::getNumStreams()}
     {}
 
     ~Impl() noexcept
@@ -334,7 +302,6 @@ public:
         if (!peerSource.empty())
             peerAddrThread = Thread{[this]{runPeerAdder();}};
         serverThread = Thread{[this]{runServer();}};
-        isRunning = true;
         while (!exception) {
             Canceler canceler{};
             exceptCond.wait(lock);
@@ -344,72 +311,85 @@ public:
     }
 
     /**
-     * Sends information about a product to the remote peers.
-     * @param[in] prodInfo        Product information
+     * Notifies all active peers about available information on a product.
+     * @param[in] prodIndex       Product index
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo) const
+    void notify(const ProdIndex& prodIndex) const
     {
         checkException();
-        peerSet.sendNotice(prodInfo);
+        peerSet.notify(prodIndex);
     }
 
     /**
-     * Sends information about a product to the remote peers except for one.
-     * @param[in] prodInfo        Product information
-     * @param[in] except          Peer to exclude
+     * Notifies all active peers about an available chunk-of-data.
+     * @param[in] chunkId         Chunk identifier
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendNotice(const ProdInfo& prodInfo, const Peer& except) const
+    void notify(const ChunkId& chunkId) const
     {
         checkException();
-        peerSet.sendNotice(prodInfo, except.getRemoteAddr());
+        peerSet.notify(chunkId);
     }
 
-    /**
-     * Sends information about a chunk-of-data to the remote peers.
-     * @param[in] chunkInfo       Chunk information
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ChunkId& chunkInfo) const
-    {
-        checkException();
-        peerSet.sendNotice(chunkInfo);
+    // Begin implementation of `PeerSetServer`
+
+    ChunkId getEarliestMissingChunkId() {
+        return p2pMgrServer.getEarliestMissingChunkId();
     }
 
-    /**
-     * Sends information about a chunk-of-data to the remote peers except for
-     * one.
-     * @param[in] chunkInfo       Chunk information
-     * @param[in] except          Peer to exclude
-     * @throws std::system_error  I/O error occurred
-     * @exceptionsafety           Basic
-     * @threadsafety              Compatible but not safe
-     */
-    void sendNotice(const ChunkId& chunkInfo, const Peer& except) const
+    Backlogger getBacklogger(
+            const ChunkId& earliest,
+            Peer&          peer)
     {
-        checkException();
-        peerSet.sendNotice(chunkInfo, except.getRemoteAddr());
+        return p2pMgrServer.getBacklogger(earliest, peer);
+    }
+    void peerStopped(const InetSockAddr& peerAddr)
+    {
+        handleStoppedPeer(peerAddr);
+    }
+    bool shouldRequest(const ProdIndex& index)
+    {
+        return p2pMgrServer.shouldRequest(index);
+    }
+    bool shouldRequest(const ChunkId& chunkId)
+    {
+        return p2pMgrServer.shouldRequest(chunkId);
+    }
+    bool get(const ProdIndex& index, ProdInfo& info)
+    {
+        return p2pMgrServer.get(index, info);
+    }
+    bool get(const ChunkId& chunkId, ActualChunk& chunk)
+    {
+        return p2pMgrServer.get(chunkId, chunk);
+    }
+    RecvStatus receive(
+            const ProdInfo&     info,
+            const InetSockAddr& peerAddr)
+    {
+        return p2pMgrServer.receive(info, peerAddr);
+    }
+    RecvStatus receive(
+            LatentChunk&        chunk,
+            const InetSockAddr& peerAddr)
+    {
+        return p2pMgrServer.receive(chunk, peerAddr);
     }
 };
 
-P2pMgr::Impl::NilMsgRcvr P2pMgr::Impl::nilMsgRcvr;
-
 P2pMgr::P2pMgr(
-        ProdStore&               prodStore,
         const InetSockAddr&      serverSockAddr,
-        PeerMsgRcvr&             msgRcvr,
+        P2pMgrServer&            p2pMgrServer,
         PeerSource&              peerSource,
         const unsigned           maxPeers,
-        const PeerSet::TimeUnit  stasisDuration)
-    : pImpl{new Impl(prodStore, serverSockAddr, maxPeers, peerSource,
-            stasisDuration, msgRcvr)}
+        const unsigned           stasisDuration)
+    : pImpl{new Impl(serverSockAddr, maxPeers, peerSource, stasisDuration,
+            p2pMgrServer)}
 {}
 
 void P2pMgr::run()
@@ -417,24 +397,14 @@ void P2pMgr::run()
     pImpl->run();
 }
 
-void P2pMgr::sendNotice(const ProdInfo& prodInfo) const
+void P2pMgr::notify(const ProdIndex& prodIndex) const
 {
-    pImpl->sendNotice(prodInfo);
+    pImpl->notify(prodIndex);
 }
 
-void P2pMgr::sendNotice(const ProdInfo& prodInfo, const Peer& except) const
+void P2pMgr::notify(const ChunkId& chunkId) const
 {
-    pImpl->sendNotice(prodInfo, except);
-}
-
-void P2pMgr::sendNotice(const ChunkId& chunkInfo) const
-{
-    pImpl->sendNotice(chunkInfo);
-}
-
-void P2pMgr::sendNotice(const ChunkId& chunkInfo, const Peer& except) const
-{
-    pImpl->sendNotice(chunkInfo, except);
+    pImpl->notify(chunkId);
 }
 
 } // namespace

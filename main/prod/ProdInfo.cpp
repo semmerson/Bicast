@@ -88,7 +88,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    const ProdName getName() const
+    inline const ProdName getName() const
     {
         return name;
     }
@@ -99,7 +99,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdIndex getIndex() const
+    inline ProdIndex getIndex() const
     {
         return index;
     }
@@ -110,7 +110,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ProdSize getSize() const
+    inline ProdSize getSize() const
     {
         return size;
     }
@@ -121,7 +121,7 @@ public:
      * @retval `true`    Yes
      * @retval `false`   No
      */
-    bool isEarlierThan(const Impl& that) const noexcept
+    inline bool isEarlierThan(const Impl& that) const noexcept
     {
         return index.isEarlierThan(that.index);
     }
@@ -132,7 +132,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkSize getChunkSize() const noexcept
+    inline ChunkSize getChunkSize() const noexcept
     {
         return canonChunkSize;
     }
@@ -151,7 +151,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    ChunkIndex getNumChunks() const noexcept
+    inline ChunkIndex getNumChunks() const noexcept
     {
         return (size + canonChunkSize - 1) / canonChunkSize;
     }
@@ -182,9 +182,10 @@ public:
 
     bool equalsExceptName(const Impl& that) const noexcept
     {
-        return (index == that.index) &&
+        const bool result = ((index == that.index) &&
                 (size == that.size) &&
-                (canonChunkSize == that.canonChunkSize);
+                (canonChunkSize == that.canonChunkSize));
+        return result;
     }
 
     /**
@@ -259,6 +260,11 @@ ProdInfo::operator bool() const noexcept
     return pImpl.operator bool();
 }
 
+bool ProdInfo::isComplete() const noexcept
+{
+    return pImpl.operator bool() && pImpl->getName().length() != 0;
+}
+
 std::string ProdInfo::to_string() const
 {
     return pImpl->to_string();
@@ -266,7 +272,8 @@ std::string ProdInfo::to_string() const
 
 bool ProdInfo::equalsExceptName(const ProdInfo& that) const noexcept
 {
-    return pImpl->equalsExceptName(*that.pImpl.get());
+    const bool result = pImpl->equalsExceptName(*that.pImpl.get());
+    return result;
 }
 
 bool ProdInfo::operator==(const ProdInfo& that) const noexcept

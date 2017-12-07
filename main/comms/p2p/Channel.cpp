@@ -35,8 +35,8 @@ protected:
          * @param[in] iovcnt  Size of I/O vector
          */
         void write(
-                const struct iovec* iov,
-                const int           iovcnt)
+                struct iovec* iov,
+                const int     iovcnt)
         {
             sock.sendv(streamId, iov, iovcnt);
         }

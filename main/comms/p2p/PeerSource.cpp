@@ -57,9 +57,9 @@ PeerSource::~PeerSource()
 
 void PeerSource::push(
         const InetSockAddr& peerAddr,
-        const Duration&     delay)
+        const unsigned      delay)
 {
-    pImpl->push(peerAddr, delay);
+    pImpl->push(peerAddr, Duration{delay});
 }
 
 InetSockAddr PeerSource::pop()

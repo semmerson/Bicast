@@ -13,7 +13,7 @@
 #include "Chunk.h"
 #include "error.h"
 #include "Peer.h"
-#include "PeerMsgRcvr.h"
+#include "PeerServer.h"
 #include "ProdIndex.h"
 #include "ProdInfo.h"
 #include "SctpSock.h"
@@ -29,114 +29,12 @@
 
 namespace hycast {
 
-/// Container for all possible message types
-class Peer::Message::Impl
-{
-    ProdIndex   prodIndex;  // Product index
-    ProdInfo    prodInfo;   // Product information
-    ChunkId     chunkId;    // Data-chunk identifier
-    LatentChunk chunk;      // Latent chunk of data
-    MsgType     type;
-
-    Impl(const MsgType type)
-        : prodIndex{}
-        , prodInfo{}
-        , chunkId{}
-        , chunk{}
-        , type{type}
-    {}
-
-public:
-    Impl()                               : Impl{EMPTY}
-    {}
-    Impl(const ProdInfo& prodInfo)       : Impl{PROD_NOTICE}
-    {
-        this->prodInfo = prodInfo;
-    }
-    Impl(const ChunkId& chunkInfo,
-         const bool       isRequest) : Impl{isRequest ? CHUNK_REQUEST
-                                                      : CHUNK_NOTICE}
-    {
-        this->chunkId = chunkInfo;
-    }
-    Impl(const ProdIndex& prodIndex)     : Impl{PROD_REQUEST}
-    {
-        this->prodIndex = prodIndex;
-    }
-    Impl(const LatentChunk& chunk)       : Impl{CHUNK}
-    {
-        this->chunk = chunk;
-    }
-
-    Impl(const Impl& that)               =delete;
-    Impl& operator =(const Message& rhs) =delete;
-
-    operator bool() const noexcept{
-        return type != EMPTY;
-    }
-    MsgType getType() const noexcept {
-        return type;
-    }
-
-    const ProdIndex& getProdIndex() const {
-        if (type != PROD_REQUEST)
-            throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
-        return prodIndex;
-    }
-    const ProdInfo& getProdInfo() const {
-        if (type != PROD_NOTICE)
-            throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
-        return prodInfo;
-    }
-    const ChunkId& getChunkId() const {
-        if (type != CHUNK_NOTICE && type != CHUNK_REQUEST)
-            throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
-        return chunkId;
-    }
-    const LatentChunk& getChunk() const {
-        if (type != CHUNK)
-            throw LOGIC_ERROR("Wrong message type " + std::to_string(type));
-        return chunk;
-    }
-};
-
-Peer::Message::Message()
-    : pImpl{new Impl()} {}
-Peer::Message::Message(const ProdInfo& prodInfo)
-    : pImpl{new Impl(prodInfo)} {}
-Peer::Message::Message(const ChunkId& chunkInfo, const bool isRequest)
-    : pImpl{new Impl(chunkInfo, isRequest)} {}
-Peer::Message::Message(const ProdIndex& prodIndex)
-    : pImpl{new Impl(prodIndex)} {}
-Peer::Message::Message(const LatentChunk& chunk)
-    : pImpl{new Impl(chunk)} {}
-Peer::Message::operator bool() const noexcept {
-    return pImpl->operator bool();
-}
-
-Peer::MsgType Peer::Message::getType() const noexcept {
-    return pImpl->getType();
-}
-
-const ProdIndex& Peer::Message::getProdIndex()  const {
-    return pImpl->getProdIndex();
-}
-const ProdInfo& Peer::Message::getProdInfo()    const {
-    return pImpl->getProdInfo();
-}
-const ChunkId& Peer::Message::getChunkId()  const {
-    return pImpl->getChunkId();
-}
-const LatentChunk& Peer::Message::getChunk()    const {
-    return pImpl->getChunk();
-}
-
-/******************************************************************************/
-
 class Peer::Impl final {
     typedef enum {
         VERSION_STREAM_ID = 0,
+        BACKLOG_STREAM_ID,
         PROD_NOTICE_STREAM_ID,
+        PROD_INFO_STREAM_ID,
         CHUNK_NOTICE_STREAM_ID,
         PROD_REQ_STREAM_ID,
         CHUNK_REQ_STREAM_ID,
@@ -145,21 +43,14 @@ class Peer::Impl final {
     }      SctpStreamId;
     unsigned                          version;
     Channel<VersionMsg>               versionChan;
-    Channel<ProdInfo>                 prodNoticeChan;
+    Channel<ChunkId>                  backlogChan;
+    Channel<ProdIndex>                prodNoticeChan;
+    Channel<ProdInfo>                 prodInfoChan;
     Channel<ChunkId>                  chunkNoticeChan;
     Channel<ProdIndex>                prodReqChan;
     Channel<ChunkId>                  chunkReqChan;
     Channel<ActualChunk,LatentChunk>  chunkChan;
     SctpSock                          sock;
-    PeerMsgRcvr*                      msgRcvr;
-
-    /**
-     * @throw LogicError       Unknown protocol version from remote peer
-     * @throw RuntimeError     Couldn't construct peer
-     */
-    Impl(SctpSock&& sock)
-        : Impl{std::ref<SctpSock>(sock)}
-    {}
 
     /**
      * Every peer implementation is unique.
@@ -196,28 +87,29 @@ public:
      */
     Impl()
         : version(0),
-          versionChan(),
-          prodNoticeChan(),
-          chunkNoticeChan(),
-          prodReqChan(),
-          chunkReqChan(),
-          chunkChan(),
-          sock(),
-          msgRcvr{nullptr}
+          versionChan{},
+          backlogChan{},
+          prodNoticeChan{},
+          chunkNoticeChan{},
+          prodReqChan{},
+          chunkReqChan{},
+          chunkChan{},
+          sock{}
     {}
 
     /**
-     * Constructs from the containing peer object and a socket. Blocks
-     * connecting to remote server and exchanging protocol version with remote
-     * peer. This is a cancellation point.
+     * Constructs. Blocks connecting to remote server and exchanging protocol
+     * version with remote peer. This is a cancellation point.
      * @param[in] sock          Socket
      * @throw     LogicError    Unknown protocol version from remote peer
      * @throw     RuntimeError  Couldn't construct peer
      */
-    Impl(SctpSock& sock)
+    Impl(   SctpSock&    sock)
         : version(0),
           versionChan(sock, VERSION_STREAM_ID, version),
+          backlogChan(sock, BACKLOG_STREAM_ID, version),
           prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
+          prodInfoChan(sock, PROD_INFO_STREAM_ID, version),
           chunkNoticeChan(sock, CHUNK_NOTICE_STREAM_ID, version),
           prodReqChan(sock, PROD_REQ_STREAM_ID, version),
           chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
@@ -246,7 +138,7 @@ public:
      * @throw     RuntimeError  Couldn't construct peer
      * @throw     SystemError   Connection failure
      */
-    Impl(const InetSockAddr& peerAddr)
+    Impl(   const InetSockAddr& peerAddr)
         : Impl{SctpSock{getNumStreams()}.connect(peerAddr)}
     {}
 
@@ -262,170 +154,189 @@ public:
      * Returns the Internet socket address of the remote peer.
      * @return Internet socket address of remote peer
      */
-    InetSockAddr getRemoteAddr()
+    inline InetSockAddr getRemoteAddr() const
     {
         return sock.getRemoteAddr();
     }
 
-#if 0
-    void runReceiver()
-    {
-        for (;;) {
-            if (sock.getSize() == 0) // Blocks waiting for input
-                break;
-            switch (sock.getStreamId()) {
-                case PROD_NOTICE_STREAM_ID:
-                    msgRcvr->recvNotice(prodNoticeChan.recv(), *peer);
-                    break;
-                case CHUNK_NOTICE_STREAM_ID:
-                    msgRcvr->recvNotice(chunkNoticeChan.recv(), *peer);
-                    break;
-                case PROD_REQ_STREAM_ID:
-                    msgRcvr->recvRequest(prodReqChan.recv(), *peer);
-                    break;
-                case CHUNK_REQ_STREAM_ID:
-                    msgRcvr->recvRequest(chunkReqChan.recv(), *peer);
-                    break;
-                case CHUNK_STREAM_ID: {
-                    msgRcvr->recvData(chunkChan.recv(), *peer);
-                    break;
-                }
-                default:
-                    LOG_WARN("Discarding unknown message type " +
-                            std::to_string(sock.getStreamId()) + " from peer " +
-                            to_string());
-                    sock.discard();
-            }
-        }
-    }
-#endif
-
-    /**
-     * Returns the next message from the remote peer.
-     * @return                Next message from remote peer. Will be empty if
-     *                        connection was closed by remote peer.
-     * @exceptionsafety       Basic guarantee
-     * @threadsafety          Thread-compatible but not thread-safe
-     */
-    Message getMessage()
-    {
-        for (;;) {
-            if (sock.getSize() == 0) // Blocks waiting for input
-                return Message{};
-            switch (sock.getStreamId()) {
-                case PROD_NOTICE_STREAM_ID:
-                    return Message{prodNoticeChan.recv()};
-                case CHUNK_NOTICE_STREAM_ID:
-                    return Message{chunkNoticeChan.recv()};
-                case PROD_REQ_STREAM_ID:
-                    return Message{prodReqChan.recv()};
-                case CHUNK_REQ_STREAM_ID:
-                    return Message{chunkReqChan.recv(), true};
-                case CHUNK_STREAM_ID: {
-                    return Message{chunkChan.recv()};
-                }
-                default:
-                    LOG_WARN("Discarding unknown message type " +
-                            std::to_string(sock.getStreamId()) + " from peer " +
-                            to_string());
-                    sock.discard();
-            }
-        }
-        return Message{}; // To accommodate Eclipse
-    }
-
-    /**
-     * Sends information about a product to the remote peer.
-     * @param[in] prodInfo  Product information
-     * @throws std::system_error if an I/O error occurs
-     * @exceptionsafety Basic
-     * @threadsafety    Compatible but not safe
-     */
-    void sendProdInfo(const ProdInfo& prodInfo) const
+    void runReceiver(PeerServer& peerServer)
     {
         try {
-            prodNoticeChan.send(prodInfo);
+            while (sock.getSize()) { // Blocks waiting for input
+                switch (sock.getStreamId()) {
+                    case BACKLOG_STREAM_ID: {
+                        auto chunkId = backlogChan.recv();
+                        peerServer.startBacklog(chunkId);
+                        break;
+                    }
+                    case PROD_NOTICE_STREAM_ID: {
+                        auto prodIndex = prodNoticeChan.recv();
+                        if (peerServer.shouldRequest(prodIndex))
+                            request(prodIndex);
+                        break;
+                    }
+                    case CHUNK_NOTICE_STREAM_ID: {
+                        auto chunkId = chunkNoticeChan.recv();
+                        LOG_DEBUG("Received notice of chunk " +
+                                chunkId.to_string());
+                        if (peerServer.shouldRequest(chunkId))
+                            request(chunkId);
+                        break;
+                    }
+                    case PROD_REQ_STREAM_ID: {
+                        ProdInfo prodInfo{};
+                        if (peerServer.get(prodReqChan.recv(), prodInfo))
+                            send(prodInfo);
+                        break;
+                    }
+                    case CHUNK_REQ_STREAM_ID: {
+                        ActualChunk chunk;
+                        if (peerServer.get(chunkReqChan.recv(), chunk))
+                            send(chunk);
+                        break;
+                    }
+                    case PROD_INFO_STREAM_ID: {
+                        auto prodInfo = prodInfoChan.recv();
+                        peerServer.receive(prodInfo);
+                        break;
+                    }
+                    case CHUNK_STREAM_ID: {
+                        auto chunk = chunkChan.recv();
+                        peerServer.receive(chunk);
+                        break;
+                    }
+                    default:
+                        LOG_WARN("Discarding unknown message type " +
+                                std::to_string(sock.getStreamId()) +
+                                " from remote peer " + to_string());
+                        sock.discard();
+                } // Channel/Stream-ID switch
+            } // Input loop
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't send product notice "
-                    + prodInfo.to_string() + " to " +
-                    sock.getRemoteAddr().to_string()));
+            std::throw_with_nested(RUNTIME_ERROR("Failure of peer " +
+                    to_string()));
         }
     }
 
+    void requestBacklog(const ChunkId& chunkId)
+    {
+        backlogChan.send(chunkId);
+    }
+
     /**
-     * Sends information about a chunk-of-data to the remote peer.
-     * @param[in] chunkId         Data-chunk identifier
+     * Notifies the remote peer about available information on a product.
+     * @param[in] prodIndex       Index of the relevant product
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendChunkInfo(const ChunkId& chunkId)
+    void notify(const ProdIndex& prodIndex) const
+    {
+        try {
+            prodNoticeChan.send(prodIndex);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't notify remote peer "
+                    + getRemoteAddr().to_string() +
+                    " about information on product " + prodIndex.to_string()));
+        }
+    }
+
+    /**
+     * Notifies the remote peer about an available chunk of data.
+     * @param[in] chunkId         Relevant data-chunk identifier
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void notify(const ChunkId& chunkId) const
     {
         try {
             chunkNoticeChan.send(chunkId);
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't send chunk notice "
-                    + chunkId.to_string() + " to " +
-                    sock.getRemoteAddr().to_string()));
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't notify remote peer "
+                    + getRemoteAddr().to_string() +
+                    " about data-chunk " + chunkId.to_string()));
         }
     }
 
     /**
-     * Sends a request for product information to the remote peer.
-     * @param[in] prodIndex  Product-index
-     * @throws std::system_error if an I/O error occurred
-     * @exceptionsafety  Basic
-     * @threadsafety     Compatible but not safe
+     * Requests information on a product from the remote peer.
+     * @param[in] prodIndex       Index of relevant product
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendProdRequest(const ProdIndex& prodIndex)
+    void request(const ProdIndex& prodIndex) const
     {
         try {
             prodReqChan.send(prodIndex);
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't send product "
-                    + prodIndex.to_string() + " request to " +
-                    sock.getRemoteAddr().to_string()));
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't request information on product "
+                    + prodIndex.to_string() + " from remote peer " +
+                    getRemoteAddr().to_string()));
         }
     }
 
     /**
-     * Sends a request for a chunk-of-data to the remote peer.
+     * Requests a chunk-of-data from the remote peer.
      * @param[in] chunkId         Data-chunk identifier
      * @throws std::system_error  I/O error occurred
      * @exceptionsafety           Basic
      * @threadsafety              Compatible but not safe
      */
-    void sendRequest(const ChunkId& chunkId)
+    void request(const ChunkId& chunkId)
     {
         try {
             chunkReqChan.send(chunkId);
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't send chunk request "
-                    + chunkId.to_string() + " to " +
-                    sock.getRemoteAddr().to_string()));
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't request data-chunk "
+                    + chunkId.to_string() + " from remote peer " +
+                    getRemoteAddr().to_string()));
         }
     }
 
     /**
-     * Sends a chunk-of-data to the remote peer.
-     * @param[in] chunk  Chunk-of-data
-     * @throws std::system_error if an I/O error occurred
-     * @exceptionsafety  Basic
-     * @threadsafety     Compatible but not safe
+     * Sends information on a product to the remote peer.
+     * @param[in] prodInfo        Product information
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
      */
-    void sendData(ActualChunk& chunk)
+    void send(const ProdInfo& prodInfo) const
+    {
+        try {
+            prodInfoChan.send(prodInfo);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR(
+                    "Couldn't send information on product " +
+                    prodInfo.to_string() + " to remote peer " +
+                    getRemoteAddr().to_string()));
+        }
+    }
+
+    /**
+     * Sends a chunk of data to the remote peer.
+     * @param[in] chunk           Chunk of data
+     * @throws std::system_error  I/O error occurred
+     * @exceptionsafety           Basic
+     * @threadsafety              Compatible but not safe
+     */
+    void send(const ActualChunk& chunk) const
     {
         try {
             chunkChan.send(chunk);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't send data-chunk " +
-                    std::to_string(chunk.getInfo()) + " to " +
-                    sock.getRemoteAddr().to_string()));
+                    chunk.getId().to_string() + " to remote peer " +
+                    getRemoteAddr().to_string()));
         }
     }
 
@@ -491,41 +402,31 @@ Peer::Peer()
 {}
 
 Peer::Peer(SctpSock& sock)
-    : pImpl(new Impl(sock))
+    : pImpl{new Impl(sock)}
 {}
 
 Peer::Peer(const InetSockAddr& peerAddr)
-    : pImpl(new Impl(peerAddr))
+    : pImpl{new Impl(peerAddr)}
 {}
 
-Peer::Message Peer::getMessage() const
+void Peer::runReceiver(PeerServer& peerServer) const
 {
-    return pImpl->getMessage();
+    pImpl->runReceiver(peerServer);
 }
 
-void Peer::sendNotice(const ProdInfo& prodInfo) const
+void Peer::requestBacklog(const ChunkId& chunkId) const
 {
-    pImpl->sendProdInfo(prodInfo);
+    pImpl->requestBacklog(chunkId);
 }
 
-void Peer::sendNotice(const ChunkId& chunkInfo) const
+void Peer::notify(const ProdIndex& prodIndex) const
 {
-    pImpl->sendChunkInfo(chunkInfo);
+    pImpl->notify(prodIndex);
 }
 
-void Peer::sendRequest(const ProdIndex& prodIndex) const
+void Peer::notify(const ChunkId& chunkId) const
 {
-    pImpl->sendProdRequest(prodIndex);
-}
-
-void Peer::sendRequest(const ChunkId& info) const
-{
-    pImpl->sendRequest(info);
-}
-
-void Peer::sendData(ActualChunk& chunk) const
-{
-    pImpl->sendData(chunk);
+    pImpl->notify(chunkId);
 }
 
 bool Peer::operator ==(const Peer& that) const noexcept

@@ -9,12 +9,10 @@
  * @author: Steven R. Emmerson
  */
 
-#include <Chunk.h>
 #include "Completer.h"
 #include "error.h"
-#include "HycastTypes.h"
-#include "InetSockAddr.h"
-#include "ProdInfo.h"
+#include "Peer.h"
+#include "PeerServer.h"
 #include "SctpSock.h"
 #include "Thread.h"
 
@@ -24,8 +22,6 @@
 #include <ctime>
 #include <functional>
 #include <gtest/gtest.h>
-#include <p2p/Peer.h>
-#include <p2p/PeerMsgRcvr.h>
 #include <iostream>
 #include <mutex>
 #include <ratio>
@@ -35,211 +31,167 @@ namespace {
 
 static hycast::InetSockAddr srvrSockAddr;
 
-// The fixture for testing class Peer.
-class PeerTest : public ::testing::Test {
-friend class TestPeerMgr;
-protected:
+class TransmitProd : public hycast::PeerServer
+{
     typedef std::chrono::high_resolution_clock Clock;
     typedef Clock::time_point                  TimePoint;
     typedef std::chrono::duration<double>      Duration;
 
-    PeerTest()
-        : data{new char[hycast::ChunkSize::defaultChunkSize]}
-        , barrier{2}
+    hycast::Future<void>       senderFuture;
+    hycast::Future<void>       receiverFuture;
+    const hycast::ProdIndex    prodIndex;
+    const hycast::ProdName     prodName;
+    const hycast::ProdSize     prodSize;
+    const hycast::ChunkSize    chunkSize;
+    const hycast::ProdInfo     prodInfo;
+    const hycast::ChunkIndex   numChunks;
+    const hycast::ChunkId      backlogChunkId;
+    char*                      chunkData;
+    hycast::Barrier            barrier;
+    hycast::ChunkIndex::type   numRcvdChunks;
+
+public:
+    TransmitProd(const hycast::ChunkSize::type chunkSize)
+        : senderFuture{}
+        , receiverFuture{}
+        , prodIndex{1}
+        , prodName{"product"}
+        , prodSize{1000000}
+        , chunkSize{chunkSize}
+        , prodInfo{prodIndex, prodName, prodSize, chunkSize}
+        , numChunks{prodInfo.getNumChunks()}
+        , backlogChunkId{prodInfo, 0}
+        , chunkData{new char[chunkSize]}
+        , barrier{3}
+        , numRcvdChunks{0}
     {
-        ::memset(data, 0xbd, hycast::ChunkSize::defaultChunkSize);
+        ::memset(chunkData, 0xbd, chunkSize);
     }
 
-    virtual ~PeerTest()
+    ~TransmitProd()
     {
-        delete[] data;
+        delete[] chunkData;
     }
 
-    void runTestSrvr(hycast::SrvrSctpSock& srvrSock)
+    void startBacklog(const hycast::ChunkId& chunkId) {
+        EXPECT_EQ(backlogChunkId, chunkId);
+    }
+    bool shouldRequest(const hycast::ProdIndex& index) {
+        EXPECT_EQ(prodIndex, index);
+        return true;
+    }
+    bool shouldRequest(const hycast::ChunkId& chunkId) {
+        EXPECT_EQ(prodIndex, chunkId.getProdIndex());
+        EXPECT_GT(numChunks, chunkId.getChunkIndex());
+        return true;
+    }
+    bool get(const hycast::ProdIndex& index, hycast::ProdInfo& info) {
+        EXPECT_EQ(prodIndex, index);
+        info = prodInfo;
+        return true;
+    }
+    bool get(const hycast::ChunkId& chunkId, hycast::ActualChunk& chunk) {
+        EXPECT_EQ(prodIndex, chunkId.getProdIndex());
+        auto chunkIndex = chunkId.getChunkIndex();
+        EXPECT_GT(numChunks, chunkIndex);
+        const hycast::ChunkInfo chunkInfo{prodInfo, chunkIndex};
+        chunk = hycast::ActualChunk(chunkInfo, chunkData);
+        return true;
+    }
+    hycast::RecvStatus receive(const hycast::ProdInfo& info) {
+        EXPECT_EQ(prodInfo, info);
+        return hycast::RecvStatus{};
+    }
+    hycast::RecvStatus receive(hycast::LatentChunk& chunk) {
+        auto chunkIndex = chunk.getIndex();
+        EXPECT_GT(numChunks, chunkIndex);
+        EXPECT_EQ(prodIndex, chunk.getProdIndex());
+        EXPECT_EQ(prodSize, chunk.getProdSize());
+        EXPECT_EQ(chunkSize, chunk.getCanonSize());
+        auto chunkSize = chunk.getSize();
+        EXPECT_EQ(prodInfo.getChunkSize(chunkIndex), chunkSize);
+        char data[static_cast<size_t>(chunkSize)];
+        chunk.drainData(data, chunkSize);
+        //EXPECT_EQ(0, ::memcmp(chunkData, data, chunkSize)); // Most time here
+        if (++numRcvdChunks == numChunks)
+            barrier.wait();
+        return hycast::RecvStatus{};
+    }
+
+    void runSrvr(hycast::SrvrSctpSock& srvrSock)
     {
         try {
-            auto sock = srvrSock.accept();
-            hycast::Peer peer{sock};
-
-            LOG_INFO("Sending product notice");
-            peer.sendNotice(prodInfo);
-            LOG_INFO("Sending chunk notice");
-            peer.sendNotice(chunkInfo.getId());
-            LOG_INFO("Sending product request");
-            peer.sendRequest(prodIndex);
-            LOG_INFO("Sending chunk request");
-            peer.sendRequest(chunkInfo.getId());
-            hycast::ActualChunk actualChunk(chunkInfo, data);
-            LOG_INFO("Sending chunk");
-            peer.sendData(actualChunk);
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(hycast::RUNTIME_ERROR(
-                    "runTestSrvr() threw an exception"));
-        }
-    }
-
-    void startTestSrvr()
-    {
-        // Server socket must exist before client connects
-        hycast::SrvrSctpSock srvrSock{srvrSockAddr,
-                hycast::Peer::getNumStreams()};
-        srvrSock.listen();
-        senderFuture = completer.submit([this,srvrSock]() mutable {
-            this->runTestSrvr(srvrSock); });
-    }
-
-    void runTestClnt(hycast::SctpSock& sock)
-    {
-        try {
-            hycast::Peer peer{sock};
-
-            auto msg = peer.getMessage();
-            EXPECT_EQ(peer.PROD_NOTICE, msg.getType());
-            EXPECT_EQ(prodInfo, msg.getProdInfo());
-            LOG_INFO("Received product notice");
-
-            msg = peer.getMessage();
-            EXPECT_EQ(peer.CHUNK_NOTICE, msg.getType());
-            EXPECT_EQ(chunkInfo, msg.getChunkId());
-            LOG_INFO("Received chunk notice");
-
-            msg = peer.getMessage();
-            EXPECT_EQ(peer.PROD_REQUEST, msg.getType());
-            EXPECT_EQ(prodIndex, msg.getProdIndex());
-            LOG_INFO("Received product request");
-
-            msg = peer.getMessage();
-            EXPECT_EQ(peer.CHUNK_REQUEST, msg.getType());
-            EXPECT_EQ(chunkInfo, msg.getChunkId());
-            LOG_INFO("Received chunk request");
-
-            msg = peer.getMessage();
-            EXPECT_EQ(peer.CHUNK, msg.getType());
-            auto chunk = msg.getChunk();
-            EXPECT_TRUE(chunkInfo.equalsExceptName(chunk.getInfo()));
-            char data[static_cast<size_t>(chunk.getSize())];
-            auto actualSize = chunk.drainData(data, sizeof(data));
-            ASSERT_EQ(sizeof(data), actualSize);
-            EXPECT_EQ(0, ::memcmp(this->data, data, sizeof(data)));
-            LOG_INFO("Received chunk");
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(hycast::RUNTIME_ERROR(
-                    "runTestClnt() threw an exception"));
-        }
-    }
-
-    void startTestClnt()
-    {
-        hycast::SctpSock sock{hycast::Peer::getNumStreams()};
-        sock.connect(srvrSockAddr);
-        receiverFuture = completer.submit([this,sock]() mutable {
-            this->runTestClnt(sock); });
-    }
-
-    void runPerfSrvr(hycast::SrvrSctpSock& srvrSock)
-    {
-        try {
-            char             chunkData[hycast::ChunkSize::chunkSizeMax];
-            const size_t     prodSize = 1000000;
-            ::memset(chunkData, 0xbd, sizeof(chunkData));
-            for (hycast::ChunkSize chunkSize : chunkSizes) {
-                {
-                    auto             sock = srvrSock.accept();
-                    hycast::Peer     peer(sock);
-                    hycast::ProdInfo prodInfo{0, "product", prodSize,
-                            chunkSize};
-                    TimePoint start = Clock::now();
-                    peer.sendNotice(prodInfo);
-                    size_t remaining = prodSize;
-                    auto numChunks = prodInfo.getNumChunks();
-                    for (hycast::ChunkIndex chunkIndex = 0;
-                            chunkIndex < numChunks; ++chunkIndex) {
-                        try {
-                            hycast::ActualChunk chunk{
-                                    hycast::ChunkInfo{prodInfo, chunkIndex},
-                                    chunkData};
-                            peer.sendData(chunk);
-                            remaining -= chunk.getSize();
-                        }
-                        catch (const std::exception& ex) {
-                            std::throw_with_nested(hycast::RUNTIME_ERROR(
-                                    "Couldn't send chunk"));
-                        }
-                    }
-                } // Connection closed
-                barrier.wait();
-            }
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(
-                    hycast::RUNTIME_ERROR("runPerfSrvr() threw an exception"));
-        }
-    }
-
-    void startPerfSrvr()
-    {
-        // Server socket must exist before client connects
-        hycast::SrvrSctpSock srvrSock{srvrSockAddr,
-                hycast::Peer::getNumStreams()};
-        srvrSock.listen();
-        senderFuture = completer.submit([this,srvrSock]() mutable {
-            this->runPerfSrvr(srvrSock); });
-    }
-
-    void runPerfClnt()
-    {
-        try {
-            for (hycast::ChunkSize chunkSize : chunkSizes) {
-                hycast::SctpSock sock{hycast::Peer::getNumStreams()};
-                sock.connect(srvrSockAddr);
-                hycast::Peer peer{sock};
-                auto start = Clock::now();
-                // Receive product information
-                prodInfo = peer.getMessage().getProdInfo();
-                auto prodSize = prodInfo.getSize();
-                // Receive data-chunks
-                for (auto msg = peer.getMessage(); msg;
-                        msg = peer.getMessage()) {
-                    msg.getChunk().discard();
+            auto              sock = srvrSock.accept();
+            hycast::Peer      peer(sock);
+            hycast::Thread    recvThread{[&peer,this]() mutable {
+                    peer.runReceiver(*this);}};
+            peer.notify(prodIndex);
+            for (hycast::ChunkIndex chunkIndex = 0;
+                    chunkIndex < numChunks; ++chunkIndex) {
+                try {
+                    hycast::ChunkId chunkId{prodInfo, chunkIndex};
+                    peer.notify(chunkId);
                 }
-                TimePoint stop = Clock::now();
-                Duration  duration = std::chrono::duration_cast<Duration>
-                        (stop - start);
-                auto seconds = duration.count() *
-                        Duration::period::num / Duration::period::den;
-                std::cerr << "Chunk size=" +
-                        std::to_string(chunkSize)
-                        + " bytes, duration=" + std::to_string(seconds) +
-                        " s, byte rate=" + std::to_string(prodSize/seconds)
-                        + " Hz" << std::endl;
-                barrier.wait();
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(hycast::RUNTIME_ERROR(
+                            "Couldn't send chunk " + chunkIndex.to_string()));
+                }
             }
+            barrier.wait();
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(
-                    hycast::RUNTIME_ERROR("runPerfClnt() threw an exception"));
+                    hycast::RUNTIME_ERROR("runSrvr() threw an exception"));
         }
     }
 
-    void startPerfClnt()
+    void startSrvr(hycast::Completer<void>& completer)
+    {
+        // Server socket must exist before client connects
+        hycast::SrvrSctpSock srvrSock{srvrSockAddr,
+                hycast::Peer::getNumStreams()};
+        srvrSock.listen();
+        senderFuture = completer.submit([this,srvrSock]() mutable {
+            this->runSrvr(srvrSock); });
+    }
+
+    void runClnt()
+    {
+        try {
+            hycast::SctpSock sock{hycast::Peer::getNumStreams()};
+            sock.connect(srvrSockAddr);
+            hycast::Peer   peer{sock};
+            auto           start = Clock::now();
+            hycast::Thread recvThread{[&peer,this]() mutable {
+                    peer.runReceiver(*this);}};
+            barrier.wait();
+            TimePoint stop = Clock::now();
+            Duration  duration = std::chrono::duration_cast<Duration>
+                    (stop - start);
+            auto seconds = duration.count() *
+                    Duration::period::num / Duration::period::den;
+            std::cerr << "Chunk size=" +
+                    std::to_string(chunkSize)
+                    + " bytes, duration=" + std::to_string(seconds) +
+                    " s, byte rate=" + std::to_string(prodSize/seconds)
+                    + " Hz" << std::endl;
+        } // Destroys `recvThread`
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    hycast::RUNTIME_ERROR("runClnt() threw an exception"));
+        }
+    }
+
+    void startClnt(hycast::Completer<void>& completer)
     {
         receiverFuture = completer.submit([this]() mutable {
-            this->runPerfClnt(); });
+            this->runClnt(); });
     }
-
-    // Objects declared here can be used by all tests in the test case for Peer.
-    hycast::Future<void>    senderFuture;
-    hycast::Future<void>    receiverFuture;
-    hycast::ProdInfo        prodInfo{1, "product", 100000};
-    hycast::ChunkInfo       chunkInfo{prodInfo, 3};
-    hycast::ProdIndex       prodIndex{1};
-    char*                   data;
-    hycast::Completer<void> completer{};
-    hycast::ChunkSize       chunkSizes[6] = {8000, 16000, 24000, 32000, 40000, 48000};
-    hycast::Barrier         barrier;
 };
+
+// The fixture for testing class Peer.
+class PeerTest : public ::testing::Test
+{};
 
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction) {
@@ -252,35 +204,25 @@ TEST_F(PeerTest, ToString) {
             hycast::Peer().to_string().data());
 }
 
-// Tests transmission
-TEST_F(PeerTest, Transmission) {
+// Tests execution
+TEST_F(PeerTest, Execution) {
+    hycast::ChunkSize::type chunkSizes[6] = { 8000, 16000, 24000, 32000, 40000,
+            48000};
     try {
-        startTestSrvr();
-        startTestClnt();
-        completer.take().getResult();
-        completer.take().getResult();
+        for (auto chunkSize : chunkSizes) {
+            TransmitProd transProd{chunkSize};
+            hycast::Completer<void> completer{};
+            transProd.startSrvr(completer);
+            transProd.startClnt(completer);
+            completer.take().getResult();
+            completer.take().getResult();
+        }
     }
     catch (const std::exception& ex) {
-        LOG_ERROR(ex, "Transmission test failure"); // Else no message nesting
+        LOG_ERROR(ex, "Execution test failure"); // Else no message nesting
         throw;
     }
 }
-
-#if 1
-// Tests performance
-TEST_F(PeerTest, Performance) {
-    try {
-        startPerfSrvr();
-        startPerfClnt();
-        completer.take().getResult();
-        completer.take().getResult();
-    }
-    catch (const std::exception& ex) {
-        LOG_ERROR(ex, "Performance test failure"); // Else no message nesting
-        throw;
-    }
-}
-#endif
 
 }  // namespace
 

@@ -114,7 +114,7 @@ class ProdMap
     std::map<ProdIndex, ProdEntry*>          incomplete;
     ProdIndex                                earliest;
     ProdIndex                                latest;
-    static const ChunkId                   emptyChunkInfo;
+    static const ChunkId                     emptyChunkId;
 
     /**
      * Updates the indexes of the earliest and latest products that this
@@ -173,15 +173,15 @@ public:
      * @return               Status of addition
      * @see                  `ProdStore::AddStatus`
      */
-    ProdStore::AddStatus add(
+    RecvStatus add(
             const ProdInfo&   prodInfo,
             ProdEntry** const prodEntry)
     {
-        LockGuard             lock{mutex};
-        ProdEntry*            entry;
-        ProdStore::AddStatus  status{};
-        const auto            prodIndex = prodInfo.getIndex();
-        auto                  iter = prods.find(prodIndex);
+        LockGuard   lock{mutex};
+        ProdEntry*  entry;
+        RecvStatus  status{};
+        const auto  prodIndex = prodInfo.getIndex();
+        auto        iter = prods.find(prodIndex);
         if (iter == prods.end()) {
             status.setNew();
             entry = &prods.emplace(prodIndex,
@@ -209,15 +209,15 @@ public:
      * @return            Status of addition
      * @see               `ProdStore::AddStatus`
      */
-    ProdStore::AddStatus add(
+    RecvStatus add(
             LatentChunk&      chunk,
             ProdEntry** const prodEntry)
     {
-        LockGuard            lock{mutex};
-        ProdEntry*           entry;
-        ProdStore::AddStatus status{};
-        const auto           prodIndex = chunk.getProdIndex();
-        auto                 iter = prods.find(prodIndex);
+        LockGuard  lock{mutex};
+        ProdEntry* entry;
+        RecvStatus status{};
+        const auto prodIndex = chunk.getProdIndex();
+        auto       iter = prods.find(prodIndex);
         if (iter == prods.end()) {
             status.setNew();
             entry = &prods.emplace(prodIndex, ProdEntry{chunk}).first->second;
@@ -312,7 +312,7 @@ public:
         LockGuard lock{mutex};
         auto iter = incomplete.begin();
         return (iter == incomplete.end())
-                ? emptyChunkInfo
+                ? emptyChunkId
                 : iter->second->identifyEarliestMissingChunk();
     }
 
@@ -329,7 +329,7 @@ public:
     }
 };
 
-const ChunkId ProdMap::emptyChunkInfo{};
+const ChunkId ProdMap::emptyChunkId{};
 
 /******************************************************************************/
 
@@ -644,14 +644,14 @@ public:
      * @threadsafety          Safe
      */
     template<class T>
-    AddStatus add(
+    RecvStatus add(
             T               thing,
             const ProdIndex prodIndex,
             Product&        prod)
     {
         throwIfException();
-        ProdEntry* entry;
-        AddStatus  status{};
+        ProdEntry*  entry;
+        RecvStatus  status{};
         try {
             status = prods.add(thing, &entry);
             if (status.isNew())
@@ -674,6 +674,18 @@ public:
     size_t size() const noexcept
     {
         return prods.size();
+    }
+
+    bool haveProdInfo(const ProdIndex index) const
+    {
+        throwIfException();
+        try {
+            return prods.getProdInfo(index).isComplete();
+        }
+        catch (const std::exception& ex) {
+            setAndThrowException();
+        }
+        return false; // To accommodate Eclipse
     }
 
     /**
@@ -766,14 +778,14 @@ void ProdStore::add(Product& prod)
     pImpl->add(prod);
 }
 
-ProdStore::AddStatus ProdStore::add(
+RecvStatus ProdStore::add(
         const ProdInfo& prodInfo,
         Product&        prod)
 {
     return pImpl->add(prodInfo, prodInfo.getIndex(), prod);
 }
 
-ProdStore::AddStatus ProdStore::add(
+RecvStatus ProdStore::add(
         LatentChunk& chunk,
         Product&     prod)
 {
@@ -783,6 +795,11 @@ ProdStore::AddStatus ProdStore::add(
 size_t ProdStore::size() const noexcept
 {
     return pImpl->size();
+}
+
+bool ProdStore::haveProdInfo(const ProdIndex index) const
+{
+    return pImpl->haveProdInfo(index);
 }
 
 ProdInfo ProdStore::getProdInfo(const ProdIndex index) const
