@@ -30,43 +30,8 @@ class Peer final : public Notifier
     std::shared_ptr<Impl> pImpl; // `pImpl` idiom
 
 public:
+    /// Type of container returned by `getOutstandingChunks()`
     typedef std::set<ChunkId> ChunkIdSet;
-
-    /// Types of messages exchanged by peers
-    typedef enum {
-        EMPTY,         // Empty message
-        PROD_NOTICE,   // Notice of product
-        CHUNK_NOTICE,  // Notice of available chunk of data
-        PROD_REQUEST,  // Request for product information
-        CHUNK_REQUEST, // Request for chunk of data
-        CHUNK          // Chunk of data
-    } MsgType;
-
-    /// Union of all possible message types
-    class Message
-    {
-        class                 Impl;
-        std::shared_ptr<Impl> pImpl;
-    public:
-        Message();
-        explicit Message(const ProdInfo& prodInfo);
-        explicit Message(const ChunkId& chunkInfo,
-                         const bool     isRequest = false);
-        explicit Message(const ProdIndex& prodIndex);
-        explicit Message(const LatentChunk& chunk);
-
-        operator bool() const noexcept;
-        MsgType getType() const noexcept;
-
-        const ProdInfo& getProdInfo() const;
-        const ChunkId& getChunkId() const;
-        const ProdIndex& getProdIndex() const;
-        const LatentChunk& getChunk() const;
-    };
-
-    void* getPimpl() const {
-        return pImpl.get();
-    }
 
     /**
      * Constructs from nothing. Any attempt to use the resulting instance will
