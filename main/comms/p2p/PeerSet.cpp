@@ -461,7 +461,6 @@ class PeerSet::Impl final : public PeerEntryServer
     std::unordered_map<PeerFuture, PeerEntry>   futureToEntryMap;
     const TimeUnit                              stasisDuration;
     const TimeUnit                              maxResideTime;
-    std::function<void(InetSockAddr&)>          peerStopped;
     unsigned                                    maxPeers;
     std::exception_ptr                          exception;
     TimePoint                                   timeLastInsert;
@@ -654,7 +653,6 @@ public:
      * @param[in] stasisDuration  Minimum amount of time that the set must be
      *                            full and unchanged before the worst-performing
      *                            peer may be removed
-     * @param[in] peerStopped     Function to call when a peer stops
      * @throws InvalidArgument    `maxPeers == 0 || stasisDuration <= 0`
      */
     Impl(   PeerSetServer& peerSetServer,
@@ -666,7 +664,6 @@ public:
         , futureToEntryMap{}
         , stasisDuration{stasisDuration}
         , maxResideTime{stasisDuration*2}
-        , peerStopped{peerStopped}
         , maxPeers{maxPeers}
         , exception{}
         , timeLastInsert{Clock::now()}
@@ -720,7 +717,7 @@ public:
             }
         } // `mutex` locked
         if (peerAddr)
-            peerStopped(peerAddr);
+            peerSetServer.peerStopped(peerAddr);
         return inserted;
     }
 
