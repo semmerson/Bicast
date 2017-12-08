@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <set>
 
 namespace hycast {
 
@@ -29,6 +30,8 @@ class Peer final : public Notifier
     std::shared_ptr<Impl> pImpl; // `pImpl` idiom
 
 public:
+    typedef std::set<ChunkId> ChunkIdSet;
+
     /// Types of messages exchanged by peers
     typedef enum {
         EMPTY,         // Empty message
@@ -172,6 +175,13 @@ public:
      * @threadsafety    Safe
      */
     std::string to_string() const;
+
+    /**
+     * Returns a copy of the set of requested but not-yet-received
+     * chunks-of-data.
+     * @return Copy of set of outstanding data-chunks
+     */
+    ChunkIdSet getOutstandingChunks() const;
 };
 
 } // namespace

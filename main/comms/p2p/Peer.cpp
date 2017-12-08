@@ -24,12 +24,19 @@
 #include <cstddef>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 
 namespace hycast {
 
-class Peer::Impl final {
+class Peer::Impl final
+{
+public:
+    typedef std::iterator<std::input_iterator_tag, ChunkId>  ChunkIdIterator;
+
+private:
     typedef enum {
         VERSION_STREAM_ID = 0,
         BACKLOG_STREAM_ID,
@@ -40,7 +47,33 @@ class Peer::Impl final {
         CHUNK_REQ_STREAM_ID,
         CHUNK_STREAM_ID,
         NUM_STREAM_IDS
-    }      SctpStreamId;
+    } SctpStreamId;
+
+    class SafeChunkIdSet final
+    {
+        typedef std::mutex                  Mutex;
+        typedef std::lock_guard<Mutex>      LockGuard;
+        typedef std::unordered_set<ChunkId> Set;
+        mutable Mutex                       mutex;
+        Set                                 chunkIds;
+    public:
+        void insert(const ChunkId& chunkId)
+        {
+            LockGuard lock{mutex};
+            chunkIds.insert(chunkId);
+        }
+        void erase(const ChunkId& chunkId)
+        {
+            LockGuard lock{mutex};
+            chunkIds.erase(chunkId);
+        }
+        Peer::ChunkIdSet getChunkIds() const
+        {
+            LockGuard lock{mutex};
+            return Peer::ChunkIdSet{chunkIds.begin(), chunkIds.end()};
+        }
+    };
+
     unsigned                          version;
     Channel<VersionMsg>               versionChan;
     Channel<ChunkId>                  backlogChan;
@@ -51,6 +84,7 @@ class Peer::Impl final {
     Channel<ChunkId>                  chunkReqChan;
     Channel<ActualChunk,LatentChunk>  chunkChan;
     SctpSock                          sock;
+    SafeChunkIdSet                    requestedChunks;
 
     /**
      * Every peer implementation is unique.
@@ -86,15 +120,16 @@ public:
      * throw an exception.
      */
     Impl()
-        : version(0),
-          versionChan{},
-          backlogChan{},
-          prodNoticeChan{},
-          chunkNoticeChan{},
-          prodReqChan{},
-          chunkReqChan{},
-          chunkChan{},
-          sock{}
+        : version(0)
+        , versionChan{}
+        , backlogChan{}
+        , prodNoticeChan{}
+        , chunkNoticeChan{}
+        , prodReqChan{}
+        , chunkReqChan{}
+        , chunkChan{}
+        , sock{}
+        , requestedChunks{}
     {}
 
     /**
@@ -105,16 +140,17 @@ public:
      * @throw     RuntimeError  Couldn't construct peer
      */
     Impl(   SctpSock&    sock)
-        : version(0),
-          versionChan(sock, VERSION_STREAM_ID, version),
-          backlogChan(sock, BACKLOG_STREAM_ID, version),
-          prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version),
-          prodInfoChan(sock, PROD_INFO_STREAM_ID, version),
-          chunkNoticeChan(sock, CHUNK_NOTICE_STREAM_ID, version),
-          prodReqChan(sock, PROD_REQ_STREAM_ID, version),
-          chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version),
-          chunkChan(sock, CHUNK_STREAM_ID, version),
-          sock(sock)
+        : version(0)
+        , versionChan(sock, VERSION_STREAM_ID, version)
+        , backlogChan(sock, BACKLOG_STREAM_ID, version)
+        , prodNoticeChan(sock, PROD_NOTICE_STREAM_ID, version)
+        , prodInfoChan(sock, PROD_INFO_STREAM_ID, version)
+        , chunkNoticeChan(sock, CHUNK_NOTICE_STREAM_ID, version)
+        , prodReqChan(sock, PROD_REQ_STREAM_ID, version)
+        , chunkReqChan(sock, CHUNK_REQ_STREAM_ID, version)
+        , chunkChan(sock, CHUNK_STREAM_ID, version)
+        , sock(sock)
+        , requestedChunks{}
     {
         try {
             VersionMsg msg(version);
@@ -203,6 +239,7 @@ public:
                     case CHUNK_STREAM_ID: {
                         auto chunk = chunkChan.recv();
                         peerServer.receive(chunk);
+                        requestedChunks.erase(chunk.getId());
                         break;
                     }
                     default:
@@ -292,6 +329,8 @@ public:
     void request(const ChunkId& chunkId)
     {
         try {
+            // NB: Higher-level peer-replacement prevents unlimited growth
+            requestedChunks.insert(chunkId);
             chunkReqChan.send(chunkId);
         }
         catch (const std::exception& ex) {
@@ -395,6 +434,18 @@ public:
                 ", version=" + std::to_string(version) + ", sock=" +
                 sock.to_string() + "}");
     }
+
+    /**
+     * Returns the set of requested but not-yet-received chunks-of-data.
+     * @return           Set of outstanding data-chunks. Not thread-safe.
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe as long as `runReceiver()` has returned *and*
+     *                   `notify(const ChunkId&)` isn't called
+     */
+    Peer::ChunkIdSet getOutstandingChunks() const
+    {
+        return requestedChunks.getChunkIds();
+    }
 };
 
 Peer::Peer()
@@ -462,6 +513,11 @@ size_t Peer::hash() const noexcept
 std::string Peer::to_string() const
 {
     return pImpl->to_string();
+}
+
+Peer::ChunkIdSet Peer::getOutstandingChunks() const
+{
+    return pImpl->getOutstandingChunks();
 }
 
 } // namespace
