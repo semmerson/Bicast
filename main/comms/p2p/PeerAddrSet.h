@@ -1,6 +1,6 @@
 /**
- * This file declares a thread-safe entry for an available chunk-of-data that's
- * been requested but not yet received.
+ * This file declares an entry for an available chunk-of-data that's been
+ * requested but not yet received.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
@@ -36,7 +36,7 @@ public:
      * Returns the number of peer-addresses.
      * @return Number of peer-addresses
      * @exceptionsafety  Strong guarantee
-     * @threadsafety     Safe
+     * @threadsafety     Compatible but not safe
      */
     size_t size() const;
 
@@ -44,7 +44,7 @@ public:
      * Adds a peer-address.
      * @param[in] peerAddr  Peer-address to be added
      * @exceptionsafety     Strong guarantee
-     * @threadsafety        Safe
+     * @threadsafety        Compatible but not safe
      */
     void add(const InetSockAddr& peerAddr);
 
@@ -52,7 +52,7 @@ public:
      * Removes a peer-address.
      * @param[in] peerAddr  Peer-address to be removed
      * @exceptionsafety     Strong guarantee
-     * @threadsafety        Safe
+     * @threadsafety        Compatible but not safe
      */
     void remove(const InetSockAddr& peerAddr);
 
@@ -63,7 +63,7 @@ public:
      * @generator            Pseudo-random number generator
      * @retval     `true`    Iff `peerAddr` is set
      * @exceptionsafety      Strong guarantee
-     * @threadsafety         Safe
+     * @threadsafety         Compatible but not safe
      */
     bool getRandom(
             InetSockAddr&               peerAddr,
