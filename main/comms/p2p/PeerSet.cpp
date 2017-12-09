@@ -567,6 +567,38 @@ class PeerSet::Impl final : public PeerEntryServer
             elt.second.resetValue();
     }
 
+    void peerStopped(Future<void>& future)
+    {
+        InetSockAddr peerAddr{};
+        {
+            LockGuard                     lock{mutex};
+            std::pair<bool, InetSockAddr> pair = erasePeer(future);
+            if (pair.first)
+                peerAddr = pair.second;
+        }
+        if (future.wasCanceled()) {
+            LOG_INFO("Peer " + peerAddr.to_string() +
+                    " was canceled");
+        }
+        else {
+            try {
+                try {
+                    future.getResult();
+                }
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(RUNTIME_ERROR(
+                            "Peer " + peerAddr.to_string() +
+                            " threw an exception"));
+                }
+            }
+            catch (const std::exception& ex) {
+                log_warn(ex);
+            }
+        }
+        if (peerAddr)
+            peerSetServer.peerStopped(peerAddr);
+    }
+
     /**
      * Handles stopped peers in the set of active peers. Removes a stopped peer
      * from the set and notifies the stopped-peer observer. Doesn't return
@@ -578,19 +610,7 @@ class PeerSet::Impl final : public PeerEntryServer
     	    try {
                 for (;;) {
                     auto future = completer.take(); // Blocks
-                    try {
-                        future.getResult();
-                    }
-                    catch (const std::exception& ex) {
-                        log_warn(ex);
-                    }
-                    std::pair<bool, InetSockAddr> pair;
-                    {
-                        LockGuard lock{mutex};
-                        pair = erasePeer(future);
-                    }
-                    if (pair.first)
-                        peerSetServer.peerStopped(pair.second);
+                    peerStopped(future);
                 }
             }
     	    catch (const std::exception& e) {
@@ -716,8 +736,10 @@ public:
                 inserted = true;
             }
         } // `mutex` locked
+#if 0
         if (peerAddr)
             peerSetServer.peerStopped(peerAddr);
+#endif
         return inserted;
     }
 
