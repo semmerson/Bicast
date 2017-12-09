@@ -114,6 +114,10 @@ typedef enum {
 } LogLevel;
 extern LogLevel logLevel;
 
+inline bool log_enabled(const LogLevel level) {
+    return level <= logLevel;
+}
+
 void log(
         const LogLevel        level,
         const std::exception& ex);
