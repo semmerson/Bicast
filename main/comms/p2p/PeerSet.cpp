@@ -170,7 +170,7 @@ class PeerSet::Impl final : public PeerEntryServer
                 std::condition_variable  cond;
                 const TimeUnit           maxResideTime;
             public:
-                SendQ(const TimeUnit& maxResideTime)
+                SendQ(const TimeUnit& maxResideTime = TimeUnit{0})
                     : queue{}
                     , mutex{}
                     , cond{}
@@ -224,7 +224,7 @@ class PeerSet::Impl final : public PeerEntryServer
             /// Completion service for executing the sending and receiving tasks
             Completer<void>        completer;
             /// Higher-level component used by this instance
-            PeerEntryServer&       peerEntryServer;
+            PeerEntryServer*       peerEntryServer;
             /// Sender of backlog data-chunks to the remote peer
             Backlogger             backlogger;
             /// Thread on which the sender of the backlog executes
@@ -249,6 +249,19 @@ class PeerSet::Impl final : public PeerEntryServer
             }
 
         public:
+            Impl()
+                : sendQ{}
+                , peer{}
+                , value{0}
+                , completer{}
+                /*
+                 * g++(1) 4.8.5 doesn't support "{}"-based initialization of
+                 * references; clang(1) does.
+                 */
+                , peerEntryServer(nullptr)
+                , backlogger{}
+                , backlogThread{}
+            {}
             /**
              * Constructs. Acts upon input from the remote peer by calling the
              * higher-level component.
@@ -273,7 +286,7 @@ class PeerSet::Impl final : public PeerEntryServer
                  * g++(1) 4.8.5 doesn't support "{}"-based initialization of
                  * references; clang(1) does.
                  */
-                , peerEntryServer(peerEntryServer)
+                , peerEntryServer(&peerEntryServer)
                 , backlogger{}
                 , backlogThread{}
             {}
@@ -284,7 +297,7 @@ class PeerSet::Impl final : public PeerEntryServer
             Impl& operator=(const Impl& rhs) =delete;
             Impl& operator=(const Impl&& rhs) =delete;
 
-            inline InetSockAddr getRemoteAddr()
+            inline const InetSockAddr getRemoteAddr() const
             {
                 return peer.getRemoteAddr();
             }
@@ -321,37 +334,37 @@ class PeerSet::Impl final : public PeerEntryServer
                  * because assignment cancels the target thread.
                  */
                 backlogThread = Thread{
-                        peerEntryServer.getBacklogger(earliest, peer)};
+                        peerEntryServer->getBacklogger(earliest, peer)};
             }
 
             bool shouldRequest(const ProdIndex& prodIndex)
             {
-                return peerEntryServer.shouldRequest(prodIndex);
+                return peerEntryServer->shouldRequest(prodIndex);
             }
 
             bool shouldRequest(const ChunkId& chunkId)
             {
-                return peerEntryServer.shouldRequest(chunkId);
+                return peerEntryServer->shouldRequest(chunkId);
             }
 
             bool get(const ProdIndex& prodIndex, ProdInfo& prodInfo)
             {
-                return peerEntryServer.get(prodIndex, prodInfo);
+                return peerEntryServer->get(prodIndex, prodInfo);
             }
 
             bool get(const ChunkId& chunkId, ActualChunk& chunk)
             {
-                return peerEntryServer.get(chunkId, chunk);
+                return peerEntryServer->get(chunkId, chunk);
             }
 
             RecvStatus receive(const ProdInfo& info)
             {
-                return peerEntryServer.receive(info, peer.getRemoteAddr());
+                return peerEntryServer->receive(info, peer.getRemoteAddr());
             }
 
             RecvStatus receive(LatentChunk& chunk)
             {
-                return peerEntryServer.receive(chunk, peer.getRemoteAddr());
+                return peerEntryServer->receive(chunk, peer.getRemoteAddr());
             }
 
             void notify(const ProdIndex& prodIndex)
@@ -424,6 +437,16 @@ class PeerSet::Impl final : public PeerEntryServer
             {
                 value = 0;
             }
+
+            size_t hash()
+            {
+                return getRemoteAddr().hash();
+            }
+
+            bool operator==(const Impl& rhs) const
+            {
+                return getRemoteAddr() == rhs.getRemoteAddr();
+            }
         };
 
         std::shared_ptr<Impl> pImpl;
@@ -450,15 +473,28 @@ class PeerSet::Impl final : public PeerEntryServer
                 std::shared_ptr<SendAction> action) const {
             pImpl->push(action);
         }
+        inline size_t hash()                const {return pImpl->hash(); }
+        inline bool operator==(const PeerEntry& rhs)
+                                            const {
+            return *pImpl.get() == *rhs.pImpl.get();
+        }
+    };
+
+    struct PeerEntryHash {
+        size_t operator()(const PeerEntry& peerEntry) const {
+            return peerEntry.hash();
+        }
     };
 
     /// The future of a peer
     typedef Future<void>                        PeerFuture;
+    typedef std::pair<PeerFuture, PeerEntry>    ActivePeerEntry;
 
     mutable std::mutex                          mutex;
     mutable std::condition_variable             cond;
-    std::unordered_map<InetSockAddr, PeerEntry> addrToEntryMap;
-    std::unordered_map<PeerFuture, PeerEntry>   futureToEntryMap;
+    std::unordered_map<InetSockAddr, ActivePeerEntry>
+                                                activePeerEntries;
+    std::unordered_map<PeerFuture, PeerEntry>   peerEntries;
     const TimeUnit                              stasisDuration;
     const TimeUnit                              maxResideTime;
     unsigned                                    maxPeers;
@@ -474,7 +510,7 @@ class PeerSet::Impl final : public PeerEntryServer
     inline bool full() const
     {
         assert(isLocked(mutex));
-        return addrToEntryMap.size() >= maxPeers;
+        return activePeerEntries.size() >= maxPeers;
     }
 
     /**
@@ -502,30 +538,18 @@ class PeerSet::Impl final : public PeerEntryServer
                 entry.operator()(earliest);});
         }
         try {
-            addrToEntryMap.insert({peer.getRemoteAddr(), entry});
-            futureToEntryMap.insert({peerFuture, entry});
+            activePeerEntries.emplace(peer.getRemoteAddr(),
+                    std::pair<PeerFuture, ActivePeerEntry>{peerFuture, entry});
+            peerEntries.emplace(peerFuture, entry);
             timeLastInsert = Clock::now();
             if (full())
                 resetValues();
         }
         catch (const std::exception& ex) {
-            futureToEntryMap.erase(peerFuture);
-            addrToEntryMap.erase(peer.getRemoteAddr());
+            peerEntries.erase(peerFuture);
+            activePeerEntries.erase(peer.getRemoteAddr());
             peerFuture.cancel(true);
         }
-    }
-
-    std::pair<bool, InetSockAddr> erasePeer(PeerFuture& future)
-    {
-        assert(isLocked(mutex));
-        auto iter = futureToEntryMap.find(future);
-        if (iter != futureToEntryMap.end()) {
-            auto peerAddr = iter->second.getRemoteAddr();
-            addrToEntryMap.erase(peerAddr);
-            futureToEntryMap.erase(iter);
-            return {true, peerAddr};
-        }
-        return {false, InetSockAddr()};
     }
 
     /**
@@ -538,47 +562,53 @@ class PeerSet::Impl final : public PeerEntryServer
     InetSockAddr stopAndRemoveWorstPeer()
     {
         assert(isLocked(mutex));
-        std::pair<PeerFuture, PeerEntry> pair;
-        auto minValue = VALUE_MAX;
-        for (const auto& elt : futureToEntryMap) {
-            auto value = elt.second.getValue();
+        auto                                     minValue = VALUE_MAX;
+        std::pair<InetSockAddr, ActivePeerEntry> pair;
+        for (const auto& elt : activePeerEntries) {
+            auto value = elt.second.second.getValue();
             if (value < minValue) {
                 minValue = value;
                 pair = elt;
             }
         }
-        auto future = pair.first;
-        if (future) {
-            UnlockGuard unlock{mutex};
-            future.cancel();
-        }
-        return erasePeer(future).second;
+        activePeerEntries.erase(pair.first);
+        auto future = pair.second.first;
+        UnlockGuard unlock{mutex};
+        future.cancel();
     }
 
     /**
-     * Resets the value-counts in the peer-to-value map.
+     * Resets the value of all active peers.
      * @exceptionsafety  Nothrow
      * @threadsafety     Compatible but not safe
      */
     void resetValues() noexcept
     {
         assert(isLocked(mutex));
-        for (const auto& elt : addrToEntryMap)
-            elt.second.resetValue();
+        for (const auto& elt : activePeerEntries)
+            elt.second.second.resetValue();
     }
 
+    /**
+     * Handles the stopped peer associated with a future. Removes the peer from
+     * internal data-structures and calls `PeerSetServer.peerStopped()`.
+     * @param[in] future  Future of stopped peer
+     */
     void peerStopped(Future<void>& future)
     {
         InetSockAddr peerAddr{};
         {
-            LockGuard                     lock{mutex};
-            std::pair<bool, InetSockAddr> pair = erasePeer(future);
-            if (pair.first)
-                peerAddr = pair.second;
+            LockGuard lock{mutex};
+            auto      iter = peerEntries.find(future);
+            if (iter != peerEntries.end()) {
+                auto peerEntry = iter->second;
+                peerAddr = peerEntry.getRemoteAddr();
+                activePeerEntries.erase(peerAddr);
+            }
+            peerEntries.erase(future);
         }
         if (future.wasCanceled()) {
-            LOG_INFO("Peer " + peerAddr.to_string() +
-                    " was canceled");
+            LOG_INFO("Peer " + peerAddr.to_string() + " was canceled");
         }
         else {
             try {
@@ -586,9 +616,8 @@ class PeerSet::Impl final : public PeerEntryServer
                     future.getResult();
                 }
                 catch (const std::exception& ex) {
-                    std::throw_with_nested(RUNTIME_ERROR(
-                            "Peer " + peerAddr.to_string() +
-                            " threw an exception"));
+                    std::throw_with_nested(RUNTIME_ERROR("Peer " +
+                            peerAddr.to_string() + " threw an exception"));
                 }
             }
             catch (const std::exception& ex) {
@@ -638,10 +667,10 @@ class PeerSet::Impl final : public PeerEntryServer
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(prodIndex)};
-        for (const auto& elt : addrToEntryMap) {
+        for (const auto& elt : activePeerEntries) {
             if (elt.first == except)
                 continue;
-            elt.second.push(action);
+            elt.second.second.push(action);
         }
     }
 
@@ -658,10 +687,10 @@ class PeerSet::Impl final : public PeerEntryServer
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
-        for (const auto& elt : addrToEntryMap) {
+        for (const auto& elt : activePeerEntries) {
             if (elt.first == except)
                 continue;
-            elt.second.push(action);
+            elt.second.second.push(action);
         }
     }
 
@@ -680,8 +709,8 @@ public:
             const unsigned stasisDuration)
         : mutex{}
         , cond{}
-        , addrToEntryMap{}
-        , futureToEntryMap{}
+        , activePeerEntries{}
+        , peerEntries{}
         , stasisDuration{stasisDuration}
         , maxResideTime{stasisDuration*2}
         , maxPeers{maxPeers}
@@ -724,8 +753,8 @@ public:
                 Canceler canceler{};
                 cond.wait_until(lock, timeNextAttempt);
             }
-            if (addrToEntryMap.find(peer.getRemoteAddr()) !=
-                    addrToEntryMap.end()) {
+            if (activePeerEntries.find(peer.getRemoteAddr()) !=
+                    activePeerEntries.end()) {
                 inserted = false;
             }
             else {
@@ -748,7 +777,7 @@ public:
         LockGuard lock{mutex};
     	if (exception)
             std::rethrow_exception(exception);
-        return addrToEntryMap.find(peerAddr) != addrToEntryMap.end();
+        return activePeerEntries.find(peerAddr) != activePeerEntries.end();
     }
 
     void notify(const ProdIndex& prodIndex)
@@ -757,8 +786,8 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(prodIndex)};
-        for (const auto& elt : addrToEntryMap)
-            elt.second.push(action);
+        for (const auto& elt : activePeerEntries)
+            elt.second.second.push(action);
     }
 
     void notify(const ChunkId& id)
@@ -767,8 +796,8 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
-        for (const auto& elt : addrToEntryMap)
-            elt.second.push(action);
+        for (const auto& elt : activePeerEntries)
+            elt.second.second.push(action);
     }
 
     void incValue(Peer& peer)
@@ -777,9 +806,9 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
-            auto iter = addrToEntryMap.find(peer.getRemoteAddr());
-            if (iter != addrToEntryMap.end())
-                iter->second.incValue();
+            auto iter = activePeerEntries.find(peer.getRemoteAddr());
+            if (iter != activePeerEntries.end())
+                iter->second.second.incValue();
         }
     }
 
@@ -789,9 +818,9 @@ public:
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
-            auto iter = addrToEntryMap.find(peer.getRemoteAddr());
-            if (iter != addrToEntryMap.end())
-                iter->second.decValue();
+            auto iter = activePeerEntries.find(peer.getRemoteAddr());
+            if (iter != activePeerEntries.end())
+                iter->second.second.decValue();
         }
     }
 
@@ -800,7 +829,7 @@ public:
         LockGuard lock{mutex};
     	if (exception)
             std::rethrow_exception(exception);
-        return addrToEntryMap.size();
+        return activePeerEntries.size();
     }
 
     bool isFull() const
