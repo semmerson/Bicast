@@ -539,7 +539,7 @@ class PeerSet::Impl final : public PeerEntryServer
         }
         try {
             activePeerEntries.emplace(peer.getRemoteAddr(),
-                    std::pair<PeerFuture, ActivePeerEntry>{peerFuture, entry});
+                    std::pair<PeerFuture, PeerEntry>{peerFuture, entry});
             peerEntries.emplace(peerFuture, entry);
             timeLastInsert = Clock::now();
             if (full())
@@ -555,6 +555,7 @@ class PeerSet::Impl final : public PeerEntryServer
     /**
      * Stops the peer with the lowest value in the set of active peers and
      * removes it from the set.
+     * @pre              `activePeerEntries.size() > 0`
      * @exceptionsafety  Basic guarantee
      * @threadsafety     Compatible but not safe
      * @return           Address of remote peer that was removed
@@ -575,6 +576,7 @@ class PeerSet::Impl final : public PeerEntryServer
         auto future = pair.second.first;
         UnlockGuard unlock{mutex};
         future.cancel();
+        return pair.first;
     }
 
     /**
