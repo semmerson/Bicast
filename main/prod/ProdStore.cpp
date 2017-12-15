@@ -157,8 +157,7 @@ public:
     {
         LockGuard  lock{mutex};
         auto       prodIndex = prod.getIndex();
-        auto       pair = prods.insert(std::pair<ProdIndex, ProdEntry>
-                (prodIndex, ProdEntry{prod}));
+        auto       pair = prods.emplace(prodIndex, ProdEntry{prod});
         const bool isNew = pair.second;
         if (isNew)
             updateEndIndexes(prodIndex);
