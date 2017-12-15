@@ -58,7 +58,7 @@ protected:
     {
         for (size_t i = 0; i < prodSize; ++i)
                 prodData[i] = i % UCHAR_MAX;
-        prod = hycast::CompleteProduct{prodIndex, "product", prodSize,
+        prod = hycast::MemoryProduct{prodIndex, "product", prodSize,
                 prodData};
         auto peerAddr = hycast::InetSockAddr(srcInetAddr, srcPort);
     }

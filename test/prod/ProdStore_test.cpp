@@ -25,7 +25,7 @@ protected:
     {
         for (size_t i = 0; i < sizeof(data); ++i)
             data[i] = i % UCHAR_MAX;
-        prod = hycast::CompleteProduct{prodIndex, "product", sizeof(data), data};
+        prod = hycast::MemoryProduct{prodIndex, "product", sizeof(data), data};
     }
 
     void addChunk(

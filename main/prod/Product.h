@@ -19,8 +19,15 @@
 
 namespace hycast {
 
+/**
+ * Base class for data-products.
+ */
 class Product
 {
+    /*
+     * NB: Not a pure virtual class so that instances of the base class (with
+     * the "pImpl" idiom) can  exist.
+     */
 protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
@@ -169,12 +176,12 @@ public:
 
 /******************************************************************************/
 
-class CompleteProduct final : public Product
+class MemoryProduct : public Product
 {
     class Impl;
 
 public:
-    CompleteProduct();
+    MemoryProduct();
 
     /**
      * Constructs from complete data.
@@ -185,7 +192,7 @@ public:
      *                       lifetime of the constructed instance.
      * @param[in] chunkSize  Canonical size of a data-chunk
      */
-    CompleteProduct(
+    MemoryProduct(
             const ProdIndex index,
             const ProdName& name,
             const ProdSize  size,

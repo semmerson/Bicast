@@ -180,7 +180,7 @@ ActualChunk Product::getChunk(const ChunkIndex index) const
 
 /******************************************************************************/
 
-class CompleteProduct::Impl : public Product::Impl
+class MemoryProduct::Impl : public Product::Impl
 {
     const char* data;
 
@@ -258,11 +258,11 @@ public:
 };
 
 
-CompleteProduct::CompleteProduct()
+MemoryProduct::MemoryProduct()
     : Product{}
 {}
 
-CompleteProduct::CompleteProduct(
+MemoryProduct::MemoryProduct(
         const ProdIndex index,
         const ProdName& name,
         const ProdSize  size,

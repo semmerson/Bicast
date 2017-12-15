@@ -92,7 +92,7 @@ TEST_F(ProductTest, IdentifyEarliestMissingChunk) {
 TEST_F(ProductTest, DataConstruction) {
     char                    data[128000];
     ::memset(data, 0xbd, sizeof(data));
-    hycast::CompleteProduct prod{1, "product", sizeof(data), data};
+    hycast::MemoryProduct prod{1, "product", sizeof(data), data};
     auto                    prodInfo = prod.getInfo();
     EXPECT_STREQ("product", prodInfo.getName().c_str());
     EXPECT_EQ(1, prodInfo.getIndex());

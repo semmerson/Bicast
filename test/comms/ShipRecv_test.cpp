@@ -116,7 +116,7 @@ TEST_F(ShipRecvTest, ShippingAndReceiving) {
     // Ship products
     for (hycast::ProdIndex i = 0; NUM_PRODUCTS > i; ++i) {
         std::string name = std::string{"product " } + std::to_string(i);
-        hycast::CompleteProduct prod{i, name, sizeof(data), data};
+        hycast::MemoryProduct prod{i, name, sizeof(data), data};
         shipping.ship(prod);
     }
 
