@@ -18,7 +18,8 @@ lib_la_SOURCES 	= \
 	Future.cpp Future.h \
 	Task.cpp Task.h \
 	Executor.cpp Executor.h \
-	Completer.cpp Completer.h
+	Completer.cpp Completer.h \
+	LinkedHashMap.h
 #	Promise.cpp Promise.h
 #	SyncQueue.h
 
