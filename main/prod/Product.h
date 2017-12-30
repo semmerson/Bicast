@@ -101,7 +101,7 @@ public:
      * @return            Data-chunk. Will be invalid if no such chunk exists.
      * @see `Chunk::operator bool()`
      */
-    ActualChunk getChunk(const ChunkIndex index) const;
+    ActualChunk getChunk(const ChunkIndex index);
 
     /**
      * Indicates if this instance is earlier than another.
@@ -171,12 +171,26 @@ public:
      * `isComplete()` is false.
      * @return  Pointer to data
      */
-    const char* getData() const noexcept;
+    const char* getData();
 };
 
 /******************************************************************************/
 
-class MemoryProduct : public Product
+class CompleteProduct : public Product
+{
+protected:
+    class Impl;
+
+    CompleteProduct();
+    CompleteProduct(Impl* ptr);
+
+public:
+    virtual ~CompleteProduct() =0;
+};
+
+/******************************************************************************/
+
+class MemoryProduct final : public CompleteProduct
 {
     class Impl;
 
@@ -198,6 +212,27 @@ public:
             const ProdSize  size,
             const char*     data,
             const ChunkSize chunkSize = ChunkSize::defaultSize);
+};
+
+/******************************************************************************/
+
+class FileProduct final : public CompleteProduct
+{
+    class Impl;
+
+public:
+    FileProduct();
+
+    /**
+     * Constructs from a file.
+     * @param[in] prodIndex  Product index
+     * @param[in] pathname   Pathname of the file
+     * @param[in] chunkSize  Canonical size of a data-chunk
+     */
+    FileProduct(
+            const ProdIndex    prodIndex,
+            const std::string& pathname,
+            const ChunkSize    chunkSize = ChunkSize::defaultSize);
 };
 
 /******************************************************************************/

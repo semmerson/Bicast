@@ -93,7 +93,7 @@ public:
         return prod.haveChunk(index);
     }
 
-    inline ActualChunk getChunk(const ChunkIndex index) const
+    inline ActualChunk getChunk(const ChunkIndex index)
     {
         return prod.getChunk(index);
     }
@@ -297,7 +297,7 @@ public:
      * @return            Data-chunk. Will be invalid if no such chunk exists.
      * @see `Chunk::operator bool()`
      */
-    ActualChunk getChunk(const ChunkId& id) const
+    ActualChunk getChunk(const ChunkId& id)
     {
         LockGuard lock{mutex};
         auto      iter = prods.find(id.getProdIndex());
@@ -724,7 +724,7 @@ public:
         return false; // To accommodate Eclipse
     }
 
-    ActualChunk getChunk(const ChunkId& id) const
+    ActualChunk getChunk(const ChunkId& id)
     {
         throwIfException();
         try {

@@ -16,7 +16,11 @@
 
 #include <cstring>
 #include <fcntl.h>
+#include <list>
+#include <mutex>
 #include <stdexcept>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <vector>
@@ -96,7 +100,7 @@ public:
 
     virtual bool haveChunk(const ChunkIndex index) const =0;
 
-    virtual ActualChunk getChunk(const ChunkIndex index) const =0;
+    virtual ActualChunk getChunk(const ChunkIndex index) =0;
 
     virtual ChunkId identifyEarliestMissingChunk() const =0;
 
@@ -108,7 +112,7 @@ public:
 
     virtual bool isComplete() const noexcept =0;
 
-    virtual const char* getData() const noexcept =0;
+    virtual const char* getData() =0;
 };
 
 Product::Product(Impl* ptr)
@@ -158,7 +162,7 @@ bool Product::isComplete() const noexcept
     return pImpl->isComplete();
 }
 
-const char* Product::getData() const noexcept
+const char* Product::getData()
 {
     return pImpl->getData();
 }
@@ -173,47 +177,42 @@ bool Product::haveChunk(const ChunkIndex index) const
     return pImpl->haveChunk(index);
 }
 
-ActualChunk Product::getChunk(const ChunkIndex index) const
+ActualChunk Product::getChunk(const ChunkIndex index)
 {
     return pImpl->getChunk(index);
 }
 
 /******************************************************************************/
 
-class MemoryProduct::Impl : public Product::Impl
+class CompleteProduct::Impl : public Product::Impl
 {
-    const char* data;
-
-public:
-    Impl(   const ProdIndex    index,
-            const std::string& name,
-            const ProdSize     size,
-            const char*        data,
-            const ChunkSize    chunkSize)
-        : Product::Impl{ProdInfo{index, name, size, chunkSize}}
-        , data{data}
+protected:
+    Impl()
+        : Product::Impl()
     {}
 
-    ChunkId identifyEarliestMissingChunk() const
+    Impl(const ProdInfo& prodInfo)
+        : Product::Impl(prodInfo)
+    {}
+
+public:
+    virtual ~Impl()
+    {}
+
+    inline ChunkId identifyEarliestMissingChunk() const
     {
         throw LOGIC_ERROR(
                 "Complete product doesn't have earliest missing chunk");
     }
 
-    bool haveChunk(const ChunkOffset offset) const
+    inline bool haveChunk(const ChunkOffset offset) const
     {
         return offset < prodInfo.getSize();
     }
 
-    bool haveChunk(const ChunkIndex index) const
+    inline bool haveChunk(const ChunkIndex index) const
     {
         return haveChunk(prodInfo.getChunkOffset(index));
-    }
-
-    ActualChunk getChunk(const ChunkIndex index) const
-    {
-        auto offset = prodInfo.getChunkOffset(index);
-        return ActualChunk{prodInfo, index, data + offset};
     }
 
     /**
@@ -225,18 +224,18 @@ public:
      * @retval `true`        New information consistent with existing
      * @throw LogicError     Product information can't be changed
      */
-    bool set(const ProdInfo& info)
+    inline bool set(const ProdInfo& info)
     {
         throw LOGIC_ERROR(
                 "Can't set product-information of complete product");
     }
 
-    bool add(const ActualChunk& chunk)
+    inline bool add(const ActualChunk& chunk)
     {
         throw LOGIC_ERROR("Can't add data to complete product");
     }
 
-    bool add(LatentChunk& chunk)
+    inline bool add(LatentChunk& chunk)
     {
         throw LOGIC_ERROR("Can't add data to complete product");
     }
@@ -246,12 +245,50 @@ public:
      * chunks-of-data).
      * @return `true` iff this instance is complete
      */
-    bool isComplete() const noexcept
+    inline bool isComplete() const noexcept
     {
         return true;
     }
 
-    const char* getData() const noexcept
+    virtual ActualChunk getChunk(const ChunkIndex index) =0;
+
+    virtual const char* getData() =0;
+};
+
+CompleteProduct::CompleteProduct()
+    : Product{}
+{}
+
+CompleteProduct::CompleteProduct(Impl* ptr)
+    : Product{ptr}
+{}
+
+CompleteProduct::~CompleteProduct()
+{}
+
+/******************************************************************************/
+
+class MemoryProduct::Impl : public CompleteProduct::Impl
+{
+    const char* data;
+
+public:
+    Impl(   const ProdIndex    index,
+            const std::string& name,
+            const ProdSize     size,
+            const char*        data,
+            const ChunkSize    chunkSize)
+        : CompleteProduct::Impl{ProdInfo{index, name, size, chunkSize}}
+        , data{data}
+    {}
+
+    ActualChunk getChunk(const ChunkIndex index)
+    {
+        auto offset = prodInfo.getChunkOffset(index);
+        return ActualChunk{prodInfo, index, data + offset};
+    }
+
+    const char* getData()
     {
         return data;
     }
@@ -259,7 +296,7 @@ public:
 
 
 MemoryProduct::MemoryProduct()
-    : Product{}
+    : CompleteProduct{}
 {}
 
 MemoryProduct::MemoryProduct(
@@ -268,7 +305,132 @@ MemoryProduct::MemoryProduct(
         const ProdSize  size,
         const char*     data,
         const ChunkSize chunkSize)
-    : Product{new Impl{index, name, size, data, chunkSize}}
+    : CompleteProduct{new Impl{index, name, size, data, chunkSize}}
+{}
+
+/******************************************************************************/
+
+class FileProduct::Impl : public CompleteProduct::Impl
+{
+    std::string pathname;
+    void*       data; /// Product data
+
+    /**
+     * Opens the file.
+     * @return              File descriptor of open product-file
+     * @throw SystemError   Couldn't open file
+     * @exceptionsafety     Strong guarantee
+     */
+    int openFile() const
+    {
+        int fd = ::open(pathname.c_str(), O_RDONLY);
+        if (fd == -1)
+            throw SYSTEM_ERROR("Couldn't open file " + pathname);
+        return fd;
+    }
+
+    /**
+     * Sets the product information.
+     * @pre                    `pathname` and `fd` are valid
+     * @param[in] fd           File descriptor of product-file
+     * @param[in] prodIndex    Product index
+     * @param[in] chunkSize    Size of a canonical data-chunk
+     * @throw InvalidArgument  File is too large
+     * @throw SystemError      Couldn't get file metadata
+     * @exceptionsafety        Strong guarantee
+     */
+    void setProdInfo(
+            const int       fd,
+            const ProdIndex prodIndex,
+            const ChunkSize chunkSize)
+    {
+        struct stat statBuf;
+        if (::fstat(fd, &statBuf))
+            throw SYSTEM_ERROR("Couldn't get information on file " +
+                    pathname);
+        if (statBuf.st_size > ProdSize::prodSizeMax)
+            throw INVALID_ARGUMENT("File " + pathname + " has " +
+                    std::to_string(statBuf.st_size) + " bytes; Maximum "
+                    "allowable is " +
+                    std::to_string(ProdSize::prodSizeMax));
+        ProdSize prodSize{static_cast<ProdSize::type>(statBuf.st_size)};
+        prodInfo = ProdInfo{prodIndex, pathname, prodSize, chunkSize};
+    }
+
+    /**
+     * Memory-maps the file.
+     * @param[in] fd       File descriptor of open file
+     * @throw SystemError  Couldn't memory-map file
+     * @exceptionsafety    Strong guarantee
+     */
+    void mapFile(const int fd)
+    {
+        auto ptr = ::mmap(0, prodInfo.getSize(), PROT_READ, MAP_PRIVATE, fd, 0);
+        if (ptr == MAP_FAILED)
+            throw SYSTEM_ERROR("Couldn't memory-map file " + pathname);
+        data = ptr;
+    }
+
+public:
+    /**
+     * Constructs.
+     * @param[in] prodIndex    Product index
+     * @param[in] pathname     File pathname
+     * @param[in] chunkSize    Size of canonical data-chunk
+     * @throw SystemError      Couldn't open file
+     * @throw InvalidArgument  File is too large
+     * @throw SystemError      Couldn't get file metadata
+     * @throw SystemError      Couldn't memory-map file
+     */
+    Impl(   const ProdIndex    prodIndex,
+            const std::string& pathname,
+            const ChunkSize    chunkSize)
+        : CompleteProduct::Impl() // Eclipse misunderstands `{}`
+        , pathname{pathname}
+        , data{nullptr}
+    {
+        int fd = openFile();
+        try {
+            setProdInfo(fd, prodIndex, chunkSize);
+            mapFile(fd); // Requires valid `prodInfo`
+            ::close(fd); // Free unneeded resource
+        }
+        catch (const std::exception& ex) {
+            ::close(fd);
+            throw;
+        }
+    }
+
+    /**
+     * Destroys.
+     */
+    ~Impl() noexcept
+    {
+        if (::munmap(data, prodInfo.getSize()))
+            LOG_ERROR("Couldn't un-memory-map file %s", pathname.c_str());
+    }
+
+    ActualChunk getChunk(const ChunkIndex index)
+    {
+        auto offset = prodInfo.getChunkOffset(index);
+        return ActualChunk{prodInfo, index, static_cast<char*>(data) + offset};
+    }
+
+    const char* getData()
+    {
+        return static_cast<char*>(data);
+    }
+};
+
+FileProduct::FileProduct()
+    : CompleteProduct{}
+{}
+
+FileProduct::FileProduct(
+        const ProdIndex    prodIndex,
+        const std::string& pathname,
+        const ChunkSize    chunkSize)
+    : CompleteProduct{new Impl{prodIndex, pathname, chunkSize}}
 {}
 
 /******************************************************************************/
@@ -402,7 +564,7 @@ public:
         return haveChunk(prodInfo.getChunkIndex(offset));
     }
 
-    ActualChunk getChunk(const ChunkIndex index) const
+    ActualChunk getChunk(const ChunkIndex index)
     {
         auto offset = prodInfo.getChunkOffset(index); // Vets `index`
         return (complete || chunkVec[index])
@@ -416,7 +578,7 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    const char* getData() const noexcept
+    const char* getData()
     {
         return data;
     }
