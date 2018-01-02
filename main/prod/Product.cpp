@@ -329,6 +329,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @return              File descriptor of open product-file
      * @throw SystemError   Couldn't open file
      * @exceptionsafety     Strong guarantee
+     * @threadsafety        Compatible but not safe
      */
     int openFile() const
     {
@@ -347,6 +348,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @throw InvalidArgument  File is too large
      * @throw SystemError      Couldn't get file metadata
      * @exceptionsafety        Strong guarantee
+     * @threadsafety           Compatible but not safe
      */
     void setProdInfo(
             const int       fd,
@@ -372,6 +374,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @retval 0           Success
      * @return             System error number
      * @exceptionsafety    Strong guarantee
+     * @threadsafety       Compatible but not safe
      */
     int memoryMap(const int fd)
     {
@@ -387,11 +390,26 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @pre                `activeImplsMutex` is locked
      * @pre                `prodInfo` is valid
      * @exceptionsafety    Strong guarantee
+     * @threadsafety       Compatible but not safe
      */
     void unMemoryMap()
     {
         ::munmap(data, prodInfo.getSize());
         data = nullptr;
+    }
+
+    /**
+     * Makes this instance the most-recently accessed one.
+     * @pre                  `data != nullptr`
+     * @exceptionsafety      Strong guarantee for this instance; Basic guarantee
+     *                       for `activeImpls`.
+     * @threadsafety         Compatible but not safe
+     */
+    void makeMostRecentlyAccessed()
+    {
+        std::lock_guard<Mutex> lock{activeImplsMutex};
+        activeImpls.remove(pathname);
+        activeImpls.insert(pathname, this);
     }
 
     /**
@@ -402,7 +420,9 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @throw RuntimeError   Couldn't free-up sufficient resources
      * @throw SystemError    Couldn't open file
      * @throw SystemError    Couldn't memory-map file
-     * @exceptionsafety      Strong guarantee
+     * @exceptionsafety      Strong guarantee for this instance; Basic guarantee
+     *                       for `activeImpls`.
+     * @threadsafety         Compatible but not safe
      */
     void activate()
     {
@@ -425,11 +445,11 @@ class FileProduct::Impl : public CompleteProduct::Impl
                 }
                 if (status != EMFILE)
                     throw SYSTEM_ERROR("Couldn't memory-map file " + pathname);
-                Impl* pImpl;
-                if (!activeImpls.pop(pImpl))
+                Impl* implPtr;
+                if (!activeImpls.pop(implPtr))
                     throw RUNTIME_ERROR("Couldn't free sufficient resources: "
                             "All FileProduct-s are inactive");
-                pImpl->unMemoryMap();
+                implPtr->unMemoryMap();
             }
             catch (const std::exception& ex) {
                 ::close(fd);
@@ -442,6 +462,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * Removes this instance from the list of active instances and
      * un-memory-maps the file.
      * @exceptionsafety  Strong guarantee
+     * @threadsafety     Compatible but not safe
      */
     void deactivate()
     {
@@ -453,12 +474,15 @@ class FileProduct::Impl : public CompleteProduct::Impl
     /**
      * Ensures that this instance is active.
      * @pre              `prodInfo` is valid
-     * @exceptionsafety  Strong guarantee
+     * @exceptionsafety  Strong guarantee for this instance; Basic guarantee for
+     *                   `activeImpls`.
+     * @threadsafety     Compatible but not safe
      */
     inline void ensureActive()
     {
-        if (data == nullptr)
-            activate();
+        data
+            ? makeMostRecentlyAccessed()
+            : activate();
     }
 
 public:
@@ -500,6 +524,10 @@ public:
             deactivate();
     }
 
+    /**
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Compatible but not safe
+     */
     ActualChunk getChunk(const ChunkIndex index)
     {
         auto offset = prodInfo.getChunkOffset(index);
@@ -507,6 +535,10 @@ public:
         return ActualChunk{prodInfo, index, static_cast<char*>(data) + offset};
     }
 
+    /**
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Compatible but not safe
+     */
     const char* getData()
     {
         ensureActive();
