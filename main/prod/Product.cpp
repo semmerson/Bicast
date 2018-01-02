@@ -403,7 +403,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
      * @pre                  `data != nullptr`
      * @exceptionsafety      Strong guarantee for this instance; Basic guarantee
      *                       for `activeImpls`.
-     * @threadsafety         Compatible but not safe
+     * @threadsafety         Safe
      */
     void makeMostRecentlyAccessed()
     {
