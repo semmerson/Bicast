@@ -436,6 +436,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
                         activeImpls.insert(pathname, this);
                     }
                     catch (const std::exception& ex) {
+                        unMemoryMap();
                         std::throw_with_nested(RUNTIME_ERROR(
                                 "Couldn't add FileProduct " + pathname +
                                 " to collection of active instances"));
