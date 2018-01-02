@@ -11,6 +11,7 @@
 
 #include "Chunk.h"
 #include "error.h"
+#include "LinkedHashMap.h"
 #include "ProdInfo.h"
 #include "Product.h"
 
@@ -312,8 +313,16 @@ MemoryProduct::MemoryProduct(
 
 class FileProduct::Impl : public CompleteProduct::Impl
 {
-    std::string pathname;
-    void*       data; /// Product data
+    typedef std::mutex Mutex;
+
+    /// Pathname of file
+    std::string                              pathname;
+    /// Product data
+    void*                                    data;
+    /// Collection of active instances
+    static LinkedHashMap<std::string, Impl*> activeImpls;
+    /// Mutex for concurrent access to collection of active instances
+    static Mutex                             activeImplsMutex;
 
     /**
      * Opens the file.
@@ -360,15 +369,96 @@ class FileProduct::Impl : public CompleteProduct::Impl
     /**
      * Memory-maps the file.
      * @param[in] fd       File descriptor of open file
-     * @throw SystemError  Couldn't memory-map file
+     * @retval 0           Success
+     * @return             System error number
      * @exceptionsafety    Strong guarantee
      */
-    void mapFile(const int fd)
+    int memoryMap(const int fd)
     {
         auto ptr = ::mmap(0, prodInfo.getSize(), PROT_READ, MAP_PRIVATE, fd, 0);
         if (ptr == MAP_FAILED)
-            throw SYSTEM_ERROR("Couldn't memory-map file " + pathname);
+            return errno;
         data = ptr;
+        return 0;
+    }
+
+    /**
+     * Un-memory-maps the file.
+     * @pre                `activeImplsMutex` is locked
+     * @pre                `prodInfo` is valid
+     * @exceptionsafety    Strong guarantee
+     */
+    void unMemoryMap()
+    {
+        ::munmap(data, prodInfo.getSize());
+        data = nullptr;
+    }
+
+    /**
+     * Activates this instance. Memory-maps the file and adds this instance
+     * to the collection of active instances.
+     * @pre                  `prodInfo` is valid
+     * @pre                  `data == nullptr`
+     * @throw RuntimeError   Couldn't free-up sufficient resources
+     * @throw SystemError    Couldn't open file
+     * @throw SystemError    Couldn't memory-map file
+     * @exceptionsafety      Strong guarantee
+     */
+    void activate()
+    {
+        std::lock_guard<Mutex> lock{activeImplsMutex};
+        for (;;) {
+            auto fd = openFile();
+            try {
+                auto status = memoryMap(fd);
+                if (status == 0) {
+                    try {
+                        activeImpls.insert(pathname, this);
+                    }
+                    catch (const std::exception& ex) {
+                        std::throw_with_nested(RUNTIME_ERROR(
+                                "Couldn't add FileProduct " + pathname +
+                                " to collection of active instances"));
+                    }
+                    ::close(fd);
+                    break;
+                }
+                if (status != EMFILE)
+                    throw SYSTEM_ERROR("Couldn't memory-map file " + pathname);
+                Impl* pImpl;
+                if (!activeImpls.pop(pImpl))
+                    throw RUNTIME_ERROR("Couldn't free sufficient resources: "
+                            "All FileProduct-s are inactive");
+                pImpl->unMemoryMap();
+            }
+            catch (const std::exception& ex) {
+                ::close(fd);
+                throw;
+            }
+        }
+    }
+
+    /**
+     * Removes this instance from the list of active instances and
+     * un-memory-maps the file.
+     * @exceptionsafety  Strong guarantee
+     */
+    void deactivate()
+    {
+        std::lock_guard<Mutex> lock{activeImplsMutex};
+        activeImpls.remove(pathname);
+        unMemoryMap();
+    }
+
+    /**
+     * Ensures that this instance is active.
+     * @pre              `prodInfo` is valid
+     * @exceptionsafety  Strong guarantee
+     */
+    inline void ensureActive()
+    {
+        if (data == nullptr)
+            activate();
     }
 
 public:
@@ -392,13 +482,13 @@ public:
         int fd = openFile();
         try {
             setProdInfo(fd, prodIndex, chunkSize);
-            mapFile(fd); // Requires valid `prodInfo`
-            ::close(fd); // Free unneeded resource
+            ::close(fd);
         }
         catch (const std::exception& ex) {
             ::close(fd);
             throw;
         }
+        activate();
     }
 
     /**
@@ -406,21 +496,26 @@ public:
      */
     ~Impl() noexcept
     {
-        if (::munmap(data, prodInfo.getSize()))
-            LOG_ERROR("Couldn't un-memory-map file %s", pathname.c_str());
+        if (data)
+            deactivate();
     }
 
     ActualChunk getChunk(const ChunkIndex index)
     {
         auto offset = prodInfo.getChunkOffset(index);
+        ensureActive();
         return ActualChunk{prodInfo, index, static_cast<char*>(data) + offset};
     }
 
     const char* getData()
     {
+        ensureActive();
         return static_cast<char*>(data);
     }
 };
+
+LinkedHashMap<std::string, FileProduct::Impl*> FileProduct::Impl::activeImpls;
+FileProduct::Impl::Mutex                       FileProduct::Impl::activeImplsMutex;
 
 FileProduct::FileProduct()
     : CompleteProduct{}
