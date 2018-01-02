@@ -1,5 +1,5 @@
 /**
- * This file declares a thread-safe, combined linked-list and hash table.
+ * This file declares a thread-safe, combined doubly-linked list and hash table.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
@@ -16,6 +16,7 @@
 #include <exception>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace hycast {
@@ -24,32 +25,24 @@ template<class Key, class Value>
 class LinkedHashMap
 {
     typedef std::shared_ptr<Key> KeyPtr;
-    class Entry
+    struct MapValue
     {
         KeyPtr prev;
         KeyPtr next;
         Value  value;
-    public:
-        inline Entry(
+
+        inline MapValue(
                 const KeyPtr& prev,
                 const Value&  value)
             : prev{prev}
             , next{}
             , value{value}
         {}
-        inline Key getNext() const
-        {
-            return next;
-        }
-        inline Key getValue() const
-        {
-            return value;
-        }
     };
     typedef std::mutex             Mutex;
     typedef std::lock_guard<Mutex> LockGuard;
 
-    std::unordered_map<Key, Entry> map;
+    std::unordered_map<Key, MapValue> map;
     Mutex                          mutex;
     KeyPtr                         front;
     KeyPtr                         back;
@@ -78,7 +71,7 @@ public:
             const Value& value)
     {
         LockGuard lock{mutex};
-        auto pair = map.emplace(key, Entry{back, value});
+        auto      pair = map.emplace(key, MapValue{back, value});
         try {
             if (!pair.second)
                 return false;
@@ -94,25 +87,53 @@ public:
     }
 
     /**
-     * Returns the oldest inserted value and removes it.
+     * Removes the oldest inserted entry and returns its value.
      * @param[out] value  Value
      * @retval `true`     Oldest entry existed
      * @retval `false`    No entries
-     * @exceptionSafety   Strong guarantee
+     * @exceptionSafety   Nothrow
      * @threadsafety      Safe
      */
-    bool pop(Value& value)
+    bool pop(Value& value) noexcept
     {
         LockGuard lock{mutex};
         if (!front)
             return false;
-        auto key = *front;
-        auto entry = map.at(key);
-        value = entry.getValue();
-        front = entry.getNext();
-        if (!front)
-            back.reset();
-        map.erase(key);
+        KeyPtr    keyPtr = front;
+        MapValue& mapValue = map.at(*keyPtr);
+        value = mapValue.value;
+        front = mapValue.next;
+        front
+            ? map.at(*front).prev.reset()
+            : back.reset();
+        map.erase(*keyPtr);
+        return true;
+    }
+
+    /**
+     * Removes the entry corresponding to a key.
+     * @param[in]  key    Key
+     * @retval `true`     Entry existed
+     * @retval `false`    Entry did not exist
+     * @exceptionSafety   Nothrow
+     * @threadsafety      Safe
+     */
+    bool remove(Key& key) noexcept
+    {
+        LockGuard lock{mutex};
+        auto iter = map.find(key);
+        if (iter == map.end())
+            return false;
+        MapValue& mapValue = iter->second;
+        KeyPtr keyPtr = mapValue.prev;
+        keyPtr
+            ? (map.at(*keyPtr).next = mapValue.next)
+            : (front = mapValue.next);
+        keyPtr = mapValue.next;
+        keyPtr
+            ? (map.at(*keyPtr).prev = mapValue.prev)
+            : (back = mapValue.prev);
+        map.erase(iter);
         return true;
     }
 };
