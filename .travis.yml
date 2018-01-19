@@ -13,10 +13,6 @@ before_install:
   - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
   - sudo apt-get install cmake libgtest-dev libboost-all-dev
         libyaml-cpp-dev libsctp-dev
-# - sudo dpkg -L libyaml-cpp-dev
-# - sudo find / -name yaml-cpp
-# - sudo find / -name yaml.h 
-# - sudo find / -name 'libyaml-cpp.*' 
   - mkdir m4
   - autoreconf -i
   - sudo ip addr
@@ -35,9 +31,8 @@ addons:
 
 install: sudo sh -x ./install_gtest.sh /usr/lib/x86_64-linux-gnu
 
-script: if [ ${COVERITY_SCAN_BRANCH} != 1 ]; then make all check >&make.log; fi
+script: if [ ${COVERITY_SCAN_BRANCH:-0} != 1 ]; then make distcheck; fi
 
 after_failure:
   - cat config.log
-  - cat make.log
   - files=`find . -name test-suite.log`; cat ${files:-/dev/null}
