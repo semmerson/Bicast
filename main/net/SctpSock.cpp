@@ -555,6 +555,7 @@ private:
             const unsigned          streamId,
             const size_t            size) noexcept
     {
+        ::memset(&sinfo, 0, sizeof(sinfo));
         sinfo.sinfo_stream = streamId;
         sinfo.sinfo_flags = SCTP_UNORDERED;
         sinfo.sinfo_ppid = htonl(size);
