@@ -172,9 +172,9 @@ public:
     }
 
     /**
-     * Scatter-receives a datagram. Waits for the datagram if necessary. If the
-     * requested number of bytes to be read is less than the datagram size, then
-     * the excess bytes are discarded.
+     * Scatter-receives a datagram. Waits for the datagram if necessary. If peek
+     * is not set and the requested number of bytes to be read is less than the
+     * datagram size, then the excess bytes are discarded.
      * @param[in] iovec     Scatter-read vector
      * @param[in] iovcnt    Number of elements in scatter-read vector
      * @param[in] peek      Whether or not to peek at the datagram. The data is
