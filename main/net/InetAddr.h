@@ -66,7 +66,7 @@ public:
      * @exceptionsafety      Nothrow
      * @threadsafety         Safe
      */
-    void setSockAddrStorage(
+    void setSockAddr(
             sockaddr_storage& storage,
             const int         port,
             const int         sockType = 0) const noexcept;

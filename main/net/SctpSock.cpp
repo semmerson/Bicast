@@ -86,7 +86,7 @@ public:
                 sizeof(events)))
             throw SYSTEM_ERROR(
                     "setsockopt() failure: Couldn't subscribe to SCTP data I/O "
-                    "events: sock=" + std::to_string(sd));
+                    "events: sock=" + std::to_string(sd), errno);
         struct sctp_initmsg sinit = {0};
         sinit.sinit_max_instreams = sinit.sinit_num_ostreams = numStreams;
         if (::setsockopt(sd, IPPROTO_SCTP, SCTP_INITMSG, &sinit,
@@ -94,7 +94,7 @@ public:
             throw SYSTEM_ERROR(
                     "setsockopt() failure: Couldn't configure number of SCTP "
                     "streams: sock=" + std::to_string(sd) + ", numStreams=" +
-                    std::to_string(numStreams));
+                    std::to_string(numStreams), errno);
     }
 
     /**
@@ -118,7 +118,7 @@ public:
         try {
             if (sd >= 0 && ::close(sd))
                 throw SYSTEM_ERROR("Couldn't close socket: sd=" +
-                        std::to_string(sd));
+                        std::to_string(sd), errno);
         }
         catch (const std::exception& e) {
             log_error(e);
@@ -155,7 +155,7 @@ public:
         int       size;
         socklen_t len = sizeof(size);
         if (::getsockopt(sd, SOL_SOCKET, SO_SNDBUF, &size, &len))
-            throw SYSTEM_ERROR("::getsockopt() failure");
+            throw SYSTEM_ERROR("::getsockopt() failure", errno);
         return size;
     }
 
@@ -168,7 +168,7 @@ public:
     Impl& setSendBufSize(const int size)
     {
         if (::setsockopt(sd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)))
-            throw SYSTEM_ERROR("::setsockopt() failure");
+            throw SYSTEM_ERROR("::setsockopt() failure", errno);
         return *this;
     }
 
@@ -181,7 +181,7 @@ public:
         int       size;
         socklen_t len = sizeof(size);
         if (::getsockopt(sd, SOL_SOCKET, SO_RCVBUF, &size, &len))
-            throw SYSTEM_ERROR("::getsockopt() failure");
+            throw SYSTEM_ERROR("::getsockopt() failure", errno);
         return size;
     }
 
@@ -194,7 +194,7 @@ public:
     Impl& setRecvBufSize(const int size)
     {
         if (::setsockopt(sd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)))
-            throw SYSTEM_ERROR("::setsockopt() failure");
+            throw SYSTEM_ERROR("::setsockopt() failure", errno);
         return *this;
     }
 
@@ -228,7 +228,7 @@ int BaseSctpSock::createSocket()
 {
     auto sd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
     if (sd == -1)
-          throw SYSTEM_ERROR("Couldn't create SCTP socket");
+          throw SYSTEM_ERROR("Couldn't create SCTP socket", errno);
     return sd;
 }
 
@@ -312,7 +312,7 @@ public:
                     sizeof(enable)))
                 throw SYSTEM_ERROR(
                         "setsockopt(SO_REUSEADDR) failure: sd=" +
-                        std::to_string(sd) + ", addr=" + addr.to_string());
+                        std::to_string(sd) + ", addr=" + addr.to_string(), errno);
             addr.bind(sd);
         }
         catch (const std::exception& e) {
@@ -333,7 +333,7 @@ public:
         if (::listen(sd, queueSize))
             throw SYSTEM_ERROR(
                     "listen() failure: sd=" + std::to_string(sd) +
-                    ", queueSize=" + std::to_string(queueSize));
+                    ", queueSize=" + std::to_string(queueSize), errno);
     }
 
     /**
@@ -354,7 +354,7 @@ public:
             newSd = ::accept(sd, &addr, &len);
         }
         if (newSd < 0)
-            throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd));
+            throw SYSTEM_ERROR("accept() failure: sd=" + std::to_string(sd), errno);
         try {
             return SctpSock{newSd, addr, numStreams};
         }
@@ -414,14 +414,14 @@ private:
             struct sigaction ignoreSignal = {0};
             ignoreSignal.sa_handler = SIG_IGN;
             if (::sigaction(SIGPIPE, &ignoreSignal, &oldSigact))
-                throw SYSTEM_ERROR("Couldn't ignore SIGPIPE");
+                throw SYSTEM_ERROR("Couldn't ignore SIGPIPE", errno);
         }
         IgnoreSigPipe(const IgnoreSigPipe& that) =delete;
         IgnoreSigPipe& operator=(const IgnoreSigPipe& rhs) =delete;
         ~IgnoreSigPipe() noexcept
         {
             if (::sigaction(SIGPIPE, &oldSigact, nullptr))
-                log_error(SYSTEM_ERROR("Couldn't restore SIGPIPE handling"));
+                log_error(SYSTEM_ERROR("Couldn't restore SIGPIPE handling", errno));
         }
     };
     typedef std::mutex             Mutex;
@@ -469,10 +469,9 @@ private:
             const ssize_t actual) const
     {
         if (actual < 0)
-            throw SystemError(__FILE__, line, std::string(funcName) +
+            throw SYSTEM_ERROR(std::string(funcName) +
                     " failure: sd=" + std::to_string(sd) + ", expected=" +
-                    std::to_string(expected) + ", errno=" +
-                    std::to_string(errno));
+                    std::to_string(expected), errno);
     }
 
     /**

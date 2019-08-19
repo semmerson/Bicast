@@ -122,15 +122,15 @@ public:
     {
         try {
             auto              sock = srvrSock.accept();
-            hycast::Peer      peer(sock);
+            hycast::PeerMsgSndr      peer(sock);
             hycast::Thread    recvThread{[&peer,this]() mutable {
                     peer.runReceiver(*this);}};
-            peer.notify(prodIndex);
+            peer.unbufNotify(prodIndex);
             for (hycast::ChunkIndex chunkIndex = 0;
                     chunkIndex < numChunks; ++chunkIndex) {
                 try {
                     hycast::ChunkId chunkId{prodInfo, chunkIndex};
-                    peer.notify(chunkId);
+                    peer.unbufNotify(chunkId);
                 }
                 catch (const std::exception& ex) {
                     std::throw_with_nested(hycast::RUNTIME_ERROR(
@@ -149,7 +149,7 @@ public:
     {
         // Server socket must exist before client connects
         hycast::SrvrSctpSock srvrSock{srvrSockAddr,
-                hycast::Peer::getNumStreams()};
+                hycast::PeerMsgSndr::getNumStreams()};
         srvrSock.listen();
         senderFuture = completer.submit([this,srvrSock]() mutable {
             this->runSrvr(srvrSock); });
@@ -158,9 +158,9 @@ public:
     void runClnt()
     {
         try {
-            hycast::SctpSock sock{hycast::Peer::getNumStreams()};
+            hycast::SctpSock sock{hycast::PeerMsgSndr::getNumStreams()};
             sock.connect(srvrSockAddr);
-            hycast::Peer   peer{sock};
+            hycast::PeerMsgSndr   peer{sock};
             auto           start = Clock::now();
             hycast::Thread recvThread{[&peer,this]() mutable {
                     peer.runReceiver(*this);}};
@@ -195,13 +195,13 @@ class PeerTest : public ::testing::Test
 
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction) {
-    hycast::Peer peer{};
+    hycast::PeerMsgSndr peer{};
 }
 
 // Tests to_string
 TEST_F(PeerTest, ToString) {
     EXPECT_STREQ("{addr=:0, version=0, sock={sd=-1, numStreams=0}}",
-            hycast::Peer().to_string().data());
+            hycast::PeerMsgSndr().to_string().data());
 }
 
 // Tests execution

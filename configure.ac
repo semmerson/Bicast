@@ -4,6 +4,7 @@ AC_PREREQ(2.59)
 AC_INIT(hycast, 1.0)
 AC_PROG_CXX
 AC_SUBST([AM_CXXFLAGS], [-std=c++11])
+AC_DEFINE([_XOPEN_SOURCE], [700], [Level of X/OPEN compliance])
 
 AC_CANONICAL_SYSTEM
 
@@ -57,6 +58,8 @@ AC_DEFINE_UNQUOTED([ETHNET_IFACE_NAME], ["$name"],
 AC_CONFIG_FILES(Makefile
                 main/Makefile
                 main/misc/Makefile
+                main/net_io/Makefile
+                main/peer/Makefile
                 main/net/Makefile
                 main/comms/Makefile
                 main/comms/mcast/Makefile
@@ -64,6 +67,8 @@ AC_CONFIG_FILES(Makefile
                 main/prod/Makefile
                 test/Makefile
                 test/misc/Makefile
+                test/net_io/Makefile
+                test/peer/Makefile
                 test/net/Makefile
                 test/prod/Makefile
                 test/comms/Makefile

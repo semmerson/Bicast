@@ -80,21 +80,21 @@ public:
      * @exceptionsafety Nothrow
      * @threadsafety    Safe
      */
-    bool operator<(const Peer& that) const noexcept;
+    bool operator<(const PeerMsgSndr& that) const noexcept;
 
     /**
      * Indicates if this instance is equal to another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is equal to the other
      */
-    bool operator==(const Peer& that) const noexcept;
+    bool operator==(const PeerMsgSndr& that) const noexcept;
 
     /**
      * Indicates if this instance is not equal to another.
      * @param[in] that  The other instance
      * @return `true` iff this instance is not equal to the other
      */
-    bool operator!=(const Peer& that) const noexcept;
+    bool operator!=(const PeerMsgSndr& that) const noexcept;
 
     /**
      * Receives messages from the socket and calls a higher-level component.
@@ -154,21 +154,21 @@ public:
 #include <functional>
 
 namespace std {
-    template<> struct hash<hycast::Peer> {
-        size_t operator()(const hycast::Peer& peer) const noexcept {
+    template<> struct hash<hycast::PeerMsgSndr> {
+        size_t operator()(const hycast::PeerMsgSndr& peer) const noexcept {
             return peer.hash();
         }
     };
 
-    template<> struct less<hycast::Peer> {
-        bool operator()(const hycast::Peer& peer1, const hycast::Peer& peer2)
+    template<> struct less<hycast::PeerMsgSndr> {
+        bool operator()(const hycast::PeerMsgSndr& peer1, const hycast::PeerMsgSndr& peer2)
                 const noexcept {
             return peer1 < peer2;
         }
     };
 
-    template<> struct equal_to<hycast::Peer> {
-        bool operator()(const hycast::Peer& peer1, const hycast::Peer& peer2)
+    template<> struct equal_to<hycast::PeerMsgSndr> {
+        bool operator()(const hycast::PeerMsgSndr& peer1, const hycast::PeerMsgSndr& peer2)
                 const noexcept {
             return peer1 == peer2;
         }

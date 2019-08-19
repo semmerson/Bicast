@@ -210,7 +210,7 @@ public:
         return prodStore.getOldestMissingChunk();
     }
 
-    Backlogger getBacklogger(const ChunkId& earliest, Peer& peer)
+    Backlogger getBacklogger(const ChunkId& earliest, PeerMsgSndr& peer)
     {
         return Backlogger{peer, earliest, prodStore};
     }

@@ -120,13 +120,13 @@ class P2pMgr::Impl final : public Notifier, public PeerSetServer
     {
         try {
             try {
-                SrvrSctpSock serverSock{serverSockAddr, Peer::getNumStreams()};
+                SrvrSctpSock serverSock{serverSockAddr, PeerMsgSndr::getNumStreams()};
                 serverSock.listen();
                 for (;;) {
                     auto sock = serverSock.accept(); // Blocks
                     LockGuard lock(peerSetMutex);
                     try {
-                        Peer peer{sock};
+                        PeerMsgSndr peer{sock};
                         if (peerSet.tryInsert(peer)) // Might block
                             LOG_NOTE("Accepted connection from remote peer " +
                                     peer.getRemoteAddr().to_string());
@@ -162,7 +162,7 @@ class P2pMgr::Impl final : public Notifier, public PeerSetServer
         bool success;
     	try {
             // Blocks until connected and versions exchanged
-            Peer peer{peerAddr};
+            PeerMsgSndr peer{peerAddr};
             success = peerSet.tryInsert(peer); // Might block
         }
         catch (const std::exception& e) {
@@ -274,7 +274,7 @@ public:
         , exception{}
         , peerAddrThread{}
         , serverThread{}
-        , serverSock{serverSockAddr, Peer::getNumStreams()}
+        , serverSock{serverSockAddr, PeerMsgSndr::getNumStreams()}
     {}
 
     ~Impl() noexcept
@@ -344,7 +344,7 @@ public:
 
     Backlogger getBacklogger(
             const ChunkId& earliest,
-            Peer&          peer)
+            PeerMsgSndr&          peer)
     {
         return p2pMgrServer.getBacklogger(earliest, peer);
     }

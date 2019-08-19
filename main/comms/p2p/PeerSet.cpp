@@ -154,7 +154,7 @@ class PeerSet::Impl final : public PeerEntryServer
      * peer, manages the threads on which the peer executes, and provides a
      * higher-level API to the peer.
      */
-    class PeerEntry final
+    class Element final
     {
         class Impl final : public Sender, public PeerServer
         {
@@ -218,7 +218,7 @@ class PeerSet::Impl final : public PeerEntryServer
             /// Queue of send-actions
             SendQ                  sendQ;
             /// Remote peer
-            Peer                   peer;
+            PeerMsgSndr                   peer;
             /// Value of this entry
             std::atomic<PeerValue> value;
             /// Completion service for executing the sending and receiving tasks
@@ -275,7 +275,7 @@ class PeerSet::Impl final : public PeerEntryServer
              *                             chunk-request
              * @throw RuntimeError         Instance couldn't be constructed
              */
-            Impl(   Peer&            peer,
+            Impl(   PeerMsgSndr&            peer,
                     PeerEntryServer& peerEntryServer,
                     const TimeUnit&  maxResideTime)
                 : sendQ{maxResideTime}
@@ -392,7 +392,7 @@ class PeerSet::Impl final : public PeerEntryServer
              * Returns the associated peer.
              * @return The associated peer
              */
-            Peer getPeer()
+            PeerMsgSndr getPeer()
             {
                 return peer;
             }
@@ -456,7 +456,7 @@ class PeerSet::Impl final : public PeerEntryServer
             : pImpl{}
         {}
         inline PeerEntry(
-                Peer&            peer,
+                PeerMsgSndr&            peer,
                 PeerEntryServer& peerEntryServer,
                 const TimeUnit&  maxResideTime)
             : pImpl{new Impl(peer, peerEntryServer, maxResideTime)}
@@ -464,7 +464,7 @@ class PeerSet::Impl final : public PeerEntryServer
         inline InetSockAddr getRemoteAddr() const { return pImpl->getRemoteAddr(); }
         inline void operator()(const ChunkId& earliest)
                                             const { pImpl->operator()(earliest); }
-        inline Peer getPeer()               const { return pImpl->getPeer(); }
+        inline PeerMsgSndr getPeer()               const { return pImpl->getPeer(); }
         inline void incValue()              const { pImpl->incValue(); }
         inline void decValue()              const { pImpl->decValue(); }
         inline PeerValue getValue()         const { return pImpl->getValue(); }
@@ -474,27 +474,27 @@ class PeerSet::Impl final : public PeerEntryServer
             pImpl->push(action);
         }
         inline size_t hash()                const {return pImpl->hash(); }
-        inline bool operator==(const PeerEntry& rhs)
+        inline bool operator==(const Element& rhs)
                                             const {
             return *pImpl.get() == *rhs.pImpl.get();
         }
     };
 
     struct PeerEntryHash {
-        size_t operator()(const PeerEntry& peerEntry) const {
+        size_t operator()(const Element& peerEntry) const {
             return peerEntry.hash();
         }
     };
 
     /// The future of a peer
     typedef Future<void>                        PeerFuture;
-    typedef std::pair<PeerFuture, PeerEntry>    ActivePeerEntry;
+    typedef std::pair<PeerFuture, Element>    ActivePeerEntry;
 
-    mutable std::mutex                          mutex;
+    mutable std::mutex                          mapMutex;
     mutable std::condition_variable             cond;
     std::unordered_map<InetSockAddr, ActivePeerEntry>
                                                 activePeerEntries;
-    std::unordered_map<PeerFuture, PeerEntry>   peerEntries;
+    std::unordered_map<PeerFuture, Element>   peerEntries;
     const TimeUnit                              stasisDuration;
     const TimeUnit                              maxResideTime;
     unsigned                                    maxPeers;
@@ -509,7 +509,7 @@ class PeerSet::Impl final : public PeerEntryServer
      */
     inline bool full() const
     {
-        assert(isLocked(mutex));
+        assert(isLocked(mapMutex));
         return activePeerEntries.size() >= maxPeers;
     }
 
@@ -526,20 +526,20 @@ class PeerSet::Impl final : public PeerEntryServer
      * @threadsafety        Compatible but not safe
      */
     void add(
-            Peer&          peer,
+            PeerMsgSndr&          peer,
             const ChunkId& earliest)
     {
-        assert(isLocked(mutex));
-        PeerEntry  entry{peer, *this, maxResideTime};
+        assert(isLocked(mapMutex));
+        Element  entry{peer, *this, maxResideTime};
         PeerFuture peerFuture{};
         {
-            UnlockGuard unlock{mutex};
+            UnlockGuard unlock{mapMutex};
             peerFuture = completer.submit([entry,earliest]() {
                 entry.operator()(earliest);});
         }
         try {
             activePeerEntries.emplace(peer.getRemoteAddr(),
-                    std::pair<PeerFuture, PeerEntry>{peerFuture, entry});
+                    std::pair<PeerFuture, Element>{peerFuture, entry});
             peerEntries.emplace(peerFuture, entry);
             timeLastInsert = Clock::now();
             if (full())
@@ -562,7 +562,7 @@ class PeerSet::Impl final : public PeerEntryServer
      */
     InetSockAddr stopAndRemoveWorstPeer()
     {
-        assert(isLocked(mutex));
+        assert(isLocked(mapMutex));
         auto                                     minValue = VALUE_MAX;
         std::pair<InetSockAddr, ActivePeerEntry> pair;
         for (const auto& elt : activePeerEntries) {
@@ -574,7 +574,7 @@ class PeerSet::Impl final : public PeerEntryServer
         }
         activePeerEntries.erase(pair.first);
         auto future = pair.second.first;
-        UnlockGuard unlock{mutex};
+        UnlockGuard unlock{mapMutex};
         future.cancel();
         return pair.first;
     }
@@ -586,7 +586,7 @@ class PeerSet::Impl final : public PeerEntryServer
      */
     void resetValues() noexcept
     {
-        assert(isLocked(mutex));
+        assert(isLocked(mapMutex));
         for (const auto& elt : activePeerEntries)
             elt.second.second.resetValue();
     }
@@ -600,7 +600,7 @@ class PeerSet::Impl final : public PeerEntryServer
     {
         InetSockAddr peerAddr{};
         {
-            LockGuard lock{mutex};
+            LockGuard lock{mapMutex};
             auto      iter = peerEntries.find(future);
             if (iter != peerEntries.end()) {
                 auto peerEntry = iter->second;
@@ -650,7 +650,7 @@ class PeerSet::Impl final : public PeerEntryServer
     	    }
     	}
     	catch (const std::exception& e) {
-    	    LockGuard lock{mutex};
+    	    LockGuard lock{mapMutex};
             exception = std::current_exception();
     	}
     }
@@ -665,7 +665,7 @@ class PeerSet::Impl final : public PeerEntryServer
             const ProdIndex&    prodIndex,
             const InetSockAddr& except)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(prodIndex)};
@@ -685,7 +685,7 @@ class PeerSet::Impl final : public PeerEntryServer
             const ChunkId&      id,
             const InetSockAddr& except)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
@@ -709,7 +709,7 @@ public:
     Impl(   PeerSetServer& peerSetServer,
             const unsigned maxPeers,
             const unsigned stasisDuration)
-        : mutex{}
+        : mapMutex{}
         , cond{}
         , activePeerEntries{}
         , peerEntries{}
@@ -741,12 +741,12 @@ public:
     Impl& operator =(const Impl& rhs) =delete;
     Impl& operator =(const Impl&& rhs) =delete;
 
-    bool tryInsert(Peer& peer)
+    bool tryInsert(PeerMsgSndr& peer)
     {
         bool         inserted;
         InetSockAddr peerAddr{};
         {
-            UniqueLock lock{mutex};
+            UniqueLock lock{mapMutex};
             if (exception)
                 std::rethrow_exception(exception);
             for (auto timeNextAttempt = timeLastInsert + stasisDuration;
@@ -776,7 +776,7 @@ public:
 
     bool contains(const InetSockAddr& peerAddr) const
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         return activePeerEntries.find(peerAddr) != activePeerEntries.end();
@@ -784,7 +784,7 @@ public:
 
     void notify(const ProdIndex& prodIndex)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendProdNotice> action{new SendProdNotice(prodIndex)};
@@ -794,7 +794,7 @@ public:
 
     void notify(const ChunkId& id)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         std::shared_ptr<SendChunkNotice> action{new SendChunkNotice(id)};
@@ -802,9 +802,9 @@ public:
             elt.second.second.push(action);
     }
 
-    void incValue(Peer& peer)
+    void incValue(PeerMsgSndr& peer)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
@@ -814,9 +814,9 @@ public:
         }
     }
 
-    void decValue(Peer& peer)
+    void decValue(PeerMsgSndr& peer)
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         if (full()) {
@@ -828,7 +828,7 @@ public:
 
     size_t size() const
     {
-        LockGuard lock{mutex};
+        LockGuard lock{mapMutex};
     	if (exception)
             std::rethrow_exception(exception);
         return activePeerEntries.size();
@@ -839,7 +839,7 @@ public:
         return size() >= maxPeers;
     }
 
-    Backlogger getBacklogger(const ChunkId& chunkId, Peer& peer)
+    Backlogger getBacklogger(const ChunkId& chunkId, PeerMsgSndr& peer)
     {
         return peerSetServer.getBacklogger(chunkId, peer);
     }
@@ -888,7 +888,7 @@ PeerSet::PeerSet(
     : pImpl(new Impl(peerSetServer, maxPeers, stasisDuration))
 {}
 
-bool PeerSet::tryInsert(Peer& peer) const
+bool PeerSet::tryInsert(PeerMsgSndr& peer) const
 {
     return pImpl->tryInsert(peer);
 }
@@ -908,12 +908,12 @@ void PeerSet::notify(const ChunkId& chunkId) const
     pImpl->notify(chunkId);
 }
 
-void PeerSet::incValue(Peer& peer) const
+void PeerSet::incValue(PeerMsgSndr& peer) const
 {
     pImpl->incValue(peer);
 }
 
-void PeerSet::decValue(Peer& peer) const
+void PeerSet::decValue(PeerMsgSndr& peer) const
 {
     pImpl->decValue(peer);
 }

@@ -1,0 +1,81 @@
+/**
+ * Thread-safe, dynamic set of active peers.
+ *
+ * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * reserved. See file "COPYING" in the top-level source-directory for usage
+ * restrictions.
+ *
+ *        File: PeerSet.h
+ *  Created on: Jun 7, 2019
+ *      Author: Steven R. Emmerson
+ */
+
+#ifndef MAIN_PEER_PEERSET_H_
+#define MAIN_PEER_PEERSET_H_
+
+#include <memory>
+#include "Peer.h"
+
+namespace hycast {
+
+class PeerSet
+{
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+public:
+    class Observer
+    {
+    public:
+        virtual ~Observer() =0;
+
+        virtual void stopped(Peer& peer) =0;
+    };
+
+    /**
+     * Default constructs.
+     */
+    PeerSet();
+
+    /**
+     * Constructs.
+     *
+     * @param[in] observer  Observer to be notified if and when a peer stops
+     *                      due to throwing an exception
+     */
+    PeerSet(Observer& obs);
+
+    /**
+     * Adds a peer to the set.
+     *
+     * @param[in] peer     The peer to add. `peer()` should not have been
+     *                     called.
+     * @retval    `true`   Success
+     * @retval    `false`  The peer is already in the set
+     * @threadsafety       Safe
+     */
+    bool activate(const Peer& peer);
+
+    /**
+     * Notifies all the peers in the set of an available chunk.
+     *
+     * @param[in] chunkId  The available chunk
+     * @retval    `true`   A notice was successfully enqueued for all peers
+     * @retval    `false`  A notice was not successfully enqueued for at least
+     *                     one peer
+     */
+    bool notify(const ChunkId& chunkId);
+
+    /**
+     * Returns the number of active peers in the set.
+     *
+     * @return        Number of active peers
+     * @threadsafety  Safe
+     */
+    size_t size() const noexcept;
+};
+
+} // namespace
+
+#endif /* MAIN_PEER_PEERSET_H_ */

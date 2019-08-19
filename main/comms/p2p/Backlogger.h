@@ -41,7 +41,7 @@ public:
      * @throw InvalidArgument  `startWith` is empty
      */
     Backlogger(
-            Peer&          peer,
+            PeerMsgSndr&          peer,
             const ChunkId& startWith,
             ProdStore&     prodStore);
 

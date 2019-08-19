@@ -106,7 +106,7 @@ public:
 
     hycast::Backlogger getBacklogger(
             const hycast::ChunkId& earliest,
-            hycast::Peer&          peer)
+            hycast::PeerMsgSndr&          peer)
     {
         return hycast::Backlogger(peer, earliest, prodStore);
     }

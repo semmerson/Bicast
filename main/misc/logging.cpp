@@ -18,6 +18,7 @@
 #include <ctime>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <sys/time.h>
 
 namespace hycast {
@@ -40,8 +41,10 @@ std::string placeStamp(
 {
     char name[::strlen(file)+1];
     ::strcpy(name, file);
-    return std::string(::basename(name)) + ":" + std::to_string(line) + "#" +
-            std::to_string(Thread::getThreadNumber());
+    std::ostringstream threadId;
+    threadId << std::this_thread::get_id();
+    return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
+            threadId.str();
 }
 
 std::string placeStamp(
@@ -51,8 +54,10 @@ std::string placeStamp(
 {
     char name[::strlen(file)+1];
     ::strcpy(name, file);
+    std::ostringstream threadId;
+    threadId << std::this_thread::get_id();
     return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
-            func + "()#" + std::to_string(Thread::getThreadNumber());
+            func + "()#" +  threadId.str();
 }
 
 std::string makeWhat(

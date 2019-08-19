@@ -38,7 +38,7 @@ protected:
                 for (;;) {
                     auto sock = srvrSock.accept();
                     try {
-                        hycast::Peer peer{sock};
+                        hycast::PeerMsgSndr peer{sock};
                         EXPECT_TRUE(peerSet.tryInsert(peer));
                         cue.cue();
                     }
@@ -57,7 +57,7 @@ protected:
         Source( const hycast::InetSockAddr& sourceSockAddr,
                 hycast::PeerSetServer&      peerSetServer)
             : peerSetServer(peerSetServer)
-            , srvrSock{sourceSockAddr, hycast::Peer::getNumStreams()}
+            , srvrSock{sourceSockAddr, hycast::PeerMsgSndr::getNumStreams()}
             , thread{}
             , peerSet{peerSetServer, 2}
             , cue{}
@@ -118,10 +118,10 @@ protected:
         ::memset(chunkData, 0xbd, sizeof(chunkData));
     }
 
-    hycast::Peer getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
-        hycast::SctpSock sock{hycast::Peer::getNumStreams()};
+    hycast::PeerMsgSndr getClientPeer(const hycast::InetSockAddr& serverSockAddr) {
+        hycast::SctpSock sock{hycast::PeerMsgSndr::getNumStreams()};
         sock.connect(serverSockAddr);
-        return hycast::Peer{sock};
+        return hycast::PeerMsgSndr{sock};
     }
 
     // Begin implementation of `PeerSetServer` interface
@@ -132,7 +132,7 @@ protected:
 
     hycast::Backlogger getBacklogger(
             const hycast::ChunkId& earliest,
-            hycast::Peer&          peer)
+            hycast::PeerMsgSndr&          peer)
     {
         return hycast::Backlogger(peer, earliest, prodStore);
     }
@@ -220,7 +220,7 @@ TEST_F(PeerSetTest, IncrementPeerValue) {
 
 // Tests inserting the same peer twice
 TEST_F(PeerSetTest, DuplicatePeerInsertion) {
-    hycast::Peer     peer{getClientPeer(srvr1Addr)};
+    hycast::PeerMsgSndr     peer{getClientPeer(srvr1Addr)};
     hycast::PeerSet  peerSet{*this, 2};
     EXPECT_TRUE(peerSet.tryInsert(peer));
     EXPECT_FALSE(peerSet.tryInsert(peer));
@@ -231,10 +231,10 @@ TEST_F(PeerSetTest, RemoveWorst) {
     try {
         hycast::PeerSet  peerSet{*this, 0, 1};
 
-        hycast::Peer peer1{getClientPeer(srvr1Addr)};
+        hycast::PeerMsgSndr peer1{getClientPeer(srvr1Addr)};
         EXPECT_TRUE(peerSet.tryInsert(peer1));
 
-        hycast::Peer peer2{getClientPeer(srvr2Addr)};
+        hycast::PeerMsgSndr peer2{getClientPeer(srvr2Addr)};
         EXPECT_TRUE(peerSet.tryInsert(peer2));
 
         EXPECT_EQ(1, peerSet.size());
@@ -246,7 +246,7 @@ TEST_F(PeerSetTest, RemoveWorst) {
 
 // Tests transmitting a product
 TEST_F(PeerSetTest, Transmit) {
-    hycast::Peer     peer = getClientPeer(srvr1Addr);
+    hycast::PeerMsgSndr     peer = getClientPeer(srvr1Addr);
     hycast::PeerSet  peerSet{*this, 2};
     EXPECT_TRUE(peerSet.tryInsert(peer));
     source1.send(prodInfo);

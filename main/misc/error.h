@@ -71,9 +71,8 @@ public:
             const char*       file,
             const int         line,
             const std::string msg);
-
-#define RUNTIME_ERROR(msg) RuntimeError(__FILE__, __LINE__, msg)
 };
+#define RUNTIME_ERROR(msg) RuntimeError(__FILE__, __LINE__, msg)
 
 class SystemError : public std::system_error
 {

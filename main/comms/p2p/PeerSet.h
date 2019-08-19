@@ -76,7 +76,7 @@ public:
      * @exceptionsafety     Strong guarantee
      * @threadsafety        Safe
      */
-    bool tryInsert(Peer& peer) const;
+    bool tryInsert(PeerMsgSndr& peer) const;
 
     /**
      * Indicates if this instance already has a given remote peer.
@@ -110,13 +110,13 @@ public:
      * Increments the value of a peer.
      * @param[in] peer  Peer to have its value incremented
      */
-    void incValue(Peer& peer) const;
+    void incValue(PeerMsgSndr& peer) const;
 
     /**
      * Decrements the value of a peer.
      * @param[in] peer  Peer to have its value decremented
      */
-    void decValue(Peer& peer) const;
+    void decValue(PeerMsgSndr& peer) const;
 
     /**
      * Returns the number of peers in the set.

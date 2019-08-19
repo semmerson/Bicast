@@ -72,3 +72,6 @@
 
 /* Version number of package */
 #undef VERSION
+
+/* Level of X/OPEN compliance */
+#undef _XOPEN_SOURCE

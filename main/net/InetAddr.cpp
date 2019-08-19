@@ -1,9 +1,4 @@
 /**
-
-
-
-
-
  * This file implements an Internet address, which may be based on an IPv4
  * address, an IPv6 address, or a hostname.
  *
@@ -39,7 +34,7 @@ namespace std {
 
 namespace hycast {
 
-class IpAddr;
+class InAddr;
 class Ipv4Addr;
 class Ipv6Addr;
 class InetNameAddr;
@@ -258,7 +253,7 @@ InetAddr::InetAddr(const std::string& addr)
     : pImpl{Impl::create(addr)}
 {}
 
-void InetAddr::setSockAddrStorage(
+void InetAddr::setSockAddr(
         sockaddr_storage& storage,
         const int         port,
         const int         sockType) const noexcept
@@ -332,17 +327,17 @@ void InetAddr::setMcastLoop(
 
 /******************************************************************************/
 
-class IpAddr : public InetAddr::Impl {
+class InAddr : public InetAddr::Impl {
 public:
-    virtual ~IpAddr() noexcept =0;
+    virtual ~InAddr() noexcept =0;
 };
 
-IpAddr::~IpAddr() noexcept
+InAddr::~InAddr() noexcept
 {}
 
 /******************************************************************************/
 
-class Ipv4Addr final : public IpAddr
+class Ipv4Addr final : public InAddr
 {
     in_addr_t ipAddr;
 
@@ -510,7 +505,7 @@ public:
         if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &ipAddr,
                 sizeof(ipAddr)))
             throw SYSTEM_ERROR("Couldn't set output interface to " +
-                    to_string());
+                    to_string(), errno);
     }
 
     /**
@@ -571,7 +566,7 @@ public:
 
 /******************************************************************************/
 
-class Ipv6Addr final : public IpAddr
+class Ipv6Addr final : public InAddr
 {
     struct in6_addr ipAddr;
 
@@ -592,7 +587,8 @@ class Ipv6Addr final : public IpAddr
             struct ifconf ifc;
             if (ioctl(sd, SIOCGIFCONF, &ifc) < 0) {
                 if (errno != EINVAL || lastlen != 0)
-                    throw SYSTEM_ERROR("Couldn't get interface configurations");
+                    throw SYSTEM_ERROR("Couldn't get interface configurations",
+                            errno);
             }
             else if (ifc.ifc_len != lastlen) {
                 lastlen = ifc.ifc_len;
@@ -626,7 +622,8 @@ class Ipv6Addr final : public IpAddr
                         if (index == 0)
                             throw SYSTEM_ERROR(
                                     "Couldn't convert interface name \"" +
-                                    std::string(ifr->ifr_name) + "\" to index");
+                                    std::string(ifr->ifr_name) + "\" to index",
+                                    errno);
                         return index;
                     } // Found matching entry
                 } // Interface entry loop
@@ -799,7 +796,7 @@ public:
         if (setsockopt(sd, IPPROTO_IP, IPV6_MULTICAST_IF, &ifaceIndex,
                 sizeof(ifaceIndex)))
             throw SYSTEM_ERROR("Couldn't set output interface to " +
-                    to_string());
+                    to_string(), errno);
     }
 
     /**
@@ -933,7 +930,7 @@ class InetNameAddr final : public InetAddr::Impl
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    IpAddr* getIpAddr(const int family) const
+    InAddr* getIpAddr(const int family) const
     {
         struct addrinfo  hints = {};
         hints.ai_family = family; // Use first entry
@@ -944,7 +941,7 @@ class InetNameAddr final : public InetAddr::Impl
                     std::string("::getaddrinfo() failure for host \"") +
                     name.data() + "\"", errno);
         try {
-            IpAddr* ipAddr = nullptr;
+            InAddr* ipAddr = nullptr;
             for (struct addrinfo* entry = list; entry != NULL;
                     entry = entry->ai_next) {
                 if (entry->ai_addr->sa_family == AF_INET) {
@@ -978,9 +975,9 @@ class InetNameAddr final : public InetAddr::Impl
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
-    IpAddr* getIpAddr() const
+    InAddr* getIpAddr() const
     {
-        IpAddr* ipAddr = getIpAddr(AF_INET);
+        InAddr* ipAddr = getIpAddr(AF_INET);
         return (ipAddr != nullptr)
                 ? ipAddr
                 : getIpAddr(AF_INET6);
@@ -1011,7 +1008,7 @@ public:
             const int         port,
             const int         sockType = 0) const
     {
-        IpAddr* const ipAddr = getIpAddr();
+        InAddr* const ipAddr = getIpAddr();
         try {
             ipAddr->setSockAddrStorage(storage, port, sockType);
             delete ipAddr;
@@ -1121,7 +1118,7 @@ public:
      */
     int getSocket(const int sockType) const
     {
-        IpAddr* const ipAddr = getIpAddr();
+        InAddr* const ipAddr = getIpAddr();
         try {
             int sd = ipAddr->getSocket(sockType);
             delete ipAddr;
@@ -1141,7 +1138,7 @@ public:
      */
     void setInterface(const int sd) const
     {
-        IpAddr* const ipAddr = getIpAddr();
+        InAddr* const ipAddr = getIpAddr();
         try {
             ipAddr->setInterface(sd);
             delete ipAddr;
@@ -1173,7 +1170,7 @@ public:
             const int      sd,
             const unsigned limit) const
     {
-        IpAddr* const ipAddr = getIpAddr();
+        InAddr* const ipAddr = getIpAddr();
         try {
             ipAddr->setHopLimit(sd, limit);
             delete ipAddr;
@@ -1197,7 +1194,7 @@ public:
             const int  sd,
             const bool enable) const
     {
-        IpAddr* const ipAddr = getIpAddr();
+        InAddr* const ipAddr = getIpAddr();
         try {
             ipAddr->setMcastLoop(sd, enable);
             delete ipAddr;

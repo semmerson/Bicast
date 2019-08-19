@@ -488,7 +488,7 @@ class ProdStore::Impl final
         catch (std::exception& e) {
             throw SYSTEM_ERROR(
                     "Couldn't close temporary output product-store \"" +
-                    tempPathname + "\"");
+                    tempPathname + "\"", errno);
         }
     }
 
@@ -500,7 +500,7 @@ class ProdStore::Impl final
         if (::rename(tempPathname.data(), pathname.data()))
             throw SYSTEM_ERROR(
                     "Couldn't rename temporary output product-store \"" +
-                    tempPathname + "\" to \"" + pathname + "\"");
+                    tempPathname + "\" to \"" + pathname + "\"", errno);
     }
 
     /**
@@ -511,7 +511,7 @@ class ProdStore::Impl final
         if (::remove(tempPathname.data()))
             throw SYSTEM_ERROR(
                     "Couldn't remove temporary output product-store \"" +
-                    tempPathname);
+                    tempPathname, errno);
     }
 
     /**
@@ -578,7 +578,7 @@ public:
             if (file.fail())
                 throw SYSTEM_ERROR(
                         "Couldn't open temporary output product-store \"" +
-                        tempPathname + "\"");
+                        tempPathname + "\"", errno);
         }
         if (residence < 0)
             throw INVALID_ARGUMENT("Residence-time is negative: " +

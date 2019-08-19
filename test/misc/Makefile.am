@@ -2,7 +2,8 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main -I$(top_srcdir)/main/misc
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 CLEANFILES	= *.vg
 
-check_PROGRAMS	= pimpl_test \
+check_PROGRAMS	= pImpl_test \
+		  pimpl_test \
 		  arg_passing_test \
 		  thread_test \
 		  unordered_map_test \
@@ -11,9 +12,11 @@ check_PROGRAMS	= pimpl_test \
 		  Task_test \
 		  Future_test \
 		  Executor_test \
-		  Completer_test
+		  Completer_test \
+		  DelayQueue_test
 #		  Promise_test
 
+pImpl_test_SOURCES		= pImpl_test.cpp
 arg_passing_test_SOURCES	= arg_passing_test.cpp
 pimpl_test_SOURCES		= pimpl_test.cpp
 thread_test_SOURCES		= thread_test.cpp
@@ -25,6 +28,7 @@ Task_test_SOURCES		= Task_test.cpp
 Future_test_SOURCES		= Future_test.cpp
 Executor_test_SOURCES		= Executor_test.cpp
 Completer_test_SOURCES		= Completer_test.cpp
+DelayQueue_test_SOURCES		= DelayQueue_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

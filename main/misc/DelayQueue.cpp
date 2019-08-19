@@ -23,6 +23,9 @@
 
 namespace hycast {
 
+typedef std::chrono::steady_clock Clock;
+typedef Clock::time_point         TimePoint;
+
 /**
  * Implementation of `DelayQueue`.
  * @tparam Value     Type of value being stored in the queue. Must support
@@ -33,11 +36,9 @@ template<typename Value, typename Dur>
 class DelayQueue<Value,Dur>::Impl final
 {
     typedef Dur                       Duration;
-    typedef std::chrono::steady_clock Clock;
-    typedef Clock::time_point         TimePoint;
     typedef std::mutex                Mutex;
-    typedef std::unique_lock<Mutex>   UniqueLock;
-    typedef std::lock_guard<Mutex>    LockGuard;
+    typedef std::unique_lock<Mutex>   Lock;
+    typedef std::lock_guard<Mutex>    Guard;
 
     /**
      * An element in the queue.
@@ -50,14 +51,13 @@ class DelayQueue<Value,Dur>::Impl final
         /**
          * Constructs from a value and a delay.
          * @param[in] value  The value.
-         * @param[in] delay  The delay for the element until the reveal-time.
-         *                   May be negative.
+         * @param[in] when   The reveal-time
          */
         Element(
-                const Value&    value,
-                const Duration& delay)
+                const Value&     value,
+                const TimePoint& when)
             : value{value}
-            , when{Clock::now() + delay}
+            , when{when}
         {}
 
         /**
@@ -124,17 +124,16 @@ public:
     /**
      * Adds a value to the queue.
      * @param[in] value  The value to be added
-     * @param[in] delay  The delay for the value in units of the template
-     *                   parameter
-     * @exceptionsafety Strong guarantee
-     * @threadsafety    Safe
+     * @param[in] when   The reveal-time
+     * @exceptionsafety  Strong guarantee
+     * @threadsafety     Safe
      */
     void push(
-            const Value&    value,
-            const Duration& delay)
+            const Value&     value,
+            const TimePoint& when)
     {
-        UniqueLock lock{mutex};
-        queue.push(Element(value, delay));
+        Guard guard{mutex};
+        queue.push(Element(value, when));
         cond.notify_one();
     }
 
@@ -142,37 +141,55 @@ public:
      * Returns the value whose reveal-time is the earliest and not later than
      * the current time and removes it from the queue. Blocks until such a value
      * is available.
-     * @return  The value with the earliest reveal-time that's not later than
-     *          the current time.
+     *
+     * @return          The value with the earliest reveal-time that's not later
+     *                  than the current time.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Safe
      */
     Value pop()
     {
-        UniqueLock lock{mutex};
-        while (queue.empty()) {
-            Canceler canceler{};
-            cond.wait(lock);
+        Lock lock{mutex};
+
+        for (;;) {
+            if (queue.empty()) {
+                Canceler canceler{};
+                cond.wait(lock);
+            }
+            else {
+                auto revealTime = queue.top().getTime();
+
+                if (revealTime <= Clock::now()) {
+                    break;
+                }
+                else {
+                    Canceler canceler{};
+                    cond.wait_until(lock, revealTime);
+                }
+            }
         }
-        for (TimePoint time = queue.top().getTime(); time > Clock::now();
-                time = queue.top().getTime()) {
-            Canceler canceler{};
-            cond.wait_until(lock, time);
-        }
+
         auto value = queue.top().getValue();
         queue.pop();
+
         return value;
+    }
+
+    bool ready() const noexcept
+    {
+        Guard guard{mutex};
+        return !queue.empty() && queue.top().getTime() <= Clock::now();
     }
 
     bool empty() const noexcept
     {
-        LockGuard lock{mutex};
+        Guard guard{mutex};
         return queue.empty();
     }
 
     void clear() noexcept
     {
-        LockGuard lock{mutex};
+        Guard guard{mutex};
         while (!queue.empty())
             queue.pop();
     }
@@ -185,16 +202,25 @@ DelayQueue<Value, Dur>::DelayQueue()
 
 template<typename Value, typename Dur>
 void DelayQueue<Value, Dur>::push(
-        const Value&    value,
-        const Duration& delay) const
+        const Value& value,
+        const int    delay) const
 {
-    pImpl->push(value, delay);
+    auto now = Clock::now();
+    auto delta = Dur{delay};
+    auto when = now + delta;
+    pImpl->push(value, when);
 }
 
 template<typename Value, typename Dur>
 Value DelayQueue<Value, Dur>::pop() const
 {
     return pImpl->pop();
+}
+
+template<typename Value, typename Dur>
+bool DelayQueue<Value, Dur>::ready() const noexcept
+{
+    return pImpl->ready();
 }
 
 template<typename Value, typename Dur>

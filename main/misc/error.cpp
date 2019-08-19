@@ -53,7 +53,7 @@ SystemError::SystemError(
         const int         line,
         const std::string msg,
         const int         errnum)
-    : std::system_error{errnum, std::system_category(),
+    : std::system_error{errnum, std::generic_category(),
             makeWhat(file, line, msg)}
 {}
 

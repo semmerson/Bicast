@@ -35,7 +35,7 @@ class Backlogger::Impl
 
     mutable Mutex mutex;
     Cond          cond;
-    Peer          peer;
+    PeerMsgSndr          peer;
     ChunkId     startWith;
     ChunkId     stopAt;
     ProdStore     prodStore;
@@ -77,7 +77,7 @@ public:
      * @param[in] prodStore    Product storage
      * @throw InvalidArgument  `startWith` is empty
      */
-    Impl(   Peer&          peer,
+    Impl(   PeerMsgSndr&          peer,
             const ChunkId& startWith,
             ProdStore&     prodStore)
         : mutex{}
@@ -173,7 +173,7 @@ Backlogger::Backlogger()
 {}
 
 Backlogger::Backlogger(
-        Peer&            peer,
+        PeerMsgSndr&            peer,
         const ChunkId& startWith,
         ProdStore&       prodStore)
     : pImpl{new Impl(peer, startWith, prodStore)}

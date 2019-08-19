@@ -98,14 +98,14 @@ class InUdpSock::Impl : public UdpSock::Impl
         if (status)
             throw SYSTEM_ERROR(
                     "Couldn't share local port number for incoming packets: "
-                    "sock=" + std::to_string(sd));
+                    "sock=" + std::to_string(sd), errno);
     }
 
     void checkReadStatus(const ssize_t nbytes)
     {
         if (nbytes < 0)
             throw SYSTEM_ERROR(std::string{"recvmsg() failure: sock="} +
-                    std::to_string(sd));
+                    std::to_string(sd), errno);
     }
 
 protected:
@@ -328,7 +328,7 @@ public:
         struct sockaddr sockAddr;
         socklen_t       len = sizeof(sockAddr);
         if (::getsockname(sd, &sockAddr, &len))
-            throw SYSTEM_ERROR("Couldn't get local socket address");
+            throw SYSTEM_ERROR("Couldn't get local socket address", errno);
         return InetSockAddr(sockAddr);
     }
 

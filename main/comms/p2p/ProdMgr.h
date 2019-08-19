@@ -29,7 +29,7 @@ public:
      * Starts sending the backlog of data-chunks to the remote peer.
      * @param[in] chunkId  Identifier of earliest data-chunk in backlog
      */
-    void startBacklog(const ChunkId& chunkId, Peer& peer) =0;
+    void startBacklog(const ChunkId& chunkId, PeerMsgSndr& peer) =0;
     /**
      * Indicates whether or not available product-information should be
      * requested.

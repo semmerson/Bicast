@@ -32,7 +32,7 @@ public:
      */
     virtual Backlogger getBacklogger(
             const ChunkId& earliest,
-            Peer&          peer) =0;
+            PeerMsgSndr&          peer) =0;
 };
 
 } // namespace

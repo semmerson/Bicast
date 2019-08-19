@@ -151,7 +151,7 @@ public:
             struct sockaddr_storage& storage) const
     {
         int sockType = getSockType(sd);
-        inetAddr.setSockAddrStorage(storage, port.get_host(), sockType);
+        inetAddr.setSockAddr(storage, port.get_host(), sockType);
     }
 
     operator bool()
@@ -246,7 +246,7 @@ public:
         }
         if (status)
             throw SYSTEM_ERROR("connect() failure: sd=" +
-                    std::to_string(sd) + ", sockAddr=" + to_string());
+                    std::to_string(sd) + ", sockAddr=" + to_string(), errno);
         return *this;
     }
 
@@ -267,7 +267,7 @@ public:
                 sizeof(storage));
         if (status)
             throw SYSTEM_ERROR("bind() failure: sd=" +
-                    std::to_string(sd) + ", sockAddr=" + to_string());
+                    std::to_string(sd) + ", sockAddr=" + to_string(), errno);
         return *this;
     }
 
@@ -331,7 +331,7 @@ public:
         if (::setsockopt(sd, level, MCAST_JOIN_GROUP, &req, sizeof(req)))
             throw SYSTEM_ERROR(
                     std::string("Couldn't join multicast group: sock=") +
-                    std::to_string(sd) + ", group=" + to_string());
+                    std::to_string(sd) + ", group=" + to_string(), errno);
         return *this;
     }
 
@@ -353,13 +353,13 @@ public:
         setSockAddrStorage(sd, req.gsr_group);
         req.gsr_interface = 0; // Let kernel choose multicast interface
         int sockType = getSockType(sd);
-        srcAddr.setSockAddrStorage(req.gsr_source, port.get_host(), sockType);
+        srcAddr.setSockAddr(req.gsr_source, port.get_host(), sockType);
         int level = familyToLevel(req.gsr_group.ss_family);
         if (::setsockopt(sd, level, MCAST_JOIN_SOURCE_GROUP, &req, sizeof(req)))
             throw SYSTEM_ERROR(
                     std::string("Couldn't join source-specific multicast group: "
                     "sock=") + std::to_string(sd) + ", group=" + to_string() +
-                    ", source=" + srcAddr.to_string());
+                    ", source=" + srcAddr.to_string(), errno);
         return *this;
     }
 };

@@ -1,6 +1,6 @@
 /**
  * This file declares a thread-safe delay-queue. Each element has a time-point
- * when it becomes available.
+ * (a reveal-time) when it becomes available.
  *
  * Copyright 2017 University Corporation for Atmospheric Research. All rights
  * reserved. See the the file COPYING in the top-level source-directory for
@@ -22,7 +22,7 @@ namespace hycast {
 /**
  * @tparam Value     Type of value being stored in the queue. Must support
  *                   copy assignment and move assignment.
- * @tparam Dur       Duration type
+ * @tparam Dur       Duration unit for integer duration arguments to `push()`
  */
 template<typename Value, typename Dur = std::chrono::seconds>
 class DelayQueue final
@@ -44,13 +44,13 @@ public:
      * Adds a value to the queue.
      * @param[in] value  The value to be added
      * @param[in] delay  The delay for the element before it becomes available
-     *                   in units of the template parameter
+     *                   in units of the duration template parameter
      * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
     void push(
-            const Value&    value,
-            const Duration& delay = Duration(0)) const;
+            const Value& value,
+            const int    delay = 0) const;
 
     /**
      * Returns the value whose reveal-time is the earliest and not later than
@@ -62,6 +62,14 @@ public:
      * @threadsafety    Safe
      */
     Value pop() const;
+
+    /**
+     * Indicates if `pop()` will immediately return.
+     *
+     * @retval `true`   Yes
+     * @retval `false`  No
+     */
+    bool ready() const noexcept;
 
     /**
      * Indicates if the queue is empty.

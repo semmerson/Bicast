@@ -1,1 +1,103 @@
+2019-05-12  steve  <steve@gilda>
+
+	* main/net_io/Channel.h: New file.
+	* main/net_io/IoVec.cpp: New file.
+	* main/net_io/IoVec.h: New file.
+	* main/net_io/IpAddr.cpp: New file.
+	* main/net_io/IpAddr.h: New file.
+	* main/net_io/Makefile.am: New file.
+	* main/net_io/Serializable.h: New file.
+	* main/net_io/ServiceId.cpp: New file.
+	* main/net_io/ServiceId.h: New file.
+	* main/net_io/SockAddr.cpp: New file.
+	* main/net_io/SockAddr.h: New file.
+	* main/net_io/Socket.cpp: New file.
+	* main/net_io/Socket.h: New file.
+	* main/net_io/Wire.h: New file.
+	* main/peer/Chunk.cpp: New file.
+	* main/peer/Chunk.h: New file.
+	* main/peer/Makefile.am: New file.
+	* main/peer/RemotePeer.cpp: New file.
+	* main/peer/RemotePeer.h: New file.
+	* main/peer/RmtPeerFac.h: New file.
+	* test/net_io/Makefile.am: New file.
+	* test/net_io/ServiceId_test.cpp: New file.
+	* config.h.in: 
+	* configure.ac: 
+	* main/Makefile.am: 
+	* main/net/InetAddr.cpp (setSockAddrStorage): 
+	* main/net/InetAddr.h (InetAddr): 
+	* main/net/InetSockAddr.cpp (setSockAddrStorage): 
+	* main/net/Interface.cpp (getInetAddr): 
+	* main/net/SctpSock.cpp (Impl): 
+	* main/net/UdpSock.cpp (shareLocalPort): 
+	* main/prod/FileIngester.cpp (DirEntry): 
+	* main/prod/ProdStore.cpp (closeTempFile): 
+	* main/prod/Product.cpp (openFile): 
+	(Impl.openFile): 
+	(setProdInfo): 
+	(Impl.setProdInfo): 
+	(activate): 
+	(Impl.activate): 
+	(Impl.closeTempFile): 
+	(renameTempFile): 
+	(deleteTempFile): 
+	(Impl.renameTempFile): 
+	(persist): 
+	(Impl.deleteTempFile): 
+	(Impl): 
+	(Impl.Impl): 
+	(~DirEntry): 
+	(Impl.DirEntry.DirEntry): 
+	(getTime): 
+	(Impl.getTime): 
+	(getInotifyProd): 
+	(Impl.getInotifyProd): 
+	(checkReadStatus): 
+	(Impl.shareLocalPort): 
+	(Impl.checkReadStatus): 
+	(getLocalAddr): 
+	(Impl.getLocalAddr): 
+	(~Impl): 
+	(Impl.~Impl): 
+	(getSendBufSize): 
+	(Impl.getSendBufSize): 
+	(setSendBufSize): 
+	(Impl.setSendBufSize): 
+	(getRecvBufSize): 
+	(Impl.getRecvBufSize): 
+	(setRecvBufSize): 
+	(Impl.setRecvBufSize): 
+	(createSocket): 
+	(BaseSctpSock::createSocket): 
+	(listen): 
+	(Impl.listen): 
+	(accept): 
+	(Impl.accept): 
+	(IgnoreSigPipe): 
+	(Impl.IgnoreSigPipe.IgnoreSigPipe): 
+	(~IgnoreSigPipe): 
+	(Impl.IgnoreSigPipe.~IgnoreSigPipe): 
+	(checkIoStatus): 
+	(Impl.checkIoStatus): 
+	(Impl.getInetAddr): 
+	(operator bool): 
+	(Impl.setSockAddrStorage): 
+	(connect): 
+	(Impl.connect): 
+	(bind): 
+	(Impl.bind): 
+	(joinMcastGroup): 
+	(Impl.joinMcastGroup): 
+	(joinSourceGroup): 
+	(Impl.joinSourceGroup): 
+	(InetAddr::setSockAddr): 
+	(setInterface): 
+	(Ipv4Addr.setInterface): 
+	(getIfaceIndex): 
+	(Ipv6Addr.getIfaceIndex): 
+	(Ipv6Addr.setInterface): 
+	* test/Makefile.am: 
+	* test/net/InetAddr_test.cpp (InetAddrTest_HostnameToSocketAddress_Test::TestBody): 
+
 Started 2016-08-15

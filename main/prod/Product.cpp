@@ -335,7 +335,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
     {
         int fd = ::open(pathname.c_str(), O_RDONLY);
         if (fd == -1)
-            throw SYSTEM_ERROR("Couldn't open file " + pathname);
+            throw SYSTEM_ERROR("Couldn't open file " + pathname, errno);
         return fd;
     }
 
@@ -358,7 +358,7 @@ class FileProduct::Impl : public CompleteProduct::Impl
         struct stat statBuf;
         if (::fstat(fd, &statBuf))
             throw SYSTEM_ERROR("Couldn't get information on file " +
-                    pathname);
+                    pathname, errno);
         if (statBuf.st_size > ProdSize::prodSizeMax)
             throw INVALID_ARGUMENT("File " + pathname + " has " +
                     std::to_string(statBuf.st_size) + " bytes; Maximum "
@@ -445,7 +445,8 @@ class FileProduct::Impl : public CompleteProduct::Impl
                     break;
                 }
                 if (status != EMFILE)
-                    throw SYSTEM_ERROR("Couldn't memory-map file " + pathname);
+                    throw SYSTEM_ERROR("Couldn't memory-map file " + pathname,
+                            status);
                 Impl* implPtr;
                 if (!activeImpls.pop(implPtr))
                     throw RUNTIME_ERROR("Couldn't free sufficient resources: "

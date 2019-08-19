@@ -49,7 +49,7 @@ class FileIngester::Impl : public Ingester::Impl
         {
             if (dir == nullptr)
                 throw SYSTEM_ERROR(std::string{"opendir() failure on \""} +
-                        pathname + "\"");
+                        pathname + "\"", errno);
         }
         ~DirEntry() noexcept
         {
@@ -121,7 +121,7 @@ class FileIngester::Impl : public Ingester::Impl
         auto        status = ::stat(pathname.data(), &statBuf);
         if (status)
             throw SYSTEM_ERROR(std::string{"stat() failure on \""} + pathname +
-                    "\"");
+                    "\"", errno);
         return Clock::from_time_t(statBuf.st_mtim.tv_sec) +
             std::chrono::nanoseconds{statBuf.st_mtim.tv_nsec};
     }
@@ -157,7 +157,7 @@ class FileIngester::Impl : public Ingester::Impl
         for (;;) {
             auto nbytes = ::read(fd, buf, sizeof(buf));
             if (nbytes == -1)
-                throw SYSTEM_ERROR("read() failure");
+                throw SYSTEM_ERROR("read() failure", errno);
             switch (event.mask) {
             // TODO
             }
@@ -173,14 +173,14 @@ class FileIngester::Impl : public Ingester::Impl
         , dirStack{}
     {
         if (fd == -1)
-            throw SYSTEM_ERROR("inotify_init1() failure");
+            throw SYSTEM_ERROR("inotify_init1() failure", errno);
         try {
             dirStack.push(rootDirPathname);
 
             auto wd = ::inotify_add_watch(fd, rootDirPathname.data(),
                     IN_CLOSE_WRITE | IN_CREATE | IN_DELETE_SELF | IN_MOVED_TO);
             if (wd == -1)
-                throw SYSTEM_ERROR("inotify_add_watch() failure");
+                throw SYSTEM_ERROR("inotify_add_watch() failure", errno);
 
             start = Clock::now();
         }

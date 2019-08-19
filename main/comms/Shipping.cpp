@@ -88,7 +88,7 @@ class Shipping::Impl final
 
             Backlogger getBacklogger(
                     const ChunkId& earliest,
-                    Peer&          peer)
+                    PeerMsgSndr&          peer)
             {
                 return Backlogger{peer, earliest, prodStore};
             }
@@ -173,7 +173,7 @@ class Shipping::Impl final
         {
             try {
                 // Blocks exchanging protocol version; hence, separate thread
-                auto peer = Peer(sock);
+                auto peer = PeerMsgSndr(sock);
                 peerSet.tryInsert(peer);
             }
             catch (const std::exception& e) {
@@ -193,7 +193,7 @@ class Shipping::Impl final
         void runServer()
         {
             try {
-                SrvrSctpSock serverSock{serverAddr, Peer::getNumStreams()};
+                SrvrSctpSock serverSock{serverAddr, PeerMsgSndr::getNumStreams()};
                 serverSock.listen();
                 for (;;) {
                     serverReady.cue();

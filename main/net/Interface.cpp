@@ -79,7 +79,7 @@ public:
         struct ifaddrs* list;
         if (::getifaddrs(&list))
             throw SYSTEM_ERROR(
-                    "Couldn't get information on network interfaces");
+                    "Couldn't get information on network interfaces", errno);
         try {
             for (struct ifaddrs* entry = list; entry != NULL;
                     entry = entry->ifa_next) {
