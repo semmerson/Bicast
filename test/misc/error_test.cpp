@@ -45,24 +45,19 @@ TEST_F(ErrorTest, ExceptionLoggingLevels) {
     hycast::log_note(hycast::RUNTIME_ERROR("Notice level"));
     hycast::log_info(hycast::RUNTIME_ERROR("Informational level"));
     hycast::log_debug(hycast::RUNTIME_ERROR("Debug level"));
-    hycast::log_error(hycast::RuntimeError(__FILE__, __LINE__, "Error level"));
-    hycast::log_warn(hycast::RuntimeError(__FILE__, __LINE__, "Warning level"));
-    hycast::log_note(hycast::RuntimeError(__FILE__, __LINE__, "Notice level"));
-    hycast::log_info(hycast::RuntimeError(__FILE__, __LINE__, "Informational level"));
-    hycast::log_debug(hycast::RuntimeError(__FILE__, __LINE__, "Debug level"));
 }
 
 // Tests system error
 TEST_F(ErrorTest, SystemError) {
     try {
         errno = 1;
-        throw hycast::SystemError(__FILE__, __LINE__, "System error");
+        throw hycast::SYSTEM_ERROR("System error");
     }
     catch (const std::exception& e) {
         hycast::log_error(e);
     }
     try {
-        throw hycast::SystemError(__FILE__, __LINE__, "System error", 2);
+        throw hycast::SYSTEM_ERROR("System error", 2);
     }
     catch (const std::exception& e) {
         hycast::log_error(e);

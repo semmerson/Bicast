@@ -11,7 +11,6 @@
  */
 #include "config.h"
 
-#include "DelayQueue.h"
 #include "Thread.h"
 
 #include <chrono>

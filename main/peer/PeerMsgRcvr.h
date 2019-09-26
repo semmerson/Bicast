@@ -59,39 +59,6 @@ public:
     virtual void hereIs(
             WireChunk       chunk,
             const SockAddr& rmtAddr) =0;
-
-    /**
-     * Indicates if a chunk should be requested from a peer.
-     *
-     * @param[in] chunkId  ID of `Chunk`
-     * @param[in] peer     Associated peer
-     * @retval    `true`   The chunk should be requested from the peer
-     * @retval    `false`  The chunk should not be requested from the peer
-     */
-    virtual bool shouldRequest(
-            const ChunkId& chunkId,
-            Peer           peer) =0;
-
-    /**
-     * Obtains a chunk for a peer.
-     *
-     * @param[in] chunkId  ID of requested `Chunk`
-     * @param[in] peer     Associated peer
-     * @return             The chunk. Will be empty if it doesn't exist.
-     */
-    virtual MemChunk get(
-            const ChunkId& chunkId,
-            Peer           peer) =0;
-
-    /**
-     * Processes a `Chunk` from a peer.
-     *
-     * @param[in] chunk  The `Chunk`
-     * @param[in] peer   Associated peer
-     */
-    virtual void hereIs(
-            WireChunk chunk,
-            Peer      peer) =0;
 };
 
 } // namespace

@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="14.3.0">
+  <zoom_level>10</zoom_level>
+  <element>
+    <id>UMLGeneric</id>
+    <coordinates>
+      <x>310</x>
+      <y>270</y>
+      <w>140</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>&lt;&lt;component&gt;&gt;
+Switchboard</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLGeneric</id>
+    <coordinates>
+      <x>70</x>
+      <y>300</y>
+      <w>140</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>&lt;&lt;component&gt;&gt;
+Multicast Receiver</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLGeneric</id>
+    <coordinates>
+      <x>600</x>
+      <y>270</y>
+      <w>140</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>&lt;&lt;component&gt;&gt;
+P2P Manager</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>200</x>
+      <y>300</y>
+      <w>130</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+hereIs</panel_attributes>
+    <additional_attributes>110.0;20.0;10.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>440</x>
+      <y>260</y>
+      <w>180</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+shouldRequest</panel_attributes>
+    <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>440</x>
+      <y>300</y>
+      <w>180</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+get</panel_attributes>
+    <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>440</x>
+      <y>340</y>
+      <w>180</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+hereIs</panel_attributes>
+    <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLGeneric</id>
+    <coordinates>
+      <x>310</x>
+      <y>470</y>
+      <w>140</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>&lt;&lt;component&gt;&gt;
+Storage</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>310</x>
+      <y>360</y>
+      <w>80</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+exists?</panel_attributes>
+    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>370</x>
+      <y>360</y>
+      <w>50</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+get</panel_attributes>
+    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>430</x>
+      <y>360</y>
+      <w>70</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+hereIs</panel_attributes>
+    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Text</id>
+    <coordinates>
+      <x>330</x>
+      <y>580</y>
+      <w>100</w>
+      <h>80</h>
+    </coordinates>
+    <panel_attributes>customelement=
+// Text Elemnt
+// DB Symbol
+drawArc(0,0,width,height*2/5,0,180,true) fg=black bg=#222222 //Parameters (x, y, width, height, start, extent, open)
+drawArc(0,0,width,height*2/5,180,180,true) fg=black //Parameters (x, y, width, height, start, extent, open)
+drawRectangle(0,(height+0.5)/5,width,(height)*3/5-1) fg=#929292 bg=#222222 //Parameters (x, y, width, height)
+drawLine(0,height/5,0,height*4/5)fg=black //Parameters (x1, y1, x2, y2) 
+drawLine(width,height/5,width,height*4/5)fg=black //Parameters (x1, y1, x2, y2) 
+drawArc(0,height*1/5,width,height*2/5,180,180,true) fg=black //Parameters (x, y, width, height, start, extent, open)
+drawArc(0,height*2/5,width,height*2/5,180,180,true) fg=black //Parameters (x, y, width, height, start, extent, open)
+drawArc(0,height*3/5,width,height*2/5,180,180,true) fg=black bg=#222222 //Parameters (x, y, width, height, start, extent, open)</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>370</x>
+      <y>500</y>
+      <w>30</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;80.0;10.0;10.0</additional_attributes>
+  </element>
+</diagram>

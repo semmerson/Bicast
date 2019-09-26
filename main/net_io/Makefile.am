@@ -9,6 +9,7 @@ noinst_LTLIBRARIES = lib.la
 
 # Library Sources
 lib_la_SOURCES 	= \
+	Serializable.h \
 	InAddr.cpp	InAddr.h \
 	SockAddr.cpp    SockAddr.h \
 	Socket.cpp      Socket.h \

@@ -60,19 +60,9 @@ AC_CONFIG_FILES(Makefile
                 main/misc/Makefile
                 main/net_io/Makefile
                 main/peer/Makefile
-                main/net/Makefile
-                main/comms/Makefile
-                main/comms/mcast/Makefile
-                main/comms/p2p/Makefile
-                main/prod/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/net_io/Makefile
                 test/peer/Makefile
-                test/net/Makefile
-                test/prod/Makefile
-                test/comms/Makefile
-                test/comms/mcast/Makefile
-                test/comms/p2p/Makefile
                 )
 AC_OUTPUT

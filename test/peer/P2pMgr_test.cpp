@@ -50,18 +50,18 @@ protected:
     P2pMgrTest()
         : srcAddr{"localhost:3880"}
         , srcAddrs{
-            // NB: Not Linux dynamic ports to obviate being acquired by receiver
+            // NB: Not Linux dynamic ports to obviate being acquired by sink
             hycast::SockAddr{"localhost:3880"},
             hycast::SockAddr{"localhost:3881"},
             hycast::SockAddr{"localhost:3882"}}
-        , snkAddr{"localhost:3883"} // NB: Not a dynamic port number
+        , snkAddr{"localhost:3883"} // NB: Not a Linux dynamic port number
         , mutex{}
         , cond{}
         , state{INIT}
         , chunkId{1}
         , memData{0}
         , memChunk(chunkId, sizeof(memData), memData)
-        , portPool(38820, 7) // NB: Dynamic port numbers
+        , portPool(38820, 7) // NB: Linux Dynamic port numbers
         , srvrSrvrPool()
     {}
 

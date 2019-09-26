@@ -694,51 +694,6 @@ public:
         msgRcvr.hereIs(chunk, rmtAddr);
         peerStats.inc(rmtAddr);
     }
-
-    /**
-     * Indicates if a chunk should be requested from a peer.
-     *
-     * @param[in] chunkId  ID of `Chunk`
-     * @param[in] peer     Associated peer
-     * @retval    `true`   The chunk should be requested from the peer
-     * @retval    `false`  The chunk should not be requested from the peer
-     */
-    bool shouldRequest(
-            const ChunkId& chunkId,
-            Peer           peer)
-    {
-        return msgRcvr.shouldRequest(chunkId, peer);
-    }
-
-    /**
-     * Obtains a chunk for a peer.
-     *
-     * @param[in] chunkId  ID of requested `Chunk`
-     * @param[in] peer     Associated peer
-     * @return             The chunk. Will be empty if it doesn't exist.
-     */
-    MemChunk get(
-            const ChunkId& chunkId,
-            Peer           peer)
-    {
-        return msgRcvr.get(chunkId, peer);
-    }
-
-    /**
-     * Processes a `Chunk` from a peer.
-     *
-     * @param[in] chunk  The `Chunk`
-     * @param[in] peer   Associated peer
-     */
-    void hereIs(
-            WireChunk chunk,
-            Peer      peer)
-    {
-        msgRcvr.hereIs(chunk, peer);
-
-        Guard guard(peerSetMutex);
-        peerStats.inc(peer.getRmtAddr());
-    }
 };
 
 /******************************************************************************/

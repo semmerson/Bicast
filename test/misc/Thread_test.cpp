@@ -67,22 +67,15 @@ protected:
             try {
                 try {
                     try {
-#if 0
-                        {
-                            hycast::Canceler canceler{};
-                            ::sleep(1);
-                        }
-#endif
                         /*
                          * If the current thread is canceled while its handling
                          * the exception, then terminate() will be called.
                          */
-                        throw hycast::SystemError(__FILE__, __LINE__,
-                                "Faux system error", 1);
+                        throw hycast::SYSTEM_ERROR("Faux system error", 1);
                     }
                     catch (const std::exception& ex) {
-                        std::throw_with_nested(hycast::RuntimeError(__FILE__,
-                                __LINE__, "Faux outer exception"));
+                        std::throw_with_nested(hycast::RUNTIME_ERROR(
+                                "Faux outer exception"));
                     }
                 }
                 catch (const std::exception& ex) {
@@ -96,12 +89,6 @@ protected:
                 exception = std::current_exception();
                 cond.notify_all();
             }
-#if 0
-            catch (...) {
-                hycast::log_log(__FILE__, __LINE__, "Non-std::exception thrown");
-                throw;
-            }
-#endif
         }
         void runP2pMgr(hycast::Cue& cue) {
             cue.cue();
