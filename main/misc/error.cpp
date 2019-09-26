@@ -16,45 +16,59 @@ namespace hycast {
 InvalidArgument::InvalidArgument(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg)
-    : std::invalid_argument{makeWhat(file, line, msg)}
+    : std::invalid_argument{makeWhat(file, line, func, msg)}
 {}
 
 LogicError::LogicError(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg)
-    : std::logic_error{makeWhat(file, line, msg)}
+    : std::logic_error{makeWhat(file, line, func, msg)}
 {}
 
 NotFoundError::NotFoundError(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg)
-    : std::runtime_error{makeWhat(file, line, msg)}
+    : std::runtime_error{makeWhat(file, line, func, msg)}
+{}
+
+DomainError::DomainError(
+        const char*       file,
+        const int         line,
+        const char*       func,
+        const std::string msg)
+    : std::domain_error{makeWhat(file, line, func, msg)}
 {}
 
 OutOfRange::OutOfRange(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg)
-    : std::out_of_range{makeWhat(file, line, msg)}
+    : std::out_of_range{makeWhat(file, line, func, msg)}
 {}
 
 RuntimeError::RuntimeError(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg)
-    : std::runtime_error{makeWhat(file, line, msg)}
+    : std::runtime_error{makeWhat(file, line, func, msg)}
 {}
 
 SystemError::SystemError(
         const char*       file,
         const int         line,
+        const char*       func,
         const std::string msg,
         const int         errnum)
     : std::system_error{errnum, std::generic_category(),
-            makeWhat(file, line, msg)}
+            makeWhat(file, line, func, msg)}
 {}
 
 } // namespace

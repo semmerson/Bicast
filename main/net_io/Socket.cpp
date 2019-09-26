@@ -28,45 +28,16 @@ class Socket::Impl
 protected:
     int sd; ///< Socket descriptor
 
+    /**
+     * Creates a streaming socket.
+     *
+     * @param[in] sockAddr           Socket address. Only the address family is
+     *                               used.
+     * @throws    std::system_error  Couldn't create socket
+     */
     explicit Impl(const SockAddr& sockAddr)
-        : sd{-1}
-    {
-        struct sockaddr sockaddr;
-        socklen_t       socklen;
-
-        sockAddr.getSockAddr(sockaddr, socklen);
-
-        sd = ::socket(sockaddr.sa_family, SOCK_STREAM, 0);
-
-        if (sd == -1)
-            throw SYSTEM_ERROR("Couldn't create streaming socket for address " +
-                    sockAddr.to_string());
-    }
-
-    static const SockAddr getSockAddr(struct sockaddr& sockaddr)
-    {
-        SockAddr peerAddr;
-
-        if (sockaddr.sa_family == AF_INET) {
-            struct sockaddr_in* addr =
-                    reinterpret_cast<struct sockaddr_in*>(&sockaddr);
-
-            peerAddr = SockAddr(*addr);
-        }
-        else if (sockaddr.sa_family == AF_INET6) {
-            struct sockaddr_in6* addr =
-                    reinterpret_cast<struct sockaddr_in6*>(&sockaddr);
-
-            peerAddr = SockAddr(*addr);
-
-        }
-        else {
-            throw RUNTIME_ERROR("Unsupported address family: " +
-                    std::to_string(sockaddr.sa_family));
-        }
-
-        return peerAddr;
-    }
+        : sd{sockAddr.socket(SOCK_STREAM)}
+    {}
 
 public:
     explicit Impl(const int sd) noexcept
@@ -75,6 +46,7 @@ public:
 
     virtual ~Impl() noexcept
     {
+        ::shutdown(sd, SHUT_RDWR);
         ::close(sd);
     }
 
@@ -123,7 +95,9 @@ public:
             throw SYSTEM_ERROR("getsockname() failure on socket " +
                     std::to_string(sd));
 
-        return getSockAddr(sockaddr);
+        SockAddr sockAddr(sockaddr);
+        LOG_DEBUG("%s", sockAddr.to_string().c_str());
+        return sockAddr;
     }
 
     const SockAddr getPeerAddr() const
@@ -135,10 +109,10 @@ public:
             throw SYSTEM_ERROR("getpeername() failure on socket " +
                     std::to_string(sd));
 
-        return getSockAddr(sockaddr);
+        return SockAddr(sockaddr);
     }
 
-    in_port_t getPort() const noexcept
+    in_port_t getPort() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -195,8 +169,8 @@ public:
         ssize_t status = ::read(sd, data, nbytes);
 
         if (status < 0)
-            throw SYSTEM_ERROR("read() failure on socket " +
-                    std::to_string(sd));
+            throw SYSTEM_ERROR("read() failure on host " +
+                    getPeerAddr().to_string());
 
         return status;
     }
@@ -207,7 +181,7 @@ public:
     {
         if (::write(sd, data, nbytes) != nbytes)
             throw SYSTEM_ERROR("Couldn't write " + std::to_string(nbytes) +
-                    " bytes to socket " + std::to_string(sd));
+                    " bytes to host " + getPeerAddr().to_string());
     }
 
     void writev(
@@ -216,7 +190,16 @@ public:
     {
         if (::writev(sd, iov, iovCnt) == -1)
             throw SYSTEM_ERROR("Couldn't write " + std::to_string(iovCnt) +
-                    "-element vector to socket " + std::to_string(sd));
+                    "-element vector to host " + getPeerAddr().to_string());
+    }
+
+    /**
+     * Shuts down the socket for both reading and writing. Causes `accept()` to
+     * throw an exception. Idempotent.
+     */
+    void shutdown() const
+    {
+        ::shutdown(sd, SHUT_RDWR);
     }
 };
 
@@ -239,7 +222,9 @@ bool Socket::getDelay() const
 
 SockAddr Socket::getAddr() const
 {
-    return pImpl->getAddr();
+    SockAddr sockAddr(pImpl->getAddr());
+    LOG_DEBUG("%s", sockAddr.to_string().c_str());
+    return sockAddr;
 }
 
 in_port_t Socket::getPort() const
@@ -277,6 +262,11 @@ void Socket::writev(
     pImpl->writev(iov, iovCnt);
 }
 
+void Socket::shutdown() const
+{
+    pImpl->shutdown();
+}
+
 /******************************************************************************/
 
 class ClntSock::Impl final : public Socket::Impl
@@ -285,20 +275,15 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] sockAddr       Address of remote endpoint
-     * @throw std::system_error  Couldn't connect to `sockAddr`
+     * @param[in] sockAddr           Address of remote endpoint
+     * @throw     std::system_error  Couldn't connect to `sockAddr`
+     * @exceptionsafety              Strong guarantee
+     * @cancellationpoint
      */
     Impl(const SockAddr& sockAddr)
         : Socket::Impl{sockAddr}
     {
-        struct sockaddr sockaddr;
-        socklen_t       socklen;
-
-        sockAddr.getSockAddr(sockaddr, socklen);
-
-        if (::connect(sd, &sockaddr, socklen))
-            throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) +
-                    " to " + sockAddr.to_string());
+        sockAddr.connect(sd);
     }
 };
 
@@ -317,40 +302,31 @@ public:
      * Constructs.
      *
      * @param[in] sockAddr           Socket address
+     * @param[in] queueSize          Size of listening queue
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
-     */
-    Impl(const SockAddr& sockAddr)
-        : Socket::Impl{sockAddr}
-    {
-        const int enable = 1;
-        if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
-            throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " +
-                    std::to_string(sd));
-
-        struct sockaddr sockaddr;
-        socklen_t       socklen;
-
-        sockAddr.getSockAddr(sockaddr, socklen);
-
-        if (::bind(sd, &sockaddr, socklen))
-            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) +
-                    " to " + sockAddr.to_string());
-
-        if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)))
-            throw SYSTEM_ERROR("Couldn't set SO_KEEPALIVE on socket " +
-                    std::to_string(sd));
-    }
-
-    /**
-     * Calls `::listen()` on the socket.
-     *
-     * @param[in] queueSize          Size of the listening queue
      * @throws    std::system_error  `::listen()` failure
      */
-    void listen(const int queueSize) const
+    Impl(   const SockAddr& sockAddr,
+            const int       queueSize)
+        : Socket::Impl(sockAddr)
     {
+        const int enable = 1;
+
+        LOG_DEBUG("Setting SO_REUSEADDR");
+        if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
+            throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " +
+                    std::to_string(sd) + ", address " + sockAddr.to_string());
+
+        LOG_DEBUG("Binding socket");
+        sockAddr.bind(sd);
+
+        LOG_DEBUG("Setting SO_KEEPALIVE");
+        if (::setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)))
+            throw SYSTEM_ERROR("Couldn't set SO_KEEPALIVE on socket " +
+                    std::to_string(sd) + ", address " + sockAddr.to_string());
+
         if (::listen(sd, queueSize))
             throw SYSTEM_ERROR("listen() failure: {sock: " + std::to_string(sd)
                     + ", queueSize: " + std::to_string(queueSize));
@@ -361,6 +337,7 @@ public:
      *
      * @return                     The accepted socket
      * @throws  std::system_error  `::accept()` failure
+     * @cancellationpoint
      */
     Socket::Impl* accept()
     {
@@ -376,14 +353,11 @@ public:
 
 /******************************************************************************/
 
-SrvrSock::SrvrSock(const SockAddr& sockAddr)
-    : Socket{new Impl(sockAddr)}
+SrvrSock::SrvrSock(
+        const SockAddr& sockAddr,
+        const int       queueSize)
+    : Socket{new Impl(sockAddr, queueSize)}
 {}
-
-void SrvrSock::listen(const int queueSize) const
-{
-    static_cast<SrvrSock::Impl*>(pImpl.get())->listen(queueSize);
-}
 
 Socket SrvrSock::accept() const
 {

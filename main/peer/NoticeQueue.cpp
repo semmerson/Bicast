@@ -37,7 +37,7 @@ public:
         Guard guard(mutex);
 
         queue.push(chunkId);
-        cond.notify_one();
+        cond.notify_all();
 
         return true;
     }
@@ -51,7 +51,7 @@ public:
 
         ChunkId chunkId = queue.front();
         queue.pop();
-        cond.notify_one();
+        cond.notify_all();
 
         return chunkId;
     }

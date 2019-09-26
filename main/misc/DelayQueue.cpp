@@ -17,9 +17,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
-#include <deque>
 #include <mutex>
 #include <queue>
+#include <vector>
 
 namespace hycast {
 
@@ -62,9 +62,10 @@ class DelayQueue<Value,Dur>::Impl final
 
         /**
          * Returns the value.
-         * @return  The value.
-         * @exceptionsafety Strong guarantee
-         * @threadsafety    Safe
+         * @return            The value.
+         * @exceptionsafety   Strong guarantee
+         * @threadsafety      Safe
+         * @cancellationpoint No
          */
         Value getValue() const noexcept
         {
@@ -73,41 +74,39 @@ class DelayQueue<Value,Dur>::Impl final
 
         /**
          * Returns the reveal-time.
-         * @return  The reveal-time.
-         * @exceptionsafety Strong guarantee
-         * @threadsafety    Safe
+         * @return            The reveal-time.
+         * @exceptionsafety   Strong guarantee
+         * @threadsafety      Safe
+         * @cancellationpoint No
          */
         const TimePoint& getTime() const noexcept
         {
             return when;
         }
+
+        bool operator<(const Element& rhs) {
+            // Later time => lower priority
+            return when > rhs.when;
+        }
     };
 
-    /**
-     * Class for comparing elements.
-     */
-    struct Compare final
-    {
+    struct Compare final {
         /**
-         * Compares two elements.
-         * @param[in] e1   First element
-         * @param[in] e2   Second element
-         * @return `true`  First element is less than second element
-         * @return `false` First element is not less than second element
+         * @cancellationpoint No
          */
-        bool operator()(const Element& e1, const Element& e2) const noexcept
-        {
-            // Later time => lower priority
-            return e1.getTime() > e2.getTime();
+        bool operator()(const Element& lhs, const Element& rhs) const noexcept {
+            return lhs.getTime() > rhs.getTime();
         }
     };
 
     /// The mutex for concurrent access to the queue.
-    std::mutex mutable                                         mutex;
+    std::mutex mutable                                          mutex;
     /// The condition variable for signaling when the queue has been modified
-    std::condition_variable                                    cond;
+    std::condition_variable                                     cond;
     /// The queue.
-    std::priority_queue<Element, std::deque<Element>, Compare> queue;
+    std::priority_queue<Element, std::vector<Element>, Compare> queue;
+    /// Whether or not the queue is closed
+    bool                                                        isClosed;
 
 public:
     /**
@@ -119,22 +118,28 @@ public:
         : mutex{}
         , cond{}
         , queue{}
+        , isClosed{false}
     {}
 
     /**
      * Adds a value to the queue.
-     * @param[in] value  The value to be added
-     * @param[in] when   The reveal-time
-     * @exceptionsafety  Strong guarantee
-     * @threadsafety     Safe
+     * @param[in] value              The value to be added
+     * @param[in] when               The reveal-time
+     * @throws    std::domain_error  `close()` was called
+     * @exceptionsafety              Strong guarantee
+     * @threadsafety                 Safe
      */
     void push(
             const Value&     value,
             const TimePoint& when)
     {
         Guard guard{mutex};
+
+        if (isClosed)
+            throw DOMAIN_ERROR("DelayQueue is closed");
+
         queue.push(Element(value, when));
-        cond.notify_one();
+        cond.notify_all();
     }
 
     /**
@@ -142,56 +147,97 @@ public:
      * the current time and removes it from the queue. Blocks until such a value
      * is available.
      *
-     * @return          The value with the earliest reveal-time that's not later
-     *                  than the current time.
-     * @exceptionsafety Basic guarantee
-     * @threadsafety    Safe
+     * @return                    The value with the earliest reveal-time that's
+     *                            not later than the current time.
+     * @throws std::domain_error  `close()` was called
+     * @exceptionsafety           Strong guarantee
+     * @threadsafety              Safe
+     * @cancellationpoint
      */
     Value pop()
     {
-        Lock lock{mutex};
+        Value value;
+        Lock  lock{mutex};
 
         for (;;) {
+            LOG_DEBUG("isClosed: %d", isClosed);
+            if (isClosed) {
+                LOG_DEBUG("Throwing DOMAIN_ERROR");
+                throw DOMAIN_ERROR("DelayQueue is closed");
+            }
+
             if (queue.empty()) {
-                Canceler canceler{};
-                cond.wait(lock);
+                LOG_DEBUG("Waiting");
+                //Canceler canceler{true};
+                try {
+                    cond.wait(lock);
+                }
+                catch (const std::exception& ex) {
+                    LOG_DEBUG("Caught std::exception");
+                    throw;
+                }
+                catch (...) {
+                    LOG_DEBUG("Caught ... exception");
+                    throw;
+                }
             }
             else {
                 auto revealTime = queue.top().getTime();
 
-                if (revealTime <= Clock::now()) {
-                    break;
+                if (revealTime > Clock::now()) {
+                    LOG_DEBUG("Waiting until");
+                    cond.wait_until(lock, revealTime);
                 }
                 else {
-                    Canceler canceler{};
-                    cond.wait_until(lock, revealTime);
+                    LOG_DEBUG("Popping value");
+                    Canceler canceler{false};
+                    value = queue.top().getValue();
+                    queue.pop();
+                    break;
                 }
             }
         }
 
-        auto value = queue.top().getValue();
-        queue.pop();
-
         return value;
     }
 
-    bool ready() const noexcept
+    /**
+     * @cancellationpoint No
+     */
+    bool ready() const //noexcept
     {
         Guard guard{mutex};
         return !queue.empty() && queue.top().getTime() <= Clock::now();
     }
 
-    bool empty() const noexcept
+    /**
+     * @cancellationpoint No
+     */
+    bool empty() const //noexcept
     {
         Guard guard{mutex};
         return queue.empty();
     }
 
-    void clear() noexcept
+    /**
+     * @cancellationpoint No
+     */
+    void clear() //noexcept
     {
         Guard guard{mutex};
         while (!queue.empty())
             queue.pop();
+        cond.notify_all();
+    }
+
+    void close() {
+        Guard guard{mutex};
+
+        while (!queue.empty())
+            queue.pop();
+
+        isClosed = true;
+        cond.notify_all();
     }
 };
 
@@ -218,21 +264,27 @@ Value DelayQueue<Value, Dur>::pop() const
 }
 
 template<typename Value, typename Dur>
-bool DelayQueue<Value, Dur>::ready() const noexcept
+bool DelayQueue<Value, Dur>::ready() const //noexcept
 {
     return pImpl->ready();
 }
 
 template<typename Value, typename Dur>
-bool DelayQueue<Value, Dur>::empty() const noexcept
+bool DelayQueue<Value, Dur>::empty() const //noexcept
 {
     return pImpl->empty();
 }
 
 template<typename Value, typename Dur>
-void DelayQueue<Value, Dur>::clear() noexcept
+void DelayQueue<Value, Dur>::clear() //noexcept
 {
     return pImpl->clear();
+}
+
+template<typename Value, typename Dur>
+void DelayQueue<Value, Dur>::close()
+{
+    pImpl->close();
 }
 
 } // namespace

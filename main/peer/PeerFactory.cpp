@@ -12,28 +12,36 @@
 
 #include "config.h"
 
+#include "error.h"
+#include "InAddr.h"
+#include "PeerConn.h"
 #include "PeerFactory.h"
 #include "Socket.h"
+
+#include <cerrno>
+#include <poll.h>
+#include <unistd.h>
 
 namespace hycast {
 
 class PeerFactory::Impl final
 {
 private:
-    PortPool     portPool;
-    SrvrSock     srvrSock;
-    PeerMsgRcvr& msgRcvr;
+    PortPool         portPool;
+    SrvrSock         srvrSock;
+    PeerMsgRcvr&     msgRcvr;
 
 public:
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
             PeerMsgRcvr&    msgRcvr)
-        : portPool(portPool)
-        , srvrSock(srvrAddr)
+        : portPool{portPool}
+        , srvrSock(srvrAddr, queueSize)
         , msgRcvr(msgRcvr) // Braces don't work
-    {
-        srvrSock.listen(queueSize);
+    {}
+
+    ~Impl() {
     }
 
     in_port_t getPort()
@@ -42,30 +50,44 @@ public:
     }
 
     /**
-     * Creates an instance by accepting a connection from a remote peer. The
-     * returned instance is not executing.
+     * Server-side peer construction. Creates a peer by accepting a connection
+     * from a remote peer. The returned peer is not executing. Potentially slow.
      *
-     * @return  local instance
+     * @return                     Local peer that's connected to a remote peer
+     * @throws  std::system_error  `::accept()` failure
+     * @cancellationpoint
      */
     Peer accept()
     {
-        Socket sock(srvrSock.accept());
+        PeerConn peerConn(srvrSock.accept());
 
-        return Peer(sock, portPool, msgRcvr);
+        return Peer(peerConn, msgRcvr);
     }
 
     /**
-     * Creates an instance by connecting to a remote server. The returned
-     * instance is not executing.
+     * Client-side construction. Creates a peer by connecting to a remote
+     * server. The returned peer is not executing.
      *
-     * @param[in] rmtSrvrAddr            Socket address of the remote server
-     * @return                           Local instance that's connected to a
-     *                                   remote counterpart
-     * @throws    std::nested_exception  System failure
+     * @return                        Local peer that's connected to a remote
+     *                                counterpart
+     * @param[in] rmtSrvrAddr         Socket address of the remote server
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @cancellationpoint             Yes
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        return Peer(rmtSrvrAddr, msgRcvr);
+        return Peer(rmtSrvrAddr, portPool, msgRcvr);
+    }
+
+    /**
+     * Closes the factory. Causes `accept()` to throw an exception. Idempotent.
+     *
+     * @throws std::system_error  `::shutdown()` failure
+     */
+    void close()
+    {
+        srvrSock.shutdown();
     }
 };
 
@@ -83,14 +105,6 @@ PeerFactory::PeerFactory(
     : pImpl{new Impl(srvrAddr, queueSize, portPool, msgRcvr)}
 {}
 
-PeerFactory::PeerFactory(
-        const InAddr& inAddr,
-        const int     queueSize,
-        PortPool&     portPool,
-        PeerMsgRcvr&  msgRcvr)
-    : PeerFactory{inAddr.getSockAddr(0), queueSize, portPool, msgRcvr}
-{}
-
 in_port_t PeerFactory::getPort() const
 {
     return pImpl->getPort();
@@ -104,6 +118,11 @@ Peer PeerFactory::accept()
 Peer PeerFactory::connect(const SockAddr& rmtAddr)
 {
     return pImpl->connect(rmtAddr);
+}
+
+void PeerFactory::close()
+{
+    pImpl->close();
 }
 
 } // namespace

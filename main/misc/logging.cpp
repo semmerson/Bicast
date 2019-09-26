@@ -20,52 +20,104 @@
 #include <mutex>
 #include <sstream>
 #include <sys/time.h>
+#include <unistd.h>
 
 namespace hycast {
 
-void timeStamp()
+static int LOC_WIDTH = 32;
+
+class StreamGuard
+{
+    FILE* stream;
+
+public:
+    StreamGuard(FILE* stream) : stream{stream} {
+        ::flockfile(stream);
+    }
+
+    StreamGuard(const StreamGuard& guard) =delete;
+
+    StreamGuard& operator=(const StreamGuard& rhs) =delete;
+
+    ~StreamGuard() {
+        ::funlockfile(stream);
+    }
+};
+
+static std::string progName{"<unset>"};
+
+static int timeStamp(FILE* stream)
 {
     struct timeval now;
     ::gettimeofday(&now, nullptr);
     struct tm tm;
     ::gmtime_r(&now.tv_sec, &tm);
-    ::fprintf(stderr,
-            "%04d%02d%02dT%02d%02d%02d.%06ldZ ",
+    return ::fprintf(stream,
+            "%04d%02d%02dT%02d%02d%02d.%06ldZ",
             tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min,
             tm.tm_sec, static_cast<long>(now.tv_usec));
 }
 
-std::string placeStamp(
-        const char* const file,
-        const int         line)
+static void procStamp(FILE* stream)
 {
-    char name[::strlen(file)+1];
-    ::strcpy(name, file);
+    char               progField[80];
     std::ostringstream threadId;
+
     threadId << std::this_thread::get_id();
-    return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
-            threadId.str();
+    ::snprintf(progField, sizeof(progField), "%s:%d:%s", progName.c_str(),
+            getpid(), threadId.str().c_str());
+
+    ::fprintf(stream, "%-35s", progField);
 }
 
-std::string placeStamp(
+static std::string codeStamp(
         const char* const file,
         const int         line,
         const char* const func)
 {
     char name[::strlen(file)+1];
     ::strcpy(name, file);
-    std::ostringstream threadId;
-    threadId << std::this_thread::get_id();
-    return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
-            func + "()#" +  threadId.str();
+    return std::string(::basename(name)) + ":" + func + ":" +
+            std::to_string(line);
 }
 
-std::string makeWhat(
-        const char*        file,
-        const int          line,
-        const std::string& msg)
+static const char*         logLevelNames[] = {"TRACE", "DEBUG", "INFO",
+        "NOTE", "WARN", "ERROR", "FATAL"};
+
+static void logHeader(
+        const LogLevel    level,
+        const char* const file,
+        const int         line,
+        const char* const func)
 {
-    return placeStamp(file, line) + " " + msg;
+    // Time stamp
+    timeStamp(stderr);
+
+    // Program, process, and thread
+    ::fputc(' ', stderr);
+    procStamp(stderr);
+
+    // Logging level
+    ::fputc(' ', stderr);
+    ::fprintf(stderr, "%-5s", logLevelNames[level]);
+
+    // Code location
+    ::fputc(' ', stderr);
+    ::fprintf(stderr, "%-*s", LOC_WIDTH, codeStamp(file, line, func).c_str());
+}
+
+LogThreshold logThreshold(LOG_LEVEL_NOTE);
+
+void log_setName(const std::string& name) {
+    progName = name;
+}
+
+void log_setLevel(const LogLevel level) noexcept {
+    logThreshold.store(level);
+}
+
+bool log_enabled(const LogLevel level) noexcept {
+    return level <= logThreshold;
 }
 
 std::string makeWhat(
@@ -74,47 +126,35 @@ std::string makeWhat(
         const char* const  func,
         const std::string& msg)
 {
-    return placeStamp(file, line, func) + ": " + msg;
+    auto what = codeStamp(file, line, func);
+
+    for (int n = what.size(); n < LOC_WIDTH; ++n)
+        what += ' ';
+
+    what += ' ' + msg;
+
+    return what;
 }
 
-void log_log(const std::string& msg)
+void log(
+        const LogLevel    level,
+        const char* const file,
+        const int         line,
+        const char* const func,
+        const char* const fmt,
+        va_list           argList)
 {
-    static std::mutex           mutex{};
-    std::lock_guard<std::mutex> lock{mutex};
-    std::cerr << msg << std::endl;
-}
+    StreamGuard guard(stderr);
 
-void log_log(
-        const char* const  file,
-        const int          line,
-        const std::string& msg)
-{
-    log_log(makeWhat(file, line, msg));
-}
+    logHeader(level, file, line, func);
 
-void log_log(
-        const char* const  file,
-        const int          line,
-        const char* const  func,
-        const std::string& msg)
-{
-    log_log(makeWhat(file, line, func, msg));
-}
+    // Message
+    ::fputc(' ', stderr);
+    ::vfprintf(stderr, fmt, argList);
 
-void log_notice_old(const std::string& msg)
-{
-    log_log("NOTICE: " + msg);
+    ::fputc('\n', stderr);
+    ::fflush(stderr);
 }
-
-void log_debug(const std::string& msg)
-{
-    log_log("DEBUG: " + msg);
-}
-
-LogLevel                     logLevel = LOG_NOTE;
-static const char*           logLevelNames[] = {"DEBUG", "INFO", "NOTE", "WARN",
-        "ERROR"};
-static std::recursive_mutex  mutex;
 
 void log(
         const LogLevel        level,
@@ -126,81 +166,74 @@ void log(
     catch (const std::exception& inner) {
         log(level, inner);
     }
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    timeStamp();
-    ::fprintf(stderr, "%s %s\n", logLevelNames[level], ex.what());
-    ::fflush(stderr);
-}
 
-void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
-        const char*    fmt,
-        va_list        argList)
-{
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    timeStamp();
-    ::fprintf(stderr, "%s %s ", logLevelNames[level],
-            placeStamp(file, line).c_str());
-    ::vfprintf(stderr, fmt, argList);
+    StreamGuard guard(stderr);
+
+    timeStamp(stderr);
+
+    // Program, process, and thread
+    ::fputc(' ', stderr);
+    procStamp(stderr);
+
+    // Logging level
+    ::fputc(' ', stderr);
+    ::fprintf(stderr, "%-5s", logLevelNames[level]);
+
+    // Code location and message
+    ::fputc(' ', stderr);
+    ::fprintf(stderr, "%s", ex.what());
+
     ::fputc('\n', stderr);
     ::fflush(stderr);
 }
 
 void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
-        const char*    fmt,
-        ...)
+        const LogLevel    level,
+        const char* const file,
+        const int         line,
+        const char* const func)
 {
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    va_list argList;
-    va_start(argList, fmt);
-    log(level, file, line, fmt, argList);
-    va_end(argList);
-}
+    StreamGuard guard(stderr);
 
-void log(
-        const LogLevel        level,
-        const char*           file,
-        const int             line,
-        const std::exception& ex,
-        const char*           fmt,
-        ...)
-{
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    log(level, ex);
-    va_list argList;
-    va_start(argList, fmt);
-    log(level, file, line, fmt, argList);
-    va_end(argList);
+    logHeader(level, file, line, func);
+
+    ::fputc('\n', stderr);
+    ::fflush(stderr);
 }
 
 void log(
         const LogLevel    level,
-        const char*       file,
+        const char* const file,
         const int         line,
-        const std::string msg)
+        const char* const func,
+        const char* const fmt,
+        ...)
 {
-    std::lock_guard<decltype(mutex)> lock{mutex};
-    timeStamp();
-    std::cerr << logLevelNames[level] << " " << placeStamp(file, line).c_str()
-            << " " << msg << std::endl;
-    std::cerr.flush();
+    StreamGuard guard(stderr);
+    va_list     argList;
+
+    va_start(argList, fmt);
+    log(level, file, line, func, fmt, argList);
+    va_end(argList);
 }
 
 void log(
         const LogLevel        level,
         const char*           file,
         const int             line,
+        const char* const     func,
         const std::exception& ex,
-        const std::string     msg)
+        const char*           fmt,
+        ...)
 {
-    std::lock_guard<decltype(mutex)> lock{mutex};
+    StreamGuard guard(stderr);
+    va_list     argList;
+
     log(level, ex);
-    log(level, file, line, msg);
+
+    va_start(argList, fmt);
+    log(level, file, line, func, fmt, argList);
+    va_end(argList);
 }
 
 } // namespace

@@ -23,11 +23,17 @@ public:
 
     virtual bool ready() const noexcept =0;
 
+    /**
+     * @exceptionsafety   Strong guarantee
+     * @cancellationpoint
+     */
     virtual SockAddr pop() =0;
 
     virtual void consider(
             const SockAddr& server,
             const unsigned  delay) =0;
+
+    virtual void close() =0;
 };
 
 ServerPool::Impl::~Impl()
@@ -41,35 +47,58 @@ private:
     DelayQueue<SockAddr, std::chrono::seconds> servers;
 
 public:
-    ServerQueue(const std::set<SockAddr> servers)
+    ServerQueue()
+        : servers()
+    {}
+
+    ServerQueue(const std::set<SockAddr>& servers)
         : servers()
     {
-        for (const auto sockAddr : servers)
+        for (const SockAddr sockAddr : servers)
             this->servers.push(sockAddr); // No delay
     }
 
-    bool ready() const noexcept
+    bool ready() const noexcept override
     {
         return servers.ready();
     }
 
-    SockAddr pop()
+    /**
+     * @exceptionsafety   Strong guarantee
+     * @cancellationpoint
+     */
+    SockAddr pop() override
     {
-        return servers.pop();
+        try {
+            LOG_DEBUG("servers.ready(): %d", servers.ready());
+            return servers.pop();
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught std::exception");
+            throw;
+        }
+        catch (...) {
+            LOG_DEBUG("Caught ... exception");
+            throw;
+        }
     }
 
     void consider(
             const SockAddr& server,
-            const unsigned  delay)
+            const unsigned  delay) override
     {
         servers.push(server, delay);
+    }
+
+    void close() override {
+        servers.close();
     }
 };
 
 /******************************************************************************/
 
 ServerPool::ServerPool()
-    : pImpl{}
+    : pImpl{new ServerQueue()}
 {}
 
 ServerPool::ServerPool(const std::set<SockAddr>& servers)
@@ -81,9 +110,19 @@ bool ServerPool::ready() const noexcept
     return pImpl->ready();
 }
 
-SockAddr ServerPool::pop() const noexcept
+SockAddr ServerPool::pop() const
 {
-    return pImpl->pop();
+    try {
+        return pImpl->pop();
+    }
+    catch (const std::exception& ex) {
+        LOG_DEBUG("Caught std::exception");
+        throw;
+    }
+    catch (...) {
+        LOG_DEBUG("Caught ... exception");
+        throw;
+    }
 }
 
 void ServerPool::consider(
@@ -91,6 +130,11 @@ void ServerPool::consider(
         const unsigned  delay) const
 {
     pImpl->consider(server, delay);
+}
+
+void ServerPool::close()
+{
+    pImpl->close();
 }
 
 } // namespace

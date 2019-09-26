@@ -36,7 +36,8 @@ public:
     PeerFactory();
 
     /**
-     * Constructs.
+     * Constructs. Creates a server that listens on the given, local socket
+     * address.
      *
      * @param[in] srvrAddr   Socket address on which a local server will accept
      *                       connections from remote peers
@@ -51,22 +52,6 @@ public:
             PeerMsgRcvr&    msgRcvr);
 
     /**
-     * Constructs. The port number of the local server will be chosen by
-     * the operating system.
-     *
-     * @param[in] inAddr     Internet address for the local server that accepts
-     *                       connections from remote peers
-     * @param[in] queueSize  Size of server's `listen()` queue
-     * @param[in] portPool   Pool of available port numbers
-     * @param[in] msgRcvr    Receiver of messages from the remote peer
-     */
-    PeerFactory(
-            const InAddr& inAddr,
-            const int     queueSize,
-            PortPool&     portPool,
-            PeerMsgRcvr&  msgRcvr);
-
-    /**
      * Returns the port number of the server's socket in host byte-order.
      *
      * @return Port number of server's socket in host byte-order
@@ -75,9 +60,10 @@ public:
 
     /**
      * Accepts a connection from a remote peer. `Peer::operator()` has not been
-     * called on the returned instance.
+     * called on the returned instance. Potentially slow.
      *
      * @return  Corresponding local peer
+     * @cancellationpoint
      */
     Peer accept();
 
@@ -85,11 +71,22 @@ public:
      * Creates a local peer by connecting to a remote server. `Peer::operator()`
      * has not been called on the returned instance.
      *
-     * @param[in] rmtAddr                Address of the remote server
-     * @return                           Corresponding local peer
-     * @throws    std::nested_exception  System error
+     * @return                        Local peer that's connected to a remote
+     *                                counterpart
+     * @param[in] rmtAddr             Socket address of the remote server
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @cancellationpoint             Yes
      */
     Peer connect(const SockAddr& rmtAddr);
+
+    /**
+     * Closes the factory. Causes any outstanding and subsequent calls to
+     * `accept()` to return a default-constructed peer. Idempotent.
+     *
+     * @throws std::system_error  System failure
+     */
+    void close();
 };
 
 /******************************************************************************/

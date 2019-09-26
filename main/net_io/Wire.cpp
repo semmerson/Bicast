@@ -114,6 +114,7 @@ public:
 
     void serialize(const uint16_t value)
     {
+        LOG_DEBUG("value: %hu", value);
         checkBuf();
 
         next->u16 = htons(value);
@@ -166,7 +167,7 @@ public:
     void deserialize(uint8_t& value)
     {
         if (sock.read(&value, sizeof(value)) != sizeof(value))
-            throw SYSTEM_ERROR("EOF", ECONNABORTED);
+            throw RUNTIME_ERROR("EOF");
     }
 
     void deserialize(uint16_t& value)
@@ -174,9 +175,10 @@ public:
         uint16_t val;
 
         if (sock.read(&val, sizeof(val)) != sizeof(val))
-            throw SYSTEM_ERROR("EOF", ECONNABORTED);
+            throw RUNTIME_ERROR("EOF");
 
         value = ntohs(val);
+        LOG_DEBUG("value: %hu", value);
     }
 
     void deserialize(uint32_t& value)
@@ -184,7 +186,7 @@ public:
         uint32_t val;
 
         if (sock.read(&val, sizeof(val)) != sizeof(val))
-            throw SYSTEM_ERROR("EOF", ECONNABORTED);
+            throw RUNTIME_ERROR("EOF");
 
         value = ntohl(val);
     }
@@ -194,7 +196,7 @@ public:
         uint32_t val[2];
 
         if (sock.read(&val, sizeof(val)) != sizeof(val))
-            throw SYSTEM_ERROR("EOF", ECONNABORTED);
+            throw RUNTIME_ERROR("EOF");
 
         value = (static_cast<uint64_t>(ntohl(val[0])) << 32) | ntohl(val[1]);
     }
@@ -213,7 +215,7 @@ public:
         char data[nbytes+1];
 
         if (deserialize(data, nbytes) != nbytes)
-            throw SYSTEM_ERROR("EOF", ECONNABORTED);
+            throw RUNTIME_ERROR("EOF");
 
         data[nbytes] = 0;
         string = std::string(data);

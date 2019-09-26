@@ -670,8 +670,8 @@ public:
 };
 
 /**
- * RAII class that enables thread cancellation on construction and returns it
- * to its previous state on destruction.
+ * RAII class that enables/disables thread cancellation on construction and
+ * returns it to its previous state on destruction.
  */
 class Canceler
 {
@@ -679,10 +679,10 @@ class Canceler
 
 public:
     /**
-     * Enables thread cancellation.
+     * Set thread cancellation.
      */
-    inline Canceler()
-        : previous{Thread::enableCancel(true)}
+    inline Canceler(const bool enable = true)
+        : previous{Thread::enableCancel(enable)}
     {}
 
     /**

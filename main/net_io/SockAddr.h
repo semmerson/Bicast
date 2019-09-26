@@ -38,20 +38,22 @@ public:
     SockAddr() noexcept;
 
     /**
-     * Constructs an IPv4 socket address.
+     * Constructs from an IPv4 socket address.
      *
      * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order
+     * @param[in] port  Port number in host byte-order. `0` obtains a system-
+     *                  chosen port number.
      */
     SockAddr(
             const in_addr_t addr,
             const in_port_t port);
 
     /**
-     * Constructs an IPv4 socket address.
+     * Constructs from an IPv4 socket address.
      *
      * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order
+     * @param[in] port  Port number in host byte-order. `0` obtains a system-
+     *                  chosen port number.
      */
     SockAddr(
             const struct in_addr& addr,
@@ -65,7 +67,8 @@ public:
     SockAddr(const struct sockaddr_in& sockaddr);
 
     /**
-     * Constructs an IPv6 socket address.
+     * Constructs from an IPv6 socket address. `0` obtains a system-chosen port
+     * number.
      *
      * @param[in] addr  IPv6 address
      * @param[in] port  Port number in host byte-order
@@ -75,17 +78,26 @@ public:
             const in_port_t        port);
 
     /**
-     * Constructs an IPv6 socket address.
+     * Constructs from an IPv6 socket address.
      *
      * @param[in] sockaddr  IPv6 socket address
      */
     SockAddr(const struct sockaddr_in6& addr);
 
     /**
-     * Constructs a socket address based on a hostname and port number.
+     * Constructs from a generic socket address.
+     *
+     * @param[in] sockaddr               Generic socket address
+     * @throws    std::invalid_argument  Address family isn't supported
+     */
+    SockAddr(const struct sockaddr& sockaddr);
+
+    /**
+     * Constructs from a hostname and port number.
      *
      * @param[in] name  Hostname
-     * @param[in] port  Port number in host byte-order
+     * @param[in] port  Port number in host byte-order. `0` obtains a system-
+     *                  chosen port number.
      */
     SockAddr(
             const std::string& name,
@@ -107,6 +119,20 @@ public:
     }
 
     /**
+     * Returns a socket appropriate for this instance's address family.
+     *
+     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
+     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
+     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
+     *                               obtain the default protocol.
+     * @return                       Appropriate socket
+     * @throws    std::system_error  `::socket()` failure
+     */
+    int socket(
+            const int type,
+            const int protocol = 0) const;
+
+    /**
      * Clones this instance while changing the port number.
      *
      * @param[in] port      New port number
@@ -123,6 +149,13 @@ public:
     bool operator <(const SockAddr& rhs) const;
 
     /**
+     * Returns the hash value of this instance.
+     *
+     * @return The hash value of this instance
+     */
+    size_t hash() const noexcept;
+
+    /**
      * Returns the string representation of this instance.
      *
      * @return String representation of this instance
@@ -130,18 +163,22 @@ public:
     const std::string& to_string() const noexcept;
 
     /**
-     * Returns the socket address structure corresponding to this instance.
+     * Binds a socket to a local socket address.
      *
-     * @param[out] sockaddr            Socket address structure
-     * @paarm[out] socklen             Used size of `sockaddr`
-     * @throws     std::system_error   `::getaddrinfo()` failure
-     * @throws     std::runtime_error  Couldn't get IP address
-     * @exceptionsafety                Strong guarantee
-     * @threadsafety                   Safe
+     * @param[in] sd                 Socket descriptor
+     * @throws    std::system_error  `::bind()` failure
+     * @threadsafety                 Safe
      */
-    void getSockAddr(
-            struct sockaddr& sockaddr,
-            socklen_t&       socklen) const;
+    void bind(const int sd) const;
+
+    /**
+     * Connects a socket to a remote socket address.
+     *
+     * @param[in] sd                 Socket descriptor
+     * @throws    std::system_error  `::connect()` failure
+     * @threadsafety                 Safe
+     */
+    void connect(const int sd) const;
 
     /**
      * Returns the Internet address of this socket address.
@@ -153,82 +190,30 @@ public:
     /**
      * Returns the port number given to the constructor in host byte-order.
      *
-     * @return Constructor port number in host byte-order
+     * @return            Constructor port number in host byte-order
+     * @cancellationpoint No
      */
-    in_port_t getPort() const;
-
-    /**
-     * Returns the address family of this socket address.
-     *
-     * @return  Address family. One of `AF_INET`, `AF_INET6`, or `AF_UNSPEC`.
-     */
-    int getFamily() const;
-};
-
-/******************************************************************************/
-
-class SockAddrIn final : public SockAddr
-{
-public:
-
-public:
-    class Impl;
-
-    SockAddrIn();
-
-    /**
-     * Constructs.
-     *
-     * @param[in] addr  IPv4 address in network byte-order
-     * @param[in] port  Port number in host byte-order
-     */
-    SockAddrIn(
-            const in_addr_t addr,
-            const in_port_t port);
-};
-
-/******************************************************************************/
-
-class SockAddrIn6 final : public SockAddr
-{
-public:
-    class Impl;
-
-    SockAddrIn6();
-
-    /**
-     * Constructs.
-     *
-     * @param[in] addr  IPv6 address in network byte-order
-     * @param[in] port  Port number in host byte-order
-     */
-    SockAddrIn6(
-            const struct in6_addr& addr,
-            const in_port_t        port);
-};
-
-/******************************************************************************/
-
-class SockAddrName final : public SockAddr
-{
-public:
-    class Impl;
-
-    SockAddrName();
-
-    /**
-     * Constructs from the name of a host.
-     *
-     * @param[in] name  Name of host. It's the caller's responsibility to
-     *                  ensure that `name` isn't a string representation of an
-     *                  IPv4 or IPv6 address.
-     * @param[in] port  Port number in host byte-order
-     */
-    SockAddrName(
-            const std::string& name,
-            const in_port_t    port);
+    in_port_t getPort() const noexcept;
 };
 
 } // namespace
+
+namespace std {
+    template<>
+    struct less<hycast::SockAddr> {
+        inline bool operator()(
+                const hycast::SockAddr& lhs,
+                const hycast::SockAddr& rhs) {
+            return lhs < rhs;
+        }
+    };
+
+    template<>
+    struct hash<hycast::SockAddr> {
+        inline bool operator()(const hycast::SockAddr& sockAddr) const {
+            return sockAddr.hash();
+        }
+    };
+}
 
 #endif /* MAIN_NET_IO_SOCKADDR_H_ */

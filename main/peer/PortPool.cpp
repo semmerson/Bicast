@@ -12,6 +12,7 @@
 
 #include "config.h"
 
+#include "error.h"
 #include "PortPool.h"
 
 #include <list>
@@ -20,19 +21,17 @@
 namespace hycast {
 
 class PortPool::Impl {
-    typedef std::queue<in_port_t, std::list<in_port_t>> Queue;
-
-    Queue queue;
+    std::queue<in_port_t, std::list<in_port_t>> queue;
 
 public:
     Impl() = default;
 
     Impl(   const in_port_t min,
-            const in_port_t max)
+            const unsigned  num)
         : queue{}
     {
-        for (in_port_t port = min; port <= max; ++port)
-            queue.push(port);
+        for (in_port_t port = min, end = min + num; port != end; ++port)
+            queue.emplace(port);
     }
 
     int size() const
@@ -43,17 +42,19 @@ public:
     in_port_t take()
     {
         if (queue.empty())
-            throw std::range_error("Queue is empty");
+            throw std::range_error("PortPool is empty");
 
-        in_port_t port = queue.front();
+        auto port = queue.front();
         queue.pop();
 
+        LOG_DEBUG("Returning port %u", port);
         return port;
     }
 
     void add(const in_port_t port)
     {
-        queue.push(port);
+        LOG_DEBUG("Adding port %u", port);
+        queue.emplace(port);
     }
 };
 
@@ -65,8 +66,8 @@ PortPool::PortPool()
 
 PortPool::PortPool(
         const in_port_t min,
-        const in_port_t max)
-    : pImpl{new Impl(min, max)}
+        const unsigned  num)
+    : pImpl{new Impl(min, num)}
 {}
 
 int PortPool::size() const

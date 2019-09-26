@@ -16,6 +16,7 @@
 #include "PeerSet.h"
 #include "PortPool.h"
 #include "ServerPool.h"
+#include "SockAddr.h"
 
 #include <memory>
 
@@ -23,19 +24,18 @@ namespace hycast {
 
 class P2pMgr
 {
-public:
+protected:
     class Impl;
 
-private:
-    std::shared_ptr<Impl> pImpl;
-
-protected:
     /**
      * Constructs from an implementation.
      *
      * @param[in] impl  The implementation
      */
     P2pMgr(Impl* const impl);
+
+private:
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
@@ -54,13 +54,18 @@ public:
      * @param[in] maxPeers    Maximum number of active peers in the set
      * @param[in] serverPool  Pool of possible remote servers for remote peers
      * @param[in] msgRcvr     Receiver of messages from peers
+     * @param[in] timePeriod  Amount of time in seconds for the improvement
+     *                        period and also the minimum amount of time before
+     *                        the peer-server associated with a failed remote
+     *                        peer is re-connected to
      */
     P2pMgr( const SockAddr& srvrAddr,
             const int       listenSize,
             PortPool&       portPool,
             const int       maxPeers,
             ServerPool&     serverPool,
-            PeerMsgRcvr&    msgRcvr);
+            PeerMsgRcvr&    msgRcvr,
+            unsigned        timePeriod = 60);
 
     /**
      * Executes this instance. Returns if

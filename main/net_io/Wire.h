@@ -114,39 +114,50 @@ public:
     /**
      * Deserializes a value.
      *
-     * @param[out]                Deserialized value
-     * @execptionsafety           Basic
-     * @threadsafety              Safe
+     * @param[out]                 Deserialized value
+     * @throws std::runtime_error  EOF
+     * @execptionsafety            Basic
+     * @threadsafety               Safe
      */
     void deserialize(uint8_t& value);
 
     /**
      * Deserializes a value.
      *
-     * @param[out]                Deserialized value
-     * @execptionsafety           Basic
-     * @threadsafety              Safe
+     * @param[out]                 Deserialized value
+     * @throws std::runtime_error  EOF
+     * @execptionsafety            Basic
+     * @threadsafety               Safe
      */
     void deserialize(uint16_t& value);
 
     /**
      * Deserializes a value.
      *
-     * @param[out]                Deserialized value
-     * @execptionsafety           Basic
-     * @threadsafety              Safe
+     * @param[out]                 Deserialized value
+     * @throws std::runtime_error  EOF
+     * @execptionsafety            Basic
+     * @threadsafety               Safe
      */
     void deserialize(uint32_t& value);
 
     /**
      * Deserializes a value.
      *
-     * @param[out]                Deserialized value
-     * @execptionsafety           Basic
-     * @threadsafety              Safe
+     * @param[out]                 Deserialized value
+     * @throws std::runtime_error  EOF
+     * @execptionsafety            Basic
+     * @threadsafety               Safe
      */
     void deserialize(uint64_t& value);
 
+    /**
+     * Deserializes a string.
+     *
+     * @throws std::runtime_error  EOF
+     * @execptionsafety            Basic
+     * @threadsafety               Safe
+     */
     void deserialize(std::string& string);
 
     /**

@@ -73,11 +73,16 @@ class PeerThreadPool::Impl
             return true;
         }
 
+        /**
+         * @param[in] peer
+         * @return
+         * @cancellationpoint
+         */
         bool take(Peer peer) {
             Lock lock{mutex};
 
             while (!done && !peerIsSet)
-                readCond.wait(lock);
+                readCond.wait(lock); // Cancellation point
 
             if (done)
                 return false;
@@ -103,21 +108,24 @@ class PeerThreadPool::Impl
     };
 
     class Worker {
+        Mutex       mutex;
+        Cond        cond;
         Lockout*    lockout;
         Peer        peer;
         bool        peerSet;
-        Mutex       mutex;
+        bool        done;
         std::thread thread;
 
         void operator()() {
             try {
                 Peer tmpPeer{};
 
-                while (lockout->take(tmpPeer)) {
+                while (!done && lockout->take(tmpPeer)) { // Cancellation point
                     {
                         Guard guard{mutex};
                         peer = tmpPeer;
                         peerSet = true;
+                        cond.notify_one();
                     }
 
                     try {
@@ -130,6 +138,7 @@ class PeerThreadPool::Impl
                     {
                         Guard guard(mutex);
                         peerSet = false;
+                        cond.notify_one();
                     }
 
                     lockout->incNumIdle();
@@ -140,12 +149,27 @@ class PeerThreadPool::Impl
             }
         }
 
+        void stop() {
+            Lock lock(mutex);
+
+            done = true;
+
+            if (peerSet) {
+                peer.halt(); // Idempotent
+
+                while (peerSet)
+                    cond.wait(lock);
+            }
+        }
+
     public:
         Worker()
-            : lockout{nullptr}
+            : mutex()
+            , cond()
+            , lockout{nullptr}
             , peer()
             , peerSet{false}
-            , mutex()
+            , done{true}
             , thread{}
         {}
 
@@ -154,18 +178,30 @@ class PeerThreadPool::Impl
             , peer()
             , peerSet{false}
             , mutex()
+            , cond()
             , thread(&Worker::operator(), this)
+            , done{false}
         {}
 
         ~Worker() noexcept {
             if (thread.joinable()) {
+                Lock lock(mutex);
+
+                // TODO: Handle thread during destruction
+                while
+
                 bool terminatePeer;
                 {
                     Guard guard(mutex);
                     terminatePeer = peerSet;
                 }
                 if (terminatePeer)
-                    peer.terminate(); // Idempotent
+                    peer.halt(); // Idempotent
+
+                int status = ::pthread_cancel(thread.native_handle());
+                if (status)
+                    LOG_ERROR("Couldn't cancel worker thread: %s",
+                            ::strerror(status));
 
                 thread.join();
             }

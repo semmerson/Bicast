@@ -227,7 +227,7 @@ TEST_F(PeerTest, Execution) {
 }  // namespace
 
 int main(int argc, char **argv) {
-    hycast::logLevel = hycast::LogLevel::LOG_INFO;
+    hycast::logThreshold = hycast::LogLevel::LOG_LEVEL_INFO;
     const char* serverIpAddrStr = "127.0.0.1";
     if (argc > 1)
         serverIpAddrStr = argv[1];

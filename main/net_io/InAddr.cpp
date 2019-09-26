@@ -19,6 +19,8 @@
 
 #include <arpa/inet.h>
 #include <cstring>
+#include <functional>
+#include <netinet/in.h>
 
 namespace hycast {
 
@@ -30,8 +32,6 @@ class InAddr::Impl
 {
 public:
     virtual ~Impl() noexcept =0;
-
-    virtual int getFamily() const noexcept =0;
 
     virtual std::string to_string() const =0;
 
@@ -51,6 +51,8 @@ public:
 
     virtual bool operator ==(const NameAddr& rhs) const noexcept =0;
 
+    virtual size_t hash() const noexcept =0;
+
     virtual SockAddr getSockAddr(const in_port_t port) const =0;
 };
 
@@ -61,17 +63,13 @@ InAddr::Impl::~Impl() noexcept
 
 class In4Addr final : public InAddr::Impl
 {
-    struct in_addr      addr;
+    struct in_addr       addr;
+    std::hash<in_addr_t> myHash;
 
 public:
     In4Addr(const in_addr_t addr)
         : addr{addr}
     {}
-
-    int getFamily() const noexcept
-    {
-        return AF_INET;
-    }
 
     std::string to_string() const
     {
@@ -123,9 +121,13 @@ public:
         return false;
     }
 
+    size_t hash() const noexcept {
+        return myHash(addr.s_addr);
+    }
+
     SockAddr getSockAddr(const in_port_t port) const
     {
-        return SockAddrIn(addr.s_addr, port);
+        return SockAddr(addr.s_addr, port);
     }
 };
 
@@ -134,16 +136,12 @@ public:
 class In6Addr final : public InAddr::Impl
 {
     struct in6_addr     addr;
+    std::hash<uint64_t> myHash;
 
 public:
     In6Addr(const struct in6_addr& addr)
         : addr(addr)
     {}
-
-    int getFamily() const noexcept
-    {
-        return AF_INET6;
-    }
 
     std::string to_string() const
     {
@@ -195,9 +193,15 @@ public:
         return false;
     }
 
+    size_t hash() const noexcept {
+        return myHash(((static_cast<uint64_t>(addr.s6_addr32[0]) ^
+                addr.s6_addr32[1]) << 32) |
+                (addr.s6_addr32[2] ^ addr.s6_addr32[3]));
+    }
+
     SockAddr getSockAddr(const in_port_t port) const
     {
-        return SockAddrIn6(addr, port);
+        return SockAddr(addr, port);
     }
 };
 
@@ -205,17 +209,13 @@ public:
 
 class NameAddr final : public InAddr::Impl
 {
-    std::string name;
+    std::string            name;
+    std::hash<std::string> myHash;
 
 public:
     NameAddr(const std::string& name)
         : name{name}
     {}
-
-    int getFamily() const noexcept
-    {
-        return AF_UNSPEC;
-    }
 
     std::string to_string() const
     {
@@ -262,9 +262,13 @@ public:
         return name == rhs.name;
     }
 
+    size_t hash() const noexcept {
+        return myHash(name);
+    }
+
     SockAddr getSockAddr(const in_port_t port) const
     {
-        return SockAddrName(name, port);
+        return SockAddr(name, port);
     }
 };
 
@@ -312,6 +316,16 @@ std::string InAddr::to_string() const
 bool InAddr::operator <(const InAddr& rhs) const noexcept
 {
     return pImpl->operator <(*rhs.pImpl.get());
+}
+
+bool InAddr::operator ==(const InAddr& rhs) const noexcept
+{
+    return pImpl->operator ==(*rhs.pImpl.get());
+}
+
+size_t InAddr::hash() const noexcept
+{
+    return pImpl->hash();
 }
 
 SockAddr InAddr::getSockAddr(const in_port_t port) const

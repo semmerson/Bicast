@@ -78,8 +78,42 @@ protected:
 
 public:
     bool shouldRequest(
+            const hycast::ChunkId&  notice,
+            const hycast::SockAddr& rmtSockAddr)
+    {
+        EXPECT_EQ(chunkId, notice);
+        return true;
+    }
+
+    hycast::MemChunk get(
+            const hycast::ChunkId&  request,
+            const hycast::SockAddr& rmtSockAddr)
+    {
+        EXPECT_EQ(chunkId, request);
+        return memChunk;
+    }
+
+    void hereIs(
+            hycast::WireChunk       wireChunk,
+            const hycast::SockAddr& rmtSockAddr)
+    {
+        const hycast::ChunkSize n = wireChunk.getSize();
+        EXPECT_EQ(memChunk.getSize(), n);
+
+        char wireData[n];
+        wireChunk.read(wireData);
+        EXPECT_EQ(0, ::memcmp(memData, wireData, n));
+
+        {
+            std::lock_guard<decltype(mutex)> lock(mutex);
+            state = DONE;
+            cond.notify_one();
+        }
+    }
+
+    bool shouldRequest(
             const hycast::ChunkId& notice,
-            hycast::Peer&          peer)
+            hycast::Peer           peer)
     {
         EXPECT_EQ(chunkId, notice);
         return true;
@@ -87,15 +121,15 @@ public:
 
     hycast::MemChunk get(
             const hycast::ChunkId& request,
-            hycast::Peer&          peer)
+            hycast::Peer           peer)
     {
         EXPECT_EQ(chunkId, request);
         return memChunk;
     }
 
     void hereIs(
-            hycast::WireChunk& wireChunk,
-            hycast::Peer&      peer)
+            hycast::WireChunk wireChunk,
+            hycast::Peer      peer)
     {
         const hycast::ChunkSize n = wireChunk.getSize();
         EXPECT_EQ(memChunk.getSize(), n);
@@ -115,7 +149,8 @@ public:
     {
         try {
             hycast::Peer srvrPeer = factory.accept();
-            srvrPeer();
+            if (srvrPeer)
+                srvrPeer();
         }
         catch (const std::exception& ex) {
             hycast::log_error(ex);
@@ -123,10 +158,27 @@ public:
     }
 };
 
+// Tests closing the factory
+TEST_F(PeerTest, FactoryClosure)
+{
+    // Start a peer-server. Calls `::listen()`.
+    hycast::PortPool portPool{38801, 2};
+    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    std::thread srvrThread(&PeerTest::runServer, this, std::ref(factory));
+
+    // Ensure `factory.accept()` called to test shutdown() effect on accept()
+    ::sleep(1);
+
+    // Close the factory
+    factory.close();
+
+    srvrThread.join();
+}
+
 // Tests complete exchange (notice, request, delivery)
 TEST_F(PeerTest, Exchange)
 {
-    hycast::PortPool portPool{38801, 38802};
+    hycast::PortPool portPool{38801, 2};
 
     // Start a peer-server. Calls `::listen()`.
     hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
@@ -147,7 +199,7 @@ TEST_F(PeerTest, Exchange)
     }
 
     // Causes `clntPeer()` to return and `srvrThread` to terminate
-    clntPeer.terminate();
+    clntPeer.halt();
     clntThread.join();
     srvrThread.join();
 }

@@ -157,7 +157,7 @@ TEST_F(PeerThreadPoolTest, ValidConstruction)
 TEST_F(PeerThreadPoolTest, OnlyServerPeer)
 {
     hycast::PeerThreadPool pool(1);
-    hycast::PortPool       portPool{38801, 38802};
+    hycast::PortPool       portPool{38801, 2};
     hycast::PeerFactory    factory(srvrAddr, 1, portPool, *this);
     std::thread            srvrThread(&PeerThreadPoolTest::runServer, this,
             factory, pool);
@@ -174,7 +174,7 @@ TEST_F(PeerThreadPoolTest, OnlyServerPeer)
 TEST_F(PeerThreadPoolTest, DataExchange)
 {
     hycast::PeerThreadPool pool(2);
-    hycast::PortPool       portPool{38801, 38802};
+    hycast::PortPool       portPool{38801, 2};
     hycast::PeerFactory    factory(srvrAddr, 1, portPool, *this);
     std::thread            srvrThread(&PeerThreadPoolTest::runServer, this,
             factory, pool);

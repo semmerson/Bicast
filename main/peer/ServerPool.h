@@ -29,11 +29,6 @@ private:
     std::shared_ptr<Impl> pImpl;
 
     /**
-     * Default constructs.
-     */
-    ServerPool();
-
-    /**
      * Constructs from an implementation.
      *
      * @param[in] impl  The implementation
@@ -41,6 +36,11 @@ private:
     ServerPool(Impl* const impl);
 
 public:
+    /**
+     * Default constructs. The pool will be empty.
+     */
+    ServerPool();
+
     /**
      * Constructs from a set of addresses of potential servers.
      *
@@ -62,25 +62,35 @@ public:
      * Returns the address of the next potential server for a remote peer.
      * Blocks until one can be returned.
      *
-     * @return          Address of a potential server for a remote peer
-     * @exceptionsafety No throw
-     * @threadsafety    Safe
+     * @return                       Address of a potential server for a remote
+     *                               peer
+     * @throws    std::domain_error  `close()` was called.
+     * @exceptionsafety              Strong guarantee
+     * @threadsafety                 Safe
+     * @cancellationpoint
      */
-    SockAddr pop() const noexcept;
+    SockAddr pop() const;
 
     /**
      * Possibly returns the address of a server to the pool. There is no
      * guarantee that the address will be subsequently returned by `pop()`.
      *
-     * @param[in] server  Address of server
-     * @param[in] delay   Delay, in seconds, before the address could possibly
-     *                    be returned by `pop()`
-     * @exceptionsafety  Strong guarantee
-     * @threadsafety     Safe
+     * @param[in] server              Address of server
+     * @param[in] delay               Delay, in seconds, before the address
+     *                                could possibly be returned by `pop()`
+     * @throws    std::domain_error  `close()` was called.
+     * @exceptionsafety              Strong guarantee
+     * @threadsafety                 Safe
      */
     void consider(
             const SockAddr& server,
             const unsigned  delay = 0) const;
+
+    /**
+     * Closes the pool of servers. Causes `pop()` and `consider()` to throw an
+     * exception. Idempotent.
+     */
+    void close();
 };
 
 } // namespace

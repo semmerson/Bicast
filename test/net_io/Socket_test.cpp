@@ -11,6 +11,7 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "Socket.h"
 
 #include <gtest/gtest.h>
@@ -116,9 +117,6 @@ public:
     void startServer()
     {
         srvrSock = hycast::SrvrSock(srvrAddr);
-
-        srvrSock.listen();
-
         srvrThread = std::thread(&SocketTest::runServer, this);
 
         // Necessary because `ClntSock` constructor throws if `connect()` fails
@@ -150,7 +148,8 @@ TEST_F(SocketTest, ServerConstruction)
 {
     hycast::SrvrSock srvrSock(srvrAddr);
 
-    hycast::SockAddr sockAddr{srvrSock.getAddr()};
+    hycast::SockAddr sockAddr(srvrSock.getAddr());
+    LOG_DEBUG("%s", sockAddr.to_string().c_str());
     EXPECT_TRUE(!(srvrAddr < sockAddr) && !(sockAddr < srvrAddr));
 }
 

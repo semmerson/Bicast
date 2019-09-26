@@ -65,11 +65,8 @@ protected:
 public:
     void runServer(hycast::SrvrSock& srvrSock)
     {
-        srvrSock.listen();
-
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
-            srvrSock.listen();
             srvrReady = true;
             cond.notify_one();
         }

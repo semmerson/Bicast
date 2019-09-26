@@ -16,9 +16,10 @@ namespace {
 class PeerTest : public ::testing::Test, public hycast::PeerMsgRcvr
 {
 protected:
-    friend class Receiver;
-
     hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        clntAddr;
+    hycast::Peer            srcPeer;
+    hycast::Peer            snkPeer;
     std::mutex              mutex;
     std::condition_variable cond;
     typedef enum {
@@ -38,6 +39,7 @@ protected:
 
     PeerTest()
         : srvrAddr{"localhost:38800"}
+        , clntAddr{}
         , mutex{}
         , cond{}
         , state{INIT}
@@ -88,8 +90,55 @@ public:
 
     // Sink-side
     bool shouldRequest(
+            const hycast::ChunkId&  notice,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(chunkId, notice);
+        EXPECT_EQ(0, snkPeer.size());
+        EXPECT_TRUE(snkPeer.begin() == snkPeer.end());
+
+        return true;
+    }
+
+    // Source-side
+    hycast::MemChunk get(
+            const hycast::ChunkId&  request,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(1, snkPeer.size());
+        EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
+        EXPECT_EQ(0, srcPeer.size());
+        EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
+        EXPECT_EQ(chunkId, request);
+
+        return memChunk;
+    }
+
+    // Sink-side
+    void hereIs(
+            hycast::WireChunk       wireChunk,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(1, snkPeer.size());
+        EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
+
+        EXPECT_EQ(0, srcPeer.size());
+        EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
+
+        const hycast::ChunkSize n = wireChunk.getSize();
+        char                    wireData[n];
+
+        wireChunk.read(wireData);
+        for (int i = 0; i < n; ++i)
+            EXPECT_EQ(memData[i], wireData[i]);
+
+        setState(DONE);
+    }
+
+    // Sink-side
+    bool shouldRequest(
             const hycast::ChunkId& notice,
-            hycast::Peer&          snkPeer)
+            hycast::Peer           snkPeer)
     {
         EXPECT_TRUE((snkPeer == srvrPeer) || (snkPeer == clntPeer));
         EXPECT_EQ(chunkId, notice);
@@ -102,10 +151,8 @@ public:
     // Source-side
     hycast::MemChunk get(
             const hycast::ChunkId& request,
-            hycast::Peer&          srcPeer)
+            hycast::Peer           srcPeer)
     {
-        hycast::Peer& snkPeer(srcPeer == srvrPeer ? clntPeer : srvrPeer);
-
         EXPECT_EQ(1, snkPeer.size());
         EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
         EXPECT_EQ(0, srcPeer.size());
@@ -117,11 +164,9 @@ public:
 
     // Sink-side
     void hereIs(
-            hycast::WireChunk& wireChunk,
-            hycast::Peer&      snkPeer)
+            hycast::WireChunk wireChunk,
+            hycast::Peer      snkPeer)
     {
-        hycast::Peer& srcPeer(snkPeer == srvrPeer ? clntPeer : srvrPeer);
-
         EXPECT_EQ(1, snkPeer.size());
         EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
 
@@ -142,20 +187,23 @@ public:
     {
         try {
             hycast::SrvrSock srvrSock(srvrAddr);
-            srvrSock.listen(1);
 
             setState(LISTENING);
 
-            hycast::Socket     noticeSock{srvrSock.accept()};
-            hycast::PortPool   portPool{38801, 38802};
+            hycast::Socket     peerSock{srvrSock.accept()};
 
-            srvrPeer = hycast::Peer(noticeSock, portPool, *this);
+            srvrPeer = hycast::Peer(peerSock, *this);
+            hycast::InAddr localhost("127.0.0.1");
+            EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInAddr());
             setState(CONNECTED);
 
             srvrPeer();
         }
+        catch (const std::runtime_error& ex) {
+            LOG_NOTE("Remote peer closed the connection");
+        }
         catch (const std::exception& ex) {
-            hycast::log_error(ex);
+            LOG_ERROR(ex, "Couldn't run peer-server");
         }
     }
 };
@@ -175,13 +223,17 @@ TEST_F(PeerTest, DataExchange)
     waitForState(LISTENING);
 
     // Start the client-peer
-    clntPeer = hycast::Peer(srvrAddr, *this); // Potentially slow
+    hycast::PortPool   portPool{38801, 2};
+    clntPeer = hycast::Peer(srvrAddr, portPool, *this); // Potentially slow
+    EXPECT_EQ(srvrAddr, clntPeer.getRmtAddr());
+    clntAddr = clntPeer.getLclAddr();
     std::thread clntThread(clntPeer);
 
     waitForState(CONNECTED);
 
-    // Establish the source peer
-    hycast::Peer& srcPeer(srvrPeer);
+    // Establish the source and sink peers
+    srcPeer = srvrPeer;
+    snkPeer = clntPeer;
 
     // Start an exchange
     const bool enqueued = srcPeer.notify(chunkId);
@@ -198,7 +250,7 @@ TEST_F(PeerTest, DataExchange)
     EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
 
     // Causes `clntPeer()` to return and `srvrThread` to terminate
-    clntPeer.terminate();
+    clntPeer.halt();
     clntThread.join();
     srvrThread.join();
 }
@@ -206,6 +258,9 @@ TEST_F(PeerTest, DataExchange)
 }  // namespace
 
 int main(int argc, char **argv) {
+  hycast::log_setName(::basename(argv[0]));
+  hycast::log_setLevel(hycast::LOG_LEVEL_TRACE);
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

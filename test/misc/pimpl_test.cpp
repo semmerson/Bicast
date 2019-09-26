@@ -79,20 +79,23 @@ int main() {
     typedef std::chrono::duration<double>  Duration; // Double precision seconds
 
     Counter   counter{};
+    auto      start = std::chrono::steady_clock::now();
+    auto      seconds =
+            std::chrono::duration_cast<Duration>(Clock::now() - start).count();
 
-    auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < 5000000; ++i)
-        valFunc(counter);
-    auto seconds = std::chrono::duration_cast<Duration>(Clock::now() - start).count();
-    std::cout << "valFunc() time/call = " << seconds/counter.get() << " s" <<
+    start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 10000000; ++i)
+        refFunc(counter);
+    seconds = std::chrono::duration_cast<Duration>(Clock::now() - start).count();
+    std::cout << "refFunc() time/call = " << seconds/counter.get() << " s" <<
             std::endl;
 
     counter.reset();
 
     start = std::chrono::steady_clock::now();
-    for (int i = 0; i < 5000000; ++i)
-        refFunc(counter);
+    for (int i = 0; i < 10000000; ++i)
+        valFunc(counter);
     seconds = std::chrono::duration_cast<Duration>(Clock::now() - start).count();
-    std::cout << "refFunc() time/call = " << seconds/counter.get() << " s" <<
+    std::cout << "valFunc() time/call = " << seconds/counter.get() << " s" <<
             std::endl;
 }

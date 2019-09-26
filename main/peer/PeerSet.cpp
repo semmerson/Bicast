@@ -14,7 +14,10 @@
 
 #include "error.h"
 #include "PeerSet.h"
+#include "Thread.h"
 
+#include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <list>
 #include <memory>
@@ -26,38 +29,40 @@
 namespace hycast {
 
 class PeerSet::Impl {
-    class Entry;
+    class EntryImpl;
 
     typedef std::lock_guard<std::mutex> Guard;
-    typedef std::shared_ptr<Entry>      EntryPtr;
+    typedef std::shared_ptr<EntryImpl>  Entry;
 
-    class Entry
+    class EntryImpl
     {
         mutable Peer        peer;
         uint_fast32_t       chunkCount;
         mutable std::thread thread;
 
     public:
-        Entry(const Peer& peer)
+        EntryImpl(const Peer peer)
             : peer(peer)
             , chunkCount{0}
             , thread{}
         {}
 
-        ~Entry() noexcept
+        ~EntryImpl() noexcept
         {
+            LOG_TRACE();
             if (thread.joinable()) {
-                peer.terminate(); // Idempotent
+                peer.halt(); // Idempotent
                 thread.join();
             }
         }
 
         void execute(Impl* impl) const
         {
+            LOG_DEBUG("Creating peer-execution thread");
             thread = std::thread(&Impl::execute, impl, peer);
         }
 
-        bool operator <(const Entry& rhs) const noexcept
+        bool operator <(const EntryImpl& rhs) const noexcept
         {
             return peer < rhs.peer;
         }
@@ -66,27 +71,33 @@ class PeerSet::Impl {
         {
             return peer.notify(chunkId);
         }
+
+        void terminate()
+        {
+            peer.halt();
+        }
     };
 
-    mutable std::mutex                        mutex;
-    mutable std::condition_variable           cond;
-    bool                                      done;
-    PeerSet::Observer*                        observer;
-    std::thread                               thread;
-    std::unordered_map<Peer, EntryPtr>        active;
-    std::queue<EntryPtr, std::list<EntryPtr>> inactive;
+    mutable std::mutex                  mutex;
+    mutable std::condition_variable     cond;
+    bool                                done;
+    PeerSet::Observer*                  observer;
+    std::unordered_map<Peer, Entry>     active;
+    std::queue<Entry, std::list<Entry>> inactive;
+    std::thread                         reaperThread;
 
-    void joinPeerThreads() {
+    void reapPeers() {
+        LOG_DEBUG("Reaping peers");
         std::unique_lock<std::mutex> lock{mutex};
 
-        for (;;) {
-            while (!done && inactive.empty())
+        // While not done or a peer exists
+        while (!done || !active.empty() || !inactive.empty()) {
+            // While there's no peer to reap but there could be
+            while (inactive.empty() && (!done || !active.empty()))
                 cond.wait(lock);
 
-            if (done)
-                break;
-
-            inactive.pop(); // Entry's destructor joins peer's execution thread
+            if (!inactive.empty())
+                inactive.pop(); // `~Entry()` joins peer's execution thread
         }
     }
 
@@ -96,22 +107,30 @@ public:
         , cond()
         , done{false}
         , observer(observer)
-        , thread()
         , active()
         , inactive()
+        , reaperThread()
     {
-        thread = std::thread(&Impl::joinPeerThreads, this);
+        LOG_DEBUG("Creating reaper thread");
+        reaperThread = std::thread(&Impl::reapPeers, this);
     }
 
     ~Impl() {
+        LOG_TRACE();
         {
             Guard guard{mutex};
+            auto  end = active.end();
 
             done = true;
+
+            // `execute()` will hang trying to de-activate the entry
+            for (auto iter = active.begin(); iter != end; ++iter)
+                iter->second->terminate();
+
             cond.notify_one();
         }
 
-        thread.join();
+        reaperThread.join();
     }
 
     /**
@@ -123,24 +142,18 @@ public:
      */
     void execute(Peer peer)
     {
-        //LOG_NOTE("Executing peer");
+        LOG_DEBUG("Executing peer");
         try {
             peer();
         }
-        catch (const std::exception& ex) {
+        catch (const std::system_error& ex) {
             log_error(ex);
         }
-
-        {
-            Guard guard(mutex);
-            auto  iter = active.find(peer);
-            auto  entryPtr = iter->second;
-
-            active.erase(iter);
-            inactive.push(entryPtr);
-            cond.notify_one();
+        catch (const std::exception& ex) {
+            log_note(ex);
         }
 
+        // Must occur before destroying `peer` by removing it from active set
         if (observer) {
             try {
                 observer->stopped(peer);
@@ -149,18 +162,55 @@ public:
                 log_error(ex);
             }
         }
+
+        {
+            Guard guard(mutex);
+            auto  iter = active.find(peer);
+            assert(iter != active.end());
+
+            Entry entry = iter->second;
+
+            active.erase(iter->first);
+            inactive.push(entry);
+            cond.notify_one();
+        }
     }
 
-    bool activate(const Peer& peer)
+    /**
+     * @param[in] peer     Peer to be activated
+     * @retval    `true`   Peer was successfully activated
+     * @retval    `false`  Peer was already activated
+     * @threadsafety       Safe
+     * @exceptionSafety    Strong guarantee
+     */
+    bool activate(const Peer peer)
     {
+        bool  success;
         Guard guard(mutex);
-        auto  pair = active.insert(std::pair<Peer, EntryPtr>(
-                peer, EntryPtr(new Entry(peer))));
 
-        if (pair.second)
-            pair.first->second->execute(this);
+        if (done) {
+            success = false;
+        }
+        else {
+            Canceler canceler{false};
+            auto     pair = active.insert(std::pair<Peer, Entry>(
+                    peer, Entry(new EntryImpl(peer))));
 
-        return pair.second;
+            success = pair.second;
+
+            if (success) {
+                try {
+                    pair.first->second->execute(this);
+                    cond.notify_one();
+                }
+                catch (...) {
+                    active.erase(peer);
+                    throw;
+                }
+            }
+        }
+
+        return success;
     }
 
     bool notify(const ChunkId& chunkId)
@@ -194,7 +244,7 @@ PeerSet::PeerSet(Observer& obs)
     : pImpl(new Impl(&obs))
 {}
 
-bool PeerSet::activate(const Peer& peer)
+bool PeerSet::activate(const Peer peer)
 {
     return pImpl->activate(peer);
 }

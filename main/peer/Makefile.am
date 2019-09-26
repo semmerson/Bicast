@@ -11,11 +11,10 @@ noinst_LTLIBRARIES = lib.la
 lib_la_SOURCES 	= Chunk.cpp		Chunk.h \
 		  PeerMsgRcvr.h \
 		  PeerMsgSndr.h \
-		  RemotePeer.cpp 	RemotePeer.h \
+		  PeerConn.cpp 		PeerConn.h \
 		  Peer.cpp 		Peer.h \
 		  PortPool.cpp		PortPool.h \
 		  PeerFactory.cpp	PeerFactory.h \
-		  PeerThreadPool.cpp    PeerThreadPool.h \
 		  PeerSet.cpp		PeerSet.h \
 		  NoticeQueue.cpp	NoticeQueue.h \
 		  ServerPool.cpp	ServerPool.h \
@@ -26,3 +25,8 @@ lib_la_SOURCES 	= Chunk.cpp		Chunk.h \
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \
 	      -I$(srcdir)/../net_io
+	      
+SUFFIXES: .i .cpp
+.cpp.i:
+	$(COMPILE) $(AM_CXXFLAGS) -E -o $@ $<
+	      

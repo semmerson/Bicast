@@ -1,18 +1,18 @@
 /**
- * This file tests class `RemotePeer`.
+ * This file tests class `PeerConn`.
  *
  * Copyright 2019 University Corporation for Atmospheric Research. All rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *       File: RemotePeet_test.cpp
+ *       File: PeerConn_test.cpp
  * Created On: May 28, 2019
  *     Author: Steven R. Emmerson
  */
 #include "config.h"
-
+#include "error.h"
+#include "PeerConn.h"
 #include "SockAddr.h"
-#include "RemotePeer.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
@@ -22,7 +22,7 @@
 namespace {
 
 /// The fixture for testing class `RemotePeer`
-class RemotePeerTest : public ::testing::Test
+class PeerConnTest : public ::testing::Test
 {
 protected:
     hycast::SockAddr        srvrAddr;
@@ -36,7 +36,7 @@ protected:
     // You can remove any or all of the following functions if its body
     // is empty.
 
-    RemotePeerTest()
+    PeerConnTest()
         : srvrAddr{"localhost:38800"}
         , mutex{}
         , cond{}
@@ -47,7 +47,7 @@ protected:
         // You can do set-up work for each test here.
     }
 
-    virtual ~RemotePeerTest()
+    virtual ~PeerConnTest()
     {
         // You can do clean-up work that doesn't throw exceptions here.
     }
@@ -74,20 +74,18 @@ public:
     {
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
-            srvrSock.listen(1);
             srvrReady = true;
             cond.notify_one();
         }
 
-        hycast::PortPool   portPool(38801, 38802);
         hycast::Socket     sock{srvrSock.accept()};
-        hycast::RemotePeer rmtPeer(sock, portPool);
-        hycast::ChunkId    id = rmtPeer.getNotice();
+        hycast::PeerConn   peerConn(sock);
+        hycast::ChunkId    id = peerConn.getNotice();
         EXPECT_EQ(chunkId, id);
 
-        rmtPeer.request(id);
+        peerConn.request(id);
 
-        hycast::WireChunk wireChunk = rmtPeer.getChunk();
+        hycast::WireChunk wireChunk = peerConn.getChunk();
         EXPECT_EQ(chunkId, wireChunk.getId());
         hycast::ChunkSize n = wireChunk.getSize();
         EXPECT_EQ(memChunk.getSize(), n);
@@ -99,36 +97,53 @@ public:
 };
 
 // Tests default construction
-TEST_F(RemotePeerTest, DefaultConstruction)
+TEST_F(PeerConnTest, DefaultConstruction)
 {
-    hycast::RemotePeer rmtPeer();
+    hycast::PeerConn peerConn();
 }
 
-// Tests a three `Wire` remote peer
-TEST_F(RemotePeerTest, ThreeWireRemotePeer)
+// Tests a three `Wire` peer connection
+TEST_F(PeerConnTest, ThreeWirePeerConn)
 {
     hycast::SrvrSock srvrSock(srvrAddr);
-    std::thread      srvrThread(&RemotePeerTest::runServer, this,
+    std::thread      srvrThread(&PeerConnTest::runServer, this,
             std::ref(srvrSock));
 
-    {
+    //try {
+        {
+            /*
+             * Necessary because `ClntSock` constructor throws if `::connect()`
+             * called before `::listen()`
+             */
+            std::unique_lock<decltype(mutex)> lock{mutex};
+            while (!srvrReady)
+                cond.wait(lock);
+        }
+
         /*
-         * Necessary because `ClntSock` constructor throws if `::connect()`
-         * called before `::listen()`
+         * 3 potential port numbers for the client's 2 temporary servers because
+         * the initial client connection could use one
          */
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (!srvrReady)
-            cond.wait(lock);
-    }
+        hycast::PortPool portPool(38801, 3);
+        hycast::PeerConn peerConn(srvrAddr, portPool);
 
-    hycast::RemotePeer rmtPeer(srvrAddr);
+        EXPECT_EQ(srvrAddr, peerConn.getRmtAddr());
 
-    rmtPeer.notify(chunkId);
+        peerConn.notify(chunkId);
 
-    hycast::ChunkId id = rmtPeer.getRequest();
-    EXPECT_EQ(chunkId, id);
+        hycast::ChunkId id = peerConn.getRequest();
+        EXPECT_EQ(chunkId, id);
 
-    rmtPeer.send(memChunk);
+        peerConn.send(memChunk);
+    //}
+    //catch (const std::exception& ex) {
+        //hycast::log_error(ex);
+        //abort();
+    //}
+    //catch (...) {
+        //LOG_FATAL("Caught ... exception");
+        //abort();
+    //}
 
     srvrThread.join();
 }

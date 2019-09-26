@@ -1,0 +1,15 @@
+{
+   shared_ptr_read_1
+   Memcheck:Addr8
+   fun:_ZNSt12__shared_ptrIN6hycast4Peer4ImplELN9__gnu_cxx12_Lock_policyE2EEC1ERKS5_
+   fun:_ZNSt10shared_ptrIN6hycast4Peer4ImplEEC1ERKS3_
+   ...
+}
+{
+   shared_ptr_read_2
+   Memcheck:Addr8
+   fun:_ZNSt14__shared_countILN9__gnu_cxx12_Lock_policyE2EEC1ERKS2_
+   fun:_ZNSt12__shared_ptrIN6hycast4Peer4ImplELN9__gnu_cxx12_Lock_policyE2EEC1ERKS5_
+   fun:_ZNSt10shared_ptrIN6hycast4Peer4ImplEEC1ERKS3_
+   ...
+}

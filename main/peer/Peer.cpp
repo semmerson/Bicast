@@ -20,6 +20,7 @@
 #include "NoticeQueue.h"
 #include "Peer.h"
 
+#include <atomic>
 #include <cstring>
 #include <condition_variable>
 #include <exception>
@@ -119,74 +120,55 @@ private:
         }
     };
 
-    NoticeQueue   notices;
-    OutChunks     outChunks;
-    RemotePeer    rmtPeer;
-    PeerMsgRcvr&  msgRcvr;
-    ExceptPtr     exceptPtr;
-    mutable Mutex stateMutex;
-    mutable Cond  stateCond;
-    std::thread   noticeThread;
-    std::thread   requestThread;
-    std::thread   chunkThread;
-    std::thread   notifyThread;
-    Peer*         peer;
-    State         state;
-
-    /**
-     * Constructs from a remote peer and a receiver of messages from the remote
-     * peer.
-     *
-     * @param[in] rmtPeer  The remote peer
-     * @param[in] msgRcvr  The receiver of messages from the remote peer
-     */
-    Impl(   RemotePeer&& rmtPeer,
-            PeerMsgRcvr& msgRcvr)
-        : notices()
-        , outChunks()
-        , rmtPeer{rmtPeer}
-        , msgRcvr(msgRcvr) // Braces don't work
-        , exceptPtr()
-        , stateMutex()
-        , stateCond()
-        , noticeThread()
-        , requestThread()
-        , chunkThread()
-        , notifyThread()
-        , peer{nullptr}
-        , state{INIT}
-    {}
+    std::atomic_flag executing;
+    mutable Mutex    doneMutex;
+    mutable Cond     doneCond;
+    NoticeQueue      notices;
+    OutChunks        outChunks;
+    PeerConn         peerConn;
+    PeerMsgRcvr&     msgRcvr;
+    ExceptPtr        exceptPtr;
+    // A peer that references this instance and that's guaranteed to exist
+    bool             haltRequested;
+    std::thread      noticeThread;
+    std::thread      requestThread;
+    std::thread      chunkThread;
+    std::thread      notifyThread;
 
     void handleException(const ExceptPtr& exPtr)
     {
-        Guard guard(stateMutex);
+        Guard guard(doneMutex);
 
         if (!exceptPtr) {
             exceptPtr = exPtr;
-            stateCond.notify_one();
+            doneCond.notify_one();
         }
     }
 
     void recvNotices()
     {
+        LOG_DEBUG("Receiving notices");
         try {
             int entryState;
 
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
             for (;;) {
-                ChunkId chunkId = rmtPeer.getNotice();
+                ChunkId chunkId = peerConn.getNotice();
+                LOG_DEBUG("Received notice");
+
+                //LOG_NOTE("Received chunk ID %lu", chunkId.id);
 
                 int cancelState;
 
                 ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
                     const bool doRequest = msgRcvr.shouldRequest(chunkId,
-                            *peer);
+                            peerConn.getRmtAddr());
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
                 if (doRequest) {
                     outChunks.insert(chunkId);
-                    rmtPeer.request(chunkId);
+                    peerConn.request(chunkId);
                 }
             }
 
@@ -199,22 +181,26 @@ private:
 
     void recvRequests()
     {
+        LOG_DEBUG("Receiving requests");
         try {
             int entryState;
 
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
             for (;;) {
-                ChunkId chunkId = rmtPeer.getRequest();
+                ChunkId chunkId = peerConn.getRequest();
+                LOG_DEBUG("Received request");
+
+                //LOG_NOTE("Received chunk ID %lu", chunkId.id);
 
                 int cancelState;
 
                 ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                    MemChunk chunk = msgRcvr.get(chunkId, *peer);
+                    MemChunk chunk = msgRcvr.get(chunkId, peerConn.getRmtAddr());
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
                 if (chunk)
-                    rmtPeer.send(chunk);
+                    peerConn.send(chunk);
             }
 
             ::pthread_setcancelstate(entryState, &entryState);
@@ -226,18 +212,22 @@ private:
 
     void recvChunks()
     {
+        LOG_DEBUG("Receiving chunks");
         try {
             int entryState;
 
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
             for (;;) {
-                WireChunk chunk = rmtPeer.getChunk();
+                WireChunk chunk = peerConn.getChunk();
+                LOG_DEBUG("Received chunk");
+
+                //LOG_NOTE("Received chunk %lu", chunk.getId().id);
 
                 int cancelState;
 
                 ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                    msgRcvr.hereIs(chunk, *peer);
+                    msgRcvr.hereIs(chunk, peerConn.getRmtAddr());
                     outChunks.erase(chunk.getId());
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
             }
@@ -251,13 +241,18 @@ private:
 
     void sendNotices()
     {
+        LOG_DEBUG("Sending notices");
         try {
             int entryState;
 
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
-            for (;;)
-                rmtPeer.notify(notices.pop());
+            for (;;) {
+                ChunkId chunkId = notices.pop();
+                //LOG_NOTE("Notifying about chunk %lu", chunkId.id);
+                peerConn.notify(chunkId);
+                LOG_DEBUG("Sent notice");
+            }
 
             ::pthread_setcancelstate(entryState, &entryState);
         }
@@ -272,12 +267,16 @@ private:
          * The tasks aren't detached because then they couldn't be canceled
          * (`std::thread::native_handle()` returns 0 for detached threads).
          */
+        LOG_DEBUG("Creating receive-chunk thread");
         chunkThread = std::thread(&Impl::recvChunks, this);
         try {
+            LOG_DEBUG("Creating receive-notice thread");
             noticeThread = std::thread(&Impl::recvNotices, this);
             try {
+                LOG_DEBUG("Creating send-request thread");
                 requestThread = std::thread(&Impl::recvRequests, this);
                 try {
+                    LOG_DEBUG("Creating send-notice thread");
                     notifyThread = std::thread(&Impl::sendNotices, this);
                 }
                 catch (const std::exception& ex) {
@@ -298,10 +297,10 @@ private:
 
     void waitUntilDone()
     {
-        Lock lock(stateMutex);
+        Lock lock(doneMutex);
 
-        while (state != STOP_REQUESTED && !exceptPtr)
-            stateCond.wait(lock);
+        while (!haltRequested && !exceptPtr)
+            doneCond.wait(lock);
     }
 
     /**
@@ -313,26 +312,30 @@ private:
 
         if (notifyThread.joinable()) {
             status = ::pthread_cancel(notifyThread.native_handle());
-            if (status)
-                LOG_INFO("Couldn't cancel notify-thread: %s", ::strerror(status));
+            if (status && status != ESRCH)
+                LOG_ERROR("Couldn't cancel notify-thread: %s",
+                        ::strerror(status));
             notifyThread.join();
         }
         if (requestThread.joinable()) {
             status = ::pthread_cancel(requestThread.native_handle());
-            if (status)
-                LOG_INFO("Couldn't cancel request-thread: %s", ::strerror(status));
+            if (status && status != ESRCH)
+                LOG_ERROR("Couldn't cancel request-thread: %s",
+                        ::strerror(status));
             requestThread.join();
         }
         if (noticeThread.joinable()) {
             status = ::pthread_cancel(noticeThread.native_handle());
-            if (status)
-                LOG_INFO("Couldn't cancel notice-thread: %s", ::strerror(status));
+            if (status && status != ESRCH)
+                LOG_ERROR("Couldn't cancel notice-thread: %s",
+                        ::strerror(status));
             noticeThread.join();
         }
         if (chunkThread.joinable()) {
             status = ::pthread_cancel(chunkThread.native_handle());
-            if (status)
-                LOG_INFO("Couldn't cancel chunk-thread: %s", ::strerror(status));
+            if (status && status != ESRCH)
+                LOG_ERROR("Couldn't cancel chunk-thread: %s",
+                        ::strerror(status));
             chunkThread.join();
         }
     }
@@ -341,16 +344,27 @@ public:
     typedef OutChunks::iterator iterator;
 
     /**
-     * Server-side construction.
+     * Server-side construction. Constructs from a remote peer and a receiver of
+     * messages from the remote peer.
      *
-     * @param[in] sock      `::accept()`ed socket
-     * @param[in] portPool  Pool of potential port numbers
-     * @param[in] msgRcvr   The receiver of messages from the remote peer
+     * @param[in] peerConn  The remote peer
+     * @param[in] msgRcvr  The receiver of messages from the remote peer
      */
-    Impl(   Socket&      sock,
-            PortPool&    portPool,
+    Impl(   PeerConn     peerConn,
             PeerMsgRcvr& msgRcvr)
-        : Impl(RemotePeer{sock, portPool}, msgRcvr)
+        : executing{ATOMIC_FLAG_INIT}
+        , doneMutex()
+        , doneCond()
+        , notices()
+        , outChunks()
+        , peerConn{peerConn}
+        , msgRcvr(msgRcvr) // Braces don't work
+        , exceptPtr()
+        , haltRequested{false}
+        , noticeThread()
+        , requestThread()
+        , chunkThread()
+        , notifyThread()
     {}
 
     /**
@@ -358,25 +372,36 @@ public:
      * established with the remote peer in order to be symmetrical with server-
      * side construction, in which the connection already exists.
      *
-     * @param[in] srvrAddr  Socket address of the remote server
-     * @param[in] msgRcvr   The receiver of messages from the remote peer
+     * @param[in] srvrAddr            Socket address of the remote server
+     * @param[in] portPool            Pool of potential port numbers for
+     *                                temporary servers
+     * @param[in] msgRcvr             Receiver of messages from the remote peer
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @cancellationpoint             Yes
      */
     Impl(   const SockAddr& srvrAddr,
+            PortPool&       portPool,
             PeerMsgRcvr&    msgRcvr)
-        : Impl(RemotePeer(srvrAddr), msgRcvr)
+        : Impl(PeerConn(srvrAddr, portPool), msgRcvr)
     {}
 
-#if 0
     ~Impl() noexcept
     {
-        try {
-            stopTasks(); // Idempotent
-        }
-        catch (const std::exception& ex) {
-            log_error(ex);
-        }
+        LOG_TRACE();
+
+        if (noticeThread.joinable())
+            LOG_ERROR("Notice thread is joinable");
+
+        if (requestThread.joinable())
+            LOG_ERROR("Request thread is joinable");
+
+        if (chunkThread.joinable())
+            LOG_ERROR("Chunk thread is joinable");
+
+        if (notifyThread.joinable())
+            LOG_ERROR("Notify thread is joinable");
     }
-#endif
 
     /*
      * Couldn't set `peer` in the constructor. Tried
@@ -385,41 +410,64 @@ public:
      *   - Using a reference
      * Either it wouldn't compile, Peer::request() would call a pure virtual
      * function, or `peer.pImpl` would be empty.
-     */
-    void setPeer(Peer* peer)
+    void setPeer(Peer& peer)
     {
         this->peer = peer;
+    }
+     */
+
+    /**
+     * Returns the socket address of the remote peer. On the client-side, this
+     * will be the address of the peer-server; on the server-side, this will be
+     * the address of the `accept()`ed socket.
+     *
+     * @return            Socket address of the remote peer.
+     * @cancellationpoint No
+     */
+    const SockAddr& getRmtAddr() const noexcept {
+        return peerConn.getRmtAddr();
+    }
+
+    /**
+     * Returns the local socket address.
+     *
+     * @return            Local socket address
+     * @cancellationpoint No
+     */
+    const SockAddr& getLclAddr() const noexcept {
+        return peerConn.getLclAddr();
     }
 
     /**
      * Executes this instance by starting subtasks. Doesn't return until an
-     * exception is thrown by a subtask or `terminate()` is called. Upon return,
-     * all subtasks have terminated. If `terminate()` is called before this
-     * method, then this instance will return immediately and won't execute.
+     * exception is thrown by a subtask or `halt()` is called. Upon return,
+     * all subtasks have terminated. If `halt()` is called before this method,
+     * then this instance will return immediately and won't execute.
+     *
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @throws    std::logic_error    This method has already been called
      */
     void operator ()()
     {
-        Lock lock(stateMutex);
+        if (executing.test_and_set())
+            throw LOGIC_ERROR("Already called");
 
-        if  (state == INIT) {
-            startTasks();
+        startTasks();
 
-            try {
-                state = STARTED;
-                lock.unlock();
+        try {
+            waitUntilDone();
+            stopTasks(); // Idempotent
+            peerConn.disconnect(); // Idempotent
 
-                waitUntilDone();
-                stopTasks();
-                rmtPeer.disconnect(); // Idempotent
-
-                lock.lock();
-                if (state != STOP_REQUESTED && exceptPtr)
-                    std::rethrow_exception(exceptPtr);
-            } // Tasks started
-            catch (const std::exception& ex) {
-                stopTasks();
-                throw;
-            }
+            Guard guard{doneMutex};
+            if (!haltRequested && exceptPtr)
+                std::rethrow_exception(exceptPtr);
+        }
+        catch (...) {
+            stopTasks(); // Idempotent
+            peerConn.disconnect(); // Idempotent
+            throw;
         }
     }
 
@@ -427,15 +475,15 @@ public:
      * Halts execution. Does nothing if `operator()()` has not been called;
      * otherwise, causes `operator()()` to return and disconnects from the
      * remote peer. Idempotent.
+     *
+     * @cancellationpoint No
      */
-    void terminate() noexcept
+    void halt() noexcept
     {
-        Guard guard(stateMutex);
+        Guard guard(doneMutex);
 
-        if (state == STARTED) {
-            state = STOP_REQUESTED;
-            stateCond.notify_one();
-        }
+        haltRequested = true;
+        doneCond.notify_one();
     }
 
     bool notify(const ChunkId& chunkId)
@@ -460,7 +508,7 @@ public:
 
     std::string to_string() const noexcept
     {
-        return rmtPeer.to_string();
+        return peerConn.to_string();
     }
 };
 
@@ -471,28 +519,39 @@ Peer::Peer()
 {}
 
 Peer::Peer(
-        Socket&      sock,
-        PortPool&    portPool,
+        PeerConn     peerConn,
         PeerMsgRcvr& msgRcvr)
-    : pImpl{new Impl(sock, portPool, msgRcvr)}
+    : pImpl{new Impl(peerConn, msgRcvr)}
 {
-    pImpl->setPeer(this);
+    //pImpl->setPeer(*this);
 }
 
 Peer::Peer(
         const SockAddr& srvrAddr,
-        PeerMsgRcvr& msgRcvr)
-    : pImpl{new Impl(srvrAddr, msgRcvr)}
+        PortPool&       portPool,
+        PeerMsgRcvr&    msgRcvr)
+    : pImpl{new Impl(srvrAddr, portPool, msgRcvr)}
 {
-    pImpl->setPeer(this);
+    //pImpl->setPeer(*this);
 }
 
 Peer::Peer(const Peer& peer)
     : pImpl(peer.pImpl)
 {}
 
-Peer::operator bool() noexcept {
-    return static_cast<bool>(pImpl);
+Peer::~Peer() noexcept
+{}
+
+const SockAddr& Peer::getRmtAddr() const noexcept {
+    return pImpl->getRmtAddr();
+}
+
+const SockAddr& Peer::getLclAddr() const noexcept {
+    return pImpl->getLclAddr();
+}
+
+Peer::operator bool() const noexcept {
+    return pImpl.operator bool();
 }
 
 Peer& Peer::operator=(const Peer& rhs)
@@ -517,10 +576,10 @@ void Peer::operator ()()
     pImpl->operator()();
 }
 
-void Peer::terminate() noexcept
+void Peer::halt() noexcept
 {
     if (pImpl)
-        pImpl->terminate();
+        pImpl->halt();
 }
 
 bool Peer::notify(const ChunkId& chunkId) const

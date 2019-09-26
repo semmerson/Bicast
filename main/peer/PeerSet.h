@@ -30,7 +30,7 @@ public:
     public:
         virtual ~Observer() =0;
 
-        virtual void stopped(Peer& peer) =0;
+        virtual void stopped(Peer peer) =0;
     };
 
     /**
@@ -55,7 +55,7 @@ public:
      * @retval    `false`  The peer is already in the set
      * @threadsafety       Safe
      */
-    bool activate(const Peer& peer);
+    bool activate(const Peer peer);
 
     /**
      * Notifies all the peers in the set of an available chunk.

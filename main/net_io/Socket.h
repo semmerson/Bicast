@@ -105,6 +105,8 @@ public:
     void writev(
             const struct iovec* iov,
             const int           iovCnt);
+
+    void shutdown() const;
 };
 
 /******************************************************************************/
@@ -116,6 +118,9 @@ class ClntSock final : public Socket
 public:
     ClntSock() =default;
 
+    /**
+     * @cancellationpoint
+     */
     ClntSock(const SockAddr& sockAddr);
 };
 
@@ -132,25 +137,22 @@ public:
      * Constructs.
      *
      * @param[in] sockAddr           Socket address
+     * @param[in] queueSize          Size of listening queue or `0` to obtain
+     *                               the default.
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
      */
-    SrvrSock(const SockAddr& sockaddr);
-
-    /**
-     * Calls `::listen()` on the socket.
-     *
-     * @param[in] queueSize          Size of the listening queue
-     * @throws    std::system_error  `::listen()` failure
-     */
-    void listen(int queueSize = 0) const;
+    SrvrSock(
+            const SockAddr& sockaddr,
+            const int       queueSize = 0);
 
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
      * @return                     The accepted socket
      * @throws  std::system_error  `::accept()` failure
+     * @cancellationpoint
      */
     Socket accept() const;
 };

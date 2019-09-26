@@ -17,9 +17,9 @@
 #define MAIN_PEER_PEER_H_
 
 #include "Chunk.h"
+#include "PeerConn.h"
 #include "PeerMsgRcvr.h"
 #include "PeerMsgSndr.h"
-#include "RemotePeer.h"
 
 #include <memory>
 #include <unordered_set>
@@ -44,12 +44,10 @@ public:
     /**
      * Server-side construction.
      *
-     * @param[in] sock      `::accept()`ed socket
-     * @param[in] portPool  Pool of potential port numbers
+     * @param[in] peerConn   Remote peer
      * @param[in] msgRcvr   The receiver of messages from the remote peer
      */
-    Peer(   Socket&      sock,
-            PortPool&    portPool,
+    Peer(   PeerConn   peerConn,
             PeerMsgRcvr& msgRcvr);
 
     /**
@@ -57,10 +55,16 @@ public:
      * established with the remote peer in order to be symmetrical with server-
      * side construction, in which the connection already exists.
      *
-     * @param[in] srvrAddr  Socket address of the remote server
-     * @param[in] msgRcvr   The receiver of messages from the remote peer
+     * @param[in] srvrAddr            Socket address of the remote server
+     * @param[in] portPool            Pool of potential port numbers for
+     *                                temporary servers
+     * @param[in] msgRcvr             Receiver of messages from the remote peer
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @cancellationpoint             Yes
      */
     Peer(   const SockAddr& srvrAddr,
+            PortPool&       portPool,
             PeerMsgRcvr&    msgRcvr);
 
     /**
@@ -70,7 +74,25 @@ public:
      */
     Peer(const Peer& peer);
 
-    operator bool() noexcept;
+    ~Peer() noexcept;
+
+    /**
+     * Returns the socket address of the remote peer. On the client-side, this
+     * will be the address of the peer-server; on the server-side, this will be
+     * the address of the `accept()`ed socket.
+     *
+     * @return Socket address of the remote peer.
+     */
+    const SockAddr& getRmtAddr() const noexcept;
+
+    /**
+     * Returns the local socket address.
+     *
+     * @return Local socket address
+     */
+    const SockAddr& getLclAddr() const noexcept;
+
+    operator bool() const noexcept;
 
     Peer& operator=(const Peer& rhs);
 
@@ -82,14 +104,20 @@ public:
      * Executes asynchronous tasks that call the member functions of the
      * constructor's `PeerMsgRcvr` argument. Doesn't return until the current
      * thread is canceled or a task throws an exception.
+     *
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
      */
     void operator ()();
 
     /**
      * Halts execution. Terminates all subtasks. Causes `operator()()` to
-     * return. Idempotent.
+     * return. If `terminate()` is called before this method, then this instance
+     * will return immediately and won't execute. Idempotent.
+     *
+     * @cancellationpoint No
      */
-    void terminate() noexcept;
+    void halt() noexcept;
 
     /**
      * Notifies the remote peer about the availability of a `Chunk` by enqueuing

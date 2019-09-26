@@ -42,11 +42,13 @@ public:
 
     /**
      * Adds a value to the queue.
-     * @param[in] value  The value to be added
-     * @param[in] delay  The delay for the element before it becomes available
-     *                   in units of the duration template parameter
-     * @exceptionsafety  Strong guarantee
-     * @threadsafety     Safe
+     * @param[in] value              The value to be added
+     * @param[in] delay              The delay for the element before it becomes
+     *                               available in units of the duration template
+     *                               parameter
+     * @throws    std::domain_error  `close()` has been called
+     * @exceptionsafety              Strong guarantee
+     * @threadsafety                 Safe
      */
     void push(
             const Value& value,
@@ -56,40 +58,51 @@ public:
      * Returns the value whose reveal-time is the earliest and not later than
      * the current time and removes it from the queue. Blocks until such a value
      * is available.
-     * @return  The value with the earliest reveal-time that's not later than
-     *          the current time.
-     * @exceptionsafety Basic guarantee
-     * @threadsafety    Safe
+     * @return                       The value with the earliest reveal-time
+     *                               that's not later than the current time.
+     * @throws std::domain_error     `close()` has been called
+     * @exceptionsafety              Strong guarantee
+     * @threadsafety                 Safe
+     * @cancellationpoint
      */
     Value pop() const;
 
     /**
      * Indicates if `pop()` will immediately return.
      *
-     * @retval `true`   Yes
-     * @retval `false`  No
+     * @retval `true`     Yes
+     * @retval `false`    No
+     * @cancellationpoint No
      */
-    bool ready() const noexcept;
+    bool ready() const;
 
     /**
      * Indicates if the queue is empty.
-     * @return `true`   The queue is empty
-     * @return `false`  The queue is not empty
-     * @exceptionsafety Nothrow
-     * @threadsafety    Safe
+     * @return `true`     The queue is empty
+     * @return `false`    The queue is not empty
+     * @exceptionsafety   Nothrow
+     * @threadsafety      Safe
+     * @cancellationpoint No
      */
-    bool empty() const noexcept;
+    bool empty() const;
 
     /**
      * Clears the queue of all elements.
-     * @exceptionsafety Nothrow
-     * @threadsafety    Safe
+     * @exceptionsafety   Nothrow
+     * @threadsafety      Safe
+     * @cancellationpoint No
      */
-    void clear() noexcept;
+    void clear();
+
+    /**
+     * Closes the queue. Causes `pop()` and `push()` to throw an exception.
+     * Idempotent.
+     */
+    void close();
 };
 
 } // namespace
 
-#include "DelayQueue.cpp" // For automatic template instatiation
+#include "DelayQueue.cpp" // For automatic template instantiation
 
 #endif /* MISC_DELAYQUEUE_H */

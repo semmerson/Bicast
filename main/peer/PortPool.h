@@ -1,5 +1,5 @@
 /**
- * A thread-compatible but thread-unsafe pool of port-numbers.
+ * A thread-compatible but thread-unsafe queue of port-numbers.
  *
  * Copyright 2019 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
@@ -35,34 +35,34 @@ public:
     /**
      * Constructs from a range of port-numbers.
      *
-     * @param[in] min  Minimum port number (inclusive)
-     * @param[in] max  Maximum port number (inclusive)
+     * @param[in] min  Minimum port number (inclusive) in host byte-order
+     * @param[in] num  Number of port numbers
      */
     PortPool(
             in_port_t min,
-            in_port_t max);
+            unsigned  num);
 
     /**
-     * Returns the number of port-numbers in the pool.
+     * Returns the number of port-numbers in the queue.
      *
-     * @return        Number of port numbers in the pool
+     * @return        Number of port numbers in the queue
      * @threadsafety  Compatible but unsafe
      */
     int size() const;
 
     /**
-     * Removes the next port-number.
+     * Removes port-number at the head of the queue.
      *
-     * @return                   Next port number
-     * @throws std::range_error  The pool is empty
+     * @return                   Port number at head of queue in host byte-order
+     * @throws std::range_error  The queue is empty
      * @threadsafety             Compatible but unsafe
      */
     in_port_t take();
 
     /**
-     * Adds a port-number.
+     * Adds a port-number to the end of the queue.
      *
-     * @param[in] port  The port-number
+     * @param[in] port  The port-number in host byte-order
      * @threadsafety    Compatible but unsafe
      */
     void add(in_port_t port);

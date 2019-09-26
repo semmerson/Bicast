@@ -35,6 +35,7 @@ protected:
     std::condition_variable cond;
     enum {
         INIT,
+        READY,
         DONE
     }                   state;
     hycast::ChunkId     chunkId;
@@ -94,24 +95,24 @@ protected:
 
 public:
     bool shouldRequest(
-            const hycast::ChunkId& notice,
-            hycast::Peer&          peer)
+            const hycast::ChunkId&  notice,
+            const hycast::SockAddr& rmtAddr)
     {
         EXPECT_TRUE(chunkId == notice);
         return true;
     }
 
     hycast::MemChunk get(
-            const hycast::ChunkId& request,
-            hycast::Peer&          peer)
+            const hycast::ChunkId&  request,
+            const hycast::SockAddr& rmtAddr)
     {
         EXPECT_EQ(chunkId, request);
         return memChunk;
     }
 
     void hereIs(
-            hycast::WireChunk& wireChunk,
-            hycast::Peer&      peer)
+            hycast::WireChunk       wireChunk,
+            const hycast::SockAddr& rmtAddr)
     {
         const hycast::ChunkSize n = wireChunk.getSize();
         char                    wireData[n];
@@ -127,7 +128,41 @@ public:
         }
     }
 
-    void stopped(hycast::Peer& peer)
+    bool shouldRequest(
+            const hycast::ChunkId& notice,
+            hycast::Peer           peer)
+    {
+        EXPECT_TRUE(chunkId == notice);
+        return true;
+    }
+
+    hycast::MemChunk get(
+            const hycast::ChunkId& request,
+            hycast::Peer           peer)
+    {
+        EXPECT_EQ(chunkId, request);
+        return memChunk;
+    }
+
+    void hereIs(
+            hycast::WireChunk wireChunk,
+            hycast::Peer      peer)
+    {
+        const hycast::ChunkSize n = wireChunk.getSize();
+        char                    wireData[n];
+
+        wireChunk.read(wireData);
+        for (int i = 0; i < n; ++i)
+            EXPECT_EQ(memData[i], wireData[i]);
+
+        {
+            std::lock_guard<decltype(mutex)> lock{mutex};
+            state = DONE;
+            cond.notify_one();
+        }
+    }
+
+    void stopped(hycast::Peer peer)
     {
         EXPECT_TRUE(peer == srvrPeer || peer == clntPeer);
 
@@ -147,8 +182,12 @@ public:
     {
         srvrPeer = factory.accept();
         EXPECT_EQ(0, srvrPeerSet.size());
-        srvrPeerSet.activate(srvrPeer); // Executes `srcPeer` on new thread
+        srvrPeerSet.activate(srvrPeer); // Executes peer on new thread
         EXPECT_EQ(1, srvrPeerSet.size());
+
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        state = READY;
+        cond.notify_one();
     }
 };
 
@@ -159,8 +198,10 @@ TEST_F(PeerSetTest, DefaultConstruction)
 // Tests complete exchange (notice, request, delivery)
 TEST_F(PeerSetTest, Exchange)
 {
+    // 3 ports for client's temporary servers in case initial connection uses one
+    hycast::PortPool portPool(38801, 3);
+
     // Start server
-    hycast::PortPool portPool{38801, 38802};
     factory = hycast::PeerFactory(srcAddr, 1, portPool, *this);
     std::thread      srvrThread(&PeerSetTest::runServer, this);
 
@@ -169,6 +210,13 @@ TEST_F(PeerSetTest, Exchange)
     EXPECT_EQ(0, clntPeerSet.size());
     clntPeerSet.activate(clntPeer); // Executes `clntPeer` on new thread
     EXPECT_EQ(1, clntPeerSet.size());
+
+    // Wait for the peers to connect
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (state != READY)
+            cond.wait(lock);
+    }
 
     // Set the direction of the exchange
     hycast::PeerSet& srcPeerSet = srvrPeerSet;
@@ -185,7 +233,7 @@ TEST_F(PeerSetTest, Exchange)
     }
 
     // Terminate sink peer. Causes source-peer to terminate.
-    snkPeer.terminate();
+    snkPeer.halt();
 
     // Wait for the peers to be removed from their peer-sets
     {

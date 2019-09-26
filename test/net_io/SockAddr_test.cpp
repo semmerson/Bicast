@@ -109,12 +109,6 @@ TEST_F(SockAddrTest, IPv4Construction) {
 
     EXPECT_TRUE(sockAddr);
 
-    struct sockaddr sockaddr;
-    socklen_t       socklen;
-    sockAddr.getSockAddr(sockaddr, socklen);
-    EXPECT_EQ(AF_INET, sockaddr.sa_family);
-    EXPECT_EQ(sizeof(struct sockaddr_in), socklen);
-
     const std::string actual{sockAddr.to_string()};
     EXPECT_STREQ(sockAddrInSpec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn_2) != (sockAddrIn_2 < sockAddr));
@@ -129,12 +123,6 @@ TEST_F(SockAddrTest, IPv6Construction) {
     const std::string actual{sockAddr.to_string()};
     EXPECT_STREQ(sockAddrIn6Spec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn6_2) != (sockAddrIn6_2 < sockAddr));
-
-    struct sockaddr sockaddr;
-    socklen_t       socklen;
-    sockAddr.getSockAddr(sockaddr, socklen);
-    EXPECT_EQ(AF_INET6, sockaddr.sa_family);
-    EXPECT_EQ(sizeof(struct sockaddr_in6), socklen);
 }
 
 // Tests construction of a named socket address

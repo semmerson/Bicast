@@ -11,6 +11,8 @@
  */
 #include "config.h"
 
+#include "error.h"
+
 #include <atomic>
 #include <condition_variable>
 #include "gtest/gtest.h"
@@ -109,6 +111,16 @@ TEST_F(ThreadTest, CancelThread)
     EXPECT_TRUE(thread.joinable());
     EXPECT_NO_THROW(thread.join());
     EXPECT_FALSE(thread.joinable());
+}
+
+// Tests canceling a terminated thread
+TEST_F(ThreadTest, CancelTerminatedThread)
+{
+    std::thread thread{&::usleep, 1};
+    ::usleep(100000);
+    EXPECT_EQ(ESRCH, ::pthread_cancel(thread.native_handle())); // No such process
+    EXPECT_TRUE(thread.joinable());
+    EXPECT_NO_THROW(thread.join());
 }
 
 // Tests canceling a bunch of threads

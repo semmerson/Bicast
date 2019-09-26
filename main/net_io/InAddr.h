@@ -82,6 +82,8 @@ public:
 
     bool operator ==(const InAddr& rhs) const noexcept;
 
+    size_t hash() const noexcept;
+
     /**
      * Returns a socket address corresponding to this instance and a port
      * number.

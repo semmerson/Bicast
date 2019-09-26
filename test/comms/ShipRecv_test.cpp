@@ -101,8 +101,8 @@ TEST_F(ShipRecvTest, ReceivingConstruction) {
 
 // Tests shipping and receiving products
 TEST_F(ShipRecvTest, ShippingAndReceiving) {
-    auto logLevelOnEntry = hycast::logLevel;
-    hycast::logLevel = hycast::LOG_NOTE;
+    auto logLevelOnEntry = hycast::logThreshold;
+    hycast::logThreshold = hycast::LOG_LEVEL_NOTE;
     // Create shipper
     hycast::Shipping shipping{prodStore, mcastAddr, protoVers, srcSrvrAddr,
             maxPeers, stasisDuration};
@@ -123,7 +123,7 @@ TEST_F(ShipRecvTest, ShippingAndReceiving) {
     cue.wait();
     perfMeter.stop();
     std::cout << perfMeter << '\n';
-    hycast::logLevel = logLevelOnEntry;
+    hycast::logThreshold = logLevelOnEntry;
 }
 
 }  // namespace
