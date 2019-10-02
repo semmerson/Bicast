@@ -26,7 +26,8 @@ namespace hycast {
 class Socket::Impl
 {
 protected:
-    int sd; ///< Socket descriptor
+    int  sd;         ///< Socket descriptor
+    bool byteStream; ///< Implements a byte-stream?
 
     /**
      * Creates a streaming socket.
@@ -42,12 +43,27 @@ protected:
 public:
     explicit Impl(const int sd) noexcept
         : sd{sd}
-    {}
+    {
+        int       type;
+        socklen_t typeLen = sizeof(type);
+        int       status = ::getsockopt(sd, SOL_SOCKET, SO_TYPE, &type,
+                &typeLen);
+
+        if (status)
+            throw SYSTEM_ERROR("Couldn't get socket type");
+
+        byteStream = type == SOCK_STREAM;
+    }
 
     virtual ~Impl() noexcept
     {
         ::shutdown(sd, SHUT_RDWR);
         ::close(sd);
+    }
+
+    bool isByteStream()
+    {
+        return byteStream;
     }
 
     /**
@@ -166,6 +182,7 @@ public:
          * Sending host crashes => read() won't return
          * Sending host becomes unreachable => read() won't return
          */
+        LOG_DEBUG("Reading %zu bytes", nbytes);
         ssize_t status = ::read(sd, data, nbytes);
 
         if (status < 0)
@@ -179,6 +196,7 @@ public:
             const void* data,
             size_t      nbytes) const
     {
+        LOG_DEBUG("Writing %zu bytes", nbytes);
         if (::write(sd, data, nbytes) != nbytes)
             throw SYSTEM_ERROR("Couldn't write " + std::to_string(nbytes) +
                     " bytes to host " + getPeerAddr().to_string());
@@ -188,6 +206,15 @@ public:
             const struct iovec* iov,
             const int           iovCnt)
     {
+#if 0
+        if (log_enabled(LOG_LEVEL_DEBUG)) {
+            size_t nbytes = 0;
+            for (int i = 0; i < iovCnt; ++i)
+                nbytes += iov->iov_len;
+            LOG_DEBUG("Writing %zu bytes", nbytes);
+        }
+#endif
+
         if (::writev(sd, iov, iovCnt) == -1)
             throw SYSTEM_ERROR("Couldn't write " + std::to_string(iovCnt) +
                     "-element vector to host " + getPeerAddr().to_string());
@@ -208,6 +235,11 @@ public:
 Socket::Socket(Socket::Impl* impl)
     : pImpl{impl}
 {}
+
+bool Socket::isByteStream() const
+{
+    return pImpl->isByteStream();
+}
 
 Socket& Socket::setDelay(bool enable)
 {
@@ -255,6 +287,7 @@ void Socket::write(
 {
     pImpl->write(bytes, nbytes);
 }
+
 void Socket::writev(
         const struct iovec* iov,
         const int           iovCnt)

@@ -35,6 +35,14 @@ public:
     virtual ~Socket() noexcept =default;
 
     /**
+     * Indicates if the socket implements a byte-stream (e.g., TCP).
+     *
+     * @retval `true`   Yes
+     * @retval `false`  No
+     */
+    bool isByteStream() const;
+
+    /**
      * If the socket protocol is TCP or SCTP, the previous sent packet hasn't
      * yet been acknowledged, and there's less than an MSS in the send buffer,
      * then this function sets whether or not the protocol layer will wait for

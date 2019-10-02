@@ -10,11 +10,10 @@
  *      Author: Steven R. Emmerson
  */
 
-#ifndef MAIN_PEER_CHUNK_H_
-#define MAIN_PEER_CHUNK_H_
+#ifndef MAIN_RPC_CHUNK_H_
+#define MAIN_RPC_CHUNK_H_
 
-#include "Serializable.h"
-#include "Wire.h"
+#include "Socket.h"
 
 #include <memory>
 
@@ -22,7 +21,7 @@
 
 namespace hycast {
 
-class ChunkId : public Serializable
+class ChunkId
 {
 private:
     friend std::hash<ChunkId>;
@@ -31,13 +30,13 @@ private:
 public:
     uint64_t id;
 
+    ChunkId()
+        : id{0}
+    {}
+
     ChunkId(const uint64_t id)
         : id{id}
     {}
-
-    void write(Wire& wire) const;
-
-    static ChunkId read(Wire& wire);
 
     bool operator ==(const ChunkId rhs) const noexcept;
 
@@ -51,7 +50,8 @@ typedef uint16_t              ChunkSize;
 class Chunk
 {
 public:
-    class Impl;
+    friend class Codec;
+    class        Impl;
 
 protected:
     std::shared_ptr<Impl> pImpl;
@@ -59,6 +59,8 @@ protected:
     Chunk(Impl* const impl);
 
 public:
+    Chunk();
+
     virtual ~Chunk() =0;
 
     const ChunkId& getId() const noexcept;
@@ -72,7 +74,7 @@ public:
 
 typedef std::shared_ptr<void> DataPtr;
 
-class MemChunk final : public Chunk, public Serializable
+class MemChunk final : public Chunk
 {
 private:
     class Impl;
@@ -83,12 +85,35 @@ public:
             const ChunkSize size,
             const void*     data);
 
-    void write(Wire& wire) const;
+    const void* getData() const;
 };
 
 /******************************************************************************/
 
-class WireChunk final : public Chunk
+class StreamChunk final : public Chunk
+{
+public:
+    class Impl;
+
+public:
+    StreamChunk();
+
+    /**
+     * Constructs.
+     *
+     * @param[in] rpc  RPC module from which the chunk can be deserialized.
+     */
+    StreamChunk(
+            const ChunkId&  id,
+            const ChunkSize size,
+            Socket&         sock);
+
+    void read(void* data);
+};
+
+/******************************************************************************/
+
+class RecordChunk final : public Chunk
 {
 public:
     class Impl;
@@ -97,9 +122,9 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] wire  Wire from which the chunk can be deserialized.
+     * @param[in] sock  Socket from which the chunk can be read.
      */
-    WireChunk(Wire& wire);
+    RecordChunk(Socket& sock);
 
     void read(void* data);
 };
@@ -130,4 +155,4 @@ namespace std {
     };
 }
 
-#endif /* MAIN_PEER_CHUNK_H_ */
+#endif /* MAIN_RPC_CHUNK_H_ */

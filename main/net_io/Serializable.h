@@ -13,7 +13,7 @@
 #ifndef MAIN_NET_IO_SERIALIZABLE_H_
 #define MAIN_NET_IO_SERIALIZABLE_H_
 
-#include "Wire.h"
+#include "Rpc.h"
 
 namespace hycast {
 
@@ -22,8 +22,6 @@ class Serializable
 public:
     virtual ~Serializable() noexcept
     {}
-
-    virtual void write(Wire& wire) const =0;
 };
 
 } // namespace

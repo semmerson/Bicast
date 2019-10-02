@@ -1,8 +1,8 @@
 #include "config.h"
 
+#include "Codec.h"
 #include "error.h"
 #include "SockAddr.h"
-#include "Wire.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
@@ -116,7 +116,7 @@ public:
 
     // Sink-side
     void hereIs(
-            hycast::WireChunk       wireChunk,
+            hycast::StreamChunk     chunk,
             const hycast::SockAddr& rmtAddr)
     {
         EXPECT_EQ(1, snkPeer.size());
@@ -125,12 +125,13 @@ public:
         EXPECT_EQ(0, srcPeer.size());
         EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
 
-        const hycast::ChunkSize n = wireChunk.getSize();
-        char                    wireData[n];
+        const hycast::ChunkSize n = chunk.getSize();
+        LOG_DEBUG("ChunkSize: %u", n);
+        char                    chunkData[n];
 
-        wireChunk.read(wireData);
+        chunk.read(chunkData);
         for (int i = 0; i < n; ++i)
-            EXPECT_EQ(memData[i], wireData[i]);
+            EXPECT_EQ(memData[i], chunkData[i]);
 
         setState(DONE);
     }
@@ -164,7 +165,7 @@ public:
 
     // Sink-side
     void hereIs(
-            hycast::WireChunk wireChunk,
+            hycast::StreamChunk wireChunk,
             hycast::Peer      snkPeer)
     {
         EXPECT_EQ(1, snkPeer.size());

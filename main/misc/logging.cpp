@@ -117,7 +117,7 @@ void log_setLevel(const LogLevel level) noexcept {
 }
 
 bool log_enabled(const LogLevel level) noexcept {
-    return level <= logThreshold;
+    return level >= logThreshold;
 }
 
 std::string makeWhat(

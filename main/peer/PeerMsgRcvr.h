@@ -57,7 +57,7 @@ public:
      * @param[in] rmtAddr  Socket address of remote peer
      */
     virtual void hereIs(
-            WireChunk       chunk,
+            StreamChunk       chunk,
             const SockAddr& rmtAddr) =0;
 };
 

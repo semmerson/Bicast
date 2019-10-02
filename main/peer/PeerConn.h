@@ -135,7 +135,7 @@ public:
      * @throws std::system_error   System error
      * @throws std::runtime_error  Remote peer closed the connection
      */
-    WireChunk getChunk();
+    StreamChunk getChunk();
 
     /**
      * Disconnects from the remote peer. After this, nothing can be sent to and

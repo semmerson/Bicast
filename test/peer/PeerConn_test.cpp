@@ -85,14 +85,14 @@ public:
 
         peerConn.request(id);
 
-        hycast::WireChunk wireChunk = peerConn.getChunk();
-        EXPECT_EQ(chunkId, wireChunk.getId());
-        hycast::ChunkSize n = wireChunk.getSize();
+        hycast::StreamChunk chunk = peerConn.getChunk();
+        EXPECT_EQ(chunkId, chunk.getId());
+        hycast::ChunkSize n = chunk.getSize();
         EXPECT_EQ(memChunk.getSize(), n);
 
-        char wireData[n];
-        wireChunk.read(wireData);
-        EXPECT_EQ(0, ::memcmp(memData, wireData, n));
+        char chunkData[n];
+        chunk.read(chunkData);
+        EXPECT_EQ(0, ::memcmp(memData, chunkData, n));
     }
 };
 
@@ -102,8 +102,8 @@ TEST_F(PeerConnTest, DefaultConstruction)
     hycast::PeerConn peerConn();
 }
 
-// Tests a three `Wire` peer connection
-TEST_F(PeerConnTest, ThreeWirePeerConn)
+// Tests a three connection peer connection
+TEST_F(PeerConnTest, ThreeConnPeerConn)
 {
     hycast::SrvrSock srvrSock(srvrAddr);
     std::thread      srvrThread(&PeerConnTest::runServer, this,

@@ -20,25 +20,6 @@
 
 namespace hycast {
 
-void ChunkId::write(Wire& wire) const
-{
-    wire.serialize(id);
-}
-
-/**
- * Reads a chunk identifier from a wire.
- *
- * @param[in] wire               Wire from which to read the chunk ID
- * @throw     std::system_error  Couldn't read from the wire
- */
-ChunkId ChunkId::read(Wire& wire)
-{
-    uint64_t id;
-
-    wire.deserialize(id);
-    return ChunkId(id);
-}
-
 bool ChunkId::operator==(const ChunkId rhs) const noexcept
 {
     return id == rhs.id;
@@ -87,6 +68,10 @@ Chunk::Impl::~Impl() noexcept
 
 /******************************************************************************/
 
+Chunk::Chunk()
+    : pImpl{}
+{}
+
 Chunk::Chunk(Impl* const impl)
     : pImpl{impl}
 {}
@@ -111,25 +96,22 @@ Chunk::operator bool() const noexcept
 
 /******************************************************************************/
 
-class MemChunk::Impl final : public Chunk::Impl, public Serializable
+class MemChunk::Impl final : public Chunk::Impl
 {
 private:
     const void* data;
 
 public:
-    Impl(
-            const ChunkId&  id,
+    Impl(   const ChunkId&  id,
             const ChunkSize size,
             const void*     data)
         : Chunk::Impl(id, size)
         , data{data}
     {}
 
-    void write(Wire& wire) const
+    const void* getData()
     {
-        id.write(wire);
-        wire.serialize(size);
-        wire.serialize(data, size);
+        return data;
     }
 };
 
@@ -142,51 +124,53 @@ MemChunk::MemChunk(
     : Chunk{new Impl(id, size, data)}
 {}
 
-void MemChunk::write(Wire& wire) const
+const void* MemChunk::getData() const
 {
-    static_cast<Impl*>(pImpl.get())->write(wire);
+    static_cast<Impl*>(pImpl.get())->getData();
 }
 
 /******************************************************************************/
 
-class WireChunk::Impl final : public Chunk::Impl
+class StreamChunk::Impl final : public Chunk::Impl
 {
 private:
-    Wire wire;
-
-protected:
-    void serializeData(Wire& wire) const
-    {
-        throw RUNTIME_ERROR("A WireChunk cannot be serialized");
-    }
+    Socket sock;
 
 public:
     /**
      * Constructs.
      *
-     * @param[in] wire  Wire from which the chunk can be deserialized.
-     *
+     * @param[in] id    Chunk ID
+     * @param[in] size  Size of chunk's data in bytes
+     * @param[in] sock  Socket from which the chunk's data can be read
      */
-    Impl(Wire& wire)
-        : Chunk::Impl(ChunkId::read(wire))
-        , wire{wire}
-    {
-        wire.deserialize(size);
-    }
+    Impl(   const ChunkId&  id,
+            const ChunkSize size,
+            Socket&         sock)
+        : Chunk::Impl(id, size)
+        , sock{sock}
+    {}
 
     void read(void* data)
     {
-        wire.deserialize(data, size);
+        sock.read(data, size);
     }
 };
 
 /******************************************************************************/
 
-WireChunk::WireChunk(Wire& wire)
-    : Chunk{new Impl(wire)}
+StreamChunk::StreamChunk()
+    : Chunk{}
 {}
 
-void WireChunk::read(void* data)
+StreamChunk::StreamChunk(
+        const ChunkId&  id,
+        const ChunkSize size,
+        Socket&         sock)
+    : Chunk{new Impl(id, size, sock)}
+{}
+
+void StreamChunk::read(void* data)
 {
     static_cast<Impl*>(pImpl.get())->read(data);
 }

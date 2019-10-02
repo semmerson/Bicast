@@ -8,8 +8,7 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= Chunk.cpp		Chunk.h \
-		  PeerMsgRcvr.h \
+lib_la_SOURCES 	= PeerMsgRcvr.h \
 		  PeerMsgSndr.h \
 		  PeerConn.cpp 		PeerConn.h \
 		  Peer.cpp 		Peer.h \

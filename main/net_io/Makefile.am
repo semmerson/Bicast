@@ -9,15 +9,14 @@ noinst_LTLIBRARIES = lib.la
 
 # Library Sources
 lib_la_SOURCES 	= \
-	Serializable.h \
+ 	Serializable.h \
 	InAddr.cpp	InAddr.h \
 	SockAddr.cpp    SockAddr.h \
 	Socket.cpp      Socket.h \
-	Wire.cpp	Wire.h
+	Codec.cpp	Codec.h \
+	Chunk.cpp	Chunk.h
 #	ServiceId.cpp ServiceId.h
-#	IoVec.cpp IoVec.h \
-#	Serializable.h \
-#	Wire.h
+#	IoVec.cpp IoVec.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.

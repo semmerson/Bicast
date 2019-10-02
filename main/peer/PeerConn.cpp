@@ -9,11 +9,11 @@
  *  Created on: May 10, 2019
  *      Author: Steven R. Emmerson
  */
-
-#include "PeerConn.h"
 #include "config.h"
 
+#include "Codec.h"
 #include "error.h"
+#include "PeerConn.h"
 #include "PortPool.h"
 
 namespace hycast {
@@ -39,7 +39,7 @@ public:
 
     virtual void send(const MemChunk& chunk) =0;
 
-    virtual WireChunk getChunk() =0;
+    virtual StreamChunk getChunk() =0;
 
     virtual void disconnect() =0;
 };
@@ -55,12 +55,12 @@ PeerConn::Impl::~Impl()
 class PeerConn3 final : public PeerConn::Impl
 {
 private:
-    SockAddr    rmtSockAddr;    ///< Remote socket address
-    SockAddr    lclSockAddr;    ///< Local socket address
-    Wire        noticeWire; ///< Wire for exchanging notices
-    Wire        clntWire;   ///< Wire for sending requests and receiving chunks
-    Wire        srvrWire;   ///< Wire for receiving requests and sending chunks
-    std::string string;     ///< `to_string()` string
+    SockAddr    rmtSockAddr; ///< Remote socket address
+    SockAddr    lclSockAddr; ///< Local socket address
+    StreamCodec noticeCodec;   ///< Connection for exchanging notices
+    StreamCodec clntCodec;     ///< Connection for sending requests and receiving chunks
+    StreamCodec srvrCodec;     ///< Connection for receiving requests and sending chunks
+    std::string string;      ///< `to_string()` string
 
     SrvrSock createSrvrSock(
             InAddr    inAddr,
@@ -95,9 +95,9 @@ public:
     PeerConn3(Socket&  sock)
         : rmtSockAddr(sock.getPeerAddr())
         , lclSockAddr{sock.getAddr()}
-        , noticeWire(sock)
-        , clntWire{}
-        , srvrWire{}
+        , noticeCodec(sock)
+        , clntCodec{}
+        , srvrCodec{}
         , string{}
     {
         InAddr rmtInAddr{rmtSockAddr.getInAddr()};
@@ -107,8 +107,8 @@ public:
 
         // Read port numbers of client's temporary servers
         in_port_t rmtSrvrPort, rmtClntPort;
-        noticeWire.deserialize(rmtSrvrPort);
-        noticeWire.deserialize(rmtClntPort);
+        noticeCodec.decode(rmtSrvrPort);
+        noticeCodec.decode(rmtClntPort);
 
         // Create sockets for requesting and receiving chunks
         ClntSock clntSock(rmtSockAddr.clone(rmtSrvrPort));
@@ -117,9 +117,9 @@ public:
         clntSock.setDelay(false);
         srvrSock.setDelay(true); // Consolidate ACK and chunk
 
-        // Create wires for requesting and receiving chunks
-        clntWire = Wire(clntSock);
-        srvrWire = Wire(srvrSock);
+        // Create support for requesting and receiving chunks
+        clntCodec = StreamCodec(clntSock);
+        srvrCodec = StreamCodec(srvrSock);
 
         string = "{remote: {addr: " +
                 sock.getPeerAddr().getInAddr().to_string() +
@@ -149,17 +149,17 @@ public:
             PortPool&       portPool)
         : rmtSockAddr{rmtSrvrAddr}
         , lclSockAddr{}
-        , noticeWire{}
-        , clntWire{}
-        , srvrWire{}
+        , noticeCodec{}
+        , clntCodec{}
+        , srvrCodec{}
     {
         // Create socket for exchanging notices
         ClntSock noticeSock{rmtSrvrAddr};
         noticeSock.setDelay(false);
 
-        // Create wire for exchanging notices
+        // Create support for exchanging notices
         lclSockAddr = noticeSock.getAddr();
-        noticeWire = Wire{noticeSock};
+        noticeCodec = StreamCodec{noticeSock};
 
         // Create temporary server sockets
         InAddr   lclInAddr = lclSockAddr.getInAddr();
@@ -167,9 +167,8 @@ public:
         SrvrSock clntSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
         // Send port numbers of temporary servers to remote peer
-        noticeWire.serialize(srvrSrvrSock.getPort());
-        noticeWire.serialize(clntSrvrSock.getPort());
-        noticeWire.flush();
+        noticeCodec.encode(srvrSrvrSock.getPort());
+        noticeCodec.encode(clntSrvrSock.getPort());
 
         // Accept sockets for requesting and receiving chunks
         Socket srvrSock{srvrSrvrSock.accept()};
@@ -179,8 +178,8 @@ public:
         srvrSock.setDelay(true); // Consolidate ACK and chunk
 
         // Create wires for requesting and receiving chunks
-        clntWire = Wire{clntSock};
-        srvrWire = Wire{srvrSock};
+        clntCodec = StreamCodec{clntSock};
+        srvrCodec = StreamCodec{srvrSock};
 
         string = "{remote: {addr: " +
                 noticeSock.getPeerAddr().getInAddr().to_string() +
@@ -222,8 +221,7 @@ public:
 
     void notify(const ChunkId& notice)
     {
-        notice.write(noticeWire);
-        noticeWire.flush();
+        noticeCodec.encode(notice);
     }
 
     /**
@@ -235,13 +233,14 @@ public:
      */
     ChunkId getNotice()
     {
-        return ChunkId::read(noticeWire);
+        ChunkId id;
+        noticeCodec.decode(id);
+        return id;
     }
 
     void request(const ChunkId& request)
     {
-        request.write(clntWire);
-        clntWire.flush();
+        clntCodec.encode(request);
     }
 
     /**
@@ -253,13 +252,14 @@ public:
      */
     ChunkId getRequest()
     {
-        return ChunkId::read(srvrWire);
+        ChunkId id;
+        srvrCodec.decode(id);
+        return id;
     }
 
     void send(const MemChunk& chunk)
     {
-        chunk.write(srvrWire);
-        srvrWire.flush();
+        srvrCodec.encode(chunk);
     }
 
     /**
@@ -269,9 +269,11 @@ public:
      * @throws std::system_error   System error
      * @throws std::runtime_error  Remote peer closed the connection
      */
-    WireChunk getChunk()
+    StreamChunk getChunk()
     {
-        return WireChunk(clntWire);
+        StreamChunk chunk;
+        clntCodec.decode(chunk);
+        return chunk;
     }
 
     /**
@@ -279,9 +281,9 @@ public:
      */
     void disconnect()
     {
-        srvrWire = Wire();
-        clntWire = Wire();
-        noticeWire = Wire();
+        srvrCodec = StreamCodec();
+        clntCodec = StreamCodec();
+        noticeCodec = StreamCodec();
     }
 };
 
@@ -344,7 +346,7 @@ void PeerConn::send(const MemChunk& chunk)
     pImpl->send(chunk);
 }
 
-WireChunk PeerConn::getChunk()
+StreamChunk PeerConn::getChunk()
 {
     return pImpl->getChunk();
 }

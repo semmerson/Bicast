@@ -64,5 +64,6 @@ AC_CONFIG_FILES(Makefile
                 test/misc/Makefile
                 test/net_io/Makefile
                 test/peer/Makefile
+                test/storage/Makefile
                 )
 AC_OUTPUT

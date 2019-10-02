@@ -12,7 +12,6 @@
  *  Created on: May 29, 2019
  *      Author: Steven R. Emmerson
  */
-
 #include "config.h"
 
 #include "Chunk.h"
@@ -155,7 +154,7 @@ private:
 
             for (;;) {
                 ChunkId chunkId = peerConn.getNotice();
-                LOG_DEBUG("Received notice");
+                LOG_DEBUG("Received notice about chunk %lu", chunkId.id);
 
                 //LOG_NOTE("Received chunk ID %lu", chunkId.id);
 
@@ -167,6 +166,7 @@ private:
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
                 if (doRequest) {
+                    LOG_DEBUG("Sending request for chunk %lu", chunkId.id);
                     outChunks.insert(chunkId);
                     peerConn.request(chunkId);
                 }
@@ -189,9 +189,7 @@ private:
 
             for (;;) {
                 ChunkId chunkId = peerConn.getRequest();
-                LOG_DEBUG("Received request");
-
-                //LOG_NOTE("Received chunk ID %lu", chunkId.id);
+                LOG_DEBUG("Received request for chunk %lu", chunkId.id);
 
                 int cancelState;
 
@@ -199,8 +197,10 @@ private:
                     MemChunk chunk = msgRcvr.get(chunkId, peerConn.getRmtAddr());
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
-                if (chunk)
+                if (chunk) {
+                    LOG_DEBUG("Sending chunk %lu", chunkId.id);
                     peerConn.send(chunk);
+                }
             }
 
             ::pthread_setcancelstate(entryState, &entryState);
@@ -219,10 +219,8 @@ private:
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
             for (;;) {
-                WireChunk chunk = peerConn.getChunk();
-                LOG_DEBUG("Received chunk");
-
-                //LOG_NOTE("Received chunk %lu", chunk.getId().id);
+                StreamChunk chunk = peerConn.getChunk();
+                LOG_DEBUG("Received chunk %lu", chunk.getId().id);
 
                 int cancelState;
 
@@ -249,9 +247,8 @@ private:
 
             for (;;) {
                 ChunkId chunkId = notices.pop();
-                //LOG_NOTE("Notifying about chunk %lu", chunkId.id);
+                LOG_DEBUG("Notifying about chunk %lu", chunkId.id);
                 peerConn.notify(chunkId);
-                LOG_DEBUG("Sent notice");
             }
 
             ::pthread_setcancelstate(entryState, &entryState);
