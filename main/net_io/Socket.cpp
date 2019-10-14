@@ -26,83 +26,20 @@ namespace hycast {
 class Socket::Impl
 {
 protected:
-    int  sd;         ///< Socket descriptor
-    bool byteStream; ///< Implements a byte-stream?
+    int sd; ///< Socket descriptor
 
-    /**
-     * Creates a streaming socket.
-     *
-     * @param[in] sockAddr           Socket address. Only the address family is
-     *                               used.
-     * @throws    std::system_error  Couldn't create socket
-     */
-    explicit Impl(const SockAddr& sockAddr)
-        : sd{sockAddr.socket(SOCK_STREAM)}
+    explicit Impl(const int sd) noexcept
+        : sd{sd}
     {}
 
 public:
-    explicit Impl(const int sd) noexcept
-        : sd{sd}
-    {
-        int       type;
-        socklen_t typeLen = sizeof(type);
-        int       status = ::getsockopt(sd, SOL_SOCKET, SO_TYPE, &type,
-                &typeLen);
-
-        if (status)
-            throw SYSTEM_ERROR("Couldn't get socket type");
-
-        byteStream = type == SOCK_STREAM;
-    }
-
     virtual ~Impl() noexcept
     {
         ::shutdown(sd, SHUT_RDWR);
         ::close(sd);
     }
 
-    bool isByteStream()
-    {
-        return byteStream;
-    }
-
-    /**
-     * Sets the Nagle algorithm.
-     *
-     * @param[in] enable             Whether or not to enable the Nagle
-     *                               algorithm
-     * @throws    std::system_error  `setsockopt()` failure
-     */
-    void setDelay(int enable)
-    {
-        if (::setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &enable,
-                sizeof(enable))) {
-            throw SYSTEM_ERROR("Couldn't set TCP_NODELAY to %d on socket " +
-                    std::to_string(enable) + std::to_string(sd));
-        }
-    }
-
-    /**
-     * Returns the setting of the Nagle algorithm.
-     *
-     * @retval `true`             The Nagle algorithm is enabled
-     * @retval `false`            The Nagle algorithm is not enabled
-     * @throws std::system_error  `getsockopt()` failure
-     */
-    bool getDelay()
-    {
-        int       enabled;
-        socklen_t len = sizeof(enabled);
-
-        if (::getsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &enabled, &len)) {
-            throw SYSTEM_ERROR("Couldn't get TCP_NODELAY setting on socket " +
-                    std::to_string(sd));
-        }
-
-        return enabled;
-    }
-
-    const SockAddr getAddr() const
+    const SockAddr getLclAddr() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -116,7 +53,7 @@ public:
         return sockAddr;
     }
 
-    const SockAddr getPeerAddr() const
+    const SockAddr getRmtAddr() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -128,7 +65,7 @@ public:
         return SockAddr(sockaddr);
     }
 
-    in_port_t getPort() const
+    in_port_t getLclPort() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -159,17 +96,145 @@ public:
         return port;
     }
 
-    in_port_t getPeerPort() const
+    in_port_t getRmtPort() const
     {
-        return getPeerAddr().getPort();
+        return getRmtAddr().getPort();
+    }
+
+    /**
+     * Shuts down the socket for both reading and writing. Causes `accept()` to
+     * throw an exception. Idempotent.
+     */
+    void shutdown() const
+    {
+        ::shutdown(sd, SHUT_RDWR);
+    }
+};
+
+Socket::Socket(Impl* impl)
+    : pImpl{impl}
+{}
+
+SockAddr Socket::getLclAddr() const
+{
+    SockAddr sockAddr(pImpl->getLclAddr());
+    LOG_DEBUG("%s", sockAddr.to_string().c_str());
+    return sockAddr;
+}
+
+in_port_t Socket::getLclPort() const
+{
+    return pImpl->getLclPort();
+}
+
+SockAddr Socket::getRmtAddr() const
+{
+    return pImpl->getRmtAddr();
+}
+
+in_port_t Socket::getRmtPort() const
+{
+    return pImpl->getRmtPort();
+}
+
+/******************************************************************************/
+
+class InetSock::Impl : public Socket::Impl
+{
+protected:
+    /**
+     * Constructs.
+     *
+     * @param[in] sd       Socket descriptor
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint
+     */
+    Impl(const int sd)
+        : Socket::Impl(sd)
+    {}
+
+public:
+    virtual ~Impl() noexcept
+    {}
+};
+
+InetSock::InetSock(Impl* impl)
+    : Socket{impl}
+{}
+
+InetSock::~InetSock()
+{}
+
+/******************************************************************************/
+
+class TcpSock::Impl : public InetSock::Impl
+{
+protected:
+    friend class TcpSrvrSock;
+
+    Impl();
+
+    /**
+     * Constructs.
+     *
+     * @param[in] sd       Socket descriptor
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint
+     */
+    Impl(const int sd)
+        : InetSock::Impl{sd}
+    {}
+
+public:
+    /**
+     * Sets the Nagle algorithm.
+     *
+     * @param[in] enable             Whether or not to enable the Nagle
+     *                               algorithm
+     * @throws    std::system_error  `setsockopt()` failure
+     */
+    void setDelay(int enable)
+    {
+        if (::setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &enable,
+                sizeof(enable))) {
+            throw SYSTEM_ERROR("Couldn't set TCP_NODELAY to %d on socket " +
+                    std::to_string(enable) + std::to_string(sd));
+        }
+    }
+
+    void write(
+            const void* bytes,
+            size_t      nbytes) const
+    {
+        LOG_DEBUG("Writing %zu bytes", nbytes);
+        if (::write(sd, bytes, nbytes) != nbytes)
+            throw SYSTEM_ERROR("Couldn't write " + std::to_string(nbytes) +
+                    " bytes to host " + getRmtAddr().to_string());
+    }
+
+    void write(uint16_t value)
+    {
+        value = hton(value);
+        write(&value, sizeof(value));
+    }
+
+    void write(uint32_t value)
+    {
+        value = hton(value);
+        write(&value, sizeof(value));
+    }
+
+    void write(uint64_t value)
+    {
+        value = hton(value);
+        write(&value, sizeof(value));
     }
 
     /**
      * Reads from the socket.
      *
      * @param[in] nbytes             Maximum amount of data to read in bytes
-     * @retval    0                  EOF
-     * @return                       Number of bytes actually read
+     * @return                       Number of bytes actually read. 0 => EOF
      * @throw     std::system_error  I/O failure
      */
     size_t read(
@@ -183,158 +248,111 @@ public:
          * Sending host becomes unreachable => read() won't return
          */
         LOG_DEBUG("Reading %zu bytes", nbytes);
-        ssize_t status = ::read(sd, data, nbytes);
+        ssize_t nread = ::read(sd, data, nbytes);
 
-        if (status < 0)
+        if (nread == -1)
             throw SYSTEM_ERROR("read() failure on host " +
-                    getPeerAddr().to_string());
+                    getRmtAddr().to_string());
 
-        return status;
+        return nread;
     }
 
-    void write(
-            const void* data,
-            size_t      nbytes) const
+    bool read(uint16_t& value)
     {
-        LOG_DEBUG("Writing %zu bytes", nbytes);
-        if (::write(sd, data, nbytes) != nbytes)
-            throw SYSTEM_ERROR("Couldn't write " + std::to_string(nbytes) +
-                    " bytes to host " + getPeerAddr().to_string());
+        if (read(&value, sizeof(value)) != sizeof(value))
+            return false;
+        value = ntoh(value);
+        return true;
     }
 
-    void writev(
-            const struct iovec* iov,
-            const int           iovCnt)
+    bool read(uint32_t& value)
     {
-#if 0
-        if (log_enabled(LOG_LEVEL_DEBUG)) {
-            size_t nbytes = 0;
-            for (int i = 0; i < iovCnt; ++i)
-                nbytes += iov->iov_len;
-            LOG_DEBUG("Writing %zu bytes", nbytes);
-        }
-#endif
-
-        if (::writev(sd, iov, iovCnt) == -1)
-            throw SYSTEM_ERROR("Couldn't write " + std::to_string(iovCnt) +
-                    "-element vector to host " + getPeerAddr().to_string());
+        if (read(&value, sizeof(value)) != sizeof(value))
+            return false;
+        value = ntoh(value);
+        return true;
     }
 
-    /**
-     * Shuts down the socket for both reading and writing. Causes `accept()` to
-     * throw an exception. Idempotent.
-     */
-    void shutdown() const
+    bool read(uint64_t& value)
     {
-        ::shutdown(sd, SHUT_RDWR);
+        if (read(&value, sizeof(value)) != sizeof(value))
+            return false;
+        value = ntoh(value);
+        return true;
     }
 };
 
-/******************************************************************************/
-
-Socket::Socket(Socket::Impl* impl)
-    : pImpl{impl}
+TcpSock::TcpSock(Impl* impl)
+    : InetSock{impl}
 {}
 
-bool Socket::isByteStream() const
-{
-    return pImpl->isByteStream();
-}
+TcpSock::~TcpSock()
+{}
 
-Socket& Socket::setDelay(bool enable)
+TcpSock& TcpSock::setDelay(bool enable)
 {
-    pImpl->setDelay(enable);
+    static_cast<TcpSock::Impl*>(pImpl.get())->setDelay(enable);
     return *this;
 }
 
-bool Socket::getDelay() const
+void TcpSock::write(
+        const void* bytes,
+        size_t      nbytes) const
 {
-    return pImpl->getDelay();
+    static_cast<TcpSock::Impl*>(pImpl.get())->write(bytes, nbytes);
 }
 
-SockAddr Socket::getAddr() const
+void TcpSock::write(uint16_t value) const
 {
-    SockAddr sockAddr(pImpl->getAddr());
-    LOG_DEBUG("%s", sockAddr.to_string().c_str());
-    return sockAddr;
+    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-in_port_t Socket::getPort() const
+void TcpSock::write(uint32_t value) const
 {
-    return pImpl->getPort();
+    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-SockAddr Socket::getPeerAddr() const
+void TcpSock::write(uint64_t value) const
 {
-    return pImpl->getPeerAddr();
+    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-in_port_t Socket::getPeerPort() const
-{
-    return pImpl->getPeerPort();
-}
-
-size_t Socket::read(
+size_t TcpSock::read(
         void* const  bytes,
         const size_t nbytes) const
 {
-    return pImpl->read(bytes, nbytes);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->read(bytes, nbytes);
 }
 
-void Socket::write(
-        const void* const bytes,
-        const size_t      nbytes) const
+bool TcpSock::read(uint16_t& value) const
 {
-    pImpl->write(bytes, nbytes);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->read(value);
 }
 
-void Socket::writev(
-        const struct iovec* iov,
-        const int           iovCnt)
+bool TcpSock::read(uint32_t& value) const
 {
-    pImpl->writev(iov, iovCnt);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->read(value);
 }
 
-void Socket::shutdown() const
+bool TcpSock::read(uint64_t& value) const
 {
-    pImpl->shutdown();
+    return static_cast<TcpSock::Impl*>(pImpl.get())->read(value);
+}
+
+void TcpSock::shutdown() const
+{
+    return static_cast<TcpSock::Impl*>(pImpl.get())->shutdown();
 }
 
 /******************************************************************************/
 
-class ClntSock::Impl final : public Socket::Impl
+class TcpSrvrSock::Impl final : public TcpSock::Impl
 {
 public:
     /**
      * Constructs.
      *
-     * @param[in] sockAddr           Address of remote endpoint
-     * @throw     std::system_error  Couldn't connect to `sockAddr`
-     * @exceptionsafety              Strong guarantee
-     * @cancellationpoint
-     */
-    Impl(const SockAddr& sockAddr)
-        : Socket::Impl{sockAddr}
-    {
-        sockAddr.connect(sd);
-    }
-};
-
-/******************************************************************************/
-
-ClntSock::ClntSock(const SockAddr& sockAddr)
-    : Socket(new Impl(sockAddr))
-{}
-
-/******************************************************************************/
-
-class SrvrSock::Impl final : public Socket::Impl
-{
-public:
-    /**
-     * Constructs.
-     *
-     * @param[in] sockAddr           Socket address
+     * @param[in] sockAddr           Server's local socket address
      * @param[in] queueSize          Size of listening queue
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
@@ -343,7 +361,7 @@ public:
      */
     Impl(   const SockAddr& sockAddr,
             const int       queueSize)
-        : Socket::Impl(sockAddr)
+        : TcpSock::Impl{sockAddr.socket(SOCK_STREAM)}
     {
         const int enable = 1;
 
@@ -362,7 +380,7 @@ public:
 
         if (::listen(sd, queueSize))
             throw SYSTEM_ERROR("listen() failure: {sock: " + std::to_string(sd)
-                    + ", queueSize: " + std::to_string(queueSize));
+                    + ", queueSize: " + std::to_string(queueSize) + "}");
     }
 
     /**
@@ -372,7 +390,7 @@ public:
      * @throws  std::system_error  `::accept()` failure
      * @cancellationpoint
      */
-    Socket::Impl* accept()
+    TcpSock::Impl* accept()
     {
         const int fd = ::accept(sd, nullptr, nullptr);
 
@@ -380,21 +398,163 @@ public:
             throw SYSTEM_ERROR("accept() failure on socket " +
                     std::to_string(sd));
 
-        return new Socket::Impl(fd);
+        return new TcpSock::Impl(fd);
     }
 };
 
-/******************************************************************************/
-
-SrvrSock::SrvrSock(
+TcpSrvrSock::TcpSrvrSock(
         const SockAddr& sockAddr,
         const int       queueSize)
-    : Socket{new Impl(sockAddr, queueSize)}
+    : TcpSock{new Impl(sockAddr, queueSize)}
 {}
 
-Socket SrvrSock::accept() const
+TcpSock TcpSrvrSock::accept() const
 {
-    return Socket{static_cast<SrvrSock::Impl*>(pImpl.get())->accept()};
+    return TcpSock{static_cast<TcpSrvrSock::Impl*>(pImpl.get())->accept()};
+}
+
+/******************************************************************************/
+
+class TcpClntSock::Impl final : public TcpSock::Impl
+{
+public:
+    /**
+     * Constructs.
+     *
+     * @param[in] sockAddr           Address of remote endpoint
+     * @throw     std::system_error  Couldn't connect to `sockAddr`
+     * @exceptionsafety              Strong guarantee
+     * @cancellationpoint
+     */
+    Impl(const SockAddr& sockAddr)
+        : TcpSock::Impl(sockAddr.socket(SOCK_STREAM, IPPROTO_TCP))
+    {
+        sockAddr.connect(sd);
+    }
+};
+
+TcpClntSock::TcpClntSock(const SockAddr& sockAddr)
+    : TcpSock(new Impl(sockAddr))
+{}
+
+/******************************************************************************/
+
+class UdpSndrSock::Impl final : public InetSock::Impl
+{
+public:
+    /**
+     * @cancellationpoint
+     */
+    Impl(   const SockAddr& ifAddr,
+            const SockAddr& grpAddr)
+        : InetSock::Impl(0) // TODO
+    {
+        // TODO
+    }
+
+    void write(
+            const struct iovec* iov,
+            const int           iovCnt)
+    {
+#if 0
+        if (log_enabled(LOG_LEVEL_DEBUG)) {
+            size_t nbytes = 0;
+            for (int i = 0; i < iovCnt; ++i)
+                nbytes += iov->iov_len;
+            LOG_DEBUG("Writing %zu bytes", nbytes);
+        }
+#endif
+
+        if (::writev(sd, iov, iovCnt) == -1)
+            throw SYSTEM_ERROR("Couldn't write " + std::to_string(iovCnt) +
+                    "-element vector to host " + getRmtAddr().to_string());
+    }
+
+};
+
+UdpSndrSock::UdpSndrSock(
+        const SockAddr& ifAddr,
+        const SockAddr& grpAddr)
+    : InetSock{new Impl(ifAddr, grpAddr)}
+{}
+
+void UdpSndrSock::write(
+        const struct iovec* iov,
+        const int           iovCnt)
+{
+    static_cast<UdpSndrSock::Impl*>(pImpl.get())->write(iov, iovCnt);
+}
+
+/******************************************************************************/
+
+class UdpRcvrSock::Impl final : public InetSock::Impl
+{
+public:
+    /**
+     * @cancellationpoint
+     */
+    Impl(   const SockAddr& ifAddr,
+            const SockAddr& grpAddr,
+            const SockAddr& srcAddr)
+        : InetSock::Impl(0) // TODO
+    {}
+
+    size_t peek(
+            void*        bytes,
+            const size_t nbytes)
+    {
+        ssize_t nread = ::recv(sd, bytes, nbytes, MSG_PEEK);
+
+        if (nread < 0)
+            throw SYSTEM_ERROR("::recv() failure: read " +
+                    std::to_string(nread) + " bytes from host " +
+                    getRmtAddr().to_string() + " but expected " +
+                    std::to_string(nbytes));
+
+        return nread;
+    }
+
+    size_t read(
+            const struct iovec* iov,
+            const int           iovCnt)
+    {
+        size_t nbytes = 0;
+        for (int i = 0; i < iovCnt; ++i)
+            nbytes += iov->iov_len;
+
+        LOG_DEBUG("Reading %zu bytes", nbytes);
+
+        auto nread = ::readv(sd, iov, iovCnt);
+
+        if (nread < 0)
+            throw SYSTEM_ERROR("::readv() failure: read " +
+                    std::to_string(nread) + " bytes from host " +
+                    getRmtAddr().to_string() + " but expected " +
+                    std::to_string(nbytes));
+
+        return nread;
+    }
+};
+
+UdpRcvrSock::UdpRcvrSock(
+        const SockAddr& ifAddr,
+        const SockAddr& grpAddr,
+        const SockAddr& srcAddr)
+    : InetSock{new Impl(ifAddr, grpAddr, srcAddr)}
+{}
+
+size_t UdpRcvrSock::peek(
+        void*        bytes,
+        const size_t nbytes)
+{
+    return static_cast<UdpRcvrSock::Impl*>(pImpl.get())->peek(bytes, nbytes);
+}
+
+size_t UdpRcvrSock::read(
+        const struct iovec* iov,
+        const int           iovCnt)
+{
+    return static_cast<UdpRcvrSock::Impl*>(pImpl.get())->read(iov, iovCnt);
 }
 
 } // namespace

@@ -42,30 +42,14 @@ public:
     Peer();
 
     /**
-     * Server-side construction.
+     * Constructs from a connection to a remote peer and a receiver of messages
+     * from the remote peer.
      *
-     * @param[in] peerConn   Remote peer
+     * @param[in] peerConn  Connection to the remote peer
      * @param[in] msgRcvr   The receiver of messages from the remote peer
      */
     Peer(   PeerConn   peerConn,
             PeerMsgRcvr& msgRcvr);
-
-    /**
-     * Client-side construction. Potentially slow because a connection is
-     * established with the remote peer in order to be symmetrical with server-
-     * side construction, in which the connection already exists.
-     *
-     * @param[in] srvrAddr            Socket address of the remote server
-     * @param[in] portPool            Pool of potential port numbers for
-     *                                temporary servers
-     * @param[in] msgRcvr             Receiver of messages from the remote peer
-     * @throws    std::system_error   System error
-     * @throws    std::runtime_error  Remote peer closed the connection
-     * @cancellationpoint             Yes
-     */
-    Peer(   const SockAddr& srvrAddr,
-            PortPool&       portPool,
-            PeerMsgRcvr&    msgRcvr);
 
     /**
      * Copy construction.

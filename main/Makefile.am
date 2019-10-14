@@ -1,4 +1,4 @@
-SUBDIRS			= misc net_io peer #net prod comms
+SUBDIRS			= misc net_io peer #storage #net prod comms
 lib_LTLIBRARIES		= libhycast.la
 libhycast_la_SOURCES	= dummy.h
 #libhycast_la_LIBADD	= misc/lib.la net/lib.la prod/lib.la comms/lib.la

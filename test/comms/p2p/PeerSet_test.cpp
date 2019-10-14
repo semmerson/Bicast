@@ -173,7 +173,7 @@ protected:
         return hycast::RecvStatus{};
     }
     hycast::RecvStatus receive(
-            hycast::LatentChunk&        chunk,
+            hycast::SocketChunk&        chunk,
             const hycast::InetSockAddr& peerAddr)
     {
         EXPECT_TRUE((srvr1Addr == peerAddr) || (srvr2Addr == peerAddr));

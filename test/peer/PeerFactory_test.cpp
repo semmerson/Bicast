@@ -94,7 +94,7 @@ public:
     }
 
     void hereIs(
-            hycast::StreamChunk       wireChunk,
+            hycast::TcpChunk       wireChunk,
             const hycast::SockAddr& rmtSockAddr)
     {
         const hycast::ChunkSize n = wireChunk.getSize();
@@ -128,7 +128,7 @@ public:
     }
 
     void hereIs(
-            hycast::StreamChunk wireChunk,
+            hycast::TcpChunk wireChunk,
             hycast::Peer      peer)
     {
         const hycast::ChunkSize n = wireChunk.getSize();

@@ -114,7 +114,7 @@ public:
     }
 
     void hereIs(
-            hycast::StreamChunk& wireChunk,
+            hycast::TcpChunk& wireChunk,
             hycast::Peer&      peer)
     {
         const hycast::ChunkSize n = wireChunk.getSize();

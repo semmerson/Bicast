@@ -28,7 +28,7 @@ namespace hycast {
 class SockAddr::Impl
 {
 protected:
-    InAddr               inAddr;
+    InetAddr               inAddr;
     in_port_t            port;
     std::string          strRep;
     std::hash<in_port_t> portHash;
@@ -66,7 +66,7 @@ public:
         , port{0}
     {}
 
-    Impl(   const InAddr& inAddr,
+    Impl(   const InetAddr& inAddr,
             const in_port_t port)
         : inAddr{inAddr}
         , port{port}
@@ -79,7 +79,7 @@ public:
 
     virtual ~Impl() =0;
 
-    const InAddr& getInAddr() const noexcept
+    const InetAddr& getInAddr() const noexcept
     {
         return inAddr;
     }
@@ -165,7 +165,7 @@ public:
     {}
 
     SockAddrIn(const struct sockaddr_in& sockaddr)
-        : Impl(InAddr(sockaddr.sin_addr), ntohs(sockaddr.sin_port))
+        : Impl(InetAddr(sockaddr.sin_addr), ntohs(sockaddr.sin_port))
         , sockaddr(sockaddr)
     {
         strRep = inAddr.to_string() + ":" + std::to_string(port);
@@ -174,7 +174,7 @@ public:
     SockAddrIn(
             const in_addr_t addr,
             const in_port_t port) ///< Port number in host byte-order
-        : Impl{InAddr(addr), port}
+        : Impl{InetAddr(addr), port}
         , sockaddr{0}
     {
         LOG_DEBUG("{addr: %s, port: %hu}", inAddr.to_string().c_str(), port);
@@ -249,7 +249,7 @@ public:
     {}
 
     SockAddrIn6(const struct sockaddr_in6& sockaddr)
-        : Impl(InAddr(sockaddr.sin6_addr), ntohs(sockaddr.sin6_port))
+        : Impl(InetAddr(sockaddr.sin6_addr), ntohs(sockaddr.sin6_port))
         , sockaddr(sockaddr)
     {
         strRep = "[" + inAddr.to_string() + "]:" + std::to_string(port);
@@ -258,7 +258,7 @@ public:
     SockAddrIn6(
             const struct in6_addr& addr,
             const in_port_t        port) ///< Port number in host byte-order
-        : Impl{InAddr(addr), port}
+        : Impl{InetAddr(addr), port}
         , sockaddr{0}
     {
         sockaddr.sin6_family = AF_INET6;
@@ -415,7 +415,7 @@ public:
     SockAddrName(
             const std::string name,
             const in_port_t   port) ///< Port number in host byte-order
-        : SockAddr::Impl{InAddr(name), port}
+        : SockAddr::Impl{InetAddr(name), port}
         , name{name}
         , sockAddr{}
     {
@@ -526,7 +526,7 @@ SockAddr::SockAddr(const struct sockaddr& sockaddr)
         throw INVALID_ARGUMENT("Unsupported address family: " +
                 std::to_string(sockaddr.sa_family));
     }
-    LOG_DEBUG("%s", pImpl->to_string().c_str());
+    //LOG_DEBUG("%s", pImpl->to_string().c_str());
 }
 
 SockAddr::SockAddr(
@@ -676,7 +676,7 @@ void SockAddr::connect(const int sd) const
     pImpl->connect(sd);
 }
 
-const InAddr& SockAddr::getInAddr() const noexcept
+const InetAddr& SockAddr::getInAddr() const noexcept
 {
     return pImpl->getInAddr();
 }

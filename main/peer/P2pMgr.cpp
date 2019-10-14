@@ -688,7 +688,7 @@ public:
      * @param[in] rmtAddr  Socket address of the remote peer
      */
     void hereIs(
-            StreamChunk       chunk,
+            TcpChunk       chunk,
             const SockAddr& rmtAddr)
     {
         msgRcvr.hereIs(chunk, rmtAddr);

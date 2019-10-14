@@ -11,59 +11,28 @@
  */
 #include "config.h"
 
-#include "Codec.h"
 #include "error.h"
 #include "PeerConn.h"
 #include "PortPool.h"
+#include "Socket.h"
 
 namespace hycast {
 
-class PeerConn::Impl
-{
-public:
-    virtual ~Impl() =0;
-
-    virtual const SockAddr& getRmtAddr() const noexcept =0;
-
-    virtual const SockAddr& getLclAddr() const noexcept =0;
-
-    virtual std::string to_string() const noexcept =0;
-
-    virtual void notify(const ChunkId& notice) =0;
-
-    virtual ChunkId getNotice() =0;
-
-    virtual void request(const ChunkId& request) =0;
-
-    virtual ChunkId getRequest() =0;
-
-    virtual void send(const MemChunk& chunk) =0;
-
-    virtual StreamChunk getChunk() =0;
-
-    virtual void disconnect() =0;
-};
-
-PeerConn::Impl::~Impl()
-{}
-
-/******************************************************************************/
-
 /**
- * A connection between peers that uses three `Wire`s to minimize latency.
+ * A connection between peers that uses three TCP sockets to minimize latency.
  */
-class PeerConn3 final : public PeerConn::Impl
+class PeerConn::Impl
 {
 private:
     SockAddr    rmtSockAddr; ///< Remote socket address
+    TcpSock     noticeSock;  ///< Connection for exchanging notices
+    TcpSock     clntSock;    ///< Connection for sending requests and receiving chunks
+    TcpSock     srvrSock;    ///< Connection for receiving requests and sending chunks
     SockAddr    lclSockAddr; ///< Local socket address
-    StreamCodec noticeCodec;   ///< Connection for exchanging notices
-    StreamCodec clntCodec;     ///< Connection for sending requests and receiving chunks
-    StreamCodec srvrCodec;     ///< Connection for receiving requests and sending chunks
     std::string string;      ///< `to_string()` string
 
-    SrvrSock createSrvrSock(
-            InAddr    inAddr,
+    TcpSrvrSock createSrvrSock(
+            InetAddr  inAddr,
             PortPool& portPool,
             const int queueSize)
     {
@@ -75,7 +44,7 @@ private:
             SockAddr        srvrAddr(inAddr.getSockAddr(port));
 
             try {
-                return SrvrSock(srvrAddr, queueSize);
+                return TcpSrvrSock(srvrAddr, queueSize);
             }
             catch (const std::exception& ex) {
                 log_error(ex);
@@ -90,47 +59,43 @@ public:
     /**
      * Server-side construction.
      *
-     * @param[in] sock      `::accept()`ed socket
+     * @param[in] sock      `::accept()`ed TCP socket
      */
-    PeerConn3(Socket&  sock)
-        : rmtSockAddr(sock.getPeerAddr())
-        , lclSockAddr{sock.getAddr()}
-        , noticeCodec(sock)
-        , clntCodec{}
-        , srvrCodec{}
+    Impl(TcpSock& sock)
+        : rmtSockAddr(sock.getRmtAddr())
+        , noticeSock(sock)
+        , clntSock{}
+        , srvrSock{}
+        , lclSockAddr{sock.getLclAddr()}
         , string{}
     {
-        InAddr rmtInAddr{rmtSockAddr.getInAddr()};
+        InetAddr rmtInAddr{rmtSockAddr.getInAddr()};
         LOG_DEBUG("rmtInAddr: %s", rmtInAddr.to_string().c_str());
 
-        sock.setDelay(false);
+        noticeSock.setDelay(false);
 
         // Read port numbers of client's temporary servers
         in_port_t rmtSrvrPort, rmtClntPort;
-        noticeCodec.decode(rmtSrvrPort);
-        noticeCodec.decode(rmtClntPort);
+        noticeSock.read(rmtSrvrPort);
+        noticeSock.read(rmtClntPort);
 
-        // Create sockets for requesting and receiving chunks
-        ClntSock clntSock(rmtSockAddr.clone(rmtSrvrPort));
-        ClntSock srvrSock(rmtSockAddr.clone(rmtClntPort));
+        // Create sockets to client's temporary servers
+        clntSock = TcpClntSock(rmtSockAddr.clone(rmtSrvrPort));
+        srvrSock = TcpClntSock(rmtSockAddr.clone(rmtClntPort));
 
         clntSock.setDelay(false);
         srvrSock.setDelay(true); // Consolidate ACK and chunk
 
-        // Create support for requesting and receiving chunks
-        clntCodec = StreamCodec(clntSock);
-        srvrCodec = StreamCodec(srvrSock);
-
         string = "{remote: {addr: " +
-                sock.getPeerAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(sock.getPeerPort()) +
-                ", " + std::to_string(clntSock.getPeerPort()) +
-                ", " + std::to_string(srvrSock.getPeerPort()) +
+                sock.getRmtAddr().getInAddr().to_string() +
+                ", ports: [" + std::to_string(sock.getRmtPort()) +
+                ", " + std::to_string(clntSock.getRmtPort()) +
+                ", " + std::to_string(srvrSock.getRmtPort()) +
                 "]}, local: {addr: " +
-                sock.getAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(sock.getPort()) +
-                ", " + std::to_string(clntSock.getPort()) +
-                ", " + std::to_string(srvrSock.getPort()) +
+                sock.getLclAddr().getInAddr().to_string() +
+                ", ports: [" + std::to_string(sock.getLclPort()) +
+                ", " + std::to_string(clntSock.getLclPort()) +
+                ", " + std::to_string(srvrSock.getLclPort()) +
                 "]}}";
     }
 
@@ -144,53 +109,44 @@ public:
      * @throws    std::runtime_error  Remote peer closed the connection
      * @cancellationpoint             Yes
      */
-    PeerConn3(
+    Impl(
             const SockAddr& rmtSrvrAddr,
             PortPool&       portPool)
         : rmtSockAddr{rmtSrvrAddr}
-        , lclSockAddr{}
-        , noticeCodec{}
-        , clntCodec{}
-        , srvrCodec{}
+        , noticeSock{TcpClntSock(rmtSrvrAddr)}
+        , clntSock{}
+        , srvrSock{}
+        , lclSockAddr{noticeSock.getLclAddr()}
+        , string()
     {
-        // Create socket for exchanging notices
-        ClntSock noticeSock{rmtSrvrAddr};
         noticeSock.setDelay(false);
 
-        // Create support for exchanging notices
-        lclSockAddr = noticeSock.getAddr();
-        noticeCodec = StreamCodec{noticeSock};
-
         // Create temporary server sockets
-        InAddr   lclInAddr = lclSockAddr.getInAddr();
-        SrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
-        SrvrSock clntSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
+        InetAddr    lclInAddr = lclSockAddr.getInAddr();
+        TcpSrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
+        TcpSrvrSock clntSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
-        // Send port numbers of temporary servers to remote peer
-        noticeCodec.encode(srvrSrvrSock.getPort());
-        noticeCodec.encode(clntSrvrSock.getPort());
+        // Send port numbers of temporary server sockets to remote peer
+        noticeSock.write(srvrSrvrSock.getLclPort());
+        noticeSock.write(clntSrvrSock.getLclPort());
 
-        // Accept sockets for requesting and receiving chunks
-        Socket srvrSock{srvrSrvrSock.accept()};
-        Socket clntSock{clntSrvrSock.accept()};
+        // Accept sockets from temporary servers
+        srvrSock = TcpSock{srvrSrvrSock.accept()};
+        clntSock = TcpSock{clntSrvrSock.accept()};
 
         clntSock.setDelay(false);
         srvrSock.setDelay(true); // Consolidate ACK and chunk
 
-        // Create wires for requesting and receiving chunks
-        clntCodec = StreamCodec{clntSock};
-        srvrCodec = StreamCodec{srvrSock};
-
         string = "{remote: {addr: " +
-                noticeSock.getPeerAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(noticeSock.getPeerPort()) +
-                ", " + std::to_string(clntSock.getPeerPort()) +
-                ", " + std::to_string(srvrSock.getPeerPort()) +
+                noticeSock.getRmtAddr().getInAddr().to_string() +
+                ", ports: [" + std::to_string(noticeSock.getRmtPort()) +
+                ", " + std::to_string(clntSock.getRmtPort()) +
+                ", " + std::to_string(srvrSock.getRmtPort()) +
                 "]}, local: {addr: " +
-                noticeSock.getAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(noticeSock.getPort()) +
-                ", " + std::to_string(clntSock.getPort()) +
-                ", " + std::to_string(srvrSock.getPort()) +
+                noticeSock.getLclAddr().getInAddr().to_string() +
+                ", ports: [" + std::to_string(noticeSock.getLclPort()) +
+                ", " + std::to_string(clntSock.getLclPort()) +
+                ", " + std::to_string(srvrSock.getLclPort()) +
                 "]}}";
     }
 
@@ -221,7 +177,7 @@ public:
 
     void notify(const ChunkId& notice)
     {
-        noticeCodec.encode(notice);
+        notice.write(noticeSock);
     }
 
     /**
@@ -233,14 +189,12 @@ public:
      */
     ChunkId getNotice()
     {
-        ChunkId id;
-        noticeCodec.decode(id);
-        return id;
+        return ChunkId::read(noticeSock);
     }
 
     void request(const ChunkId& request)
     {
-        clntCodec.encode(request);
+        request.write(clntSock);
     }
 
     /**
@@ -252,14 +206,12 @@ public:
      */
     ChunkId getRequest()
     {
-        ChunkId id;
-        srvrCodec.decode(id);
-        return id;
+        return ChunkId::read(srvrSock);
     }
 
     void send(const MemChunk& chunk)
     {
-        srvrCodec.encode(chunk);
+        chunk.write(srvrSock);
     }
 
     /**
@@ -269,11 +221,9 @@ public:
      * @throws std::system_error   System error
      * @throws std::runtime_error  Remote peer closed the connection
      */
-    StreamChunk getChunk()
+    TcpChunk getChunk()
     {
-        StreamChunk chunk;
-        clntCodec.decode(chunk);
-        return chunk;
+        return TcpChunk{clntSock};
     }
 
     /**
@@ -281,9 +231,9 @@ public:
      */
     void disconnect()
     {
-        srvrCodec = StreamCodec();
-        clntCodec = StreamCodec();
-        noticeCodec = StreamCodec();
+        srvrSock.shutdown();
+        clntSock.shutdown();
+        noticeSock.shutdown();
     }
 };
 
@@ -296,15 +246,15 @@ PeerConn::PeerConn(Impl* const impl)
 PeerConn::PeerConn(
         const SockAddr& srvrAddr,
         PortPool&       portPool)
-    : PeerConn{new PeerConn3(srvrAddr, portPool)}
+    : PeerConn{new Impl(srvrAddr, portPool)}
 {}
 
-PeerConn::PeerConn(Socket&   sock)
-    : PeerConn{new PeerConn3(sock)}
+PeerConn::PeerConn(TcpSock& sock)
+    : PeerConn{new Impl(sock)}
 {}
 
-PeerConn::PeerConn(Socket&& sock)
-    : PeerConn{new PeerConn3(sock)}
+PeerConn::PeerConn(TcpSock&& sock)
+    : PeerConn{new Impl(sock)}
 {}
 
 const SockAddr& PeerConn::getRmtAddr() const noexcept
@@ -346,7 +296,7 @@ void PeerConn::send(const MemChunk& chunk)
     pImpl->send(chunk);
 }
 
-StreamChunk PeerConn::getChunk()
+TcpChunk PeerConn::getChunk()
 {
     return pImpl->getChunk();
 }

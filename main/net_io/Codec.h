@@ -47,14 +47,14 @@ public:
      *
      * @param[in] sock  Socket
      */
-    Codec(Socket& sock);
+    Codec(TcpSock& sock);
 
     /**
      * Move constructs from a socket.
      *
      * @param[in] sock  Socket
      */
-    Codec(Socket&& sock);
+    Codec(TcpSock&& sock);
 
     virtual void encode(const MemChunk& chunk) const =0;
 };
@@ -66,9 +66,9 @@ public:
 
     StreamCodec();
 
-    StreamCodec(Socket& sock);
+    StreamCodec(TcpSock& sock);
 
-    StreamCodec(Socket&& sock);
+    StreamCodec(TcpSock&& sock);
 
     void encode(const in_port_t port) const;
 
@@ -82,7 +82,7 @@ public:
 
     void decode(ChunkId& chunkId) const;
 
-    void decode(StreamChunk& chunk) const;
+    void decode(TcpChunk& chunk) const;
 
     size_t decode(void* data, const size_t nbytes) const;
 };
@@ -94,13 +94,13 @@ public:
 
     RecordCodec();
 
-    RecordCodec(Socket& sock);
+    RecordCodec(UdpSock& sock);
 
-    RecordCodec(Socket&& sock);
+    RecordCodec(UdpSock&& sock);
 
     void encode(const MemChunk& chunk) const override;
 
-    void decode(RecordChunk& chunk) const;
+    void decode(UdpChunk& chunk) const;
 };
 
 } // namespace

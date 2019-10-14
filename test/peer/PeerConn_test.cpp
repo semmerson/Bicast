@@ -30,7 +30,7 @@ protected:
     std::condition_variable cond;
     bool                    srvrReady;
     hycast::ChunkId         chunkId;
-    char                    memData[1000] = {0};
+    char                    memData[1000];
     hycast::MemChunk        memChunk;
 
     // You can remove any or all of the following functions if its body
@@ -42,6 +42,7 @@ protected:
         , cond{}
         , srvrReady{false}
         , chunkId{1}
+        , memData{0}
         , memChunk(chunkId, sizeof(memData), memData)
     {
         // You can do set-up work for each test here.
@@ -70,7 +71,7 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
 
 public:
-    void runServer(hycast::SrvrSock& srvrSock)
+    void runServer(hycast::TcpSrvrSock& srvrSock)
     {
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
@@ -78,14 +79,14 @@ public:
             cond.notify_one();
         }
 
-        hycast::Socket     sock{srvrSock.accept()};
+        hycast::TcpSock    sock{srvrSock.accept()};
         hycast::PeerConn   peerConn(sock);
         hycast::ChunkId    id = peerConn.getNotice();
         EXPECT_EQ(chunkId, id);
 
         peerConn.request(id);
 
-        hycast::StreamChunk chunk = peerConn.getChunk();
+        hycast::TcpChunk chunk = peerConn.getChunk();
         EXPECT_EQ(chunkId, chunk.getId());
         hycast::ChunkSize n = chunk.getSize();
         EXPECT_EQ(memChunk.getSize(), n);
@@ -105,8 +106,8 @@ TEST_F(PeerConnTest, DefaultConstruction)
 // Tests a three connection peer connection
 TEST_F(PeerConnTest, ThreeConnPeerConn)
 {
-    hycast::SrvrSock srvrSock(srvrAddr);
-    std::thread      srvrThread(&PeerConnTest::runServer, this,
+    hycast::TcpSrvrSock srvrSock(srvrAddr);
+    std::thread         srvrThread(&PeerConnTest::runServer, this,
             std::ref(srvrSock));
 
     //try {

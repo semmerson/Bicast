@@ -42,8 +42,8 @@ protected:
         encoder.flush();
 
         hycast::MemDecoder  decoder{buf, sizeof(buf)};
-        decoder.fill(hycast::LatentChunk::getMetadataSize(version));
-        hycast::LatentChunk latentChunk{decoder, version};
+        decoder.fill(hycast::InetChunk::getMetadataSize(version));
+        hycast::InetChunk latentChunk{decoder, version};
         hycast::Product prod{};
         ps.add(latentChunk, prod);
     }
@@ -80,8 +80,8 @@ protected:
 
             // Create latent chunk and store it
             hycast::MemDecoder  decoder(buf, nbytes);
-            decoder.fill(hycast::LatentChunk::getMetadataSize(version));
-            hycast::LatentChunk latentChunk(decoder, version);
+            decoder.fill(hycast::InetChunk::getMetadataSize(version));
+            hycast::InetChunk latentChunk(decoder, version);
             const auto          status = ps.add(latentChunk, prod2);
             const bool          isLast = chunkIndex == prodInfo.getNumChunks() -
                     1;

@@ -43,7 +43,7 @@ void runClient()
     hycast::SctpSock sock(numStreams);
     sock.connect(serverSockAddr);
 
-    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel(sock, 0, 0);
+    hycast::Channel<hycast::ActualChunk,hycast::SocketChunk> chunkChannel(sock, 0, 0);
     uint8_t data1[hycast::ChunkSize::defaultSize];
     (void)memset(data1, 0xbd, sizeof(data1));
     hycast::ProdInfo  prodInfo(0, "product", sizeof(data1));
@@ -52,7 +52,7 @@ void runClient()
     chunkChannel.send(actualChunk);
     char data2[sizeof(data1)];
     ASSERT_EQ(0, sock.getStreamId());
-    hycast::LatentChunk latentChunk = chunkChannel.recv();
+    hycast::SocketChunk latentChunk = chunkChannel.recv();
     const size_t nbytes = latentChunk.drainData(data2, sizeof(data2));
     EXPECT_EQ(sizeof(data2), nbytes);
     EXPECT_EQ(0, memcmp(data1, data2, sizeof(data1)));
@@ -117,7 +117,7 @@ protected:
 
 // Tests default construction
 TEST_F(ChunkChannelTest, DefaultConstruction) {
-    hycast::Channel<hycast::ActualChunk,hycast::LatentChunk> chunkChannel{};
+    hycast::Channel<hycast::ActualChunk,hycast::SocketChunk> chunkChannel{};
 }
 
 // Tests end-to-end Chunk transmission

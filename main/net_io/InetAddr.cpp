@@ -13,7 +13,7 @@
 #include "config.h"
 
 #include "error.h"
-#include "InAddr.h"
+#include "InetAddr.h"
 #include "SockAddr.h"
 #include "error.h"
 
@@ -24,11 +24,11 @@
 
 namespace hycast {
 
-class In4Addr;
-class In6Addr;
+class Inet4Addr;
+class Inet6Addr;
 class NameAddr;
 
-class InAddr::Impl
+class InetAddr::Impl
 {
 public:
     virtual ~Impl() noexcept =0;
@@ -37,17 +37,17 @@ public:
 
     virtual bool operator <(const Impl& rhs) const noexcept =0;
 
-    virtual bool operator <(const In4Addr& rhs) const noexcept =0;
+    virtual bool operator <(const Inet4Addr& rhs) const noexcept =0;
 
-    virtual bool operator <(const In6Addr& rhs) const noexcept =0;
+    virtual bool operator <(const Inet6Addr& rhs) const noexcept =0;
 
     virtual bool operator <(const NameAddr& rhs) const noexcept =0;
 
     virtual bool operator ==(const Impl& rhs) const noexcept =0;
 
-    virtual bool operator ==(const In4Addr& rhs) const noexcept =0;
+    virtual bool operator ==(const Inet4Addr& rhs) const noexcept =0;
 
-    virtual bool operator ==(const In6Addr& rhs) const noexcept =0;
+    virtual bool operator ==(const Inet6Addr& rhs) const noexcept =0;
 
     virtual bool operator ==(const NameAddr& rhs) const noexcept =0;
 
@@ -56,18 +56,18 @@ public:
     virtual SockAddr getSockAddr(const in_port_t port) const =0;
 };
 
-InAddr::Impl::~Impl() noexcept
+InetAddr::Impl::~Impl() noexcept
 {}
 
 /******************************************************************************/
 
-class In4Addr final : public InAddr::Impl
+class Inet4Addr final : public InetAddr::Impl
 {
     struct in_addr       addr;
     std::hash<in_addr_t> myHash;
 
 public:
-    In4Addr(const in_addr_t addr)
+    Inet4Addr(const in_addr_t addr)
         : addr{addr}
     {}
 
@@ -81,17 +81,17 @@ public:
         return std::string(buf);
     }
 
-    bool operator <(const InAddr::Impl& rhs) const noexcept
+    bool operator <(const InetAddr::Impl& rhs) const noexcept
     {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const In4Addr& rhs) const noexcept
+    bool operator <(const Inet4Addr& rhs) const noexcept
     {
         return ntohl(addr.s_addr) < ntohl(rhs.addr.s_addr);
     }
 
-    bool operator <(const In6Addr& rhs) const noexcept
+    bool operator <(const Inet6Addr& rhs) const noexcept
     {
         return true;
     }
@@ -101,17 +101,17 @@ public:
         return true;
     }
 
-    bool operator ==(const InAddr::Impl& rhs) const noexcept
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept
     {
         return rhs == *this;
     }
 
-    bool operator ==(const In4Addr& rhs) const noexcept
+    bool operator ==(const Inet4Addr& rhs) const noexcept
     {
         return addr.s_addr == rhs.addr.s_addr;
     }
 
-    bool operator ==(const In6Addr& rhs) const noexcept
+    bool operator ==(const Inet6Addr& rhs) const noexcept
     {
         return false;
     }
@@ -133,13 +133,13 @@ public:
 
 /******************************************************************************/
 
-class In6Addr final : public InAddr::Impl
+class Inet6Addr final : public InetAddr::Impl
 {
     struct in6_addr     addr;
     std::hash<uint64_t> myHash;
 
 public:
-    In6Addr(const struct in6_addr& addr)
+    Inet6Addr(const struct in6_addr& addr)
         : addr(addr)
     {}
 
@@ -153,17 +153,17 @@ public:
         return std::string(buf);
     }
 
-    bool operator <(const InAddr::Impl& rhs) const noexcept
+    bool operator <(const InetAddr::Impl& rhs) const noexcept
     {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const In4Addr& rhs) const noexcept
+    bool operator <(const Inet4Addr& rhs) const noexcept
     {;
         return false;
     }
 
-    bool operator <(const In6Addr& rhs) const noexcept
+    bool operator <(const Inet6Addr& rhs) const noexcept
     {
         return ::memcmp(&addr, &rhs.addr, sizeof(addr)) < 0;
     }
@@ -173,17 +173,17 @@ public:
         return true;
     }
 
-    bool operator ==(const InAddr::Impl& rhs) const noexcept
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept
     {
         return rhs == *this;
     }
 
-    bool operator ==(const In4Addr& rhs) const noexcept
+    bool operator ==(const Inet4Addr& rhs) const noexcept
     {
         return false;
     }
 
-    bool operator ==(const In6Addr& rhs) const noexcept
+    bool operator ==(const Inet6Addr& rhs) const noexcept
     {
         return ::memcmp(&addr, &rhs.addr, sizeof(addr)) == 0;
     }
@@ -207,7 +207,7 @@ public:
 
 /******************************************************************************/
 
-class NameAddr final : public InAddr::Impl
+class NameAddr final : public InetAddr::Impl
 {
     std::string            name;
     std::hash<std::string> myHash;
@@ -222,17 +222,17 @@ public:
         return std::string(name);
     }
 
-    bool operator <(const InAddr::Impl& rhs) const noexcept
+    bool operator <(const InetAddr::Impl& rhs) const noexcept
     {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const In4Addr& rhs) const noexcept
+    bool operator <(const Inet4Addr& rhs) const noexcept
     {
         return false;
     }
 
-    bool operator <(const In6Addr& rhs) const noexcept
+    bool operator <(const Inet6Addr& rhs) const noexcept
     {
         return false;
     }
@@ -242,17 +242,17 @@ public:
         return name < rhs.name;
     }
 
-    bool operator ==(const InAddr::Impl& rhs) const noexcept
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept
     {
         return rhs == *this;
     }
 
-    bool operator ==(const In4Addr& rhs) const noexcept
+    bool operator ==(const Inet4Addr& rhs) const noexcept
     {
         return false;
     }
 
-    bool operator ==(const In6Addr& rhs) const noexcept
+    bool operator ==(const Inet6Addr& rhs) const noexcept
     {
         return false;
     }
@@ -274,23 +274,23 @@ public:
 
 /******************************************************************************/
 
-InAddr::InAddr() noexcept
+InetAddr::InetAddr() noexcept
     : pImpl()
 {}
 
-InAddr::InAddr(const in_addr_t addr) noexcept
-    : pImpl(new In4Addr(addr))
+InetAddr::InetAddr(const in_addr_t addr) noexcept
+    : pImpl(new Inet4Addr(addr))
 {}
 
-InAddr::InAddr(const struct in_addr& addr) noexcept
-    : pImpl(new In4Addr(addr.s_addr))
+InetAddr::InetAddr(const struct in_addr& addr) noexcept
+    : pImpl(new Inet4Addr(addr.s_addr))
 {}
 
-InAddr::InAddr(const struct in6_addr& addr) noexcept
-    : pImpl(new In6Addr(addr))
+InetAddr::InetAddr(const struct in6_addr& addr) noexcept
+    : pImpl(new Inet6Addr(addr))
 {}
 
-InAddr::InAddr(const std::string& addr)
+InetAddr::InetAddr(const std::string& addr)
     : pImpl()
 {
     const char*     cstr = addr.data();
@@ -298,37 +298,37 @@ InAddr::InAddr(const std::string& addr)
     struct in6_addr in6addr;
 
     if (::inet_pton(AF_INET, cstr, &in4addr) == 1) {
-        pImpl.reset(new In4Addr(in4addr.s_addr));
+        pImpl.reset(new Inet4Addr(in4addr.s_addr));
     }
     else if (::inet_pton(AF_INET6, cstr, &in6addr) == 1) {
-        pImpl.reset(new In6Addr(in6addr));
+        pImpl.reset(new Inet6Addr(in6addr));
     }
     else {
         pImpl.reset(new NameAddr(addr));
     }
 }
 
-std::string InAddr::to_string() const
+std::string InetAddr::to_string() const
 {
     return pImpl->to_string();
 }
 
-bool InAddr::operator <(const InAddr& rhs) const noexcept
+bool InetAddr::operator <(const InetAddr& rhs) const noexcept
 {
     return pImpl->operator <(*rhs.pImpl.get());
 }
 
-bool InAddr::operator ==(const InAddr& rhs) const noexcept
+bool InetAddr::operator ==(const InetAddr& rhs) const noexcept
 {
     return pImpl->operator ==(*rhs.pImpl.get());
 }
 
-size_t InAddr::hash() const noexcept
+size_t InetAddr::hash() const noexcept
 {
     return pImpl->hash();
 }
 
-SockAddr InAddr::getSockAddr(const in_port_t port) const
+SockAddr InetAddr::getSockAddr(const in_port_t port) const
 {
     return pImpl->getSockAddr(port);
 }

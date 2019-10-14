@@ -27,20 +27,114 @@ public:
 protected:
     std::shared_ptr<Impl> pImpl;
 
-    Socket() =default;
+    Socket(Impl* impl); // Should be protected but won't compile if so
 
 public:
-    Socket(Impl* impl); // Should be protected but won't compile if so
+    Socket() =default;
 
     virtual ~Socket() noexcept =default;
 
     /**
-     * Indicates if the socket implements a byte-stream (e.g., TCP).
+     * Returns the local socket address.
      *
-     * @retval `true`   Yes
-     * @retval `false`  No
+     * @return Local socket address
      */
-    bool isByteStream() const;
+    SockAddr getLclAddr() const;
+
+    /**
+     * Returns the local port number in host byte-order.
+     *
+     * @return Local port number in host byte-order
+     */
+    in_port_t getLclPort() const;
+
+    /**
+     * Returns the remote socket address.
+     *
+     * @return Remote socket address
+     */
+    SockAddr getRmtAddr() const;
+
+    /**
+     * Returns the remote port number in host byte-order.
+     *
+     * @return Remote port number in host byte-order
+     */
+    in_port_t getRmtPort() const;
+};
+
+/******************************************************************************/
+
+class InetSock : public Socket
+{
+public:
+    class Impl;
+
+protected:
+    InetSock(Impl* impl);
+
+public:
+    class Impl;
+
+    InetSock() =default;
+
+    virtual ~InetSock() noexcept =0;
+
+    static inline uint16_t hton(const uint16_t value)
+    {
+        return htons(value);
+    }
+
+    static inline uint32_t hton(const uint32_t value)
+    {
+        return htonl(value);
+    }
+
+    static inline uint64_t hton(uint64_t value)
+    {
+        uint64_t  v64;
+        uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
+
+        v32[0] = hton(static_cast<uint32_t>(value >> 32));
+        v32[1] = hton(static_cast<uint32_t>(value));
+
+        return v64;
+    }
+
+    static inline uint16_t ntoh(const uint16_t value)
+    {
+        return ntohs(value);
+    }
+
+    static inline uint32_t ntoh(const uint32_t value)
+    {
+        return ntohl(value);
+    }
+
+    static inline uint64_t ntoh(uint64_t value)
+    {
+        uint32_t* v32 = reinterpret_cast<uint32_t*>(&value);
+
+        return (static_cast<uint64_t>(ntoh(v32[0])) << 32) | ntoh(v32[1]);
+    }
+};
+
+/******************************************************************************/
+
+class TcpSock : public InetSock
+{
+public:
+    class Impl;
+
+protected:
+    friend class TcpSrvrSock;
+
+    TcpSock(Impl* impl);
+
+public:
+    TcpSock() =default;
+
+    virtual ~TcpSock() noexcept;
 
     /**
      * If the socket protocol is TCP or SCTP, the previous sent packet hasn't
@@ -55,91 +149,43 @@ public:
      * @return                       Reference to this instance
      * @throws    std::system_error  `setsockopt()` failure
      */
-    Socket& setDelay(bool enable);
+    TcpSock& setDelay(bool enable);
 
-    /**
-     * Returns whether or not the Nagle algorithm is enabled.
-     *
-     * @retval `true`             The Nagle algorithm is enabled
-     * @retval `false`            The Nagle algorithm is not enabled
-     * @throws std::system_error  `getsockopt()` failure
-     */
-    bool getDelay() const;
+    void write(
+            const void* bytes,
+            size_t      nbytes) const;
 
-    /**
-     * Returns the local socket address.
-     *
-     * @return Local socket address
-     */
-    SockAddr getAddr() const;
-
-    /**
-     * Returns the local port number in host byte-order.
-     *
-     * @return Local port number in host byte-order
-     */
-    in_port_t getPort() const;
-
-    /**
-     * Returns the remote socket address.
-     *
-     * @return Remote socket address
-     */
-    SockAddr getPeerAddr() const;
-
-    /**
-     * Returns the remote port number in host byte-order.
-     *
-     * @return Remote port number in host byte-order
-     */
-    in_port_t getPeerPort() const;
+    void write(uint16_t value) const;
+    void write(uint32_t value) const;
+    void write(uint64_t value) const;
 
     /**
      * Reads from the socket.
      *
-     * @param[in] nbytes         Amount of data to read in bytes
-     * @retval    0              EOF
-     * @return                   The number of bytes actually read
-     * @throw std::system_error  I/O failure
+     * @param[out] bytes         Buffer into which data will be read
+     * @param[in]  nbytes        Maximum amount of data to read in bytes
+     * @return                   Number of bytes actually read. 0 => EOF
+     * @throws     SystemError   Read error
      */
     size_t read(
-            void*  data,
-            size_t nbytes) const;
+            void*        bytes,
+            const size_t nbytes) const;
 
-    void write(
-            const void* data,
-            size_t      nbytes) const;
-
-    void writev(
-            const struct iovec* iov,
-            const int           iovCnt);
+    bool read(uint16_t& value) const;
+    bool read(uint32_t& value) const;
+    bool read(uint64_t& value) const;
 
     void shutdown() const;
 };
 
 /******************************************************************************/
 
-class ClntSock final : public Socket
+class TcpSrvrSock final : public TcpSock
 {
     class Impl;
 
 public:
-    ClntSock() =default;
-
-    /**
-     * @cancellationpoint
-     */
-    ClntSock(const SockAddr& sockAddr);
-};
-
-/******************************************************************************/
-
-class SrvrSock : public Socket
-{
-    class Impl;
-
-public:
-    SrvrSock() =default;
+    TcpSrvrSock() =default;
 
     /**
      * Constructs.
@@ -151,7 +197,7 @@ public:
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
      */
-    SrvrSock(
+    TcpSrvrSock(
             const SockAddr& sockaddr,
             const int       queueSize = 0);
 
@@ -162,7 +208,84 @@ public:
      * @throws  std::system_error  `::accept()` failure
      * @cancellationpoint
      */
-    Socket accept() const;
+    TcpSock accept() const;
+};
+
+/******************************************************************************/
+
+class TcpClntSock final : public TcpSock
+{
+    class Impl;
+
+public:
+    TcpClntSock() =default;
+
+    /**
+     * @cancellationpoint
+     */
+    TcpClntSock(const SockAddr& sockAddr);
+};
+
+/******************************************************************************/
+
+class UdpSndrSock final : public InetSock
+{
+    class Impl;
+
+public:
+    UdpSndrSock() =default;
+
+    /**
+     * @cancellationpoint
+     */
+    UdpSndrSock(
+            const SockAddr& ifAddr,
+            const SockAddr& grpAddr);
+
+    void write(
+            const struct iovec* iov,
+            const int           iovCnt);
+};
+
+/******************************************************************************/
+
+class UdpRcvrSock final : public InetSock
+{
+    class Impl;
+
+public:
+    UdpRcvrSock() =default;
+
+    /**
+     * @cancellationpoint
+     */
+    UdpRcvrSock(
+            const SockAddr& ifAddr,
+            const SockAddr& grpAddr,
+            const SockAddr& srcAddr);
+
+    /**
+     * Peeks at at UDP record.
+     *
+     * @param[out] bytes        Buffer
+     * @param[in]  nbytes       Maximum number of bytes to read into `bytes`
+     * @return                  Number of bytes read. 0 => EOF.
+     * @throws     SystemError  Error reading
+     */
+    size_t peek(
+            void*  bytes,
+            size_t nbytes);
+
+    /**
+     * Reads a UDP record.
+     *
+     * @param[in] iov           I/O vector
+     * @return                  Number of bytes read. 0 => EOF.
+     * @throws     SystemError  Error reading
+     */
+    size_t read(
+            const struct iovec* iov,
+            const int           iovCnt);
 };
 
 } // namespace

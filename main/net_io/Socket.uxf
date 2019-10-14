@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="14.3.0">
+  <zoom_level>10</zoom_level>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>350</x>
+      <y>0</y>
+      <w>210</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>/Socket/
+--
++Impl: class
+-pImpl: Impl*
+--
+#Socket(Impl*)
+/+~Socket()/
++getLclAddr(): SockAddr
++getRmtAddr(): SockAddr</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>340</x>
+      <y>230</y>
+      <w>240</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>/InetSock/
+--
+#Impl: class
+--
+#InetSock(Impl*)
+/+~InetSock()/
+_+hton(uint16_t value): uint16_t_
+_+hton(uint32_t value): uint32_t_
+_+hton(uint64_t value): uint64_t_
+_+ntoh(uint16_t value): uint16_t_
+_+ntoh(uint32_t value): uint32_t_
+_+ntoh(uint64_t value): uint64_t_</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>440</x>
+      <y>180</y>
+      <w>30</w>
+      <h>70</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;50.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>570</x>
+      <y>310</y>
+      <w>80</w>
+      <h>30</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;60.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>210</x>
+      <y>410</y>
+      <w>270</w>
+      <h>80</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>250.0;10.0;10.0;60.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>100</x>
+      <y>720</y>
+      <w>140</w>
+      <h>80</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>120.0;10.0;10.0;60.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>0</x>
+      <y>780</y>
+      <w>210</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>TcpSrvrSock
+--
+-Impl: TcpSock::Impl
+--
++TcpSrvr(SockAddr lclAddr)
++accept(): TcpSock</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>570</x>
+      <y>480</y>
+      <w>210</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>SctpSock
+--
+--</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>460</x>
+      <y>410</y>
+      <w>240</w>
+      <h>90</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;220.0;70.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>470</x>
+      <y>730</y>
+      <w>210</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>SctpSrvrSock
+--
+--
++SctpSrvr(SockAddr)
++accept(): SctpSock</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>570</x>
+      <y>660</y>
+      <w>130</w>
+      <h>90</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>110.0;10.0;10.0;70.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>240</x>
+      <y>780</y>
+      <w>210</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>TcpClntSock
+--
+-Impl: TcpSock::Impl
+--
++TcpClnt(SockAddr rmtAddr)</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>220</x>
+      <y>720</y>
+      <w>150</w>
+      <h>80</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;130.0;60.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>100</x>
+      <y>470</y>
+      <w>240</w>
+      <h>260</h>
+    </coordinates>
+    <panel_attributes>/TcpSock/
+--
+#Impl: class
+--
+#TcpSock(Impl*)
+/+~TcpSock()/
++setDelay(): bool
++write(uint16_t value): void
++write(uint32_t value): void
++write(uint64_t value): void
++write(void* data,
+           size_t nbytes): void
++read(uint16_t value): uint16_t
++read(uint32_t value): uint32_t
++read(uint64_t value): uint64_t
++read(void* data,
+          size_t nbytes): void
++shutdown(): void</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>60</x>
+      <y>230</y>
+      <w>230</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>UdpSndrSock
+--
+--
++McastSndr(InetAddr ifAddr,
+                    SockAddr grpAddr)
++write(struct iovec* iov
+              int iovCnt): void</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>630</x>
+      <y>230</y>
+      <w>230</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>UdpRcvrSock
+--
+--
++McastRcvr(InetAddr ifAddr,
+                   SockAddr grpAddr,
+                   SockAddr srcAddr)
++peek(void* bytes,
+            size_t nbytes): void
++read(struct iovec* iov,
+             int iovCnt): void</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>280</x>
+      <y>310</y>
+      <w>80</w>
+      <h>30</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>60.0;10.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>700</x>
+      <y>730</y>
+      <w>220</w>
+      <h>190</h>
+    </coordinates>
+    <panel_attributes>SctpClntSock
+--
+--
++SctpClnt(SockAddr rmtAddr)</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>680</x>
+      <y>660</y>
+      <w>150</w>
+      <h>90</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;130.0;70.0</additional_attributes>
+  </element>
+</diagram>

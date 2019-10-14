@@ -73,6 +73,7 @@ private:
         void insert(const ChunkId& chunkId)
         {
             Guard guard(mutex);
+            LOG_DEBUG("Inserting chunk ID %lu", chunkId.id);
             chunks.insert(chunkId);
         }
 
@@ -85,6 +86,7 @@ private:
         void insert(const ChunkId&& chunkId)
         {
             Guard guard(mutex);
+            LOG_DEBUG("Inserting chunk ID %lu", chunkId.id);
             chunks.insert(chunkId);
         }
 
@@ -97,6 +99,7 @@ private:
         void erase(const ChunkId& chunkId)
         {
             Guard guard(mutex);
+            LOG_DEBUG("Erasing chunk ID %lu", chunkId.id);
             chunks.erase(chunkId);
         }
 
@@ -219,7 +222,7 @@ private:
             ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
             for (;;) {
-                StreamChunk chunk = peerConn.getChunk();
+                TcpChunk chunk = peerConn.getChunk();
                 LOG_DEBUG("Received chunk %lu", chunk.getId().id);
 
                 int cancelState;
@@ -341,11 +344,11 @@ public:
     typedef OutChunks::iterator iterator;
 
     /**
-     * Server-side construction. Constructs from a remote peer and a receiver of
-     * messages from the remote peer.
+     * Constructs from a connection to a remote peer and a receiver of messages
+     * from the remote peer.
      *
-     * @param[in] peerConn  The remote peer
-     * @param[in] msgRcvr  The receiver of messages from the remote peer
+     * @param[in] peerConn  Connection to the remote peer
+     * @param[in] msgRcvr   The receiver of messages from the remote peer
      */
     Impl(   PeerConn     peerConn,
             PeerMsgRcvr& msgRcvr)
@@ -362,25 +365,6 @@ public:
         , requestThread()
         , chunkThread()
         , notifyThread()
-    {}
-
-    /**
-     * Client-side construction. Potentially slow because a connection is
-     * established with the remote peer in order to be symmetrical with server-
-     * side construction, in which the connection already exists.
-     *
-     * @param[in] srvrAddr            Socket address of the remote server
-     * @param[in] portPool            Pool of potential port numbers for
-     *                                temporary servers
-     * @param[in] msgRcvr             Receiver of messages from the remote peer
-     * @throws    std::system_error   System error
-     * @throws    std::runtime_error  Remote peer closed the connection
-     * @cancellationpoint             Yes
-     */
-    Impl(   const SockAddr& srvrAddr,
-            PortPool&       portPool,
-            PeerMsgRcvr&    msgRcvr)
-        : Impl(PeerConn(srvrAddr, portPool), msgRcvr)
     {}
 
     ~Impl() noexcept
@@ -519,15 +503,6 @@ Peer::Peer(
         PeerConn     peerConn,
         PeerMsgRcvr& msgRcvr)
     : pImpl{new Impl(peerConn, msgRcvr)}
-{
-    //pImpl->setPeer(*this);
-}
-
-Peer::Peer(
-        const SockAddr& srvrAddr,
-        PortPool&       portPool,
-        PeerMsgRcvr&    msgRcvr)
-    : pImpl{new Impl(srvrAddr, portPool, msgRcvr)}
 {
     //pImpl->setPeer(*this);
 }

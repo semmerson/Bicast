@@ -75,7 +75,7 @@ protected:
         numChunks = info.getNumChunks();
     }
 
-    void receive(hycast::LatentChunk chunk)
+    void receive(hycast::InetChunk chunk)
     {
         EXPECT_EQ(prodIndex, chunk.getProdIndex());
         EXPECT_EQ(chunkIndex, chunk.getIndex());

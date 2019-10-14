@@ -38,7 +38,7 @@ protected:
     std::condition_variable cond;
     bool                    srvrReady;
     std::thread             srvrThread;
-    hycast::SrvrSock        srvrSock;
+    hycast::TcpSrvrSock        srvrSock;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -100,7 +100,7 @@ public:
         }
 
         try {
-            hycast::Socket sock{srvrSock.accept()};
+            hycast::TcpSock sock{srvrSock.accept()};
 
             for (;;) {
                 int            readInt;
@@ -116,7 +116,7 @@ public:
 
     void startServer()
     {
-        srvrSock = hycast::SrvrSock(srvrAddr);
+        srvrSock = hycast::TcpSrvrSock(srvrAddr);
         srvrThread = std::thread(&SocketTest::runServer, this);
 
         // Necessary because `ClntSock` constructor throws if `connect()` fails
@@ -129,26 +129,24 @@ public:
 // Tests copy construction
 TEST_F(SocketTest, CopyConstruction)
 {
-    hycast::SrvrSock srvrSock{srvrAddr};
+    hycast::TcpSrvrSock srvrSock{srvrAddr};
     hycast::Socket   sock(srvrSock);
 }
 
 // Tests setting the Nagle algorithm
 TEST_F(SocketTest, SettingNagle)
 {
-    hycast::SrvrSock srvrSock(srvrAddr);
+    hycast::TcpSrvrSock srvrSock(srvrAddr);
 
-    const bool enabled = srvrSock.getDelay();
-    EXPECT_TRUE(&srvrSock.setDelay(!enabled) == &srvrSock);
-    EXPECT_EQ(!enabled, srvrSock.getDelay());
+    EXPECT_TRUE(&srvrSock.setDelay(false) == &srvrSock);
 }
 
 // Tests server-socket construction
 TEST_F(SocketTest, ServerConstruction)
 {
-    hycast::SrvrSock srvrSock(srvrAddr);
+    hycast::TcpSrvrSock srvrSock(srvrAddr);
 
-    hycast::SockAddr sockAddr(srvrSock.getAddr());
+    hycast::SockAddr sockAddr(srvrSock.getLclAddr());
     LOG_DEBUG("%s", sockAddr.to_string().c_str());
     EXPECT_TRUE(!(srvrAddr < sockAddr) && !(sockAddr < srvrAddr));
 }
@@ -161,7 +159,7 @@ TEST_F(SocketTest, ReadShutdown)
 {
     startServer();
 
-    hycast::ClntSock clntSock(srvrAddr);
+    hycast::TcpClntSock clntSock(srvrAddr);
 
     ::sleep(1);
     srvrSock.shutdown();
@@ -187,7 +185,7 @@ TEST_F(SocketTest, CancelRead)
 {
     startServer();
 
-    hycast::ClntSock clntSock(srvrAddr);
+    hycast::TcpClntSock clntSock(srvrAddr);
 
     ::usleep(200000);
 #ifdef USE_SIGTERM
@@ -203,7 +201,7 @@ TEST_F(SocketTest, ScalarExchange)
 {
     startServer();
 
-    hycast::ClntSock clntSock(srvrAddr);
+    hycast::TcpClntSock clntSock(srvrAddr);
     int              writeInt = 0xff00;
     int              readInt = ~writeInt;
 
@@ -221,20 +219,13 @@ TEST_F(SocketTest, VectorExchange)
 {
     startServer();
 
-    hycast::ClntSock clntSock(srvrAddr);
-    int              writeInt[2] = {0xff00, 0x00ff};
-    int              readInt[2] = {0};
-    struct iovec     iov[2];
-    const int        size = sizeof(int);
+    hycast::TcpClntSock clntSock(srvrAddr);
+    int                 writeInt[2] = {0xff00, 0x00ff};
+    int                 readInt[2] = {0};
+    struct iovec        iov[2];
 
-    iov[0].iov_base = writeInt;
-    iov[1].iov_base = writeInt+1;
-    iov[1].iov_len = iov[0].iov_len = size;
-
-    clntSock.writev(iov, 2);
-
-    clntSock.read(readInt, size);
-    clntSock.read(readInt+1, size);
+    clntSock.write(writeInt, sizeof(writeInt));
+    clntSock.read(readInt, sizeof(writeInt));
 
     EXPECT_EQ(writeInt[0], readInt[0]);
     EXPECT_EQ(writeInt[1], readInt[1]);

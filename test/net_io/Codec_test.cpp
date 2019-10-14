@@ -63,7 +63,7 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
 
 public:
-    void runServer(hycast::SrvrSock& srvrSock)
+    void runServer(hycast::TcpSrvrSock& srvrSock)
     {
         {
             std::lock_guard<decltype(mutex)> lock{mutex};
@@ -93,7 +93,7 @@ TEST_F(CodecTest, DefaultConstruction)
 TEST_F(CodecTest, ScalarSerialization)
 {
     hycast::SockAddr srvrAddr("localhost:38800");
-    hycast::SrvrSock srvrSock(srvrAddr);
+    hycast::TcpSrvrSock srvrSock(srvrAddr);
     std::thread      srvrThread([this,&srvrSock](){runServer(srvrSock);});
 
     {
@@ -106,7 +106,7 @@ TEST_F(CodecTest, ScalarSerialization)
             cond.wait(lock);
     }
 
-    hycast::ClntSock    clntSock(srvrAddr);
+    hycast::TcpClntSock    clntSock(srvrAddr);
     hycast::StreamCodec codec(clntSock);
 
     ::fprintf(stderr, "ScalarSerialization(): uint16_t\n");

@@ -20,7 +20,7 @@ namespace hycast {
 
 class SockAddr;
 
-class InAddr
+class InetAddr
 {
 public:
     class                 Impl;
@@ -28,48 +28,46 @@ public:
 protected:
     std::shared_ptr<Impl> pImpl;
 
-    InAddr(Impl* impl);
+    InetAddr(Impl* impl);
 
 public:
     /**
      * Default constructs.
      */
-    InAddr() noexcept;
+    InetAddr() noexcept;
 
     /**
      * Constructs from an IPv4 address in network byte order.
      *
      * @param[in] addr  IPv4 address in network byte order
      */
-    InAddr(const in_addr_t addr) noexcept;
+    InetAddr(const in_addr_t addr) noexcept;
 
     /**
      * Constructs from an IPv4 address in network byte order.
      *
      * @param[in] addr  IPv4 address in network byte order
      */
-    InAddr(const struct in_addr& addr) noexcept;
+    InetAddr(const struct in_addr& addr) noexcept;
 
     /**
      * Constructs from an IPv6 address in network byte order.
      *
      * @param[in] addr  IPv6 address in network byte order
      */
-    InAddr(const struct in6_addr& addr) noexcept;
+    InetAddr(const struct in6_addr& addr) noexcept;
 
     /**
      * Constructs from a string representation of an Internet address.
      *
      * @param[in] addr  String representation of Internet address
      */
-    InAddr(const std::string& addr);
+    InetAddr(const std::string& addr);
 
     inline operator bool() const noexcept
     {
         return (bool)pImpl;
     }
-
-    int getFamily() const noexcept;
 
     /**
      * Returns the string representation of this instance.
@@ -78,9 +76,9 @@ public:
      */
     std::string to_string() const;
 
-    bool operator <(const InAddr& rhs) const noexcept;
+    bool operator <(const InetAddr& rhs) const noexcept;
 
-    bool operator ==(const InAddr& rhs) const noexcept;
+    bool operator ==(const InetAddr& rhs) const noexcept;
 
     size_t hash() const noexcept;
 

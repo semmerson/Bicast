@@ -119,8 +119,8 @@ TEST_F(ProductTest, Serialization) {
         EXPECT_EQ(sizeof(buf), nbytes);
         encoder.flush();
         hycast::MemDecoder decoder(buf, nbytes);
-        decoder.fill(hycast::LatentChunk::getMetadataSize(version));
-        hycast::LatentChunk latentChunk{decoder, version};
+        decoder.fill(hycast::InetChunk::getMetadataSize(version));
+        hycast::InetChunk latentChunk{decoder, version};
         EXPECT_EQ(chunkId, latentChunk.getId());
         char latentData[static_cast<size_t>(latentChunk.getSize())];
         EXPECT_EQ(chunkSize, latentChunk.drainData(latentData,

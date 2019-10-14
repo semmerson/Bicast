@@ -13,7 +13,7 @@
 #ifndef MAIN_NET_IO_SOCKADDR_H_
 #define MAIN_NET_IO_SOCKADDR_H_
 
-#include "InAddr.h"
+#include "InetAddr.h"
 
 #include <memory>
 #include <netinet/in.h>
@@ -185,7 +185,7 @@ public:
      *
      * @return Internet address of this socket address
      */
-    const InAddr& getInAddr() const noexcept;
+    const InetAddr& getInAddr() const noexcept;
 
     /**
      * Returns the port number given to the constructor in host byte-order.

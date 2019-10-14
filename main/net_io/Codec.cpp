@@ -23,7 +23,7 @@ namespace hycast {
 class Codec::Impl
 {
 protected:
-    Socket sock;
+    TcpSock sock;
 
     inline uint16_t hton(const uint16_t value)
     {
@@ -64,11 +64,11 @@ protected:
     }
 
 public:
-    Impl(Socket& sock)
+    Impl(TcpSock& sock)
         : sock{sock}
     {}
 
-    Impl(Socket&& sock)
+    Impl(TcpSock&& sock)
         : sock{sock}
     {}
 };
@@ -105,11 +105,11 @@ class StreamCodec::Impl : public Codec::Impl
     }
 
 public:
-    Impl(Socket& sock)
+    Impl(TcpSock& sock)
         : Codec::Impl{sock}
     {}
 
-    Impl(Socket&& sock)
+    Impl(TcpSock&& sock)
         : Codec::Impl{sock}
     {}
 
@@ -124,7 +124,7 @@ public:
         encode(id.id);
     }
 
-    void encode(const MemChunk& chunk)
+    void encode(const MemoryChunk& chunk)
     {
         struct iovec iov[3];
 
@@ -189,11 +189,11 @@ Codec::Codec(Impl* const impl)
     : pImpl{impl}
 {}
 
-Codec::Codec(Socket& sock)
+Codec::Codec(TcpSock& sock)
     : pImpl{new StreamCodec::Impl(sock)}
 {}
 
-Codec::Codec(Socket&& sock)
+Codec::Codec(TcpSock&& sock)
     : pImpl{new StreamCodec::Impl(sock)}
 {}
 
@@ -203,11 +203,11 @@ StreamCodec::StreamCodec()
     : Codec{}
 {}
 
-StreamCodec::StreamCodec(Socket& sock)
+StreamCodec::StreamCodec(TcpSock& sock)
     : Codec{new StreamCodec::Impl(sock)}
 {}
 
-StreamCodec::StreamCodec(Socket&& sock)
+StreamCodec::StreamCodec(TcpSock&& sock)
     : Codec{new StreamCodec::Impl(sock)}
 {}
 
@@ -221,7 +221,7 @@ void StreamCodec::encode(const ChunkId& chunkId) const
     (static_cast<Impl*>(pImpl.get()))->encode(chunkId);
 }
 
-void StreamCodec::encode(const MemChunk& chunk) const
+void StreamCodec::encode(const MemoryChunk& chunk) const
 {
     (static_cast<Impl*>(pImpl.get()))->encode(chunk);
 }

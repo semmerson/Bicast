@@ -8,17 +8,14 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= \
- 	Serializable.h \
-	InetAddr.cpp	InetAddr.h \
-	SockAddr.cpp    SockAddr.h \
-	Socket.cpp      Socket.h \
-	Chunk.cpp	Chunk.h
-#	ServiceId.cpp ServiceId.h
-#	IoVec.cpp IoVec.h
-#	Codec.cpp	Codec.h
+lib_la_SOURCES 	= MemProd.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
-	      -I$(srcdir)/../misc
+	      -I$(srcdir)/../misc \
+	      -I$(srcdir)/../net_io
+	      
+SUFFIXES: .i .cpp
+.cpp.i:
+	$(COMPILE) $(AM_CXXFLAGS) -E -o $@ $<

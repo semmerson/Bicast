@@ -13,7 +13,7 @@
 #include "config.h"
 
 #include "error.h"
-#include "InAddr.h"
+#include "InetAddr.h"
 #include "PeerConn.h"
 #include "PeerFactory.h"
 #include "Socket.h"
@@ -28,7 +28,7 @@ class PeerFactory::Impl final
 {
 private:
     PortPool         portPool;
-    SrvrSock         srvrSock;
+    TcpSrvrSock         srvrSock;
     PeerMsgRcvr&     msgRcvr;
 
 public:
@@ -46,7 +46,7 @@ public:
 
     in_port_t getPort()
     {
-        return srvrSock.getPort();
+        return srvrSock.getLclPort();
     }
 
     /**
@@ -77,7 +77,9 @@ public:
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        return Peer(rmtSrvrAddr, portPool, msgRcvr);
+        PeerConn peerConn{rmtSrvrAddr, portPool};
+
+        return Peer(peerConn, msgRcvr);
     }
 
     /**

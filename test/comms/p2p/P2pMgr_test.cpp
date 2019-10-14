@@ -145,7 +145,7 @@ public:
         return hycast::RecvStatus{};
     }
     hycast::RecvStatus receive(
-            hycast::LatentChunk&        chunk,
+            hycast::InetChunk&        chunk,
             const hycast::InetSockAddr& peerAddr)
     {
         EXPECT_EQ(srcSrvrAddr, peerAddr);

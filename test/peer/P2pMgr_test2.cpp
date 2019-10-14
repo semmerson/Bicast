@@ -10,7 +10,7 @@ class P2pMgrTest : public ::testing::Test
 {
 protected:
     hycast::SockAddr srcAddr;
-    hycast::InAddr inAddr;
+    hycast::InetAddr inAddr;
     int five;
 
     P2pMgrTest() {
@@ -18,7 +18,7 @@ protected:
 
     void SetUp() override {
         srcAddr = hycast::SockAddr("localhost:38800");
-        inAddr = hycast::InAddr("localhost");
+        inAddr = hycast::InetAddr("localhost");
         five = 5;
     }
 };

@@ -7,13 +7,13 @@ all:
 check_PROGRAMS		= \
 	SockAddr_test \
 	Socket_test \
-	Codec_test \
 	ReuseAddr_test
+#	Codec_test
 
 ReuseAddr_test_SOURCES		= ReuseAddr_test.cpp
 SockAddr_test_SOURCES		= SockAddr_test.cpp
 Socket_test_SOURCES		= Socket_test.cpp
-Codec_test_SOURCES		= Codec_test.cpp
+#Codec_test_SOURCES		= Codec_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

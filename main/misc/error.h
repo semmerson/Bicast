@@ -92,6 +92,17 @@ public:
 };
 #define RUNTIME_ERROR(msg) RuntimeError(__FILE__, __LINE__, __func__, msg)
 
+class EofError : public RuntimeError
+{
+public:
+    EofError(
+            const char*       file,
+            const int         line,
+            const char*       func,
+            const std::string msg);
+};
+#define EOF_ERROR(msg) RuntimeError(__FILE__, __LINE__, __func__, "EOF")
+
 class SystemError : public std::system_error
 {
 public:

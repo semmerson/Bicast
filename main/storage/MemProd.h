@@ -43,7 +43,7 @@ public:
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    bool accept(StreamChunk chunk) const;
+    bool accept(TcpChunk chunk) const;
 };
 
 } // namespace

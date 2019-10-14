@@ -102,7 +102,7 @@ public:
         EXPECT_EQ(prodInfo, info);
         return hycast::RecvStatus{};
     }
-    hycast::RecvStatus receive(hycast::LatentChunk& chunk) {
+    hycast::RecvStatus receive(hycast::SocketChunk& chunk) {
         auto chunkIndex = chunk.getIndex();
         EXPECT_GT(numChunks, chunkIndex);
         EXPECT_EQ(prodIndex, chunk.getProdIndex());

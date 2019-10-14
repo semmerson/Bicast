@@ -43,14 +43,14 @@ public:
      *
      * @param[in] sock      `::accept()`ed socket
      */
-    PeerConn(Socket& sock);
+    PeerConn(TcpSock& sock);
 
     /**
      * Server-side construction.
      *
      * @param[in] sock      `::accept()`ed socket
      */
-    PeerConn(Socket&& sock);
+    PeerConn(TcpSock&& sock);
 
     /**
      * Client-side construction.
@@ -135,7 +135,7 @@ public:
      * @throws std::system_error   System error
      * @throws std::runtime_error  Remote peer closed the connection
      */
-    StreamChunk getChunk();
+    TcpChunk getChunk();
 
     /**
      * Disconnects from the remote peer. After this, nothing can be sent to and

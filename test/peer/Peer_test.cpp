@@ -1,6 +1,5 @@
 #include "config.h"
 
-#include "Codec.h"
 #include "error.h"
 #include "SockAddr.h"
 
@@ -116,7 +115,7 @@ public:
 
     // Sink-side
     void hereIs(
-            hycast::StreamChunk     chunk,
+            hycast::TcpChunk     chunk,
             const hycast::SockAddr& rmtAddr)
     {
         EXPECT_EQ(1, snkPeer.size());
@@ -165,7 +164,7 @@ public:
 
     // Sink-side
     void hereIs(
-            hycast::StreamChunk wireChunk,
+            hycast::TcpChunk wireChunk,
             hycast::Peer      snkPeer)
     {
         EXPECT_EQ(1, snkPeer.size());
@@ -187,14 +186,14 @@ public:
     void runServer()
     {
         try {
-            hycast::SrvrSock srvrSock(srvrAddr);
+            hycast::TcpSrvrSock srvrSock(srvrAddr);
 
             setState(LISTENING);
 
-            hycast::Socket     peerSock{srvrSock.accept()};
+            hycast::TcpSock    peerSock{srvrSock.accept()};
 
             srvrPeer = hycast::Peer(peerSock, *this);
-            hycast::InAddr localhost("127.0.0.1");
+            hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInAddr());
             setState(CONNECTED);
 
@@ -224,8 +223,9 @@ TEST_F(PeerTest, DataExchange)
     waitForState(LISTENING);
 
     // Start the client-peer
-    hycast::PortPool   portPool{38801, 2};
-    clntPeer = hycast::Peer(srvrAddr, portPool, *this); // Potentially slow
+    hycast::PortPool portPool{38801, 2};
+    hycast::PeerConn peerConn(srvrAddr, portPool);
+    clntPeer = hycast::Peer(peerConn, *this); // Potentially slow
     EXPECT_EQ(srvrAddr, clntPeer.getRmtAddr());
     clntAddr = clntPeer.getLclAddr();
     std::thread clntThread(clntPeer);

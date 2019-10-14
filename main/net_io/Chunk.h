@@ -41,17 +41,33 @@ public:
     bool operator ==(const ChunkId rhs) const noexcept;
 
     size_t hash() const noexcept;
+
+    std::string to_string() const;
+
+    void write(TcpSock& sock) const;
+
+    /**
+     * Constructs an instance from a TCP socket.
+     *
+     * @param[in] sock         TCP socket
+     * @return                 Chunk ID read from socket
+     * @throws    EofError     EOF
+     * @throws    SystemError  Read failure
+     */
+    static ChunkId read(TcpSock& sock);
 };
 
 /******************************************************************************/
 
 typedef uint16_t              ChunkSize;
 
+/**
+ * A chunk of data.
+ */
 class Chunk
 {
 public:
-    friend class Codec;
-    class        Impl;
+    class Impl;
 
 protected:
     std::shared_ptr<Impl> pImpl;
@@ -72,8 +88,9 @@ public:
 
 /******************************************************************************/
 
-typedef std::shared_ptr<void> DataPtr;
-
+/**
+ * Chunk whose data resides in memory.
+ */
 class MemChunk final : public Chunk
 {
 private:
@@ -86,46 +103,104 @@ public:
             const void*     data);
 
     const void* getData() const;
+
+    void write(TcpSock& sock) const;
 };
 
 /******************************************************************************/
 
-class StreamChunk final : public Chunk
+/**
+ * Chunk whose data must be read from a socket.
+ */
+class InetChunk : public Chunk
 {
+protected:
+    class Impl;
+
+    InetChunk(Impl* impl);
+
 public:
+    InetChunk() =default;
+
+    virtual ~InetChunk() =0;
+
+    /**
+     * Reads the chunk's data.
+     *
+     * @param[out] data                Buffer for the chunk's data
+     * @throws     std::runtime_error  All the chunk's data couldn't be read
+     * @threadsafety                   Compatible but unsafe
+     * @exceptionsafety                Basic guarantee
+     * @cancellationpoint              Yes
+     */
+    virtual void read(void* data) =0;
+};
+
+/******************************************************************************/
+
+/**
+ * Chunk whose data must be read from a TCP socket.
+ */
+class TcpChunk final : public InetChunk
+{
     class Impl;
 
 public:
-    StreamChunk();
+    TcpChunk();
 
     /**
-     * Constructs.
+     * Constructs from a TCP socket.
      *
-     * @param[in] rpc  RPC module from which the chunk can be deserialized.
+     * @param[in] sock                   TCP socket
+     * @throws    EOF_ERROR("Couldn't peek at chunk");
      */
-    StreamChunk(
-            const ChunkId&  id,
-            const ChunkSize size,
-            Socket&         sock);
+    TcpChunk(TcpSock& sock);
 
+    /**
+     * Reads the chunk's data.
+     *
+     * @param[out] data                Buffer for the chunk's data
+     * @throws     SystemError         I/O error
+     * @throws     RuntimeError        Couldn't read chunk's data
+     * @threadsafety                   Compatible but unsafe
+     * @exceptionsafety                Basic guarantee
+     * @cancellationpoint              Yes
+     */
     void read(void* data);
 };
 
 /******************************************************************************/
 
-class RecordChunk final : public Chunk
+/**
+ * Chunk whose data must be read from a UDP socket.
+ */
+class UdpChunk final : public InetChunk
 {
-public:
     class Impl;
 
 public:
-    /**
-     * Constructs.
-     *
-     * @param[in] sock  Socket from which the chunk can be read.
-     */
-    RecordChunk(Socket& sock);
+    UdpChunk();
 
+    /**
+     * Constructs from a UDP socket.
+     *
+     * @param[in] sock                   UDP socket
+     * @throws    std::system_error      Chunk's header couldn't be read from
+     *                                   socket
+     */
+    UdpChunk(UdpRcvrSock& sock);
+
+    /**
+     * Reads the chunk's data.
+     *
+     * @param[out] data                Buffer for the chunk's data
+     * @throws     EofError            EOF
+     * @throws     SystemError         I/O failure
+     * @throws     LogicError          Logic error
+     * @threadsafety                   Compatible but unsafe
+     * @exceptionsafety                Basic guarantee
+     * @cancellationpoint              Yes
+     */
     void read(void* data);
 };
 
