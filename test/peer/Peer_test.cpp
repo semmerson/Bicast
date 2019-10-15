@@ -190,9 +190,11 @@ public:
 
             setState(LISTENING);
 
-            hycast::TcpSock    peerSock{srvrSock.accept()};
+            hycast::TcpSock  peerSock{srvrSock.accept()};
+            hycast::PortPool portPool{38801, 2};
+            hycast::PeerConn peerConn(peerSock, portPool);
 
-            srvrPeer = hycast::Peer(peerSock, *this);
+            srvrPeer = hycast::Peer(peerConn, *this);
             hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInAddr());
             setState(CONNECTED);
@@ -223,8 +225,7 @@ TEST_F(PeerTest, DataExchange)
     waitForState(LISTENING);
 
     // Start the client-peer
-    hycast::PortPool portPool{38801, 2};
-    hycast::PeerConn peerConn(srvrAddr, portPool);
+    hycast::PeerConn peerConn(srvrAddr);
     clntPeer = hycast::Peer(peerConn, *this); // Potentially slow
     EXPECT_EQ(srvrAddr, clntPeer.getRmtAddr());
     clntAddr = clntPeer.getLclAddr();

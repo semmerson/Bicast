@@ -25,11 +25,13 @@ class PeerConn::Impl
 {
 private:
     SockAddr    rmtSockAddr; ///< Remote socket address
-    TcpSock     noticeSock;  ///< Connection for exchanging notices
-    TcpSock     clntSock;    ///< Connection for sending requests and receiving chunks
-    TcpSock     srvrSock;    ///< Connection for receiving requests and sending chunks
+    TcpSock     noticeSock;  ///< For exchanging notices
+    TcpSock     clntSock;    ///< For sending requests and receiving chunks
+    TcpSock     srvrSock;    ///< For receiving requests and sending chunks
     SockAddr    lclSockAddr; ///< Local socket address
     std::string string;      ///< `to_string()` string
+    bool        srvrSide;    ///< Server-side construction?
+    PortPool    portPool;    ///< Pool of potential ports for temporary servers
 
     TcpSrvrSock createSrvrSock(
             InetAddr  inAddr,
@@ -60,79 +62,97 @@ public:
      * Server-side construction.
      *
      * @param[in] sock      `::accept()`ed TCP socket
+     * @param[in] portPool  Pool of potential port numbers for temporary servers
+     * @exceptionsafety     Strong guarantee
+     * @cancellationpoint   Yes
      */
-    Impl(TcpSock& sock)
+    Impl(   TcpSock&  sock,
+            PortPool& portPool)
         : rmtSockAddr(sock.getRmtAddr())
         , noticeSock(sock)
         , clntSock{}
         , srvrSock{}
         , lclSockAddr{sock.getLclAddr()}
         , string{}
+        , srvrSide{true}
+        , portPool{portPool}
     {
         InetAddr rmtInAddr{rmtSockAddr.getInAddr()};
         LOG_DEBUG("rmtInAddr: %s", rmtInAddr.to_string().c_str());
 
         noticeSock.setDelay(false);
 
-        // Read port numbers of client's temporary servers
-        in_port_t rmtSrvrPort, rmtClntPort;
-        noticeSock.read(rmtSrvrPort);
-        noticeSock.read(rmtClntPort);
+        // Create temporary server sockets
+        InetAddr    lclInAddr = lclSockAddr.getInAddr();
+        TcpSrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
-        // Create sockets to client's temporary servers
-        clntSock = TcpClntSock(rmtSockAddr.clone(rmtSrvrPort));
-        srvrSock = TcpClntSock(rmtSockAddr.clone(rmtClntPort));
+        try {
+            TcpSrvrSock clntSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
-        clntSock.setDelay(false);
-        srvrSock.setDelay(true); // Consolidate ACK and chunk
+            try {
+                // Send port numbers of temporary server sockets to remote peer
+                noticeSock.write(srvrSrvrSock.getLclPort());
+                noticeSock.write(clntSrvrSock.getLclPort());
 
-        string = "{remote: {addr: " +
-                sock.getRmtAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(sock.getRmtPort()) +
-                ", " + std::to_string(clntSock.getRmtPort()) +
-                ", " + std::to_string(srvrSock.getRmtPort()) +
-                "]}, local: {addr: " +
-                sock.getLclAddr().getInAddr().to_string() +
-                ", ports: [" + std::to_string(sock.getLclPort()) +
-                ", " + std::to_string(clntSock.getLclPort()) +
-                ", " + std::to_string(srvrSock.getLclPort()) +
-                "]}}";
+                // Accept sockets from temporary servers
+                // TODO: Ensure connections are from remote peer
+                srvrSock = TcpSock{srvrSrvrSock.accept()};
+                clntSock = TcpSock{clntSrvrSock.accept()};
+
+                clntSock.setDelay(false);
+                srvrSock.setDelay(true); // Consolidate ACK and chunk
+
+                string = "{remote: {addr: " +
+                        sock.getRmtAddr().getInAddr().to_string() +
+                        ", ports: [" + std::to_string(sock.getRmtPort()) +
+                        ", " + std::to_string(clntSock.getRmtPort()) +
+                        ", " + std::to_string(srvrSock.getRmtPort()) +
+                        "]}, local: {addr: " +
+                        sock.getLclAddr().getInAddr().to_string() +
+                        ", ports: [" + std::to_string(sock.getLclPort()) +
+                        ", " + std::to_string(clntSock.getLclPort()) +
+                        ", " + std::to_string(srvrSock.getLclPort()) +
+                        "]}}";
+            }
+            catch (...) {
+                portPool.add(clntSrvrSock.getLclPort());
+                throw;
+            }
+        }
+        catch (...) {
+            portPool.add(srvrSrvrSock.getLclPort());
+            throw;
+        }
     }
 
     /**
      * Client-side construction.
      *
      * @param[in] rmtSrvrAddr         Socket address of the remote server
-     * @param[in] portPool            Pool of potential port numbers for
-     *                                temporary servers
      * @throws    std::system_error   System error
      * @throws    std::runtime_error  Remote peer closed the connection
+     * @exceptionsafety               Strong guarantee
      * @cancellationpoint             Yes
      */
-    Impl(
-            const SockAddr& rmtSrvrAddr,
-            PortPool&       portPool)
+    Impl(const SockAddr& rmtSrvrAddr)
         : rmtSockAddr{rmtSrvrAddr}
         , noticeSock{TcpClntSock(rmtSrvrAddr)}
         , clntSock{}
         , srvrSock{}
         , lclSockAddr{noticeSock.getLclAddr()}
         , string()
+        , srvrSide{false}
     {
         noticeSock.setDelay(false);
 
-        // Create temporary server sockets
-        InetAddr    lclInAddr = lclSockAddr.getInAddr();
-        TcpSrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
-        TcpSrvrSock clntSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
+        // Read port numbers of remote peer's temporary servers
+        in_port_t rmtSrvrPort, rmtClntPort;
+        noticeSock.read(rmtSrvrPort);
+        noticeSock.read(rmtClntPort);
 
-        // Send port numbers of temporary server sockets to remote peer
-        noticeSock.write(srvrSrvrSock.getLclPort());
-        noticeSock.write(clntSrvrSock.getLclPort());
-
-        // Accept sockets from temporary servers
-        srvrSock = TcpSock{srvrSrvrSock.accept()};
-        clntSock = TcpSock{clntSrvrSock.accept()};
+        // Create sockets to remote peer's temporary servers
+        clntSock = TcpClntSock(rmtSockAddr.clone(rmtSrvrPort));
+        srvrSock = TcpClntSock(rmtSockAddr.clone(rmtClntPort));
 
         clntSock.setDelay(false);
         srvrSock.setDelay(true); // Consolidate ACK and chunk
@@ -148,6 +168,14 @@ public:
                 ", " + std::to_string(clntSock.getLclPort()) +
                 ", " + std::to_string(srvrSock.getLclPort()) +
                 "]}}";
+    }
+
+    ~Impl()
+    {
+        if (srvrSide) {
+            portPool.add(clntSock.getLclPort());
+            portPool.add(srvrSock.getLclPort());
+        }
     }
 
     /**
@@ -243,18 +271,20 @@ PeerConn::PeerConn(Impl* const impl)
     : pImpl{impl}
 {}
 
+PeerConn::PeerConn(const SockAddr& srvrAddr)
+    : PeerConn{new Impl(srvrAddr)}
+{}
+
 PeerConn::PeerConn(
-        const SockAddr& srvrAddr,
-        PortPool&       portPool)
-    : PeerConn{new Impl(srvrAddr, portPool)}
+        TcpSock&  sock,
+        PortPool& portPool)
+    : PeerConn{new Impl(sock, portPool)}
 {}
 
-PeerConn::PeerConn(TcpSock& sock)
-    : PeerConn{new Impl(sock)}
-{}
-
-PeerConn::PeerConn(TcpSock&& sock)
-    : PeerConn{new Impl(sock)}
+PeerConn::PeerConn(
+        TcpSock&& sock,
+        PortPool& portPool)
+    : PeerConn{new Impl(sock, portPool)}
 {}
 
 const SockAddr& PeerConn::getRmtAddr() const noexcept

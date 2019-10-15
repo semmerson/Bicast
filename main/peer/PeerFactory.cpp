@@ -59,7 +59,7 @@ public:
      */
     Peer accept()
     {
-        PeerConn peerConn(srvrSock.accept());
+        PeerConn peerConn(srvrSock.accept(), portPool);
 
         return Peer(peerConn, msgRcvr);
     }
@@ -77,7 +77,7 @@ public:
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        PeerConn peerConn{rmtSrvrAddr, portPool};
+        PeerConn peerConn{rmtSrvrAddr};
 
         return Peer(peerConn, msgRcvr);
     }

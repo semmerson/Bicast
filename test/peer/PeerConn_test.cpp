@@ -80,7 +80,12 @@ public:
         }
 
         hycast::TcpSock    sock{srvrSock.accept()};
-        hycast::PeerConn   peerConn(sock);
+        /*
+         * 3 potential port numbers for the client's 2 temporary servers because
+         * the initial client connection could use one
+         */
+        hycast::PortPool   portPool(38801, 3);
+        hycast::PeerConn   peerConn(sock, portPool);
         hycast::ChunkId    id = peerConn.getNotice();
         EXPECT_EQ(chunkId, id);
 
@@ -121,12 +126,7 @@ TEST_F(PeerConnTest, ThreeConnPeerConn)
                 cond.wait(lock);
         }
 
-        /*
-         * 3 potential port numbers for the client's 2 temporary servers because
-         * the initial client connection could use one
-         */
-        hycast::PortPool portPool(38801, 3);
-        hycast::PeerConn peerConn(srvrAddr, portPool);
+        hycast::PeerConn peerConn(srvrAddr);
 
         EXPECT_EQ(srvrAddr, peerConn.getRmtAddr());
 

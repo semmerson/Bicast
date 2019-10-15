@@ -42,29 +42,31 @@ public:
      * Server-side construction.
      *
      * @param[in] sock      `::accept()`ed socket
+     * @param[in] portPool  Pool of potential port numbers for temporary servers
      */
-    PeerConn(TcpSock& sock);
+    PeerConn(
+            TcpSock&  sock,
+            PortPool& portPool);
 
     /**
      * Server-side construction.
      *
      * @param[in] sock      `::accept()`ed socket
+     * @param[in] portPool  Pool of potential port numbers for temporary servers
      */
-    PeerConn(TcpSock&& sock);
+    PeerConn(
+            TcpSock&& sock,
+            PortPool& portPool);
 
     /**
      * Client-side construction.
      *
      * @param[in] rmtSrvrAddr         Socket address of the remote server
-     * @param[in] portPool            Pool of potential port numbers for
-     *                                temporary servers
      * @throws    std::system_error   System error
      * @throws    std::runtime_error  Remote peer closed the connection
      * @cancellationpoint             Yes
      */
-    PeerConn(
-            const SockAddr& rmtSrvrAddr,
-            PortPool&       portPool);
+    PeerConn(const SockAddr& rmtSrvrAddr);
 
     /**
      * Returns the socket address of the remote peer. On the client-side, this
