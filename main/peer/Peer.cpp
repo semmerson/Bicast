@@ -12,9 +12,9 @@
  *  Created on: May 29, 2019
  *      Author: Steven R. Emmerson
  */
+#include <main/protocol/Chunk.h>
 #include "config.h"
 
-#include "Chunk.h"
 #include "error.h"
 #include "NoticeQueue.h"
 #include "Peer.h"

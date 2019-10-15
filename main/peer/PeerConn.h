@@ -13,7 +13,7 @@
 #ifndef MAIN_PEER_PEERCONN_H_
 #define MAIN_PEER_PEERCONN_H_
 
-#include "Chunk.h"
+#include <main/protocol/Chunk.h>
 #include "PeerMsgSndr.h"
 #include "PortPool.h"
 #include "SockAddr.h"

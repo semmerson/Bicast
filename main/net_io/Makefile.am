@@ -12,8 +12,7 @@ lib_la_SOURCES 	= \
  	Serializable.h \
 	InetAddr.cpp	InetAddr.h \
 	SockAddr.cpp    SockAddr.h \
-	Socket.cpp      Socket.h \
-	Chunk.cpp	Chunk.h
+	Socket.cpp      Socket.h
 #	ServiceId.cpp ServiceId.h
 #	IoVec.cpp IoVec.h
 #	Codec.cpp	Codec.h

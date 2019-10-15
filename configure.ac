@@ -60,6 +60,7 @@ AC_CONFIG_FILES(Makefile
                 main/misc/Makefile
                 main/net_io/Makefile
                 main/peer/Makefile
+                main/protocol/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/net_io/Makefile

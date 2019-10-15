@@ -13,8 +13,7 @@
 #ifndef MAIN_PEER_PEERMSGRCVR_H_
 #define MAIN_PEER_PEERMSGRCVR_H_
 
-#include "Chunk.h"
-
+#include <main/protocol/Chunk.h>
 #include <memory>
 
 namespace hycast {

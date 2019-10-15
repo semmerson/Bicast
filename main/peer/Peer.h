@@ -16,7 +16,7 @@
 #ifndef MAIN_PEER_PEER_H_
 #define MAIN_PEER_PEER_H_
 
-#include "Chunk.h"
+#include <main/protocol/Chunk.h>
 #include "PeerConn.h"
 #include "PeerMsgRcvr.h"
 #include "PeerMsgSndr.h"

@@ -10,9 +10,9 @@
  *      Author: Steven R. Emmerson
  */
 
+#include <main/protocol/Chunk.h>
 #include "config.h"
 
-#include "Chunk.h"
 #include "error.h"
 #include "unistd.h"
 

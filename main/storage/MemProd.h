@@ -13,8 +13,7 @@
 #ifndef MAIN_STORAGE_MEMPROD_H_
 #define MAIN_STORAGE_MEMPROD_H_
 
-#include "Chunk.h"
-
+#include <main/protocol/Chunk.h>
 #include <memory>
 
 namespace hycast {
