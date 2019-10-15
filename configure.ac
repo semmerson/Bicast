@@ -59,12 +59,12 @@ AC_CONFIG_FILES(Makefile
                 main/Makefile
                 main/misc/Makefile
                 main/net_io/Makefile
-                main/peer/Makefile
+                main/p2p/Makefile
                 main/protocol/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/net_io/Makefile
-                test/peer/Makefile
+                test/p2p/Makefile
 dnl                test/storage/Makefile
                 )
 AC_OUTPUT
