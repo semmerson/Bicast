@@ -37,13 +37,11 @@ class PeerSet::Impl {
     class EntryImpl
     {
         mutable Peer        peer;
-        uint_fast32_t       chunkCount;
         mutable std::thread thread;
 
     public:
         EntryImpl(const Peer peer)
             : peer(peer)
-            , chunkCount{0}
             , thread{}
         {}
 

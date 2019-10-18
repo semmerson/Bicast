@@ -105,6 +105,8 @@ public:
     const void* getData() const;
 
     void write(TcpSock& sock) const;
+
+    void write(UdpSndrSock& sock) const;
 };
 
 /******************************************************************************/

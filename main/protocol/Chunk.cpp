@@ -152,6 +152,24 @@ public:
         sock.write(size);
         sock.write(data, size);
     }
+
+    void write(UdpSndrSock& sock) const
+    {
+        struct iovec iov[3];
+
+        auto chunkId = sock.hton(id.id);
+        iov[0].iov_base = &chunkId;
+        iov[0].iov_len = sizeof(chunkId);
+
+        auto chunkSize = sock.hton(size);
+        iov[1].iov_base = &chunkSize;
+        iov[1].iov_len = sizeof(chunkSize);
+
+        iov[2].iov_base = const_cast<void*>(data); // Safe cast
+        iov[2].iov_len = size;
+
+        sock.write(iov, 3);
+    }
 };
 
 /******************************************************************************/
@@ -169,6 +187,11 @@ const void* MemChunk::getData() const
 }
 
 void MemChunk::write(TcpSock& sock) const
+{
+    static_cast<Impl*>(pImpl.get())->write(sock);
+}
+
+void MemChunk::write(UdpSndrSock& sock) const
 {
     static_cast<Impl*>(pImpl.get())->write(sock);
 }
@@ -207,8 +230,6 @@ InetChunk::InetChunk(Impl* impl)
 
 InetChunk::~InetChunk()
 {}
-
-/******************************************************************************/
 
 /******************************************************************************/
 

@@ -185,7 +185,7 @@ public:
      *
      * @return Internet address of this socket address
      */
-    const InetAddr& getInAddr() const noexcept;
+    const InetAddr& getInetAddr() const noexcept;
 
     /**
      * Returns the port number given to the constructor in host byte-order.
@@ -194,6 +194,15 @@ public:
      * @cancellationpoint No
      */
     in_port_t getPort() const noexcept;
+
+    /**
+     * Sets a socket address storage structure.
+     *
+     * @param[out] storage  The structure to be set
+     * @cancellationpoint   Maybe (`::getaddrinfo()` may be one and will be
+     *                      called if the address is based on a name)
+     */
+    void setAddr(struct sockaddr_storage& storage) const;
 };
 
 } // namespace

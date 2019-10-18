@@ -28,7 +28,7 @@ namespace hycast {
 class SockAddr::Impl
 {
 protected:
-    InetAddr               inAddr;
+    InetAddr             inetAddr;
     in_port_t            port;
     std::string          strRep;
     std::hash<in_port_t> portHash;
@@ -62,13 +62,13 @@ protected:
 
 public:
     Impl()
-        : inAddr{}
+        : inetAddr{}
         , port{0}
     {}
 
     Impl(   const InetAddr& inAddr,
             const in_port_t port)
-        : inAddr{inAddr}
+        : inetAddr{inAddr}
         , port{port}
         , strRep{}
     {
@@ -79,9 +79,9 @@ public:
 
     virtual ~Impl() =0;
 
-    const InetAddr& getInAddr() const noexcept
+    const InetAddr& getInetAddr() const noexcept
     {
-        return inAddr;
+        return inetAddr;
     }
 
 
@@ -108,9 +108,9 @@ public:
 
     bool operator <(const Impl& rhs) const
     {
-        return (inAddr < rhs.inAddr)
+        return (inetAddr < rhs.inetAddr)
                 ? true
-                : (rhs.inAddr < inAddr)
+                : (rhs.inetAddr < inetAddr)
                   ? false
                   : (port < rhs.port);
     }
@@ -121,7 +121,7 @@ public:
      * @return The hash value of this instance
      */
     size_t hash() const noexcept {
-        return inAddr.hash() ^ portHash(port);
+        return inetAddr.hash() ^ portHash(port);
     }
 
     /**
@@ -146,6 +146,8 @@ public:
     {
         return port;
     }
+
+    virtual void setAddr(struct sockaddr_storage& storage) const =0;
 };
 
 SockAddr::Impl::~Impl()
@@ -168,7 +170,7 @@ public:
         : Impl(InetAddr(sockaddr.sin_addr), ntohs(sockaddr.sin_port))
         , sockaddr(sockaddr)
     {
-        strRep = inAddr.to_string() + ":" + std::to_string(port);
+        strRep = inetAddr.to_string() + ":" + std::to_string(port);
     }
 
     SockAddrIn(
@@ -177,12 +179,12 @@ public:
         : Impl{InetAddr(addr), port}
         , sockaddr{0}
     {
-        LOG_DEBUG("{addr: %s, port: %hu}", inAddr.to_string().c_str(), port);
+        LOG_DEBUG("{addr: %s, port: %hu}", inetAddr.to_string().c_str(), port);
         sockaddr.sin_family = AF_INET;
         sockaddr.sin_port = htons(port);
         sockaddr.sin_addr.s_addr = addr;
 
-        strRep = inAddr.to_string() + ":" + std::to_string(port);
+        strRep = inetAddr.to_string() + ":" + std::to_string(port);
     }
 
     /**
@@ -233,6 +235,11 @@ public:
             throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) +
                     " to " + strRep);
     }
+
+    void setAddr(struct sockaddr_storage& storage) const
+    {
+        ::memcpy(&storage, &sockaddr, sizeof(sockaddr));
+    }
 };
 
 /******************************************************************************/
@@ -252,7 +259,7 @@ public:
         : Impl(InetAddr(sockaddr.sin6_addr), ntohs(sockaddr.sin6_port))
         , sockaddr(sockaddr)
     {
-        strRep = "[" + inAddr.to_string() + "]:" + std::to_string(port);
+        strRep = "[" + inetAddr.to_string() + "]:" + std::to_string(port);
     }
 
     SockAddrIn6(
@@ -265,7 +272,7 @@ public:
         sockaddr.sin6_port = htons(port);
         sockaddr.sin6_addr = addr;
 
-        strRep = "[" + inAddr.to_string() + "]:" + std::to_string(port);
+        strRep = "[" + inetAddr.to_string() + "]:" + std::to_string(port);
     }
 
     /**
@@ -316,6 +323,11 @@ public:
             throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) +
                     " to " + strRep);
     }
+
+    void setAddr(struct sockaddr_storage& storage) const
+    {
+        ::memcpy(&storage, &sockaddr, sizeof(sockaddr));
+    }
 };
 
 /******************************************************************************/
@@ -324,7 +336,6 @@ class SockAddrName final : public SockAddr::Impl
 {
 private:
     std::string         name;
-    mutable SockAddr    sockAddr;
 
     /**
      * Sets a socket address from the first IP-based Internet address that
@@ -340,6 +351,7 @@ private:
      * @throws     std::system_error  `::getaddrinfo()` failure
      * @exceptionsafety               Strong guarantee
      * @threadsafety                  Safe
+     * @cancellationpoint             Maybe (`::getaddrinfo()` may be one)
      */
     static bool setSockAddr(
             SockAddr&          sockAddr,
@@ -389,15 +401,17 @@ private:
     }
 
     /**
-     * Sets the socket address from the first IP-based Internet address
+     * Sets a socket address from the first IP-based Internet address
      * associated with this instance's hostname.
      *
+     * @param[out] sockAddr        Socket address to be set
      * @throws std::system_error   `::getaddrinfo()` failure
      * @throws std::runtime_error  Couldn't get IP address
      * @exceptionsafety            Strong guarantee
      * @threadsafety               Safe
+     * @cancellationpoint          Maybe (`::getaddrinfo()` may be one)
      */
-    void setSockAddr() const
+    void setSockAddr(SockAddr& sockAddr) const
     {
         if (!setSockAddr(sockAddr, name, AF_INET, port) &&
             !setSockAddr(sockAddr, name, AF_INET6, port))
@@ -409,7 +423,6 @@ public:
     SockAddrName()
         : Impl{}
         , name{}
-        , sockAddr{}
     {}
 
     SockAddrName(
@@ -417,7 +430,6 @@ public:
             const in_port_t   port) ///< Port number in host byte-order
         : SockAddr::Impl{InetAddr(name), port}
         , name{name}
-        , sockAddr{}
     {
         strRep = name + ":" + std::to_string(port);
     }
@@ -436,7 +448,8 @@ public:
             const int type,
             const int protocol) const
     {
-        setSockAddr();
+        SockAddr sockAddr;
+        setSockAddr(sockAddr);
         return sockAddr.socket(type, protocol);
     }
 
@@ -454,7 +467,8 @@ public:
      */
     void bind(const int sd) const
     {
-        setSockAddr();
+        SockAddr sockAddr;
+        setSockAddr(sockAddr);
         sockAddr.bind(sd);
     }
 
@@ -467,8 +481,16 @@ public:
      */
     void connect(const int sd) const
     {
-        setSockAddr();
+        SockAddr sockAddr;
+        setSockAddr(sockAddr);
         sockAddr.connect(sd);
+    }
+
+    void setAddr(struct sockaddr_storage& storage) const
+    {
+        SockAddr sockAddr;
+        setSockAddr(sockAddr);
+        sockAddr.setAddr(storage);
     }
 };
 
@@ -676,14 +698,19 @@ void SockAddr::connect(const int sd) const
     pImpl->connect(sd);
 }
 
-const InetAddr& SockAddr::getInAddr() const noexcept
+const InetAddr& SockAddr::getInetAddr() const noexcept
 {
-    return pImpl->getInAddr();
+    return pImpl->getInetAddr();
 }
 
 in_port_t SockAddr::getPort() const noexcept
 {
     return pImpl->getPort();
+}
+
+void SockAddr::setAddr(struct sockaddr_storage& storage) const
+{
+    return pImpl->setAddr(storage);
 }
 
 } // namespace

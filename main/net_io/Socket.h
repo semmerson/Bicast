@@ -238,9 +238,7 @@ public:
     /**
      * @cancellationpoint
      */
-    UdpSndrSock(
-            const SockAddr& ifAddr,
-            const SockAddr& grpAddr);
+    UdpSndrSock(const SockAddr& grpAddr);
 
     void write(
             const struct iovec* iov,
@@ -260,9 +258,8 @@ public:
      * @cancellationpoint
      */
     UdpRcvrSock(
-            const SockAddr& ifAddr,
             const SockAddr& grpAddr,
-            const SockAddr& srcAddr);
+            const InetAddr& srcAddr);
 
     /**
      * Peeks at at UDP record.

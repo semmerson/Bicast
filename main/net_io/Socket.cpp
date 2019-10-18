@@ -445,26 +445,31 @@ public:
     /**
      * @cancellationpoint
      */
-    Impl(   const SockAddr& ifAddr,
-            const SockAddr& grpAddr)
-        : InetSock::Impl(0) // TODO
+    Impl(const SockAddr& grpAddr)
+        : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
     {
-        // TODO
+        unsigned char  ttl = 250; // Should be large enough
+
+        if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)))
+            throw SYSTEM_ERROR(
+                    "Couldn't set time-to-live for multicast packets");
+
+        // Enable loopback of multicast datagrams
+        {
+            unsigned char enable = 1;
+            if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable,
+                    sizeof(enable)))
+                throw SYSTEM_ERROR(
+                        "Couldn't enable loopback of multicast datagrams");
+        }
+
+        grpAddr.connect(sd);
     }
 
     void write(
             const struct iovec* iov,
             const int           iovCnt)
     {
-#if 0
-        if (log_enabled(LOG_LEVEL_DEBUG)) {
-            size_t nbytes = 0;
-            for (int i = 0; i < iovCnt; ++i)
-                nbytes += iov->iov_len;
-            LOG_DEBUG("Writing %zu bytes", nbytes);
-        }
-#endif
-
         if (::writev(sd, iov, iovCnt) == -1)
             throw SYSTEM_ERROR("Couldn't write " + std::to_string(iovCnt) +
                     "-element vector to host " + getRmtAddr().to_string());
@@ -472,10 +477,8 @@ public:
 
 };
 
-UdpSndrSock::UdpSndrSock(
-        const SockAddr& ifAddr,
-        const SockAddr& grpAddr)
-    : InetSock{new Impl(ifAddr, grpAddr)}
+UdpSndrSock::UdpSndrSock(const SockAddr& grpAddr)
+    : InetSock{new Impl(grpAddr)}
 {}
 
 void UdpSndrSock::write(
@@ -493,11 +496,13 @@ public:
     /**
      * @cancellationpoint
      */
-    Impl(   const SockAddr& ifAddr,
-            const SockAddr& grpAddr,
-            const SockAddr& srcAddr)
-        : InetSock::Impl(0) // TODO
-    {}
+    Impl(   const SockAddr& grpAddr,
+            const InetAddr& srcAddr)
+        : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
+    {
+        grpAddr.bind(sd);
+        grpAddr.getInetAddr().join(sd, srcAddr);
+    }
 
     size_t peek(
             void*        bytes,
@@ -537,10 +542,9 @@ public:
 };
 
 UdpRcvrSock::UdpRcvrSock(
-        const SockAddr& ifAddr,
         const SockAddr& grpAddr,
-        const SockAddr& srcAddr)
-    : InetSock{new Impl(ifAddr, grpAddr, srcAddr)}
+        const InetAddr& srcAddr)
+    : InetSock{new Impl(grpAddr, srcAddr)}
 {}
 
 size_t UdpRcvrSock::peek(

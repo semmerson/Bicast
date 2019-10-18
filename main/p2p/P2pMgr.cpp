@@ -12,6 +12,7 @@
 
 #include "config.h"
 
+#include "Bookkeeper.h"
 #include "error.h"
 #include "P2pMgr.h"
 #include "PeerFactory.h"
@@ -33,115 +34,12 @@ namespace hycast {
 
 class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
 {
-    class PeerStats {
-        typedef struct PeerStat {
-            Peer          peer;        ///< Peer
-            uint_fast32_t chunkCount;  ///< Number of received chunks
-            bool          fromConnect; ///< From `::connect()`?
-
-            PeerStat()
-                : peer()
-                , chunkCount(0)
-                , fromConnect(false)
-            {}
-
-            PeerStat(
-                    Peer       peer,
-                    const bool fromConnect)
-                : peer{peer}
-                , chunkCount{0}
-                , fromConnect{fromConnect}
-            {}
-        }                                       PeerStat;
-        typedef std::mutex                      Mutex;
-        typedef std::lock_guard<Mutex>          Guard;
-
-        std::mutex                              mutex;
-        std::unordered_map<SockAddr, PeerStat>  map;
-
-    public:
-        void add(
-                Peer       peer,
-                const bool fromConnect)
-        {
-            const SockAddr& rmtSockAddr = peer.getRmtAddr();
-
-            LOG_NOTE("Adding peer %s", rmtSockAddr.to_string().c_str());
-
-            Guard guard{mutex};
-            map.emplace(rmtSockAddr, PeerStat(peer, fromConnect));
-        }
-
-        void erase(const SockAddr& rmtSockAddr)
-        {
-            Guard guard{mutex};
-            map.erase(rmtSockAddr);
-        }
-
-        bool fromConnect(const SockAddr& rmtSockAddr)
-        {
-            Guard guard{mutex};
-            return map.count(rmtSockAddr)
-                    ? map[rmtSockAddr].fromConnect
-                    : false;
-        }
-
-        void inc(const SockAddr& rmtSockAddr)
-        {
-            Guard guard{mutex};
-
-            if (map.count(rmtSockAddr))
-                ++map[rmtSockAddr].chunkCount;
-        }
-
-        /**
-         * Stops the worst performing peer if it's unique and not tied with any
-         * other peer.
-         *
-         * @cancellationpoint  No
-         */
-        void stopWorstPeer() {
-            unsigned long minCount{ULONG_MAX};
-            unsigned long tieCount{ULONG_MAX};
-            Peer          peer;
-            Guard         guard{mutex};
-
-            for (auto iter = map.begin(), end = map.end(); iter != end;
-                    ++iter) {
-                auto count = iter->second.chunkCount;
-
-                if (count < minCount) {
-                    minCount = count;
-                    peer = iter->second.peer;
-                }
-                else if (count == minCount) {
-                    tieCount = minCount;
-                }
-            }
-
-            if (peer && minCount != tieCount)
-                peer.halt();
-        }
-
-        /**
-         * Resets the chunk counts for all peers.
-         *
-         * @cancellationpoint No
-         */
-        void resetChunkCounts() {
-            Guard         guard{mutex};
-
-            for (auto iter = map.begin(), end = map.end(); iter != end; ++iter)
-                iter->second.chunkCount = 0;
-        }
-    };
-    //typedef std::unordered_map<Peer, PeerStat>      PeerStats;
-    typedef std::mutex                              Mutex;
-    typedef std::lock_guard<Mutex>                  Guard;
-    typedef std::unique_lock<Mutex>                 Lock;
-    typedef std::condition_variable                 Cond;
-    typedef std::exception_ptr                      ExceptPtr;
-    typedef std::chrono::steady_clock               Clock;
+    typedef std::mutex                Mutex;
+    typedef std::lock_guard<Mutex>    Guard;
+    typedef std::unique_lock<Mutex>   Lock;
+    typedef std::condition_variable   Cond;
+    typedef std::exception_ptr        ExceptPtr;
+    typedef std::chrono::steady_clock Clock;
 
     std::atomic_flag  executing;     ///< Has `operator()` been called?
     mutable Mutex     peerSetMutex;  ///< Guards set of peers
@@ -155,7 +53,7 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
     PeerMsgRcvr&      msgRcvr;       ///< Receiver of messages from remote peers
     ExceptPtr         taskException; ///< Exception that terminated execution
     ServerPool        serverPool;    ///< Pool of potential remote peer-servers
-    PeerStats         peerStats;     ///< Peer performance statistics
+    Bookkeeper        bookkeeper;    ///< Keeps track of peers and chunks
     PeerSet           peerSet;       ///< Set of active peers
     Clock::time_point improveStart;  ///< Time of start of improvement period
     std::thread       improveThread; ///< Improves set of peers
@@ -163,7 +61,7 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
     std::thread       acceptThread;  ///< Accepts incoming connections
 
     /**
-     * Sets the exception that caused this instance to terminate. Will only set
+//     * Sets the exception that caused this instance to terminate. Will only set
      * it once.
      *
      * @param[in] exPtr  Relevant exception pointer
@@ -185,7 +83,7 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
      * @cancellationpoint No
      */
     void resetImprovement() {
-        peerStats.resetChunkCounts();
+        bookkeeper.resetChunkCounts();
         improveStart = Clock::now();
     }
 
@@ -211,9 +109,7 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
             success = false;
         }
         else {
-            peerStats.add(peer, fromConnect);
-
-            const SockAddr rmtSockAddr{peer.getRmtAddr()};
+            bookkeeper.add(peer, fromConnect);
 
             try {
                 (void)peerSet.activate(peer); // Fast
@@ -223,9 +119,9 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
                 peerSetCond.notify_all();
             }
             catch (const std::exception& ex) {
-                peerStats.erase(rmtSockAddr);
+                bookkeeper.erase(peer);
                 std::throw_with_nested(RUNTIME_ERROR("Couldn't add peer " +
-                        rmtSockAddr.to_string()));
+                        peer.getRmtAddr().to_string()));
             }
         }
 
@@ -305,7 +201,9 @@ class P2pMgr::Impl : public PeerMsgRcvr, public PeerSet::Observer
                         time = improveStart + timeout)
                     peerSetCond.wait_until(lock, time); // Cancellation point
 
-                peerStats.stopWorstPeer(); // Not a cancellation point
+                Peer peer = bookkeeper.getWorstPeer();
+                if (peer)
+                    peer.halt();
                 resetImprovement();        // Not a cancellation point
             }
         }
@@ -520,7 +418,7 @@ public:
         , msgRcvr(msgRcvr)
         , taskException{}
         , serverPool{serverPool}
-        , peerStats{}    // Must be destroyed after `peerSet`
+        , bookkeeper(maxPeers)
         , peerSet{*this} // Must be destroyed before `peerStats`
         , improveStart{Clock::now()}
         , improveThread{}
@@ -624,7 +522,7 @@ public:
         // Possibly add the remote peer-server to the pool of remote servers
         bool fromConnect;
         try {
-            fromConnect = peerStats.fromConnect(rmtSockAddr);
+            fromConnect = bookkeeper.isFromConnect(peer);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(LOGIC_ERROR("Peer " + rmtSockAddr.to_string()
@@ -634,7 +532,7 @@ public:
         if (fromConnect)
             serverPool.consider(rmtSockAddr, timePeriod);
 
-        peerStats.erase(rmtSockAddr); // Remove performance entry
+        bookkeeper.erase(peer);
         resetImprovement();           // Restart performance evaluation
         peerSetCond.notify_all();
     }
@@ -691,8 +589,8 @@ public:
             TcpChunk       chunk,
             const SockAddr& rmtAddr)
     {
+        bookkeeper.received(rmtAddr, chunk.getId());
         msgRcvr.hereIs(chunk, rmtAddr);
-        peerStats.inc(rmtAddr);
     }
 };
 

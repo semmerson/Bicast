@@ -31,7 +31,7 @@ class NameAddr;
 class InetAddr::Impl
 {
 public:
-    virtual ~Impl() noexcept =0;
+    virtual ~Impl() noexcept;
 
     virtual std::string to_string() const =0;
 
@@ -54,6 +54,34 @@ public:
     virtual size_t hash() const noexcept =0;
 
     virtual SockAddr getSockAddr(const in_port_t port) const =0;
+
+    /**
+     * Joins the source-specific multicast group identified by this instance
+     * and the address of the sending host.
+     *
+     * @param[in] sd       Socket identifier
+     * @param[in] srcAddr  Address of the sending host
+     * @threadsafety       Safe
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
+     *                     called if either address is based on a name)
+     */
+    void join(
+            const int       sd,
+            const InetAddr& srcAddr) const
+    {
+        // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
+        struct group_source_req mreq;
+
+        mreq.gsr_interface = 0; // => O/S chooses interface
+                getSockAddr(0).setAddr(mreq.gsr_group);
+        srcAddr.getSockAddr(0).setAddr(mreq.gsr_source);
+
+        if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq,
+                sizeof(mreq)))
+            throw SYSTEM_ERROR("Couldn't join multicast group " +
+                    to_string() + " from source " + srcAddr.to_string());
+    }
 };
 
 InetAddr::Impl::~Impl() noexcept
@@ -331,6 +359,13 @@ size_t InetAddr::hash() const noexcept
 SockAddr InetAddr::getSockAddr(const in_port_t port) const
 {
     return pImpl->getSockAddr(port);
+}
+
+void InetAddr::join(
+        const int       sd,
+        const InetAddr& srcAddr) const
+{
+    return pImpl->join(sd, srcAddr);
 }
 
 } // namespace

@@ -93,8 +93,6 @@ public:
             const hycast::SockAddr& rmtAddr)
     {
         EXPECT_EQ(chunkId, notice);
-        EXPECT_EQ(0, snkPeer.size());
-        EXPECT_TRUE(snkPeer.begin() == snkPeer.end());
 
         return true;
     }
@@ -104,10 +102,6 @@ public:
             const hycast::ChunkId&  request,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(1, snkPeer.size());
-        EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
-        EXPECT_EQ(0, srcPeer.size());
-        EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
         EXPECT_EQ(chunkId, request);
 
         return memChunk;
@@ -118,12 +112,6 @@ public:
             hycast::TcpChunk     chunk,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(1, snkPeer.size());
-        EXPECT_TRUE(snkPeer.begin() != snkPeer.end());
-
-        EXPECT_EQ(0, srcPeer.size());
-        EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
-
         const hycast::ChunkSize n = chunk.getSize();
         LOG_DEBUG("ChunkSize: %u", n);
         char                    chunkData[n];
@@ -196,7 +184,7 @@ public:
 
             srvrPeer = hycast::Peer(peerConn, *this);
             hycast::InetAddr localhost("127.0.0.1");
-            EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInAddr());
+            EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInetAddr());
             setState(CONNECTED);
 
             srvrPeer();
@@ -243,13 +231,6 @@ TEST_F(PeerTest, DataExchange)
 
     // Wait for the exchange to complete
     waitForState(DONE);
-
-    /*
-     * The sink-peer calls `hereIs()` before removing it from the pending
-     * set; therefore, the sink-peer isn't tested.
-     */
-    EXPECT_EQ(0, srcPeer.size());
-    EXPECT_TRUE(srcPeer.begin() == srcPeer.end());
 
     // Causes `clntPeer()` to return and `srvrThread` to terminate
     clntPeer.halt();

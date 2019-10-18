@@ -90,6 +90,21 @@ public:
      * @return          Corresponding socket address
      */
     SockAddr getSockAddr(const in_port_t port) const;
+
+    /**
+     * Joins the source-specific multicast group identified by this instance
+     * and the address of the sending host.
+     *
+     * @param[in] sd       Socket identifier
+     * @param[in] srcAddr  Address of the sending host
+     * @threadsafety       Safe
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
+     *                     called if either address is based on a name)
+     */
+    void join(
+            const int       sd,
+            const InetAddr& srcAddr) const;
 };
 
 } // namespace

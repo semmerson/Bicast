@@ -1,1 +1,1 @@
-SUBDIRS			= misc net_io p2p #storage
+SUBDIRS			= misc net_io p2p multicast #storage

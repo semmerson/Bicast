@@ -77,13 +77,13 @@ public:
         , srvrSide{true}
         , portPool{portPool}
     {
-        InetAddr rmtInAddr{rmtSockAddr.getInAddr()};
+        InetAddr rmtInAddr{rmtSockAddr.getInetAddr()};
         LOG_DEBUG("rmtInAddr: %s", rmtInAddr.to_string().c_str());
 
         noticeSock.setDelay(false);
 
         // Create temporary server sockets
-        InetAddr    lclInAddr = lclSockAddr.getInAddr();
+        InetAddr    lclInAddr = lclSockAddr.getInetAddr();
         TcpSrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
         try {
@@ -103,12 +103,12 @@ public:
                 srvrSock.setDelay(true); // Consolidate ACK and chunk
 
                 string = "{remote: {addr: " +
-                        sock.getRmtAddr().getInAddr().to_string() +
+                        sock.getRmtAddr().getInetAddr().to_string() +
                         ", ports: [" + std::to_string(sock.getRmtPort()) +
                         ", " + std::to_string(clntSock.getRmtPort()) +
                         ", " + std::to_string(srvrSock.getRmtPort()) +
                         "]}, local: {addr: " +
-                        sock.getLclAddr().getInAddr().to_string() +
+                        sock.getLclAddr().getInetAddr().to_string() +
                         ", ports: [" + std::to_string(sock.getLclPort()) +
                         ", " + std::to_string(clntSock.getLclPort()) +
                         ", " + std::to_string(srvrSock.getLclPort()) +
@@ -158,12 +158,12 @@ public:
         srvrSock.setDelay(true); // Consolidate ACK and chunk
 
         string = "{remote: {addr: " +
-                noticeSock.getRmtAddr().getInAddr().to_string() +
+                noticeSock.getRmtAddr().getInetAddr().to_string() +
                 ", ports: [" + std::to_string(noticeSock.getRmtPort()) +
                 ", " + std::to_string(clntSock.getRmtPort()) +
                 ", " + std::to_string(srvrSock.getRmtPort()) +
                 "]}, local: {addr: " +
-                noticeSock.getLclAddr().getInAddr().to_string() +
+                noticeSock.getLclAddr().getInetAddr().to_string() +
                 ", ports: [" + std::to_string(noticeSock.getLclPort()) +
                 ", " + std::to_string(clntSock.getLclPort()) +
                 ", " + std::to_string(srvrSock.getLclPort()) +

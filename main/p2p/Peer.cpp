@@ -12,9 +12,9 @@
  *  Created on: May 29, 2019
  *      Author: Steven R. Emmerson
  */
-#include <main/protocol/Chunk.h>
 #include "config.h"
 
+#include "Chunk.h"
 #include "error.h"
 #include "NoticeQueue.h"
 #include "Peer.h"
@@ -47,86 +47,10 @@ private:
         STOP_REQUESTED
     }                               State;
 
-    // Outstanding/pending chunks (i.e., requested chunks that haven't arrived)
-    class OutChunks
-    {
-    private:
-        typedef std::unordered_set<ChunkId> Chunks;
-
-        mutable Mutex  mutex;
-        Chunks         chunks; // Outstanding/pending chunks
-
-    public:
-        typedef Chunks::const_iterator iterator;
-
-        OutChunks()
-            : mutex()
-            , chunks()
-        {}
-
-        /**
-         * Inserts a chunk identifier.
-         *
-         * @param[in] chunkId  Chunk identifier
-         * @threadsafety       Safe
-         */
-        void insert(const ChunkId& chunkId)
-        {
-            Guard guard(mutex);
-            LOG_DEBUG("Inserting chunk ID %lu", chunkId.id);
-            chunks.insert(chunkId);
-        }
-
-        /**
-         * Inserts a chunk identifier.
-         *
-         * @param[in] chunkId  Chunk identifier
-         * @threadsafety       Safe
-         */
-        void insert(const ChunkId&& chunkId)
-        {
-            Guard guard(mutex);
-            LOG_DEBUG("Inserting chunk ID %lu", chunkId.id);
-            chunks.insert(chunkId);
-        }
-
-        /**
-         * Removes a chunk identifier.
-         *
-         * @param[in] chunkId  Chunk identifier
-         * @threadsafety       Safe
-         */
-        void erase(const ChunkId& chunkId)
-        {
-            Guard guard(mutex);
-            LOG_DEBUG("Erasing chunk ID %lu", chunkId.id);
-            chunks.erase(chunkId);
-        }
-
-        size_t size() const noexcept
-        {
-            Guard guard(mutex);
-            return chunks.size();
-        }
-
-        iterator begin() const noexcept
-        {
-            Guard guard(mutex);
-            return chunks.begin();
-        }
-
-        iterator end() const noexcept
-        {
-            Guard guard(mutex);
-            return chunks.end();
-        }
-    };
-
     std::atomic_flag executing;
     mutable Mutex    doneMutex;
     mutable Cond     doneCond;
     NoticeQueue      notices;
-    OutChunks        outChunks;
     PeerConn         peerConn;
     PeerMsgRcvr&     msgRcvr;
     ExceptPtr        exceptPtr;
@@ -170,7 +94,6 @@ private:
 
                 if (doRequest) {
                     LOG_DEBUG("Sending request for chunk %lu", chunkId.id);
-                    outChunks.insert(chunkId);
                     peerConn.request(chunkId);
                 }
             }
@@ -229,7 +152,6 @@ private:
 
                 ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
                     msgRcvr.hereIs(chunk, peerConn.getRmtAddr());
-                    outChunks.erase(chunk.getId());
                 ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
             }
 
@@ -341,8 +263,6 @@ private:
     }
 
 public:
-    typedef OutChunks::iterator iterator;
-
     /**
      * Constructs from a connection to a remote peer and a receiver of messages
      * from the remote peer.
@@ -356,7 +276,6 @@ public:
         , doneMutex()
         , doneCond()
         , notices()
-        , outChunks()
         , peerConn{peerConn}
         , msgRcvr(msgRcvr) // Braces don't work
         , exceptPtr()
@@ -472,21 +391,6 @@ public:
         return notices.push(chunkId);
     }
 
-    size_t size() const noexcept
-    {
-        return outChunks.size();
-    }
-
-    iterator begin() const noexcept
-    {
-        return outChunks.begin();
-    }
-
-    iterator end() const noexcept
-    {
-        return outChunks.end();
-    }
-
     std::string to_string() const noexcept
     {
         return peerConn.to_string();
@@ -557,21 +461,6 @@ void Peer::halt() noexcept
 bool Peer::notify(const ChunkId& chunkId) const
 {
     return pImpl->notify(chunkId);
-}
-
-size_t Peer::size() const noexcept
-{
-    return pImpl->size();
-}
-
-Peer::iterator Peer::begin() const noexcept
-{
-    return pImpl->begin();
-}
-
-Peer::iterator Peer::end() const noexcept
-{
-    return pImpl->end();
 }
 
 size_t Peer::hash() const noexcept
