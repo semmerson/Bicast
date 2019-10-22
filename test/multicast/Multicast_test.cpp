@@ -11,6 +11,7 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "Multicast.h"
 
 #include <condition_variable>
@@ -34,9 +35,9 @@ protected:
         , mutex()
         , cond()
         , ready{false}
-    {}
+    {
+    }
 
-public:
     void runSink(
             const hycast::InetAddr& srcAddr,
             const hycast::MemChunk& memChunk)
@@ -57,10 +58,13 @@ public:
 
         // Verify the chunk
         EXPECT_EQ(memChunk.getId(), udpChunk.getId());
-        ASSERT_EQ(memChunk.getSize(), udpChunk.getSize());
-        char buf[udpChunk.getSize()];
-        udpChunk.read(buf);
-        EXPECT_STREQ(static_cast<const char*>(memChunk.getData()), buf);
+        hycast::ChunkSize memSize = memChunk.getSize();
+        hycast::ChunkSize udpSize = udpChunk.getSize();
+        ASSERT_EQ(memSize, udpSize);
+        const char* memData = static_cast<const char*>(memChunk.getData());
+        char        udpData[udpSize];
+        udpChunk.read(udpData);
+        EXPECT_STREQ(memData, udpData);
     }
 };
 
@@ -74,24 +78,27 @@ TEST_F(MulticastTest, Construction)
 TEST_F(MulticastTest, Multicasting)
 {
     // Create chunk
-    hycast::ChunkId  id{1};
-    const char       data[] = "Hello, world!";
-    hycast::MemChunk chunk(id, sizeof(data), data);
+    const hycast::ChunkId   id{1};
+    const char              memData[] = "Hello, world!";
+    const hycast::ChunkSize memSize = sizeof(memData);
+    const hycast::MemChunk  memChunk(id, memSize, memData);
+
+    // Create multicast sender
+    hycast::McastSndr mcastSndr(grpAddr);
 
     // Create multicast sink
-    hycast::McastSndr mcastSndr(grpAddr);
     hycast::SockAddr  lclAddr = mcastSndr.getLclAddr();
     hycast::InetAddr  srcAddr = lclAddr.getInetAddr();
-    std::thread       snkThread(&MulticastTest::runSink, this,
-            std::ref(srcAddr), std::ref(chunk));
+    std::thread       snkThread(&MulticastTest_Multicasting_Test::runSink, this,
+            std::ref(srcAddr), std::ref(memChunk));
 
     // Wait until multicast sink is ready
     std::unique_lock<decltype(mutex)> lock{mutex};
     while (!ready)
         cond.wait(lock);
 
-    // Multicast chunk
-    mcastSndr.send(chunk);
+    // Multicast memChunk
+    mcastSndr.send(memChunk);
 
     // Join multicast sink
     snkThread.join();

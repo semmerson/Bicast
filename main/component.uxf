@@ -4,20 +4,20 @@
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>340</x>
-      <y>140</y>
+      <x>330</x>
+      <y>130</y>
       <w>140</w>
       <h>100</h>
     </coordinates>
     <panel_attributes>&lt;&lt;component&gt;&gt;
-Switchboard</panel_attributes>
+Repository</panel_attributes>
     <additional_attributes/>
   </element>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>100</x>
-      <y>170</y>
+      <x>90</x>
+      <y>160</y>
       <w>140</w>
       <h>40</h>
     </coordinates>
@@ -28,8 +28,8 @@ Multicast Receiver</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>630</x>
-      <y>140</y>
+      <x>620</x>
+      <y>130</y>
       <w>140</w>
       <h>100</h>
     </coordinates>
@@ -40,8 +40,8 @@ P2P Manager</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>230</x>
-      <y>170</y>
+      <x>220</x>
+      <y>160</y>
       <w>130</w>
       <h>40</h>
     </coordinates>
@@ -52,8 +52,8 @@ hereIs</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>470</x>
-      <y>130</y>
+      <x>460</x>
+      <y>120</y>
       <w>180</w>
       <h>40</h>
     </coordinates>
@@ -64,80 +64,32 @@ shouldRequest</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>470</x>
-      <y>170</y>
+      <x>460</x>
+      <y>160</y>
       <w>180</w>
       <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;&lt;-
 get</panel_attributes>
     <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
-  </element>
-  <element>
-    <id>Relation</id>
-    <coordinates>
-      <x>470</x>
-      <y>210</y>
-      <w>180</w>
-      <h>40</h>
-    </coordinates>
-    <panel_attributes>lt=&lt;-
-hereIs</panel_attributes>
-    <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
-  </element>
-  <element>
-    <id>UMLGeneric</id>
-    <coordinates>
-      <x>340</x>
-      <y>340</y>
-      <w>140</w>
-      <h>40</h>
-    </coordinates>
-    <panel_attributes>&lt;&lt;component&gt;&gt;
-Storage</panel_attributes>
-    <additional_attributes/>
-  </element>
-  <element>
-    <id>Relation</id>
-    <coordinates>
-      <x>340</x>
-      <y>230</y>
-      <w>80</w>
-      <h>130</h>
-    </coordinates>
-    <panel_attributes>lt=&lt;&lt;-
-exists?</panel_attributes>
-    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
-  </element>
-  <element>
-    <id>Relation</id>
-    <coordinates>
-      <x>400</x>
-      <y>230</y>
-      <w>50</w>
-      <h>130</h>
-    </coordinates>
-    <panel_attributes>lt=&lt;&lt;-
-get</panel_attributes>
-    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
   </element>
   <element>
     <id>Relation</id>
     <coordinates>
       <x>460</x>
-      <y>230</y>
-      <w>70</w>
-      <h>130</h>
+      <y>200</y>
+      <w>180</w>
+      <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;-
 hereIs</panel_attributes>
-    <additional_attributes>10.0;110.0;10.0;10.0</additional_attributes>
+    <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
   </element>
   <element>
     <id>Text</id>
     <coordinates>
-      <x>360</x>
-      <y>450</y>
+      <x>350</x>
+      <y>300</y>
       <w>100</w>
       <h>80</h>
     </coordinates>
@@ -157,8 +109,8 @@ drawArc(0,height*3/5,width,height*2/5,180,180,true) fg=black bg=#222222 //Parame
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>400</x>
-      <y>370</y>
+      <x>390</x>
+      <y>220</y>
       <w>30</w>
       <h>100</h>
     </coordinates>
@@ -168,8 +120,8 @@ drawArc(0,height*3/5,width,height*2/5,180,180,true) fg=black bg=#222222 //Parame
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>590</x>
-      <y>460</y>
+      <x>580</x>
+      <y>290</y>
       <w>190</w>
       <h>40</h>
     </coordinates>
@@ -180,8 +132,8 @@ response expected</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>590</x>
-      <y>530</y>
+      <x>580</x>
+      <y>360</y>
       <w>190</w>
       <h>40</h>
     </coordinates>

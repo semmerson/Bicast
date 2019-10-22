@@ -1,6 +1,7 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc \
 		  -I$(top_srcdir)/main/net_io \
-		  -I$(top_srcdir)/main/storage
+		  -I$(top_srcdir)/main/protocol \
+		  -I$(top_srcdir)/main/repository
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 CLEANFILES	= callgrind.out *.log *.vg *.supp
 

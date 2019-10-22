@@ -71,7 +71,7 @@ public:
             const InetAddr& srcAddr) const
     {
         // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
-        struct group_source_req mreq;
+        struct group_source_req mreq = {};
 
         mreq.gsr_interface = 0; // => O/S chooses interface
                 getSockAddr(0).setAddr(mreq.gsr_group);

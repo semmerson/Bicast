@@ -37,7 +37,6 @@ error_test_SOURCES		= error_test.cpp
 #Completer_test_SOURCES		= Completer_test.cpp
 DelayQueue_test_SOURCES		= DelayQueue_test.cpp
 reuseaddr_test_SOURCES		= reuseaddr_test.c
-ReuseAddr_test_SOURCES		= ReuseAddr_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

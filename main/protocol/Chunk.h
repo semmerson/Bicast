@@ -15,11 +15,14 @@
 
 #include "Socket.h"
 
+#include <climits>
 #include <memory>
 
 /******************************************************************************/
 
 namespace hycast {
+
+typedef uint_fast32_t SegIndex;
 
 class ChunkId
 {
@@ -28,7 +31,8 @@ private:
     friend std::equal_to<ChunkId>;
 
 public:
-    uint64_t id;
+    typedef uint64_t Id;
+    Id               id;
 
     ChunkId()
         : id{0}
@@ -37,6 +41,8 @@ public:
     ChunkId(const uint64_t id)
         : id{id}
     {}
+
+    bool isProdInfo() const noexcept;
 
     bool operator ==(const ChunkId rhs) const noexcept;
 
@@ -55,6 +61,8 @@ public:
      * @throws    SystemError  Read failure
      */
     static ChunkId read(TcpSock& sock);
+
+    SegIndex getSegIndex() const noexcept;
 };
 
 /******************************************************************************/
@@ -79,11 +87,15 @@ public:
 
     virtual ~Chunk() =0;
 
+    operator bool() const noexcept;
+
     const ChunkId& getId() const noexcept;
 
     ChunkSize getSize() const noexcept;
 
-    operator bool() const noexcept;
+    SegIndex getSegIndex() const noexcept;
+
+    void write(void* data);
 };
 
 /******************************************************************************/
@@ -112,38 +124,9 @@ public:
 /******************************************************************************/
 
 /**
- * Chunk whose data must be read from a socket.
- */
-class InetChunk : public Chunk
-{
-protected:
-    class Impl;
-
-    InetChunk(Impl* impl);
-
-public:
-    InetChunk() =default;
-
-    virtual ~InetChunk() =0;
-
-    /**
-     * Reads the chunk's data.
-     *
-     * @param[out] data                Buffer for the chunk's data
-     * @throws     std::runtime_error  All the chunk's data couldn't be read
-     * @threadsafety                   Compatible but unsafe
-     * @exceptionsafety                Basic guarantee
-     * @cancellationpoint              Yes
-     */
-    virtual void read(void* data) =0;
-};
-
-/******************************************************************************/
-
-/**
  * Chunk whose data must be read from a TCP socket.
  */
-class TcpChunk final : public InetChunk
+class TcpChunk final : public Chunk
 {
     class Impl;
 
@@ -176,7 +159,7 @@ public:
 /**
  * Chunk whose data must be read from a UDP socket.
  */
-class UdpChunk final : public InetChunk
+class UdpChunk final : public Chunk
 {
     class Impl;
 
@@ -216,7 +199,7 @@ namespace std {
     {
         size_t operator ()(const hycast::ChunkId chunkId) const
         {
-            return std::hash<decltype(chunkId.id)>()(chunkId.id);
+            return std::hash<hycast::ChunkId::Id>()(chunkId.id);
         }
     };
 

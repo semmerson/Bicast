@@ -10,16 +10,25 @@
  *      Author: Steven R. Emmerson
  */
 
-#include <main/protocol/Chunk.h>
 #include "config.h"
 
+#include "Chunk.h"
 #include "error.h"
-#include "unistd.h"
 
 #include <climits>
 #include <functional>
+#include <unistd.h>
 
 namespace hycast {
+
+static const ChunkId::Id  PRODINFO_MASK = (static_cast<ChunkId::Id>(1) <<
+        ((sizeof(ChunkId::Id)*CHAR_BIT) - 1));
+static const ChunkId::Id  SEGINDEX_MASK = ((1 << 24) - 1);
+
+bool ChunkId::isProdInfo() const noexcept
+{
+    return id & PRODINFO_MASK;
+}
 
 bool ChunkId::operator==(const ChunkId rhs) const noexcept
 {
@@ -28,7 +37,7 @@ bool ChunkId::operator==(const ChunkId rhs) const noexcept
 
 size_t ChunkId::hash() const noexcept
 {
-    return std::hash<decltype(id)>()(id);
+    return std::hash<Id>()(id);
 }
 
 std::string ChunkId::to_string() const
@@ -49,6 +58,14 @@ ChunkId ChunkId::read(TcpSock& sock)
         throw EOF_ERROR();
 
     return chunkId;
+}
+
+SegIndex ChunkId::getSegIndex() const noexcept
+{
+    if (isProdInfo())
+        throw LOGIC_ERROR("Chunk-ID isn't for a data-segment");
+
+    return id & SEGINDEX_MASK;
 }
 
 /******************************************************************************/
@@ -93,6 +110,13 @@ public:
     {
         return size;
     }
+
+    SegIndex getSegIndex() const noexcept
+    {
+        return id.getSegIndex();
+    }
+
+    virtual void write(void* data) =0;
 };
 
 Chunk::Impl::~Impl() noexcept
@@ -111,6 +135,11 @@ Chunk::Chunk(Impl* const impl)
 Chunk::~Chunk()
 {}
 
+Chunk::operator bool() const noexcept
+{
+    return (bool)pImpl;
+}
+
 const ChunkId& Chunk::getId() const noexcept
 {
     return pImpl->getId();
@@ -121,9 +150,14 @@ ChunkSize Chunk::getSize() const noexcept
     return pImpl->getSize();
 }
 
-Chunk::operator bool() const noexcept
+SegIndex Chunk::getSegIndex() const noexcept
 {
-    return (bool)pImpl;
+    return pImpl->getSegIndex();
+}
+
+void Chunk::write(void* data)
+{
+    pImpl->write(data);
 }
 
 /******************************************************************************/
@@ -170,6 +204,11 @@ public:
 
         sock.write(iov, 3);
     }
+
+    void write(void* data)
+    {
+        ::memcpy(data, this->data, size);
+    }
 };
 
 /******************************************************************************/
@@ -183,7 +222,7 @@ MemChunk::MemChunk(
 
 const void* MemChunk::getData() const
 {
-    static_cast<Impl*>(pImpl.get())->getData();
+    return static_cast<Impl*>(pImpl.get())->getData();
 }
 
 void MemChunk::write(TcpSock& sock) const
@@ -198,42 +237,7 @@ void MemChunk::write(UdpSndrSock& sock) const
 
 /******************************************************************************/
 
-class InetChunk::Impl : public Chunk::Impl
-{
-protected:
-    Impl()
-        : Chunk::Impl()
-    {}
-
-    /**
-     * Constructs.
-     *
-     * @param[in] id                     Chunk ID
-     * @param[in] size                   Size of chunk's data in bytes
-     * @throws    std::invalid_argument  Socket isn't a byte-stream
-     */
-    Impl(   const ChunkId&  id,
-            const ChunkSize size)
-        : Chunk::Impl(id, size)
-    {}
-
-public:
-    virtual ~Impl()
-    {}
-
-    virtual void read(void* data) =0;
-};
-
-InetChunk::InetChunk(Impl* impl)
-    : Chunk(impl)
-{}
-
-InetChunk::~InetChunk()
-{}
-
-/******************************************************************************/
-
-class TcpChunk::Impl final : public InetChunk::Impl
+class TcpChunk::Impl final : public Chunk::Impl
 {
     TcpSock sock;
 
@@ -246,14 +250,14 @@ public:
      * @throws    SystemError            Error reading chunk's header
      */
     Impl(TcpSock& sock)
-        : InetChunk::Impl()
+        : Chunk::Impl()
         , sock{sock}
     {
         if (!sock.read(id.id) || !sock.read(size))
             throw EOF_ERROR("Couldn't read chunk's header");
     }
 
-    void read(void* data)
+    void write(void* data)
     {
         const size_t nread = sock.read(data, size);
 
@@ -266,37 +270,37 @@ public:
 /******************************************************************************/
 
 TcpChunk::TcpChunk()
-    : InetChunk{}
+    : Chunk{}
 {}
 
 TcpChunk::TcpChunk(TcpSock& sock)
-    : InetChunk{new Impl(sock)}
+    : Chunk{new Impl(sock)}
 {}
 
 void TcpChunk::read(void* data)
 {
-    static_cast<Impl*>(pImpl.get())->read(data);
+    static_cast<Impl*>(pImpl.get())->write(data);
 }
 
 /******************************************************************************/
 
-class UdpChunk::Impl final : public InetChunk::Impl
+class UdpChunk::Impl final : public Chunk::Impl
 {
 private:
     UdpRcvrSock sock;
 
 public:
     /**
-     * Constructs from a record-oriented socket.
+     * Constructs from a UDP socket.
      *
-     * @param[in] sock                   Record-oriented socket from which the
-     *                                   chunk data can be read
-     * @throws    std::invalid_argument  Socket isn't record-oriented
+     * @param[in] sock                   UDP socket from which the chunk data
+     *                                   can be read
+     * @throws    std::invalid_argument  Socket isn't UDP
      * @throws    std::EofError          EOF
      * @throws    std::system_error      Error reading Chunk's header
      */
     Impl(UdpRcvrSock& sock)
-        : InetChunk::Impl()
+        : Chunk::Impl()
         , sock{sock}
     {
         Chunk::Impl::Header header;
@@ -305,11 +309,11 @@ public:
         if (!sock.peek(&header, Chunk::Impl::HEADER_SIZE))
             throw EOF_ERROR("Couldn't peek at chunk");
 
-        id = ChunkId(sock.ntoh(header.id));
+        id = ChunkId{sock.ntoh(header.id)};
         size = sock.ntoh(header.size);
     }
 
-    void read(void* data)
+    void write(void* data)
     {
         Chunk::Impl::Header header;
         struct iovec        iov[2];
@@ -338,16 +342,16 @@ public:
 /******************************************************************************/
 
 UdpChunk::UdpChunk()
-    : InetChunk{}
+    : Chunk{}
 {}
 
 UdpChunk::UdpChunk(UdpRcvrSock& sock)
-    : InetChunk{new Impl(sock)}
+    : Chunk{new Impl(sock)}
 {}
 
 void UdpChunk::read(void* data)
 {
-    static_cast<Impl*>(pImpl.get())->read(data);
+    static_cast<Impl*>(pImpl.get())->write(data);
 }
 
 } // namespace
