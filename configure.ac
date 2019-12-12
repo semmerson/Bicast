@@ -58,14 +58,13 @@ AC_DEFINE_UNQUOTED([ETHNET_IFACE_NAME], ["$name"],
 AC_CONFIG_FILES(Makefile
                 main/Makefile
                 main/misc/Makefile
-                main/multicast/Makefile
                 main/net_io/Makefile
                 main/p2p/Makefile
                 main/protocol/Makefile
                 main/repository/Makefile
                 test/Makefile
                 test/misc/Makefile
-                test/multicast/Makefile
+                test/protocol/Makefile
                 test/net_io/Makefile
                 test/p2p/Makefile
                 test/repository/Makefile

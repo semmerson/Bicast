@@ -7,11 +7,11 @@ CLEANFILES	= callgrind.out *.log *.vg *.supp
 
 all:
 
-check_PROGRAMS	= MemProd_test
+#check_PROGRAMS	= MemProd_test
 
-MemProd_test_SOURCES		= MemProd_test.cpp
+#MemProd_test_SOURCES		= MemProd_test.cpp
 
-TESTS	= $(check_PROGRAMS)
+#TESTS	= $(check_PROGRAMS)
 
 SUFFIXES:	.vg .sup .supp
 

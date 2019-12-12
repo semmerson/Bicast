@@ -25,31 +25,55 @@
 namespace {
 
 /// The fixture for testing class `P2pMgr`
-class P2pMgrTest : public ::testing::Test, public hycast::PeerMsgRcvr
+class P2pMgrTest : public ::testing::Test, public hycast::P2pMgrObs
 {
 protected:
-    hycast::SockAddr        srcAddr;
-    hycast::SockAddr        srcAddrs[3];
+    hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        srvrAddrs[3];
     hycast::SockAddr        snkAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     typedef enum {
-        INIT,
-        DONE
+        INIT = 0,
+        CONNECTED = 1,
+        PROD_NOTICE_RCVD = 2,
+        SEG_NOTICE_RCVD = 4,
+        PROD_REQUEST_RCVD = 8,
+        SEG_REQUEST_RCVD = 16,
+        PROD_INFO_RCVD = 32,
+        SEG_RCVD = 64,
+        CLNT_PEER_STOPPED = 128,
+        SRVR_PEER_STOPPED = 256,
+        EXCHANGE_COMPLETE = CONNECTED |
+               PROD_NOTICE_RCVD |
+               SEG_NOTICE_RCVD |
+               PROD_REQUEST_RCVD |
+               SEG_REQUEST_RCVD |
+               PROD_INFO_RCVD |
+               SEG_RCVD,
+        DONE = EXCHANGE_COMPLETE |
+               CLNT_PEER_STOPPED |
+               SRVR_PEER_STOPPED
     } State;
     State                   state;
-    hycast::ChunkId         chunkId;
+    hycast::ProdIndex       prodIndex;
+    hycast::ProdSize        prodSize;
+    hycast::SegSize         segSize;
+    hycast::ProdInfo        prodInfo;
+    hycast::SegId           segId;
+    hycast::SegInfo         segInfo;
     char                    memData[1000];
-    hycast::MemChunk        memChunk;
+    hycast::MemSeg          memSeg;
     hycast::PortPool        portPool;
     hycast::ServerPool      srvrSrvrPool;
+    std::atomic<unsigned>   numAdded;
 
     // You can remove any or all of the following functions if its body
     // is empty.
 
     P2pMgrTest()
-        : srcAddr{"localhost:3880"}
-        , srcAddrs{
+        : srvrAddr{"localhost:3880"}
+        , srvrAddrs{
             // NB: Not Linux dynamic ports to obviate being acquired by sink
             hycast::SockAddr{"localhost:3880"},
             hycast::SockAddr{"localhost:3881"},
@@ -57,19 +81,34 @@ protected:
         , snkAddr{"localhost:3883"} // NB: Not a Linux dynamic port number
         , mutex{}
         , cond{}
+        , prodIndex{1}
         , state{INIT}
-        , chunkId{1}
-        , memData{0}
-        , memChunk(chunkId, sizeof(memData), memData)
-        , portPool(38820, 7) // NB: Linux Dynamic port numbers
+        , prodSize{1000000}
+        , segSize{sizeof(memData)}
+        , prodInfo{prodIndex, prodSize, "product"}
+        , segId(prodIndex, segSize)
+        , segInfo(segId, prodSize, segSize)
+        , memData{}
+        , memSeg{segInfo, memData}
+        , portPool(38840, 7) // NB: Linux Dynamic port numbers
         , srvrSrvrPool()
-    {}
+        , numAdded{0}
+    {
+        ::memset(memData, 0xbd, segSize);
+    }
 
     void setState(const State state) {
         std::lock_guard<decltype(mutex)> lock{mutex};
 
         this->state = state;
         cond.notify_one();
+    }
+
+    void orState(const State state)
+    {
+        std::lock_guard<decltype(mutex)> guard{mutex};
+        this->state = static_cast<State>(this->state | state);
+        cond.notify_all();
     }
 
     void waitForState(const State state) {
@@ -79,63 +118,78 @@ protected:
             cond.wait(lock);
     }
 
-    // Objects declared here can be used by all tests in the test case for Error.
 public:
-    bool shouldRequest(
-            const hycast::ChunkId&  notice,
-            const hycast::SockAddr& rmtAddr) {
-        EXPECT_EQ(chunkId, notice);
+    void added(hycast::Peer& peer)
+    {
+        if (++numAdded >= 2) // Once for client and once for server
+            orState(CONNECTED);
+    }
+
+    void removed(hycast::Peer& peer)
+    {}
+
+    // Receiver-side
+    bool shouldRequest(const hycast::ProdIndex actual)
+    {
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_NOTICE_RCVD);
+
         return true;
     }
 
-    hycast::MemChunk get(
-            const hycast::ChunkId&  request,
-            const hycast::SockAddr& rmtAddr) {
-        EXPECT_EQ(chunkId, request);
-        return memChunk;
-    }
+    // Receiver-side
+    bool shouldRequest(const hycast::SegId& actual)
+    {
+        EXPECT_EQ(segId, actual);
+        orState(SEG_NOTICE_RCVD);
 
-    void hereIs(
-            hycast::TcpChunk       wireChunk,
-            const hycast::SockAddr& rmtAddr) {
-        const hycast::ChunkSize n = wireChunk.getSize();
-        char                    wireData[n];
-
-        wireChunk.read(wireData);
-        for (int i = 0; i < n; ++i)
-            EXPECT_EQ(memData[i], wireData[i]);
-
-        setState(DONE);
-    }
-
-    bool shouldRequest(
-            const hycast::ChunkId& notice,
-            hycast::Peer           peer) {
-        EXPECT_EQ(chunkId, notice);
         return true;
     }
 
-    hycast::MemChunk get(
-            const hycast::ChunkId& request,
-            hycast::Peer           peer) {
-        EXPECT_EQ(chunkId, request);
-        return memChunk;
+    // Sender-side
+    hycast::ProdInfo get(const hycast::ProdIndex actual)
+    {
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_REQUEST_RCVD);
+
+        return prodInfo;
     }
 
-    void hereIs(
-            hycast::TcpChunk wireChunk,
-            hycast::Peer      peer) {
-        const hycast::ChunkSize n = wireChunk.getSize();
-        char                    wireData[n];
+    // Sender-side
+    hycast::MemSeg get(const hycast::SegId& actual)
+    {
+        EXPECT_EQ(segId, actual);
+        orState(SEG_REQUEST_RCVD);
 
-        wireChunk.read(wireData);
-        for (int i = 0; i < n; ++i)
-            EXPECT_EQ(memData[i], wireData[i]);
-
-        setState(DONE);
+        return memSeg;
     }
 
-    static void runP2pMgr(hycast::P2pMgr& p2pMgr) {
+    // Receiver-side
+    bool hereIs(const hycast::ProdInfo& actual)
+    {
+        EXPECT_EQ(prodInfo, actual);
+        orState(PROD_INFO_RCVD);
+
+        return true;
+    }
+
+    // Receiver-side
+    bool hereIs(hycast::TcpSeg& actual)
+    {
+        const hycast::SegSize size = actual.getInfo().getSegSize();
+        EXPECT_EQ(segSize, size);
+
+        char buf[size];
+        actual.write(buf);
+
+        EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
+
+        orState(SEG_RCVD);
+
+        return true;
+    }
+
+    void runP2pMgr(hycast::P2pMgr& p2pMgr) {
         try {
             LOG_DEBUG("Executing p2pMgr");
             p2pMgr();
@@ -154,31 +208,32 @@ public:
 // Tests simple construction
 TEST_F(P2pMgrTest, SimpleConstruction)
 {
-    hycast::P2pMgr p2pMgr(srcAddr, 0, portPool, 0, srvrSrvrPool, *this);
+    hycast::P2pMgr p2pMgr(srvrAddr, 0, portPool, 0, srvrSrvrPool, *this);
 }
 #endif
 
-// Tests exchanging data
+// Tests exchanging data between two peers
 TEST_F(P2pMgrTest, DataExchange)
 {
     // Start server
-    hycast::P2pMgr     srvrP2pMgr(srcAddr, 0, portPool, 1, srvrSrvrPool, *this);
-    std::thread        srvrThread(&P2pMgrTest::runP2pMgr, std::ref(srvrP2pMgr));
+    hycast::P2pMgr     srvrP2pMgr(srvrAddr, 0, portPool, 1, srvrSrvrPool, *this);
+    std::thread        srvrThread(&P2pMgrTest::runP2pMgr, this,
+            std::ref(srvrP2pMgr));
 
     // Start client
-    hycast::ServerPool clntSrvrPool(std::set<hycast::SockAddr>{srcAddr});
+    hycast::ServerPool clntSrvrPool(std::set<hycast::SockAddr>{srvrAddr});
     hycast::P2pMgr     clntP2pMgr(snkAddr, 0, portPool, 1, clntSrvrPool, *this);
-    std::thread        clntThread(&P2pMgrTest::runP2pMgr, std::ref(clntP2pMgr));
+    std::thread        clntThread(&P2pMgrTest::runP2pMgr, this,
+            std::ref(clntP2pMgr));
 
-    // Wait for the client to connect to the server
-    while (clntP2pMgr.size() == 0)
-        ::usleep(100000);
+    waitForState(CONNECTED);
 
     // Start an exchange
-    srvrP2pMgr.notify(chunkId);
+    clntP2pMgr.notify(prodIndex);
+    clntP2pMgr.notify(segId);
 
     // Wait for the exchange to complete
-    waitForState(DONE);
+    waitForState(EXCHANGE_COMPLETE);
 
     clntP2pMgr.halt();
     clntThread.join();
@@ -187,7 +242,7 @@ TEST_F(P2pMgrTest, DataExchange)
     srvrThread.join();
 }
 
-#if 1
+#if 0
 // Tests multiple peers
 TEST_F(P2pMgrTest, MultiplePeers)
 {
@@ -199,7 +254,7 @@ TEST_F(P2pMgrTest, MultiplePeers)
         try {
             for (int i = 0; i < 3; ++i) {
                 LOG_NOTE("Creating server %d", i);
-                srvrP2pMgrs[i] = hycast::P2pMgr(srcAddrs[i], 0, portPool, 1,
+                srvrP2pMgrs[i] = hycast::P2pMgr(srvrAddrs[i], 0, portPool, 1,
                         srvrSrvrPool, *this);
                 LOG_NOTE("Executing server %d", i);
                 srvrThreads[i] = std::thread(&P2pMgrTest::runP2pMgr,
@@ -214,7 +269,7 @@ TEST_F(P2pMgrTest, MultiplePeers)
         // Start client
         LOG_NOTE("Starting client");
         hycast::ServerPool clntSrvrPool(std::set<hycast::SockAddr>{
-            srcAddrs[0], srcAddrs[1], srcAddrs[2]});
+            srvrAddrs[0], srvrAddrs[1], srvrAddrs[2]});
         hycast::P2pMgr     clntP2pMgr(snkAddr, 0, portPool, 2, clntSrvrPool,
                 *this);
         std::thread        clntThread(&P2pMgrTest::runP2pMgr,

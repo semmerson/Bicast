@@ -16,25 +16,104 @@
 #ifndef MAIN_PEER_PEER_H_
 #define MAIN_PEER_PEER_H_
 
-#include "Chunk.h"
-#include "PeerConn.h"
-#include "PeerMsgRcvr.h"
-#include "PeerMsgSndr.h"
+#include "hycast.h"
+#include "PeerProto.h"
 
 #include <memory>
 #include <unordered_set>
 
 namespace hycast {
 
-class Peer
+class Peer; // Forward declaration
+
+/**
+ * Interface for an observer of a peer.
+ */
+class PeerObs
+{
+public:
+    virtual ~PeerObs() noexcept
+    {}
+
+    /**
+     * Indicates if product-information should be requested.
+     *
+     * @param[in] prodIndex  Product index
+     * @param[in] rmtAddr    Address of the remote peer with the information
+     * @retval    `true`     The chunk should be requested
+     * @retval    `false`    The chunk should not be requested
+     */
+    virtual bool shouldRequest(
+            const ProdIndex prodIndex,
+            const SockAddr& rmtAddr) =0;
+
+    /**
+     * Indicates if a data-segment should be requested.
+     *
+     * @param[in] segId    Segment ID
+     * @param[in] rmtAddr  Address of the remote peer with the segment
+     * @retval    `true`   The chunk should be requested
+     * @retval    `false`  The chunk should not be requested
+     */
+    virtual bool shouldRequest(
+            const SegId&    segId,
+            const SockAddr& rmtAddr) =0;
+
+    /**
+     * Returns product information.
+     *
+     * @param[in] prodIndex  Product index
+     * @param[in] rmtAddr    Address of remote peer
+     * @return               The information. Will be empty if it doesn't exist.
+     */
+    virtual ProdInfo get(
+            const ProdIndex prodIndex,
+            const SockAddr& rmtAddr) =0;
+
+    /**
+     * Returns a data-segment.
+     *
+     * @param[in] id       ID of requested data-segment
+     * @param[in] rmtAddr  Address of remote peer
+     * @return             The data-segment. Will be empty if it doesn't exist.
+     */
+    virtual MemSeg get(
+            const SegId&    id,
+            const SockAddr& rmtAddr) =0;
+
+    /**
+     * Accepts product-information.
+     *
+     * @param[in] prodInfo  Product information
+     * @param[in] rmtAddr   Socket address of remote peer
+     * @retval    `true`    Product information was accepted
+     * @retval    `false`   Product information was previously accepted
+     */
+    virtual bool hereIs(
+            const ProdInfo& prodInfo,
+            const SockAddr& rmtAddr) =0;
+
+    /**
+     * Accepts a data-segment.
+     *
+     * @param[in] tcpSeg   TCP-based data-segment
+     * @param[in] rmtAddr  Socket address of remote peer
+     * @retval    `true`   Chunk was accepted
+     * @retval    `false`  Chunk was previously accepted
+     */
+    virtual bool hereIs(
+            TcpSeg&         tcpSeg,
+            const SockAddr& rmtAddr) =0;
+};
+
+class Peer final : public PeerProtoObs
 {
 protected:
-    class Impl;
-
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef std::unordered_set<ChunkId>::const_iterator iterator;
+    typedef std::unordered_set<SegId>::const_iterator iterator;
 
     /**
      * Default construction.
@@ -46,10 +125,10 @@ public:
      * from the remote peer.
      *
      * @param[in] peerConn  Connection to the remote peer
-     * @param[in] msgRcvr   The receiver of messages from the remote peer
+     * @param[in] peerObs   Observer of this peer
      */
-    Peer(   PeerConn   peerConn,
-            PeerMsgRcvr& msgRcvr);
+    Peer(   PeerProto& peerProto,
+            PeerObs&   peerObs);
 
     /**
      * Copy construction.
@@ -67,14 +146,14 @@ public:
      *
      * @return Socket address of the remote peer.
      */
-    const SockAddr& getRmtAddr() const noexcept;
+    const SockAddr getRmtAddr() const noexcept;
 
     /**
      * Returns the local socket address.
      *
      * @return Local socket address
      */
-    const SockAddr& getLclAddr() const noexcept;
+    const SockAddr getLclAddr() const noexcept;
 
     operator bool() const noexcept;
 
@@ -104,14 +183,22 @@ public:
     void halt() noexcept;
 
     /**
-     * Notifies the remote peer about the availability of a `Chunk` by enqueuing
-     * a notice.
+     * Notifies the remote peer about the availability of product-information.
      *
-     * @param[in] notice   ID of available `Chunk`
-     * @retval    `true`   Notice was enqueued to be sent
-     * @retval    `true`   Notice was not enqueued to be sent
+     * @param[in] prodIndex  Product index
      */
-    bool notify(const ChunkId& notice) const;
+    void notify(const ProdIndex prodIndex) const;
+
+    /**
+     * Notifies the remote peer about the availability of a data-segment.
+     *
+     * @param[in] segId    ID of data-segment
+     */
+    void notify(const SegId& segId) const;
+
+    void request(const ProdIndex prodIndex) const;
+
+    void request(const SegId& segId) const;
 
     size_t size() const noexcept;
 
@@ -122,6 +209,52 @@ public:
     size_t hash() const noexcept;
 
     std::string to_string() const noexcept;
+
+    /**
+     * Handles a notice of available product-information.
+     *
+     * @param[in] prodIndex   Product index
+     */
+    void acceptNotice(ProdIndex prodIndex);
+
+    /**
+     * Handles a notice of available data.
+     *
+     * @param[in] dataId   ID of data-chunk
+     */
+    void acceptNotice(const SegId& dataId);
+
+    /**
+     * Handles a request for product-information.
+     *
+     * @param[in] prodIndex  Product index
+     */
+    void acceptRequest(ProdIndex prodIndex);
+
+    /**
+     * Obtains a data-chunk for a peer.
+     *
+     * @param[in] dataId   Data-chunk ID
+     */
+    void acceptRequest(const SegId& dataId);
+
+    /**
+     * Accepts product-information from the remote peer.
+     *
+     * @param[in] prodInfo   Product-information
+     * @retval    `true`     Accepted
+     * @retval    `false`    Previously accepted
+     */
+    void accept(const ProdInfo& prodInfo);
+
+    /**
+     * Accepts a data-segment from the remote peer.
+     *
+     * @param[in] seg        Data-segment
+     * @retval    `true`     Segment was accepted
+     * @retval    `false`    Segment was previously accepted
+     */
+    void accept(TcpSeg& seg);
 };
 
 } // namespace

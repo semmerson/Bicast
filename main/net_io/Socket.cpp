@@ -15,6 +15,7 @@
 #include "error.h"
 #include "Socket.h"
 
+#include <atomic>
 #include <cstdio>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -26,10 +27,12 @@ namespace hycast {
 class Socket::Impl
 {
 protected:
-    int sd; ///< Socket descriptor
+    int              sd;         ///< Socket descriptor
+    std::atomic_bool isShutdown; ///< `shutdown()` has been called?
 
     explicit Impl(const int sd) noexcept
         : sd{sd}
+        , isShutdown{false}
     {}
 
 public:
@@ -39,7 +42,7 @@ public:
         ::close(sd);
     }
 
-    const SockAddr getLclAddr() const
+    SockAddr getLclAddr() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -53,7 +56,7 @@ public:
         return sockAddr;
     }
 
-    const SockAddr getRmtAddr() const
+    SockAddr getRmtAddr() const
     {
         struct sockaddr sockaddr = {};
         socklen_t       socklen = sizeof(sockaddr);
@@ -105,14 +108,18 @@ public:
      * Shuts down the socket for both reading and writing. Causes `accept()` to
      * throw an exception. Idempotent.
      */
-    void shutdown() const
+    void shutdown()
     {
+        isShutdown = true;
         ::shutdown(sd, SHUT_RDWR);
     }
 };
 
 Socket::Socket(Impl* impl)
     : pImpl{impl}
+{}
+
+Socket::~Socket()
 {}
 
 SockAddr Socket::getLclAddr() const
@@ -186,6 +193,12 @@ protected:
     {}
 
 public:
+    std::string to_string() const
+    {
+        return "{rmtAddr: " + getRmtAddr().to_string() + ", lclAddr: " +
+                getLclAddr().to_string() + "}";
+    }
+
     /**
      * Sets the Nagle algorithm.
      *
@@ -231,15 +244,15 @@ public:
     }
 
     /**
-     * Reads from the socket.
+     * Reads from the socket. No network-to-host translation is performed.
      *
-     * @param[in] nbytes             Maximum amount of data to read in bytes
-     * @return                       Number of bytes actually read. 0 => EOF
-     * @throw     std::system_error  I/O failure
+     * @param[in] nbytes       Maximum amount of data to read in bytes
+     * @return                 Number of bytes actually read. 0 => EOF.
+     * @throw     SystemError  I/O failure
      */
     size_t read(
             void* const  data,
-            size_t       nbytes) const
+            const size_t nbytes) const
     {
         /*
          * Sending process closes connection => FIN sent => EOF
@@ -248,15 +261,30 @@ public:
          * Sending host becomes unreachable => read() won't return
          */
         LOG_DEBUG("Reading %zu bytes", nbytes);
-        ssize_t nread = ::read(sd, data, nbytes);
 
-        if (nread == -1)
-            throw SYSTEM_ERROR("read() failure on host " +
-                    getRmtAddr().to_string());
+        size_t nleft = nbytes;
 
-        return nread;
+        while (nleft) {
+            ssize_t nread = ::read(sd, data, nbytes);
+
+            if (nread == -1)
+                throw SYSTEM_ERROR("read() failure on host " +
+                        getRmtAddr().to_string());
+
+            if (nread == 0)
+                break; // EOF
+
+            nleft -= nread;
+        }
+
+        return nbytes - nleft;
     }
 
+    /**
+     * @param[out] value
+     * @retval     `true`   Success
+     * @retval     `false`  EOF
+     */
     bool read(uint16_t& value)
     {
         if (read(&value, sizeof(value)) != sizeof(value))
@@ -265,6 +293,11 @@ public:
         return true;
     }
 
+    /**
+     * @param[out] value
+     * @retval     `true`   Success
+     * @retval     `false`  EOF
+     */
     bool read(uint32_t& value)
     {
         if (read(&value, sizeof(value)) != sizeof(value))
@@ -273,6 +306,11 @@ public:
         return true;
     }
 
+    /**
+     * @param[out] value
+     * @retval     `true`   Success
+     * @retval     `false`  EOF
+     */
     bool read(uint64_t& value)
     {
         if (read(&value, sizeof(value)) != sizeof(value))
@@ -288,6 +326,11 @@ TcpSock::TcpSock(Impl* impl)
 
 TcpSock::~TcpSock()
 {}
+
+std::string TcpSock::to_string() const
+{
+    return static_cast<TcpSock::Impl*>(pImpl.get())->to_string();
+}
 
 TcpSock& TcpSock::setDelay(bool enable)
 {
@@ -350,7 +393,7 @@ class TcpSrvrSock::Impl final : public TcpSock::Impl
 {
 public:
     /**
-     * Constructs.
+     * Constructs. Calls `::listen()`.
      *
      * @param[in] sockAddr           Server's local socket address
      * @param[in] queueSize          Size of listening queue
@@ -383,20 +426,30 @@ public:
                     + ", queueSize: " + std::to_string(queueSize) + "}");
     }
 
+    std::string to_string() const
+    {
+        return getLclAddr().to_string();
+    }
+
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
+     * @retval  `nullptr`          `shutdown()` was called
      * @return                     The accepted socket
      * @throws  std::system_error  `::accept()` failure
-     * @cancellationpoint
+     * @cancellationpoint          Yes
      */
     TcpSock::Impl* accept()
     {
         const int fd = ::accept(sd, nullptr, nullptr);
 
-        if (fd == -1)
+        if (fd == -1) {
+            if (isShutdown)
+                return nullptr;
+
             throw SYSTEM_ERROR("accept() failure on socket " +
-                    std::to_string(sd));
+                        std::to_string(sd));
+        }
 
         return new TcpSock::Impl(fd);
     }
@@ -407,6 +460,11 @@ TcpSrvrSock::TcpSrvrSock(
         const int       queueSize)
     : TcpSock{new Impl(sockAddr, queueSize)}
 {}
+
+std::string TcpSrvrSock::to_string() const
+{
+    return static_cast<Impl*>(pImpl.get())->to_string();
+}
 
 TcpSock TcpSrvrSock::accept() const
 {
@@ -439,14 +497,17 @@ TcpClntSock::TcpClntSock(const SockAddr& sockAddr)
 
 /******************************************************************************/
 
-class UdpSndrSock::Impl final : public InetSock::Impl
+class UdpSock::Impl final : public InetSock::Impl
 {
+    size_t numPeeked; ///< Number of bytes peeked
+
 public:
     /**
      * @cancellationpoint
      */
     Impl(const SockAddr& grpAddr)
         : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
+        , numPeeked{0}
     {
         unsigned char  ttl = 250; // Should be large enough
 
@@ -466,6 +527,23 @@ public:
         grpAddr.connect(sd);
     }
 
+    /**
+     * @cancellationpoint
+     */
+    Impl(   const SockAddr& grpAddr,
+            const InetAddr& srcAddr)
+        : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
+        , numPeeked{0}
+    {
+        grpAddr.bind(sd);
+        grpAddr.getInetAddr().join(sd, srcAddr);
+    }
+
+    std::string to_string() const
+    {
+        return getLclAddr().to_string();
+    }
+
     void write(
             const struct iovec* iov,
             const int           iovCnt)
@@ -475,90 +553,128 @@ public:
                     "-element vector to host " + getRmtAddr().to_string());
     }
 
-};
-
-UdpSndrSock::UdpSndrSock(const SockAddr& grpAddr)
-    : InetSock{new Impl(grpAddr)}
-{}
-
-void UdpSndrSock::write(
-        const struct iovec* iov,
-        const int           iovCnt)
-{
-    static_cast<UdpSndrSock::Impl*>(pImpl.get())->write(iov, iovCnt);
-}
-
-/******************************************************************************/
-
-class UdpRcvrSock::Impl final : public InetSock::Impl
-{
-public:
-    /**
-     * @cancellationpoint
-     */
-    Impl(   const SockAddr& grpAddr,
-            const InetAddr& srcAddr)
-        : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
-    {
-        grpAddr.bind(sd);
-        grpAddr.getInetAddr().join(sd, srcAddr);
-    }
-
-    size_t peek(
+    void peek(
             void*        bytes,
             const size_t nbytes)
     {
         ssize_t nread = ::recv(sd, bytes, nbytes, MSG_PEEK);
 
         if (nread < 0)
-            throw SYSTEM_ERROR("::recv() failure: read " +
+            throw SYSTEM_ERROR("::recv() failure");
+
+        if (nread != nbytes)
+            throw EOF_ERROR("Read " +
                     std::to_string(nread) + " bytes from host " +
                     getRmtAddr().to_string() + " but expected " +
                     std::to_string(nbytes));
-
-        return nread;
     }
 
+    /**
+     * Reads a UDP record sequentially (i.e., previously read bytes are
+     * skipped). No network-to-host translation is performed.
+     *
+     * @param[in] iov           I/O vector
+     * @return                  Number of new bytes read. 0 => EOF.
+     * @throws    SystemError   I/O error
+     * @throws    RuntimeError  Packet is too small
+     * @cancellationpoint       Yes
+     */
     size_t read(
             const struct iovec* iov,
             const int           iovCnt)
     {
-        size_t nbytes = 0;
-        for (int i = 0; i < iovCnt; ++i)
-            nbytes += iov->iov_len;
+        // Construct new read vector that skips previously peeked bytes
+        struct iovec  myIov[iovCnt+1];
+        size_t        reqNumPeek = 0; // Requested number of bytes to read
+        char          skipBuf[numPeeked];
+        myIov[0].iov_base = skipBuf;
+        myIov[0].iov_len = numPeeked;
+        for (int i = 0; i < iovCnt; ++i) {
+            myIov[i+1] = iov[i];
+            reqNumPeek += iov[i].iov_len;
+        }
 
-        LOG_DEBUG("Reading %zu bytes", nbytes);
+        // Construct recvmsg() control structure
+        struct msghdr msghdr = {};
+        msghdr.msg_name = msghdr.msg_control = nullptr;
+        msghdr.msg_iov = myIov;
+        msghdr.msg_iovlen = iovCnt+1;
 
-        auto nread = ::readv(sd, iov, iovCnt);
-
+        // Peek packet
+        ssize_t nread = ::recvmsg(sd, &msghdr, MSG_PEEK);
         if (nread < 0)
-            throw SYSTEM_ERROR("::readv() failure: read " +
-                    std::to_string(nread) + " bytes from host " +
-                    getRmtAddr().to_string() + " but expected " +
-                    std::to_string(nbytes));
+            throw SYSTEM_ERROR("recvmsg() failure");
+
+        nread -= numPeeked;
+        numPeeked += nread;
 
         return nread;
     }
+
+    void discard()
+    {
+        char byte;
+        ::read(sd, &byte, sizeof(byte)); // Discards packet
+        numPeeked = 0; // For next time
+    }
+
+    void shutdown(const int how)
+    {
+        const int status = ::shutdown(sd, how);
+        if (status == EINVAL)
+            throw INVALID_ARGUMENT("how: " + std::to_string(how));
+        if (status && errno != ENOTCONN)
+            throw SYSTEM_ERROR("shutdown() failure");
+    }
 };
 
-UdpRcvrSock::UdpRcvrSock(
+UdpSock::UdpSock(const SockAddr& grpAddr)
+    : InetSock{new Impl(grpAddr)}
+{}
+
+UdpSock::UdpSock(
         const SockAddr& grpAddr,
         const InetAddr& srcAddr)
     : InetSock{new Impl(grpAddr, srcAddr)}
 {}
 
-size_t UdpRcvrSock::peek(
-        void*        bytes,
-        const size_t nbytes)
+std::string UdpSock::to_string() const
 {
-    return static_cast<UdpRcvrSock::Impl*>(pImpl.get())->peek(bytes, nbytes);
+    return static_cast<UdpSock::Impl*>(pImpl.get())->to_string();
 }
 
-size_t UdpRcvrSock::read(
+void UdpSock::write(
         const struct iovec* iov,
         const int           iovCnt)
 {
-    return static_cast<UdpRcvrSock::Impl*>(pImpl.get())->read(iov, iovCnt);
+    static_cast<UdpSock::Impl*>(pImpl.get())->write(iov, iovCnt);
+}
+
+size_t UdpSock::read(
+        void*        bytes,
+        const size_t nbytes)
+{
+    struct iovec iov;
+    iov.iov_base = bytes;
+    iov.iov_len = nbytes;
+    return static_cast<UdpSock::Impl*>(pImpl.get())->read(&iov, 1);
+}
+
+size_t UdpSock::read(
+        const struct iovec* iov,
+        const int           iovCnt)
+{
+    return static_cast<UdpSock::Impl*>(pImpl.get())->read(iov, iovCnt);
+}
+
+void UdpSock::discard()
+{
+    static_cast<UdpSock::Impl*>(pImpl.get())->discard();
+}
+
+void UdpSock::shutdown(const int how)
+{
+    static_cast<UdpSock::Impl*>(pImpl.get())->shutdown(how);
 }
 
 } // namespace

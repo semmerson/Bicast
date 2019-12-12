@@ -8,10 +8,13 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= Chunk.cpp Chunk.h
+lib_la_SOURCES 	= hycast.cpp     hycast.h \
+		  PeerProto.cpp  PeerProto.h \
+		  McastProto.cpp McastProto.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \
-	      -I$(srcdir)/../net_io
+	      -I$(srcdir)/../net_io \
+	      -I$(srcdir)/../p2p

@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class Repository : public PeerMsgRcvr
+class Repository : public PeerObs
 {
 protected:
     class                 Impl;
@@ -66,21 +66,25 @@ public:
      * Accepts a multicast chunk.
      *
      * @param[in] chunk    Chunk
+     * @retval    `true`   Chunk was accepted
+     * @retval    `false`  Chunk was previously accepted
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    void hereIs(UdpChunk chunk) const;
+    bool hereIs(UdpChunk chunk) const;
 
     /**
      * Accepts a chunk from a peer.
      *
      * @param[in] chunk    Chunk
+     * @retval    `true`   Chunk was accepted
+     * @retval    `false`  Chunk was previously accepted
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    void hereIs(TcpChunk chunk) const;
+    bool hereIs(TcpChunk chunk) const;
 };
 
 } // namespace

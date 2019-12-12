@@ -10,7 +10,7 @@
       <h>100</h>
     </coordinates>
     <panel_attributes>&lt;&lt;component&gt;&gt;
-Repository</panel_attributes>
+ClearingHouse</panel_attributes>
     <additional_attributes/>
   </element>
   <element>
@@ -46,7 +46,7 @@ P2P Manager</panel_attributes>
       <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;-
-hereIs</panel_attributes>
+save</panel_attributes>
     <additional_attributes>110.0;20.0;10.0;20.0</additional_attributes>
   </element>
   <element>
@@ -58,7 +58,7 @@ hereIs</panel_attributes>
       <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;&lt;-
-shouldRequest</panel_attributes>
+shouldRequest?</panel_attributes>
     <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
   </element>
   <element>
@@ -82,14 +82,14 @@ get</panel_attributes>
       <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;-
-hereIs</panel_attributes>
+save</panel_attributes>
     <additional_attributes>10.0;20.0;160.0;20.0</additional_attributes>
   </element>
   <element>
     <id>Text</id>
     <coordinates>
       <x>350</x>
-      <y>300</y>
+      <y>470</y>
       <w>100</w>
       <h>80</h>
     </coordinates>
@@ -110,7 +110,7 @@ drawArc(0,height*3/5,width,height*2/5,180,180,true) fg=black bg=#222222 //Parame
     <id>Relation</id>
     <coordinates>
       <x>390</x>
-      <y>220</y>
+      <y>390</y>
       <w>30</w>
       <h>100</h>
     </coordinates>
@@ -140,5 +140,53 @@ response expected</panel_attributes>
     <panel_attributes>lt=&lt;-
 no response</panel_attributes>
     <additional_attributes>10.0;20.0;170.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLGeneric</id>
+    <coordinates>
+      <x>330</x>
+      <y>300</y>
+      <w>140</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>&lt;&lt;component&gt;&gt;
+Repository</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>330</x>
+      <y>220</y>
+      <w>80</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+exists?</panel_attributes>
+    <additional_attributes>10.0;80.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>390</x>
+      <y>220</y>
+      <w>60</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+save</panel_attributes>
+    <additional_attributes>10.0;80.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>450</x>
+      <y>220</y>
+      <w>50</w>
+      <h>100</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+get</panel_attributes>
+    <additional_attributes>10.0;80.0;10.0;10.0</additional_attributes>
   </element>
 </diagram>

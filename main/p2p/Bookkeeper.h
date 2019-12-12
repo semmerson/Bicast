@@ -1,5 +1,5 @@
 /**
- * Keeps track of peers and chunks in a thread-safe manner.
+ * Keeps track of peers and message exchanges in a thread-safe manner.
  *
  * Copyright 2019 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
@@ -28,10 +28,12 @@ class Bookkeeper
     std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef std::unordered_set<ChunkId> ChunkIds;
-    typedef std::list<Peer>             Peers;
-    typedef ChunkIds::iterator          ChunkIdIter;
-    typedef Peers::iterator             PeerIter;
+    typedef std::unordered_set<ProdIndex> ProdIndexes;
+    typedef std::unordered_set<SegId>     SegIds;
+    typedef std::list<Peer>               Peers;
+    typedef ProdIndexes::iterator         ProdIndexIter;
+    typedef SegIds::iterator              SegIdIter;
+    typedef Peers::iterator               PeerIter;
 
     /**
      * Constructs.
@@ -72,10 +74,10 @@ public:
     bool isFromConnect(const Peer& peer) const;
 
     /**
-     * Marks a peer as having requested a particular chunk.
+     * Marks a peer as having requested information on a particular product.
      *
-     * @param[in] peer            The peer
-     * @param[in] id              The chunk
+     * @param[in] rmtAddr         Address of the remote peer
+     * @param[in] prodIndex       Product index
      * @throws std::out_of_range  `peer` is unknown
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
@@ -83,43 +85,84 @@ public:
      * @cancellationpoint         No
      */
     void requested(
-            const Peer&    peer,
-            const ChunkId& id) const;
+            const SockAddr& rmtAddr,
+            const ProdIndex prodIndex) const;
 
     /**
-     * Indicates if a chunk has been requested by any peer.
+     * Marks a peer as having requested a particular data-segment.
      *
-     * @param[in] id       ID of the chunk in question
-     * @return    `true`   The chunk has been requested
-     * @return    `false`  The chunk has not been requested
+     * @param[in] rmtAddr         Address of the remote peer
+     * @param[in] id              The segment ID
+     * @throws std::out_of_range  `peer` is unknown
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Strong guarantee
+     * @cancellationpoint         No
+     */
+    void requested(
+            const SockAddr& rmtAddr,
+            const SegId&   id) const;
+
+    /**
+     * Indicates if information on a particular product has been requested by
+     * any peer.
+     *
+     * @param[in] prodIndex  Index of the product in question
+     * @return    `true`     The product-information has been requested
+     * @return    `false`    The product-information has not been requested
+     * @threadsafety         Safe
+     * @exceptionsafety      No throw
+     * @cancellationpoint    No
+     */
+    bool wasRequested(const ProdIndex prodIndex) const noexcept;
+
+    /**
+     * Indicates if a particular data-segment has been requested by any peer.
+     *
+     * @param[in] id       ID of the data-segment in question
+     * @return    `true`   The data-segment has been requested
+     * @return    `false`  The data-segment has not been requested
      * @threadsafety       Safe
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    bool wasRequested(const ChunkId& id) const noexcept;
+    bool wasRequested(const SegId& id) const noexcept;
 
     /**
-     * Marks a chunk as having been received by a particular peer.
+     * Marks a peer as having received information on a particular product.
      *
      * @param[in] rmtAddr         Address of the remote peer
-     * @param[in] id              The chunk
+     * @param[in] prodIndex       Index of the product
      * @throws std::out_of_range  `rmtAddr` is unknown
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
     void received(
-            const SockAddr&    rmtAddr,
-            const ChunkId& id) const;
+            const SockAddr& rmtAddr,
+            const ProdIndex prodIndex) const;
 
     /**
-     * Returns the uniquely worst performing peer, which will test false if it's
-     * not unique.
+     * Marks a peer as having received a particular data-segment.
+     *
+     * @param[in] rmtAddr         Address of the remote peer
+     * @param[in] id              Data-segment ID
+     * @throws std::out_of_range  `rmtAddr` is unknown
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     */
+    void received(
+            const SockAddr& rmtAddr,
+            const SegId&    id) const;
+
+    /**
+     * Returns the uniquely worst performing peer.
      *
      * @return                    The worst performing peer since construction
-     *                            or `resetChunkCounts()` was called. Will test
-     *                            false if the worst performing peer isn't
-     *                            unique.
+     *                            or `resetCounts()` was called. The returned
+     *                            peer will test false if the worst performing
+     *                            peer isn't unique.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Strong guarantee
@@ -128,50 +171,94 @@ public:
     Peer getWorstPeer() const;
 
     /**
-     * Resets the count of received chunks for every peer.
+     * Resets the measure of utility for every peer.
      *
      * @threadsafety       Safe
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    void resetChunkCounts() const noexcept;
+    void resetCounts() const noexcept;
 
     /**
-     * Returns the IDs of the chunks that a peer has requested but that have not
-     * yet been received.
+     * Returns the indexes of products that a peer has requested information on
+     * but that have not yet been received. Should be called before `erase()`.
      *
      * @param[in] peer            The peer in question
-     * @return                    [first, last) iterators over the chunk IDs
+     * @return                    [first, last) iterators over the product
+     *                            indexes
      * @throws std::out_of_range  `peer` is unknown
+     * @validity                  No changes to the peer's account
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `erase()`
      */
-    std::pair<ChunkIdIter, ChunkIdIter> getChunkIds(const Peer& peer) const;
+    std::pair<ProdIndexIter, ProdIndexIter> getProdIndexes(const Peer& peer)
+            const;
 
     /**
-     * Returns the peers that can request a particular chunk. The peers are in
-     * the order in which they were notified.
+     * Returns the IDs of the data-segments that a peer has requested but that
+     * have not yet been received. Should be called before `erase()`.
      *
-     * @param[in] chunkId         The chunk in questioni
-     * @return                    [first, last) iterators over the peers
-     * @throws std::system_error  Out of memory
+     * @param[in] peer            The peer in question
+     * @return                    [first, last) iterators over the segment IDs
+     * @throws std::out_of_range  `peer` is unknown
+     * @validity                  No changes to the peer's account
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `erase()`
      */
-    std::pair<PeerIter, PeerIter> getPeers(const ChunkId& chunkId) const;
+    std::pair<SegIdIter, SegIdIter> getSegIds(const Peer& peer) const;
 
     /**
-     * Removes a peer.
+     * Removes a peer. Should be called after `getProdIndexes()` and
+     * `getSegIds()` and before `getBestPeer()`.
      *
      * @param[in] peer            The peer to be removed
      * @throws std::out_of_range  `peer` is unknown
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `getProdIndexes()`
+     * @see                       `getSegIds()`
+     * @see                       `getBestPeer()`
      */
     void erase(const Peer& peer) const;
+
+    /**
+     * Returns the best local peer to request information on a particular
+     * product and that isn't a particular peer.
+     *
+     * @param[in] prodIndex       Index of the product
+     * @param[in] except          Peer to avoid
+     * @return                    The peer. Will test `false` if no such peer
+     *                            exists.
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     */
+    Peer getBestPeerExcept(
+            const ProdIndex prodIndex,
+            const Peer&     except) const;
+
+    /**
+     * Returns the local peer to request a particular data-segment and
+     * that isn't a particular peer.
+     *
+     * @param[in] segId           Segment ID
+     * @param[in] except          Peer to avoid
+     * @return                    The peer. Will test `false` if no such peer
+     *                            exists.
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     */
+    Peer getBestPeerExcept(
+            const SegId& segId,
+            const Peer&  except) const;
 };
 
 } // namespace

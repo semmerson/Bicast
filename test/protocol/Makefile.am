@@ -7,9 +7,10 @@ CLEANFILES	= callgrind.out *.log *.vg *.supp
 
 all:
 
-check_PROGRAMS	= Multicast_test
+check_PROGRAMS	= PeerProto_test McastProto_test
 
-Multicast_test_SOURCES		= Multicast_test.cpp
+PeerProto_test_SOURCES		= PeerProto_test.cpp
+McastProto_test_SOURCES		= McastProto_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

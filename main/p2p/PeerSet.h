@@ -13,8 +13,9 @@
 #ifndef MAIN_PEER_PEERSET_H_
 #define MAIN_PEER_PEERSET_H_
 
-#include <memory>
 #include "Peer.h"
+
+#include <memory>
 
 namespace hycast {
 
@@ -58,14 +59,18 @@ public:
     bool activate(const Peer peer);
 
     /**
-     * Notifies all the peers in the set of an available chunk.
+     * Notifies all the peers in the set of available product-information.
      *
-     * @param[in] chunkId  The available chunk
-     * @retval    `true`   A notice was successfully enqueued for all peers
-     * @retval    `false`  A notice was not successfully enqueued for at least
-     *                     one peer
+     * @param[in] prodIndex  Product index
      */
-    bool notify(const ChunkId& chunkId);
+    void notify(ProdIndex prodIndex);
+
+    /**
+     * Notifies all the peers in the set of an available data-segment.
+     *
+     * @param[in] segId  Segment ID
+     */
+    void notify(const SegId& segId);
 
     /**
      * Returns the number of active peers in the set.

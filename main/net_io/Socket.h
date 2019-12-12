@@ -27,12 +27,17 @@ public:
 protected:
     std::shared_ptr<Impl> pImpl;
 
-    Socket(Impl* impl); // Should be protected but won't compile if so
+    Socket(Impl* impl);
 
 public:
     Socket() =default;
 
-    virtual ~Socket() noexcept =default;
+    virtual ~Socket() noexcept =0;
+
+    operator bool() const noexcept
+    {
+        return (bool)pImpl;
+    }
 
     /**
      * Returns the local socket address.
@@ -90,6 +95,11 @@ public:
         return htonl(value);
     }
 
+    static inline int32_t hton(const int32_t value)
+    {
+        return htonl(value);
+    }
+
     static inline uint64_t hton(uint64_t value)
     {
         uint64_t  v64;
@@ -136,6 +146,8 @@ public:
 
     virtual ~TcpSock() noexcept;
 
+    virtual std::string to_string() const;
+
     /**
      * If the socket protocol is TCP or SCTP, the previous sent packet hasn't
      * yet been acknowledged, and there's less than an MSS in the send buffer,
@@ -163,8 +175,8 @@ public:
      * Reads from the socket.
      *
      * @param[out] bytes         Buffer into which data will be read
-     * @param[in]  nbytes        Maximum amount of data to read in bytes
-     * @return                   Number of bytes actually read. 0 => EOF
+     * @param[in]  nbytes        Maximum mount of data to read in bytes
+     * @return                   Number of bytes actually read. 0 => EOF.
      * @throws     SystemError   Read error
      */
     size_t read(
@@ -188,7 +200,7 @@ public:
     TcpSrvrSock() =default;
 
     /**
-     * Constructs.
+     * Constructs. Calls `::listen()`.
      *
      * @param[in] sockAddr           Socket address
      * @param[in] queueSize          Size of listening queue or `0` to obtain
@@ -201,10 +213,13 @@ public:
             const SockAddr& sockaddr,
             const int       queueSize = 0);
 
+    std::string to_string() const;
+
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
-     * @return                     The accepted socket
+     * @return                     The accepted socket. Will test false if
+     *                             `shutdown()` has been called.
      * @throws  std::system_error  `::accept()` failure
      * @cancellationpoint
      */
@@ -228,61 +243,66 @@ public:
 
 /******************************************************************************/
 
-class UdpSndrSock final : public InetSock
+class UdpSock final : public InetSock
 {
     class Impl;
 
 public:
-    UdpSndrSock() =default;
+    UdpSock() =default;
 
     /**
+     * Constructs a sending UDP socket.
+     *
      * @cancellationpoint
      */
-    UdpSndrSock(const SockAddr& grpAddr);
+    UdpSock(const SockAddr& grpAddr);
+
+    /**
+     * Constructs a source-specific receiving socket.
+     *
+     * @cancellationpoint
+     */
+    UdpSock(const SockAddr& grpAddr,
+            const InetAddr& srcAddr);
+
+    std::string to_string() const;
 
     void write(
             const struct iovec* iov,
             const int           iovCnt);
-};
-
-/******************************************************************************/
-
-class UdpRcvrSock final : public InetSock
-{
-    class Impl;
-
-public:
-    UdpRcvrSock() =default;
 
     /**
-     * @cancellationpoint
+     * @return  Number of new bytes read. 0 => EOF.
      */
-    UdpRcvrSock(
-            const SockAddr& grpAddr,
-            const InetAddr& srcAddr);
+    size_t read(
+            void*        bytes,
+            const size_t nbytes);
 
     /**
-     * Peeks at at UDP record.
-     *
-     * @param[out] bytes        Buffer
-     * @param[in]  nbytes       Maximum number of bytes to read into `bytes`
-     * @return                  Number of bytes read. 0 => EOF.
-     * @throws     SystemError  Error reading
-     */
-    size_t peek(
-            void*  bytes,
-            size_t nbytes);
-
-    /**
-     * Reads a UDP record.
+     * Reads a UDP record sequentially (i.e., previously read bytes are
+     * skipped). When all bytes in the packet have been read, the packet is
+     * discarded. No network-to-host translation is performed.
      *
      * @param[in] iov           I/O vector
-     * @return                  Number of bytes read. 0 => EOF.
-     * @throws     SystemError  Error reading
+     * @return                  Number of new bytes read. 0 => EOF.
+     * @throws    SystemError   I/O error
+     * @throws    RuntimeError  Packet is too small
+     * @cancellationpoint       Yes
      */
     size_t read(
             const struct iovec* iov,
             const int           iovCnt);
+
+    void discard();
+
+    /**
+     * Shuts down the socket.
+     *
+     * @param[in] how              One of `SHUT_RD`, `SHUT_WR`, or `SHUT_RDWR`
+     * @throws    InvalidArgument  Invalid `how`
+     * @throws    SystemError      `::shutdown()` failure
+     */
+    void shutdown(int how);
 };
 
 } // namespace

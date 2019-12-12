@@ -149,6 +149,15 @@ public:
     bool operator <(const SockAddr& rhs) const;
 
     /**
+     * Indicates if this instance is considered equal to another.
+     *
+     * @param[in] rhs      The other instance
+     * @retval    `true`   This instance is equal to `rhs`
+     * @retval    `false`  This instance is not equal to `rhs`
+     */
+    bool operator ==(const SockAddr& rhs) const;
+
+    /**
      * Returns the hash value of this instance.
      *
      * @return The hash value of this instance

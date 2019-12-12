@@ -1,5 +1,5 @@
 /**
- * Chunk of arbitrary data.
+ * Fundamental entities exchanged on a network.
  *
  * Copyright 2019 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
@@ -15,343 +15,272 @@
 #include "Chunk.h"
 #include "error.h"
 
-#include <climits>
-#include <functional>
-#include <unistd.h>
-
 namespace hycast {
 
-static const ChunkId::Id  PRODINFO_MASK = (static_cast<ChunkId::Id>(1) <<
-        ((sizeof(ChunkId::Id)*CHAR_BIT) - 1));
-static const ChunkId::Id  SEGINDEX_MASK = ((1 << 24) - 1);
-
-bool ChunkId::isProdInfo() const noexcept
-{
-    return id & PRODINFO_MASK;
-}
-
-bool ChunkId::operator==(const ChunkId rhs) const noexcept
-{
-    return id == rhs.id;
-}
-
-size_t ChunkId::hash() const noexcept
-{
-    return std::hash<Id>()(id);
-}
-
-std::string ChunkId::to_string() const
-{
-    return std::to_string(id);
-}
-
-void ChunkId::write(TcpSock& sock) const
-{
-    sock.write(id);
-}
-
-ChunkId ChunkId::read(TcpSock& sock)
-{
-    ChunkId chunkId;
-
-    if (!sock.read(chunkId.id))
-        throw EOF_ERROR();
-
-    return chunkId;
-}
-
-SegIndex ChunkId::getSegIndex() const noexcept
-{
-    if (isProdInfo())
-        throw LOGIC_ERROR("Chunk-ID isn't for a data-segment");
-
-    return id & SEGINDEX_MASK;
-}
-
-/******************************************************************************/
-
-class Chunk::Impl
-{
-protected:
-    ChunkId   id;
-    ChunkSize size;
-
-    typedef struct {
-        decltype(ChunkId::id) id;
-        ChunkSize             size;
-    } Header;
-    const size_t HEADER_SIZE = sizeof(ChunkId::id) + sizeof(ChunkSize);
-
-    Impl()
-        : id{}
-        , size{0}
-    {}
-
-    Impl(const ChunkId& id)
-        : id{id}
-        , size{0}
-    {}
-
-    Impl(   const ChunkId&  id,
-            const ChunkSize size)
-        : id{id}
-        , size{size}
-    {}
-
-public:
-    virtual ~Impl() noexcept =0;
-
-    const ChunkId& getId() const noexcept
-    {
-        return id;
-    }
-
-    const ChunkSize getSize() const noexcept
-    {
-        return size;
-    }
-
-    SegIndex getSegIndex() const noexcept
-    {
-        return id.getSegIndex();
-    }
-
-    virtual void write(void* data) =0;
+struct BopIdMsg {
+    Flags     flags;
+    SegSize   pad;
+    ProdIndex prodIndex;
 };
 
-Chunk::Impl::~Impl() noexcept
-{}
+struct SegIdMsg {
+    Flags     flags;
+    SegSize   pad;
+    ProdIndex prodIndex;
+    ProdSize  segOffset;
+};
+
+struct BopMsg {
+    Flags     flags;
+    SegSize   nameLen;
+    ProdIndex prodIndex;
+    ProdSize  prodSize;
+    char      name[];
+};
+
+struct SegMsg {
+    Flags     flags;
+    SegSize   segSize;
+    ProdIndex prodIndex;
+    ProdSize  prodSize;
+    ProdSize  segOffset;
+    char      data[];
+};
 
 /******************************************************************************/
 
-Chunk::Chunk()
-    : pImpl{}
-{}
+class ChunkId::Impl
+{
+public:
+    virtual ~Impl() noexcept
+    {}
+};
 
-Chunk::Chunk(Impl* const impl)
+ChunkId::ChunkId(const Impl* impl)
     : pImpl{impl}
 {}
 
-Chunk::~Chunk()
-{}
-
-Chunk::operator bool() const noexcept
-{
-    return (bool)pImpl;
-}
-
-const ChunkId& Chunk::getId() const noexcept
-{
-    return pImpl->getId();
-}
-
-ChunkSize Chunk::getSize() const noexcept
-{
-    return pImpl->getSize();
-}
-
-SegIndex Chunk::getSegIndex() const noexcept
-{
-    return pImpl->getSegIndex();
-}
-
-void Chunk::write(void* data)
-{
-    pImpl->write(data);
-}
-
 /******************************************************************************/
 
-class MemChunk::Impl final : public Chunk::Impl
+class BopId::Impl : public ChunkId::Impl
 {
-private:
-    const void* data;
+    ProdIndex index;
+
+protected:
+    bool operator ==(const Impl& rhs) const noexcept
+    {
+        return index == rhs.index;
+    }
 
 public:
-    Impl(   const ChunkId&  id,
-            const ChunkSize size,
-            const void*     data)
-        : Chunk::Impl(id, size)
-        , data{data}
+    Impl(ProdIndex index)
+        : index{index}
     {}
 
-    const void* getData()
+    ProdIndex getIndex() const noexcept
     {
-        return data;
+        return index;
     }
 
-    void write(TcpSock& sock) const
+    std::string to_string() const
     {
-        id.write(sock);
-        sock.write(size);
-        sock.write(data, size);
+        return std::to_string(index);
     }
 
-    void write(UdpSndrSock& sock) const
+    size_t hash() const noexcept
     {
-        struct iovec iov[3];
-
-        auto chunkId = sock.hton(id.id);
-        iov[0].iov_base = &chunkId;
-        iov[0].iov_len = sizeof(chunkId);
-
-        auto chunkSize = sock.hton(size);
-        iov[1].iov_base = &chunkSize;
-        iov[1].iov_len = sizeof(chunkSize);
-
-        iov[2].iov_base = const_cast<void*>(data); // Safe cast
-        iov[2].iov_len = size;
-
-        sock.write(iov, 3);
-    }
-
-    void write(void* data)
-    {
-        ::memcpy(data, this->data, size);
+        return std::hash<ProdIndex>(index);
     }
 };
 
-/******************************************************************************/
-
-MemChunk::MemChunk(
-        const ChunkId&  id,
-        const ChunkSize size,
-        const void*     data)
-    : Chunk{new Impl(id, size, data)}
+BopId::BopId(ProdIndex prodIndex)
+    : ChunkId{new Impl(prodIndex)}
 {}
 
-const void* MemChunk::getData() const
+ProdIndex BopId::getIndex() const noexcept
 {
-    return static_cast<Impl*>(pImpl.get())->getData();
+    return static_cast<BopId::Impl*>(pImpl.get())->getIndex();
 }
 
-void MemChunk::write(TcpSock& sock) const
+std::string BopId::to_string() const
 {
-    static_cast<Impl*>(pImpl.get())->write(sock);
+    return static_cast<BopId::Impl*>(pImpl.get())->to_string();
 }
 
-void MemChunk::write(UdpSndrSock& sock) const
+size_t BopId::hash() const noexcept
 {
-    static_cast<Impl*>(pImpl.get())->write(sock);
+    return static_cast<BopId::Impl*>(pImpl.get())->hash();
+}
+
+bool BopId::operator ==(const BopId& rhs) const noexcept
+{
+    return *static_cast<BopId::Impl*>(pImpl.get()) ==
+           *static_cast<BopId::Impl*>(rhs.pImpl.get());
+}
+
+void BopId::write(McastSndr& proto) const
+{
+    proto->write(*this);
+}
+
+void BopId::write(PeerProto& proto) const
+{
+    proto->write(*this);
 }
 
 /******************************************************************************/
 
-class TcpChunk::Impl final : public Chunk::Impl
+class SegId final : public ChunkId
 {
-    TcpSock sock;
+    class Impl;
+
+protected:
+    bool operator ==(const BopId& rhs) const noexcept
+    {
+        return false;
+    }
+
+    bool operator ==(const SegId& rhs) const noexcept;
 
 public:
-    /**
-     * Constructs.
-     *
-     * @param[in] id                     Chunk ID
-     * @throws    EofError               EOF
-     * @throws    SystemError            Error reading chunk's header
-     */
-    Impl(TcpSock& sock)
-        : Chunk::Impl()
-        , sock{sock}
+    SegId(  ProdIndex prodIndex,
+            ProdSize  segOffset);
+
+    ProdIndex getProdIndex() const noexcept;
+
+    ProdSize getSegOffset() const noexcept;
+
+    std::string to_string() const;
+
+    size_t hash() const noexcept;
+
+    bool operator ==(const ChunkId& rhs) const noexcept
     {
-        if (!sock.read(id.id) || !sock.read(size))
-            throw EOF_ERROR("Couldn't read chunk's header");
+        return rhs == *this;
     }
 
-    void write(void* data)
-    {
-        const size_t nread = sock.read(data, size);
+    void write(McastSndr* sock) const;
 
-        if (nread != size)
-            throw RUNTIME_ERROR("Could only read " + std::to_string(nread) +
-                    " bytes out of " + std::to_string(size));
-    }
+    void write(PeerProto* sock) const;
 };
 
 /******************************************************************************/
 
-TcpChunk::TcpChunk()
-    : Chunk{}
-{}
-
-TcpChunk::TcpChunk(TcpSock& sock)
-    : Chunk{new Impl(sock)}
-{}
-
-void TcpChunk::read(void* data)
+class Bop
 {
-    static_cast<Impl*>(pImpl.get())->write(data);
-}
+public:
+    virtual ~Bop() =0;
+
+    virtual ProdInfo& getInfo() const noexcept =0;
+};
 
 /******************************************************************************/
 
-class UdpChunk::Impl final : public Chunk::Impl
+class Seg
 {
-private:
-    UdpRcvrSock sock;
+public:
+    virtual ~Seg() =0;
+
+    virtual SegInfo& getInfo() const noexcept =0;
+
+    virtual void write(void* data);
+};
+
+/******************************************************************************/
+
+class Chunk
+{
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+    Chunk(Impl* impl);
 
 public:
-    /**
-     * Constructs from a UDP socket.
-     *
-     * @param[in] sock                   UDP socket from which the chunk data
-     *                                   can be read
-     * @throws    std::invalid_argument  Socket isn't UDP
-     * @throws    std::EofError          EOF
-     * @throws    std::system_error      Error reading Chunk's header
-     */
-    Impl(UdpRcvrSock& sock)
-        : Chunk::Impl()
-        , sock{sock}
-    {
-        Chunk::Impl::Header header;
+    virtual ~Chunk() noexcept =0;
 
-        // TODO: Make this more robust by accommodating padding in `header`
-        if (!sock.peek(&header, Chunk::Impl::HEADER_SIZE))
-            throw EOF_ERROR("Couldn't peek at chunk");
-
-        id = ChunkId{sock.ntoh(header.id)};
-        size = sock.ntoh(header.size);
-    }
-
-    void write(void* data)
-    {
-        Chunk::Impl::Header header;
-        struct iovec        iov[2];
-
-        iov[0].iov_base = &header;
-        iov[0].iov_len = Chunk::Impl::HEADER_SIZE;
-
-        iov[1].iov_base = const_cast<void*>(data); // Safe cast
-        iov[1].iov_len = size;
-
-        if (sock.read(iov, 2) != iov[0].iov_len + iov[1].iov_len)
-            throw EOF_ERROR();
-
-        header.id = sock.ntoh(header.id);
-        if (header.id != id.id)
-            throw LOGIC_ERROR("Chunk IDs don't match: expected: " +
-                    id.to_string() + ", actual: " + std::to_string(header.id));
-        header.size = sock.ntoh(header.size);
-        if (header.size != size)
-            throw LOGIC_ERROR("Chunk sizes don't match: expected: " +
-                    std::to_string(size) + ", actual: " +
-                    std::to_string(header.size));
-    }
+    virtual ChunkId& getId() const noexcept =0;
 };
 
 /******************************************************************************/
 
-UdpChunk::UdpChunk()
-    : Chunk{}
-{}
-
-UdpChunk::UdpChunk(UdpRcvrSock& sock)
-    : Chunk{new Impl(sock)}
-{}
-
-void UdpChunk::read(void* data)
+class MemChunk : public Chunk
 {
-    static_cast<Impl*>(pImpl.get())->write(data);
-}
+public:
+    virtual ~MemChunk() =0;
+
+    virtual void write(McastSndr& sock) const =0;
+
+    virtual void write(PeerProto& sock) const =0;
+};
+
+class MemBop final : public MemChunk, public Bop
+{
+    class Impl;
+
+public:
+    MemBop(const ProdInfo& info);
+};
+
+class MemSeg final : public MemChunk, public Seg
+{
+    class Impl;
+
+public:
+    MemSeg( const SegInfo& info,
+            const void*    data);
+};
+
+/******************************************************************************/
+
+class UdpChunk : public Chunk
+{
+public:
+    virtual ~UdpChunk() =0;
+};
+
+class UdpBop final : public UdpChunk, public Bop
+{
+    class Impl;
+
+public:
+    UdpBop( const ProdInfo& info,
+            McastSndr&        sock);
+};
+
+class UdpSeg final : public UdpChunk, public Seg
+{
+    class Impl;
+
+public:
+    UdpSeg( const SegInfo& info,
+            McastSndr&       sock);
+};
+
+/******************************************************************************/
+
+class TcpChunk : public Chunk
+{
+public:
+    virtual ~TcpChunk() =0;
+};
+
+class TcpBop final : public TcpChunk, public Bop
+{
+    class Impl;
+
+public:
+    TcpBop( const ProdInfo& info,
+            PeerProto&        sock);
+};
+
+class TcpSeg final : public TcpChunk, public Seg
+{
+    class Impl;
+
+public:
+    TcpSeg( const SegInfo& info,
+            PeerProto&       sock);
+};
 
 } // namespace

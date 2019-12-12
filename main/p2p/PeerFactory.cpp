@@ -14,12 +14,12 @@
 
 #include "error.h"
 #include "InetAddr.h"
-#include "PeerConn.h"
 #include "PeerFactory.h"
 #include "Socket.h"
 
 #include <cerrno>
 #include <poll.h>
+#include <PeerProto.h>
 #include <unistd.h>
 
 namespace hycast {
@@ -27,18 +27,26 @@ namespace hycast {
 class PeerFactory::Impl final
 {
 private:
-    PortPool         portPool;
-    TcpSrvrSock         srvrSock;
-    PeerMsgRcvr&     msgRcvr;
+    PortPool      portPool;
+    TcpSrvrSock   srvrSock;
+    PeerObs&      peerObs;
 
 public:
+    /**
+     * Calls `::listen()`.
+     *
+     * @param srvrAddr
+     * @param queueSize
+     * @param portPool
+     * @param msgRcvr
+     */
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
-            PeerMsgRcvr&    msgRcvr)
+            PeerObs&        peerObs)
         : portPool{portPool}
         , srvrSock(srvrAddr, queueSize)
-        , msgRcvr(msgRcvr) // Braces don't work
+        , peerObs(peerObs) // Braces don't work
     {}
 
     ~Impl() {
@@ -53,15 +61,20 @@ public:
      * Server-side peer construction. Creates a peer by accepting a connection
      * from a remote peer. The returned peer is not executing. Potentially slow.
      *
-     * @return                     Local peer that's connected to a remote peer
-     * @throws  std::system_error  `::accept()` failure
-     * @cancellationpoint
+     * @return               Local peer that's connected to a remote peer. Will
+     *                       test false if `close()` has been called.
+     * @throws  SystemError  `::accept()` failure
+     * @cancellationpoint    Yes
      */
     Peer accept()
     {
-        PeerConn peerConn(srvrSock.accept(), portPool);
+        TcpSock sock = srvrSock.accept();
 
-        return Peer(peerConn, msgRcvr);
+        if (!sock)
+            return Peer{};
+
+        PeerProto peerProto(sock, portPool);
+        return Peer{peerProto, peerObs};
     }
 
     /**
@@ -77,9 +90,9 @@ public:
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        PeerConn peerConn{rmtSrvrAddr};
+        PeerProto peerProto{rmtSrvrAddr};
 
-        return Peer(peerConn, msgRcvr);
+        return Peer{peerProto, peerObs};
     }
 
     /**
@@ -103,8 +116,8 @@ PeerFactory::PeerFactory(
         const SockAddr& srvrAddr,
         const int       queueSize,
         PortPool&       portPool,
-        PeerMsgRcvr&    msgRcvr)
-    : pImpl{new Impl(srvrAddr, queueSize, portPool, msgRcvr)}
+        PeerObs&        peerObs)
+    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs)}
 {}
 
 in_port_t PeerFactory::getPort() const

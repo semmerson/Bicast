@@ -7,16 +7,16 @@ CLEANFILES	= callgrind.out *.log *.vg *.supp
 
 all:
 
-check_PROGRAMS	= PeerConn_test \
+check_PROGRAMS	= IdQueue_test \
 		  Peer_test \
 		  PeerFactory_test \
 		  PeerSet_test \
 		  P2pMgr_test
 
-PeerConn_test_SOURCES		= PeerConn_test.cpp
 Peer_test_SOURCES		= Peer_test.cpp
 PeerFactory_test_SOURCES	= PeerFactory_test.cpp
 #PeerThreadPool_test_SOURCES	= PeerThreadPool_test.cpp
+IdQueue_test_SOURCES		= IdQueue_test.cpp
 PeerSet_test_SOURCES		= PeerSet_test.cpp
 #PeerSet2_test_SOURCES		= PeerSet2_test.cpp
 P2pMgr_test_SOURCES		= P2pMgr_test.cpp

@@ -13,8 +13,7 @@
 #ifndef MAIN_STORAGE_MEMPROD_H_
 #define MAIN_STORAGE_MEMPROD_H_
 
-#include "Chunk.h"
-
+#include <hycast.h>
 #include <cstddef>
 #include <memory>
 
@@ -32,22 +31,20 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] name         Name of the product
-     * @param[in] size         Size of the product in bytes
      * @param[in] segSize      Size, in bytes, of every data-segment except,
      *                         usually, the last
-     * @throw InvalidArgument  `segSize == 0 && prodSize != 0`
+     * @throw InvalidArgument  `segSize == 0`
      */
-    MemProd(const std::string& name,
-            const size_t       size,
-            const ChunkSize    segSize);
+    MemProd(const SegSize segSize);
 
     /**
      * Returns the name of this product.
      *
-     * @return Name of this product
+     * @return            Name of this product
+     * @throw LogicError  Name has not been set (product information segment
+     *                    hasn't been accepted)
      */
-    const std::string& getName() const noexcept;
+    const std::string& getName() const;
 
     /**
      * Accepts a data-chunk for incorporation.
@@ -74,6 +71,9 @@ public:
      * Writes this data-product to a file descriptor.
      *
      * @param[in] fd       File descriptor
+     * @throw LogicError   Name has not been set (product information segment
+     *                     hasn't been accepted)
+     * @throw SystemError  I/O failure
      * @threadsafety       Safe
      * @exceptionsafety    Basic guarantee
      * @cancellationpoint  Yes

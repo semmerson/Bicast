@@ -130,7 +130,7 @@ public:
 TEST_F(SocketTest, CopyConstruction)
 {
     hycast::TcpSrvrSock srvrSock{srvrAddr};
-    hycast::Socket   sock(srvrSock);
+    hycast::TcpSrvrSock sock(srvrSock);
 }
 
 // Tests setting the Nagle algorithm

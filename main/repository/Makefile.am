@@ -8,7 +8,7 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= MemProd.cpp MemProd.h
+lib_la_SOURCES 	= #MemProd.cpp MemProd.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.

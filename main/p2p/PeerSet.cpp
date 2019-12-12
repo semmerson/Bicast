@@ -13,6 +13,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "hycast.h"
 #include "PeerSet.h"
 #include "Thread.h"
 
@@ -65,9 +66,14 @@ class PeerSet::Impl {
             return peer < rhs.peer;
         }
 
-        bool notify(const ChunkId& chunkId) const
+        void notify(const ProdIndex prodIndex) const
         {
-            return peer.notify(chunkId);
+            peer.notify(prodIndex);
+        }
+
+        void notify(const SegId& segId) const
+        {
+            peer.notify(segId);
         }
 
         void terminate()
@@ -211,15 +217,20 @@ public:
         return success;
     }
 
-    bool notify(const ChunkId& chunkId)
+    void notify(const ProdIndex& prodIndex)
     {
         Guard guard(mutex);
-        bool  success = true;
 
         for (auto iter = active.begin(); iter != active.end(); ++iter)
-            success &= iter->second->notify(chunkId);
+            iter->second->notify(prodIndex);
+    }
 
-        return success;
+    void notify(const SegId& segId)
+    {
+        Guard guard(mutex);
+
+        for (auto iter = active.begin(); iter != active.end(); ++iter)
+            iter->second->notify(segId);
     }
 
     size_t size() const noexcept
@@ -247,9 +258,14 @@ bool PeerSet::activate(const Peer peer)
     return pImpl->activate(peer);
 }
 
-bool PeerSet::notify(const ChunkId& chunkId)
+void PeerSet::notify(const ProdIndex prodIndex)
 {
-    return pImpl->notify(chunkId);
+    pImpl->notify(prodIndex);
+}
+
+void PeerSet::notify(const SegId& segId)
+{
+    pImpl->notify(segId);
 }
 
 size_t PeerSet::size() const noexcept

@@ -13,8 +13,8 @@
 #ifndef MAIN_PEER_P2PMGR_H_
 #define MAIN_PEER_P2PMGR_H_
 
-#include "PeerSet.h"
 #include "PortPool.h"
+#include "PeerSet.h"
 #include "ServerPool.h"
 #include "SockAddr.h"
 
@@ -22,6 +22,87 @@
 
 namespace hycast {
 
+class P2pMgr; // Forward declaration
+
+/**
+ * Interface for an observer of a peer-to-peer manager.
+ */
+class P2pMgrObs
+{
+public:
+    virtual ~P2pMgrObs() noexcept
+    {}
+
+    /**
+     * Accepts notification that a local peer has been added.
+     *
+     * @param[in] peer  The local peer
+     */
+    virtual void added(Peer& peer) =0;
+
+    /**
+     * Accepts notification that a local peer has been removed.
+     *
+     * @param[in] peer  The local peer
+     */
+    virtual void removed(Peer& peer) =0;
+
+    /**
+     * Indicates if product-information should be requested.
+     *
+     * @param[in] prodIndex  Product index
+     * @retval    `true`     The chunk should be requested
+     * @retval    `false`    The chunk should not be requested
+     */
+    virtual bool shouldRequest(const ProdIndex prodIndex) =0;
+
+    /**
+     * Indicates if a data-segment should be requested.
+     *
+     * @param[in] segId    Segment ID
+     * @retval    `true`   The chunk should be requested
+     * @retval    `false`  The chunk should not be requested
+     */
+    virtual bool shouldRequest(const SegId& segId) =0;
+
+    /**
+     * Returns product information.
+     *
+     * @param[in] prodIndex  Product index
+     * @return               The information. Will be empty if it doesn't exist.
+     */
+    virtual ProdInfo get(const ProdIndex prodIndex) =0;
+
+    /**
+     * Returns a data-segment.
+     *
+     * @param[in] id       ID of requested data-segment
+     * @return             The data-segment. Will be empty if it doesn't exist.
+     */
+    virtual MemSeg get(const SegId& id) =0;
+
+    /**
+     * Accepts product-information.
+     *
+     * @param[in] prodInfo  Product information
+     * @retval    `true`    Product information was accepted
+     * @retval    `false`   Product information was previously accepted
+     */
+    virtual bool hereIs(const ProdInfo& prodInfo) =0;
+
+    /**
+     * Accepts a data-segment.
+     *
+     * @param[in] tcpSeg   TCP-based data-segment
+     * @retval    `true`   Chunk was accepted
+     * @retval    `false`  Chunk was previously accepted
+     */
+    virtual bool hereIs(TcpSeg& tcpSeg) =0;
+};
+
+/**
+ * Manager of a peer-to-peer network.
+ */
 class P2pMgr
 {
 protected:
@@ -44,7 +125,7 @@ public:
     P2pMgr();
 
     /**
-     * Constructs.
+     * Constructs. Calls `::listen()`.
      *
      * @param[in] srvrAddr    Socket address of local server that accepts
      *                        connections from remote peers
@@ -53,19 +134,26 @@ public:
      *                        server to use when necessary
      * @param[in] maxPeers    Maximum number of active peers in the set
      * @param[in] serverPool  Pool of possible remote servers for remote peers
-     * @param[in] msgRcvr     Receiver of messages from peers
-     * @param[in] timePeriod  Amount of time in seconds for the improvement
-     *                        period and also the minimum amount of time before
-     *                        the peer-server associated with a failed remote
-     *                        peer is re-connected to
+     * @param[in] p2pMgrObs   Observer of this peer-to-peer manager
      */
     P2pMgr( const SockAddr& srvrAddr,
             const int       listenSize,
             PortPool&       portPool,
             const int       maxPeers,
             ServerPool&     serverPool,
-            PeerMsgRcvr&    msgRcvr,
-            unsigned        timePeriod = 60);
+            P2pMgrObs&      p2pMgrObs);
+
+    /**
+     * Sets the time period over which this instance will attempt to replace the
+     * worst performing peer in a full set of peers.
+     *
+     * @param[in] timePeriod  Amount of time in seconds for the improvement
+     *                        period and also the minimum amount of time before
+     *                        the peer-server associated with a failed remote
+     *                        peer is re-connected to
+     * @return                This instance
+     */
+    P2pMgr& setTimePeriod(unsigned timePeriod);
 
     /**
      * Executes this instance. Returns if
@@ -87,14 +175,18 @@ public:
     size_t size() const;
 
     /**
-     * Notifies all the managed peers of an available chunk.
+     * Notifies all the managed peers about information on a data-product.
      *
-     * @param[in] chunkId  The available chunk
-     * @retval    `true`   A notice was successfully enqueued for all peers
-     * @retval    `false`  A notice was not successfully enqueued for at least
-     *                     one peer
+     * @param[in] prodIndex  Index of the product
      */
-    bool notify(const ChunkId& chunkId);
+    void notify(const ProdIndex prodIndex);
+
+    /**
+     * Notifies all the managed peers about an available data-segment.
+     *
+     * @param[in] id       ID of the data-segment
+     */
+    void notify(const SegId& id);
 
     /**
      * Halts execution of this instance. If called before `operator()`, then

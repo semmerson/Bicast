@@ -23,7 +23,7 @@
 namespace {
 
 /// The fixture for testing class `PeerThreadPool`
-class PeerThreadPoolTest : public ::testing::Test, public hycast::PeerMsgRcvr
+class PeerThreadPoolTest : public ::testing::Test, public hycast::PeerObs
 {
 protected:
     typedef std::mutex              Mutex;
@@ -117,8 +117,8 @@ public:
             hycast::TcpChunk& wireChunk,
             hycast::Peer&      peer)
     {
-        const hycast::ChunkSize n = wireChunk.getSize();
-        EXPECT_EQ(memChunk.getSize(), n);
+        const hycast::ChunkSize n = wireChunk.getSegSize();
+        EXPECT_EQ(memChunk.getSegSize(), n);
 
         char wireData[n];
         wireChunk.read(wireData);

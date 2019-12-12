@@ -23,224 +23,226 @@
 
 namespace {
 
-/// The fixture for testing class `Peer`
-class PeerSetTest : public ::testing::Test, public hycast::PeerMsgRcvr,
+/// The fixture for testing class `PeerSet`
+class PeerSetTest : public ::testing::Test, public hycast::PeerObs,
         public hycast::PeerSet::Observer
 {
 protected:
     friend class Receiver;
 
-    hycast::SockAddr        srcAddr;
+    typedef enum {
+        INIT = 0,
+        LISTENING = 1,
+        PROD_NOTICE_RCVD = 2,
+        SEG_NOTICE_RCVD = 4,
+        PROD_REQUEST_RCVD = 8,
+        SEG_REQUEST_RCVD = 16,
+        PROD_INFO_RCVD = 32,
+        SEG_RCVD = 64,
+        CLNT_PEER_STOPPED = 128,
+        SRVR_PEER_STOPPED = 256,
+        EXCHANGE_COMPLETE = LISTENING |
+               PROD_NOTICE_RCVD |
+               SEG_NOTICE_RCVD |
+               PROD_REQUEST_RCVD |
+               SEG_REQUEST_RCVD |
+               PROD_INFO_RCVD |
+               SEG_RCVD,
+        DONE = EXCHANGE_COMPLETE |
+               CLNT_PEER_STOPPED |
+               SRVR_PEER_STOPPED
+    } State;
+    State                   state;
+    hycast::SockAddr        srvrAddr;
+    hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
-    enum {
-        INIT,
-        READY,
-        DONE
-    }                   state;
-    hycast::ChunkId     chunkId;
-    char                memData[1000];
-    hycast::MemChunk    memChunk;
-    hycast::PeerFactory factory;
-    hycast::Peer        srvrPeer;
-    hycast::Peer        clntPeer;
-    hycast::PeerSet     srvrPeerSet;
-    hycast::PeerSet     clntPeerSet;
-    bool                srvrPeerStopped;
-    bool                clntPeerStopped;
+    hycast::ProdIndex       prodIndex;
+    hycast::ProdSize        prodSize;
+    hycast::SegSize         segSize;
+    hycast::ProdInfo        prodInfo;
+    hycast::SegId           segId;
+    hycast::SegInfo         segInfo;
+    char                    memData[1000];
+    hycast::MemSeg          memSeg;
+    hycast::PeerFactory     factory;
+    hycast::Peer            srvrPeer;
+    hycast::Peer            clntPeer;
 
     // You can remove any or all of the following functions if its body
     // is empty.
 
     PeerSetTest()
-        : srcAddr{"localhost:38800"}
+        : state{INIT}
+        , srvrAddr{"localhost:3880"}
+        /*
+         * 3 potential port numbers for the server's 2 temporary servers because
+         * the initial client connection could use one
+         */
+        , portPool(3881, 3)
         , mutex{}
         , cond{}
-        , state{INIT}
-        , chunkId{1}
-        , memData{0}
-        , memChunk(chunkId, sizeof(memData), memData)
+        , prodIndex{1}
+        , prodSize{1000000}
+        , segSize{sizeof(memData)}
+        , prodInfo{prodIndex, prodSize, "product"}
+        , segId(prodIndex, segSize)
+        , segInfo(segId, prodSize, segSize)
+        , memData{}
+        , memSeg{segInfo, memData}
         , factory()
         , srvrPeer()
         , clntPeer()
-        , srvrPeerSet(*this)
-        , clntPeerSet(*this)
-        , srvrPeerStopped{false}
-        , clntPeerStopped{false}
     {
-        // You can do set-up work for each test here.
+        ::memset(memData, 0xbd, segSize);
+        factory = hycast::PeerFactory(srvrAddr, 1, portPool, *this);
     }
-
-    virtual ~PeerSetTest()
-    {
-        // You can do clean-up work that doesn't throw exceptions here.
-    }
-
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp()
-    {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-    }
-
-    virtual void TearDown()
-    {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-    }
-
-    // Objects declared here can be used by all tests in the test case for Error.
 
 public:
+    void orState(const State state)
+    {
+        std::lock_guard<decltype(mutex)> guard{mutex};
+        this->state = static_cast<State>(this->state | state);
+        cond.notify_all();
+    }
+
+    void waitForState(const State state)
+    {
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (this->state != state)
+            cond.wait(lock);
+    }
+
+    // Receiver-side
     bool shouldRequest(
-            const hycast::ChunkId&  notice,
+            const hycast::ProdIndex actual,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_TRUE(chunkId == notice);
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_NOTICE_RCVD);
+
         return true;
     }
 
-    hycast::MemChunk get(
-            const hycast::ChunkId&  request,
-            const hycast::SockAddr& rmtAddr)
-    {
-        EXPECT_EQ(chunkId, request);
-        return memChunk;
-    }
-
-    void hereIs(
-            hycast::TcpChunk       wireChunk,
-            const hycast::SockAddr& rmtAddr)
-    {
-        const hycast::ChunkSize n = wireChunk.getSize();
-        char                    wireData[n];
-
-        wireChunk.read(wireData);
-        for (int i = 0; i < n; ++i)
-            EXPECT_EQ(memData[i], wireData[i]);
-
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            state = DONE;
-            cond.notify_one();
-        }
-    }
-
+    // Receiver-side
     bool shouldRequest(
-            const hycast::ChunkId& notice,
-            hycast::Peer           peer)
+            const hycast::SegId&    actual,
+            const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_TRUE(chunkId == notice);
+        EXPECT_EQ(segId, actual);
+        orState(SEG_NOTICE_RCVD);
+
         return true;
     }
 
-    hycast::MemChunk get(
-            const hycast::ChunkId& request,
-            hycast::Peer           peer)
+    // Sender-side
+    hycast::ProdInfo get(
+            const hycast::ProdIndex actual,
+            const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(chunkId, request);
-        return memChunk;
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_REQUEST_RCVD);
+
+        return prodInfo;
     }
 
-    void hereIs(
-            hycast::TcpChunk wireChunk,
-            hycast::Peer      peer)
+    // Sender-side
+    hycast::MemSeg get(
+            const hycast::SegId&    actual,
+            const hycast::SockAddr& rmtAddr)
     {
-        const hycast::ChunkSize n = wireChunk.getSize();
-        char                    wireData[n];
+        EXPECT_EQ(segId, actual);
+        orState(SEG_REQUEST_RCVD);
 
-        wireChunk.read(wireData);
-        for (int i = 0; i < n; ++i)
-            EXPECT_EQ(memData[i], wireData[i]);
+        return memSeg;
+    }
 
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            state = DONE;
-            cond.notify_one();
-        }
+    // Receiver-side
+    bool hereIs(
+            const hycast::ProdInfo& actual,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(prodInfo, actual);
+        orState(PROD_INFO_RCVD);
+
+        return true;
+    }
+
+    // Receiver-side
+    bool hereIs(
+            hycast::TcpSeg&         actual,
+            const hycast::SockAddr& rmtAddr)
+    {
+        const hycast::SegSize size = actual.getInfo().getSegSize();
+        EXPECT_EQ(segSize, size);
+
+        char buf[size];
+        actual.write(buf);
+
+        EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
+
+        orState(SEG_RCVD);
+
+        return true;
     }
 
     void stopped(hycast::Peer peer)
     {
         EXPECT_TRUE(peer == srvrPeer || peer == clntPeer);
 
-        std::lock_guard<decltype(mutex)> guard{mutex};
-
         if (peer == srvrPeer) {
-            srvrPeerStopped = true;
+            orState(SRVR_PEER_STOPPED);
         }
         else if (peer == clntPeer) {
-            clntPeerStopped = true;
+            orState(CLNT_PEER_STOPPED);
         }
-
-        cond.notify_one();
     }
 
-    void runServer()
+    void runServer(hycast::PeerSet& peerSet)
     {
+        orState(LISTENING);
         srvrPeer = factory.accept();
-        EXPECT_EQ(0, srvrPeerSet.size());
-        srvrPeerSet.activate(srvrPeer); // Executes peer on new thread
-        EXPECT_EQ(1, srvrPeerSet.size());
-
-        std::lock_guard<decltype(mutex)> lock{mutex};
-        state = READY;
-        cond.notify_one();
+        EXPECT_EQ(0, peerSet.size());
+        peerSet.activate(srvrPeer); // Executes peer on new thread
+        EXPECT_EQ(1, peerSet.size());
     }
 };
 
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction)
-{}
+{
+    hycast::PeerSet{};
+}
 
 // Tests complete exchange (notice, request, delivery)
 TEST_F(PeerSetTest, Exchange)
 {
-    // 3 ports for client's temporary servers in case initial connection uses one
-    hycast::PortPool portPool(38801, 3);
-
     // Start server
-    factory = hycast::PeerFactory(srcAddr, 1, portPool, *this);
-    std::thread      srvrThread(&PeerSetTest::runServer, this);
+    hycast::PeerSet srvrPeerSet{*this};
+    std::thread     srvrThread(&PeerSetTest::runServer, this,
+            std::ref(srvrPeerSet));
+
+    waitForState(LISTENING);
 
     // Start client
-    clntPeer = factory.connect(srcAddr);
+    hycast::PeerSet clntPeerSet{*this};
+    clntPeer = factory.connect(srvrAddr);
     EXPECT_EQ(0, clntPeerSet.size());
     clntPeerSet.activate(clntPeer); // Executes `clntPeer` on new thread
     EXPECT_EQ(1, clntPeerSet.size());
 
-    // Wait for the peers to connect
-    {
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (state != READY)
-            cond.wait(lock);
-    }
-
-    // Set the direction of the exchange
-    hycast::PeerSet& srcPeerSet = srvrPeerSet;
-    hycast::Peer&    snkPeer = clntPeer;
-
     // Start an exchange
-    srcPeerSet.notify(chunkId);
+    clntPeerSet.notify(prodIndex);
+    clntPeerSet.notify(segId);
 
     // Wait for the exchange to complete
-    {
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (state != DONE)
-            cond.wait(lock);
-    }
+    waitForState(EXCHANGE_COMPLETE);
 
-    // Terminate sink peer. Causes source-peer to terminate.
-    snkPeer.halt();
+    // Terminate clnt peer. Causes server-peer to terminate.
+    clntPeer.halt();
 
     // Wait for the peers to be removed from their peer-sets
-    {
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (!clntPeerStopped && !srvrPeerStopped)
-            cond.wait(lock);
-    }
+    waitForState(DONE);
 
     srvrThread.join();
 }

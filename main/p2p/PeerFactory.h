@@ -13,8 +13,8 @@
 #ifndef MAIN_PEER_PEERFACTORY_H_
 #define MAIN_PEER_PEERFACTORY_H_
 
+#include <PortPool.h>
 #include "Peer.h"
-#include "PortPool.h"
 #include "SockAddr.h"
 
 #include <memory>
@@ -37,19 +37,19 @@ public:
 
     /**
      * Constructs. Creates a server that listens on the given, local socket
-     * address.
+     * address.  Calls `::listen()`.
      *
      * @param[in] srvrAddr   Socket address on which a local server will accept
      *                       connections from remote peers
      * @param[in] queueSize  Size of server's `listen()` queue
      * @param[in] portPool   Pool of available port numbers
-     * @param[in] msgRcvr    Receiver of messages from the remote peer
+     * @param[in] peerObs    Observer of the remote peer
      */
     PeerFactory(
             const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
-            PeerMsgRcvr&    msgRcvr);
+            PeerObs&        peerObs);
 
     /**
      * Returns the port number of the server's socket in host byte-order.
@@ -62,8 +62,9 @@ public:
      * Accepts a connection from a remote peer. `Peer::operator()` has not been
      * called on the returned instance. Potentially slow.
      *
-     * @return  Corresponding local peer
-     * @cancellationpoint
+     * @return             Corresponding local peer. Will test false if
+     *                     `close()` has been called.
+     * @cancellationpoint  Yes
      */
     Peer accept();
 

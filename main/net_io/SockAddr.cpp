@@ -115,6 +115,11 @@ public:
                   : (port < rhs.port);
     }
 
+    bool operator ==(const Impl& rhs) const
+    {
+        return !((*this < rhs) || (rhs < *this));
+    }
+
     /**
      * Returns the hash value of this instance.
      *
@@ -676,6 +681,11 @@ SockAddr SockAddr::clone(const in_port_t port) const
 bool SockAddr::operator <(const SockAddr& rhs) const
 {
     return *pImpl.get() < *rhs.pImpl.get();
+}
+
+bool SockAddr::operator ==(const SockAddr& rhs) const
+{
+    return *pImpl.get() == *rhs.pImpl.get();
 }
 
 size_t SockAddr::hash() const noexcept

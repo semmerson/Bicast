@@ -14,26 +14,20 @@
  */
 #include "config.h"
 
-#include "Chunk.h"
 #include "error.h"
-#include "NoticeQueue.h"
+#include "hycast.h"
+#include "IdQueue.h"
 #include "Peer.h"
-
-#include <atomic>
-#include <cstring>
+#include "PeerProto.h"
 #include <condition_variable>
 #include <exception>
-#include <functional>
-#include <list>
 #include <mutex>
 #include <pthread.h>
-#include <queue>
 #include <thread>
-#include <unordered_set>
 
 namespace hycast {
 
-class Peer::Impl
+class Peer::Impl : public PeerProtoObs
 {
 private:
     typedef std::mutex              Mutex;
@@ -41,25 +35,16 @@ private:
     typedef std::unique_lock<Mutex> Lock;
     typedef std::condition_variable Cond;
     typedef std::exception_ptr      ExceptPtr;
-    typedef enum {
-        INIT,
-        STARTED,
-        STOP_REQUESTED
-    }                               State;
 
-    std::atomic_flag executing;
     mutable Mutex    doneMutex;
     mutable Cond     doneCond;
-    NoticeQueue      notices;
-    PeerConn         peerConn;
-    PeerMsgRcvr&     msgRcvr;
+    IdQueue          noticeQueue;
+    IdQueue          requestQueue;
+    PeerProto        peerProto;
+    const SockAddr   rmtAddr;
+    PeerObs&         peerObs;
     ExceptPtr        exceptPtr;
-    // A peer that references this instance and that's guaranteed to exist
     bool             haltRequested;
-    std::thread      noticeThread;
-    std::thread      requestThread;
-    std::thread      chunkThread;
-    std::thread      notifyThread;
 
     void handleException(const ExceptPtr& exPtr)
     {
@@ -71,149 +56,25 @@ private:
         }
     }
 
-    void recvNotices()
+    void runNotifier(void)
     {
-        LOG_DEBUG("Receiving notices");
         try {
-            int entryState;
-
-            ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-            for (;;) {
-                ChunkId chunkId = peerConn.getNotice();
-                LOG_DEBUG("Received notice about chunk %lu", chunkId.id);
-
-                //LOG_NOTE("Received chunk ID %lu", chunkId.id);
-
-                int cancelState;
-
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                    const bool doRequest = msgRcvr.shouldRequest(chunkId,
-                            peerConn.getRmtAddr());
-                ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
-
-                if (doRequest) {
-                    LOG_DEBUG("Sending request for chunk %lu", chunkId.id);
-                    peerConn.request(chunkId);
-                }
-            }
-
-            ::pthread_setcancelstate(entryState, &entryState);
+            for (;;)
+                noticeQueue.pop().notify(peerProto);
         }
         catch (const std::exception& ex) {
             handleException(std::current_exception());
         }
     }
 
-    void recvRequests()
+    void runRequester(void)
     {
-        LOG_DEBUG("Receiving requests");
         try {
-            int entryState;
-
-            ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-            for (;;) {
-                ChunkId chunkId = peerConn.getRequest();
-                LOG_DEBUG("Received request for chunk %lu", chunkId.id);
-
-                int cancelState;
-
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                    MemChunk chunk = msgRcvr.get(chunkId, peerConn.getRmtAddr());
-                ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
-
-                if (chunk) {
-                    LOG_DEBUG("Sending chunk %lu", chunkId.id);
-                    peerConn.send(chunk);
-                }
-            }
-
-            ::pthread_setcancelstate(entryState, &entryState);
+            for (;;)
+                requestQueue.pop().request(peerProto);
         }
         catch (const std::exception& ex) {
             handleException(std::current_exception());
-        }
-    }
-
-    void recvChunks()
-    {
-        LOG_DEBUG("Receiving chunks");
-        try {
-            int entryState;
-
-            ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-            for (;;) {
-                TcpChunk chunk = peerConn.getChunk();
-                LOG_DEBUG("Received chunk %lu", chunk.getId().id);
-
-                int cancelState;
-
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                    msgRcvr.hereIs(chunk, peerConn.getRmtAddr());
-                ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
-            }
-
-            ::pthread_setcancelstate(entryState, &entryState);
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
-    }
-
-    void sendNotices()
-    {
-        LOG_DEBUG("Sending notices");
-        try {
-            int entryState;
-
-            ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-            for (;;) {
-                ChunkId chunkId = notices.pop();
-                LOG_DEBUG("Notifying about chunk %lu", chunkId.id);
-                peerConn.notify(chunkId);
-            }
-
-            ::pthread_setcancelstate(entryState, &entryState);
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
-    }
-
-    void startTasks()
-    {
-        /*
-         * The tasks aren't detached because then they couldn't be canceled
-         * (`std::thread::native_handle()` returns 0 for detached threads).
-         */
-        LOG_DEBUG("Creating receive-chunk thread");
-        chunkThread = std::thread(&Impl::recvChunks, this);
-        try {
-            LOG_DEBUG("Creating receive-notice thread");
-            noticeThread = std::thread(&Impl::recvNotices, this);
-            try {
-                LOG_DEBUG("Creating send-request thread");
-                requestThread = std::thread(&Impl::recvRequests, this);
-                try {
-                    LOG_DEBUG("Creating send-notice thread");
-                    notifyThread = std::thread(&Impl::sendNotices, this);
-                }
-                catch (const std::exception& ex) {
-                    ::pthread_cancel(requestThread.native_handle());
-                    throw;
-                }
-            } // `noticeThread` created
-            catch (const std::exception& ex) {
-                ::pthread_cancel(noticeThread.native_handle());
-                throw;
-            }
-        } // `chunkThread` created
-        catch (const std::exception& ex) {
-            ::pthread_cancel(chunkThread.native_handle());
-            throw;
         }
     }
 
@@ -225,96 +86,33 @@ private:
             doneCond.wait(lock);
     }
 
-    /**
-     * Idempotent.
-     */
-    void stopTasks()
-    {
-        int status;
-
-        if (notifyThread.joinable()) {
-            status = ::pthread_cancel(notifyThread.native_handle());
-            if (status && status != ESRCH)
-                LOG_ERROR("Couldn't cancel notify-thread: %s",
-                        ::strerror(status));
-            notifyThread.join();
-        }
-        if (requestThread.joinable()) {
-            status = ::pthread_cancel(requestThread.native_handle());
-            if (status && status != ESRCH)
-                LOG_ERROR("Couldn't cancel request-thread: %s",
-                        ::strerror(status));
-            requestThread.join();
-        }
-        if (noticeThread.joinable()) {
-            status = ::pthread_cancel(noticeThread.native_handle());
-            if (status && status != ESRCH)
-                LOG_ERROR("Couldn't cancel notice-thread: %s",
-                        ::strerror(status));
-            noticeThread.join();
-        }
-        if (chunkThread.joinable()) {
-            status = ::pthread_cancel(chunkThread.native_handle());
-            if (status && status != ESRCH)
-                LOG_ERROR("Couldn't cancel chunk-thread: %s",
-                        ::strerror(status));
-            chunkThread.join();
-        }
-    }
-
 public:
     /**
      * Constructs from a connection to a remote peer and a receiver of messages
-     * from the remote peer.
+     * from the local peer.
      *
      * @param[in] peerConn  Connection to the remote peer
-     * @param[in] msgRcvr   The receiver of messages from the remote peer
+     * @param[in] msgRcvr   The receiver of messages from the local peer
      */
-    Impl(   PeerConn     peerConn,
-            PeerMsgRcvr& msgRcvr)
-        : executing{ATOMIC_FLAG_INIT}
-        , doneMutex()
+    Impl(   PeerProto& peerProto,
+            PeerObs&   msgRcvr)
+        : doneMutex()
         , doneCond()
-        , notices()
-        , peerConn{peerConn}
-        , msgRcvr(msgRcvr) // Braces don't work
+        , noticeQueue{}
+        , requestQueue{}
+        , peerProto{peerProto}
+        , rmtAddr{peerProto.getRmtAddr()}
+        , peerObs(msgRcvr) // Braces don't work
         , exceptPtr()
         , haltRequested{false}
-        , noticeThread()
-        , requestThread()
-        , chunkThread()
-        , notifyThread()
-    {}
+    {
+        peerProto.set(this);
+    }
 
     ~Impl() noexcept
     {
         LOG_TRACE();
-
-        if (noticeThread.joinable())
-            LOG_ERROR("Notice thread is joinable");
-
-        if (requestThread.joinable())
-            LOG_ERROR("Request thread is joinable");
-
-        if (chunkThread.joinable())
-            LOG_ERROR("Chunk thread is joinable");
-
-        if (notifyThread.joinable())
-            LOG_ERROR("Notify thread is joinable");
     }
-
-    /*
-     * Couldn't set `peer` in the constructor. Tried
-     *   - Passing in `this` and `*this`
-     *   - Using `std::move()`
-     *   - Using a reference
-     * Either it wouldn't compile, Peer::request() would call a pure virtual
-     * function, or `peer.pImpl` would be empty.
-    void setPeer(Peer& peer)
-    {
-        this->peer = peer;
-    }
-     */
 
     /**
      * Returns the socket address of the remote peer. On the client-side, this
@@ -325,7 +123,7 @@ public:
      * @cancellationpoint No
      */
     const SockAddr& getRmtAddr() const noexcept {
-        return peerConn.getRmtAddr();
+        return rmtAddr;
     }
 
     /**
@@ -334,8 +132,8 @@ public:
      * @return            Local socket address
      * @cancellationpoint No
      */
-    const SockAddr& getLclAddr() const noexcept {
-        return peerConn.getLclAddr();
+    SockAddr getLclAddr() const noexcept {
+        return peerProto.getLclAddr();
     }
 
     /**
@@ -350,23 +148,35 @@ public:
      */
     void operator ()()
     {
-        if (executing.test_and_set())
-            throw LOGIC_ERROR("Already called");
-
-        startTasks();
+        std::thread notifierThread{&Impl::runNotifier, this};
 
         try {
-            waitUntilDone();
-            stopTasks(); // Idempotent
-            peerConn.disconnect(); // Idempotent
+            std::thread requesterThread{&Impl::runRequester, this};
 
-            Guard guard{doneMutex};
-            if (!haltRequested && exceptPtr)
-                std::rethrow_exception(exceptPtr);
+            try {
+                peerProto();
+
+                {
+                    Guard guard{doneMutex};
+                    if (!haltRequested && exceptPtr)
+                        std::rethrow_exception(exceptPtr);
+                }
+
+                (void)pthread_cancel(requesterThread.native_handle());
+                requesterThread.join();
+            }
+            catch (...) {
+                (void)pthread_cancel(requesterThread.native_handle());
+                requesterThread.join();
+                throw;
+            }
+
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
         }
         catch (...) {
-            stopTasks(); // Idempotent
-            peerConn.disconnect(); // Idempotent
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
             throw;
         }
     }
@@ -383,17 +193,124 @@ public:
         Guard guard(doneMutex);
 
         haltRequested = true;
+        peerProto.halt();
         doneCond.notify_one();
     }
 
-    bool notify(const ChunkId& chunkId)
+    void notify(const ProdIndex& prodIndex)
     {
-        return notices.push(chunkId);
+        noticeQueue.push(prodIndex);
+    }
+
+    void notify(const SegId& id)
+    {
+        noticeQueue.push(id);
+    }
+
+    void request(const ProdIndex prodIndex)
+    {
+        requestQueue.push(prodIndex);
+    }
+
+    void request(const SegId& segId)
+    {
+        requestQueue.push(segId);
     }
 
     std::string to_string() const noexcept
     {
-        return peerConn.to_string();
+        return peerProto.to_string();
+    }
+
+    void acceptNotice(ProdIndex prodIndex)
+    {
+        LOG_DEBUG("Accepting product-information notice");
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            const bool doRequest = peerObs.shouldRequest(prodIndex, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+
+        if (doRequest) {
+            LOG_DEBUG("Sending request for information on product %lu",
+                    static_cast<unsigned long>(prodIndex));
+            peerProto.request(prodIndex);
+        }
+    }
+
+    void acceptNotice(const SegId& segId)
+    {
+        LOG_DEBUG("Accepting data-segment notice");
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            const bool doRequest = peerObs.shouldRequest(segId, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+
+        if (doRequest) {
+            LOG_DEBUG("Sending request for data-segment %s",
+                    segId.to_string().data());
+            peerProto.request(segId);
+        }
+    }
+
+    void acceptRequest(const ProdIndex prodIndex)
+    {
+        LOG_DEBUG("Accepting request for information on product %lu",
+                static_cast<unsigned long>(prodIndex));
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            ProdInfo info = peerObs.get(prodIndex, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+
+        if (info) {
+            LOG_DEBUG("Sending information");
+            peerProto.send(info);
+        }
+    }
+
+    void acceptRequest(const SegId& segId)
+    {
+        LOG_DEBUG("Accepting request for data-segment %s",
+                segId.to_string().data());
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            MemSeg seg = peerObs.get(segId, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+
+        if (seg) {
+            LOG_DEBUG("Sending information");
+            peerProto.send(seg);
+        }
+    }
+
+    void accept(const ProdInfo& prodInfo)
+    {
+        LOG_DEBUG("Accepting information on product %lu",
+                static_cast<unsigned long>(prodInfo.getIndex()));
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            (void)peerObs.hereIs(prodInfo, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+    }
+
+    void accept(TcpSeg& seg)
+    {
+        LOG_DEBUG("Accepting data-segment %s", seg.to_string().data());
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            (void)peerObs.hereIs(seg, rmtAddr);
+        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 };
 
@@ -404,12 +321,10 @@ Peer::Peer()
 {}
 
 Peer::Peer(
-        PeerConn     peerConn,
-        PeerMsgRcvr& msgRcvr)
-    : pImpl{new Impl(peerConn, msgRcvr)}
-{
-    //pImpl->setPeer(*this);
-}
+        PeerProto& peerProto,
+        PeerObs&   msgRcvr)
+    : pImpl{new Impl(peerProto, msgRcvr)}
+{}
 
 Peer::Peer(const Peer& peer)
     : pImpl(peer.pImpl)
@@ -418,11 +333,11 @@ Peer::Peer(const Peer& peer)
 Peer::~Peer() noexcept
 {}
 
-const SockAddr& Peer::getRmtAddr() const noexcept {
+const SockAddr Peer::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }
 
-const SockAddr& Peer::getLclAddr() const noexcept {
+const SockAddr Peer::getLclAddr() const noexcept {
     return pImpl->getLclAddr();
 }
 
@@ -458,9 +373,24 @@ void Peer::halt() noexcept
         pImpl->halt();
 }
 
-bool Peer::notify(const ChunkId& chunkId) const
+void Peer::notify(const ProdIndex prodIndex) const
 {
-    return pImpl->notify(chunkId);
+    pImpl->notify(prodIndex);
+}
+
+void Peer::notify(const SegId& segId) const
+{
+    pImpl->notify(segId);
+}
+
+void Peer::request(const ProdIndex prodIndex) const
+{
+    pImpl->request(prodIndex);
+}
+
+void Peer::request(const SegId& segId) const
+{
+    pImpl->request(segId);
 }
 
 size_t Peer::hash() const noexcept
@@ -472,5 +402,36 @@ std::string Peer::to_string() const noexcept
 {
     return pImpl->to_string();
 }
+
+void Peer::acceptNotice(ProdIndex prodIndex)
+{
+    pImpl->acceptNotice(prodIndex);
+}
+
+void Peer::acceptNotice(const SegId& dataId)
+{
+    pImpl->acceptNotice(dataId);
+}
+
+void Peer::acceptRequest(ProdIndex prodIndex)
+{
+    pImpl->acceptRequest(prodIndex);
+}
+
+void Peer::acceptRequest(const SegId& dataId)
+{
+    pImpl->acceptRequest(dataId);
+}
+
+void Peer::accept(const ProdInfo& prodInfo)
+{
+    pImpl->accept(prodInfo);
+}
+
+void Peer::accept(TcpSeg& seg)
+{
+    pImpl->accept(seg);
+}
+
 
 } // namespace

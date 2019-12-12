@@ -1,30 +1,41 @@
+/**
+ * This file tests class `PeerProto`.
+ *
+ * Copyright 2019 University Corporation for Atmospheric Research. All rights
+ * reserved. See file "COPYING" in the top-level source-directory for usage
+ * restrictions.
+ *
+ *       File: PeerProto_test.cpp
+ * Created On: May 28, 2019
+ *     Author: Steven R. Emmerson
+ */
 #include "config.h"
-
 #include "error.h"
 #include "SockAddr.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <Peer.h>
+#include <PeerProto.h>
 #include <mutex>
 #include <thread>
 
 namespace {
 
-/// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public hycast::PeerObs
+/// The fixture for testing class `PeerProto`
+class PeerProtoTest : public ::testing::Test, public hycast::PeerProtoObs
 {
 protected:
     typedef enum {
         INIT = 0,
-        LISTENING = 1,
+        READY = 1,
         PROD_NOTICE_RCVD = 2,
         SEG_NOTICE_RCVD = 4,
         PROD_REQUEST_RCVD = 8,
         SEG_REQUEST_RCVD = 16,
         PROD_INFO_RCVD = 32,
         SEG_RCVD = 64,
-        DONE = LISTENING |
+        DONE = READY |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -33,42 +44,46 @@ protected:
                SEG_RCVD
     } State;
     State                   state;
-    hycast::SockAddr        srvrAddr;
-    hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
+    hycast::SockAddr        srvrAddr;
+    hycast::PortPool        portPool;
     hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
-    hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
+    hycast::SegSize         segSize;
     hycast::SegId           segId;
     hycast::SegInfo         segInfo;
-    char                    memData[1000];
+    char*                   memData;
     hycast::MemSeg          memSeg;
 
-    PeerTest()
+    PeerProtoTest()
         : state{INIT}
+        , mutex{}
+        , cond{}
         , srvrAddr{"localhost:38800"}
         /*
          * 3 potential port numbers for the client's 2 temporary servers because
          * the initial client connection could use one
          */
         , portPool(38801, 3)
-        , mutex{}
-        , cond{}
         , prodIndex{1}
         , prodSize{1000000}
-        , segSize{sizeof(memData)}
+        , segSize{1000}
         , prodInfo{prodIndex, prodSize, "product"}
         , segId(prodIndex, segSize)
         , segInfo(segId, prodSize, segSize)
-        , memData{}
+        , memData{new char[segSize]}
         , memSeg{segInfo, memData}
     {
         ::memset(memData, 0xbd, segSize);
     }
 
-public:
+    virtual ~PeerProtoTest()
+    {
+        delete[] memData;
+    }
+
     void orState(const State state)
     {
         std::lock_guard<decltype(mutex)> guard{mutex};
@@ -76,149 +91,119 @@ public:
         cond.notify_all();
     }
 
-    void waitForState(const State nextState)
+    void waitForState(const State state)
     {
         std::unique_lock<decltype(mutex)> lock{mutex};
-        while (state != nextState)
+        while (this->state != state)
             cond.wait(lock);
     }
 
-    // Receiver-side
-    bool shouldRequest(
-            const hycast::ProdIndex actual,
-            const hycast::SockAddr& rmtAddr)
+public:
+    void acceptNotice(hycast::ProdIndex actual)
     {
         EXPECT_EQ(prodIndex, actual);
         orState(PROD_NOTICE_RCVD);
-
-        return true;
     }
 
-    // Receiver-side
-    bool shouldRequest(
-            const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
+    void acceptNotice(const hycast::SegId& actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
-
-        return true;
     }
 
-    // Sender-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
-            const hycast::SockAddr& rmtAddr)
+    void acceptRequest(hycast::ProdIndex actual)
     {
         EXPECT_EQ(prodIndex, actual);
         orState(PROD_REQUEST_RCVD);
-
-        return prodInfo;
     }
 
-    // Sender-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
+    void acceptRequest(const hycast::SegId& actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
-
-        return memSeg;
     }
 
-    // Receiver-side
-    bool hereIs(
-            const hycast::ProdInfo& actual,
-            const hycast::SockAddr& rmtAddr)
+    void accept(const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
-
-        return true;
     }
 
-    // Receiver-side
-    bool hereIs(
-            hycast::TcpSeg&         actual,
-            const hycast::SockAddr& rmtAddr)
+    void accept(hycast::TcpSeg& seg)
     {
-        const hycast::SegSize size = actual.getInfo().getSegSize();
-        EXPECT_EQ(segSize, size);
+        const hycast::SegSize size = seg.getInfo().getSegSize();
+        ASSERT_EQ(segSize, size);
 
         char buf[size];
-        actual.write(buf);
+        seg.write(buf);
 
         EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
 
         orState(SEG_RCVD);
-
-        return true;
     }
 
-    void runServer()
+    void startServer()
     {
         try {
             hycast::TcpSrvrSock srvrSock(srvrAddr);
 
-            orState(LISTENING);
+            // Must be after listening socket creation and before accept
+            orState(READY);
 
-            hycast::TcpSock   peerSock{srvrSock.accept()};
-            hycast::PeerProto peerProto(peerSock, portPool);
-            hycast::Peer      srvrPeer{peerProto, *this};
+            hycast::TcpSock    sock{srvrSock.accept()};
+            hycast::PeerProto  srvrProto(sock, portPool);
+            srvrProto.set(this);
 
-            hycast::InetAddr localhost("127.0.0.1");
-            EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInetAddr());
-
-            srvrPeer();
+            srvrProto();
         }
         catch (const std::exception& ex) {
             hycast::log_error(ex);
-            throw;
-        }
-        catch (...) {
-            LOG_NOTE("Server thread cancelled");
             throw;
         }
     }
 };
 
 // Tests default construction
-TEST_F(PeerTest, DefaultConstruction)
+TEST_F(PeerProtoTest, DefaultConstruction)
 {
-    hycast::Peer job();
+    hycast::PeerProto peerProto();
 }
 
-// Tests data exchange
-TEST_F(PeerTest, DataExchange)
+// Tests exchange
+TEST_F(PeerProtoTest, Exchange)
 {
-    // Start the server
-    std::thread srvrThread(&PeerTest::runServer, this);
+    // Start server
+    std::thread srvrThread{&PeerProtoTest::startServer, this};
 
     try {
-        waitForState(LISTENING);
+        waitForState(READY);
 
-        // Start the client
-        hycast::PeerProto peerProto(srvrAddr);
-        hycast::Peer      clntPeer{peerProto, *this}; // Potentially slow
-        std::thread       clntThread(clntPeer);
+        // Start client
+        hycast::PeerProto clntProto{srvrAddr};
+        clntProto.set(this);
+        //std::thread       clntThread(&hycast::PeerProto::operator(), clntProto);
+        std::thread       clntThread(clntProto);
 
         try {
-            // Start an exchange
-            clntPeer.notify(prodIndex);
-            clntPeer.notify(segId);
+            // Client and server are connected
 
-            // Wait for the exchange to complete
+            // Send
+            clntProto.notify(prodIndex);
+            //::pause();
+            clntProto.notify(segId);
+            clntProto.request(prodIndex);
+            clntProto.request(segId);
+            clntProto.send(prodInfo);
+            clntProto.send(memSeg);
+
             waitForState(DONE);
 
-            // Causes `rcvrPeer()` to return and `srvrThread` to terminate
-            clntPeer.halt();
+            clntProto.halt();
             clntThread.join();
             srvrThread.join();
-        }
+        } // `clntThread` allocated
         catch (const std::exception& ex) {
             hycast::log_fatal(ex);
-            clntPeer.halt();
             clntThread.join();
             throw;
         }
@@ -226,8 +211,8 @@ TEST_F(PeerTest, DataExchange)
             LOG_FATAL("Thread cancellation?");
             clntThread.join();
             throw;
-        } // `rcvrThread` active
-    } // `sndrThread` active
+        }
+    } // `srvrThread` allocated
     catch (const std::exception& ex) {
         hycast::log_fatal(ex);
         srvrThread.join();
@@ -242,18 +227,7 @@ TEST_F(PeerTest, DataExchange)
 
 }  // namespace
 
-static void myTerminate()
-{
-    LOG_FATAL("terminate() called %s an active exception",
-            std::current_exception() ? "with" : "without");
-    abort();
-}
-
 int main(int argc, char **argv) {
-  hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LOG_LEVEL_TRACE);
-
-  std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

@@ -56,34 +56,14 @@ protected:
 // Tests construction
 TEST(MemProdTest, Construction)
 {
-    std::string     name{"/foo/bar"};
-    hycast::MemProd prod(name, 1000000, 1000);
-    EXPECT_EQ(name, prod.getName());
+    hycast::MemProd prod(1000);
     EXPECT_FALSE(prod.isComplete());
-}
-
-// Tests zero product size
-TEST(MemProdTest, ZeroProdSize)
-{
-    std::string     name{"/foo/bar"};
-    hycast::MemProd prod(name, 0, 1000);
-    EXPECT_TRUE(prod.isComplete());
 }
 
 // Tests zero segment size
 TEST(MemProdTest, ZeroSegSize)
 {
-    std::string name{"/foo/bar"};
-
-    EXPECT_THROW(hycast::MemProd(name, 1000000, 0), hycast::InvalidArgument);
-}
-
-// Tests zero product size and zero segment size
-TEST(MemProdTest, ZeroProdAndSegSize)
-{
-    std::string     name{"/foo/bar"};
-    hycast::MemProd prod(name, 0, 0);
-    EXPECT_TRUE(prod.isComplete());
+    EXPECT_THROW(hycast::MemProd(0), hycast::InvalidArgument);
 }
 
 // Tests accepting a segment
@@ -104,7 +84,7 @@ TEST(MemProdTest, BadSegmentAddition)
     std::string      name{"/foo/bar"};
     hycast::MemProd  prod(name, 1000, 1000);
     char             data[1000] = {};
-    hycast::MemChunk chunk(hycast::ChunkId(1), 1000, data);
+    hycast::MemChunk chunk(hycast::ChunkId(2), 1000, data);
 
     EXPECT_THROW(prod.accept(chunk), hycast::InvalidArgument);
     EXPECT_FALSE(prod.isComplete());

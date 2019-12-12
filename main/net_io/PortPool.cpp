@@ -10,11 +10,10 @@
  *      Author: Steven R. Emmerson
  */
 
+#include <PortPool.h>
 #include "config.h"
 
 #include "error.h"
-#include "PortPool.h"
-
 #include <list>
 #include <queue>
 

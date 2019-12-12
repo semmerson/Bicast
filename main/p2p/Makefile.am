@@ -8,17 +8,14 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= PeerMsgRcvr.h \
-		  PeerMsgSndr.h \
-		  PeerConn.cpp 		PeerConn.h \
+lib_la_SOURCES 	= PeerMsgSndr.h \
 		  Peer.cpp 		Peer.h \
-		  PortPool.cpp		PortPool.h \
 		  PeerFactory.cpp	PeerFactory.h \
 		  PeerSet.cpp		PeerSet.h \
-		  NoticeQueue.cpp	NoticeQueue.h \
 		  ServerPool.cpp	ServerPool.h \
 		  P2pMgr.cpp		P2pMgr.h \
-		  Bookkeeper.cpp	Bookkeeper.h
+		  Bookkeeper.cpp	Bookkeeper.h \
+		  IdQueue.cpp	        IdQueue.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.

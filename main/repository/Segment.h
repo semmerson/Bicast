@@ -14,8 +14,7 @@
 #ifndef MAIN_REPOSITORY_SEGMENT_H_
 #define MAIN_REPOSITORY_SEGMENT_H_
 
-#include "Chunk.h"
-
+#include <hycast.h>
 #include <memory>
 #include <cstdint>
 

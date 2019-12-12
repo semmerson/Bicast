@@ -12,7 +12,7 @@
 #ifndef MAIN_RPC_RPC_H_
 #define MAIN_RPC_RPC_H_
 
-#include "Chunk.h"
+#include <hycast.h>
 #include "Socket.h"
 
 #include <memory>

@@ -1,218 +1,261 @@
 /**
- * A chunk of data.
+ * Fundamental entities exchanged on a network.
  *
  * Copyright 2019 University Corporation for Atmospheric Research. All Rights
- * reserved. See file "Copying" in the top-level source-directory for usage
+ * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
  *        File: Chunk.h
- *  Created on: May 10, 2019
+ *  Created on: Nov 22, 2019
  *      Author: Steven R. Emmerson
  */
 
-#ifndef MAIN_RPC_CHUNK_H_
-#define MAIN_RPC_CHUNK_H_
+#ifndef MAIN_PROTOCOL_CHUNK_H_
+#define MAIN_PROTOCOL_CHUNK_H_
 
-#include "Socket.h"
+#include "PeerProto.h"
+#include "McastProto.h"
 
-#include <climits>
 #include <memory>
-
-/******************************************************************************/
 
 namespace hycast {
 
-typedef uint_fast32_t SegIndex;
+typedef uint16_t Flags;
+typedef uint16_t SegSize;
+typedef uint32_t ProdIndex;
+typedef uint32_t ProdSize;
+
+/******************************************************************************/
 
 class ChunkId
 {
-private:
-    friend std::hash<ChunkId>;
-    friend std::equal_to<ChunkId>;
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+    ChunkId(const Impl* impl);
 
 public:
-    typedef uint64_t Id;
-    Id               id;
+    virtual ~ChunkId() noexcept;
 
-    ChunkId()
-        : id{0}
-    {}
+    virtual std::string to_string() const =0;
 
-    ChunkId(const uint64_t id)
-        : id{id}
-    {}
+    virtual size_t hash() const noexcept =0;
 
-    bool isProdInfo() const noexcept;
+    virtual bool operator ==(const ChunkId& rhs) const noexcept =0;
 
-    bool operator ==(const ChunkId rhs) const noexcept;
+    virtual bool operator ==(const InfoId& rhs) const noexcept =0;
 
-    size_t hash() const noexcept;
+    virtual bool operator ==(const SegId& rhs) const noexcept =0;
+
+    virtual void notify(PeerProto& proto) const =0;
+
+    virtual void request(PeerProto& proto) const =0;
+};
+
+/******************************************************************************/
+
+class InfoId final : public ChunkId
+{
+    class Impl;
+
+public:
+    InfoId(ProdIndex prodIndex);
+
+    ProdIndex getIndex() const noexcept;
 
     std::string to_string() const;
 
-    void write(TcpSock& sock) const;
+    size_t hash() const noexcept;
 
-    /**
-     * Constructs an instance from a TCP socket.
-     *
-     * @param[in] sock         TCP socket
-     * @return                 Chunk ID read from socket
-     * @throws    EofError     EOF
-     * @throws    SystemError  Read failure
-     */
-    static ChunkId read(TcpSock& sock);
+    bool operator ==(const ChunkId& rhs) const noexcept
+    {
+        return rhs == *this;
+    }
 
-    SegIndex getSegIndex() const noexcept;
+    bool operator ==(const InfoId& rhs) const noexcept;
+
+    bool operator ==(const SegId& rhs) const noexcept
+    {
+        return false;
+    }
+
+    void notify(PeerProto& proto) const;
+
+    void request(PeerProto& proto) const;
 };
 
 /******************************************************************************/
 
-typedef uint16_t              ChunkSize;
+class SegId final : public ChunkId
+{
+    class Impl;
 
-/**
- * A chunk of data.
- */
+public:
+    SegId(  ProdIndex prodIndex,
+            ProdSize  segOffset);
+
+    ProdIndex getProdIndex() const noexcept;
+
+    ProdSize getSegOffset() const noexcept;
+
+    std::string to_string() const;
+
+    size_t hash() const noexcept;
+
+    bool operator ==(const ChunkId& rhs) const noexcept
+    {
+        return rhs == *this;
+    }
+
+    bool operator ==(const InfoId& rhs) const noexcept
+    {
+        return false;
+    }
+
+    bool operator ==(const SegId& rhs) const noexcept;
+
+    void notify(PeerProto& proto) const;
+
+    void request(PeerProto& proto) const;
+};
+
+/******************************************************************************/
+
+class Info
+{
+public:
+    virtual ~Info() =0;
+
+    virtual ProdInfo& getInfo() const noexcept =0;
+};
+
+/******************************************************************************/
+
+class Seg
+{
+public:
+    virtual ~Seg() =0;
+
+    virtual SegInfo& getInfo() const noexcept =0;
+};
+
+/******************************************************************************/
+
 class Chunk
 {
-public:
-    class Impl;
-
 protected:
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    Chunk(Impl* const impl);
+    Chunk(Impl* impl);
 
 public:
-    Chunk();
+    virtual ~Chunk() noexcept =0;
 
-    virtual ~Chunk() =0;
-
-    operator bool() const noexcept;
-
-    const ChunkId& getId() const noexcept;
-
-    ChunkSize getSize() const noexcept;
-
-    SegIndex getSegIndex() const noexcept;
-
-    void write(void* data);
+    virtual ChunkId& getId() const noexcept =0;
 };
 
 /******************************************************************************/
 
-/**
- * Chunk whose data resides in memory.
- */
-class MemChunk final : public Chunk
+class MemChunk : public Chunk
 {
-private:
+protected:
+    class Impl;
+
+    MemChunk(Impl* impl);
+
+public:
+    virtual ~MemChunk() =0;
+
+    virtual void write(PeerProto& proto) const =0;
+
+    virtual void write(McastSndr& proto) const =0;
+};
+
+class MemInfo final : public MemChunk, public Info
+{
     class Impl;
 
 public:
-    MemChunk(
-            const ChunkId&  id,
-            const ChunkSize size,
-            const void*     data);
+    MemInfo(const ProdInfo& info);
+};
 
-    const void* getData() const;
+class MemSeg final : public MemChunk, public Seg
+{
+    class Impl;
 
-    void write(TcpSock& sock) const;
-
-    void write(UdpSndrSock& sock) const;
+public:
+    MemSeg( const SegInfo& info,
+            const void*    data);
 };
 
 /******************************************************************************/
 
-/**
- * Chunk whose data must be read from a TCP socket.
- */
-class TcpChunk final : public Chunk
+class UdpChunk : public Chunk
+{
+protected:
+    class Impl;
+
+    UdpChunk(Impl* impl);
+
+public:
+    virtual ~UdpChunk() =0;
+
+    virtual void write(void* data);
+};
+
+class UdpInfo final : public UdpChunk, public Info
 {
     class Impl;
 
 public:
-    TcpChunk();
+    UdpInfo(const ProdInfo& info,
+            McastRcvr&      proto);
+};
 
-    /**
-     * Constructs from a TCP socket.
-     *
-     * @param[in] sock                   TCP socket
-     * @throws    EOF_ERROR("Couldn't peek at chunk");
-     */
-    TcpChunk(TcpSock& sock);
+class UdpSeg final : public UdpChunk, public Seg
+{
+    class Impl;
 
-    /**
-     * Reads the chunk's data.
-     *
-     * @param[out] data                Buffer for the chunk's data
-     * @throws     SystemError         I/O error
-     * @throws     RuntimeError        Couldn't read chunk's data
-     * @threadsafety                   Compatible but unsafe
-     * @exceptionsafety                Basic guarantee
-     * @cancellationpoint              Yes
-     */
-    void read(void* data);
+public:
+    UdpSeg( const SegInfo& info,
+            McastRcvr&     proto);
 };
 
 /******************************************************************************/
 
-/**
- * Chunk whose data must be read from a UDP socket.
- */
-class UdpChunk final : public Chunk
+class TcpChunk : public Chunk
+{
+protected:
+    class Impl;
+
+    TcpChunk(Impl* impl);
+
+public:
+    virtual ~TcpChunk() =0;
+
+    virtual void write(void* data);
+};
+
+class TcpInfo final : public TcpChunk, public Info
 {
     class Impl;
 
 public:
-    UdpChunk();
+    TcpInfo( const ProdInfo& info,
+            PeerProto&      proto);
+};
 
-    /**
-     * Constructs from a UDP socket.
-     *
-     * @param[in] sock                   UDP socket
-     * @throws    std::system_error      Chunk's header couldn't be read from
-     *                                   socket
-     */
-    UdpChunk(UdpRcvrSock& sock);
+class TcpSeg final : public TcpChunk, public Seg
+{
+    class Impl;
 
-    /**
-     * Reads the chunk's data.
-     *
-     * @param[out] data                Buffer for the chunk's data
-     * @throws     EofError            EOF
-     * @throws     SystemError         I/O failure
-     * @throws     LogicError          Logic error
-     * @threadsafety                   Compatible but unsafe
-     * @exceptionsafety                Basic guarantee
-     * @cancellationpoint              Yes
-     */
-    void read(void* data);
+public:
+    TcpSeg( const SegInfo& info,
+            PeerProto&     proto);
 };
 
 } // namespace
 
-/******************************************************************************/
-
-namespace std {
-    template<>
-    struct hash<hycast::ChunkId>
-    {
-        size_t operator ()(const hycast::ChunkId chunkId) const
-        {
-            return std::hash<hycast::ChunkId::Id>()(chunkId.id);
-        }
-    };
-
-    template<>
-    struct equal_to<hycast::ChunkId>
-    {
-        size_t operator ()(
-                const hycast::ChunkId id1,
-                const hycast::ChunkId id2) const
-        {
-            return id1.id == id2.id;
-        }
-    };
-}
-
-#endif /* MAIN_RPC_CHUNK_H_ */
+#endif /* MAIN_PROTOCOL_CHUNK_H_ */
