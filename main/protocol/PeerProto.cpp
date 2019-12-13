@@ -43,7 +43,7 @@ class PeerProto::Impl
     bool           srvrSide;     ///< Server-side construction?
     /// Pool of potential ports for temporary servers
     PortPool       portPool;
-    PeerProtoObs* msgRcvr;      ///< Associated receiver of messages
+    PeerProtoObs*  observer;     ///< Observer of this instance
     bool           haltRequested;
     std::thread    noticeThread;
     std::thread    requestThread;
@@ -68,7 +68,7 @@ class PeerProto::Impl
         LOG_DEBUG("Receiving product notice");
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptNotice(prodId);
+            observer->acceptNotice(prodId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
@@ -83,7 +83,7 @@ class PeerProto::Impl
         SegId segId{prodId, segOffset};
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptNotice(segId);
+            observer->acceptNotice(segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -126,7 +126,7 @@ class PeerProto::Impl
     {
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptRequest(prodId);
+            observer->acceptRequest(prodId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
@@ -137,10 +137,10 @@ class PeerProto::Impl
         if (!srvrSock.read(segOffset))
             return false;
 
-        SegId id{prodId, segOffset};
-        int    cancelState;
+        SegId segId{prodId, segOffset};
+        int   cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptRequest(id);
+            observer->acceptRequest(segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -194,7 +194,7 @@ class PeerProto::Impl
         int         cancelState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->accept(prodInfo);
+            observer->accept(prodInfo);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -216,7 +216,7 @@ class PeerProto::Impl
         int     cancelState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->accept(seg);
+            observer->accept(seg);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -394,7 +394,7 @@ public:
         , string{}
         , srvrSide{true}
         , portPool{portPool}
-        , msgRcvr{nullptr}
+        , observer{nullptr}
         , haltRequested{false}
         , noticeThread{}
         , requestThread{}
@@ -467,7 +467,7 @@ public:
         , srvrSock{}
         , string()
         , srvrSide{false}
-        , msgRcvr{nullptr}
+        , observer{nullptr}
         , haltRequested{false}
         , noticeThread{}
         , requestThread{}
@@ -512,7 +512,7 @@ public:
 
     Impl& set(PeerProtoObs* const msgRcvr)
     {
-        this->msgRcvr = msgRcvr;
+        this->observer = msgRcvr;
         return *this;
     }
 
@@ -550,7 +550,7 @@ public:
     {
         if (executing.test_and_set())
             throw LOGIC_ERROR("Already called");
-        if (msgRcvr == nullptr)
+        if (observer == nullptr)
             throw LOGIC_ERROR("Message receiver not set");
 
         startTasks();
