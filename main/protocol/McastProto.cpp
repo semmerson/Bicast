@@ -45,7 +45,7 @@ public:
         iov[1].iov_base = &nameLen;
         iov[1].iov_len = sizeof(nameLen);
 
-        ProdIndex prodIndex = prodInfo.getIndex();
+        ProdId prodIndex = prodInfo.getIndex();
         prodIndex = sock.hton(prodIndex);
         iov[2].iov_base = &prodIndex;
         iov[2].iov_len = sizeof(prodIndex);
@@ -75,7 +75,7 @@ public:
         iov[1].iov_base = &segSize;
         iov[1].iov_len = sizeof(segSize);
 
-        ProdIndex prodIndex = seg.getProdIndex();
+        ProdId prodIndex = seg.getProdIndex();
         prodIndex = sock.hton(prodIndex);
         iov[2].iov_base = &prodIndex;
         iov[2].iov_len = sizeof(prodIndex);
@@ -120,7 +120,7 @@ class McastRcvr::Impl
     McastRcvrObs* srvr;
 
     void recvInfo(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const ProdSize  prodSize,
             const SegSize   nameLen)
     {
@@ -140,7 +140,7 @@ class McastRcvr::Impl
     }
 
     void recvSeg(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const ProdSize  prodSize,
             const SegSize   segSize)
     {
@@ -185,7 +185,7 @@ public:
             iov[1].iov_base = &varSize;
             iov[1].iov_len = sizeof(varSize);
 
-            ProdIndex prodIndex;
+            ProdId prodIndex;
             iov[2].iov_base = &prodIndex;
             iov[2].iov_len = sizeof(prodIndex);
 

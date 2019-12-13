@@ -57,7 +57,7 @@ protected:
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -115,45 +115,34 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::ProdIndex actual,
+            const hycast::ChunkId   chunkId,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_NOTICE_RCVD);
-
-        return true;
-    }
-
-    // Receiver-side
-    bool shouldRequest(
-            const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
-    {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_NOTICE_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdId());
+            orState(PROD_NOTICE_RCVD);
+        }
+        else {
+            EXPECT_EQ(segId, chunkId.getSegId());
+            orState(SEG_NOTICE_RCVD);
+        }
 
         return true;
     }
 
     // Sender-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
+    const hycast::Chunk& get(
+            const hycast::ChunkId   chunkId,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_REQUEST_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdId());
+            orState(PROD_REQUEST_RCVD);
+            return prodInfo;
+        }
 
-        return prodInfo;
-    }
-
-    // Sender-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
-    {
-        EXPECT_EQ(segId, actual);
+        EXPECT_EQ(segId, chunkId.getSegId());
         orState(SEG_REQUEST_RCVD);
-
         return memSeg;
     }
 

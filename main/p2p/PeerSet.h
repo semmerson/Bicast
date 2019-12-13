@@ -59,18 +59,11 @@ public:
     bool activate(const Peer peer);
 
     /**
-     * Notifies all the peers in the set of available product-information.
+     * Notifies all the peers in the set of an available chunk.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] chunkId  Chunk Identifier
      */
-    void notify(ProdIndex prodIndex);
-
-    /**
-     * Notifies all the peers in the set of an available data-segment.
-     *
-     * @param[in] segId  Segment ID
-     */
-    void notify(const SegId& segId);
+    void notify(ChunkId chunkId);
 
     /**
      * Returns the number of active peers in the set.

@@ -11,10 +11,10 @@
  */
 
 #include "config.h"
+#include "P2pMgr.h"
 
 #include "Bookkeeper.h"
 #include "error.h"
-#include "P2pMgr.h"
 #include "PeerFactory.h"
 #include "Thread.h"
 
@@ -27,7 +27,6 @@
 #include <sstream>
 #include <thread>
 #include <unistd.h>
-#include <unordered_map>
 
 namespace hycast {
 
@@ -358,26 +357,18 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     /**
      * Reassigns a stopped peer's outstanding requests to the next-best peers in
      * the peer-set. For each request, if no peer in the set has been notified
-     * about the associated item, then the request is discarded.
+     * about the associated item, then the request is discarded in the
+     * expectation that one of the other remote peers will, eventually, notify.
+     * a local peer about the chunk.
      *
      * @pre             The state is locked
      * @param[in] peer  The stopped peer
      */
     void reassignPending(Peer& peer)
     {
-        auto prodIndexes = bookkeeper.getProdIndexes(peer);
-        auto endProd = prodIndexes.second;
-        for (auto iter = prodIndexes.first; iter != endProd; ++iter) {
-            Peer bestPeer{bookkeeper.getBestPeerExcept(*iter, peer)};
-            if (bestPeer) {
-                bestPeer.request(*iter);
-                bookkeeper.requested(bestPeer.getRmtAddr(), *iter);
-            }
-        }
-
-        auto segIds = bookkeeper.getSegIds(peer);
-        auto endSeg = segIds.second;
-        for (auto iter = segIds.first; iter != endSeg; ++iter) {
+        auto chunkIds = bookkeeper.getChunkIds(peer);
+        auto endProd = chunkIds.second;
+        for (auto iter = chunkIds.first; iter != endProd; ++iter) {
             Peer bestPeer{bookkeeper.getBestPeerExcept(*iter, peer)};
             if (bestPeer) {
                 bestPeer.request(*iter);
@@ -592,94 +583,47 @@ public:
     }
 
     /**
-     * Notifies all remote peers about information on a particular product.
+     * Notifies all remote peers about a particular chunk.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] ChunkId  Chunk identifier
      */
-    void notify(const ProdIndex prodIndex)
+    void notify(const ChunkId chunkId)
     {
-        return peerSet.notify(prodIndex);
+        return peerSet.notify(chunkId);
     }
 
     /**
-     * Notifies all remote peers about an available data-segment.
+     * Indicates if a chunk should be requested from a remote peer.
      *
-     * @param[in] id       Id of available data-segment
-     *                     one peer
-     */
-    void notify(const SegId& id)
-    {
-        return peerSet.notify(id);
-    }
-
-    /**
-     * Indicates if information on a product should be requested from a remote
-     * peer.
-     *
-     * @param[in] prodIndex  Index of the product
-     * @param[in] rmtAddr    Socket address of the remote peer
-     * @retval    `true`     The information should be requested from the peer
-     * @retval    `false`    The information should not be requested from the
-     *                       peer
-     */
-    bool shouldRequest(
-            const ProdIndex prodIndex,
-            const SockAddr& rmtAddr)
-    {
-        Guard      guard{stateMutex};
-        const bool yes = !bookkeeper.wasRequested(prodIndex) &&
-                p2pMgrObs.shouldRequest(prodIndex);
-        if (yes)
-            bookkeeper.requested(rmtAddr, prodIndex);
-        return yes;
-    }
-
-    /**
-     * Indicates if a data-segment should be requested from a remote peer.
-     *
-     * @param[in] segId    ID of data-segment
+     * @param[in] chunkId  Chunk identifier
      * @param[in] rmtAddr  Socket address of the remote peer
-     * @retval    `true`   The segment should be requested from the peer
-     * @retval    `false`  The segment should not be requested from the peer
+     * @retval    `true`   The chunk should be requested from the peer
+     * @retval    `false`  The chunk should not be requested from the peer
      */
     bool shouldRequest(
-            const SegId&    segId,
+            const ChunkId   chunkId,
             const SockAddr& rmtAddr)
     {
         Guard      guard{stateMutex};
-        const bool yes = !bookkeeper.wasRequested(segId) &&
-                p2pMgrObs.shouldRequest(segId);
+        const bool yes = !bookkeeper.wasRequested(chunkId) &&
+                p2pMgrObs.shouldRequest(chunkId);
         if (yes)
-            bookkeeper.requested(rmtAddr, segId);
+            bookkeeper.requested(rmtAddr, chunkId);
         return yes;
     }
 
     /**
-     * Obtains product-information for a remote peer.
+     * Obtains a chunk for a remote peer.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] chunkId    Chunk identifier
      * @param[in] rmtAddr    Socket address of the remote peer
      * @return               The information. Will be empty if it doesn't exist.
      */
-    ProdInfo get(
-            const ProdIndex prodIndex,
+    const Chunk& get(
+            const ChunkId   chunkId,
             const SockAddr& rmtAddr)
     {
-        return p2pMgrObs.get(prodIndex);
-    }
-
-    /**
-     * Obtains a data-segment for a remote peer.
-     *
-     * @param[in] id       ID of the data-segment
-     * @param[in] rmtAddr  Socket address of the remote peer
-     * @return             The segment. Will be empty if it doesn't exist.
-     */
-    MemSeg get(
-            const SegId&    id,
-            const SockAddr& rmtAddr)
-    {
-        return p2pMgrObs.get(id);
+        return p2pMgrObs.get(chunkId);
     }
 
     /**
@@ -750,14 +694,9 @@ size_t P2pMgr::size() const
     return pImpl->size();
 }
 
-void P2pMgr::notify(const ProdIndex prodIndex)
+void P2pMgr::notify(const ChunkId chunkId)
 {
-    return pImpl->notify(prodIndex);
-}
-
-void P2pMgr::notify(const SegId& id)
-{
-    return pImpl->notify(id);
+    return pImpl->notify(chunkId);
 }
 
 void P2pMgr::halt() const

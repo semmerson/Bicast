@@ -56,7 +56,7 @@ protected:
                SRVR_PEER_STOPPED
     } State;
     State                   state;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodId;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -81,12 +81,12 @@ protected:
         , snkAddr{"localhost:3883"} // NB: Not a Linux dynamic port number
         , mutex{}
         , cond{}
-        , prodIndex{1}
+        , prodId{1}
         , state{INIT}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, prodSize, "product"}
-        , segId(prodIndex, segSize)
+        , prodInfo{prodId, prodSize, "product"}
+        , segId(prodId, segSize)
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
@@ -129,38 +129,31 @@ public:
     {}
 
     // Receiver-side
-    bool shouldRequest(const hycast::ProdIndex actual)
+    bool shouldRequest(const hycast::ChunkId chunkId)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_NOTICE_RCVD);
-
-        return true;
-    }
-
-    // Receiver-side
-    bool shouldRequest(const hycast::SegId& actual)
-    {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_NOTICE_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodId, chunkId.getProdId());
+            orState(PROD_NOTICE_RCVD);
+        }
+        else {
+            EXPECT_EQ(segId, chunkId.getSegId());
+            orState(SEG_NOTICE_RCVD);
+        }
 
         return true;
     }
 
     // Sender-side
-    hycast::ProdInfo get(const hycast::ProdIndex actual)
+    const hycast::Chunk& get(const hycast::ChunkId chunkId)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_REQUEST_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodId, chunkId.getProdId());
+            orState(PROD_REQUEST_RCVD);
+            return prodInfo;
+        }
 
-        return prodInfo;
-    }
-
-    // Sender-side
-    hycast::MemSeg get(const hycast::SegId& actual)
-    {
-        EXPECT_EQ(segId, actual);
+        EXPECT_EQ(segId, chunkId.getSegId());
         orState(SEG_REQUEST_RCVD);
-
         return memSeg;
     }
 
@@ -229,7 +222,7 @@ TEST_F(P2pMgrTest, DataExchange)
     waitForState(CONNECTED);
 
     // Start an exchange
-    clntP2pMgr.notify(prodIndex);
+    clntP2pMgr.notify(prodId);
     clntP2pMgr.notify(segId);
 
     // Wait for the exchange to complete

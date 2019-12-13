@@ -36,49 +36,26 @@ public:
     {}
 
     /**
-     * Indicates if product-information should be requested.
+     * Indicates if a chunk should be requested.
      *
-     * @param[in] prodIndex  Product index
-     * @param[in] rmtAddr    Address of the remote peer with the information
+     * @param[in] chunkId    Chunk identifier
+     * @param[in] rmtAddr    Address of the remote peer with the chunk
      * @retval    `true`     The chunk should be requested
      * @retval    `false`    The chunk should not be requested
      */
     virtual bool shouldRequest(
-            const ProdIndex prodIndex,
+            const ChunkId   chunkId,
             const SockAddr& rmtAddr) =0;
 
     /**
-     * Indicates if a data-segment should be requested.
+     * Returns a chunk.
      *
-     * @param[in] segId    Segment ID
-     * @param[in] rmtAddr  Address of the remote peer with the segment
-     * @retval    `true`   The chunk should be requested
-     * @retval    `false`  The chunk should not be requested
-     */
-    virtual bool shouldRequest(
-            const SegId&    segId,
-            const SockAddr& rmtAddr) =0;
-
-    /**
-     * Returns product information.
-     *
-     * @param[in] prodIndex  Product index
+     * @param[in] chunkId    Chunk identifier
      * @param[in] rmtAddr    Address of remote peer
-     * @return               The information. Will be empty if it doesn't exist.
+     * @return               The chunk will test false if it doesn't exist.
      */
-    virtual ProdInfo get(
-            const ProdIndex prodIndex,
-            const SockAddr& rmtAddr) =0;
-
-    /**
-     * Returns a data-segment.
-     *
-     * @param[in] id       ID of requested data-segment
-     * @param[in] rmtAddr  Address of remote peer
-     * @return             The data-segment. Will be empty if it doesn't exist.
-     */
-    virtual MemSeg get(
-            const SegId&    id,
+    virtual const Chunk& get(
+            const ChunkId   chunkId,
             const SockAddr& rmtAddr) =0;
 
     /**
@@ -113,8 +90,6 @@ protected:
     std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef std::unordered_set<SegId>::const_iterator iterator;
-
     /**
      * Default construction.
      */
@@ -183,60 +158,37 @@ public:
     void halt() noexcept;
 
     /**
-     * Notifies the remote peer about the availability of product-information.
+     * Notifies the remote peer about the availability of a chunk.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] chunkId  Chunk identifier
      */
-    void notify(const ProdIndex prodIndex) const;
+    void notify(const ChunkId chunkId) const;
 
-    /**
-     * Notifies the remote peer about the availability of a data-segment.
-     *
-     * @param[in] segId    ID of data-segment
-     */
-    void notify(const SegId& segId) const;
+    void request(const ChunkId chunkId) const;
 
-    void request(const ProdIndex prodIndex) const;
+    void request(const ProdId prodIndex) const;
 
     void request(const SegId& segId) const;
 
     size_t size() const noexcept;
-
-    iterator begin() const noexcept;
-
-    iterator end() const noexcept;
 
     size_t hash() const noexcept;
 
     std::string to_string() const noexcept;
 
     /**
-     * Handles a notice of available product-information.
+     * Handles a notice of an available chunk.
      *
-     * @param[in] prodIndex   Product index
+     * @param[in] chunkId  Chunk identifier
      */
-    void acceptNotice(ProdIndex prodIndex);
+    void acceptNotice(ChunkId chunkId);
 
     /**
-     * Handles a notice of available data.
+     * Handles a request for a chunk.
      *
-     * @param[in] dataId   ID of data-chunk
+     * @param[in] chunkId   Chunk identifier
      */
-    void acceptNotice(const SegId& dataId);
-
-    /**
-     * Handles a request for product-information.
-     *
-     * @param[in] prodIndex  Product index
-     */
-    void acceptRequest(ProdIndex prodIndex);
-
-    /**
-     * Obtains a data-chunk for a peer.
-     *
-     * @param[in] dataId   Data-chunk ID
-     */
-    void acceptRequest(const SegId& dataId);
+    void acceptRequest(ChunkId chunkId);
 
     /**
      * Accepts product-information from the remote peer.

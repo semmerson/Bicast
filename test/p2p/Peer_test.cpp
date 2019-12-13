@@ -37,7 +37,7 @@ protected:
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodId;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -56,11 +56,11 @@ protected:
         , portPool(38801, 3)
         , mutex{}
         , cond{}
-        , prodIndex{1}
+        , prodId{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, prodSize, "product"}
-        , segId(prodIndex, segSize)
+        , prodInfo{prodId, prodSize, "product"}
+        , segId(prodId, segSize)
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
@@ -85,11 +85,17 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::ProdIndex actual,
+            const hycast::ChunkId   chunkId,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_NOTICE_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodId, chunkId.getProdId());
+            orState(PROD_NOTICE_RCVD);
+        }
+        else {
+            EXPECT_EQ(segId, chunkId.getSegId());
+            orState(SEG_NOTICE_RCVD);
+        }
 
         return true;
     }
@@ -106,24 +112,18 @@ public:
     }
 
     // Sender-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
+    const hycast::Chunk& get(
+            const hycast::ChunkId   chunkId,
             const hycast::SockAddr& rmtAddr)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_REQUEST_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodId, chunkId.getProdId());
+            orState(PROD_REQUEST_RCVD);
+            return prodInfo;
+        }
 
-        return prodInfo;
-    }
-
-    // Sender-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
-    {
-        EXPECT_EQ(segId, actual);
+        EXPECT_EQ(segId, chunkId.getSegId());
         orState(SEG_REQUEST_RCVD);
-
         return memSeg;
     }
 
@@ -205,7 +205,7 @@ TEST_F(PeerTest, DataExchange)
 
         try {
             // Start an exchange
-            clntPeer.notify(prodIndex);
+            clntPeer.notify(prodId);
             clntPeer.notify(segId);
 
             // Wait for the exchange to complete

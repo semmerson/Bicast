@@ -25,28 +25,50 @@ namespace hycast {
 
 typedef uint16_t Flags;
 typedef uint16_t SegSize;
-typedef uint32_t ProdIndex;
+typedef uint32_t ProdId;
 typedef uint32_t ProdSize;
 
 /******************************************************************************/
 
-class ProdInfo
+class PeerProto;
+
+class Chunk
 {
-    class                 Impl;
+public:
+    class Impl;
+
+protected:
     std::shared_ptr<Impl> pImpl;
 
-    ProdInfo(Impl* const impl);
+    Chunk(Impl* impl);
+
+public:
+    virtual ~Chunk() noexcept;
+
+    operator bool() const
+    {
+        return (bool)pImpl;
+    }
+
+    virtual void send(PeerProto& proto) const =0;
+};
+
+/******************************************************************************/
+
+class ProdInfo final : public Chunk
+{
+    class Impl;
 
 public:
     /**
      * Constructs.
      *
-     * @param[in] index  Product index
-     * @param[in] size   Product size in bytes
-     * @param[in] name   Product name
+     * @param[in] prodId  Product identifier
+     * @param[in] size    Product size in bytes
+     * @param[in] name    Product name
      */
     ProdInfo(
-            ProdIndex          index,
+            ProdId             prodId,
             ProdSize           size,
             const std::string& name);
 
@@ -55,13 +77,15 @@ public:
         return (bool)pImpl;
     }
 
-    ProdIndex getIndex() const;
+    ProdId getIndex() const;
 
     ProdSize getSize() const;
 
     const std::string& getName() const;
 
     bool operator ==(const ProdInfo& rhs) const;
+
+    void send(PeerProto& proto) const;
 };
 
 /******************************************************************************/
@@ -71,13 +95,13 @@ public:
  */
 class SegId
 {
-    const ProdIndex prodIndex;
-    const ProdSize  segOffset;
+    const ProdId   prodId;
+    const ProdSize segOffset;
 
 public:
-    SegId(  const ProdIndex prodIndex,
+    SegId(  const ProdId prodId,
             const ProdSize  segOffset)
-        : prodIndex{prodIndex}
+        : prodId{prodId}
         , segOffset{segOffset}
     {}
 
@@ -85,9 +109,9 @@ public:
         : SegId(0, 0)
     {}
 
-    ProdIndex getProdIndex() const noexcept
+    ProdId getProdId() const noexcept
     {
-        return prodIndex;
+        return prodId;
     }
 
     ProdSize getSegOffset() const noexcept
@@ -97,83 +121,79 @@ public:
 
     size_t hash() const noexcept
     {
-        return std::hash<ProdIndex>()(prodIndex) ^
+        return std::hash<ProdId>()(prodId) ^
                 std::hash<ProdSize>()(segOffset);
     }
 
     bool operator ==(const SegId& rhs) const noexcept
     {
-        return prodIndex == rhs.prodIndex &&
+        return prodId == rhs.prodId &&
                 segOffset == rhs.segOffset;
     }
 
     std::string to_string() const;
 };
 
-class ChunkNotice
+/******************************************************************************/
+
+class PeerProto;
+
+/**
+ * An identifier of a chunk.
+ */
+class ChunkId final
 {
-protected:
-    ProdIndex prodIndex;
-    ProdSize  segOffset;
+    friend class std::hash<ChunkId>;
+
+    /*
+     * Implemented as a discriminated union in order to have a fixed size in
+     * a container.
+     */
+    bool isProd;
+
+    union {
+        ProdId prodId;
+        SegId  segId;
+    } id;
 
 public:
-    ChunkNotice(
-            const ProdIndex prodIndex,
-            const ProdSize  segOffset)
-        : prodIndex{prodIndex}
-        , segOffset{segOffset}
+    ChunkId(ProdId prodId)
+        : isProd{true}
+        , id{.prodId=prodId}
     {}
 
-    virtual ~ChunkNotice();
-
-    ProdIndex getProdIndex() const noexcept
-    {
-        return prodIndex;
-    }
-
-    size_t hash() const noexcept
-    {
-        return std::hash<ProdIndex>()(prodIndex) ^
-                std::hash<ProdSize>()(segOffset);
-    }
-
-    bool operator ==(const ChunkNotice& rhs) const noexcept
-    {
-        return prodIndex == rhs.prodIndex &&
-                segOffset == rhs.segOffset;
-    }
-
-    virtual std::string to_string() const =0;
-};
-
-class ProdNotice final : public ChunkNotice
-{
-public:
-    ProdNotice(const ProdIndex prodIndex)
-        : ChunkNotice{prodIndex, (ProdSize)-1}
+    ChunkId(const SegId segId)
+        : isProd{false}
+        , id{.segId=segId}
     {}
 
-    std::string to_string() const
-    {
-        return std::to_string(prodIndex);
-    }
-};
-
-class SegNotice final : public ChunkNotice
-{
-public:
-    SegNotice(const SegId& segId)
-        : ChunkNotice{segId.getProdIndex(), segId.getSegOffset()}
+    ChunkId()
+        : ChunkId(SegId{})
     {}
 
-    std::string to_string() const
-    {
-        return "{prodIndex: " + std::to_string(prodIndex) + ", segOffset: " +
-                std::to_string(segOffset) + "}";
-    }
-};
+    bool operator ==(const ChunkId& rhs) const;
 
-typedef ChunkNotice ChunkRequest;
+    bool isProdId() const
+    {
+        return isProd;
+    }
+
+    ProdId getProdId() const
+    {
+        return id.prodId;
+    }
+
+    SegId getSegId() const
+    {
+        return id.segId;
+    }
+
+    std::string to_string() const;
+
+    void notify(PeerProto& peerProto) const;
+
+    void request(PeerProto& peerProto) const;
+};
 
 /******************************************************************************/
 
@@ -218,12 +238,9 @@ public:
 /**
  * Data-segment that resides in memory.
  */
-class MemSeg
+class MemSeg final : public Chunk
 {
     class                 Impl;
-    std::shared_ptr<Impl> pImpl;
-
-    MemSeg(Impl* impl);
 
 public:
     MemSeg(const SegInfo& info,
@@ -240,11 +257,13 @@ public:
 
     SegSize getSegSize() const;
 
-    ProdIndex getProdIndex() const;
+    ProdId getProdIndex() const;
 
     ProdSize getProdSize() const;
 
     ProdSize getSegOffset() const;
+
+    void send(PeerProto& proto) const;
 };
 
 /******************************************************************************/
@@ -310,11 +329,13 @@ public:
 
 namespace std {
     template<>
-    struct hash<hycast::SegId>
+    struct hash<hycast::ChunkId>
     {
-        size_t operator ()(const hycast::SegId& id) const
+        size_t operator ()(const hycast::ChunkId& chunkId) const
         {
-            return id.hash();
+            return chunkId.isProd
+                    ? std::hash<hycast::ProdId>()(chunkId.id.prodId)
+                    : chunkId.id.segId.hash();
         }
     };
 }

@@ -22,7 +22,7 @@ namespace hycast {
 
 typedef uint16_t Flags;
 typedef uint16_t SegSize;
-typedef uint32_t ProdIndex;
+typedef uint32_t ProdId;
 typedef uint32_t ProdSize;
 
 /******************************************************************************/
@@ -60,9 +60,9 @@ class InfoId final : public ChunkId
     class Impl;
 
 public:
-    InfoId(ProdIndex prodIndex);
+    InfoId(ProdId prodIndex);
 
-    ProdIndex getIndex() const noexcept;
+    ProdId getIndex() const noexcept;
 
     std::string to_string() const;
 
@@ -92,10 +92,10 @@ class SegId final : public ChunkId
     class Impl;
 
 public:
-    SegId(  ProdIndex prodIndex,
+    SegId(  ProdId prodIndex,
             ProdSize  segOffset);
 
-    ProdIndex getProdIndex() const noexcept;
+    ProdId getProdId() const noexcept;
 
     ProdSize getSegOffset() const noexcept;
 

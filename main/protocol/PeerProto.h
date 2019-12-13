@@ -31,32 +31,18 @@ public:
     {}
 
     /**
-     * Handles a notice of available product-information.
+     * Handles a notice of an available chunk.
      *
-     * @param[in] prodIndex   Product index
+     * @param[in] chunkId  Chunk identifier
      */
-    virtual void acceptNotice(ProdIndex prodIndex) =0;
+    virtual void acceptNotice(ChunkId chunkId) =0;
 
     /**
-     * Handles a notice of available data.
+     * Handles a request for a chunk.
      *
-     * @param[in] dataId   ID of data-chunk
+     * @param[in] chunkId  Chunk identifier
      */
-    virtual void acceptNotice(const SegId& dataId) =0;
-
-    /**
-     * Handles a request for product-information.
-     *
-     * @param[in] prodIndex  Product index
-     */
-    virtual void acceptRequest(ProdIndex prodIndex) =0;
-
-    /**
-     * Obtains a data-chunk for a peer.
-     *
-     * @param[in] dataId   Data-chunk ID
-     */
-    virtual void acceptRequest(const SegId& dataId) =0;
+    virtual void acceptRequest(ChunkId chunkId) =0;
 
     /**
      * Accepts product-information from the remote peer.
@@ -158,7 +144,7 @@ public:
      * @param[in] prodIndex  Product index
      * @cancellationpoint    Yes
      */
-    void notify(ProdIndex prodIndex) const;
+    void notify(ProdId prodIndex) const;
 
     /**
      * Notifies the remote peer of an available data-segment.
@@ -171,18 +157,18 @@ public:
     /**
      * Requests information on a product from the remote peer.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] prodId     Product identifier
      * @cancellationpoint    Yes
      */
-    void request(ProdIndex prodIndex) const;
+    void request(ProdId prodId) const;
 
     /**
      * Requests a data-segment from the remote peer.
      *
-     * @param[in] id       ID of data-segment
-     * @cancellationpoint  Yes
+     * @param[in] segId      Segment identifier
+     * @cancellationpoint    Yes
      */
-    void request(const SegId& id) const;
+    void request(SegId segId) const;
 
     /**
      * Sends product-information to the remote peer.
@@ -198,7 +184,7 @@ public:
      * @param[in] seg      Data-segment
      * @cancellationpoint  Yes
      */
-    void send(MemSeg& seg) const;
+    void send(const MemSeg& seg) const;
 };
 
 } // namespace

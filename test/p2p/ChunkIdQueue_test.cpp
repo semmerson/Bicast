@@ -9,7 +9,7 @@
  * Created On: Dec 6, 2019
  *     Author: Steven R. Emmerson
  */
-#include <IdQueue.h>
+#include <ChunkIdQueue.h>
 #include "config.h"
 
 #include "gtest/gtest.h"
@@ -20,57 +20,37 @@ namespace {
 class NoticeQueueTest : public ::testing::Test
 {
 protected:
-    hycast::ProdIndex prodIndex;
+    hycast::ProdId prodId;
     hycast::SegId     segId;
 
     NoticeQueueTest()
-        : prodIndex{1}
-        , segId{prodIndex, 1000}
+        : prodId{1}
+        , segId{prodId, 1000}
     {}
-
-    virtual ~NoticeQueueTest()
-    {
-        // You can do clean-up work that doesn't throw exceptions here.
-    }
-
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp()
-    {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-    }
-
-    virtual void TearDown()
-    {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-    }
-
-    // Objects declared here can be used by all tests in the test case for Error.
 };
 
 // Tests default construction
 TEST_F(NoticeQueueTest, DefaultConstruction)
 {
-    hycast::IdQueue queue{};
+    hycast::ChunkIdQueue queue{};
     EXPECT_EQ(0, queue.size());
 }
 
 // Tests adding a product-index
 TEST_F(NoticeQueueTest, AddProdIndex)
 {
-    hycast::IdQueue queue{};
-    queue.push(prodIndex);
+    hycast::ChunkIdQueue queue{};
+    hycast::ChunkId chunkId{prodId};
+    queue.push(chunkId);
     EXPECT_EQ(1, queue.size());
 }
 
 // Tests adding a segment-ID
 TEST_F(NoticeQueueTest, AddSegId)
 {
-    hycast::IdQueue queue{};
-    queue.push(segId);
+    hycast::ChunkIdQueue queue{};
+    hycast::ChunkId chunkId{segId};
+    queue.push(chunkId);
     EXPECT_EQ(1, queue.size());
 }
 

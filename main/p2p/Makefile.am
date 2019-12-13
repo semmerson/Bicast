@@ -15,7 +15,7 @@ lib_la_SOURCES 	= PeerMsgSndr.h \
 		  ServerPool.cpp	ServerPool.h \
 		  P2pMgr.cpp		P2pMgr.h \
 		  Bookkeeper.cpp	Bookkeeper.h \
-		  IdQueue.cpp	        IdQueue.h
+		  ChunkIdQueue.cpp	ChunkIdQueue.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.

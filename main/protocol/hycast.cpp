@@ -12,28 +12,43 @@
 
 #include "config.h"
 
-#include "error.h"
 #include "hycast.h"
+
+#include "error.h"
+#include "PeerProto.h"
 
 namespace hycast {
 
-class ProdInfo::Impl {
-    const ProdIndex   index;
+class Chunk::Impl
+{};
+
+Chunk::Chunk(Impl* impl)
+    : pImpl{impl}
+{}
+
+Chunk::~Chunk() noexcept
+{}
+
+/******************************************************************************/
+
+class ProdInfo::Impl final : public Chunk::Impl
+{
+    const ProdId      prodId;
     const ProdSize    size;
     const std::string name;
 
 public:
-    Impl(   const ProdIndex    index,
+    Impl(   const ProdId       prodId,
             const ProdSize     size,
             const std::string& name)
-        : index{index}
+        : prodId{prodId}
         , size{size}
         , name{name}
     {}
 
-    ProdIndex getIndex() const
+    ProdId getIndex() const
     {
-        return index;
+        return prodId;
     }
 
     ProdSize getSize() const
@@ -48,7 +63,7 @@ public:
 
     bool operator ==(const Impl& rhs) const
     {
-        return index == rhs.index &&
+        return prodId == rhs.prodId &&
                size == rhs.size &&
                name == rhs.name;
     }
@@ -56,42 +71,44 @@ public:
 
 /******************************************************************************/
 
-ProdInfo::ProdInfo(Impl* const impl)
-    : pImpl{impl}
-{}
-
 ProdInfo::ProdInfo(
-        const ProdIndex    index,
+        const ProdId       prodId,
         const ProdSize     size,
         const std::string& name)
-    : pImpl{new Impl(index, size, name)}
+    : Chunk{new Impl(prodId, size, name)}
 {}
 
-ProdIndex ProdInfo::getIndex() const
+ProdId ProdInfo::getIndex() const
 {
-    return pImpl->getIndex();
+    return static_cast<Impl*>(pImpl.get())->getIndex();
 }
 
 ProdSize ProdInfo::getSize() const
 {
-    return pImpl->getSize();
+    return static_cast<Impl*>(pImpl.get())->getSize();
 }
 
 const std::string& ProdInfo::getName() const
 {
-    return pImpl->getName();
+    return static_cast<Impl*>(pImpl.get())->getName();
 }
 
 bool ProdInfo::operator ==(const ProdInfo& rhs) const
 {
-    return pImpl->operator ==(*rhs.pImpl.get());
+    return *static_cast<Impl*>(pImpl.get()) ==
+            *static_cast<Impl*>(rhs.pImpl.get());
+}
+
+void ProdInfo::send(PeerProto& proto) const
+{
+    proto.send(*this);
 }
 
 /******************************************************************************/
 
 std::string SegId::to_string() const
 {
-    return "{prodIndex: " + std::to_string(prodIndex) + ", segOffset: " +
+    return "{prodId: " + std::to_string(prodId) + ", segOffset: " +
             std::to_string(segOffset) + "}";
 }
 
@@ -106,7 +123,51 @@ std::string SegInfo::to_string() const
 
 /******************************************************************************/
 
-class MemSeg::Impl
+bool ChunkId::operator ==(const ChunkId& rhs) const
+{
+    return isProd
+            ? id.prodId == rhs.id.prodId
+            : id.segId == rhs.id.segId;
+}
+
+std::string ChunkId::to_string() const
+{
+    return isProd
+            ? std::to_string(id.prodId)
+            : id.segId.to_string();
+}
+
+void ChunkId::notify(PeerProto& peerProto) const
+{
+    if (isProd) {
+        LOG_DEBUG("Notifying about product %lu",
+                static_cast<unsigned long>(id.prodId));
+        peerProto.notify(id.prodId);
+    }
+    else {
+        LOG_DEBUG("Notifying about segment %s",
+                id.segId.to_string().c_str());
+        peerProto.notify(id.segId);
+    }
+}
+
+void ChunkId::request(PeerProto& peerProto) const
+{
+    if (isProd) {
+        LOG_DEBUG("Requesting information about product %lu",
+                static_cast<unsigned long>(id.prodId));
+        peerProto.request(id.prodId);
+    }
+    else {
+        LOG_DEBUG("Requesting segment %s",
+                id.segId.to_string().c_str());
+        peerProto.request(id.segId);
+    }
+}
+
+/******************************************************************************/
+
+class MemSeg::Impl final : public Chunk::Impl
 {
     const SegInfo info;
     const void*   data;
@@ -133,9 +194,9 @@ public:
         return info.getSegSize();
     }
 
-    ProdIndex getProdIndex() const
+    ProdId getProdIndex() const
     {
-        return info.getId().getProdIndex();
+        return info.getId().getProdId();
     }
 
     ProdSize getProdSize() const
@@ -149,44 +210,45 @@ public:
     }
 };
 
-MemSeg::MemSeg(Impl* impl)
-    : pImpl{impl}
-{}
-
 MemSeg::MemSeg(
         const SegInfo& info,
         const void*    data)
-    : MemSeg{new Impl(info, data)}
+    : Chunk(new Impl(info, data))
 {}
 
 const SegInfo& MemSeg::getInfo() const
 {
-    return pImpl->getInfo();
+    return static_cast<Impl*>(pImpl.get())->getInfo();
 }
 
 const void* MemSeg::getData() const
 {
-    return pImpl->getData();
+    return static_cast<Impl*>(pImpl.get())->getData();
 }
 
 SegSize MemSeg::getSegSize() const
 {
-    return pImpl->getSegSize();
+    return static_cast<Impl*>(pImpl.get())->getSegSize();
 }
 
-ProdIndex MemSeg::getProdIndex() const
+ProdId MemSeg::getProdIndex() const
 {
-    return pImpl->getProdIndex();
+    return static_cast<Impl*>(pImpl.get())->getProdIndex();
 }
 
 ProdSize MemSeg::getProdSize() const
 {
-    return pImpl->getProdSize();
+    return static_cast<Impl*>(pImpl.get())->getProdSize();
 }
 
 ProdSize MemSeg::getSegOffset() const
 {
-    return pImpl->getSegOffset();
+    return static_cast<Impl*>(pImpl.get())->getSegOffset();
+}
+
+void MemSeg::send(PeerProto& proto) const
+{
+    proto.send(*this);
 }
 
 /******************************************************************************/

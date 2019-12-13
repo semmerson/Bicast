@@ -13,12 +13,13 @@
  *      Author: Steven R. Emmerson
  */
 #include "config.h"
+#include "Peer.h"
 
+#include "ChunkIdQueue.h"
 #include "error.h"
 #include "hycast.h"
-#include "IdQueue.h"
-#include "Peer.h"
 #include "PeerProto.h"
+
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -38,8 +39,8 @@ private:
 
     mutable Mutex    doneMutex;
     mutable Cond     doneCond;
-    IdQueue          noticeQueue;
-    IdQueue          requestQueue;
+    ChunkIdQueue     noticeQueue;
+    ChunkIdQueue     requestQueue;
     PeerProto        peerProto;
     const SockAddr   rmtAddr;
     PeerObs&         peerObs;
@@ -197,19 +198,19 @@ public:
         doneCond.notify_one();
     }
 
-    void notify(const ProdIndex& prodIndex)
+    void notify(const ChunkId chunkId)
     {
-        noticeQueue.push(prodIndex);
+        noticeQueue.push(chunkId);
     }
 
-    void notify(const SegId& id)
+    void request(const ChunkId chunkId)
     {
-        noticeQueue.push(id);
+        requestQueue.push(chunkId);
     }
 
-    void request(const ProdIndex prodIndex)
+    void request(const ProdId prodId)
     {
-        requestQueue.push(prodIndex);
+        requestQueue.push(prodId);
     }
 
     void request(const SegId& segId)
@@ -222,71 +223,36 @@ public:
         return peerProto.to_string();
     }
 
-    void acceptNotice(ProdIndex prodIndex)
+    void acceptNotice(const ChunkId chunkId)
     {
-        LOG_DEBUG("Accepting product-information notice");
+        LOG_DEBUG("Accepting notice of chunk %s", chunkId.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(prodIndex, rmtAddr);
+            const bool doRequest = peerObs.shouldRequest(chunkId, rmtAddr);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (doRequest) {
-            LOG_DEBUG("Sending request for information on product %lu",
-                    static_cast<unsigned long>(prodIndex));
-            peerProto.request(prodIndex);
+            LOG_DEBUG("Sending request for chunk %s",
+                    chunkId.to_string().data());
+            chunkId.request(peerProto);
         }
     }
 
-    void acceptNotice(const SegId& segId)
+    void acceptRequest(const ChunkId chunkId)
     {
-        LOG_DEBUG("Accepting data-segment notice");
+        LOG_DEBUG("Accepting request for chunk %s", chunkId.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(segId, rmtAddr);
+            const Chunk& chunk(peerObs.get(chunkId, rmtAddr));
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
-        if (doRequest) {
-            LOG_DEBUG("Sending request for data-segment %s",
-                    segId.to_string().data());
-            peerProto.request(segId);
-        }
-    }
-
-    void acceptRequest(const ProdIndex prodIndex)
-    {
-        LOG_DEBUG("Accepting request for information on product %lu",
-                static_cast<unsigned long>(prodIndex));
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            ProdInfo info = peerObs.get(prodIndex, rmtAddr);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-        if (info) {
-            LOG_DEBUG("Sending information");
-            peerProto.send(info);
-        }
-    }
-
-    void acceptRequest(const SegId& segId)
-    {
-        LOG_DEBUG("Accepting request for data-segment %s",
-                segId.to_string().data());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            MemSeg seg = peerObs.get(segId, rmtAddr);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-        if (seg) {
-            LOG_DEBUG("Sending information");
-            peerProto.send(seg);
+        if (chunk) {
+            LOG_DEBUG("Sending chunk %s", chunkId.to_string().data());
+            chunk.send(peerProto);
         }
     }
 
@@ -373,19 +339,19 @@ void Peer::halt() noexcept
         pImpl->halt();
 }
 
-void Peer::notify(const ProdIndex prodIndex) const
+void Peer::notify(const ChunkId chunkId) const
 {
-    pImpl->notify(prodIndex);
+    pImpl->notify(chunkId);
 }
 
-void Peer::notify(const SegId& segId) const
+void Peer::request(const ChunkId chunkId) const
 {
-    pImpl->notify(segId);
+    pImpl->request(chunkId);
 }
 
-void Peer::request(const ProdIndex prodIndex) const
+void Peer::request(const ProdId prodId) const
 {
-    pImpl->request(prodIndex);
+    pImpl->request(prodId);
 }
 
 void Peer::request(const SegId& segId) const
@@ -403,24 +369,14 @@ std::string Peer::to_string() const noexcept
     return pImpl->to_string();
 }
 
-void Peer::acceptNotice(ProdIndex prodIndex)
+void Peer::acceptNotice(const ChunkId chunkId)
 {
-    pImpl->acceptNotice(prodIndex);
+    pImpl->acceptNotice(chunkId);
 }
 
-void Peer::acceptNotice(const SegId& dataId)
+void Peer::acceptRequest(const ChunkId chunkId)
 {
-    pImpl->acceptNotice(dataId);
-}
-
-void Peer::acceptRequest(ProdIndex prodIndex)
-{
-    pImpl->acceptRequest(prodIndex);
-}
-
-void Peer::acceptRequest(const SegId& dataId)
-{
-    pImpl->acceptRequest(dataId);
+    pImpl->acceptRequest(chunkId);
 }
 
 void Peer::accept(const ProdInfo& prodInfo)

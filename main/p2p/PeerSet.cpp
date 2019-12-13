@@ -11,10 +11,10 @@
  */
 
 #include "config.h"
+#include "PeerSet.h"
 
 #include "error.h"
 #include "hycast.h"
-#include "PeerSet.h"
 #include "Thread.h"
 
 #include <atomic>
@@ -66,14 +66,9 @@ class PeerSet::Impl {
             return peer < rhs.peer;
         }
 
-        void notify(const ProdIndex prodIndex) const
+        void notify(const ChunkId chunkId) const
         {
-            peer.notify(prodIndex);
-        }
-
-        void notify(const SegId& segId) const
-        {
-            peer.notify(segId);
+            peer.notify(chunkId);
         }
 
         void terminate()
@@ -217,20 +212,12 @@ public:
         return success;
     }
 
-    void notify(const ProdIndex& prodIndex)
+    void notify(const ChunkId chunkId)
     {
         Guard guard(mutex);
 
         for (auto iter = active.begin(); iter != active.end(); ++iter)
-            iter->second->notify(prodIndex);
-    }
-
-    void notify(const SegId& segId)
-    {
-        Guard guard(mutex);
-
-        for (auto iter = active.begin(); iter != active.end(); ++iter)
-            iter->second->notify(segId);
+            iter->second->notify(chunkId);
     }
 
     size_t size() const noexcept
@@ -258,14 +245,9 @@ bool PeerSet::activate(const Peer peer)
     return pImpl->activate(peer);
 }
 
-void PeerSet::notify(const ProdIndex prodIndex)
+void PeerSet::notify(const ChunkId chunkId)
 {
-    pImpl->notify(prodIndex);
-}
-
-void PeerSet::notify(const SegId& segId)
-{
-    pImpl->notify(segId);
+    pImpl->notify(chunkId);
 }
 
 size_t PeerSet::size() const noexcept

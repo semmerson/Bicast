@@ -48,7 +48,7 @@ protected:
     std::condition_variable cond;
     hycast::SockAddr        srvrAddr;
     hycast::PortPool        portPool;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
     hycast::SegSize         segSize;
@@ -99,28 +99,28 @@ protected:
     }
 
 public:
-    void acceptNotice(hycast::ProdIndex actual)
+    void acceptNotice(hycast::ChunkId chunkId)
     {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_NOTICE_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdId());
+            orState(PROD_NOTICE_RCVD);
+        }
+        else {
+            EXPECT_EQ(segId, chunkId.getSegId());
+            orState(SEG_NOTICE_RCVD);
+        }
     }
 
-    void acceptNotice(const hycast::SegId& actual)
+    void acceptRequest(hycast::ChunkId chunkId)
     {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_NOTICE_RCVD);
-    }
-
-    void acceptRequest(hycast::ProdIndex actual)
-    {
-        EXPECT_EQ(prodIndex, actual);
-        orState(PROD_REQUEST_RCVD);
-    }
-
-    void acceptRequest(const hycast::SegId& actual)
-    {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_REQUEST_RCVD);
+        if (chunkId.isProdId()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdId());
+            orState(PROD_REQUEST_RCVD);
+        }
+        else {
+            EXPECT_EQ(segId, chunkId.getSegId());
+            orState(SEG_REQUEST_RCVD);
+        }
     }
 
     void accept(const hycast::ProdInfo& actual)

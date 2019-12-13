@@ -63,16 +63,16 @@ class PeerProto::Impl
         }
     }
 
-    void recvProdNotice(const ProdIndex prodIndex)
+    void recvProdNotice(const ProdId prodId)
     {
         LOG_DEBUG("Receiving product notice");
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptNotice(prodIndex);
+            msgRcvr->acceptNotice(prodId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
-    bool recvSegNotice(const ProdIndex prodIndex)
+    bool recvSegNotice(const ProdId prodId)
     {
         LOG_DEBUG("Receiving segment notice");
         ProdSize  segOffset;
@@ -80,10 +80,10 @@ class PeerProto::Impl
         if (!noticeSock.read(segOffset))
             return false;
 
-        SegId id{prodIndex, segOffset};
+        SegId segId{prodId, segOffset};
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptNotice(id);
+            msgRcvr->acceptNotice(segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -100,17 +100,17 @@ class PeerProto::Impl
             for (;;) {
                 Flags     flags;
                 SegSize   pad;
-                ProdIndex prodIndex;
+                ProdId prodId;
 
                 // The following perform network translation
                 if (!noticeSock.read(flags) || !noticeSock.read(pad) ||
-                        !noticeSock.read(prodIndex))
+                        !noticeSock.read(prodId))
                     break; // EOF
 
                 if (flags & FLAGS_PROD) {
-                    recvProdNotice(prodIndex);
+                    recvProdNotice(prodId);
                 }
-                else if (!recvSegNotice(prodIndex)) {
+                else if (!recvSegNotice(prodId)) {
                     break; // EOF
                 }
             }
@@ -122,22 +122,22 @@ class PeerProto::Impl
         }
     }
 
-    void recvProdRequest(const ProdIndex prodIndex)
+    void recvProdRequest(const ProdId prodId)
     {
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            msgRcvr->acceptRequest(prodIndex);
+            msgRcvr->acceptRequest(prodId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
-    bool recvSegRequest(const ProdIndex prodIndex)
+    bool recvSegRequest(const ProdId prodId)
     {
         ProdSize  segOffset;
 
         if (!srvrSock.read(segOffset))
             return false;
 
-        SegId id{prodIndex, segOffset};
+        SegId id{prodId, segOffset};
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
             msgRcvr->acceptRequest(id);
@@ -157,17 +157,17 @@ class PeerProto::Impl
             for (;;) {
                 Flags     flags;
                 SegSize   pad;
-                ProdIndex prodIndex;
+                ProdId prodId;
 
                 // The following perform network translation
                 if (!srvrSock.read(flags) || !srvrSock.read(pad) ||
-                        !srvrSock.read(prodIndex))
+                        !srvrSock.read(prodId))
                     break; // EOF
 
                 if (flags & FLAGS_PROD) {
-                    recvProdRequest(prodIndex);
+                    recvProdRequest(prodId);
                 }
-                else if (!recvSegRequest(prodIndex)) {
+                else if (!recvSegRequest(prodId)) {
                     break; // EOF
                 }
             }
@@ -180,7 +180,7 @@ class PeerProto::Impl
     }
 
     bool recvProdInfo(
-            const ProdIndex prodIndex,
+            const ProdId prodId,
             const ProdSize  prodSize,
             const SegSize   nameLen)
     {
@@ -190,7 +190,7 @@ class PeerProto::Impl
             return false;
 
         std::string name(buf, nameLen);
-        ProdInfo    prodInfo{prodIndex, prodSize, name};
+        ProdInfo    prodInfo{prodId, prodSize, name};
         int         cancelState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
@@ -201,7 +201,7 @@ class PeerProto::Impl
     }
 
     bool recvTcpSeg(
-            const ProdIndex prodIndex,
+            const ProdId prodId,
             const ProdSize  prodSize,
             const SegSize   dataLen)
     {
@@ -210,7 +210,7 @@ class PeerProto::Impl
         if (!clntSock.read(segOffset))
             return false; // EOF
 
-        SegId   id{prodIndex, segOffset};
+        SegId   id{prodId, segOffset};
         SegInfo info{id, prodSize, dataLen};
         TcpSeg  seg{info, clntSock};
         int     cancelState;
@@ -233,17 +233,17 @@ class PeerProto::Impl
             for (;;) {
                 Flags     flags;
                 SegSize   varSize;
-                ProdIndex prodIndex;
+                ProdId prodId;
                 ProdSize  prodSize;
 
                 // The following perform network translation
                 if (!clntSock.read(flags) || !clntSock.read(varSize) ||
-                        !clntSock.read(prodIndex) || ! clntSock.read(prodSize))
+                        !clntSock.read(prodId) || ! clntSock.read(prodSize))
                     break; // EOF
 
                 if ((flags & FLAGS_PROD)
-                        ? !recvProdInfo(prodIndex, prodSize, varSize)
-                        : !recvTcpSeg(prodIndex, prodSize, varSize))
+                        ? !recvProdInfo(prodId, prodSize, varSize)
+                        : !recvTcpSeg(prodId, prodSize, varSize))
                     break; // EOF
             }
 
@@ -355,12 +355,12 @@ class PeerProto::Impl
     }
 
     void send(
-            const ProdIndex prodIndex,
-            TcpSock&        sock)
+            const ProdId prodId,
+            TcpSock&     sock)
     {
         sock.write(FLAGS_PROD); // Performs network translation
         sock.write(PAD);
-        sock.write(prodIndex);
+        sock.write(prodId);
     }
 
     void send(
@@ -369,7 +369,7 @@ class PeerProto::Impl
     {
         sock.write(FLAGS_SEG);
         sock.write(PAD);
-        sock.write(id.getProdIndex());
+        sock.write(id.getProdId());
         sock.write(id.getSegOffset());
     }
 
@@ -585,9 +585,9 @@ public:
         doneCond.notify_one();
     }
 
-    void notify(const ProdIndex prodIndex)
+    void notify(const ProdId prodId)
     {
-        send(prodIndex, noticeSock);
+        send(prodId, noticeSock);
     }
 
     void notify(const SegId& id)
@@ -595,14 +595,14 @@ public:
         send(id, noticeSock);
     }
 
-    void request(const ProdIndex prodIndex)
+    void request(const ProdId prodId)
     {
-        send(prodIndex, clntSock);
+        send(prodId, clntSock);
     }
 
-    void request(const SegId& id)
+    void request(const SegId segId)
     {
-        send(id, clntSock);
+        send(segId, clntSock);
     }
 
     void send(const ProdInfo& info)
@@ -619,7 +619,7 @@ public:
         srvrSock.write(name.data(), nameLen); // No network translation
     }
 
-    void send(MemSeg& seg)
+    void send(const MemSeg& seg)
     {
         const SegInfo& info = seg.getInfo();
         SegSize        segSize = info.getSegSize();
@@ -627,7 +627,7 @@ public:
         // The following perform host-to-network translation
         srvrSock.write(FLAGS_SEG);
         srvrSock.write(segSize);
-        srvrSock.write(info.getId().getProdIndex());
+        srvrSock.write(info.getId().getProdId());
         srvrSock.write(info.getProdSize());
         srvrSock.write(info.getId().getSegOffset());
 
@@ -680,9 +680,9 @@ void PeerProto::halt() const
     pImpl->halt();
 }
 
-void PeerProto::notify(const ProdIndex prodIndex) const
+void PeerProto::notify(const ProdId prodId) const
 {
-    pImpl->notify(prodIndex);
+    pImpl->notify(prodId);
 }
 
 void PeerProto::notify(const SegId& id) const
@@ -690,14 +690,14 @@ void PeerProto::notify(const SegId& id) const
     pImpl->notify(id);
 }
 
-void PeerProto::request(const ProdIndex prodIndex) const
+void PeerProto::request(const ProdId prodId) const
 {
-    pImpl->request(prodIndex);
+    pImpl->request(prodId);
 }
 
-void PeerProto::request(const SegId& id) const
+void PeerProto::request(const SegId segId) const
 {
-    pImpl->request(id);
+    pImpl->request(segId);
 }
 
 void PeerProto::send(const ProdInfo& prodInfo) const
@@ -705,9 +705,9 @@ void PeerProto::send(const ProdInfo& prodInfo) const
     pImpl->send(prodInfo);
 }
 
-void PeerProto::send(MemSeg& chunk) const
+void PeerProto::send(const MemSeg& memSeg) const
 {
-    pImpl->send(chunk);
+    pImpl->send(memSeg);
 }
 
 } // namespace

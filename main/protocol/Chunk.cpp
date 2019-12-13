@@ -20,20 +20,20 @@ namespace hycast {
 struct BopIdMsg {
     Flags     flags;
     SegSize   pad;
-    ProdIndex prodIndex;
+    ProdId prodIndex;
 };
 
 struct SegIdMsg {
     Flags     flags;
     SegSize   pad;
-    ProdIndex prodIndex;
+    ProdId prodIndex;
     ProdSize  segOffset;
 };
 
 struct BopMsg {
     Flags     flags;
     SegSize   nameLen;
-    ProdIndex prodIndex;
+    ProdId prodIndex;
     ProdSize  prodSize;
     char      name[];
 };
@@ -41,7 +41,7 @@ struct BopMsg {
 struct SegMsg {
     Flags     flags;
     SegSize   segSize;
-    ProdIndex prodIndex;
+    ProdId prodIndex;
     ProdSize  prodSize;
     ProdSize  segOffset;
     char      data[];
@@ -64,7 +64,7 @@ ChunkId::ChunkId(const Impl* impl)
 
 class BopId::Impl : public ChunkId::Impl
 {
-    ProdIndex index;
+    ProdId index;
 
 protected:
     bool operator ==(const Impl& rhs) const noexcept
@@ -73,11 +73,11 @@ protected:
     }
 
 public:
-    Impl(ProdIndex index)
+    Impl(ProdId index)
         : index{index}
     {}
 
-    ProdIndex getIndex() const noexcept
+    ProdId getIndex() const noexcept
     {
         return index;
     }
@@ -89,15 +89,15 @@ public:
 
     size_t hash() const noexcept
     {
-        return std::hash<ProdIndex>(index);
+        return std::hash<ProdId>(index);
     }
 };
 
-BopId::BopId(ProdIndex prodIndex)
+BopId::BopId(ProdId prodIndex)
     : ChunkId{new Impl(prodIndex)}
 {}
 
-ProdIndex BopId::getIndex() const noexcept
+ProdId BopId::getIndex() const noexcept
 {
     return static_cast<BopId::Impl*>(pImpl.get())->getIndex();
 }
@@ -143,10 +143,10 @@ protected:
     bool operator ==(const SegId& rhs) const noexcept;
 
 public:
-    SegId(  ProdIndex prodIndex,
+    SegId(  ProdId prodIndex,
             ProdSize  segOffset);
 
-    ProdIndex getProdIndex() const noexcept;
+    ProdId getProdIndex() const noexcept;
 
     ProdSize getSegOffset() const noexcept;
 

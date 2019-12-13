@@ -29,7 +29,7 @@ protected:
     std::mutex              mutex;
     std::condition_variable cond;
     bool                    ready;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
     hycast::SegSize         segSize;

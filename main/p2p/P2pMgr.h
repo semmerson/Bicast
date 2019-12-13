@@ -48,38 +48,21 @@ public:
     virtual void removed(Peer& peer) =0;
 
     /**
-     * Indicates if product-information should be requested.
+     * Indicates if a chunk should be requested.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] chunkId    Chunk Identifier
      * @retval    `true`     The chunk should be requested
      * @retval    `false`    The chunk should not be requested
      */
-    virtual bool shouldRequest(const ProdIndex prodIndex) =0;
+    virtual bool shouldRequest(const ChunkId chunkId) =0;
 
     /**
-     * Indicates if a data-segment should be requested.
+     * Returns a chunk.
      *
-     * @param[in] segId    Segment ID
-     * @retval    `true`   The chunk should be requested
-     * @retval    `false`  The chunk should not be requested
+     * @param[in] chunkId    Chunk Identifier
+     * @return               The chunk. Will test false if it doesn't exist.
      */
-    virtual bool shouldRequest(const SegId& segId) =0;
-
-    /**
-     * Returns product information.
-     *
-     * @param[in] prodIndex  Product index
-     * @return               The information. Will be empty if it doesn't exist.
-     */
-    virtual ProdInfo get(const ProdIndex prodIndex) =0;
-
-    /**
-     * Returns a data-segment.
-     *
-     * @param[in] id       ID of requested data-segment
-     * @return             The data-segment. Will be empty if it doesn't exist.
-     */
-    virtual MemSeg get(const SegId& id) =0;
+    virtual const Chunk& get(const ChunkId chunkId) =0;
 
     /**
      * Accepts product-information.
@@ -175,18 +158,11 @@ public:
     size_t size() const;
 
     /**
-     * Notifies all the managed peers about information on a data-product.
+     * Notifies all the managed peers about an available chunk.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] chunkId  Chunk identifier
      */
-    void notify(const ProdIndex prodIndex);
-
-    /**
-     * Notifies all the managed peers about an available data-segment.
-     *
-     * @param[in] id       ID of the data-segment
-     */
-    void notify(const SegId& id);
+    void notify(const ChunkId chunkId);
 
     /**
      * Halts execution of this instance. If called before `operator()`, then
