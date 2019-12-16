@@ -77,7 +77,7 @@ public:
         ASSERT_EQ(segSize, size);
 
         char buf[size];
-        seg.write(buf);
+        seg.read(buf);
 
         ASSERT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
 

@@ -329,6 +329,8 @@ public:
 
     virtual std::string to_string() const =0;
 
+    virtual void read(void* buf) const =0;
+
     virtual void save(Repository& repo) const =0;
 };
 
@@ -343,9 +345,9 @@ public:
     UdpSeg( const SegInfo& info,
             UdpSock&       sock);
 
-    std::string to_string() const;
+    std::string to_string() const override;
 
-    void write(void* buf) const;
+    void read(void* buf) const override;
 
     void save(Repository& repo) const override;
 };
@@ -361,9 +363,9 @@ public:
     TcpSeg( const SegInfo& info,
             TcpSock&       sock);
 
-    std::string to_string() const;
+    std::string to_string() const override;
 
-    void write(void* buf) const;
+    void read(void* buf) const override;
 
     void save(Repository& repo) const override;
 };

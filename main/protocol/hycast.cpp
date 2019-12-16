@@ -350,7 +350,7 @@ std::string UdpSeg::to_string() const
     return static_cast<Impl*>(pImpl.get())->to_string();
 }
 
-void UdpSeg::write(void* buf) const
+void UdpSeg::read(void* buf) const
 {
     return static_cast<Impl*>(pImpl.get())->write(buf);
 }
@@ -399,7 +399,7 @@ std::string TcpSeg::to_string() const
     return static_cast<Impl*>(pImpl.get())->to_string();
 }
 
-void TcpSeg::write(void* buf) const
+void TcpSeg::read(void* buf) const
 {
     return static_cast<Impl*>(pImpl.get())->write(buf);
 }
