@@ -93,11 +93,11 @@ public:
     /**
      * Sets the corresponding local peer.
      *
-     * @param[in] msgRcvr  Services messages from the remote peer
-     * @return             Reference to this instance
-     * @cancellationpoint  No
+     * @param[in] observer  Observes this instance
+     * @return              Reference to this instance
+     * @cancellationpoint   No
      */
-    const PeerProto& set(PeerProtoObs* msgRcvr) const;
+    const PeerProto& set(PeerProtoObs* observer) const;
 
     /**
      * Returns the socket address of the remote peer.

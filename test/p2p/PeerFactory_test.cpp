@@ -117,7 +117,7 @@ public:
     }
 
     // Sender-side
-    const hycast::Chunk& get(
+    const hycast::OutChunk& get(
             const hycast::ChunkId   chunkId,
             const hycast::SockAddr& rmtAddr)
     {

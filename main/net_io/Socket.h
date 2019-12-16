@@ -272,6 +272,10 @@ public:
             const int           iovCnt);
 
     /**
+     * Reads a UDP record sequentially (i.e., previously read bytes are
+     * skipped). When all bytes in the packet have been read, the packet is
+     * discarded. No network-to-host translation is performed.
+     *
      * @return  Number of new bytes read. 0 => EOF.
      */
     size_t read(

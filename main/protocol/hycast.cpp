@@ -16,22 +16,33 @@
 
 #include "error.h"
 #include "PeerProto.h"
+#include "Repository.h"
 
 namespace hycast {
 
-class Chunk::Impl
+class OutChunk::Impl
 {};
 
-Chunk::Chunk(Impl* impl)
+OutChunk::OutChunk(Impl* impl)
     : pImpl{impl}
-{}
-
-Chunk::~Chunk() noexcept
 {}
 
 /******************************************************************************/
 
-class ProdInfo::Impl final : public Chunk::Impl
+class InChunk::Impl
+{};
+
+InChunk::InChunk()
+    : pImpl{}
+{}
+
+InChunk::InChunk(Impl* impl)
+    : pImpl{impl}
+{}
+
+/******************************************************************************/
+
+class ProdInfo::Impl final : public OutChunk::Impl, public InChunk::Impl
 {
     const ProdId      prodId;
     const ProdSize    size;
@@ -71,37 +82,45 @@ public:
 
 /******************************************************************************/
 
+/******************************************************************************/
+
 ProdInfo::ProdInfo(
         const ProdId       prodId,
         const ProdSize     size,
         const std::string& name)
-    : Chunk{new Impl(prodId, size, name)}
+    : OutChunk(new Impl(prodId, size, name))
 {}
 
 ProdId ProdInfo::getIndex() const
 {
-    return static_cast<Impl*>(pImpl.get())->getIndex();
+    return static_cast<Impl*>(OutChunk::pImpl.get())->getIndex();
 }
 
 ProdSize ProdInfo::getSize() const
 {
-    return static_cast<Impl*>(pImpl.get())->getSize();
+    return static_cast<Impl*>(OutChunk::pImpl.get())->getSize();
 }
 
 const std::string& ProdInfo::getName() const
 {
-    return static_cast<Impl*>(pImpl.get())->getName();
+    return static_cast<Impl*>(OutChunk::pImpl.get())->getName();
 }
 
 bool ProdInfo::operator ==(const ProdInfo& rhs) const
 {
-    return *static_cast<Impl*>(pImpl.get()) ==
-            *static_cast<Impl*>(rhs.pImpl.get());
+    return *static_cast<Impl*>(OutChunk::pImpl.get()) ==
+            *static_cast<Impl*>(rhs.OutChunk::pImpl.get());
 }
 
 void ProdInfo::send(PeerProto& proto) const
 {
     proto.send(*this);
+}
+
+void ProdInfo::save(Repository& repo) const
+{
+    throw LOGIC_ERROR("Not implemented yet");
+    //repo.save(*this);
 }
 
 /******************************************************************************/
@@ -167,7 +186,7 @@ void ChunkId::request(PeerProto& peerProto) const
 
 /******************************************************************************/
 
-class MemSeg::Impl final : public Chunk::Impl
+class MemSeg::Impl final : public OutChunk::Impl
 {
     const SegInfo info;
     const void*   data;
@@ -213,7 +232,7 @@ public:
 MemSeg::MemSeg(
         const SegInfo& info,
         const void*    data)
-    : Chunk(new Impl(info, data))
+    : OutChunk(new Impl(info, data))
 {}
 
 const SegInfo& MemSeg::getInfo() const
@@ -277,8 +296,6 @@ public:
     }
 
     virtual std::string to_string() const =0;
-
-    virtual void write(void* data) =0;
 };
 
 SockSeg::SockSeg(Impl* impl)
@@ -314,13 +331,11 @@ public:
                 sock.to_string() + "}";
     }
 
-    void write(void* data)
+    void write(void* buf)
     {
-        auto nbytes = info.getSegSize();
-        auto nread = sock.read(data, info.getSegSize());
-
-        if (nread != nbytes)
-            throw RUNTIME_ERROR("Couldn't read segment data");
+        const auto nbytes = getInfo().getSegSize();
+        if (sock.read(buf, nbytes) != nbytes)
+            throw EOF_ERROR();
     }
 };
 
@@ -335,9 +350,15 @@ std::string UdpSeg::to_string() const
     return static_cast<Impl*>(pImpl.get())->to_string();
 }
 
-void UdpSeg::write(void* data) const
+void UdpSeg::write(void* buf) const
 {
-    static_cast<Impl*>(pImpl.get())->write(data);
+    return static_cast<Impl*>(pImpl.get())->write(buf);
+}
+
+void UdpSeg::save(Repository& repo) const
+{
+    throw LOGIC_ERROR("Not implemented yet");
+    //repo.save(*this);
 }
 
 /******************************************************************************/
@@ -359,9 +380,11 @@ public:
                 sock.to_string() + "}";
     }
 
-    void write(void* data)
+    void write(void* buf)
     {
-        sock.read(data, info.getSegSize());
+        const auto nbytes = getInfo().getSegSize();
+        if (sock.read(buf, nbytes) != nbytes)
+            throw EOF_ERROR();
     }
 };
 
@@ -376,9 +399,15 @@ std::string TcpSeg::to_string() const
     return static_cast<Impl*>(pImpl.get())->to_string();
 }
 
-void TcpSeg::write(void* data) const
+void TcpSeg::write(void* buf) const
 {
-    static_cast<Impl*>(pImpl.get())->write(data);
+    return static_cast<Impl*>(pImpl.get())->write(buf);
+}
+
+void TcpSeg::save(Repository& repo) const
+{
+    throw LOGIC_ERROR("Not implemented yet");
+    //repo.save(*this);
 }
 
 } // namespace

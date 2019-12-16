@@ -31,6 +31,7 @@ typedef uint32_t ProdSize;
 /******************************************************************************/
 
 class PeerProto;
+class Repository;
 
 class Chunk
 {
@@ -39,6 +40,9 @@ public:
 
 protected:
     std::shared_ptr<Impl> pImpl;
+
+    Chunk()
+    {}
 
     Chunk(Impl* impl);
 
@@ -49,13 +53,58 @@ public:
     {
         return (bool)pImpl;
     }
+};
+
+/**
+ * A chunk that is sent to a remote peer.
+ */
+class OutChunk
+{
+public:
+    class Impl;
+
+protected:
+    std::shared_ptr<Impl> pImpl;
+
+    OutChunk(Impl* impl);
+
+public:
+    virtual ~OutChunk() noexcept
+    {}
+
+    operator bool() const
+    {
+        return (bool)pImpl;
+    }
 
     virtual void send(PeerProto& proto) const =0;
 };
 
+/**
+ * A chunk that is received from a remote peer.
+ */
+class InChunk
+{
+public:
+    class Impl;
+
+protected:
+    std::shared_ptr<Impl> pImpl;
+
+    InChunk(); // For `prodInfo` construction
+
+    InChunk(Impl* impl);
+
+public:
+    virtual ~InChunk() noexcept
+    {}
+
+    virtual void save(Repository& repo) const =0;
+};
+
 /******************************************************************************/
 
-class ProdInfo final : public Chunk
+class ProdInfo final : virtual public OutChunk, virtual public InChunk
 {
     class Impl;
 
@@ -72,11 +121,6 @@ public:
             ProdSize           size,
             const std::string& name);
 
-    operator bool()
-    {
-        return (bool)pImpl;
-    }
-
     ProdId getIndex() const;
 
     ProdSize getSize() const;
@@ -86,6 +130,8 @@ public:
     bool operator ==(const ProdInfo& rhs) const;
 
     void send(PeerProto& proto) const;
+
+    void save(Repository& repo) const;
 };
 
 /******************************************************************************/
@@ -238,18 +284,13 @@ public:
 /**
  * Data-segment that resides in memory.
  */
-class MemSeg final : public Chunk
+class MemSeg final : public OutChunk
 {
-    class                 Impl;
+    class Impl;
 
 public:
     MemSeg(const SegInfo& info,
            const void*    data);
-
-    operator bool()
-    {
-        return (bool)pImpl;
-    }
 
     const SegInfo& getInfo() const;
 
@@ -269,7 +310,7 @@ public:
 /******************************************************************************/
 
 /**
- * Abstract data-segment from a socket
+ * Abstract, socket-based data-segment.
  */
 class SockSeg
 {
@@ -288,7 +329,7 @@ public:
 
     virtual std::string to_string() const =0;
 
-    virtual void write(void* data) const =0;
+    virtual void save(Repository& repo) const =0;
 };
 
 /**
@@ -304,7 +345,9 @@ public:
 
     std::string to_string() const;
 
-    void write(void* data) const override;
+    void write(void* buf) const;
+
+    void save(Repository& repo) const override;
 };
 
 /**
@@ -320,7 +363,9 @@ public:
 
     std::string to_string() const;
 
-    void write(void* data) const override;
+    void write(void* buf) const;
+
+    void save(Repository& repo) const override;
 };
 
 } // namespace

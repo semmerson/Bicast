@@ -5,5 +5,4 @@ libhycast_la_SOURCES	= dummy.h
 libhycast_la_LIBADD	= misc/lib.la \
 			  net_io/lib.la \
 			  protocol/lib.la \
-			  p2p/lib.la \
-			  repository/lib.la
+			  p2p/lib.la

@@ -144,7 +144,7 @@ public:
     }
 
     // Sender-side
-    const hycast::Chunk& get(const hycast::ChunkId chunkId)
+    const hycast::OutChunk& get(const hycast::ChunkId chunkId)
     {
         if (chunkId.isProdId()) {
             EXPECT_EQ(prodId, chunkId.getProdId());

@@ -54,7 +54,7 @@ public:
      * @param[in] rmtAddr    Address of remote peer
      * @return               The chunk will test false if it doesn't exist.
      */
-    virtual const Chunk& get(
+    virtual const OutChunk& get(
             const ChunkId   chunkId,
             const SockAddr& rmtAddr) =0;
 

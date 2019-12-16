@@ -13,14 +13,12 @@
 #ifndef MAIN_REPOSITORY_REPOSITORY_H_
 #define MAIN_REPOSITORY_REPOSITORY_H_
 
-#include "PeerMsgRcvr.h"
-
 #include <memory>
 #include <string>
 
 namespace hycast {
 
-class Repository : public PeerObs
+class Repository
 {
 protected:
     class                 Impl;
@@ -33,58 +31,31 @@ public:
      * Constructs.
      *
      * @param[in] rootPath   Pathname of the root of the repository
-     * @param[in] chunkSize  Size of data-segments in bytes
+     * @param[in] chunkSize  Canonical size of data-segments in bytes
      */
     Repository(
             const std::string& rootPath,
-            ChunkSize          segSize);
+            SegSize            segSize);
 
     /**
-     * Indicates if a chunk should be requested from a peer.
+     * Saves product information.
      *
-     * @param[in] chunkId  ID of `Chunk`
-     * @param[in] rmtAddr  Socket address of remote peer
-     * @retval    `true`   Chunk should be requested from the remote peer
-     * @retval    `false`  Chunk should not be requested from the remote peer
-     */
-    bool shouldRequest(
-            const ChunkId&  chunkId,
-            const SockAddr& rmtAddr);
-
-    /**
-     * Obtains a chunk for a remote peer.
-     *
-     * @param[in] chunkId  ID of requested `Chunk`
-     * @param[in] rmtAddr  Socket address of remote peer
-     * @return             The chunk. Will be empty if it doesn't exist.
-     */
-    MemChunk get(
-            const ChunkId&  chunkId,
-            const SockAddr& rmtAddr);
-
-    /**
-     * Accepts a multicast chunk.
-     *
-     * @param[in] chunk    Chunk
-     * @retval    `true`   Chunk was accepted
-     * @retval    `false`  Chunk was previously accepted
+     * @param[in] prodInfo  Product information
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    bool hereIs(UdpChunk chunk) const;
+    void save(const ProdInfo& prodInfo) const;
 
     /**
-     * Accepts a chunk from a peer.
+     * Saves a socket-based data-segment.
      *
-     * @param[in] chunk    Chunk
-     * @retval    `true`   Chunk was accepted
-     * @retval    `false`  Chunk was previously accepted
+     * @param[in] sockSeg  Socket-based data-segment
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    bool hereIs(TcpChunk chunk) const;
+    void save(const SockSeg& sockSeg) const;
 };
 
 } // namespace

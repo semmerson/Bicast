@@ -247,7 +247,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const Chunk& chunk(peerObs.get(chunkId, rmtAddr));
+            const auto& chunk = peerObs.get(chunkId, rmtAddr);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (chunk) {

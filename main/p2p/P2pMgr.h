@@ -62,7 +62,7 @@ public:
      * @param[in] chunkId    Chunk Identifier
      * @return               The chunk. Will test false if it doesn't exist.
      */
-    virtual const Chunk& get(const ChunkId chunkId) =0;
+    virtual const OutChunk& get(const ChunkId chunkId) =0;
 
     /**
      * Accepts product-information.

@@ -619,7 +619,7 @@ public:
      * @param[in] rmtAddr    Socket address of the remote peer
      * @return               The information. Will be empty if it doesn't exist.
      */
-    const Chunk& get(
+    const OutChunk& get(
             const ChunkId   chunkId,
             const SockAddr& rmtAddr)
     {

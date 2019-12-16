@@ -180,9 +180,9 @@ class PeerProto::Impl
     }
 
     bool recvProdInfo(
-            const ProdId prodId,
-            const ProdSize  prodSize,
-            const SegSize   nameLen)
+            const ProdId   prodId,
+            const ProdSize prodSize,
+            const SegSize  nameLen)
     {
         char buf[nameLen];
 
@@ -231,10 +231,10 @@ class PeerProto::Impl
             LOG_DEBUG("Receiving data");
 
             for (;;) {
-                Flags     flags;
-                SegSize   varSize;
-                ProdId prodId;
-                ProdSize  prodSize;
+                Flags    flags;
+                SegSize  varSize;
+                ProdId   prodId;
+                ProdSize prodSize;
 
                 // The following perform network translation
                 if (!clntSock.read(flags) || !clntSock.read(varSize) ||
@@ -510,9 +510,9 @@ public:
         }
     }
 
-    Impl& set(PeerProtoObs* const msgRcvr)
+    Impl& set(PeerProtoObs* const observer)
     {
-        this->observer = msgRcvr;
+        this->observer = observer;
         return *this;
     }
 
@@ -649,9 +649,9 @@ PeerProto::PeerProto(const SockAddr& rmtSrvrAddr)
     : PeerProto{new Impl(rmtSrvrAddr)}
 {}
 
-const PeerProto& PeerProto::set(PeerProtoObs* const msgRcvr) const
+const PeerProto& PeerProto::set(PeerProtoObs* const observer) const
 {
-    pImpl->set(msgRcvr);
+    pImpl->set(observer);
     return *this;
 }
 
