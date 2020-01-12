@@ -208,7 +208,7 @@ public:
         requestQueue.push(chunkId);
     }
 
-    void request(const ProdId prodId)
+    void request(const ProdIndex prodId)
     {
         requestQueue.push(prodId);
     }
@@ -258,8 +258,8 @@ public:
 
     void accept(const ProdInfo& prodInfo)
     {
-        LOG_DEBUG("Accepting information on product %lu",
-                static_cast<unsigned long>(prodInfo.getIndex()));
+        LOG_DEBUG("Accepting information on product %s",
+                prodInfo.getProdIndex().to_string().data());
 
         int entryState;
 
@@ -349,7 +349,7 @@ void Peer::request(const ChunkId chunkId) const
     pImpl->request(chunkId);
 }
 
-void Peer::request(const ProdId prodId) const
+void Peer::request(const ProdIndex prodId) const
 {
     pImpl->request(prodId);
 }

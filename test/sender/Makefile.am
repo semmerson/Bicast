@@ -1,7 +1,9 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc \
 		  -I$(top_srcdir)/main/net_io \
 		  -I$(top_srcdir)/main/protocol \
-		  -I$(top_srcdir)/main/repository
+		  -I$(top_srcdir)/main/p2p \
+		  -I$(top_srcdir)/main/repository \
+		  -I$(top_srcdir)/main/sender
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 CLEANFILES	= callgrind.out *.log *.vg *.supp
 
@@ -10,15 +12,14 @@ all:
 SUFFIXES: .i .cpp
 .cpp.i:
 	$(CXXCOMPILE) $(AM_CXXFLAGS) -E -o $@ $<
-	      
+
+check_PROGRAMS		= Sender_test
+
+Sender_test_SOURCES	= Sender_test.cpp
+
+TESTS			= $(check_PROGRAMS)
+
 SUFFIXES:	.vg .sup .supp
-
-check_PROGRAMS	= ProdFile_test Repository_test
-
-Repository_test_SOURCES		= Repository_test.cpp
-ProdFile_test_SOURCES		= ProdFile_test.cpp
-
-TESTS	= $(check_PROGRAMS)
 
 # Precursor to Valgrind suppression file
 %.supp:	%

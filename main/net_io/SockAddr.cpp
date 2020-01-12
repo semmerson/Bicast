@@ -84,7 +84,6 @@ public:
         return inetAddr;
     }
 
-
     /**
      * Returns a socket appropriate to this instance's address family.
      *

@@ -48,7 +48,7 @@ protected:
     std::condition_variable cond;
     hycast::SockAddr        srvrAddr;
     hycast::PortPool        portPool;
-    hycast::ProdId       prodIndex;
+    hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
     hycast::SegSize         segSize;
@@ -101,8 +101,8 @@ protected:
 public:
     void acceptNotice(hycast::ChunkId chunkId)
     {
-        if (chunkId.isProdId()) {
-            EXPECT_EQ(prodIndex, chunkId.getProdId());
+        if (chunkId.isProdIndex()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdIndex());
             orState(PROD_NOTICE_RCVD);
         }
         else {
@@ -113,8 +113,8 @@ public:
 
     void acceptRequest(hycast::ChunkId chunkId)
     {
-        if (chunkId.isProdId()) {
-            EXPECT_EQ(prodIndex, chunkId.getProdId());
+        if (chunkId.isProdIndex()) {
+            EXPECT_EQ(prodIndex, chunkId.getProdIndex());
             orState(PROD_REQUEST_RCVD);
         }
         else {

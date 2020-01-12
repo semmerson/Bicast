@@ -1,7 +1,7 @@
 /**
  * The types involved in network exchanges.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
@@ -18,13 +18,27 @@
 #include "PeerProto.h"
 #include "Repository.h"
 
+#include <cstring>
+
 namespace hycast {
+
+/******************************************************************************/
+
+std::string ProdIndex::to_string() const
+{
+    return std::to_string(index);
+}
+
+/******************************************************************************/
 
 class OutChunk::Impl
 {};
 
 OutChunk::OutChunk(Impl* impl)
     : pImpl{impl}
+{}
+
+void OutChunk::send(PeerProto& proto) const
 {}
 
 /******************************************************************************/
@@ -44,22 +58,22 @@ InChunk::InChunk(Impl* impl)
 
 class ProdInfo::Impl final : public OutChunk::Impl, public InChunk::Impl
 {
-    const ProdId      prodId;
+    const ProdIndex   prodIndex;
     const ProdSize    size;
     const std::string name;
 
 public:
-    Impl(   const ProdId       prodId,
+    Impl(   const ProdIndex    prodIndex,
             const ProdSize     size,
             const std::string& name)
-        : prodId{prodId}
+        : prodIndex{prodIndex}
         , size{size}
         , name{name}
     {}
 
-    ProdId getIndex() const
+    ProdIndex getIndex() const
     {
-        return prodId;
+        return prodIndex;
     }
 
     ProdSize getSize() const
@@ -72,9 +86,15 @@ public:
         return name;
     }
 
-    bool operator ==(const Impl& rhs) const
+    std::string to_string() const
     {
-        return prodId == rhs.prodId &&
+        return "{name: " + name + ", index: " + prodIndex.to_string() +
+                ", size: " + std::to_string(size) + "}";
+    }
+
+    bool operator ==(const Impl& rhs) const noexcept
+    {
+        return prodIndex == rhs.prodIndex &&
                size == rhs.size &&
                name == rhs.name;
     }
@@ -84,14 +104,23 @@ public:
 
 /******************************************************************************/
 
-ProdInfo::ProdInfo(
-        const ProdId       prodId,
-        const ProdSize     size,
-        const std::string& name)
-    : OutChunk(new Impl(prodId, size, name))
+ProdInfo::ProdInfo()
+    : OutChunk(nullptr)
 {}
 
-ProdId ProdInfo::getIndex() const
+ProdInfo::ProdInfo(
+        const ProdIndex    prodIndex,
+        const ProdSize     size,
+        const std::string& name)
+    : OutChunk(new Impl(prodIndex, size, name))
+{}
+
+ProdInfo::operator bool() const noexcept
+{
+    return static_cast<bool>(OutChunk::pImpl);
+}
+
+ProdIndex ProdInfo::getProdIndex() const
 {
     return static_cast<Impl*>(OutChunk::pImpl.get())->getIndex();
 }
@@ -106,7 +135,12 @@ const std::string& ProdInfo::getName() const
     return static_cast<Impl*>(OutChunk::pImpl.get())->getName();
 }
 
-bool ProdInfo::operator ==(const ProdInfo& rhs) const
+std::string ProdInfo::to_string() const
+{
+    return static_cast<Impl*>(OutChunk::pImpl.get())->to_string();
+}
+
+bool ProdInfo::operator ==(const ProdInfo& rhs) const noexcept
 {
     return *static_cast<Impl*>(OutChunk::pImpl.get()) ==
             *static_cast<Impl*>(rhs.OutChunk::pImpl.get());
@@ -127,7 +161,7 @@ void ProdInfo::save(Repository& repo) const
 
 std::string SegId::to_string() const
 {
-    return "{prodId: " + std::to_string(prodId) + ", segOffset: " +
+    return "{prodId: " + prodIndex.to_string() + ", segOffset: " +
             std::to_string(segOffset) + "}";
 }
 
@@ -145,23 +179,23 @@ std::string SegInfo::to_string() const
 bool ChunkId::operator ==(const ChunkId& rhs) const
 {
     return isProd
-            ? id.prodId == rhs.id.prodId
+            ? id.prodIndex == rhs.id.prodIndex
             : id.segId == rhs.id.segId;
 }
 
 std::string ChunkId::to_string() const
 {
     return isProd
-            ? std::to_string(id.prodId)
+            ? id.prodIndex.to_string()
             : id.segId.to_string();
 }
 
 void ChunkId::notify(PeerProto& peerProto) const
 {
     if (isProd) {
-        LOG_DEBUG("Notifying about product %lu",
-                static_cast<unsigned long>(id.prodId));
-        peerProto.notify(id.prodId);
+        LOG_DEBUG("Notifying about product %s",
+                id.prodIndex.to_string().data());
+        peerProto.notify(id.prodIndex);
     }
     else {
         LOG_DEBUG("Notifying about segment %s",
@@ -173,9 +207,9 @@ void ChunkId::notify(PeerProto& peerProto) const
 void ChunkId::request(PeerProto& peerProto) const
 {
     if (isProd) {
-        LOG_DEBUG("Requesting information about product %lu",
-                static_cast<unsigned long>(id.prodId));
-        peerProto.request(id.prodId);
+        LOG_DEBUG("Requesting information about product %s",
+                id.prodIndex.to_string().data());
+        peerProto.request(id.prodIndex);
     }
     else {
         LOG_DEBUG("Requesting segment %s",
@@ -183,6 +217,25 @@ void ChunkId::request(PeerProto& peerProto) const
         peerProto.request(id.segId);
     }
 }
+
+OutChunk ChunkId::get(Repository& repo) const
+{
+    if (isProd) {
+        LOG_DEBUG("Getting information on product %s",
+                id.prodIndex.to_string().data());
+        return repo.getProdInfo(id.prodIndex);
+    }
+    else {
+        LOG_DEBUG("Getting data-segment %s",
+                id.segId.to_string().c_str());
+        return repo.getMemSeg(id.segId);
+    }
+}
+
+/******************************************************************************/
+
+DataSeg::~DataSeg() noexcept
+{}
 
 /******************************************************************************/
 
@@ -198,9 +251,14 @@ public:
         , data{data}
     {}
 
-    const SegInfo& getInfo() const
+    const SegInfo& getInfo() const noexcept
     {
         return info;
+    }
+
+    const SegId& getSegId() const noexcept
+    {
+        return info.getId();
     }
 
     const void* getData() const
@@ -213,9 +271,9 @@ public:
         return info.getSegSize();
     }
 
-    ProdId getProdIndex() const
+    ProdIndex getProdId() const noexcept
     {
-        return info.getId().getProdId();
+        return info.getId().getProdIndex();
     }
 
     ProdSize getProdSize() const
@@ -227,7 +285,28 @@ public:
     {
         return info.getId().getSegOffset();
     }
+
+    bool operator ==(const Impl& rhs) const
+    {
+        return info == rhs.info &&
+                ::memcmp(data, rhs.data, info.getSegSize()) == 0;
+    }
+
+    void writeData(
+            void* const   data,
+            const SegSize nbytes) const
+    {
+        if (nbytes > info.getSegSize())
+            throw INVALID_ARGUMENT("Requested amount is greater than available "
+                    "amount: {req: " + std::to_string(nbytes) + ", avail: " +
+                    std::to_string(info.getSegSize()));
+        ::memcpy(data, this->data, nbytes);
+    }
 };
+
+MemSeg::MemSeg()
+    : OutChunk{nullptr}
+{}
 
 MemSeg::MemSeg(
         const SegInfo& info,
@@ -235,9 +314,14 @@ MemSeg::MemSeg(
     : OutChunk(new Impl(info, data))
 {}
 
-const SegInfo& MemSeg::getInfo() const
+const SegInfo& MemSeg::getSegInfo() const noexcept
 {
     return static_cast<Impl*>(pImpl.get())->getInfo();
+}
+
+const SegId& MemSeg::getSegId() const noexcept
+{
+    return static_cast<Impl*>(pImpl.get())->getSegId();
 }
 
 const void* MemSeg::getData() const
@@ -250,9 +334,9 @@ SegSize MemSeg::getSegSize() const
     return static_cast<Impl*>(pImpl.get())->getSegSize();
 }
 
-ProdId MemSeg::getProdIndex() const
+ProdIndex MemSeg::getProdIndex() const noexcept
 {
-    return static_cast<Impl*>(pImpl.get())->getProdIndex();
+    return static_cast<Impl*>(pImpl.get())->getProdId();
 }
 
 ProdSize MemSeg::getProdSize() const
@@ -260,14 +344,30 @@ ProdSize MemSeg::getProdSize() const
     return static_cast<Impl*>(pImpl.get())->getProdSize();
 }
 
-ProdSize MemSeg::getSegOffset() const
+ProdSize MemSeg::getSegOffset() const noexcept
 {
     return static_cast<Impl*>(pImpl.get())->getSegOffset();
+}
+
+bool MemSeg::operator ==(const MemSeg& rhs) const noexcept
+{
+    return *static_cast<Impl*>(pImpl.get()) ==
+            *static_cast<Impl*>(rhs.pImpl.get());
 }
 
 void MemSeg::send(PeerProto& proto) const
 {
     proto.send(*this);
+}
+
+ProdSize MemSeg::getOffset() const noexcept
+{
+    return getSegOffset();
+}
+
+void MemSeg::writeData(void* data, SegSize nbytes) const
+{
+    static_cast<Impl*>(pImpl.get())->writeData(data, nbytes);
 }
 
 /******************************************************************************/
@@ -285,14 +385,19 @@ public:
     virtual ~Impl()
     {}
 
-    const SegInfo& getInfo() const
+    const SegInfo& getSegInfo() const noexcept
     {
         return info;
     }
 
-    const SegId& getId() const
+    const SegId& getSegId() const noexcept
     {
         return info.getId();
+    }
+
+    ProdIndex getProdId() const noexcept
+    {
+        return info.getId().getProdIndex();
     }
 
     virtual std::string to_string() const =0;
@@ -302,14 +407,19 @@ SockSeg::SockSeg(Impl* impl)
     : pImpl{impl}
 {}
 
-const SegInfo& SockSeg::getInfo() const
+const SegInfo& SockSeg::getSegInfo() const noexcept
 {
-    return pImpl->getInfo();
+    return pImpl->getSegInfo();
 }
 
-const SegId& SockSeg::getId() const
+const SegId& SockSeg::getSegId() const noexcept
 {
-    return pImpl->getId();
+    return pImpl->getSegId();
+}
+
+ProdIndex SockSeg::getProdIndex() const noexcept
+{
+    return pImpl->getProdId();
 }
 
 /******************************************************************************/
@@ -333,7 +443,20 @@ public:
 
     void write(void* buf)
     {
-        const auto nbytes = getInfo().getSegSize();
+        const auto nbytes = getSegInfo().getSegSize();
+        if (sock.read(buf, nbytes) != nbytes)
+            throw EOF_ERROR();
+    }
+
+    ProdSize getOffset() const noexcept
+    {
+        return info.getId().getSegOffset();
+    }
+
+    void writeData(
+            void*         buf,
+            const SegSize nbytes)
+    {
         if (sock.read(buf, nbytes) != nbytes)
             throw EOF_ERROR();
     }
@@ -361,6 +484,18 @@ void UdpSeg::save(Repository& repo) const
     //repo.save(*this);
 }
 
+ProdSize UdpSeg::getOffset() const noexcept
+{
+    return static_cast<Impl*>(pImpl.get())->getOffset();
+}
+
+void UdpSeg::writeData(
+        void*   data,
+        SegSize nbytes) const
+{
+    return static_cast<Impl*>(pImpl.get())->writeData(data, nbytes);
+}
+
 /******************************************************************************/
 
 class TcpSeg::Impl final : public SockSeg::Impl
@@ -382,7 +517,20 @@ public:
 
     void write(void* buf)
     {
-        const auto nbytes = getInfo().getSegSize();
+        const auto nbytes = getSegInfo().getSegSize();
+        if (sock.read(buf, nbytes) != nbytes)
+            throw EOF_ERROR();
+    }
+
+    ProdSize getOffset() const noexcept
+    {
+        return info.getId().getSegOffset();
+    }
+
+    void writeData(
+            void*         buf,
+            const SegSize nbytes)
+    {
         if (sock.read(buf, nbytes) != nbytes)
             throw EOF_ERROR();
     }
@@ -410,7 +558,26 @@ void TcpSeg::save(Repository& repo) const
     //repo.save(*this);
 }
 
+ProdSize TcpSeg::getOffset() const noexcept
+{
+    return static_cast<Impl*>(pImpl.get())->getOffset();
+}
+
+void TcpSeg::writeData(
+        void*   data,
+        SegSize nbytes) const
+{
+    return static_cast<Impl*>(pImpl.get())->writeData(data, nbytes);
+}
+
+SockSeg::~SockSeg()
+{}
+
 } // namespace
 
-hycast::SockSeg::~SockSeg() {
+namespace std {
+    string to_string(const hycast::ProdInfo& prodInfo)
+    {
+        return prodInfo.to_string();
+    }
 }

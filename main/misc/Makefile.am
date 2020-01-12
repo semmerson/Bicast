@@ -14,6 +14,7 @@ lib_la_SOURCES 	= \
 	error.cpp	error.h \
 			DelayQueue.h \
 			FixedDelayQueue.h \
+	FileUtil.cpp    FileUtil.h \
 	MapOfLists.cpp	MapOfLists.h \
 	Thread.h	Thread.cpp \
 	Future.cpp	Future.h \
@@ -29,3 +30,7 @@ lib_la_SOURCES 	= \
 # Compiler options. Here we are adding the include directory
 # to be searched for headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/..
+	      
+SUFFIXES: .i .cpp
+.cpp.i:
+	$(COMPILE) $(AM_CXXFLAGS) -E -o $@ $<

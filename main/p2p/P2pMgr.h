@@ -30,57 +30,83 @@ class P2pMgr; // Forward declaration
 class P2pMgrObs
 {
 public:
-    virtual ~P2pMgrObs() noexcept
-    {}
+    virtual ~P2pMgrObs() noexcept =0;
 
     /**
-     * Accepts notification that a local peer has been added.
+     * Accepts notification that a local peer has been added. This
+     * implementation throws an exception.
      *
-     * @param[in] peer  The local peer
+     * @param[in] peer        Local peer
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual void added(Peer& peer) =0;
+    virtual void added(Peer& peer)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 
     /**
-     * Accepts notification that a local peer has been removed.
+     * Accepts notification that a local peer has been removed. This
+     * implementation throws an exception.
      *
-     * @param[in] peer  The local peer
+     * @param[in] peer        Local peer
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual void removed(Peer& peer) =0;
+    virtual void removed(Peer& peer)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 
     /**
-     * Indicates if a chunk should be requested.
+     * Indicates if a chunk should be requested. This implementation throws an
+     * exception.
      *
      * @param[in] chunkId    Chunk Identifier
      * @retval    `true`     The chunk should be requested
      * @retval    `false`    The chunk should not be requested
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual bool shouldRequest(const ChunkId chunkId) =0;
+    virtual bool shouldRequest(const ChunkId& chunkId)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 
     /**
-     * Returns a chunk.
+     * Returns a chunk. This implementation throws an exception.
      *
-     * @param[in] chunkId    Chunk Identifier
-     * @return               The chunk. Will test false if it doesn't exist.
+     * @param[in] chunkId     Chunk Identifier
+     * @return                The chunk. Will test false if it doesn't exist.
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual const OutChunk& get(const ChunkId chunkId) =0;
+    virtual const OutChunk get(const ChunkId& chunkId)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 
     /**
-     * Accepts product-information.
+     * Accepts product-information. This implementation throws an exception.
      *
-     * @param[in] prodInfo  Product information
-     * @retval    `true`    Product information was accepted
-     * @retval    `false`   Product information was previously accepted
+     * @param[in] prodInfo    Product information
+     * @retval    `true`      Product information was accepted
+     * @retval    `false`     Product information was previously accepted
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual bool hereIs(const ProdInfo& prodInfo) =0;
+    virtual bool hereIs(const ProdInfo& prodInfo)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 
     /**
-     * Accepts a data-segment.
+     * Accepts a data-segment. This implementation throws an exception.
      *
-     * @param[in] tcpSeg   TCP-based data-segment
-     * @retval    `true`   Chunk was accepted
-     * @retval    `false`  Chunk was previously accepted
+     * @param[in] tcpSeg      TCP-based data-segment
+     * @retval    `true`      Chunk was accepted
+     * @retval    `false`     Chunk was previously accepted
+     * @throws    logicError  Shouldn't have been called
      */
-    virtual bool hereIs(TcpSeg& tcpSeg) =0;
+    virtual bool hereIs(TcpSeg& tcpSeg)
+    {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
 };
 
 /**

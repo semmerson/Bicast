@@ -13,6 +13,7 @@
 #ifndef MAIN_HYCAST_H_
 #define MAIN_HYCAST_H_
 
+#include "error.h"
 #include "Socket.h"
 
 #include <climits>
@@ -23,10 +24,91 @@
 
 namespace hycast {
 
-typedef uint16_t Flags;
 typedef uint16_t SegSize;
-typedef uint32_t ProdId;
 typedef uint32_t ProdSize;
+
+/******************************************************************************/
+
+class ProdIndex
+{
+public:
+    typedef uint32_t ValueType;
+
+    ProdIndex() noexcept
+        : index{0}
+    {}
+
+    ProdIndex(const ValueType index)
+        : index{index}
+    {
+        if (index == 0)
+            throw INVALID_ARGUMENT("Can't explicitly initialize index to zero");
+    }
+
+    ProdIndex& operator =(const ProdIndex& rhs)
+    {
+        index = rhs.index;
+        return *this;
+    }
+
+    operator bool() const noexcept
+    {
+        return index != 0;
+    }
+
+    ValueType getValue() const noexcept
+    {
+        return index;
+    }
+
+    size_t hash() const noexcept
+    {
+        return index;
+    }
+
+    std::string to_string() const;
+
+    bool operator ==(const ProdIndex rhs) const noexcept
+    {
+        return index == rhs.index;
+    }
+
+private:
+    ValueType index;
+};
+
+/******************************************************************************/
+
+class Flags
+{
+public:
+    typedef uint16_t flags_t;
+
+private:
+    static const flags_t SEG = 0;  // Identifies data-segment chunk
+    static const flags_t PROD = 1; // Identifies product chunk
+
+public:
+    inline static bool isProd(flags_t val)
+    {
+        return val & PROD;
+    }
+
+    inline static bool isSeg(flags_t val)
+    {
+        return !isProd(val);
+    }
+
+    inline static flags_t getProd()
+    {
+        return PROD;
+    }
+
+    inline static flags_t getSeg()
+    {
+        return SEG;
+    }
+};
 
 /******************************************************************************/
 
@@ -60,10 +142,8 @@ public:
  */
 class OutChunk
 {
-public:
-    class Impl;
-
 protected:
+    class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
     OutChunk(Impl* impl);
@@ -74,10 +154,10 @@ public:
 
     operator bool() const
     {
-        return (bool)pImpl;
+        return static_cast<bool>(pImpl);
     }
 
-    virtual void send(PeerProto& proto) const =0;
+    virtual void send(PeerProto& proto) const;
 };
 
 /**
@@ -110,24 +190,41 @@ class ProdInfo final : virtual public OutChunk, virtual public InChunk
 
 public:
     /**
-     * Constructs.
+     * Default constructs. The instance will be invalid.
      *
-     * @param[in] prodId  Product identifier
-     * @param[in] size    Product size in bytes
-     * @param[in] name    Product name
+     * @see `operator bool()`
+     */
+    ProdInfo();
+
+    /**
+     * Constructs a valid instance.
+     *
+     * @param[in] prodIndex  Product index
+     * @param[in] size       Product size in bytes
+     * @param[in] name       Product name
      */
     ProdInfo(
-            ProdId             prodId,
+            ProdIndex          prodIndex,
             ProdSize           size,
             const std::string& name);
 
-    ProdId getIndex() const;
+    /**
+     * Indicates if an instance is valid.
+     *
+     * @retval `false`  Invalid
+     * @retval `true`   Valid
+     */
+    operator bool() const noexcept;
+
+    ProdIndex getProdIndex() const;
 
     ProdSize getSize() const;
 
     const std::string& getName() const;
 
-    bool operator ==(const ProdInfo& rhs) const;
+    std::string to_string() const;
+
+    bool operator ==(const ProdInfo& rhs) const noexcept;
 
     void send(PeerProto& proto) const;
 
@@ -141,23 +238,24 @@ public:
  */
 class SegId
 {
-    const ProdId   prodId;
-    const ProdSize segOffset;
+    const ProdIndex prodIndex;
+    const ProdSize  segOffset;
 
 public:
-    SegId(  const ProdId prodId,
+    SegId(  const ProdIndex prodIndex,
             const ProdSize  segOffset)
-        : prodId{prodId}
+        : prodIndex{prodIndex}
         , segOffset{segOffset}
     {}
 
     SegId()
-        : SegId(0, 0)
+        : prodIndex{}
+        , segOffset{0}
     {}
 
-    ProdId getProdId() const noexcept
+    ProdIndex getProdIndex() const noexcept
     {
-        return prodId;
+        return prodIndex;
     }
 
     ProdSize getSegOffset() const noexcept
@@ -167,13 +265,13 @@ public:
 
     size_t hash() const noexcept
     {
-        return std::hash<ProdId>()(prodId) ^
+        return prodIndex.hash() ^
                 std::hash<ProdSize>()(segOffset);
     }
 
     bool operator ==(const SegId& rhs) const noexcept
     {
-        return prodId == rhs.prodId &&
+        return prodIndex == rhs.prodIndex &&
                 segOffset == rhs.segOffset;
     }
 
@@ -198,14 +296,14 @@ class ChunkId final
     bool isProd;
 
     union {
-        ProdId prodId;
-        SegId  segId;
+        ProdIndex prodIndex;
+        SegId     segId;
     } id;
 
 public:
-    ChunkId(ProdId prodId)
+    ChunkId(ProdIndex prodIndex)
         : isProd{true}
-        , id{.prodId=prodId}
+        , id{.prodIndex=prodIndex}
     {}
 
     ChunkId(const SegId segId)
@@ -219,14 +317,14 @@ public:
 
     bool operator ==(const ChunkId& rhs) const;
 
-    bool isProdId() const
+    bool isProdIndex() const
     {
         return isProd;
     }
 
-    ProdId getProdId() const
+    ProdIndex getProdIndex() const
     {
-        return id.prodId;
+        return id.prodIndex;
     }
 
     SegId getSegId() const
@@ -239,6 +337,8 @@ public:
     void notify(PeerProto& peerProto) const;
 
     void request(PeerProto& peerProto) const;
+
+    OutChunk get(Repository& repo) const;
 };
 
 /******************************************************************************/
@@ -263,20 +363,53 @@ public:
 
     std::string to_string() const;
 
-    const SegId& getId() const
+    const SegId& getId() const noexcept
     {
         return id;
     }
 
-    ProdSize getProdSize() const
+    ProdIndex getProdIndex() const noexcept
+    {
+        return id.getProdIndex();
+    }
+
+    ProdSize getProdSize() const noexcept
     {
         return prodSize;
     }
 
-    SegSize getSegSize() const
+    SegSize getSegSize() const noexcept
     {
         return segSize;
     }
+
+    bool operator ==(const SegInfo& rhs) const
+    {
+        return id == rhs.id &&
+                prodSize == rhs.prodSize &&
+                segSize == rhs.segSize;
+    }
+};
+
+/******************************************************************************/
+
+/**
+ * Interface for a data-segment.
+ */
+class DataSeg
+{
+public:
+    virtual ~DataSeg() noexcept;
+
+    virtual const SegInfo& getSegInfo() const =0;
+
+    virtual const SegId& getSegId() const noexcept =0;
+
+    virtual ProdIndex getProdIndex() const noexcept =0;
+
+    virtual ProdSize getOffset() const noexcept =0;
+
+    virtual void writeData(void* data, SegSize nbytes) const =0;
 };
 
 /******************************************************************************/
@@ -284,27 +417,37 @@ public:
 /**
  * Data-segment that resides in memory.
  */
-class MemSeg final : public OutChunk
+class MemSeg final : public OutChunk, public DataSeg
 {
     class Impl;
 
 public:
+    MemSeg();
+
     MemSeg(const SegInfo& info,
            const void*    data);
 
-    const SegInfo& getInfo() const;
+    const SegInfo& getSegInfo() const noexcept;
+
+    const SegId& getSegId() const noexcept;
 
     const void* getData() const;
 
     SegSize getSegSize() const;
 
-    ProdId getProdIndex() const;
+    ProdIndex getProdIndex() const noexcept;
 
     ProdSize getProdSize() const;
 
-    ProdSize getSegOffset() const;
+    ProdSize getSegOffset() const noexcept;
+
+    bool operator ==(const MemSeg& rhs) const noexcept;
 
     void send(PeerProto& proto) const;
+
+    ProdSize getOffset() const noexcept override;
+
+    void writeData(void* data, SegSize nbytes) const override;
 };
 
 /******************************************************************************/
@@ -312,7 +455,7 @@ public:
 /**
  * Abstract, socket-based data-segment.
  */
-class SockSeg
+class SockSeg : public DataSeg
 {
 protected:
     class                 Impl;
@@ -323,15 +466,23 @@ protected:
 public:
     virtual ~SockSeg();
 
-    const SegInfo& getInfo() const;
+    const SegInfo& getSegInfo() const noexcept;
 
-    const SegId& getId() const;
+    const SegId& getSegId() const noexcept;
+
+    ProdIndex getProdIndex() const noexcept;
 
     virtual std::string to_string() const =0;
 
     virtual void read(void* buf) const =0;
 
     virtual void save(Repository& repo) const =0;
+
+    virtual ProdSize getOffset() const noexcept =0;
+
+    virtual void writeData(
+            void*   data,
+            SegSize nbytes) const =0;
 };
 
 /**
@@ -350,6 +501,10 @@ public:
     void read(void* buf) const override;
 
     void save(Repository& repo) const override;
+
+    ProdSize getOffset() const noexcept;
+
+    void writeData(void* data, SegSize nbytes) const;
 };
 
 /**
@@ -368,6 +523,10 @@ public:
     void read(void* buf) const override;
 
     void save(Repository& repo) const override;
+
+    ProdSize getOffset() const noexcept;
+
+    void writeData(void* data, SegSize nbytes) const;
 };
 
 } // namespace
@@ -375,13 +534,24 @@ public:
 /******************************************************************************/
 
 namespace std {
+    string to_string(const hycast::ProdInfo& prodInfo);
+
+    template<>
+    struct hash<hycast::ProdIndex>
+    {
+        inline size_t operator ()(const hycast::ProdIndex& prodIndex) const
+        {
+            return prodIndex.hash();
+        }
+    };
+
     template<>
     struct hash<hycast::ChunkId>
     {
-        size_t operator ()(const hycast::ChunkId& chunkId) const
+        inline size_t operator ()(const hycast::ChunkId& chunkId) const
         {
             return chunkId.isProd
-                    ? std::hash<hycast::ProdId>()(chunkId.id.prodId)
+                    ? chunkId.id.prodIndex.hash()
                     : chunkId.id.segId.hash();
         }
     };

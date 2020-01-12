@@ -17,8 +17,6 @@
 
 namespace hycast {
 
-static const Flags FLAGS_INFO = 1;
-
 class McastSndr::Impl {
     UdpSock sock;
 
@@ -27,15 +25,25 @@ public:
         : sock{sock}
     {}
 
-    void send(ProdInfo& prodInfo)
+    Impl(UdpSock&& sock)
+        : sock{sock}
+    {}
+
+    void setMcastIface(const InetAddr& interface)
+    {
+        sock.setMcastIface(interface);
+    }
+
+    void multicast(const ProdInfo& prodInfo)
     {
         struct iovec iov[5];
 
-        Flags     flags = FLAGS_INFO;
-        flags = sock.hton(flags);
+        // Product information
+        static Flags::flags_t flags = sock.hton(Flags::getProd());
         iov[0].iov_base = &flags;
         iov[0].iov_len = sizeof(flags);
 
+        // Done now before 'hton()` conversion
         const std::string& name = prodInfo.getName();
         SegSize            nameLen = name.length();
         iov[4].iov_base = const_cast<char*>(name.data()); // Safe casts
@@ -45,10 +53,10 @@ public:
         iov[1].iov_base = &nameLen;
         iov[1].iov_len = sizeof(nameLen);
 
-        ProdId prodIndex = prodInfo.getIndex();
-        prodIndex = sock.hton(prodIndex);
-        iov[2].iov_base = &prodIndex;
-        iov[2].iov_len = sizeof(prodIndex);
+        ProdIndex prodId = prodInfo.getProdIndex();
+        auto   value = sock.hton(prodId.getValue());
+        iov[2].iov_base = &value;
+        iov[2].iov_len = sizeof(value);
 
         ProdSize prodSize = prodInfo.getSize();
         prodSize = sock.hton(prodSize);
@@ -58,16 +66,18 @@ public:
         sock.write(iov, 5);
     }
 
-    void send(MemSeg& seg)
+    void multicast(const MemSeg& seg)
     {
         struct iovec iov[6];
 
-        static Flags flags = 0; // Is product-data
+        // Data-segment
+        static Flags::flags_t flags = sock.hton(Flags::getSeg());
         iov[0].iov_base = &flags;
         iov[0].iov_len = sizeof(flags);
 
         SegSize segSize = seg.getSegSize();
 
+        // Done now before 'hton()` conversion
         iov[5].iov_base = const_cast<void*>(seg.getData());
         iov[5].iov_len = segSize;
 
@@ -75,10 +85,10 @@ public:
         iov[1].iov_base = &segSize;
         iov[1].iov_len = sizeof(segSize);
 
-        ProdId prodIndex = seg.getProdIndex();
-        prodIndex = sock.hton(prodIndex);
-        iov[2].iov_base = &prodIndex;
-        iov[2].iov_len = sizeof(prodIndex);
+        ProdIndex prodId = seg.getProdIndex();
+        auto   value = sock.hton(prodId.getValue());
+        iov[2].iov_base = &value;
+        iov[2].iov_len = sizeof(value);
 
         ProdSize prodSize = seg.getProdSize();
         prodSize = sock.hton(prodSize);
@@ -94,33 +104,39 @@ public:
     }
 };
 
-McastSndr::McastSndr(Impl* impl)
-    : pImpl{impl}
-{}
-
 McastSndr::McastSndr(UdpSock& sock)
-    : McastSndr{new Impl(sock)}
+    : pImpl{new Impl(sock)}
 {}
 
-void McastSndr::send(ProdInfo& info)
+McastSndr::McastSndr(UdpSock&& sock)
+    : pImpl{new Impl(sock)}
+{}
+
+const McastSndr& McastSndr::setMcastIface(const InetAddr& iface) const
 {
-    pImpl->send(info);
+    pImpl->setMcastIface(iface);
+    return *this;
 }
 
-void McastSndr::send(MemSeg& seg)
+void McastSndr::multicast(const ProdInfo& info)
 {
-    pImpl->send(seg);
+    pImpl->multicast(info);
+}
+
+void McastSndr::multicast(const MemSeg& seg)
+{
+    pImpl->multicast(seg);
 }
 
 /******************************************************************************/
 
 class McastRcvr::Impl
 {
-    UdpSock    sock;
+    UdpSock       sock;
     McastRcvrObs* srvr;
 
     void recvInfo(
-            const ProdId prodIndex,
+            const ProdIndex prodIndex,
             const ProdSize  prodSize,
             const SegSize   nameLen)
     {
@@ -140,7 +156,7 @@ class McastRcvr::Impl
     }
 
     void recvSeg(
-            const ProdId prodIndex,
+            const ProdIndex prodIndex,
             const ProdSize  prodSize,
             const SegSize   segSize)
     {
@@ -177,7 +193,7 @@ public:
         for (;;) {
             struct iovec iov[4];
 
-            Flags flags;
+            Flags::flags_t flags;
             iov[0].iov_base = &flags;
             iov[0].iov_len = sizeof(flags);
 
@@ -185,9 +201,9 @@ public:
             iov[1].iov_base = &varSize;
             iov[1].iov_len = sizeof(varSize);
 
-            ProdId prodIndex;
-            iov[2].iov_base = &prodIndex;
-            iov[2].iov_len = sizeof(prodIndex);
+            ProdIndex::ValueType id;
+            iov[2].iov_base = &id;
+            iov[2].iov_len = sizeof(id);
 
             ProdSize prodSize;
             iov[3].iov_base = &prodSize;
@@ -196,18 +212,18 @@ public:
             auto nread = sock.read(iov, 4);
             if (nread == 0)
                 break; // EOF
-            if (nread != sizeof(flags) + sizeof(varSize) + sizeof(prodIndex) +
+            if (nread != sizeof(flags) + sizeof(varSize) + sizeof(id) +
                     sizeof(prodSize))
                 throw RUNTIME_ERROR("Couldn't read packet header");
 
             flags = sock.ntoh(flags);
             varSize = sock.ntoh(varSize);
-            prodIndex = sock.ntoh(prodIndex);
+            ProdIndex prodId{sock.ntoh(id)};
             prodSize = sock.ntoh(prodSize);
 
-            (flags & FLAGS_INFO)
-                ? recvInfo(prodIndex, prodSize, varSize)
-                : recvSeg(prodIndex, prodSize, varSize);
+            (Flags::isProd(flags))
+                ? recvInfo(prodId, prodSize, varSize)
+                : recvSeg(prodId, prodSize, varSize);
 
             sock.discard();
         } // Indefinite loop
@@ -224,14 +240,10 @@ public:
     }
 };
 
-McastRcvr::McastRcvr(Impl* impl)
-    : pImpl{impl}
-{}
-
 McastRcvr::McastRcvr(
         UdpSock&      sock,
         McastRcvrObs& srvr)
-    : McastRcvr{new Impl(sock, srvr)}
+    : pImpl{new Impl(sock, srvr)}
 {}
 
 void McastRcvr::operator()()

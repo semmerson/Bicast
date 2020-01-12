@@ -105,6 +105,31 @@ public:
     void join(
             const int       sd,
             const InetAddr& srcAddr) const;
+
+    /**
+     * Sets a socket address structure and returns a pointer to it.
+     *
+     * @param[in] storage  Socket address structure
+     * @param[in] port     Port number in host byte-order
+     * @return             Pointer to given socket address structure
+     * @threadsafety       Safe
+     */
+    struct sockaddr* get_sockaddr(
+            struct sockaddr_storage& storage,
+            const in_port_t          port) const;
+
+    /**
+     * Set a UDP socket to use the interface associated with this instance.
+     *
+     * @param[in] sd          UDP socket descriptor
+     * @return                This instance
+     * @throws    LogicError  This instance is based on a hostname and not an
+     *                        IP address
+     * @threadsafety          Safe
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     Unknown due to non-standard function usage
+     */
+    const InetAddr& setMcastIface(int sd) const;
 };
 
 } // namespace

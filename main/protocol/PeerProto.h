@@ -141,10 +141,10 @@ public:
     /**
      * Notifies the remote peer of available product information.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] prodId     Product identifier
      * @cancellationpoint    Yes
      */
-    void notify(ProdId prodIndex) const;
+    void notify(ProdIndex prodId) const;
 
     /**
      * Notifies the remote peer of an available data-segment.
@@ -160,7 +160,7 @@ public:
      * @param[in] prodId     Product identifier
      * @cancellationpoint    Yes
      */
-    void request(ProdId prodId) const;
+    void request(ProdIndex prodId) const;
 
     /**
      * Requests a data-segment from the remote peer.

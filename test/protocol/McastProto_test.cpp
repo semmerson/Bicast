@@ -29,30 +29,30 @@ protected:
     std::mutex              mutex;
     std::condition_variable cond;
     bool                    ready;
-    hycast::ProdId       prodIndex;
+    hycast::ProdIndex          prodId;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
     hycast::SegSize         segSize;
     hycast::SegId           segId;
     hycast::SegInfo         segInfo;
-    char*                   memData;
+    char                    memData[1000];
     hycast::MemSeg          memSeg;
     bool                    prodInfoRcvd;
     bool                    segRcvd;
 
 public:
     McastProtoTest()
-        : grpAddr("232.1.1.1:38800")
+        : grpAddr("232.1.1.1:3880")
         , mutex()
         , cond()
         , ready{false}
-        , prodIndex{1}
+        , prodId{1}
         , prodSize{1000000}
-        , segSize{1000}
-        , prodInfo{prodIndex, prodSize, "product"}
-        , segId(prodIndex, segSize)
+        , segSize{sizeof(memData)}
+        , prodInfo{prodId, prodSize, "product"}
+        , segId(prodId, segSize)
         , segInfo(segId, prodSize, segSize)
-        , memData{new char[segSize]}
+        , memData{}
         , memSeg{segInfo, memData}
         , prodInfoRcvd{false}
         , segRcvd{false}
@@ -60,14 +60,10 @@ public:
         ::memset(memData, 0xbd, segSize);
     }
 
-    ~McastProtoTest()
-    {
-        delete[] memData;
-    }
-
     void hereIs(const hycast::ProdInfo& actual)
     {
         ASSERT_EQ(prodInfo, actual);
+        std::lock_guard<decltype(mutex)> guard{mutex};
         prodInfoRcvd = true;
     }
 
@@ -88,15 +84,15 @@ public:
 
     void runRcvr(hycast::McastRcvr& rcvr)
     {
-        // Notify multicast sender that the receiver is ready
+        // Notify the multicast sender that the receiver is ready
         {
             std::lock_guard<decltype(mutex)> guard{mutex};
             ready = true;
             cond.notify_one();
         }
 
-        // Receive the multicast
-        rcvr(); // Returns on EOF
+        //  Receive the multicast
+        rcvr(); // Returns on `rcvr.halt()`
     }
 };
 
@@ -124,13 +120,13 @@ TEST_F(McastProtoTest, Multicasting)
         }
 
         // Multicast
-        mcastSndr.send(prodInfo);
-        mcastSndr.send(memSeg);
+        mcastSndr.multicast(prodInfo);
+        mcastSndr.multicast(memSeg);
 
         // Wait until multicast has been received
         {
             std::unique_lock<decltype(mutex)> lock{mutex};
-            while (!segRcvd)
+            while (!prodInfoRcvd && !segRcvd)
                 cond.wait(lock);
         }
 

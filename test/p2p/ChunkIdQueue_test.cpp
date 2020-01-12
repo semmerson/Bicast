@@ -20,7 +20,7 @@ namespace {
 class NoticeQueueTest : public ::testing::Test
 {
 protected:
-    hycast::ProdId prodId;
+    hycast::ProdIndex prodId;
     hycast::SegId     segId;
 
     NoticeQueueTest()

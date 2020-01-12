@@ -127,8 +127,8 @@ TEST_F(InetAddrTest, CopyAssignment) {
 TEST_F(InetAddrTest, HostnameToSocketAddress) {
     hycast::InetAddr nameAddr{"localhost"};
     struct sockaddr_storage storage;
-    unsigned short port{38800};
-    nameAddr.setSockAddr(storage, port, SOCK_DGRAM);
+    in_port_t port{38800};
+    nameAddr.get_sockaddr(storage, port);
     struct sockaddr_in* sockAddrIn =
             reinterpret_cast<struct sockaddr_in*>(&storage);
     EXPECT_EQ(AF_INET, sockAddrIn->sin_family);

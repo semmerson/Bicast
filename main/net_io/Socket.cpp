@@ -499,7 +499,7 @@ TcpClntSock::TcpClntSock(const SockAddr& sockAddr)
 
 class UdpSock::Impl final : public InetSock::Impl
 {
-    size_t numPeeked; ///< Number of bytes peeked
+    size_t   numPeeked; ///< Number of bytes peeked
 
 public:
     /**
@@ -531,12 +531,21 @@ public:
      * @cancellationpoint
      */
     Impl(   const SockAddr& grpAddr,
-            const InetAddr& srcAddr)
+            const InetAddr& rmtAddr)
         : InetSock::Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
         , numPeeked{0}
     {
         grpAddr.bind(sd);
-        grpAddr.getInetAddr().join(sd, srcAddr);
+        grpAddr.getInetAddr().join(sd, rmtAddr);
+    }
+
+    /**
+     * Sets the interface to be used by the UDP socket for multicasting. The
+     * default is system dependent.
+     */
+    void setMcastIface(const InetAddr& iface) const
+    {
+        iface.setMcastIface(sd);
     }
 
     std::string to_string() const
@@ -634,9 +643,15 @@ UdpSock::UdpSock(const SockAddr& grpAddr)
 
 UdpSock::UdpSock(
         const SockAddr& grpAddr,
-        const InetAddr& srcAddr)
-    : InetSock{new Impl(grpAddr, srcAddr)}
+        const InetAddr& rmtAddr)
+    : InetSock{new Impl(grpAddr, rmtAddr)}
 {}
+
+const UdpSock& UdpSock::setMcastIface(const InetAddr& iface) const
+{
+    static_cast<UdpSock::Impl*>(pImpl.get())->setMcastIface(iface);
+    return *this;
+}
 
 std::string UdpSock::to_string() const
 {

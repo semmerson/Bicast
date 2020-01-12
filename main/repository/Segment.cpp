@@ -17,7 +17,7 @@
 
 namespace hycast {
 
-class Segment::Impl {
+class DataSeg::Impl {
     Chunk chunk;
 
 public:
@@ -31,7 +31,7 @@ public:
     void write(void* bytes);
 };
 
-Segment::Segment(
+DataSeg::Segment(
         ChunkSize canonSize,
         Chunk&    chunk)
     : pImpl{new Impl(canonSize, chunk)}

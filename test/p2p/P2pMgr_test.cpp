@@ -56,7 +56,7 @@ protected:
                SRVR_PEER_STOPPED
     } State;
     State                   state;
-    hycast::ProdId       prodId;
+    hycast::ProdIndex          prodId;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -67,9 +67,6 @@ protected:
     hycast::PortPool        portPool;
     hycast::ServerPool      srvrSrvrPool;
     std::atomic<unsigned>   numAdded;
-
-    // You can remove any or all of the following functions if its body
-    // is empty.
 
     P2pMgrTest()
         : srvrAddr{"localhost:3880"}
@@ -131,8 +128,8 @@ public:
     // Receiver-side
     bool shouldRequest(const hycast::ChunkId chunkId)
     {
-        if (chunkId.isProdId()) {
-            EXPECT_EQ(prodId, chunkId.getProdId());
+        if (chunkId.isProdIndex()) {
+            EXPECT_EQ(prodId, chunkId.getProdIndex());
             orState(PROD_NOTICE_RCVD);
         }
         else {
@@ -146,8 +143,8 @@ public:
     // Sender-side
     const hycast::OutChunk& get(const hycast::ChunkId chunkId)
     {
-        if (chunkId.isProdId()) {
-            EXPECT_EQ(prodId, chunkId.getProdId());
+        if (chunkId.isProdIndex()) {
+            EXPECT_EQ(prodId, chunkId.getProdIndex());
             orState(PROD_REQUEST_RCVD);
             return prodInfo;
         }

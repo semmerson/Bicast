@@ -28,8 +28,6 @@ class McastSndr
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    McastSndr(Impl* impl);
-
 public:
     /**
      * Constructs.
@@ -41,13 +39,32 @@ public:
     McastSndr(UdpSock& sock);
 
     /**
+     * Constructs.
+     *
+     * @param[in] sock         UDP socket
+     * @throw     SystemError  I/O failure
+     * @cancellationpoint      Yes
+     */
+    McastSndr(UdpSock&& sock);
+
+    /**
+     * Sets the interface to use for multicasting.
+     *
+     * @param[in] iface        Interface to use for multicasting
+     * @return                 This instance
+     * @throw     SystemError  I/O failure
+     * @cancellationpoint      Yes
+     */
+    const McastSndr& setMcastIface(const InetAddr& iface) const;
+
+    /**
      * Multicasts product-information.
      *
      * @param[in] info          Product information
      * @throws    SystemError   I/O failure
      * @cancellationpoint       Yes
      */
-    void send(ProdInfo& info);
+    void multicast(const ProdInfo& info);
 
     /**
      * Multicasts a data-segment.
@@ -56,11 +73,13 @@ public:
      * @throws    SystemError   I/O failure
      * @cancellationpoint       Yes
      */
-    void send(MemSeg& seg);
+    void multicast(const MemSeg& seg);
 };
 
+/******************************************************************************/
+
 /**
- * Interface for an observer of an McastRcvr.
+ * Interface for an observer of a multicast receiver.
  */
 class McastRcvrObs
 {
@@ -73,6 +92,8 @@ public:
     virtual void hereIs(UdpSeg& seg) =0;
 };
 
+/******************************************************************************/
+
 /**
  * Receives multicast data-products.
  */
@@ -81,23 +102,21 @@ class McastRcvr
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    McastRcvr(Impl* impl);
-
 public:
     /**
      * Constructs.
      *
-     * @param[in] sock     UDP socket
-     * @param[in] msgRcvr  Services multicast messages
-     * @cancellationpoint  Yes
+     * @param[in] sock      UDP socket
+     * @param[in] observer  Observer of this instance
+     * @cancellationpoint   Yes
      */
     McastRcvr(
             UdpSock&      sock,
-            McastRcvrObs& msgRcvr);
+            McastRcvrObs& observer);
 
     /**
-     * Executes the multicast receiver. Calls the multicast message server.
-     * Returns on EOF.
+     * Executes the multicast receiver. Calls this instance's observer. Returns
+     * on EOF.
      *
      * @throws RuntimeError  I/O error
      * @cancellationpoint    Yes

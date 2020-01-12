@@ -16,6 +16,7 @@
 #include "SockAddr.h"
 
 #include <memory>
+#include <string>
 
 namespace hycast {
 
@@ -263,7 +264,15 @@ public:
      * @cancellationpoint
      */
     UdpSock(const SockAddr& grpAddr,
-            const InetAddr& srcAddr);
+            const InetAddr& rmtAddr);
+
+    /**
+     * Sets the interface to be used for multicasting.
+     *
+     * @param[in] iface  The interface
+     * @return           This instance
+     */
+    const UdpSock& setMcastIface(const InetAddr& iface) const;
 
     std::string to_string() const;
 

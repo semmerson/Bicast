@@ -20,7 +20,7 @@
 
 namespace hycast {
 
-class Segment
+class DataSeg
 {
 protected:
     class                 Impl;

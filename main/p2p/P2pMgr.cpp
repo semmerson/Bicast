@@ -30,6 +30,9 @@
 
 namespace hycast {
 
+P2pMgrObs::~P2pMgrObs() noexcept
+{}
+
 class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
 {
     typedef std::mutex                Mutex;
@@ -513,7 +516,7 @@ public:
         Guard guard(doneMutex);
 
         LOG_DEBUG("haltRequested: %d", haltRequested);
-        LOG_DEBUG("taskException: %sempty", taskException ? "not " : "");
+        LOG_DEBUG("taskException: %s", taskException ? "set" : "not set");
         if (!haltRequested && taskException)
             std::rethrow_exception(taskException);
     }
@@ -619,7 +622,7 @@ public:
      * @param[in] rmtAddr    Socket address of the remote peer
      * @return               The information. Will be empty if it doesn't exist.
      */
-    const OutChunk& get(
+    const OutChunk get(
             const ChunkId   chunkId,
             const SockAddr& rmtAddr)
     {
@@ -639,7 +642,7 @@ public:
             const SockAddr& rmtAddr)
     {
         const bool isNew = p2pMgrObs.hereIs(prodInfo);
-        bookkeeper.received(rmtAddr, prodInfo.getIndex());
+        bookkeeper.received(rmtAddr, prodInfo.getProdIndex());
         return isNew;
     }
 
@@ -656,7 +659,7 @@ public:
             const SockAddr& rmtAddr)
     {
         const bool isNew = p2pMgrObs.hereIs(seg);
-        bookkeeper.received(rmtAddr, seg.getId());
+        bookkeeper.received(rmtAddr, seg.getSegId());
         return isNew;
     }
 };

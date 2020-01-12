@@ -12,13 +12,15 @@
 
 #include "config.h"
 
+#include "PeerProto.h"
+
 #include "error.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
 #include <pthread.h>
-#include <PeerProto.h>
 #include <thread>
 
 namespace hycast {
@@ -49,8 +51,6 @@ class PeerProto::Impl
     std::thread    requestThread;
     std::thread    dataThread;
 
-    static const Flags   FLAGS_SEG = 0;  // Data chunk-ID
-    static const Flags   FLAGS_PROD = 1; // Product-information chunk-ID
     static const SegSize PAD = 0;        // 16-bit padding
 
     void handleException(const ExceptPtr& exPtr)
@@ -63,7 +63,7 @@ class PeerProto::Impl
         }
     }
 
-    void recvProdNotice(const ProdId prodId)
+    void recvProdNotice(const ProdIndex prodId)
     {
         LOG_DEBUG("Receiving product notice");
         int    cancelState;
@@ -72,7 +72,7 @@ class PeerProto::Impl
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
-    bool recvSegNotice(const ProdId prodId)
+    bool recvSegNotice(const ProdIndex prodId)
     {
         LOG_DEBUG("Receiving segment notice");
         ProdSize  segOffset;
@@ -98,16 +98,18 @@ class PeerProto::Impl
             LOG_DEBUG("Receiving notices");
 
             for (;;) {
-                Flags     flags;
-                SegSize   pad;
-                ProdId prodId;
+                Flags::flags_t    flags;
+                SegSize           pad;
+                ProdIndex::ValueType id;
 
                 // The following perform network translation
                 if (!noticeSock.read(flags) || !noticeSock.read(pad) ||
-                        !noticeSock.read(prodId))
+                        !noticeSock.read(id))
                     break; // EOF
 
-                if (flags & FLAGS_PROD) {
+                ProdIndex prodId{id};
+
+                if (Flags::isProd(flags)) {
                     recvProdNotice(prodId);
                 }
                 else if (!recvSegNotice(prodId)) {
@@ -122,7 +124,7 @@ class PeerProto::Impl
         }
     }
 
-    void recvProdRequest(const ProdId prodId)
+    void recvProdRequest(const ProdIndex prodId)
     {
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
@@ -130,7 +132,7 @@ class PeerProto::Impl
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
     }
 
-    bool recvSegRequest(const ProdId prodId)
+    bool recvSegRequest(const ProdIndex prodId)
     {
         ProdSize  segOffset;
 
@@ -155,16 +157,18 @@ class PeerProto::Impl
             LOG_DEBUG("Receiving requests");
 
             for (;;) {
-                Flags     flags;
-                SegSize   pad;
-                ProdId prodId;
+                Flags::flags_t    flags;
+                SegSize           pad;
+                ProdIndex::ValueType id;
 
                 // The following perform network translation
                 if (!srvrSock.read(flags) || !srvrSock.read(pad) ||
-                        !srvrSock.read(prodId))
+                        !srvrSock.read(id))
                     break; // EOF
 
-                if (flags & FLAGS_PROD) {
+                ProdIndex prodId{id};
+
+                if (Flags::isProd(flags)) {
                     recvProdRequest(prodId);
                 }
                 else if (!recvSegRequest(prodId)) {
@@ -180,7 +184,7 @@ class PeerProto::Impl
     }
 
     bool recvProdInfo(
-            const ProdId   prodId,
+            const ProdIndex   prodId,
             const ProdSize prodSize,
             const SegSize  nameLen)
     {
@@ -201,7 +205,7 @@ class PeerProto::Impl
     }
 
     bool recvTcpSeg(
-            const ProdId prodId,
+            const ProdIndex prodId,
             const ProdSize  prodSize,
             const SegSize   dataLen)
     {
@@ -231,17 +235,19 @@ class PeerProto::Impl
             LOG_DEBUG("Receiving data");
 
             for (;;) {
-                Flags    flags;
-                SegSize  varSize;
-                ProdId   prodId;
-                ProdSize prodSize;
+                Flags::flags_t    flags;
+                SegSize           varSize;
+                ProdSize          prodSize;
+                ProdIndex::ValueType id;
 
                 // The following perform network translation
                 if (!clntSock.read(flags) || !clntSock.read(varSize) ||
-                        !clntSock.read(prodId) || ! clntSock.read(prodSize))
+                        !clntSock.read(id) || ! clntSock.read(prodSize))
                     break; // EOF
 
-                if ((flags & FLAGS_PROD)
+                ProdIndex prodId{id};
+
+                if (Flags::isProd(flags)
                         ? !recvProdInfo(prodId, prodSize, varSize)
                         : !recvTcpSeg(prodId, prodSize, varSize))
                     break; // EOF
@@ -355,21 +361,25 @@ class PeerProto::Impl
     }
 
     void send(
-            const ProdId prodId,
+            const ProdIndex prodId,
             TcpSock&     sock)
     {
-        sock.write(FLAGS_PROD); // Performs network translation
+        // The following perform network translation
+        sock.write(Flags::getProd());
         sock.write(PAD);
-        sock.write(prodId);
+        sock.write(prodId.getValue());
     }
 
     void send(
             const SegId& id,
             TcpSock&     sock)
     {
-        sock.write(FLAGS_SEG);
+        // 2+2+4+4 = 12 bytes
+        // 2+2+12+4 = 20 bytes
+        // The following perform network translation
+        sock.write(Flags::getSeg());
         sock.write(PAD);
-        sock.write(id.getProdId());
+        sock.write(id.getProdIndex().getValue());
         sock.write(id.getSegOffset());
     }
 
@@ -585,7 +595,7 @@ public:
         doneCond.notify_one();
     }
 
-    void notify(const ProdId prodId)
+    void notify(const ProdIndex prodId)
     {
         send(prodId, noticeSock);
     }
@@ -595,7 +605,7 @@ public:
         send(id, noticeSock);
     }
 
-    void request(const ProdId prodId)
+    void request(const ProdIndex prodId)
     {
         send(prodId, clntSock);
     }
@@ -611,9 +621,9 @@ public:
         const SegSize      nameLen = name.length();
 
         // The following perform host-to-network translation
-        srvrSock.write(FLAGS_PROD);
+        srvrSock.write(Flags::getProd());
         srvrSock.write(nameLen);
-        srvrSock.write(info.getIndex());
+        srvrSock.write(info.getProdIndex().getValue());
         srvrSock.write(info.getSize());
 
         srvrSock.write(name.data(), nameLen); // No network translation
@@ -621,13 +631,13 @@ public:
 
     void send(const MemSeg& seg)
     {
-        const SegInfo& info = seg.getInfo();
+        const SegInfo& info = seg.getSegInfo();
         SegSize        segSize = info.getSegSize();
 
         // The following perform host-to-network translation
-        srvrSock.write(FLAGS_SEG);
+        srvrSock.write(Flags::getSeg());
         srvrSock.write(segSize);
-        srvrSock.write(info.getId().getProdId());
+        srvrSock.write(info.getId().getProdIndex().getValue());
         srvrSock.write(info.getProdSize());
         srvrSock.write(info.getId().getSegOffset());
 
@@ -680,7 +690,7 @@ void PeerProto::halt() const
     pImpl->halt();
 }
 
-void PeerProto::notify(const ProdId prodId) const
+void PeerProto::notify(const ProdIndex prodId) const
 {
     pImpl->notify(prodId);
 }
@@ -690,7 +700,7 @@ void PeerProto::notify(const SegId& id) const
     pImpl->notify(id);
 }
 
-void PeerProto::request(const ProdId prodId) const
+void PeerProto::request(const ProdIndex prodId) const
 {
     pImpl->request(prodId);
 }

@@ -339,7 +339,7 @@ bool Bookkeeper::wasRequested(const ChunkId chunkId) const noexcept
 
 void Bookkeeper::received(
         const SockAddr& rmtAddr,
-        const ChunkId chunkId) const
+        const ChunkId   chunkId) const
 {
     pImpl->received(rmtAddr, chunkId);
 }
