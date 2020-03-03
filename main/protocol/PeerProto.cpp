@@ -810,7 +810,7 @@ public:
                 srvrSock.write(info.getId().getOffset());
 
                 // No network translation
-                srvrSock.write(seg.getData(), segSize);
+                srvrSock.write(seg.data(), segSize);
             }
             catch (const std::exception& ex) {
                 LOG_DEBUG("Caught exception \"%s\"", ex.what());

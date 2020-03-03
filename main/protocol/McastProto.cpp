@@ -65,7 +65,7 @@ public:
         sock.addWrite(seg.getProdIndex().getValue());
         sock.addWrite(seg.getProdSize());
         sock.addWrite(seg.getOffset());
-        sock.addWrite(seg.getData(), seg.getSegSize());
+        sock.addWrite(seg.data(), seg.getSegSize());
         sock.write();
     }
 };

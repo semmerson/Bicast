@@ -371,7 +371,7 @@ public:
         const bool accepted = !haveSegs[iSeg];
 
         if (accepted) {
-            seg.copyData(data+offset); // Potentially slow
+            seg.getData(data+offset); // Potentially slow
             ++segCount;
             haveSegs[iSeg] = true;
         }

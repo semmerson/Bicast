@@ -146,7 +146,7 @@ public:
         char buf[size];
         seg.read(buf);
 
-        const auto cmp = ::memcmp(memSeg.getData(), buf, segSize);
+        const auto cmp = ::memcmp(memSeg.data(), buf, segSize);
         EXPECT_EQ(0, cmp);
 
         orState(SEG_RCVD);

@@ -79,7 +79,7 @@ public:
         char buf[size];
         seg.read(buf);
 
-        EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
+        EXPECT_EQ(0, ::memcmp(memSeg.data(), buf, segSize));
 
         std::lock_guard<decltype(mutex)> guard{mutex};
         segRcvd = true;

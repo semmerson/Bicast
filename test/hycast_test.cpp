@@ -176,7 +176,7 @@ protected:
         char buf[size];
         actual.read(buf);
 
-        EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
+        EXPECT_EQ(0, ::memcmp(memSeg.data(), buf, segSize));
 
         orState(SEG_RCVD);
 

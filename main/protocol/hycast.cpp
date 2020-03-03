@@ -366,7 +366,7 @@ const SegId& MemSeg::getSegId() const noexcept
     return pImpl->getSegId();
 }
 
-const void* MemSeg::getData() const
+const void* MemSeg::data() const
 {
     return pImpl->getData();
 }
@@ -396,7 +396,7 @@ std::string MemSeg::to_string() const
     return pImpl->to_string();
 }
 
-void MemSeg::copyData(void* buf) const
+void MemSeg::getData(void* buf) const
 {
     pImpl->copyData(buf);
 }

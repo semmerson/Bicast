@@ -120,7 +120,7 @@ public:
         const ProdInfo&  prodInfo = chunk.getProdSize();
         SegSize          segSize = chunk.getSegSize();
 
-        iov[5].iov_base = chunk.getData();
+        iov[5].iov_base = chunk.data();
         iov[5].iov_len = segSize;
 
         segSize = sock.hton(segSize);

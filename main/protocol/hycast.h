@@ -373,7 +373,7 @@ public:
 
     virtual std::string to_string() const =0;
 
-    virtual void copyData(void* buf) const =0;
+    virtual void getData(void* buf) const =0;
 };
 
 /******************************************************************************/
@@ -399,7 +399,7 @@ public:
 
     const SegId& getSegId() const noexcept override;
 
-    const void* getData() const;
+    const void* data() const;
 
     SegSize getSegSize() const;
 
@@ -411,7 +411,7 @@ public:
 
     std::string to_string() const override;
 
-    void copyData(void* buf) const;
+    void getData(void* buf) const;
 
     bool operator ==(const MemSeg& rhs) const noexcept;
 };
@@ -442,7 +442,7 @@ public:
 
     virtual void read(void* buf) const =0;
 
-    inline void copyData(void* buf) const
+    inline void getData(void* buf) const
     {
         read(buf);
     }
