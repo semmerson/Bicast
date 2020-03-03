@@ -61,6 +61,14 @@ RuntimeError::RuntimeError(
     : std::runtime_error{makeWhat(file, line, func, msg)}
 {}
 
+EofError::EofError(
+        const char*       file,
+        const int         line,
+        const char*       func,
+        const std::string msg)
+    : RuntimeError{file, line, func, msg}
+{}
+
 SystemError::SystemError(
         const char*       file,
         const int         line,

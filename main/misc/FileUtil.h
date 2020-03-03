@@ -34,6 +34,14 @@ void ensureDir(
  */
 void pruneDir(const std::string& pathname);
 
+/**
+ * Deletes a directory. The given directory hierarchy is recursively
+ * traversed depth first. All files are deleted, including the given directory.
+ *
+ * @param[in] pathname  Root of directory hierarchy. Will be deleted.
+ */
+void deleteDir(const std::string& pathname);
+
 size_t getSize(const std::string& pathname);
 
 } // namespace

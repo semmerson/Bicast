@@ -28,7 +28,7 @@ class ProdFileTest : public ::testing::Test
 {
 protected:
     const std::string pathname;
-    hycast::ProdIndex    prodId;
+    hycast::ProdIndex prodIndex;
     hycast::ProdSize  prodSize;
     hycast::SegSize   segSize;
     hycast::ProdInfo  prodInfo;
@@ -42,16 +42,17 @@ protected:
 
     ProdFileTest()
         : pathname("ProdFile_test.dat")
-        , prodId{1}
+        , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodId, prodSize, "product"}
-        , segId(prodId, 0)
+        , prodInfo{prodIndex, prodSize, "product"}
+        , segId(prodIndex, 0)
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
     {
-        ::memset(memData, 0xbd, segSize);
+        for (int i = 0; i < sizeof(memData); ++i)
+            memData[i] = static_cast<char>(i);
     }
 };
 
@@ -137,12 +138,10 @@ TEST_F(ProdFileTest, RcvProdFile)
     {
         ASSERT_FALSE(prodFile.isComplete());
         for (int i = 0; i < 2; ++i) {
-            hycast::SegId     segId(prodId, i*segSize);
+            hycast::SegId     segId(prodIndex, i*segSize);
             hycast::SegInfo   segInfo(segId, prodSize, segSize);
-            char              memData[segSize];
-            ::memset(memData, 0xbd, segSize);
             hycast::MemSeg    memSeg{segInfo, memData};
-            ASSERT_TRUE(prodFile.accept(memSeg));
+            ASSERT_TRUE(prodFile.save(memSeg));
         }
         ASSERT_TRUE(prodFile.isComplete());
     } // Closes file

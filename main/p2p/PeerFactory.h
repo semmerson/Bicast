@@ -44,12 +44,14 @@ public:
      * @param[in] queueSize  Size of server's `listen()` queue
      * @param[in] portPool   Pool of available port numbers
      * @param[in] peerObs    Observer of the remote peer
+     * @param[in] isSource   Is this instance the source of data-products?
      */
     PeerFactory(
             const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
-            PeerObs&        peerObs);
+            PeerObs&        peerObs,
+            bool            isSource = false);
 
     /**
      * Returns the port number of the server's socket in host byte-order.

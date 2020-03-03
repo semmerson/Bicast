@@ -1,16 +1,16 @@
 /**
- * This file tests class `Sender`.
+ * This file tests class `Receiver`.
  *
  * Copyright 2020 University Corporation for Atmospheric Research. All rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *       File: Sender_test.cpp
+ *       File: Receiver_test.cpp
  * Created On: Jan 3, 2020
  *     Author: Steven R. Emmerson
  */
 #include "config.h"
-#include "Sender.h"
+#include "Receiver.h"
 
 #include "FileUtil.h"
 
@@ -20,17 +20,18 @@
 
 namespace {
 
-/// The fixture for testing class `Sender`
-class SenderTest : public ::testing::Test
+/// The fixture for testing class `Receiver`
+class ReceiverTest : public ::testing::Test
 {
 protected:
-    hycast::SockAddr      grpAddr;
-    hycast::SockAddr      sndrAddr;
-    hycast::SockAddr      rcvrAddr;
+    hycast::SockAddr      grpSockAddr;
+    hycast::SockAddr      sndrInetAddr;
+    hycast::SockAddr      sndrSockAddr;
+    hycast::SockAddr      rcvrSockAddr;
     int                   listenSize;
     hycast::PortPool      portPool;
     int                   maxPeers;
-    hycast::SrcRepo       repo;
+    hycast::RcvRepo       repo;
     hycast::ProdIndex     prodIndex;
     char                  memData[1000];
     const hycast::SegSize segSize;
@@ -40,10 +41,11 @@ protected:
     hycast::SegInfo       segInfo;
     hycast::MemSeg        memSeg;
 
-    SenderTest()
-        : grpAddr("232.1.1.1:3880")
-        , sndrAddr{"localhost:3880"}
-        , rcvrAddr{"localhost:3881"} // NB: Not a Linux dynamic port number
+    ReceiverTest()
+        : grpSockAddr("232.1.1.1:3880")
+        , sndrInetAddr{"localhost"}
+        , sndrSockAddr{sndrInetAddr, 3880}
+        , rcvrSockAddr{"localhost:3881"} // NB: Not a Linux dynamic port number
         , listenSize{0}
         , portPool(38800, 5) // NB: Linux Dynamic port numbers
         , maxPeers{3}
@@ -60,7 +62,7 @@ protected:
         ::memset(memData, 0xbd, segSize);
     }
 
-    virtual ~SenderTest()
+    virtual ~ReceiverTest()
     {
     }
 
@@ -81,43 +83,10 @@ protected:
 };
 
 // Tests construction
-TEST_F(SenderTest, Construction)
+TEST_F(ReceiverTest, Construction)
 {
-    hycast::Sender sender(sndrAddr, listenSize, portPool, maxPeers, grpAddr,
-            repo);
-}
-
-// Tests sending
-TEST_F(SenderTest, Sending)
-{
-    // Create product-file
-    hycast::Sender sender(sndrAddr, listenSize, portPool, maxPeers, grpAddr,
-            repo);
-    std::string        namePath = repo.getPathname(prodInfo.getName());
-    int                status = ::unlink(namePath.data());
-    ASSERT_TRUE(status == 0 || errno == ENOENT);
-    const std::string  dirPath = hycast::dirPath(namePath);
-    hycast::ensureDir(dirPath, 0700);
-    int                fd = ::open(namePath.data(), O_WRONLY|O_CREAT|O_EXCL,
-            0600);
-    ASSERT_NE(-1, fd);
-    ASSERT_EQ(segSize, ::write(fd, memData, segSize));
-    ASSERT_EQ(0, ::close(fd));
-
-    // Tell repository
-    repo.newProd(prodInfo.getName(), prodIndex);
-
-    hycast::ProdInfo repoProdInfo = repo.getProdInfo(prodIndex);
-    ASSERT_TRUE(repoProdInfo);
-    sender.send(repoProdInfo);
-
-    auto repoSeg = repo.getMemSeg(segId);
-    ASSERT_TRUE(repoSeg);
-    sender.send(repoSeg);
-
-    ::unlink(namePath.data());
-    ::unlink(repo.getPathname(prodIndex).data());
-    hycast::pruneDir(repo.getRootDir());
+    hycast::Receiver receiver(sndrSockAddr, listenSize, portPool, maxPeers,
+            grpSockAddr, sndrInetAddr, repo);
 }
 
 }  // namespace

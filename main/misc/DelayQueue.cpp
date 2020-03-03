@@ -159,24 +159,24 @@ public:
         Lock  lock{mutex};
 
         for (;;) {
-            LOG_DEBUG("isClosed: %d", isClosed);
+            //LOG_DEBUG("isClosed: %d", isClosed);
             if (isClosed) {
-                LOG_DEBUG("Throwing DOMAIN_ERROR");
+                //LOG_DEBUG("Throwing DOMAIN_ERROR");
                 throw DOMAIN_ERROR("DelayQueue is closed");
             }
 
             if (queue.empty()) {
-                LOG_DEBUG("Waiting");
+                //LOG_DEBUG("Waiting");
                 //Canceler canceler{true};
                 try {
                     cond.wait(lock);
                 }
                 catch (const std::exception& ex) {
-                    LOG_DEBUG("Caught std::exception");
+                    //LOG_DEBUG("Caught std::exception");
                     throw;
                 }
                 catch (...) {
-                    LOG_DEBUG("Caught ... exception");
+                    //LOG_DEBUG("Caught ... exception");
                     throw;
                 }
             }
@@ -184,11 +184,11 @@ public:
                 auto revealTime = queue.top().getTime();
 
                 if (revealTime > Clock::now()) {
-                    LOG_DEBUG("Waiting until");
+                    //LOG_DEBUG("Waiting until");
                     cond.wait_until(lock, revealTime);
                 }
                 else {
-                    LOG_DEBUG("Popping value");
+                    //LOG_DEBUG("Popping value");
                     Canceler canceler{false};
                     value = queue.top().getValue();
                     queue.pop();

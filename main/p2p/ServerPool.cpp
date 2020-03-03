@@ -34,6 +34,8 @@ public:
             const unsigned  delay) =0;
 
     virtual void close() =0;
+
+    virtual bool empty() const =0;
 };
 
 ServerPool::Impl::~Impl()
@@ -70,15 +72,15 @@ public:
     SockAddr pop() override
     {
         try {
-            LOG_DEBUG("servers.ready(): %d", servers.ready());
+            //LOG_DEBUG("servers.ready(): %d", servers.ready());
             return servers.pop();
         }
         catch (const std::exception& ex) {
-            LOG_DEBUG("Caught std::exception");
+            //LOG_DEBUG("Caught std::exception");
             throw;
         }
         catch (...) {
-            LOG_DEBUG("Caught ... exception");
+            //LOG_DEBUG("Caught ... exception");
             throw;
         }
     }
@@ -92,6 +94,11 @@ public:
 
     void close() override {
         servers.close();
+    }
+
+    bool empty() const override
+    {
+        return  servers.empty();
     }
 };
 
@@ -116,11 +123,11 @@ SockAddr ServerPool::pop() const
         return pImpl->pop();
     }
     catch (const std::exception& ex) {
-        LOG_DEBUG("Caught std::exception");
+        //LOG_DEBUG("Caught std::exception");
         throw;
     }
     catch (...) {
-        LOG_DEBUG("Caught ... exception");
+        //LOG_DEBUG("Caught ... exception");
         throw;
     }
 }
@@ -135,6 +142,11 @@ void ServerPool::consider(
 void ServerPool::close()
 {
     pImpl->close();
+}
+
+bool ServerPool::empty() const
+{
+    return pImpl->empty();
 }
 
 } // namespace

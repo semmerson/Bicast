@@ -3,7 +3,8 @@ LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 CLEANFILES	= *.vg
 AM_CFLAGS	= -std=c99
 
-check_PROGRAMS	= noexcept_test \
+check_PROGRAMS	= AutoReference \
+		  noexcept_test \
 		  pImpl_test \
 		  pimpl_test \
 		  arg_passing_test \
@@ -21,6 +22,7 @@ check_PROGRAMS	= noexcept_test \
 #		  CancelNoexcept_test
 #		  Promise_test
 
+AutoReference_SOURCES           = AutoReference.cpp
 #CancelNoexcept_test_SOURCES	= CancelNoexcept_test.cpp
 noexcept_test_SOURCES		= noexcept_test.cpp
 pImpl_test_SOURCES		= pImpl_test.cpp

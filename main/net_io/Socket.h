@@ -67,6 +67,10 @@ public:
      * @return Remote port number in host byte-order
      */
     in_port_t getRmtPort() const;
+
+    void shutdown() const;
+
+    bool isShutdown() const;
 };
 
 /******************************************************************************/
@@ -85,6 +89,13 @@ public:
     InetSock() =default;
 
     virtual ~InetSock() noexcept =0;
+
+    operator bool() noexcept;
+
+    static inline uint8_t hton(const uint8_t value)
+    {
+        return value;
+    }
 
     static inline uint16_t hton(const uint16_t value)
     {
@@ -150,8 +161,8 @@ public:
     virtual std::string to_string() const;
 
     /**
-     * If the socket protocol is TCP or SCTP, the previous sent packet hasn't
-     * yet been acknowledged, and there's less than an MSS in the send buffer,
+     * If the socket protocol is TCP or SCTP, there's an outstanding packet
+     * acknowledgment, and there's less than an MSS in the send buffer,
      * then this function sets whether or not the protocol layer will wait for
      * the outstanding acknowledgment before sending the sub-MSS packet. This is
      * the Nagle algorithm.
@@ -164,31 +175,129 @@ public:
      */
     TcpSock& setDelay(bool enable);
 
+    /**
+     * Writes bytes to the socket. No host-to-network translation is performed.
+     *
+     * @param[in] bytes        Data to be written
+     * @param[in] nbytes       Number of bytes
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
     void write(
             const void* bytes,
             size_t      nbytes) const;
 
+    /**
+     * Writes a value to the socket. No host-to-network translation is
+     * performed.
+     *
+     * @param[in] value        Value to be written
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
+    void write(bool value) const;
+
+    /**
+     * Writes a value to the socket. No host-to-network translation is
+     * performed.
+     *
+     * @param[in] value        Value to be written
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
+    void write(uint8_t value) const;
+
+    /**
+     * Writes a value to the socket. Host-to-network translation is performed.
+     *
+     * @param[in] value        Value to be written
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
     void write(uint16_t value) const;
+
+    /**
+     * Writes a value to the socket. Host-to-network translation is performed.
+     *
+     * @param[in] value        Value to be written
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
     void write(uint32_t value) const;
+
+    /**
+     * Writes a value to the socket. Host-to-network translation is performed.
+     *
+     * @param[in] value        Value to be written
+     * @throws    EofError     Socket is closed
+     * @throws    SystemError  System error
+     */
     void write(uint64_t value) const;
 
     /**
-     * Reads from the socket.
+     * Reads bytes from the socket. No network-to-host translation is performed.
      *
      * @param[out] bytes         Buffer into which data will be read
      * @param[in]  nbytes        Maximum mount of data to read in bytes
-     * @return                   Number of bytes actually read. 0 => EOF.
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
      * @throws     SystemError   Read error
      */
-    size_t read(
+    bool read(
             void*        bytes,
             const size_t nbytes) const;
 
-    bool read(uint16_t& value) const;
-    bool read(uint32_t& value) const;
-    bool read(uint64_t& value) const;
+    /**
+     * Reads a value from the socket. No network-to-host translation is
+     * performed.
+     *
+     * @param[out] value         Destination for value
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(bool&     value) const;
 
-    void shutdown() const;
+    /**
+     * Reads a value from the socket. No network-to-host translation is
+     * performed.
+     *
+     * @param[out] value         Destination for value
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(uint8_t&  value) const;
+
+    /**
+     * Reads a value from the socket. Network-to-host translation is performed.
+     *
+     * @param[out] value         Destination for value
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(uint16_t& value) const;
+
+    /**
+     * Reads a value from the socket. Network-to-host translation is performed.
+     *
+     * @param[out] value         Destination for value
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(uint32_t& value) const;
+
+    /**
+     * Reads a value from the socket. Network-to-host translation is performed.
+     *
+     * @param[out] value         Destination for value
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(uint64_t& value) const;
 };
 
 /******************************************************************************/
@@ -249,6 +358,8 @@ class UdpSock final : public InetSock
     class Impl;
 
 public:
+    static const int MAX_PAYLOAD = 1472;
+
     UdpSock() =default;
 
     /**
@@ -276,46 +387,138 @@ public:
 
     std::string to_string() const;
 
-    void write(
-            const struct iovec* iov,
-            const int           iovCnt);
-
     /**
-     * Reads a UDP record sequentially (i.e., previously read bytes are
-     * skipped). When all bytes in the packet have been read, the packet is
-     * discarded. No network-to-host translation is performed.
+     * Adds bytes to be written. No host-to-network translation is performed.
      *
-     * @return  Number of new bytes read. 0 => EOF.
+     * @param[in] data    Bytes to be added. <b>Must exist until `send()`
+     *                    returns.</b>
+     * @param[in] nbytes  Number of bytes to be added.
      */
-    size_t read(
-            void*        bytes,
+    void addWrite(
+            const void*  data,
             const size_t nbytes);
 
     /**
-     * Reads a UDP record sequentially (i.e., previously read bytes are
-     * skipped). When all bytes in the packet have been read, the packet is
-     * discarded. No network-to-host translation is performed.
+     * Adds a byte. Host-to-network translation is performed.
      *
-     * @param[in] iov           I/O vector
-     * @return                  Number of new bytes read. 0 => EOF.
+     * @param[in] value  Value to be added.
+     */
+    void addWrite(const uint8_t value);
+
+    /**
+     * Adds a value. Host-to-network translation is performed.
+     *
+     * @param[in] value  Value to be added.
+     */
+    void addWrite(const bool value);
+
+    /**
+     * Adds a value. Host-to-network translation is performed.
+     *
+     * @param[in] value  Value to be added.
+     */
+    void addWrite(const uint16_t value);
+
+    /**
+     * Adds a value. Host-to-network translation is performed.
+     *
+     * @param[in] value  Value to be added.
+     */
+    void addWrite(const uint32_t value);
+
+    /**
+     * Adds a value. Host-to-network translation is performed.
+     *
+     * @param[in] value  Value to be added.
+     */
+    void addWrite(const uint64_t value);
+
+    /**
+     * Writes the UDP packet.
+     *
+     * @cancellationpoint  Yes
+     */
+    void write();
+
+    /**
+     * Adds bytes to be peeked by the next call to `peek()` Previously peeked
+     * bytes are skipped. No network-to-host translation is performed.
+     *
+     * @param[out] data             Destination for peeked bytes. <b>Must exist
+     *                              until `peek()` returns.</b>
+     * @param[in]  nbytes           Number of bytes to be peeked
+     * @throws     InvalidArgument  Addition would exceed UDP packet size
+     * @throws     LogicError       Out of vector I/O elements
+     * @cancellationpoint           No
+     */
+    void addPeek(
+            void* const  data,
+            const size_t nbytes);
+
+    /**
+     * Adds a value to be peeked by the next call to `peek()` Previously peeked
+     * bytes are skipped. Network-to-host translation is performed.
+     *
+     * @param[out] value            Destination for peeked value. <b>Must exist
+     *                              until `peek()` returns.</b>
+     * @throws     InvalidArgument  Addition would exceed UDP packet size
+     * @throws     LogicError       Out of vector I/O elements
+     * @cancellationpoint           No
+     */
+    void addPeek(uint8_t& value);
+
+    /**
+     * Adds a value to be peeked by the next call to `peek()` Previously peeked
+     * bytes are skipped. Network-to-host translation is performed.
+     *
+     * @param[out] value            Destination for peeked value. <b>Must exist
+     *                              until `peek()` returns.</b>
+     * @throws     InvalidArgument  Addition would exceed UDP packet size
+     * @throws     LogicError       Out of vector I/O elements
+     * @cancellationpoint           No
+     */
+    void addPeek(uint16_t& value);
+
+    /**
+     * Adds a value to be peeked by the next call to `peek()` Previously peeked
+     * bytes are skipped. Network-to-host translation is performed.
+     *
+     * @param[out] value            Destination for peeked value. <b>Must exist
+     *                              until `peek()` returns.</b>
+     * @throws     InvalidArgument  Addition would exceed UDP packet size
+     * @throws     LogicError       Out of vector I/O elements
+     * @cancellationpoint           No
+     */
+    void addPeek(uint32_t& value);
+
+    /**
+     * Adds a value to be peeked by the next call to `peek()` Previously peeked
+     * bytes are skipped. Network-to-host translation is performed.
+     *
+     * @param[out] value            Destination for peeked value. <b>Must exist
+     *                              until `peek()` returns.</b>
+     * @throws     InvalidArgument  Addition would exceed UDP packet size
+     * @throws     LogicError       Out of vector I/O elements
+     * @cancellationpoint           No
+     */
+    void addPeek(uint64_t& value);
+
+    /**
+     * Peeks at the UDP packet using the I/O vector set by previous calls to
+     * `setPeek()`. Previously peeked bytes are skipped.
+     *
+     * @retval    `false`       EOF or `halt()` called
+     * @retval    `true`        Success
      * @throws    SystemError   I/O error
      * @throws    RuntimeError  Packet is too small
      * @cancellationpoint       Yes
      */
-    size_t read(
-            const struct iovec* iov,
-            const int           iovCnt);
-
-    void discard();
+    bool peek() const;
 
     /**
-     * Shuts down the socket.
-     *
-     * @param[in] how              One of `SHUT_RD`, `SHUT_WR`, or `SHUT_RDWR`
-     * @throws    InvalidArgument  Invalid `how`
-     * @throws    SystemError      `::shutdown()` failure
+     * Discards the current packet. Idempotent.
      */
-    void shutdown(int how);
+    void discard();
 };
 
 } // namespace

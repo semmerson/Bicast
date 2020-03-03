@@ -30,35 +30,7 @@ class SockAddr::Impl
 protected:
     InetAddr             inetAddr;
     in_port_t            port;
-    std::string          strRep;
     std::hash<in_port_t> portHash;
-
-    /**
-     * Returns an appropriate socket.
-     *
-     * @param[in] family             Address family. One of `AF_INET` or
-     *                               `AF_INET6`.
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
-     */
-    static int createSocket(
-            const int family,
-            const int type,
-            const int protocol) {
-        int sd = ::socket(family, type, protocol);
-
-        if (sd == -1)
-            throw SYSTEM_ERROR("::socket() failure: {"
-                    "family: " + std::to_string(family) + ", "
-                    "type: " + std::to_string(type) + ", "
-                    "protocol: " + std::to_string(protocol) + "}");
-
-        return sd;
-    }
 
 public:
     Impl()
@@ -66,43 +38,31 @@ public:
         , port{0}
     {}
 
-    Impl(   const InetAddr& inAddr,
+    Impl(   const InetAddr& inetAddr,
             const in_port_t port)
-        : inetAddr{inAddr}
+        : inetAddr{inetAddr}
         , port{port}
-        , strRep{}
     {
         if (port > 65535)
             throw INVALID_ARGUMENT("Port number is too large: " +
                     std::to_string(port));
     }
 
-    virtual ~Impl() =0;
-
     const InetAddr& getInetAddr() const noexcept
     {
         return inetAddr;
     }
 
-    /**
-     * Returns a socket appropriate to this instance's address family.
-     *
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
-     */
-    virtual int socket(
-            const int type,
-            const int protocol) const =0;
-
-    virtual const Impl* clone(in_port_t port) const =0;
-
-    const std::string& to_string() const noexcept
+    in_port_t getPort() const noexcept
     {
-        return strRep;
+        return port;
+    }
+
+    std::string to_string() const noexcept
+    {
+        return (inetAddr.getFamily() == AF_INET6)
+                ? "[" + inetAddr.to_string() + "]:" + std::to_string(port)
+                : inetAddr.to_string() + ":" + std::to_string(port);
     }
 
     bool operator <(const Impl& rhs) const
@@ -128,67 +88,9 @@ public:
         return inetAddr.hash() ^ portHash(port);
     }
 
-    /**
-     * Binds a socket to a local socket address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::bind()` failure
-     * @threadsafety                 Safe
-     */
-    virtual void bind(const int sd) const =0;
-
-    /**
-     * Connects a socket to a remote socket address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::connect()` failure
-     * @threadsafety                 Safe
-     */
-    virtual void connect(const int sd) const =0;
-
-    in_port_t getPort() const noexcept
+    void get_sockaddr(struct sockaddr_storage& storage) const
     {
-        return port;
-    }
-
-    virtual void setAddr(struct sockaddr_storage& storage) const =0;
-};
-
-SockAddr::Impl::~Impl()
-{}
-
-/******************************************************************************/
-
-class SockAddrIn final : public SockAddr::Impl
-{
-private:
-    struct sockaddr_in  sockaddr;
-
-public:
-    SockAddrIn()
-        : Impl()
-        , sockaddr{0}
-    {}
-
-    SockAddrIn(const struct sockaddr_in& sockaddr)
-        : Impl(InetAddr(sockaddr.sin_addr), ntohs(sockaddr.sin_port))
-        , sockaddr(sockaddr)
-    {
-        strRep = inetAddr.to_string() + ":" + std::to_string(port);
-    }
-
-    SockAddrIn(
-            const in_addr_t addr,
-            const in_port_t port) ///< Port number in host byte-order
-        : Impl{InetAddr(addr), port}
-        , sockaddr{0}
-    {
-        LOG_DEBUG("{addr: %s, port: %hu}", inetAddr.to_string().c_str(), port);
-        sockaddr.sin_family = AF_INET;
-        sockaddr.sin_port = htons(port);
-        sockaddr.sin_addr.s_addr = addr;
-
-        strRep = inetAddr.to_string() + ":" + std::to_string(port);
+        inetAddr.get_sockaddr(storage, port);
     }
 
     /**
@@ -203,263 +105,9 @@ public:
      */
     int socket(
             const int type,
-            const int protocol) const {
-        return createSocket(AF_INET, type, protocol);
-    }
-
-    const SockAddrIn* clone(in_port_t port) const
-    {
-        return new SockAddrIn(sockaddr.sin_addr.s_addr, port);
-    }
-
-    /**
-     * Binds a socket to this instance's address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::bind()` failure
-     * @threadsafety                 Safe
-     */
-    void bind(const int sd) const {
-        if (::bind(sd, reinterpret_cast<const struct sockaddr*>(&sockaddr),
-                sizeof(sockaddr)))
-            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) +
-                    " to " + strRep);
-    }
-
-    /**
-     * Connects a socket to a remote socket address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::connect()` failure
-     * @threadsafety                 Safe
-     */
-    void connect(const int sd) const {
-        if (::connect(sd, reinterpret_cast<const struct sockaddr*>(&sockaddr),
-                sizeof(sockaddr)))
-            throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) +
-                    " to " + strRep);
-    }
-
-    void setAddr(struct sockaddr_storage& storage) const
-    {
-        ::memcpy(&storage, &sockaddr, sizeof(sockaddr));
-    }
-};
-
-/******************************************************************************/
-
-class SockAddrIn6 final : public SockAddr::Impl
-{
-private:
-    struct sockaddr_in6 sockaddr;
-
-public:
-    SockAddrIn6()
-        : Impl()
-        , sockaddr{0}
-    {}
-
-    SockAddrIn6(const struct sockaddr_in6& sockaddr)
-        : Impl(InetAddr(sockaddr.sin6_addr), ntohs(sockaddr.sin6_port))
-        , sockaddr(sockaddr)
-    {
-        strRep = "[" + inetAddr.to_string() + "]:" + std::to_string(port);
-    }
-
-    SockAddrIn6(
-            const struct in6_addr& addr,
-            const in_port_t        port) ///< Port number in host byte-order
-        : Impl{InetAddr(addr), port}
-        , sockaddr{0}
-    {
-        sockaddr.sin6_family = AF_INET6;
-        sockaddr.sin6_port = htons(port);
-        sockaddr.sin6_addr = addr;
-
-        strRep = "[" + inetAddr.to_string() + "]:" + std::to_string(port);
-    }
-
-    /**
-     * Returns a socket appropriate for this instance's address family.
-     *
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
-     */
-    int socket(
-            const int type,
-            const int protocol) const {
-        return createSocket(AF_INET6, type, protocol);
-    }
-
-    const SockAddrIn6* clone(in_port_t port) const
-    {
-        return new SockAddrIn6(sockaddr.sin6_addr, port);
-    }
-
-    /**
-     * Binds a socket to this instance's socket address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::bind()` failure
-     * @threadsafety                 Safe
-     */
-    void bind(const int sd) const {
-        if (::bind(sd, reinterpret_cast<const struct sockaddr*>(&sockaddr),
-                sizeof(sockaddr)))
-            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) +
-                    " to " + strRep);
-    }
-
-    /**
-     * Connects a socket to a remote socket address.
-     *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::connect()` failure
-     * @threadsafety                 Safe
-     */
-    void connect(const int sd) const {
-        if (::connect(sd, reinterpret_cast<const struct sockaddr*>(&sockaddr),
-                sizeof(sockaddr)))
-            throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) +
-                    " to " + strRep);
-    }
-
-    void setAddr(struct sockaddr_storage& storage) const
-    {
-        ::memcpy(&storage, &sockaddr, sizeof(sockaddr));
-    }
-};
-
-/******************************************************************************/
-
-class SockAddrName final : public SockAddr::Impl
-{
-private:
-    std::string         name;
-
-    /**
-     * Sets a socket address from the first IP-based Internet address that
-     * matches the given information.
-     *
-     * @param[out] sockaddr           Socket address
-     * @param[in]  name               Name of host
-     * @param[in]  family             Address family. One of `AF_INET` or
-     *                                `AF_INET6`.
-     * @param[in]  port               Port number in host byte-order
-     * @retval     `true`             Success. `sockaddr` is set.
-     * @retval     `false`            Failure. `sockaddr` is not set.
-     * @throws     std::system_error  `::getaddrinfo()` failure
-     * @exceptionsafety               Strong guarantee
-     * @threadsafety                  Safe
-     * @cancellationpoint             Maybe (`::getaddrinfo()` may be one)
-     */
-    static bool setSockAddr(
-            SockAddr&          sockAddr,
-            const std::string& name,
-            const int          family,
-            const in_port_t    port)
-    {
-        bool             success = false;
-        struct addrinfo  hints = {};
-        struct addrinfo* list;
-
-        hints.ai_family = family;
-        hints.ai_socktype = 0;
-
-        if (::getaddrinfo(name.data(), nullptr, &hints, &list))
-            throw SYSTEM_ERROR(
-                    std::string("::getaddrinfo() failure for host \"") +
-                    name.data() + "\"");
-        try {
-            for (struct addrinfo* entry = list; entry != NULL;
-                    entry = entry->ai_next) {
-                if (entry->ai_family == AF_INET) {
-                    const struct sockaddr_in* sockAddrIn = reinterpret_cast<
-                            const struct sockaddr_in*>(entry->ai_addr);
-
-                    sockAddr = SockAddr(sockAddrIn->sin_addr.s_addr, port);
-                    success = true;
-                    break;
-                }
-                else if (entry->ai_family == AF_INET6) {
-                    const struct sockaddr_in6* sockAddrIn6 = reinterpret_cast<
-                            const struct sockaddr_in6*>(entry->ai_addr);
-
-                    sockAddr = SockAddr(sockAddrIn6->sin6_addr, port);
-                    success = true;
-                    break;
-                }
-            }
-
-            freeaddrinfo(list);
-            return success;
-        }
-        catch (...) {
-            freeaddrinfo(list);
-            throw;
-        }
-    }
-
-    /**
-     * Sets a socket address from the first IP-based Internet address
-     * associated with this instance's hostname.
-     *
-     * @param[out] sockAddr        Socket address to be set
-     * @throws std::system_error   `::getaddrinfo()` failure
-     * @throws std::runtime_error  Couldn't get IP address
-     * @exceptionsafety            Strong guarantee
-     * @threadsafety               Safe
-     * @cancellationpoint          Maybe (`::getaddrinfo()` may be one)
-     */
-    void setSockAddr(SockAddr& sockAddr) const
-    {
-        if (!setSockAddr(sockAddr, name, AF_INET, port) &&
-            !setSockAddr(sockAddr, name, AF_INET6, port))
-                throw RUNTIME_ERROR(
-                        "Couldn't get IP address for \"" + name + "\"");
-    }
-
-public:
-    SockAddrName()
-        : Impl{}
-        , name{}
-    {}
-
-    SockAddrName(
-            const std::string name,
-            const in_port_t   port) ///< Port number in host byte-order
-        : SockAddr::Impl{InetAddr(name), port}
-        , name{name}
-    {
-        strRep = name + ":" + std::to_string(port);
-    }
-
-    /**
-     * Returns a socket appropriate for this instance's address family.
-     *
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
-     */
-    int socket(
-            const int type,
             const int protocol) const
     {
-        SockAddr sockAddr;
-        setSockAddr(sockAddr);
-        return sockAddr.socket(type, protocol);
-    }
-
-    const SockAddrName* clone(in_port_t port) const
-    {
-        return new SockAddrName(name, port);
+        return inetAddr.socket(type, protocol);
     }
 
     /**
@@ -471,9 +119,11 @@ public:
      */
     void bind(const int sd) const
     {
-        SockAddr sockAddr;
-        setSockAddr(sockAddr);
-        sockAddr.bind(sd);
+        struct sockaddr_storage storage;
+
+        if (::bind(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage)))
+            throw SYSTEM_ERROR("Couldn't bind() socket " + std::to_string(sd) +
+                    " to " + to_string());
     }
 
     /**
@@ -485,16 +135,43 @@ public:
      */
     void connect(const int sd) const
     {
-        SockAddr sockAddr;
-        setSockAddr(sockAddr);
-        sockAddr.connect(sd);
+        struct sockaddr_storage storage;
+
+        if (::connect(sd, inetAddr.get_sockaddr(storage, port),
+                sizeof(storage)))
+            throw SYSTEM_ERROR("Couldn't connect() socket " +
+                    std::to_string(sd) + " to " + to_string());
     }
 
-    void setAddr(struct sockaddr_storage& storage) const
+    /**
+     * Joins the source-specific multicast group identified by this instance
+     * and the address of the sending host.
+     *
+     * @param[in] sd       Socket identifier
+     * @param[in] srcAddr  Address of the sending host
+     * @threadsafety       Safe
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
+     *                     called if either address is based on a name)
+     */
+    void join(
+            const int       sd,
+            const InetAddr& srcAddr) const
     {
-        SockAddr sockAddr;
-        setSockAddr(sockAddr);
-        sockAddr.setAddr(storage);
+        LOG_DEBUG("Joining multicast group %s from source %s",
+                to_string().data(), srcAddr.to_string().data());
+
+        // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
+        struct group_source_req mreq = {};
+
+        mreq.gsr_interface = 0; // 0 => O/S chooses interface
+        inetAddr.get_sockaddr(mreq.gsr_group, port);
+        srcAddr.get_sockaddr(mreq.gsr_source, 0);
+
+        if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq,
+                sizeof(mreq)))
+            throw SYSTEM_ERROR("Couldn't join multicast group " +
+                    to_string() + " from source " + srcAddr.to_string());
     }
 };
 
@@ -504,74 +181,81 @@ SockAddr::SockAddr() noexcept
     : pImpl()
 {}
 
-SockAddr::SockAddr(const Impl* const impl)
-    : pImpl{impl}
+SockAddr::SockAddr(
+        const InetAddr& inetAddr,
+        in_port_t       port)
+    : pImpl{new Impl(inetAddr, port)}
 {}
 
 SockAddr::SockAddr(
         const in_addr_t addr,
         const in_port_t port) ///< Port number in host byte-order
-     : pImpl{new SockAddrIn(addr, port)}
+     : SockAddr(InetAddr(addr), port)
 {}
 
 SockAddr::SockAddr(
         const struct in_addr& addr,
         const in_port_t       port) ///< Port number in host byte-order
-     : pImpl{new SockAddrIn(addr.s_addr, port)}
+     : SockAddr(InetAddr(addr.s_addr), port)
 {}
 
 SockAddr::SockAddr(const struct sockaddr_in& sockaddr)
-     : pImpl{new SockAddrIn(sockaddr.sin_addr.s_addr,
-             ntohs(sockaddr.sin_port))}
+     : SockAddr(InetAddr(sockaddr.sin_addr.s_addr), ntohs(sockaddr.sin_port))
 {}
 
 SockAddr::SockAddr(
         const struct in6_addr& addr,
         const in_port_t        port) ///< Port number in host byte-order
-    : pImpl{new SockAddrIn6(addr, port)}
+    : SockAddr(InetAddr(addr), port)
 {}
 
 SockAddr::SockAddr(const struct sockaddr_in6& sockaddr)
-    : pImpl{new SockAddrIn6(sockaddr.sin6_addr, ntohs(sockaddr.sin6_port))}
+    : SockAddr(InetAddr(sockaddr.sin6_addr), ntohs(sockaddr.sin6_port))
 {}
 
-SockAddr::SockAddr(const struct sockaddr& sockaddr)
-    : pImpl{}
+SockAddr::SockAddr(const struct sockaddr_storage& storage)
+    : SockAddr{}
 {
-    if (sockaddr.sa_family == AF_INET) {
+    if (storage.ss_family == AF_INET) {
         const struct sockaddr_in* addr =
-                reinterpret_cast<const struct sockaddr_in*>(&sockaddr);
-        pImpl.reset(new SockAddrIn(*addr));
+                reinterpret_cast<const struct sockaddr_in*>(&storage);
+        pImpl.reset(new Impl(InetAddr(addr->sin_addr),
+                ntohs(addr->sin_port)));
     }
-    else if (sockaddr.sa_family == AF_INET6) {
+    else if (storage.ss_family == AF_INET6) {
         const struct sockaddr_in6* addr =
-                reinterpret_cast<const struct sockaddr_in6*>(&sockaddr);
-        pImpl.reset(new SockAddrIn6(*addr));
+                reinterpret_cast<const struct sockaddr_in6*>(&storage);
+        pImpl.reset(new Impl(InetAddr(addr->sin6_addr),
+                ntohs(addr->sin6_port)));
     }
     else {
         throw INVALID_ARGUMENT("Unsupported address family: " +
-                std::to_string(sockaddr.sa_family));
+                std::to_string(storage.ss_family));
     }
     //LOG_DEBUG("%s", pImpl->to_string().c_str());
 }
 
+SockAddr::SockAddr(const struct sockaddr& sockaddr)
+    : SockAddr{*reinterpret_cast<const struct sockaddr_storage*>(&sockaddr)}
+{}
+
 SockAddr::SockAddr(
         const std::string& addr,
         const in_port_t    port)
-    : pImpl{}
+    : SockAddr{}
 {
     const char*     cstr{addr.data()};
     struct in_addr  inaddr;
     struct in6_addr in6addr;
 
     if (inet_pton(AF_INET, cstr, &inaddr) == 1) {
-        pImpl.reset(new SockAddrIn(inaddr.s_addr, port));
+        pImpl.reset(new Impl(InetAddr(inaddr), port));
     }
     else if (inet_pton(AF_INET6, cstr, &in6addr) == 1) {
-        pImpl.reset(new SockAddrIn6(in6addr, port));
+        pImpl.reset(new Impl(InetAddr(in6addr), port));
     }
     else {
-        pImpl.reset(new SockAddrName(addr, port));
+        pImpl.reset(new Impl(InetAddr(addr), port));
     }
 }
 
@@ -621,6 +305,7 @@ static bool parseSpec(
 }
 
 SockAddr::SockAddr(const std::string& spec)
+    : SockAddr{}
 {
     // std::regex in gcc 4.8 doesn't work; hence, the following
 
@@ -636,8 +321,7 @@ SockAddr::SockAddr(const std::string& spec)
                 throw INVALID_ARGUMENT(std::string(
                         "Invalid IPv4 specification: \"") + id + "\"");
 
-            pImpl.reset(new SockAddrIn(addr,
-                    static_cast<in_port_t>(port)));
+            pImpl.reset(new Impl(InetAddr(addr), port));
         }
         else if (parseSpec(cstr, "[%m[0-9a-fA-F:]]:%5lu%n", id, port)) {
             struct in6_addr addr;
@@ -646,12 +330,10 @@ SockAddr::SockAddr(const std::string& spec)
                 throw INVALID_ARGUMENT(std::string(
                         "Invalid IPv6 specification: \"") + id + "\"");
 
-            pImpl.reset(new SockAddrIn6(addr,
-                    static_cast<in_port_t>(port)));
+            pImpl.reset(new Impl(addr, port));
         }
         else if (parseSpec(cstr, "%m[0-9a-zA-Z._-]:%5lu%n", id, port)) {
-            pImpl.reset(new SockAddrName(id,
-                    static_cast<in_port_t>(port)));
+            pImpl.reset(new Impl(InetAddr(id), port));
         }
         else {
             throw INVALID_ARGUMENT("Invalid socket address: \"" + spec + "\"");
@@ -665,16 +347,21 @@ SockAddr::SockAddr(const std::string& spec)
     }
 }
 
+SockAddr SockAddr::clone(const in_port_t port) const
+{
+    return SockAddr{getInetAddr(), port};
+}
+
+SockAddr::operator bool() const noexcept
+{
+    return static_cast<bool>(pImpl);
+}
+
 int SockAddr::socket(
             const int type,
             const int protocol) const
 {
     return pImpl->socket(type, protocol);
-}
-
-SockAddr SockAddr::clone(const in_port_t port) const
-{
-    return SockAddr(pImpl->clone(port));
 }
 
 bool SockAddr::operator <(const SockAddr& rhs) const
@@ -692,9 +379,9 @@ size_t SockAddr::hash() const noexcept
     return pImpl->hash();
 }
 
-const std::string& SockAddr::to_string() const noexcept
+std::string SockAddr::to_string() const noexcept
 {
-    return pImpl->to_string();
+    return pImpl ? pImpl->to_string() : "<unset>";
 }
 
 void SockAddr::bind(const int sd) const
@@ -707,6 +394,13 @@ void SockAddr::connect(const int sd) const
     pImpl->connect(sd);
 }
 
+void SockAddr::join(
+        const int       sd,
+        const InetAddr& srcAddr) const
+{
+    pImpl->join(sd, srcAddr);
+}
+
 const InetAddr& SockAddr::getInetAddr() const noexcept
 {
     return pImpl->getInetAddr();
@@ -717,9 +411,9 @@ in_port_t SockAddr::getPort() const noexcept
     return pImpl->getPort();
 }
 
-void SockAddr::setAddr(struct sockaddr_storage& storage) const
+void SockAddr::get_sockaddr(struct sockaddr_storage& storage) const
 {
-    return pImpl->setAddr(storage);
+    return pImpl->get_sockaddr(storage);
 }
 
 } // namespace

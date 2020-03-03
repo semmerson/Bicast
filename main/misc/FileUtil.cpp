@@ -61,48 +61,98 @@ void ensureDir(
 void pruneDir(const std::string& pathname)
 {
     DIR* dir = ::opendir(pathname.data());
-    if (dir == nullptr)
-        throw SYSTEM_ERROR("Couldn't open directory \"" + pathname + "\"");
 
-    try {
-        struct dirent  entry;
-        struct dirent* result;
-        int            status;
-        bool           shouldDelete = true;
+    if (dir) {
+        try {
+            struct dirent  entry;
+            struct dirent* result;
+            int            status;
+            bool           shouldDelete = true;
 
-        for (status = ::readdir_r(dir, &entry, &result);
-                status == 0 && result != nullptr;
-                status = ::readdir_r(dir, &entry, &result)) {
-            const char* name = entry.d_name;
+            for (status = ::readdir_r(dir, &entry, &result);
+                    status == 0 && result != nullptr;
+                    status = ::readdir_r(dir, &entry, &result)) {
+                const char* name = entry.d_name;
 
-            if (::strcmp(".", name) && ::strcmp("..", name)) {
-                const std::string subdir = pathname + "/" + name;
-                struct stat       statBuf;
+                if (::strcmp(".", name) && ::strcmp("..", name)) {
+                    const std::string subName = pathname + "/" + name;
+                    struct stat       statBuf;
 
-                if (::stat(subdir.data(), &statBuf))
-                    throw SYSTEM_ERROR(std::string("stat() failure on \"") +
-                            subdir + "\"");
+                    if (::stat(subName.data(), &statBuf))
+                        throw SYSTEM_ERROR(std::string("stat() failure on \"") +
+                                subName + "\"");
 
-                if (!S_ISDIR(statBuf.st_mode)) {
-                    shouldDelete = false;
-                }
-                else {
-                    pruneDir(subdir);
+                    if (!S_ISDIR(statBuf.st_mode)) {
+                        shouldDelete = false;
+                    }
+                    else {
+                        pruneDir(subName);
+                    }
                 }
             }
+            if (status && status != ENOENT)
+                throw SYSTEM_ERROR("Couldn't read directory \"" + pathname +
+                        "\"");
+
+            if (shouldDelete && ::rmdir(pathname.data()))
+                throw SYSTEM_ERROR("Couldn't delete directory \"" + pathname +
+                        "\"");
+
+            ::closedir(dir);
         }
-        if (status && status != ENOENT)
-            throw SYSTEM_ERROR("Couldn't read directory \"" + pathname + "\"");
-
-        if (shouldDelete && ::rmdir(pathname.data()))
-            throw SYSTEM_ERROR("Couldn't delete directory \"" + pathname +
-                    "\"");
-
-        ::closedir(dir);
+        catch (...) {
+            ::closedir(dir);
+            throw;
+        }
     }
-    catch (...) {
-        ::closedir(dir);
-        throw;
+}
+
+void deleteDir(const std::string& pathname)
+{
+    DIR* dir = ::opendir(pathname.data());
+
+    if (dir) {
+        try {
+            struct dirent  entry;
+            struct dirent* result;
+            int            status;
+            bool           shouldDelete = true;
+
+            for (status = ::readdir_r(dir, &entry, &result);
+                    status == 0 && result != nullptr;
+                    status = ::readdir_r(dir, &entry, &result)) {
+                const char* name = entry.d_name;
+
+                if (::strcmp(".", name) && ::strcmp("..", name)) {
+                    const std::string subName = pathname + "/" + name;
+                    struct stat       statBuf;
+
+                    if (::stat(subName.data(), &statBuf))
+                        throw SYSTEM_ERROR(std::string("stat() failure on \"") +
+                                subName + "\"");
+
+                    if (!S_ISDIR(statBuf.st_mode)) {
+                        ::unlink(subName.data());
+                    }
+                    else {
+                        deleteDir(subName);
+                    }
+                }
+            }
+            if (status && status != ENOENT)
+                throw SYSTEM_ERROR("Couldn't read directory \"" + pathname +
+                        "\"");
+
+            if (::rmdir(pathname.data()))
+                throw SYSTEM_ERROR("Couldn't delete directory \"" + pathname +
+                        "\"");
+
+            ::closedir(dir);
+        }
+        catch (...) {
+            ::closedir(dir);
+            throw;
+        }
     }
 }
 

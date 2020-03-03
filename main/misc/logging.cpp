@@ -77,8 +77,8 @@ static std::string codeStamp(
 {
     char name[::strlen(file)+1];
     ::strcpy(name, file);
-    return std::string(::basename(name)) + ":" + func + ":" +
-            std::to_string(line);
+    return std::string(::basename(name)) + ":" + std::to_string(line) + ":" +
+            func;
 }
 
 static const char*         logLevelNames[] = {"TRACE", "DEBUG", "INFO",
@@ -126,6 +126,7 @@ std::string makeWhat(
         const char* const  func,
         const std::string& msg)
 {
+    //LOG_DEBUG("Entered");
     auto what = codeStamp(file, line, func);
 
     for (int n = what.size(); n < LOC_WIDTH; ++n)
@@ -133,6 +134,7 @@ std::string makeWhat(
 
     what += ' ' + msg;
 
+    //LOG_DEBUG("Made what: %s", what.data());
     return what;
 }
 
@@ -222,6 +224,17 @@ void log(
         const char*           file,
         const int             line,
         const char* const     func,
+        const std::exception& ex)
+{
+    StreamGuard guard(stderr);
+    log(level, ex);
+}
+
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const char* const     func,
         const std::exception& ex,
         const char*           fmt,
         ...)
@@ -234,6 +247,16 @@ void log(
     va_start(argList, fmt);
     log(level, file, line, func, fmt, argList);
     va_end(argList);
+}
+
+void log(
+        const LogLevel    level,
+        const char*       file,
+        const int         line,
+        const char*       func,
+        const std::string msg)
+{
+    log(level, file, line, func, "%s", msg.data());
 }
 
 } // namespace

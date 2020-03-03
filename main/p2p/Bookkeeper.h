@@ -72,53 +72,50 @@ public:
     bool isFromConnect(const Peer& peer) const;
 
     /**
-     * Marks a peer as having requested a particular chunk.
+     * Indicates if a chunk should be requested by a peer. If yes, then the
+     * chunk is added to the list of chunks requested by the peer; if no, then
+     * the peer is added to a list of potential peers for the chunk.
      *
-     * @param[in] rmtAddr         Address of the remote peer
-     * @param[in] chunkId         Chunk Identifier
-     * @throws std::out_of_range  `peer` is unknown
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
+     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] chunkId            Chunk Identifier
+     * @return    `true`             Chunk should be requested
+     * @return    `false`            Chunk shouldn't be requested
+     * @throws    std::out_of_range  Remote peer is unknown
+     * @throws    logicError         Chunk has already been requested from
+     *                               remote peer or remote peer is already
+     *                               alternative peer for chunk
+     * @threadsafety                 Safe
+     * @cancellationpoint            No
      */
-    void requested(
+    bool shouldRequest(
             const SockAddr& rmtAddr,
-            const ChunkId chunkId) const;
+            const ChunkId   chunkId) const;
 
     /**
-     * Indicates if a chunk has been requested by any peer.
+     * Process a chunk as having been received from a peer. Nothing happens if
+     * the chunk wasn't requested by the peer; otherwise, the peer is marked as
+     * having received the chunk and the set of alternative peers that could but
+     * haven't requested the chunk is cleared.
      *
-     * @param[in] chunkId    Chunk Identifier
-     * @return    `true`     The chunk has been requested
-     * @return    `false`    The chunk has not been requested
-     * @threadsafety         Safe
-     * @exceptionsafety      No throw
-     * @cancellationpoint    No
-     */
-    bool wasRequested(const ChunkId chunkId) const noexcept;
-
-    /**
-     * Marks a peer as having received a particular chunk.
-     *
-     * @param[in] rmtAddr         Address of the remote peer
-     * @param[in] chunkId         Chunk Identifier
-     * @throws std::out_of_range  `rmtAddr` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
+     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] chunkId            Chunk Identifier
+     * @retval    `false`            Chunk wasn't requested by peer.
+     * @retval    `true`             Chunk was requested by peer
+     * @throws    std::out_of_range  `peer` is unknown
+     * @threadsafety                 Safe
+     * @exceptionsafety              Basic guarantee
+     * @cancellationpoint            No
      */
     void received(
             const SockAddr& rmtAddr,
             const ChunkId   chunkId) const;
 
     /**
-     * Returns the uniquely worst performing peer.
+     * Returns a worst performing peer.
      *
-     * @return                    The worst performing peer since construction
-     *                            or `resetCounts()` was called. The returned
-     *                            peer will test false if the worst performing
-     *                            peer isn't unique.
+     * @return                    A worst performing peer since construction
+     *                            or `resetCounts()` was called. Will test
+     *                            false if the set is empty.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Strong guarantee
@@ -136,8 +133,10 @@ public:
     void resetCounts() const noexcept;
 
     /**
-     * Returns the indexes of chunks that a peer has requested  but that have
-     * not yet been received. Should be called before `erase()`.
+     * Returns a reference to the identifiers of chunks that a peer has
+     * requested but that have not yet been received. The set of identifiers
+     * is deleted when `erase()` is called -- so the reference must not be
+     * dereferenced after that.
      *
      * @param[in] peer            The peer in question
      * @return                    [first, last) iterators over the chunk
@@ -147,41 +146,56 @@ public:
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `popBestAlt()`
+     * @see                       `requested()`
      * @see                       `erase()`
      */
-    std::pair<ChunkIdIter, ChunkIdIter> getChunkIds(const Peer& peer) const;
+    Bookkeeper::ChunkIds& getRequested(const Peer& peer) const;
 
     /**
-     * Removes a peer. Should be called after `getProdIndexes()` and
-     * `getSegIds()` and before `getBestPeer()`.
-     *
-     * @param[in] peer            The peer to be removed
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `getProdIndexes()`
-     * @see                       `getSegIds()`
-     * @see                       `getBestPeer()`
-     */
-    void erase(const Peer& peer) const;
-
-    /**
-     * Returns the best local peer to request a particular chunk and that isn't
-     * a particular peer.
+     * Returns the best peer to request a chunk that hasn't already requested
+     * it. The peer is removed from the set of such peers.
      *
      * @param[in] chunkId         Chunk Identifier
-     * @param[in] except          Peer to avoid
      * @return                    The peer. Will test `false` if no such peer
      *                            exists.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `getRequested()`
+     * @see                       `requested()`
+     * @see                       `erase()`
      */
-    Peer getBestPeerExcept(
-            const ChunkId chunkId,
-            const Peer&   except) const;
+    Peer popBestAlt(const ChunkId chunkId) const;
+
+    /**
+     * Marks a peer as being responsible for a chunk.
+     *
+     * @param[in] rmtAddr  Address of associated remote peer
+     * @param[in] chunkId  Identifier of chunk
+     * @see                `getRequested()`
+     * @see                `popBestAlt()`
+     * @see                `erase()`
+     */
+    void requested(
+            const SockAddr& rmtAddr,
+            const ChunkId   chunkId) const;
+
+    /**
+     * Removes a peer. Should be called after processing the entire set
+     * returned by `getChunkIds()`.
+     *
+     * @param[in] peer            The peer to be removed
+     * @throws std::out_of_range  `peer` is unknown
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     * @see                       `getRequested()`
+     * @see                       `popBestAlt()`
+     * @see                       `requested()`
+     */
+    void erase(const Peer& peer) const;
 };
 
 } // namespace

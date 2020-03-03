@@ -91,6 +91,15 @@ public:
      * exception. Idempotent.
      */
     void close();
+
+    /**
+     * Indicates if the pool of servers is empty. Even if false, `pop()` might
+     * not immediately return.
+     *
+     * @retval `false`  Pool isn't empty
+     * @retval `true`   Pool is empty
+     */
+    bool empty() const;
 };
 
 } // namespace

@@ -33,8 +33,9 @@ class HycastTest :
 {
 protected:
     hycast::SockAddr        grpAddr; // Multicast group address
-    hycast::SockAddr        sndrAddr;
-    hycast::SockAddr        rcvrAddr;
+    hycast::InetAddr        sndrInetAddr;
+    hycast::SockAddr        sndrSockAddr;
+    hycast::SockAddr        rcvrSockAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     typedef enum {
@@ -74,8 +75,9 @@ protected:
 
     HycastTest()
         : grpAddr("232.1.1.1:3880")
-        , sndrAddr{"localhost:3880"}
-        , rcvrAddr{"localhost:3881"} // NB: Not a Linux dynamic port number
+        , sndrInetAddr{"localhost"}
+        , sndrSockAddr{sndrInetAddr, 3880}
+        , rcvrSockAddr{"localhost:3881"} // NB: Not a Linux dynamic port number
         , mutex{}
         , cond{}
         , prodId{1}
@@ -157,7 +159,7 @@ protected:
     }
 
     // Receiver-side
-    bool hereIs(const hycast::ProdInfo& actual)
+    bool hereIsMcast(const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -218,7 +220,7 @@ TEST_F(HycastTest, SingleReceiver)
 
     // Start sender
         // Start P2P component
-        hycast::P2pMgr sndrP2pMgr(sndrAddr, 0, portPool, 1, sndrSrvrPool,
+        hycast::P2pMgr sndrP2pMgr(sndrSockAddr, 0, portPool, 1, sndrSrvrPool,
                 *this);
         std::thread    sndrThread(&HycastTest::runP2pMgr, this,
                 std::ref(sndrP2pMgr));
@@ -229,14 +231,14 @@ TEST_F(HycastTest, SingleReceiver)
 
     // Start receiver
         // Start P2P component
-        hycast::ServerPool rcvrSrvrPool(std::set<hycast::SockAddr>{sndrAddr});
-        hycast::P2pMgr     rcvrP2pMgr(rcvrAddr, 0, portPool, 1, rcvrSrvrPool,
+        hycast::ServerPool rcvrSrvrPool(std::set<hycast::SockAddr>{sndrSockAddr});
+        hycast::P2pMgr     rcvrP2pMgr(rcvrSockAddr, 0, portPool, 1, rcvrSrvrPool,
                 *this);
         std::thread        rcvrThread(&HycastTest::runP2pMgr, this,
                 std::ref(rcvrP2pMgr));
 
         // Start multicast component
-        hycast::UdpSock   rcvrMcastSock{grpAddr, sndrAddr};
+        hycast::UdpSock   rcvrMcastSock{grpAddr, sndrInetAddr};
         hycast::McastRcvr mcastRcvr{rcvrMcastSock, *this};
         std::thread       rcvrThread(&HycastTest::runRcvr, this,
                 std::ref(mcastRcvr));

@@ -22,7 +22,7 @@
 namespace {
 
 /// The fixture for testing class `Repository`
-class RepositoryTest : public ::testing::Test
+class RepositoryTest : public ::testing::Test, public hycast::RcvRepoObs
 {
 protected:
     const std::string     rootPath;
@@ -54,22 +54,27 @@ public:
     {
         EXPECT_EQ(prodInfo, actualProdInfo);
     }
+
+    void completed(const hycast::ProdInfo& actualProdInfo)
+    {
+        EXPECT_EQ(prodInfo, actualProdInfo);
+    }
 };
 
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::SrcRepo srcRepo(rootPath, segSize);
-    hycast::SnkRepo snkRepo(rootPath, segSize);
+    hycast::SndRepo srcRepo(rootPath, segSize);
+    hycast::RcvRepo snkRepo(rootPath, segSize, *this);
 }
 
 // Tests pathname of file
 TEST_F(RepositoryTest, Pathname)
 {
-    hycast::SrcRepo repo(rootPath, segSize);
+    hycast::SndRepo repo(rootPath, segSize);
     std::cout << "ProdId pathname: " << repo.getPathname(prodIndex) << '\n';
 
-    const std::string& name = prodInfo.getName();
+    const std::string& name = prodInfo.getProdName();
     std::cout << "ProdName pathname: " << repo.getPathname(name) << '\n';
 }
 
@@ -79,7 +84,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
     int         status;
     std::string indexPath;
     {
-        hycast::SnkRepo repo(rootPath, segSize);
+        hycast::RcvRepo repo(rootPath, segSize, *this);
         indexPath = repo.getPathname(prodIndex);
         status = ::unlink(indexPath.data());
         if (status == -1)
@@ -102,10 +107,10 @@ TEST_F(RepositoryTest, SaveInfoThenData)
     std::string indexPath;
     std::string namePath;
     {
-        hycast::SnkRepo repo(rootPath, segSize);
+        hycast::RcvRepo repo(rootPath, segSize, *this);
 
         indexPath = repo.getPathname(prodIndex);
-        namePath = repo.getPathname(prodInfo.getName());
+        namePath = repo.getPathname(prodInfo.getProdName());
 
         ::unlink(indexPath.data());
         ::unlink(namePath.data());
@@ -147,9 +152,9 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
     std::string indexPath;
     std::string namePath;
     {
-        hycast::SnkRepo repo(rootPath, segSize);
+        hycast::RcvRepo repo(rootPath, segSize, *this);
         indexPath = repo.getPathname(prodIndex);
-        namePath = repo.getPathname(prodInfo.getName());
+        namePath = repo.getPathname(prodInfo.getProdName());
         ::unlink(indexPath.data());
         ::unlink(namePath.data());
         repo.save(prodInfo);
@@ -182,8 +187,8 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
 TEST_F(RepositoryTest, CreatProdForSending)
 {
     // Create file
-    hycast::SrcRepo repo(rootPath, segSize);
-    std::string     namePath = repo.getPathname(prodInfo.getName());
+    hycast::SndRepo repo(rootPath, segSize);
+    std::string     namePath = repo.getPathname(prodInfo.getProdName());
     int             status = ::unlink(namePath.data());
     ASSERT_TRUE(status == 0 || errno == ENOENT);
     int             fd = ::open(namePath.data(), O_WRONLY|O_CREAT|O_EXCL,
@@ -193,7 +198,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
     ASSERT_EQ(0, ::close(fd));
 
     // Tell the repository
-    repo.newProd(prodInfo.getName(), prodIndex);
+    repo.newProd(prodInfo.getProdName(), prodIndex);
 
     // Verify repository access
     struct stat statBuf;

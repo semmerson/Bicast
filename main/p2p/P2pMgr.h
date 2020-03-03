@@ -22,65 +22,87 @@
 
 namespace hycast {
 
+/******************************************************************************/
+
+struct P2pInfo
+{
+    SockAddr   sockAddr;    ///< Server's socket address
+    PortPool   portPool;    ///< Pool of port numbers for transitory servers
+    int        listenSize;  ///< Server's `::listen()` size
+    int        maxPeers;    ///< Maximum number of peers
+};
+
+/******************************************************************************/
+
 class P2pMgr; // Forward declaration
+
+/**
+ * Interface for an observer of peer changes.
+ */
+class PeerChngObs
+{
+public:
+    virtual ~PeerChngObs() noexcept;
+
+    /**
+     * Accepts notification that a local peer has been added.
+     *
+     * @param[in] peer        Local peer
+     * @throws    logicError  Shouldn't have been called
+     */
+    virtual void added(Peer& peer);
+
+    /**
+     * Accepts notification that a local peer has been removed.
+     *
+     * @param[in] peer        Local peer
+     * @throws    logicError  Shouldn't have been called
+     */
+    virtual void removed(Peer& peer);
+};
 
 /**
  * Interface for an observer of a peer-to-peer manager.
  */
-class P2pMgrObs
+class P2pMgrObs : public PeerChngObs
 {
 public:
     virtual ~P2pMgrObs() noexcept =0;
 
     /**
-     * Accepts notification that a local peer has been added. This
-     * implementation throws an exception.
+     * Indicates if product-information should be requested.
      *
-     * @param[in] peer        Local peer
-     * @throws    logicError  Shouldn't have been called
+     * @param[in] prodIndex  identifier of product
+     * @retval    `true`     The information should be requested
+     * @retval    `false`    The information should not be requested
      */
-    virtual void added(Peer& peer)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual bool shouldRequest(ProdIndex prodIndex) =0;
 
     /**
-     * Accepts notification that a local peer has been removed. This
-     * implementation throws an exception.
+     * Indicates if a data-segment should be requested.
      *
-     * @param[in] peer        Local peer
-     * @throws    logicError  Shouldn't have been called
+     * @param[in] segId      Identifier of data-segment
+     * @retval    `true`     The segment should be requested
+     * @retval    `false`    The segment should not be requested
      */
-    virtual void removed(Peer& peer)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual bool shouldRequest(const SegId& segId) =0;
 
     /**
-     * Indicates if a chunk should be requested. This implementation throws an
-     * exception.
+     * Returns product-information.
      *
-     * @param[in] chunkId    Chunk Identifier
-     * @retval    `true`     The chunk should be requested
-     * @retval    `false`    The chunk should not be requested
-     * @throws    logicError  Shouldn't have been called
+     * @param[in] prodIndex   identifier of product
+     * @return                The information. Will test false if it doesn't
+     *                        exist.
      */
-    virtual bool shouldRequest(const ChunkId& chunkId)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual ProdInfo get(ProdIndex prodIndex) =0;
 
     /**
-     * Returns a chunk. This implementation throws an exception.
+     * Returns a data-segment.
      *
-     * @param[in] chunkId     Chunk Identifier
-     * @return                The chunk. Will test false if it doesn't exist.
-     * @throws    logicError  Shouldn't have been called
+     * @param[in] segId       Identifier of data-segment
+     * @return                The segment. Will test false if it doesn't exist.
      */
-    virtual const OutChunk get(const ChunkId& chunkId)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual MemSeg get(const SegId& segId) =0;
 
     /**
      * Accepts product-information. This implementation throws an exception.
@@ -90,10 +112,7 @@ public:
      * @retval    `false`     Product information was previously accepted
      * @throws    logicError  Shouldn't have been called
      */
-    virtual bool hereIs(const ProdInfo& prodInfo)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual bool hereIsP2p(const ProdInfo& prodInfo) =0;
 
     /**
      * Accepts a data-segment. This implementation throws an exception.
@@ -103,10 +122,7 @@ public:
      * @retval    `false`     Chunk was previously accepted
      * @throws    logicError  Shouldn't have been called
      */
-    virtual bool hereIs(TcpSeg& tcpSeg)
-    {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
+    virtual bool hereIs(TcpSeg& tcpSeg) =0;
 };
 
 /**
@@ -153,6 +169,18 @@ public:
             P2pMgrObs&      p2pMgrObs);
 
     /**
+     * Constructs. Calls `::listen()`.
+     *
+     * @param[in] p2pInfo      Peer-to-peer execution parameters
+     * @param[in] p2pSrvrPool  Pool of remote P2P servers
+     * @param[in] p2pMgrObs    Observer of this peer-to-peer manager
+     */
+    P2pMgr(
+            P2pInfo&    p2pInfo,
+            ServerPool& p2pSrvrPool,
+            P2pMgrObs&  p2pMgrObs);
+
+    /**
      * Sets the time period over which this instance will attempt to replace the
      * worst performing peer in a full set of peers.
      *
@@ -165,7 +193,8 @@ public:
     P2pMgr& setTimePeriod(unsigned timePeriod);
 
     /**
-     * Executes this instance. Returns if
+     * Executes this instance (i.e., executes receiving threads and calls
+     * the observer when appropriate). Returns if
      *   - `halt()` is called
      *   - An exception is thrown
      * Returns immediately if `halt()` was called before this method.
@@ -184,11 +213,18 @@ public:
     size_t size() const;
 
     /**
-     * Notifies all the managed peers about an available chunk.
+     * Notifies all the managed peers about available product-information.
      *
-     * @param[in] chunkId  Chunk identifier
+     * @param[in] prodIndex  Identifier of product
      */
-    void notify(const ChunkId chunkId);
+    void notify(ProdIndex prodIndex);
+
+    /**
+     * Notifies all the managed peers about an available data-segment.
+     *
+     * @param[in] segId  Identifier of data-segment
+     */
+    void notify(const SegId& segId);
 
     /**
      * Halts execution of this instance. If called before `operator()`, then

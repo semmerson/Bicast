@@ -30,19 +30,37 @@ public:
     virtual ~PeerProtoObs() noexcept
     {}
 
-    /**
-     * Handles a notice of an available chunk.
-     *
-     * @param[in] chunkId  Chunk identifier
-     */
-    virtual void acceptNotice(ChunkId chunkId) =0;
+    virtual void pathToSrc() noexcept =0;
+
+    virtual void noPathToSrc() noexcept =0;
 
     /**
-     * Handles a request for a chunk.
+     * Handles a notice of available product-information.
      *
-     * @param[in] chunkId  Chunk identifier
+     * @param[in] prodIndex  Index of product
      */
-    virtual void acceptRequest(ChunkId chunkId) =0;
+    virtual void acceptNotice(ProdIndex prodIndex) =0;
+
+    /**
+     * Handles a notice of an available data-segment.
+     *
+     * @param[in] segId  Data-segment identifier
+     */
+    virtual void acceptNotice(const SegId& segId) =0;
+
+    /**
+     * Handles a request for product-information.
+     *
+     * @param[in] prodIndex  Identifier of product
+     */
+    virtual void acceptRequest(ProdIndex prodIndex) =0;
+
+    /**
+     * Handles a request for a data-segment.
+     *
+     * @param[in] segId  Identifier of data-segment
+     */
+    virtual void acceptRequest(const SegId& segId) =0;
 
     /**
      * Accepts product-information from the remote peer.
@@ -71,33 +89,36 @@ class PeerProto
     PeerProto(Impl* impl);
 
 public:
+    PeerProto() =default;
+
     /**
      * Server-side construction.
      *
      * @param[in]     sock      Server's listening TCP socket
      * @param[in,out] portPool  Pool of port numbers for transient servers
+     * @param[in]     observer  Observer of this instance
+     * @param[in]     isSource  This instance will be the source of
+     *                          data-products
      * @cancellationpoint       Yes
      */
     PeerProto(
-            TcpSock&  sock,
-            PortPool& portPool);
+            TcpSock&      sock,
+            PortPool&     portPool,
+            PeerProtoObs& observer,
+            bool          isSource = false);
 
     /**
      * Client-side construction.
      *
      * @param[in] rmtSrvrAddr  Socket address of remote peer-server
+     * @param[in] observer     Observer of this instance
      * @cancellationpoint      Yes
      */
-    PeerProto(const SockAddr& rmtSrvrAddr);
+    PeerProto(
+            const SockAddr& rmtSrvrAddr,
+            PeerProtoObs&   observer);
 
-    /**
-     * Sets the corresponding local peer.
-     *
-     * @param[in] observer  Observes this instance
-     * @return              Reference to this instance
-     * @cancellationpoint   No
-     */
-    const PeerProto& set(PeerProtoObs* observer) const;
+    operator bool() const;
 
     /**
      * Returns the socket address of the remote peer.

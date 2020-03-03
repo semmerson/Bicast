@@ -13,6 +13,7 @@
 #ifndef MAIN_REPOSITORY_REPOSITORY_H_
 #define MAIN_REPOSITORY_REPOSITORY_H_
 
+#include "ProdFile.h"
 #include "hycast.h"
 
 #include <memory>
@@ -22,18 +23,23 @@ namespace hycast {
 
 /**
  * Repository of in-transit data-products.
+ *
+ * #tparam PF  Product-file type
  */
 class Repository
 {
 protected:
-    class                 Impl;
+    class Impl;
+
     std::shared_ptr<Impl> pImpl;
 
-    Repository(Impl* const impl);
+    Repository(Impl* impl);
 
 public:
     virtual ~Repository()
     {}
+
+    SegSize getSegSize() const noexcept;
 
     /**
      * Returns the pathname of the root-directory for this instance.
@@ -87,8 +93,9 @@ public:
      * @threadsafety         Safe
      * @exceptionsafety      Strong guarantee
      * @cancellationpoint    No
+     * @see `ProdInfo::operator bool()`
      */
-    virtual ProdInfo getProdInfo(const ProdIndex prodIndex) const =0;
+    virtual ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
 
     /**
      * Returns a data-segment
@@ -100,17 +107,35 @@ public:
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           No
-     * @see `OutChunk::operator bool()`
+     * @see `MemSeg::operator bool()`
      */
     virtual MemSeg getMemSeg(const SegId& segId) const =0;
+
+    /**
+     * Indicates if information exists for a particular product.
+     *
+     * @param[in] prodIndex  Index of the product
+     * @retval    `false`    Information does not exist
+     * @retval    `true`     Information does exist
+     */
+    virtual bool exists(const ProdIndex prodIndex) const =0;
+
+    /**
+     * Indicates if a particular data-segment exists for a given product.
+     *
+     * @param[in] prodIndex  Index of the product
+     * @retval    `false`    Information does not exist
+     * @retval    `true`     Information does exist
+     */
+    virtual bool exists(const SegId& segId) const =0;
 };
 
 /******************************************************************************/
 
 /**
- * Source-side repository.
+ * Sender-side repository.
  */
-class SrcRepo final : public Repository
+class SndRepo final : public Repository
 {
     class Impl;
 
@@ -121,7 +146,7 @@ public:
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
      */
-    SrcRepo(const std::string& rootPathname,
+    SndRepo(const std::string& rootPathname,
             SegSize            segSize);
 
     /**
@@ -138,6 +163,10 @@ public:
     void newProd(
             const std::string& prodName,
             ProdIndex          prodIndex);
+
+    bool exists(ProdIndex prodIndex) const;
+
+    bool exists(const SegId& segId) const;
 
     /**
      * Returns information on a product.
@@ -159,9 +188,26 @@ public:
 /******************************************************************************/
 
 /**
- * Sink-side repository.
+ * Interface for an observer of a receiver-side repository.
  */
-class SnkRepo final : public Repository
+class RcvRepoObs
+{
+public:
+    virtual ~RcvRepoObs()
+    {}
+
+    /**
+     * Accepts notification that a data-product is complete.
+     *
+     * @param[in] prodInfo  Information on the completed data-product
+     */
+    virtual void completed(const ProdInfo& prodInfo) =0;
+};
+
+/**
+ * Receiver-side repository.
+ */
+class RcvRepo final : public Repository
 {
     class Impl;
 
@@ -172,28 +218,51 @@ public:
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
      */
-    SnkRepo(const std::string& rootPathname,
-            SegSize            segSize);
+    RcvRepo(const std::string& rootPathname,
+            SegSize            segSize,
+            RcvRepoObs&        repoObs);
 
     /**
      * Saves product information.
      *
      * @param[in] prodInfo  Product information
+     * @retval    `false`   Product information was not used
+     * @retval    `true`    Product information was used
      * @threadsafety        Safe
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   No
      */
-    void save(const ProdInfo& prodInfo) const;
+    bool save(const ProdInfo& prodInfo) const;
 
     /**
      * Saves a data-segment.
      *
      * @param[in] dataSeg  Data-segment
+     * @retval    `false`  Data-segment was not used
+     * @retval    `true`   Data-segment was used
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    void save(DataSeg& dataSeg) const;
+    bool save(DataSeg& dataSeg) const;
+
+    /**
+     * Indicates if product-information exists.
+     *
+     * @param[in] prodIndex  Index of the product in question
+     * @retval    `false`    Product-information doesn't exist
+     * @retval    `true`     Product-information does exist
+     */
+    bool exists(const ProdIndex prodIndex) const;
+
+    /**
+     * Indicates if a data-segment exists.
+     *
+     * @param[in] segId      Segment identifier
+     * @retval    `false`    Data-segment doesn't exist
+     * @retval    `true`     Data-segment does exist
+     */
+    bool exists(const SegId& segId) const;
 
     /**
      * Returns information on a product.

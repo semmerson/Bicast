@@ -38,7 +38,7 @@ public:
      *
      * @retval `false`     No
      * @retval `true`      Yes
-     * @threadsafety       Compatible but not safe
+     * @threadsafety       Safe
      * @cancellationpoint  No
      */
     operator bool() noexcept;
@@ -60,6 +60,28 @@ public:
      * @throws invalid_argument  Offset is invalid
      */
     SegSize getSegSize(const ProdSize offset) const;
+
+    /**
+     * Vets a data-segment.
+     *
+     * @param[in] offset    Offset of data-segment in bytes
+     * @throws LOGIC_ERROR  Offset is greater than product's size or isn't an
+     *                      integral multiple of canonical segment size
+     */
+    void vet(const ProdSize offset);
+
+    /**
+     * Indicates if the file contains a particular data-segment.
+     *
+     * @param[in] offset           Offset of the data-segment in bytes
+     * @retval    `false`          No
+     * @retval    `true`           Yes
+     * @throws    IllegalArgument  Offset is invalid
+     * @threadsafety               Safe
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          No
+     */
+    virtual bool exists(ProdSize offset) const =0;
 
     /**
      * Returns a pointer to a data-segment within the product.
@@ -98,6 +120,8 @@ public:
     SndProdFile(
             const std::string& pathname,
             SegSize            segSize);
+
+    bool exists(ProdSize offset) const;
 };
 
 /******************************************************************************/
@@ -129,32 +153,32 @@ public:
     /**
      * Indicates if the file contains a data-segment.
      *
-     * @param[in] offset   Offset, in bytes, of the data-segment
-     * @retval    `true`   Yes
-     * @retval    `false`  No
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  No
+     * @param[in] offset           Offset of data-segment in bytes
+     * @retval    `true`           Yes
+     * @retval    `false`          No
+     * @throws    IllegalArgument  Offset is invalid
+     * @threadsafety               Safe
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          No
      */
     bool exists(ProdSize offset) const;
 
     /**
-     * Accepts a data-segment.
+     * Saves a data-segment.
      *
-     * @param[in] seg               Data-segment to accept
-     * @retval    `false`           Segment was not accepted because it already
+     * @param[in] seg               Data-segment to be saved
+     * @retval    `false`           Segment was not saved because it already
      *                              exists
-     * @retval    `true`            Segment was accepted
+     * @retval    `true`            Segment was saved
      * @throws    InvalidArgument   Segment's offset is invalid
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           Yes
      */
-    bool accept(DataSeg& seg) const;
+    bool save(DataSeg& seg) const;
 
     /**
-     * Indicates if the product is complete (i.e., all data-segments have been
-     * received.
+     * Indicates if the product is complete (i.e., all data-segments exist).
      *
      * @retval `false`  No
      * @retval `true`   Yes

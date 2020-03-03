@@ -32,13 +32,13 @@ typedef uint32_t ProdSize;
 class ProdIndex
 {
 public:
-    typedef uint32_t ValueType;
+    typedef uint32_t Type;
 
     ProdIndex() noexcept
         : index{0}
     {}
 
-    ProdIndex(const ValueType index)
+    ProdIndex(const Type index)
         : index{index}
     {
         if (index == 0)
@@ -56,7 +56,7 @@ public:
         return index != 0;
     }
 
-    ValueType getValue() const noexcept
+    Type getValue() const noexcept
     {
         return index;
     }
@@ -74,7 +74,7 @@ public:
     }
 
 private:
-    ValueType index;
+    Type index;
 };
 
 /******************************************************************************/
@@ -82,31 +82,49 @@ private:
 class Flags
 {
 public:
-    typedef uint16_t flags_t;
+    typedef uint16_t Type;
+
+    typedef enum {
+        PROD_INFO_NOTICE = 1,
+        DATA_SEG_NOTICE,
+        PROD_INFO_REQUEST,
+        DATA_SEG_REQUEST,
+        PROD_INFO,
+        DATA_SEG,
+        PATH_TO_SRC,
+        NO_PATH_TO_SRC
+    } MsgId;
 
 private:
-    static const flags_t SEG = 0;  // Identifies data-segment chunk
-    static const flags_t PROD = 1; // Identifies product chunk
+    static const Type PROD = 1;     // Identifies product-related chunk
+    static const Type SRC_PATH = 2; // Have path to source of data-products?
+
+    std::atomic<Type> flags;
 
 public:
-    inline static bool isProd(flags_t val)
+    Flags() noexcept;
+
+    Flags(const Type flags) noexcept;
+
+    Flags(const Flags& flags) noexcept;
+
+    Flags& operator =(const Type flags) noexcept;
+
+    operator Type() const noexcept;
+
+    Flags& setPathToSrc() noexcept;
+
+    Flags& clrPathToSrc() noexcept;
+
+    bool isPathToSrc() const noexcept;
+
+    Flags& setProd() noexcept;
+
+    bool isProd() const noexcept;
+
+    inline static bool isProd(Type val)
     {
         return val & PROD;
-    }
-
-    inline static bool isSeg(flags_t val)
-    {
-        return !isProd(val);
-    }
-
-    inline static flags_t getProd()
-    {
-        return PROD;
-    }
-
-    inline static flags_t getSeg()
-    {
-        return SEG;
     }
 };
 
@@ -115,78 +133,13 @@ public:
 class PeerProto;
 class Repository;
 
-class Chunk
-{
-public:
-    class Impl;
-
-protected:
-    std::shared_ptr<Impl> pImpl;
-
-    Chunk()
-    {}
-
-    Chunk(Impl* impl);
-
-public:
-    virtual ~Chunk() noexcept;
-
-    operator bool() const
-    {
-        return (bool)pImpl;
-    }
-};
-
-/**
- * A chunk that is sent to a remote peer.
- */
-class OutChunk
-{
-protected:
-    class                 Impl;
-    std::shared_ptr<Impl> pImpl;
-
-    OutChunk(Impl* impl);
-
-public:
-    virtual ~OutChunk() noexcept
-    {}
-
-    operator bool() const
-    {
-        return static_cast<bool>(pImpl);
-    }
-
-    virtual void send(PeerProto& proto) const;
-};
-
-/**
- * A chunk that is received from a remote peer.
- */
-class InChunk
-{
-public:
-    class Impl;
-
-protected:
-    std::shared_ptr<Impl> pImpl;
-
-    InChunk(); // For `prodInfo` construction
-
-    InChunk(Impl* impl);
-
-public:
-    virtual ~InChunk() noexcept
-    {}
-
-    virtual void save(Repository& repo) const =0;
-};
-
 /******************************************************************************/
 
-class ProdInfo final : virtual public OutChunk, virtual public InChunk
+class ProdInfo
 {
     class Impl;
+
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**
@@ -199,9 +152,9 @@ public:
     /**
      * Constructs a valid instance.
      *
-     * @param[in] prodIndex  Product index
-     * @param[in] size       Product size in bytes
-     * @param[in] name       Product name
+     * @param[in] prodIndex        Product index
+     * @param[in] size             Product size in bytes
+     * @param[in] name             Product name
      */
     ProdInfo(
             ProdIndex          prodIndex,
@@ -218,17 +171,15 @@ public:
 
     ProdIndex getProdIndex() const;
 
-    ProdSize getSize() const;
+    ProdSize getProdSize() const;
 
-    const std::string& getName() const;
+    const std::string& getProdName() const;
 
     std::string to_string() const;
 
     bool operator ==(const ProdInfo& rhs) const noexcept;
 
     void send(PeerProto& proto) const;
-
-    void save(Repository& repo) const;
 };
 
 /******************************************************************************/
@@ -258,7 +209,7 @@ public:
         return prodIndex;
     }
 
-    ProdSize getSegOffset() const noexcept
+    ProdSize getOffset() const noexcept
     {
         return segOffset;
     }
@@ -281,6 +232,7 @@ public:
 /******************************************************************************/
 
 class PeerProto;
+class Peer;
 
 /**
  * An identifier of a chunk.
@@ -301,18 +253,28 @@ class ChunkId final
     } id;
 
 public:
+    /**
+     * Constructs. NB: Implicit construction.
+     *
+     * @param[in] prodIndex  Identifier of product
+     */
     ChunkId(ProdIndex prodIndex)
         : isProd{true}
         , id{.prodIndex=prodIndex}
     {}
 
+    /**
+     * Constructs. NB: Implicit construction.
+     *
+     * @param[in] segId  Identifier of data-segment
+     */
     ChunkId(const SegId segId)
         : isProd{false}
         , id{.segId=segId}
     {}
 
     ChunkId()
-        : ChunkId(SegId{})
+        : ChunkId(ProdIndex{})
     {}
 
     bool operator ==(const ChunkId& rhs) const;
@@ -338,7 +300,7 @@ public:
 
     void request(PeerProto& peerProto) const;
 
-    OutChunk get(Repository& repo) const;
+    void request(Peer& peer) const;
 };
 
 /******************************************************************************/
@@ -409,7 +371,9 @@ public:
 
     virtual ProdSize getOffset() const noexcept =0;
 
-    virtual void writeData(void* data, SegSize nbytes) const =0;
+    virtual std::string to_string() const =0;
+
+    virtual void copyData(void* buf) const =0;
 };
 
 /******************************************************************************/
@@ -417,9 +381,11 @@ public:
 /**
  * Data-segment that resides in memory.
  */
-class MemSeg final : public OutChunk, public DataSeg
+class MemSeg final : public DataSeg
 {
     class Impl;
+
+    std::shared_ptr<Impl> pImpl;
 
 public:
     MemSeg();
@@ -427,27 +393,27 @@ public:
     MemSeg(const SegInfo& info,
            const void*    data);
 
-    const SegInfo& getSegInfo() const noexcept;
+    operator bool() const noexcept;
 
-    const SegId& getSegId() const noexcept;
+    const SegInfo& getSegInfo() const noexcept override;
+
+    const SegId& getSegId() const noexcept override;
 
     const void* getData() const;
 
     SegSize getSegSize() const;
 
-    ProdIndex getProdIndex() const noexcept;
+    ProdIndex getProdIndex() const noexcept override;
 
     ProdSize getProdSize() const;
 
-    ProdSize getSegOffset() const noexcept;
-
-    bool operator ==(const MemSeg& rhs) const noexcept;
-
-    void send(PeerProto& proto) const;
-
     ProdSize getOffset() const noexcept override;
 
-    void writeData(void* data, SegSize nbytes) const override;
+    std::string to_string() const override;
+
+    void copyData(void* buf) const;
+
+    bool operator ==(const MemSeg& rhs) const noexcept;
 };
 
 /******************************************************************************/
@@ -476,13 +442,12 @@ public:
 
     virtual void read(void* buf) const =0;
 
-    virtual void save(Repository& repo) const =0;
+    inline void copyData(void* buf) const
+    {
+        read(buf);
+    }
 
     virtual ProdSize getOffset() const noexcept =0;
-
-    virtual void writeData(
-            void*   data,
-            SegSize nbytes) const =0;
 };
 
 /**
@@ -500,11 +465,7 @@ public:
 
     void read(void* buf) const override;
 
-    void save(Repository& repo) const override;
-
     ProdSize getOffset() const noexcept;
-
-    void writeData(void* data, SegSize nbytes) const;
 };
 
 /**
@@ -522,11 +483,7 @@ public:
 
     void read(void* buf) const override;
 
-    void save(Repository& repo) const override;
-
     ProdSize getOffset() const noexcept;
-
-    void writeData(void* data, SegSize nbytes) const;
 };
 
 } // namespace

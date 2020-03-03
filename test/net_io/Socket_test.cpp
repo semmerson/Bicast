@@ -38,7 +38,8 @@ protected:
     std::condition_variable cond;
     bool                    srvrReady;
     std::thread             srvrThread;
-    hycast::TcpSrvrSock        srvrSock;
+    hycast::TcpSrvrSock     acceptSock; ///< Server's `::accept()` socket
+    hycast::TcpSock         srvrSock;       ///< Socket from `::accept()`
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -49,6 +50,7 @@ protected:
         , cond{}
         , srvrReady{false}
         , srvrThread()
+        , acceptSock()
         , srvrSock()
     {
         // You can do set-up work for each test here.
@@ -100,13 +102,15 @@ public:
         }
 
         try {
-            hycast::TcpSock sock{srvrSock.accept()};
+            srvrSock = acceptSock.accept();
 
-            for (;;) {
-                int            readInt;
+            if (srvrSock) {
+                for (;;) {
+                    int readInt;
 
-                sock.read(&readInt, sizeof(readInt));
-                sock.write(&readInt, sizeof(readInt));
+                    srvrSock.read(&readInt, sizeof(readInt));
+                    srvrSock.write(&readInt, sizeof(readInt));
+                }
             }
         }
         catch (std::exception const& ex) {
@@ -116,7 +120,7 @@ public:
 
     void startServer()
     {
-        srvrSock = hycast::TcpSrvrSock(srvrAddr);
+        acceptSock = hycast::TcpSrvrSock(srvrAddr);
         srvrThread = std::thread(&SocketTest::runServer, this);
 
         // Necessary because `ClntSock` constructor throws if `connect()` fails
@@ -162,7 +166,7 @@ TEST_F(SocketTest, ReadShutdown)
     hycast::TcpClntSock clntSock(srvrAddr);
 
     ::sleep(1);
-    srvrSock.shutdown();
+    acceptSock.shutdown();
     srvrThread.join();
 }
 #endif
@@ -180,6 +184,14 @@ TEST_F(SocketTest, CancelAccept)
     srvrThread.join();
 }
 
+// Tests shutting down the server's accept-socket
+TEST_F(SocketTest, ShutdownAccept)
+{
+    startServer();
+    acceptSock.shutdown();
+    srvrThread.join();
+}
+
 // Tests canceling the server thread while read() is executing
 TEST_F(SocketTest, CancelRead)
 {
@@ -187,12 +199,39 @@ TEST_F(SocketTest, CancelRead)
 
     hycast::TcpClntSock clntSock(srvrAddr);
 
-    ::usleep(200000);
+    ::usleep(100000);
 #ifdef USE_SIGTERM
     ::pthread_kill(srvrThread.native_handle(), SIGTERM);
 #else
     ::pthread_cancel(srvrThread.native_handle());
 #endif
+    srvrThread.join();
+}
+
+// Tests shutting down the server's socket while read() is executing
+TEST_F(SocketTest, shutdownRead)
+{
+    startServer();
+
+    hycast::TcpClntSock clntSock(srvrAddr);
+
+    ::usleep(100000);
+    srvrSock.shutdown();
+    srvrThread.join();
+}
+
+// Tests shutting down the server's socket while write() is executing
+TEST_F(SocketTest, shutdownWrite)
+{
+    startServer();
+
+    hycast::TcpClntSock clntSock(srvrAddr);
+
+    int writeInt = 0xff00;
+    clntSock.write(&writeInt, sizeof(writeInt));
+
+    ::usleep(100000);
+    srvrSock.shutdown();
     srvrThread.join();
 }
 

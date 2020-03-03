@@ -64,10 +64,9 @@ public:
      */
     InetAddr(const std::string& addr);
 
-    inline operator bool() const noexcept
-    {
-        return (bool)pImpl;
-    }
+    operator bool() const noexcept;
+
+    int getFamily() const noexcept;
 
     /**
      * Returns the string representation of this instance.
@@ -90,6 +89,21 @@ public:
      * @return          Corresponding socket address
      */
     SockAddr getSockAddr(const in_port_t port) const;
+
+    /**
+     * Returns a socket descriptor appropriate to this instance's address
+     * family.
+     *
+     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
+     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
+     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
+     *                               obtain the default protocol.
+     * @return                       Appropriate socket
+     * @throws    std::system_error  `::socket()` failure
+     */
+    int socket(
+            const int type,
+            const int protocol) const;
 
     /**
      * Joins the source-specific multicast group identified by this instance

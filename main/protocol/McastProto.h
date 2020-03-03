@@ -14,11 +14,35 @@
 #define MAIN_PROTOCOL_INPROTO_H_
 
 #include "hycast.h"
+#include "SockAddr.h"
 #include "Socket.h"
 
 #include <memory>
 
 namespace hycast {
+
+/**
+ * Source-specific multicast information
+ */
+struct SrcMcastAddrs
+{
+    SockAddr grpAddr;
+    InetAddr srcAddr;
+};
+
+/******************************************************************************/
+
+/**
+ * Class for holding multicast protocol parameters.
+ */
+class McastProto
+{
+public:
+    /// Maximum size of a data-segment in bytes
+    static const int MAX_SEGSIZE = UdpSock::MAX_PAYLOAD - 12;
+};
+
+/******************************************************************************/
 
 /**
  * Multicasts data-products.
@@ -87,9 +111,9 @@ public:
     virtual ~McastRcvrObs()
     {}
 
-    virtual void hereIs(const ProdInfo& prodInfo) =0;
+    virtual bool hereIsMcast(const ProdInfo& prodInfo) =0;
 
-    virtual void hereIs(UdpSeg& seg) =0;
+    virtual bool hereIs(UdpSeg& seg) =0;
 };
 
 /******************************************************************************/
@@ -106,19 +130,19 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] sock      UDP socket
-     * @param[in] observer  Observer of this instance
-     * @cancellationpoint   Yes
+     * @param[in] srcMcastInfo  Source-specific multicast information
+     * @param[in] observer      Observer of this instance
+     * @cancellationpoint       Yes
      */
     McastRcvr(
-            UdpSock&      sock,
-            McastRcvrObs& observer);
+            const SrcMcastAddrs& srcMcastInfo,
+            McastRcvrObs&        observer);
 
     /**
      * Executes the multicast receiver. Calls this instance's observer. Returns
      * on EOF.
      *
-     * @throws RuntimeError  I/O error
+     * @throws SystemError   I/O error
      * @cancellationpoint    Yes
      */
     void operator()();

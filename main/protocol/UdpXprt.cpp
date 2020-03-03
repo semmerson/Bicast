@@ -86,7 +86,7 @@ public:
         iov[0].iov_len = sizeof(flags);
 
         const ProdInfo&    prodInfo = chunk.getProdInfo();
-        const std::string& name = prodInfo.getName();
+        const std::string& name = prodInfo.getProdName();
         SegSize            nameLen = name.length();
 
         iov[4].iov_base = name.c_str();

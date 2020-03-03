@@ -56,7 +56,7 @@ protected:
                SRVR_PEER_STOPPED
     } State;
     State                   state;
-    hycast::ProdIndex          prodId;
+    hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -78,12 +78,12 @@ protected:
         , snkAddr{"localhost:3883"} // NB: Not a Linux dynamic port number
         , mutex{}
         , cond{}
-        , prodId{1}
+        , prodIndex{1}
         , state{INIT}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodId, prodSize, "product"}
-        , segId(prodId, segSize)
+        , prodInfo{prodIndex, prodSize, "product"}
+        , segId(prodIndex, segSize)
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
@@ -126,36 +126,41 @@ public:
     {}
 
     // Receiver-side
-    bool shouldRequest(const hycast::ChunkId chunkId)
+    bool shouldRequest(hycast::ProdIndex actual)
     {
-        if (chunkId.isProdIndex()) {
-            EXPECT_EQ(prodId, chunkId.getProdIndex());
-            orState(PROD_NOTICE_RCVD);
-        }
-        else {
-            EXPECT_EQ(segId, chunkId.getSegId());
-            orState(SEG_NOTICE_RCVD);
-        }
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_NOTICE_RCVD);
+
+        return true;
+    }
+
+    // Receiver-side
+    bool shouldRequest(const hycast::SegId& actual)
+    {
+        EXPECT_EQ(segId, actual);
+        orState(SEG_NOTICE_RCVD);
 
         return true;
     }
 
     // Sender-side
-    const hycast::OutChunk& get(const hycast::ChunkId chunkId)
+    hycast::ProdInfo get(hycast::ProdIndex actual)
     {
-        if (chunkId.isProdIndex()) {
-            EXPECT_EQ(prodId, chunkId.getProdIndex());
-            orState(PROD_REQUEST_RCVD);
-            return prodInfo;
-        }
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_REQUEST_RCVD);
+        return prodInfo;
+    }
 
-        EXPECT_EQ(segId, chunkId.getSegId());
+    // Sender-side
+    hycast::MemSeg get(const hycast::SegId& actual)
+    {
+        EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
         return memSeg;
     }
 
     // Receiver-side
-    bool hereIs(const hycast::ProdInfo& actual)
+    bool hereIsP2p(const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -166,7 +171,7 @@ public:
     // Receiver-side
     bool hereIs(hycast::TcpSeg& actual)
     {
-        const hycast::SegSize size = actual.getInfo().getSegSize();
+        const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);
 
         char buf[size];
@@ -219,8 +224,8 @@ TEST_F(P2pMgrTest, DataExchange)
     waitForState(CONNECTED);
 
     // Start an exchange
-    clntP2pMgr.notify(prodId);
-    clntP2pMgr.notify(segId);
+    srvrP2pMgr.notify(prodIndex);
+    srvrP2pMgr.notify(segId);
 
     // Wait for the exchange to complete
     waitForState(EXCHANGE_COMPLETE);
@@ -296,7 +301,7 @@ TEST_F(P2pMgrTest, MultiplePeers)
         LOG_ERROR("Caught ... exception");
         throw;
     }
-}
+}write
 #endif
 
 } // namespace

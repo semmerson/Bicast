@@ -29,13 +29,13 @@ protected:
     std::mutex              mutex;
     std::condition_variable cond;
     bool                    ready;
-    hycast::ProdIndex          prodId;
+    hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
     hycast::SegSize         segSize;
     hycast::SegId           segId;
     hycast::SegInfo         segInfo;
-    char                    memData[1000];
+    unsigned char           memData[1000];
     hycast::MemSeg          memSeg;
     bool                    prodInfoRcvd;
     bool                    segRcvd;
@@ -46,40 +46,46 @@ public:
         , mutex()
         , cond()
         , ready{false}
-        , prodId{1}
+        , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodId, prodSize, "product"}
-        , segId(prodId, segSize)
+        , prodInfo{prodIndex, prodSize, "product"}
+        , segId(prodIndex, 0)
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
         , prodInfoRcvd{false}
         , segRcvd{false}
     {
-        ::memset(memData, 0xbd, segSize);
+        for (int i = 0; i < sizeof(memData); ++i)
+            memData[i] = static_cast<unsigned char>(i);
     }
 
-    void hereIs(const hycast::ProdInfo& actual)
+    bool hereIsMcast(const hycast::ProdInfo& actual)
     {
-        ASSERT_EQ(prodInfo, actual);
+        LOG_DEBUG("prodInfo: %s", prodInfo.to_string().data());
+        LOG_DEBUG("actual: %s", actual.to_string().data());
+        EXPECT_EQ(prodInfo, actual);
         std::lock_guard<decltype(mutex)> guard{mutex};
         prodInfoRcvd = true;
+        return true;
     }
 
-    void hereIs(hycast::UdpSeg& seg)
+    bool hereIs(hycast::UdpSeg& seg)
     {
-        const hycast::SegSize size = seg.getInfo().getSegSize();
-        ASSERT_EQ(segSize, size);
+        const hycast::SegSize size = seg.getSegInfo().getSegSize();
+        EXPECT_EQ(segSize, size);
 
         char buf[size];
         seg.read(buf);
 
-        ASSERT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
+        EXPECT_EQ(0, ::memcmp(memSeg.getData(), buf, segSize));
 
         std::lock_guard<decltype(mutex)> guard{mutex};
         segRcvd = true;
         cond.notify_one();
+
+        return true;
     }
 
     void runRcvr(hycast::McastRcvr& rcvr)
@@ -104,11 +110,10 @@ TEST_F(McastProtoTest, Multicasting)
     hycast::McastSndr mcastSndr{sndSock};
 
     // Create multicast receiver
-    hycast::SockAddr  lclAddr = sndSock.getLclAddr();
-    hycast::InetAddr  srcAddr = lclAddr.getInetAddr();
-    hycast::UdpSock   rcvSock{grpAddr, srcAddr};
-    hycast::McastRcvr mcastRcvr{rcvSock, *this};
-    std::thread       rcvrThread(&McastProtoTest::runRcvr, this,
+    hycast::InetAddr      srcAddr = sndSock.getLclAddr().getInetAddr();
+    hycast::SrcMcastAddrs mcastAddrs = {.grpAddr=grpAddr, .srcAddr=srcAddr};
+    hycast::McastRcvr     mcastRcvr(mcastAddrs, *this);
+    std::thread           rcvrThread(&McastProtoTest::runRcvr, this,
             std::ref(mcastRcvr));
 
     try {
@@ -121,6 +126,7 @@ TEST_F(McastProtoTest, Multicasting)
 
         // Multicast
         mcastSndr.multicast(prodInfo);
+        ::usleep(5000); // To ensure no packet loss. 2000 failed eventually
         mcastSndr.multicast(memSeg);
 
         // Wait until multicast has been received
@@ -150,8 +156,20 @@ TEST_F(McastProtoTest, Multicasting)
 
 static void myTerminate()
 {
-    LOG_FATAL("terminate() called %s an active exception",
-            std::current_exception() ? "with" : "without");
+    auto exPtr = std::current_exception();
+    if (exPtr) {
+        try {
+            std::rethrow_exception(exPtr);
+        }
+        catch (const std::exception& ex) {
+            hycast::log_fatal(ex);
+        }
+    }
+    else {
+        LOG_FATAL("terminate() called without active exception");
+    }
+
+
     abort();
 }
 

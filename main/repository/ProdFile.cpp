@@ -15,6 +15,7 @@
 #include "ProdFile.h"
 
 #include "error.h"
+#include "FileUtil.h"
 #include "Thread.h"
 
 #include <fcntl.h>
@@ -99,16 +100,6 @@ protected:
         }
     }
 
-    void vetOffset(const ProdSize offset) const
-    {
-        // Following order works for zero segment-size; fails otherwise
-        if ((offset >= prodSize) || (offset % segSize))
-            throw INVALID_ARGUMENT("Invalid offset: {offset: " +
-                    std::to_string(offset) + ", segSize: " +
-                    std::to_string(segSize) + ", prodSize: " +
-                    std::to_string(prodSize) + "}");
-    }
-
     inline ProdSize segIndex(const ProdSize offset) const
     {
         return offset / segSize;
@@ -136,10 +127,20 @@ public:
 
     SegSize getSegSize(const ProdSize offset) const
     {
-        vetOffset(offset);
+        vet(offset);
         return (offset + segSize > prodSize)
                 ? prodSize - offset
                 : segSize;
+    }
+
+    void vet(const ProdSize offset) const
+    {
+        // Following order works for zero segment-size; fails otherwise
+        if ((offset >= prodSize) || (offset % segSize))
+            throw INVALID_ARGUMENT("Invalid offset: {offset: " +
+                    std::to_string(offset) + ", segSize: " +
+                    std::to_string(segSize) + ", prodSize: " +
+                    std::to_string(prodSize) + "}");
     }
 
     /**
@@ -151,7 +152,7 @@ public:
      */
     virtual bool exists(const ProdSize offset) const
     {
-        vetOffset(offset);
+        vet(offset);
         return true;
     }
 
@@ -201,6 +202,11 @@ SegSize ProdFile::getSegSize(const ProdSize offset) const
     return pImpl->getSegSize(offset);
 }
 
+void ProdFile::vet(const ProdSize offset)
+{
+    return pImpl->vet(offset);
+}
+
 const void* ProdFile::getData(const ProdSize offset) const
 {
     return pImpl->getData(offset);
@@ -245,6 +251,12 @@ public:
             } // Memory-mapping failed
         } // Positive product-size
     }
+
+    bool exists(const ProdSize offset)
+    {
+        vet(offset);
+        return true;
+    }
 };
 
 /******************************************************************************/
@@ -258,6 +270,11 @@ SndProdFile::SndProdFile(
         const SegSize      segSize)
     : ProdFile{new Impl(pathname, segSize)}
 {}
+
+bool SndProdFile::exists(ProdSize offset) const
+{
+    return static_cast<SndProdFile::Impl*>(pImpl.get())->exists(offset);
+}
 
 /******************************************************************************/
 /******************************************************************************/
@@ -287,6 +304,8 @@ class RcvProdFile::Impl final : public ProdFile::Impl
         if (prodSize && segSize == 0)
             throw INVALID_ARGUMENT("Zero segment-size specified for non-empty "
                     "file \"" + pathname + "\"");
+
+        ensureDir(dirPath(pathname), 0700);
 
         const int fd = ::open(pathname.data(), O_RDWR|O_CREAT, 0600);
         if (fd == -1)
@@ -330,7 +349,7 @@ public:
 
     bool exists(const ProdSize offset) const
     {
-        vetOffset(offset);
+        vet(offset);
         Guard guard(mutex);
         return haveSegs[segIndex(offset)];
     }
@@ -338,28 +357,23 @@ public:
     bool accept(DataSeg& seg)
     {
         const ProdSize offset = seg.getOffset();
-        vetOffset(offset);
+        vet(offset);
 
-        ProdSize       iSeg = segIndex(offset);
-        Lock           lock(mutex);
+        const auto segInfo = seg.getSegInfo();
+        const auto segSize = segInfo.getSegSize();
+        const auto expectSize = segLen(offset);
+        if (segSize != segLen(offset))
+            throw INVALID_ARGUMENT("Segment " + segInfo.to_string() + " should "
+                    "have " + std::to_string(expectSize) + " data-bytes");
 
-            const bool accepted = !haveSegs[iSeg];
-            if (accepted)
-                haveSegs[iSeg] = true;
-
-        lock.unlock();
+        ProdSize   iSeg = segIndex(offset);
+        Guard      guard(mutex);
+        const bool accepted = !haveSegs[iSeg];
 
         if (accepted) {
-            try {
-                seg.writeData(data+offset, segLen(offset)); // Potentially slow
-                lock.lock();
-                    ++segCount;
-            }
-            catch (...) {
-                lock.lock();
-                    haveSegs[iSeg] = false;
-                    throw;
-            }
+            seg.copyData(data+offset); // Potentially slow
+            ++segCount;
+            haveSegs[iSeg] = true;
         }
 
         return accepted;
@@ -392,7 +406,7 @@ RcvProdFile::exists(const ProdSize offset) const
 }
 
 bool
-RcvProdFile::accept(DataSeg& seg) const
+RcvProdFile::save(DataSeg& seg) const
 {
     return static_cast<Impl*>(pImpl.get())->accept(seg);
 }

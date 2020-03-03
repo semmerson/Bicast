@@ -34,6 +34,8 @@ class Bookkeeper::Impl
         uint_fast32_t           chunkCount;  ///< Number of received messages
         bool                    fromConnect; ///< Resulted from `::connect()`?
 
+        PeerInfo() =default;
+
         PeerInfo(const bool fromConnect)
             : reqChunks()
             , chunkCount{0}
@@ -42,13 +44,19 @@ class Bookkeeper::Impl
     } PeerInfo;
 
     /// Map of peer -> peer information
-    std::unordered_map<Peer, PeerInfo>               lclPeerInfos;
+    std::unordered_map<Peer, PeerInfo>               peerInfos;
 
-    /// Map of chunk identifiers -> local peers that can request the chunks
-    std::unordered_map<ChunkId, Bookkeeper::Peers>   willingPeers;
+    /// Map of chunk identifiers -> alternative peers that can request a chunk
+    std::unordered_map<ChunkId, Bookkeeper::Peers>   altPeers;
 
     /// Map of remote peer address -> peer
-    std::unordered_map<SockAddr, Peer>               lclPeers;
+    std::unordered_map<SockAddr, Peer>               peers;
+
+    /*
+     * INVARIANTS:
+     *   - If `peerInfos[peer].reqChunks` contains `chunkId`, then `peer`
+     *     is not contained in `altPeers[chunkId]`
+     */
 
 public:
     /**
@@ -60,9 +68,9 @@ public:
      */
     Impl(const int maxPeers)
         : mutex()
-        , lclPeerInfos(maxPeers)
-        , willingPeers()
-        , lclPeers(maxPeers)
+        , peerInfos(maxPeers)
+        , altPeers()
+        , peers(maxPeers)
     {}
 
     /**
@@ -81,12 +89,12 @@ public:
     {
         Guard guard(mutex);
 
-        lclPeerInfos.emplace(peer, fromConnect);
+        peerInfos.emplace(peer, fromConnect);
         try {
-            lclPeers.emplace(peer.getRmtAddr(), peer);
+            peers.emplace(peer.getRmtAddr(), peer);
         }
         catch (...) {
-            lclPeerInfos.erase(peer);
+            peerInfos.erase(peer);
             throw;
         }
     }
@@ -107,78 +115,111 @@ public:
     bool isFromConnect(const Peer& peer) const
     {
         Guard guard(mutex);
-        return lclPeerInfos.at(peer).fromConnect;
+        return peerInfos.at(peer).fromConnect;
     }
 
     /**
-     * Marks a local peer as having requested a particular chunk.
+     * Indicates if a chunk should be requested by a peer. If yes, then the
+     * chunk is added to the list of chunks requested by the peer; if no, then
+     * the peer is added to a list of potential peers for the chunk.
      *
-     * @param[in] rmtAddr         Address of the remote peer
-     * @param[in] chunkId         Chunk Identifier
-     * @throws std::out_of_range  `peer` is unknown
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
+     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] chunkId            Chunk Identifier
+     * @return    `true`             Chunk should be requested
+     * @return    `false`            Chunk shouldn't be requested
+     * @throws    std::out_of_range  Remote peer is unknown
+     * @throws    logicError         Chunk has already been requested from
+     *                               remote peer or remote peer is already
+     *                               alternative peer for chunk
+     * @threadsafety                 Safe
+     * @cancellationpoint            No
      */
-    void requested(
+    bool shouldRequest(
             const SockAddr& rmtAddr,
             const ChunkId   chunkId)
     {
+        bool  should;
         Guard guard(mutex);
+        auto  elt = altPeers.find(chunkId);
 
-        Peer& peer = lclPeers.at(rmtAddr);
-        lclPeerInfos.at(peer).reqChunks.insert(chunkId);
-        willingPeers[chunkId].push_back(peer);
+        if (elt == altPeers.end()) {
+            // First request for this chunk
+            auto& peer = peers.at(rmtAddr);
+            auto& reqChunks = peerInfos.at(peer).reqChunks;
+
+            // Check invariant
+            if (reqChunks.find(chunkId) != reqChunks.end())
+                throw LOGIC_ERROR("Peer " + peer.to_string() + " has "
+                        "already requested chunk " + chunkId.to_string());
+
+            altPeers[chunkId]; // Creates empty alternative-peer list
+            // Add chunk to list of chunks requested by this peer
+            reqChunks.insert(chunkId);
+            should = true;
+        }
+        else {
+            Peer peer{peers.at(rmtAddr)};
+            auto iter = peerInfos.find(peer);
+
+            // Check invariant
+            if (iter != peerInfos.end()) {
+                auto& reqChunks = iter->second.reqChunks;
+                if (reqChunks.find(chunkId) != reqChunks.end())
+                    throw LOGIC_ERROR("Peer " + peer.to_string() + "requested "
+                            "chunk " + chunkId.to_string());
+            }
+
+            elt->second.push_back(peer); // Add alternative peer for this chunk
+            should = false;
+        }
+
+        //LOG_DEBUG("Chunk %s %s be requested from %s", chunkId.to_string().data(),
+                //should ? "should" : "shouldn't", rmtAddr.to_string().data());
+        return should;
     }
 
     /**
-     * Indicates if a chunk has been requested by any local peer.
+     * Process a chunk as having been received from a peer. Nothing happens if
+     * the chunk wasn't requested by the peer; otherwise, the peer is marked as
+     * having received the chunk and the set of alternative peers that could but
+     * haven't requested the chunk is cleared.
      *
-     * @param[in] chunkId    Chunk Identifier
-     * @return    `true`     The data-segment has been requested
-     * @return    `false`    The data-segment has not been requested
-     * @threadsafety         Safe
-     * @exceptionsafety      No throw
-     * @cancellationpoint    No
+     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] chunkId            Chunk Identifier
+     * @retval    `false`            Chunk wasn't requested by peer.
+     * @retval    `true`             Chunk was requested by peer
+     * @throws    std::out_of_range  `peer` is unknown
+     * @threadsafety                 Safe
+     * @exceptionsafety              Basic guarantee
+     * @cancellationpoint            No
      */
-    bool wasRequested(const ChunkId chunkId) noexcept
-    {
-        Guard guard(mutex);
-        return willingPeers.count(chunkId) > 0;
-    }
-
-    /**
-     * Marks a chunk as having been received from a remote peer.
-     *
-     * @param[in] rmtAddr         Address of the remote peer
-     * @param[in] chunkId         Chunk Identifier
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     */
-    void received(
+    bool received(
             const SockAddr& rmtAddr,
             const ChunkId   chunkId)
     {
-        Guard guard(mutex);
-        auto& peerInfo = lclPeerInfos.at(lclPeers.at(rmtAddr));
+        Guard  guard(mutex);
+        auto&  peer = peers.at(rmtAddr);
+        auto&  peerInfo = peerInfos.at(peer);
+        bool   wasRequested;
 
-        peerInfo.reqChunks.erase(chunkId);
-        ++peerInfo.chunkCount;
+        if (peerInfo.reqChunks.erase(chunkId) == 0) {
+            wasRequested = false;
+        }
+        else {
+            ++peerInfo.chunkCount;
+            altPeers.erase(chunkId); // Chunk is no longer relevant
+            wasRequested = true;
+        }
 
-        willingPeers.erase(chunkId); // Chunk is no longer relevant
+        return wasRequested;
     }
 
     /**
-     * Returns the uniquely worst performing peer, which will test false if it's
-     * not unique.
+     * Returns a worst performing peer.
      *
-     * @return                    The worst performing peer since construction
-     *                            or `resetChunkCounts()` was called. Will test
-     *                            false if the worst performing peer isn't
-     *                            unique.
+     * @return                    A worst performing peer since construction
+     *                            or `resetCounts()` was called. Will test
+     *                            false if the set is empty.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Strong guarantee
@@ -187,24 +228,19 @@ public:
     Peer getWorstPeer()
     {
         unsigned long minCount{ULONG_MAX};
-        unsigned long tieCount{ULONG_MAX};
-        Peer          peer;
+        Peer          peer{};
         Guard         guard(mutex);
 
-        for (auto iter = lclPeerInfos.begin(), end = lclPeerInfos.end(); iter != end;
-                ++iter) {
-            auto count = iter->second.chunkCount;
+        for (auto elt : peerInfos) {
+            auto count = elt.second.chunkCount;
 
             if (count < minCount) {
                 minCount = count;
-                peer = iter->first;
-            }
-            else if (count == minCount) {
-                tieCount = minCount;
+                peer = elt.first;
             }
         }
 
-        return (minCount != tieCount) ? peer : Peer();
+        return peer;
     }
 
     /**
@@ -218,14 +254,15 @@ public:
     {
         Guard guard(mutex);
 
-        for (auto iter = lclPeerInfos.begin(), end = lclPeerInfos.end();
-                iter != end; ++iter)
-            iter->second.chunkCount = 0;
+        for (auto& elt : peerInfos)
+            elt.second.chunkCount = 0;
     }
 
     /**
-     * Returns the identifiers of chunks that a peer has requested but that
-     * have not yet been received. Should be called before `erase()`.
+     * Returns a reference to the identifiers of chunks that a peer has
+     * requested but that have not yet been received. The set of identifiers
+     * is deleted when `erase()` is called -- so the reference must not be
+     * dereferenced after that.
      *
      * @param[in] peer            The peer in question
      * @return                    [first, last) iterators over the chunk
@@ -235,77 +272,86 @@ public:
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `popBestAlt()`
+     * @see                       `requested()`
      * @see                       `erase()`
      */
-    std::pair<ChunkIdIter, ChunkIdIter> getChunkIds(const Peer& peer)
+    Bookkeeper::ChunkIds& getRequested(const Peer& peer)
     {
-        Guard guard(mutex);
-        auto& chunkIds = lclPeerInfos.at(peer).reqChunks;
-        return {chunkIds.begin(), chunkIds.end()};
+        return peerInfos.at(peer).reqChunks;
     }
 
     /**
-     * Removes a peer. Should be called after `getProdIndexes()` and
-     * `getSegIds()` and before `getBestPeer()`.
-     *
-     * @param[in] peer            The peer to be removed
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `getProdIndexes()`
-     * @see                       `getSegIds()`
-     * @see                       `getBestPeer()`
-     */
-    void erase(const Peer& peer)
-    {
-        Guard    guard(mutex);
-        PeerInfo peerInfo = lclPeerInfos.at(peer);
-        auto&    chunkIds = peerInfo.reqChunks;
-        auto     end = chunkIds.end();
-
-        for (auto segIdIter = chunkIds.begin(); segIdIter != end; ++segIdIter) {
-            auto& peerList = willingPeers[*segIdIter];
-            auto  end = peerList.end();
-
-            for (auto peerIter = peerList.begin(); peerIter != end;
-                    ++peerIter) {
-                if (*peerIter == peer) {
-                    peerList.erase(peerIter);
-                    break;
-                }
-            }
-        }
-
-        lclPeers.erase(peer.getRmtAddr());
-        lclPeerInfos.erase(peer);
-    }
-
-    /**
-     * Returns the best local peer to request a chunk that's not a particular
-     * peer.
+     * Returns the best peer to request a chunk that hasn't already requested
+     * it. The peer is removed from the set of such peers.
      *
      * @param[in] chunkId         Chunk Identifier
-     * @param[in] except          Peer to avoid
      * @return                    The peer. Will test `false` if no such peer
      *                            exists.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
+     * @see                       `getRequested()`
+     * @see                       `requested()`
      * @see                       `erase()`
      */
-    Peer getBestPeerExcept(
-            const ChunkId chunkId,
-            const Peer&   except)
+    Peer popBestAlt(const ChunkId chunkId)
     {
         Guard guard(mutex);
-        for (auto& peer : willingPeers[chunkId]) {
-            if (peer == except)
-                continue;
-            return peer;
+        Peer  peer{};
+        auto  iter = altPeers.find(chunkId);
+
+        if (iter != altPeers.end()) {
+            auto& peers = iter->second;
+            if (!peers.empty()) {
+                peer = peers.front();
+                peers.pop_front();
+            }
         }
-        return Peer{};
+
+        return peer;
+    }
+
+    /**
+     * Marks a peer as being responsible for a chunk.
+     *
+     * @param[in] rmtAddr  Address of associated remote peer
+     * @param[in] chunkId  Identifier of chunk
+     * @see                `getRequested()`
+     * @see                `popBestAlt()`
+     * @see                `erase()`
+     */
+    void requested(
+            const SockAddr& rmtAddr,
+            const ChunkId   chunkId)
+    {
+        Guard guard{mutex};
+        peerInfos[peers.at(rmtAddr)].reqChunks.insert(chunkId);
+    }
+
+    /**
+     * Removes a peer. Should be called after processing the entire set
+     * returned by `getChunkIds()`.
+     *
+     * @param[in] peer            The peer to be removed
+     * @throws std::out_of_range  `peer` is unknown
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     * @see                       `getRequested()`
+     * @see                       `popBestAlt()`
+     * @see                       `requested()`
+     */
+    void erase(const Peer& peer)
+    {
+        Guard    guard(mutex);
+
+        for (auto& elt : altPeers)
+            elt.second.remove(peer);
+
+        peers.erase(peer.getRmtAddr());
+        peerInfos.erase(peer);
     }
 };
 
@@ -325,16 +371,11 @@ bool Bookkeeper::isFromConnect(const Peer& peer) const
     return pImpl->isFromConnect(peer);
 }
 
-void Bookkeeper::requested(
+bool Bookkeeper::shouldRequest(
         const SockAddr& rmtAddr,
-        const ChunkId chunkId) const
+        const ChunkId   chunkId) const
 {
-    pImpl->requested(rmtAddr, chunkId);
-}
-
-bool Bookkeeper::wasRequested(const ChunkId chunkId) const noexcept
-{
-    return pImpl->wasRequested(chunkId);
+    return pImpl->shouldRequest(rmtAddr, chunkId);
 }
 
 void Bookkeeper::received(
@@ -354,22 +395,27 @@ void Bookkeeper::resetCounts() const noexcept
     pImpl->resetCounts();
 }
 
-std::pair<Bookkeeper::ChunkIdIter, Bookkeeper::ChunkIdIter>
-Bookkeeper::getChunkIds(const Peer& peer) const
+Bookkeeper::ChunkIds&
+Bookkeeper::getRequested(const Peer& peer) const
 {
-    return pImpl->getChunkIds(peer);
+    return pImpl->getRequested(peer);
+}
+
+Peer Bookkeeper::popBestAlt(const ChunkId chunkId) const
+{
+    return pImpl->popBestAlt(chunkId);
+}
+
+void Bookkeeper::requested(
+        const SockAddr& rmtAddr,
+        const ChunkId   chunkId) const
+{
+    pImpl->requested(rmtAddr, chunkId);
 }
 
 void Bookkeeper::erase(const Peer& peer) const
 {
     pImpl->erase(peer);
-}
-
-Peer Bookkeeper::getBestPeerExcept(
-        const ChunkId chunkId,
-        const Peer&   except) const
-{
-    return pImpl->getBestPeerExcept(chunkId, except);
 }
 
 } // namespace

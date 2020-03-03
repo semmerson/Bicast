@@ -46,13 +46,13 @@ public:
         auto port = queue.front();
         queue.pop();
 
-        LOG_DEBUG("Returning port %u", port);
+        //LOG_DEBUG("Returning port %u", port);
         return port;
     }
 
     void add(const in_port_t port)
     {
-        LOG_DEBUG("Adding port %u", port);
+        //LOG_DEBUG("Adding port %u", port);
         queue.emplace(port);
     }
 };

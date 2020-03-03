@@ -37,15 +37,19 @@ private:
     typedef std::condition_variable Cond;
     typedef std::exception_ptr      ExceptPtr;
 
-    mutable Mutex    doneMutex;
-    mutable Cond     doneCond;
-    ChunkIdQueue     noticeQueue;
-    ChunkIdQueue     requestQueue;
-    PeerProto        peerProto;
-    const SockAddr   rmtAddr;
-    PeerObs&         peerObs;
-    ExceptPtr        exceptPtr;
-    bool             haltRequested;
+    mutable Mutex  doneMutex;       ///< For protecting `done`
+    mutable Cond   doneCond;        ///< For checking `done`
+    ChunkIdQueue   noticeQueue;     ///< Queue for notices
+    ChunkIdQueue   requestQueue;    ///< Queue for requests
+    PeerProto      peerProto;       ///< Peer-to-peer protocol object
+    const SockAddr rmtAddr;         ///< Address of remote peer
+    PeerObs&       peerObs;         ///< Observer of this instance
+    std::thread    notifierThread;  ///< Thread on which notices are sent
+    std::thread    requesterThread; ///< Thread on which requests are made
+    std::thread    peerProtoThread; ///< Thread on which peerProto() executes
+    ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
+    bool           done;            ///< Terminate without an exception?
+    Peer&          peer;            ///< Containing peer
 
     void handleException(const ExceptPtr& exPtr)
     {
@@ -57,58 +61,192 @@ private:
         }
     }
 
-    void runNotifier(void)
+    void setDone()
     {
-        try {
-            for (;;)
-                noticeQueue.pop().notify(peerProto);
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
+        Guard guard{doneMutex};
+        done = true;
+        doneCond.notify_one();
     }
 
-    void runRequester(void)
+    bool isDone()
     {
-        try {
-            for (;;)
-                requestQueue.pop().request(peerProto);
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
+        Guard guard{doneMutex};
+        return done;
     }
 
     void waitUntilDone()
     {
         Lock lock(doneMutex);
 
-        while (!haltRequested && !exceptPtr)
+        while (!done && !exceptPtr)
             doneCond.wait(lock);
+    }
+
+    void runNotifier(void)
+    {
+        try {
+            for (;;) {
+                auto chunkId = noticeQueue.pop();
+
+                if (isDone())
+                    break;
+
+                chunkId.notify(peerProto);
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught exception \"%s\"", ex.what());
+            handleException(std::current_exception());
+        }
+        catch (...) {
+            LOG_DEBUG("Caught exception ...");
+            throw;
+        }
+    }
+
+    void runRequester(void)
+    {
+        try {
+            for (;;) {
+                auto chunkId = requestQueue.pop();
+
+                if (isDone())
+                    break;
+
+                chunkId.request(peerProto);
+            }
+        }
+        catch (const std::exception& ex) {
+            handleException(std::current_exception());
+        }
+    }
+
+    void runPeerProto(void)
+    {
+        try {
+            peerProto();
+            // The remote peer closed the connection
+            setDone();
+        }
+        catch (const std::exception& ex) {
+            handleException(std::current_exception());
+        }
+    }
+
+    void startTasks()
+    {
+        notifierThread = std::thread{&Impl::runNotifier, this};
+
+        try {
+            requesterThread = std::thread{&Impl::runRequester, this};
+
+            try {
+                peerProtoThread = std::thread{&Impl::runPeerProto, this};
+            }
+            catch (const std::exception& ex) {
+                LOG_DEBUG("Caught \"%s\"", ex.what());
+                (void)pthread_cancel(requesterThread.native_handle());
+                requesterThread.join();
+                throw;
+            }
+            catch (...) {
+                LOG_DEBUG("Caught ...");
+                (void)pthread_cancel(requesterThread.native_handle());
+                requesterThread.join();
+                throw;
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught \"%s\"", ex.what());
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+            throw;
+        }
+        catch (...) {
+            LOG_DEBUG("Caught ...");
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+            throw;
+        }
+    }
+
+    /**
+     * Idempotent.
+     */
+    void stopTasks()
+    {
+        if (peerProtoThread.joinable()) {
+            peerProto.halt();
+            peerProtoThread.join();
+        }
+        if (requesterThread.joinable()) {
+            requestQueue.close();
+            //(void)pthread_cancel(requesterThread.native_handle());
+            requesterThread.join();
+        }
+        if (notifierThread.joinable()) {
+            noticeQueue.close();
+            //(void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+        }
     }
 
 public:
     /**
-     * Constructs from a connection to a remote peer and a receiver of messages
-     * from the local peer.
+     * Server-side construction. Constructs from a connection to a remote peer
+     * and an observer of this instance.
      *
-     * @param[in] peerConn  Connection to the remote peer
-     * @param[in] msgRcvr   The receiver of messages from the local peer
+     * @param[in] sock      TCP socket with remote peer
+     * @param[in] portPool  Pool of port numbers for temporary servers
+     * @param[in] peerObs   Observer of this instance
+     * @param[in] isSource  Is this instance the source of data-products?
+     * @param[in] peer      Containing local peer
      */
-    Impl(   PeerProto& peerProto,
-            PeerObs&   msgRcvr)
+    Impl(   TcpSock&   sock,
+            PortPool&  portPool,
+            PeerObs&   peerObs,
+            const bool isSource,
+            Peer&      peer)
         : doneMutex()
         , doneCond()
         , noticeQueue{}
         , requestQueue{}
-        , peerProto{peerProto}
+        , peerProto{sock, portPool, *this, isSource}
         , rmtAddr{peerProto.getRmtAddr()}
-        , peerObs(msgRcvr) // Braces don't work
+        , peerObs(peerObs) // Braces don't work
+        , notifierThread{}
+        , requesterThread{}
+        , peerProtoThread{}
         , exceptPtr()
-        , haltRequested{false}
-    {
-        peerProto.set(this);
-    }
+        , done{false}
+        , peer(peer)
+    {}
+
+    /**
+     * Client-side construction. Constructs from the address of a remote peer-
+     * server and an observer of this instance.
+     *
+     * @param[in] rmtSrvrAddr  Address of remote peer-server
+     * @param[in] peerObs      Observer of this instance
+     * @param[in] peer         Containing local peer
+     */
+    Impl(   const SockAddr& rmtSrvrAddr,
+            PeerObs&        peerObs,
+            Peer&           peer)
+        : doneMutex()
+        , doneCond()
+        , noticeQueue{}
+        , requestQueue{}
+        , peerProto{rmtSrvrAddr, *this}
+        , rmtAddr{peerProto.getRmtAddr()}
+        , peerObs(peerObs) // Braces don't work
+        , notifierThread{}
+        , requesterThread{}
+        , peerProtoThread{}
+        , exceptPtr()
+        , done{false}
+        , peer(peer)
+    {}
 
     ~Impl() noexcept
     {
@@ -149,35 +287,28 @@ public:
      */
     void operator ()()
     {
-        std::thread notifierThread{&Impl::runNotifier, this};
-
         try {
-            std::thread requesterThread{&Impl::runRequester, this};
+            startTasks();
 
             try {
-                peerProto();
+                waitUntilDone();
+                stopTasks(); // Idempotent
 
-                {
-                    Guard guard{doneMutex};
-                    if (!haltRequested && exceptPtr)
-                        std::rethrow_exception(exceptPtr);
-                }
-
-                (void)pthread_cancel(requesterThread.native_handle());
-                requesterThread.join();
+                Guard guard{doneMutex};
+                if (!done && exceptPtr)
+                    std::rethrow_exception(exceptPtr);
             }
             catch (...) {
-                (void)pthread_cancel(requesterThread.native_handle());
-                requesterThread.join();
+                stopTasks(); // Idempotent
                 throw;
             }
-
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught \"%s\"", ex.what());
+            std::throw_with_nested(RUNTIME_ERROR("Failure"));
         }
         catch (...) {
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+            LOG_DEBUG("Caught ...");
             throw;
         }
     }
@@ -191,26 +322,22 @@ public:
      */
     void halt() noexcept
     {
-        Guard guard(doneMutex);
-
-        haltRequested = true;
-        peerProto.halt();
-        doneCond.notify_one();
+        setDone();
     }
 
-    void notify(const ChunkId chunkId)
+    void notify(ProdIndex prodIndex)
     {
-        noticeQueue.push(chunkId);
+        noticeQueue.push(prodIndex);
     }
 
-    void request(const ChunkId chunkId)
+    void notify(const SegId& segId)
     {
-        requestQueue.push(chunkId);
+        noticeQueue.push(segId);
     }
 
-    void request(const ProdIndex prodId)
+    void request(const ProdIndex prodIndex)
     {
-        requestQueue.push(prodId);
+        requestQueue.push(prodIndex);
     }
 
     void request(const SegId& segId)
@@ -223,36 +350,93 @@ public:
         return peerProto.to_string();
     }
 
-    void acceptNotice(const ChunkId chunkId)
+    void pathToSrc() noexcept
     {
-        LOG_DEBUG("Accepting notice of chunk %s", chunkId.to_string().data());
+        // TODO
+    }
+
+    void noPathToSrc() noexcept
+    {
+        // TODO
+    }
+
+    void acceptNotice(ProdIndex prodIndex)
+    {
+        LOG_DEBUG("Accepting notice of product-information %s",
+                prodIndex.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(chunkId, rmtAddr);
+            const bool doRequest = peerObs.shouldRequest(prodIndex, rmtAddr);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (doRequest) {
-            LOG_DEBUG("Sending request for chunk %s",
-                    chunkId.to_string().data());
-            chunkId.request(peerProto);
+            LOG_DEBUG("Sending request for product-information %s",
+                    prodIndex.to_string().data());
+            peerProto.request(prodIndex);
         }
     }
 
-    void acceptRequest(const ChunkId chunkId)
+    void acceptNotice(const SegId& segId)
     {
-        LOG_DEBUG("Accepting request for chunk %s", chunkId.to_string().data());
+        LOG_DEBUG("Accepting notice of data-segment %s", segId.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const auto& chunk = peerObs.get(chunkId, rmtAddr);
+            const bool doRequest = peerObs.shouldRequest(segId, rmtAddr);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
-        if (chunk) {
-            LOG_DEBUG("Sending chunk %s", chunkId.to_string().data());
-            chunk.send(peerProto);
+        if (doRequest) {
+            LOG_DEBUG("Sending request for data-segment %s",
+                    segId.to_string().data());
+            peerProto.request(segId);
+        }
+    }
+
+    void acceptRequest(ProdIndex prodIndex)
+    {
+        LOG_DEBUG("Accepting request for product-information %s",
+                prodIndex.to_string().data());
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            auto prodInfo = peerObs.get(prodIndex, rmtAddr);
+        ::pthread_setcancelstate(entryState, &entryState);
+
+        if (prodInfo) {
+            //LOG_DEBUG("Sending product-information %s",
+                    //prodInfo.to_string().data());
+            peerProto.send(prodInfo);
+        }
+    }
+
+    void acceptRequest(const SegId& segId)
+    {
+        try {
+            LOG_DEBUG("Accepting request for data-segment %s",
+                    segId.to_string().data());
+
+            int entryState;
+
+            //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+                auto memSeg = peerObs.get(segId, rmtAddr);
+            //::pthread_setcancelstate(entryState, &entryState);
+
+            if (memSeg) {
+                //LOG_DEBUG("Sending data-segment %s", memSeg.to_string().data());
+                peerProto.send(memSeg);
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught exception \"%s\"", ex.what());
+            throw;
+        }
+        catch (...) {
+            LOG_DEBUG("Caught exception ...");
+            throw;
         }
     }
 
@@ -287,9 +471,17 @@ Peer::Peer()
 {}
 
 Peer::Peer(
-        PeerProto& peerProto,
-        PeerObs&   msgRcvr)
-    : pImpl{new Impl(peerProto, msgRcvr)}
+        TcpSock&   sock,
+        PortPool&  portPool,
+        PeerObs&   peerObs,
+        const bool isSource)
+    : pImpl{new Impl(sock, portPool, peerObs, isSource, *this)}
+{}
+
+Peer::Peer(
+        const SockAddr& rmtSrvrAddr,
+        PeerObs&        peerObs)
+    : pImpl{new Impl(rmtSrvrAddr, peerObs, *this)}
 {}
 
 Peer::Peer(const Peer& peer)
@@ -339,14 +531,14 @@ void Peer::halt() noexcept
         pImpl->halt();
 }
 
-void Peer::notify(const ChunkId chunkId) const
+void Peer::notify(ProdIndex prodIndex) const
 {
-    pImpl->notify(chunkId);
+    pImpl->notify(prodIndex);
 }
 
-void Peer::request(const ChunkId chunkId) const
+void Peer::notify(const SegId& segId) const
 {
-    pImpl->request(chunkId);
+    pImpl->notify(segId);
 }
 
 void Peer::request(const ProdIndex prodId) const
@@ -368,26 +560,5 @@ std::string Peer::to_string() const noexcept
 {
     return pImpl->to_string();
 }
-
-void Peer::acceptNotice(const ChunkId chunkId)
-{
-    pImpl->acceptNotice(chunkId);
-}
-
-void Peer::acceptRequest(const ChunkId chunkId)
-{
-    pImpl->acceptRequest(chunkId);
-}
-
-void Peer::accept(const ProdInfo& prodInfo)
-{
-    pImpl->accept(prodInfo);
-}
-
-void Peer::accept(TcpSeg& seg)
-{
-    pImpl->accept(seg);
-}
-
 
 } // namespace

@@ -70,6 +70,8 @@ protected:
 public:
     virtual ~Impl() noexcept;
 
+    virtual int getFamily() const noexcept =0;
+
     virtual std::string to_string() const =0;
 
     virtual bool operator <(const Impl& rhs) const noexcept =0;
@@ -136,12 +138,15 @@ public:
             const int       sd,
             const InetAddr& srcAddr) const
     {
+        LOG_DEBUG("Joining multicast group %s from source %s",
+                to_string().data(), srcAddr.to_string().data());
+
         // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
         struct group_source_req mreq = {};
 
         mreq.gsr_interface = 0; // => O/S chooses interface
-                getSockAddr(0).setAddr(mreq.gsr_group);
-        srcAddr.getSockAddr(0).setAddr(mreq.gsr_source);
+        getSockAddr(0).get_sockaddr(mreq.gsr_group);
+        srcAddr.getSockAddr(0).get_sockaddr(mreq.gsr_source);
 
         if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq,
                 sizeof(mreq)))
@@ -161,9 +166,14 @@ class Inet4Addr final : public InetAddr::Impl
     std::hash<in_addr_t> myHash;
 
 public:
-    Inet4Addr(const in_addr_t addr)
+    Inet4Addr(const in_addr_t addr) noexcept
         : addr{addr}
     {}
+
+    int getFamily() const noexcept
+    {
+        return AF_INET;
+    }
 
     std::string to_string() const
     {
@@ -235,13 +245,13 @@ public:
             struct sockaddr_storage& storage,
             const in_port_t          port) const
     {
+        ::memset(&storage, 0, sizeof(storage));
         struct sockaddr_in* const sockaddr =
                 reinterpret_cast<struct sockaddr_in*>(&storage);
-        ::memset(sockaddr, 0, sizeof(*sockaddr));
         sockaddr->sin_family = AF_INET;
         sockaddr->sin_addr = addr;
         sockaddr->sin_port = htons(port);
-        return reinterpret_cast<struct sockaddr*>(&storage);
+        return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
     void setMcastIface(int sd) const
@@ -368,9 +378,14 @@ class Inet6Addr final : public InetAddr::Impl
     }
 
 public:
-    Inet6Addr(const struct in6_addr& addr)
+    Inet6Addr(const struct in6_addr& addr) noexcept
         : addr(addr)
     {}
+
+    int getFamily() const noexcept
+    {
+        return AF_INET6;
+    }
 
     std::string to_string() const
     {
@@ -444,13 +459,13 @@ public:
             struct sockaddr_storage& storage,
             const in_port_t          port) const
     {
+        ::memset(&storage, 0, sizeof(storage));
         struct sockaddr_in6* const sockaddr =
                 reinterpret_cast<struct sockaddr_in6*>(&storage);
-        ::memset(sockaddr, 0, sizeof(*sockaddr));
         sockaddr->sin6_family = AF_INET;
         sockaddr->sin6_addr = addr;
         sockaddr->sin6_port = htons(port);
-        return reinterpret_cast<struct sockaddr*>(&storage);
+        return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
     void setMcastIface(int sd) const
@@ -543,6 +558,11 @@ public:
         : name{name}
     {}
 
+    int getFamily() const noexcept
+    {
+        return AF_UNSPEC;
+    }
+
     std::string to_string() const
     {
         return std::string(name);
@@ -619,8 +639,23 @@ public:
 
     void setMcastIface(int sd) const
     {
-        throw LOGIC_ERROR("Using hostname to set multicast interface is "
-                "unsupported");
+        struct sockaddr_storage storage;
+        get_sockaddr(storage, 0);
+
+        if (storage.ss_family == AF_INET) {
+            const auto* sockaddr =
+                    reinterpret_cast<struct sockaddr_in*>(&storage);
+            Inet4Addr(sockaddr->sin_addr.s_addr).setMcastIface(sd);
+        }
+        else if (storage.ss_family == AF_INET6) {
+            const auto* sockaddr =
+                    reinterpret_cast<struct sockaddr_in6*>(&storage);
+            Inet6Addr(sockaddr->sin6_addr).setMcastIface(sd);
+        }
+        else {
+            throw LOGIC_ERROR("Unsupported address family: " +
+                    std::to_string(storage.ss_family));
+        }
     }
 };
 
@@ -635,7 +670,7 @@ InetAddr::InetAddr(const in_addr_t addr) noexcept
 {}
 
 InetAddr::InetAddr(const struct in_addr& addr) noexcept
-    : pImpl(new Inet4Addr(addr.s_addr))
+    : InetAddr(addr.s_addr)
 {}
 
 InetAddr::InetAddr(const struct in6_addr& addr) noexcept
@@ -660,9 +695,19 @@ InetAddr::InetAddr(const std::string& addr)
     }
 }
 
+InetAddr::operator bool() const noexcept
+{
+    return static_cast<bool>(pImpl);
+}
+
+int InetAddr::getFamily() const noexcept
+{
+    return pImpl->getFamily();
+}
+
 std::string InetAddr::to_string() const
 {
-    return pImpl->to_string();
+    return pImpl ? pImpl->to_string() : "(unset)";
 }
 
 bool InetAddr::operator <(const InetAddr& rhs) const noexcept
@@ -683,6 +728,13 @@ size_t InetAddr::hash() const noexcept
 SockAddr InetAddr::getSockAddr(const in_port_t port) const
 {
     return pImpl->getSockAddr(port);
+}
+
+int InetAddr::socket(
+        const int type,
+        const int protocol) const
+{
+    return pImpl->socket(type, protocol);
 }
 
 void InetAddr::join(

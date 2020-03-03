@@ -13,9 +13,16 @@
 #include "config.h"
 
 #include "error.h"
+#include "hycast.h"
 #include "McastProto.h"
+#include "protocol.h"
 
 namespace hycast {
+
+typedef uint16_t MsgIdType;
+
+static MsgIdType prodInfoId = MsgId::PROD_INFO;
+static MsgIdType dataSegId = MsgId::DATA_SEG;
 
 class McastSndr::Impl {
     UdpSock sock;
@@ -36,71 +43,30 @@ public:
 
     void multicast(const ProdInfo& prodInfo)
     {
-        struct iovec iov[5];
+        LOG_DEBUG("Multicasting product-information %s on socket %s",
+                prodInfo.to_string().data(), sock.to_string().data());
 
-        // Product information
-        static Flags::flags_t flags = sock.hton(Flags::getProd());
-        iov[0].iov_base = &flags;
-        iov[0].iov_len = sizeof(flags);
-
-        // Done now before 'hton()` conversion
-        const std::string& name = prodInfo.getName();
-        SegSize            nameLen = name.length();
-        iov[4].iov_base = const_cast<char*>(name.data()); // Safe casts
-        iov[4].iov_len = nameLen;
-
-        nameLen = sock.hton(nameLen);
-        iov[1].iov_base = &nameLen;
-        iov[1].iov_len = sizeof(nameLen);
-
-        ProdIndex prodId = prodInfo.getProdIndex();
-        auto   value = sock.hton(prodId.getValue());
-        iov[2].iov_base = &value;
-        iov[2].iov_len = sizeof(value);
-
-        ProdSize prodSize = prodInfo.getSize();
-        prodSize = sock.hton(prodSize);
-        iov[3].iov_base = &prodSize;
-        iov[3].iov_len = sizeof(prodSize);
-
-        sock.write(iov, 5);
+        sock.addWrite(prodInfoId);
+        const std::string& name = prodInfo.getProdName();
+        sock.addWrite(static_cast<SegSize>(name.length()));
+        sock.addWrite(prodInfo.getProdIndex().getValue());
+        sock.addWrite(prodInfo.getProdSize());
+        sock.addWrite(name.data(), name.length());
+        sock.write();
     }
 
     void multicast(const MemSeg& seg)
     {
-        struct iovec iov[6];
+        LOG_DEBUG("Multicasting data-segment %s on socket %s",
+                seg.to_string().data(), sock.to_string().data());
 
-        // Data-segment
-        static Flags::flags_t flags = sock.hton(Flags::getSeg());
-        iov[0].iov_base = &flags;
-        iov[0].iov_len = sizeof(flags);
-
-        SegSize segSize = seg.getSegSize();
-
-        // Done now before 'hton()` conversion
-        iov[5].iov_base = const_cast<void*>(seg.getData());
-        iov[5].iov_len = segSize;
-
-        segSize = sock.hton(segSize);
-        iov[1].iov_base = &segSize;
-        iov[1].iov_len = sizeof(segSize);
-
-        ProdIndex prodId = seg.getProdIndex();
-        auto   value = sock.hton(prodId.getValue());
-        iov[2].iov_base = &value;
-        iov[2].iov_len = sizeof(value);
-
-        ProdSize prodSize = seg.getProdSize();
-        prodSize = sock.hton(prodSize);
-        iov[3].iov_base = &prodSize;
-        iov[3].iov_len = sizeof(prodSize);
-
-        ProdSize segOffset = seg.getSegOffset();
-        segOffset = sock.hton(segOffset);
-        iov[4].iov_base = &segOffset;
-        iov[4].iov_len = sizeof(segOffset);
-
-        sock.write(iov, 6);
+        sock.addWrite(dataSegId);
+        sock.addWrite(seg.getSegSize());
+        sock.addWrite(seg.getProdIndex().getValue());
+        sock.addWrite(seg.getProdSize());
+        sock.addWrite(seg.getOffset());
+        sock.addWrite(seg.getData(), seg.getSegSize());
+        sock.write();
     }
 };
 
@@ -132,57 +98,71 @@ void McastSndr::multicast(const MemSeg& seg)
 
 class McastRcvr::Impl
 {
-    UdpSock       sock;
-    McastRcvrObs* srvr;
+    UdpSock          sock;
+    McastRcvrObs*    observer;
 
-    void recvInfo(
-            const ProdIndex prodIndex,
-            const ProdSize  prodSize,
-            const SegSize   nameLen)
+    void addCommon(
+            SegSize&         varSize,
+            ProdIndex::Type& prodIndex,
+            ProdSize&        prodSize)
     {
-        struct iovec iov;
-
-        char buf[nameLen];
-        iov.iov_base = buf;
-        iov.iov_len = nameLen;
-
-        auto nread = sock.read(&iov, 1);
-        if (nread != nameLen)
-            throw RUNTIME_ERROR("Couldn't read product name");
-
-        std::string name(buf, nameLen);
-        ProdInfo    prodInfo{prodIndex, prodSize, name};
-        srvr->hereIs(prodInfo);
+        sock.addPeek(varSize);
+        sock.addPeek(prodIndex);
+        sock.addPeek(prodSize);
     }
 
-    void recvSeg(
-            const ProdIndex prodIndex,
-            const ProdSize  prodSize,
-            const SegSize   segSize)
+    bool recvProdInfo()
     {
-        struct iovec iov;
+        LOG_DEBUG("Receiving product-information on socket %s",
+                sock.to_string().data());
 
-        ProdSize segOffset;
-        iov.iov_base = &segOffset;
-        iov.iov_len = sizeof(segOffset);
+        SegSize         nameLen;
+        ProdIndex::Type prodIndex;
+        ProdSize        prodSize;
+        addCommon(nameLen, prodIndex, prodSize);
+        if (!sock.peek())
+            return false;
 
-        auto nread = sock.read(&iov, 1);
-        if (nread != sizeof(segOffset))
-            throw RUNTIME_ERROR("Couldn't read segment offset");
+        char buf[nameLen];
+        sock.addPeek(buf, nameLen);
+        if (!sock.peek())
+            return false;
 
-        segOffset = sock.ntoh(segOffset);
+        sock.discard();
 
-        SegId   id(prodIndex, segOffset);
-        SegInfo info(id, prodSize, segSize);
-        UdpSeg  seg{info, sock};
-        srvr->hereIs(seg);
+        observer->hereIsMcast(ProdInfo{prodIndex, prodSize,
+            std::string(buf, nameLen)});
+
+        return true;
+    }
+
+    bool recvDataSeg()
+    {
+        LOG_DEBUG("Receiving data-segment on socket %s",
+                sock.to_string().data());
+
+        SegSize         segSize;
+        ProdIndex::Type prodIndex;
+        ProdSize        prodSize;
+        ProdSize        segOffset;
+        addCommon(segSize, prodIndex, prodSize);
+        sock.addPeek(segOffset);
+        if (!sock.peek())
+            return false;
+
+        UdpSeg udpSeg{SegInfo{SegId{prodIndex, segOffset}, prodSize, segSize},
+                sock};
+        observer->hereIs(udpSeg);
+        sock.discard();
+
+        return true;
     }
 
 public:
-    Impl(   UdpSock&   sock,
-            McastRcvrObs& srvr)
-        : sock{sock}
-        , srvr{&srvr}
+    Impl(   const SrcMcastAddrs& srcMcastInfo,
+            McastRcvrObs&       observer)
+        : sock{srcMcastInfo.grpAddr, srcMcastInfo.srcAddr}
+        , observer{&observer}
     {}
 
     /**
@@ -190,43 +170,29 @@ public:
      */
     void operator()()
     {
-        for (;;) {
-            struct iovec iov[4];
+        try {
+            for (;;) {
+                MsgIdType msgId;
+                sock.addPeek(msgId);
+                if (!sock.peek())
+                    break; // EOF or `sock.halt()` called
 
-            Flags::flags_t flags;
-            iov[0].iov_base = &flags;
-            iov[0].iov_len = sizeof(flags);
+                if (msgId == MsgId::PROD_INFO) {
+                    if (!recvProdInfo())
+                        break;
+                }
+                else if (msgId == MsgId::DATA_SEG) {
+                    if (!recvDataSeg())
+                        break;
+                }
 
-            SegSize varSize;
-            iov[1].iov_base = &varSize;
-            iov[1].iov_len = sizeof(varSize);
-
-            ProdIndex::ValueType id;
-            iov[2].iov_base = &id;
-            iov[2].iov_len = sizeof(id);
-
-            ProdSize prodSize;
-            iov[3].iov_base = &prodSize;
-            iov[3].iov_len = sizeof(prodSize);
-
-            auto nread = sock.read(iov, 4);
-            if (nread == 0)
-                break; // EOF
-            if (nread != sizeof(flags) + sizeof(varSize) + sizeof(id) +
-                    sizeof(prodSize))
-                throw RUNTIME_ERROR("Couldn't read packet header");
-
-            flags = sock.ntoh(flags);
-            varSize = sock.ntoh(varSize);
-            ProdIndex prodId{sock.ntoh(id)};
-            prodSize = sock.ntoh(prodSize);
-
-            (Flags::isProd(flags))
-                ? recvInfo(prodId, prodSize, varSize)
-                : recvSeg(prodId, prodSize, varSize);
-
-            sock.discard();
-        } // Indefinite loop
+                sock.discard();
+            } // Indefinite loop
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Multicast reception failure"));
+        }
     }
 
     /**
@@ -236,14 +202,14 @@ public:
      */
     void halt()
     {
-        sock.shutdown(SHUT_RD);
+        sock.shutdown();
     }
 };
 
 McastRcvr::McastRcvr(
-        UdpSock&      sock,
-        McastRcvrObs& srvr)
-    : pImpl{new Impl(sock, srvr)}
+        const SrcMcastAddrs& srcMcastInfo,
+        McastRcvrObs&       observer)
+    : pImpl{new Impl(srcMcastInfo, observer)}
 {}
 
 void McastRcvr::operator()()

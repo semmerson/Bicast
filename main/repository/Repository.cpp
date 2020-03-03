@@ -32,26 +32,35 @@
 
 namespace hycast {
 
-typedef struct ProdEntry
+template<class PE> class ProdFiles; // Forward declaration
+
+/**
+ * @tparam PF  Product-file type
+ */
+template <class PF>
+class ProdEntry
 {
-    std::string namePath;  ///< Pathname of product-file based on product-name
-    time_t      when;      ///< Creation-time of entry
-    ProdIndex   prodIndex; ///< Product index
-    ProdIndex   prev;      ///< Previous entry in queue
-    ProdIndex   next;      ///< Next entry in queue
+public:
+    ProdInfo  prodInfo;  ///< Product information
+    PF        prodFile;  ///< Product file
+    time_t    when;      ///< Creation-time of entry
+    ProdIndex prev;      ///< Previous entry in queue
+    ProdIndex next;      ///< Next entry in queue
 
     ProdEntry()
-        : namePath{}
+        : prodFile{}
+        , prodInfo{}
         , when{time(nullptr)}
-        , prodIndex{}
         , prev{}
         , next{}
     {}
 
-    ProdEntry(const ProdIndex prodIndex)
-        : namePath{}
+    ProdEntry(
+            const ProdInfo&    prodInfo,
+            PF&                prodFile)
+        : prodInfo{prodInfo}
+        , prodFile{prodFile}
         , when{time(nullptr)}
-        , prodIndex{prodIndex}
         , prev{}
         , next{}
     {}
@@ -59,37 +68,208 @@ typedef struct ProdEntry
     virtual ~ProdEntry() noexcept
     {}
 
-    ProdEntry& operator =(const ProdEntry& rhs)
+    inline ProdEntry& operator =(const ProdEntry& rhs) =default;
+
+    inline const ProdInfo& getProdInfo() const
     {
-        namePath = rhs.namePath;
-        when = rhs.when;
-        prodIndex = rhs.prodIndex;
-        prev = rhs.prev;
-        next = rhs.next;
-        return *this;
+        return prodInfo;
     }
 
-    virtual bool isComplete() const =0;
-} ProdEntry;
+    inline const std::string& getProdName() const
+    {
+        return prodInfo.getProdName();
+    }
 
+    inline PF& getProdFile()
+    {
+        return prodFile;
+    }
+
+    inline bool exists(const ProdSize offset) const
+    {
+        return prodFile.exists(offset);
+    }
+
+    std::string to_string() const
+    {
+        return prodInfo.to_string();
+    }
+
+    //virtual bool isComplete() const =0;
+};
+
+class SndProdEntry : public ProdEntry<SndProdFile>
+{
+public:
+    SndProdEntry()
+        : ProdEntry()
+    {}
+
+    SndProdEntry(
+            const std::string& prodName,
+            const ProdIndex    prodIndex,
+            SndProdFile&       prodFile)
+        : ProdEntry(ProdInfo(prodIndex, prodFile.getProdSize(), prodName),
+                prodFile)
+    {}
+
+    bool isComplete() const
+    {
+        return true;
+    }
+};
+
+class RcvProdEntry : public ProdEntry<RcvProdFile>
+{
+public:
+    RcvProdEntry()
+        : ProdEntry()
+    {}
+
+    RcvProdEntry(
+            const ProdInfo&     prodInfo,
+            struct RcvProdFile& prodFile)
+        : ProdEntry(prodInfo, prodFile)
+    {}
+
+    RcvProdEntry(
+            const ProdIndex     prodIndex,
+            struct RcvProdFile& prodFile)
+        : ProdEntry(ProdInfo(prodIndex, prodFile.getProdSize(), ""), prodFile)
+    {}
+
+    inline void setProdName(const std::string& name)
+    {
+        prodInfo = ProdInfo(prodInfo.getProdIndex(), prodInfo.getProdSize(),
+                name);
+    }
+
+    bool isComplete() const
+    {
+        return prodInfo && !prodInfo.getProdName().empty() &&
+                prodFile.isComplete();
+    }
+};
+
+/******************************************************************************/
+
+template <class PE>
+class ProdFiles
+{
+    typedef std::unordered_map<ProdIndex,PE> Map;
+
+    Map       prodFiles; ///< Product files
+    ProdIndex headIndex; ///< Index of product at head of queue
+    ProdIndex tailIndex; ///< Index of product at tail of queue
+
+    void removeFromQueue(PE& prodEntry)
+    {
+        if (prodEntry.prev)
+            prodFiles[prodEntry.prev].next = prodEntry.next;
+        if (prodEntry.next)
+            prodFiles[prodEntry.next].prev = prodEntry.prev;
+        if (prodEntry.prodInfo.getProdIndex() == headIndex)
+            headIndex = prodEntry.next;
+        if (prodEntry.prodInfo.getProdIndex() == tailIndex)
+            tailIndex = prodEntry.prev;
+    }
+
+    void addToTail(PE& prodEntry)
+    {
+        // Modify product-entry
+        prodEntry.prev = tailIndex;
+        prodEntry.next = ProdIndex();
+        prodEntry.when = time(nullptr);
+
+        // Modify tail of non-empty queue
+        if (tailIndex)
+            prodFiles[tailIndex].next = prodEntry.prodInfo.getProdIndex();
+        tailIndex = prodEntry.prodInfo.getProdIndex();
+
+        // Modify head of empty queue
+        if (!headIndex)
+            headIndex = tailIndex;
+    }
+
+    inline void moveToTail(PE& prodEntry)
+    {
+        removeFromQueue(prodEntry);
+        addToTail(prodEntry);
+    }
+
+public:
+    ProdFiles()
+        : prodFiles{}
+        , headIndex{}
+        , tailIndex{}
+    {}
+
+    PE* add(PE& prodEntry)
+    {
+        auto  pair = prodFiles.emplace(std::piecewise_construct,
+                std::forward_as_tuple(prodEntry.getProdInfo().getProdIndex()),
+                std::forward_as_tuple(prodEntry));
+
+        if (pair.second)
+            addToTail(pair.first->second);
+
+        return &pair.first->second;
+    }
+
+    PE* find(const ProdIndex prodIndex)
+    {
+        auto  iter = prodFiles.find(prodIndex);
+
+        if (iter == prodFiles.end())
+            return nullptr;
+
+        PE& prodEntry = iter->second;
+        moveToTail(prodEntry);
+
+        return &prodEntry;
+    }
+
+    void erase(const ProdIndex prodIndex)
+    {
+        auto  iter = prodFiles.find(prodIndex);
+
+        if (iter != prodFiles.end()) {
+            auto& prodEntry = iter->second;
+
+            if (!prodEntry.isComplete())
+                LOG_WARN("Closing incomplete product-file %s",
+                        prodEntry.to_string().data());
+
+            removeFromQueue(prodEntry);
+            prodFiles.erase(iter); // Destructor closes file
+        }
+    }
+};
+
+/******************************************************************************/
+
+/**
+ * @tparam PF  Product-file type
+ */
 class Repository::Impl
 {
 protected:
-    typedef std::mutex              Mutex;
-    typedef std::lock_guard<Mutex>  Guard;
-    typedef std::unique_lock<Mutex> Lock;
+    typedef std::mutex                          Mutex;
+    typedef std::lock_guard<Mutex>              Guard;
+    typedef std::unique_lock<Mutex>             Lock;
 
+    mutable Mutex     mutex;        ///< For concurrency control
     const std::string rootPathname; ///< Pathname of root of repository
+
     /// Pathname of root of directory hierarchy of product files based on
     /// product-indexes
     const std::string indexesDir;
+
     /// Pathname of root of directory hierarchy of product files based on
     /// product-names
     const std::string namesDir;
+
     const SegSize     segSize;      ///< Size of canonical data-segment in bytes
-    mutable Mutex     mutex;        ///< For concurrency control
-    ProdIndex         headIndex;    ///< Index of product at head of queue
-    ProdIndex         tailIndex;    ///< Index of product at tail of queue
 
     static std::string getIndexPath(const ProdIndex prodId)
     {
@@ -104,219 +284,15 @@ protected:
         return std::string(buf);
     }
 
-    template <class MAP, class ENTRY>
-    void removeFromList(
-            MAP&   prodFiles,
-            ENTRY& prodEntry)
-    {
-        if (prodEntry.prev)
-            prodFiles[prodEntry.prev].next = prodEntry.next;
-        if (prodEntry.next)
-            prodFiles[prodEntry.next].prev = prodEntry.prev;
-        if (prodEntry.prodIndex == headIndex)
-            headIndex = prodEntry.next;
-        if (prodEntry.prodIndex == tailIndex)
-            tailIndex = prodEntry.prev;
-    }
-
-    template <class MAP, class ENTRY>
-    void addToTail(
-            MAP&   prodFiles,
-            ENTRY& prodEntry)
-    {
-        // Modify product-entry
-        prodEntry.prev = tailIndex;
-        prodEntry.next = ProdIndex();
-        prodEntry.when = time(nullptr);
-
-        // Modify tail of non-empty queue
-        if (tailIndex)
-            prodFiles[tailIndex].next = prodEntry.prodIndex;
-        tailIndex = prodEntry.prodIndex;
-
-        // Modify head of empty queue
-        if (!headIndex)
-            headIndex = tailIndex;
-    }
-
-    template <class MAP, class ENTRY>
-    inline void moveToTail(
-            MAP&   prodFiles,
-            ENTRY& prodEntry)
-    {
-        removeFromList<MAP, ENTRY>(prodFiles, prodEntry);
-        addToTail<MAP, ENTRY>(prodFiles, prodEntry);
-    }
-
-    template <class MAP, class ENTRY>
-    void erase(
-            MAP&            prodFiles,
-            const ProdIndex prodIndex)
-    {
-        ENTRY& prodEntry = prodFiles[headIndex];
-
-        if (!prodEntry.isComplete())
-            LOG_WARN("Closing incomplete product-file \"%s\" to reuse "
-                    "file-descriptor");
-
-        removeFromList<MAP, ENTRY>(prodFiles, prodEntry);
-        prodFiles.erase(prodIndex); // Destructor closes file
-    }
-
-    template <class MAP, class ENTRY>
-    ENTRY* getProdEntry(
-            MAP&            prodFiles,
-            const ProdIndex prodIndex)
-    {
-        ENTRY* prodEntry;
-        auto   iter = prodFiles.find(prodIndex);
-
-        if (iter == prodFiles.end()) {
-            prodEntry = nullptr;
-        }
-        else {
-            prodEntry = &iter->second;
-
-            if (prodIndex != tailIndex)
-                moveToTail<MAP,ENTRY>(prodFiles, *prodEntry);
-        }
-
-        return prodEntry;
-    }
-
-    /**
-     * Adds a product-entry.
-     *
-     * @param[in] prodIndex    Product index
-     * @param[in] prodSize     Product size in bytes
-     * @return                 Pointer to product-entry
-     * @throws    LogicError   Entry already exists
-     * @throws    SystemError  Couldn't construct product-file
-     */
-    template <class MAP, class ENTRY, class PFILE>
-    ENTRY* addProdEntry(
-            MAP&                                           prodFiles,
-            const ProdIndex                                prodIndex,
-            const std::function<PFILE(const std::string&)> PfileCtor)
-    {
-        const std::string indexPath = getPathname(prodIndex);
-        PFILE             prodFile;
-
-        ensureDir(dirPath(indexPath), 0700);
-
-        for (;;) {
-            try {
-                prodFile = PfileCtor(indexPath);
-            }
-            catch (const SystemError& ex) {
-                const int errnum = ex.code().value();
-                if ((errnum != EMFILE && errnum != ENFILE) || !headIndex)
-                    throw;
-                erase<MAP, ENTRY>(prodFiles, headIndex); // Destructor closes file
-                continue;
-            }
-            break;
-        }
-
-        auto pair = prodFiles.emplace(std::piecewise_construct,
-                std::forward_as_tuple(prodIndex),
-                std::forward_as_tuple(prodIndex, prodFile));
-
-        if (!pair.second)
-            throw LOGIC_ERROR("Entry for product " + prodIndex.to_string() +
-                    " already exists");
-
-        return &pair.first->second;
-    }
-
-    template <class MAP, class ENTRY, class PFILE>
-    ENTRY& getProdEntry(
-            MAP&                                           prodFiles,
-            const ProdIndex                                prodIndex,
-            const std::function<PFILE(const std::string&)> PfileCtor)
-    {
-        ENTRY* prodEntry;
-        auto   iter = prodFiles.find(prodIndex);
-
-        if (iter == prodFiles.end()) {
-            prodEntry = addProdEntry<MAP, ENTRY, PFILE>(prodFiles, prodIndex,
-                    PfileCtor);
-            addToTail<MAP, ENTRY>(prodFiles, *prodEntry);
-        }
-        else {
-            prodEntry = &iter->second;
-
-            if (prodIndex != tailIndex)
-                moveToTail<MAP, ENTRY>(prodFiles, *prodEntry);
-        }
-
-        return *prodEntry;
-    }
-
-    void link(
-            const std::string extantPath,
-            const std::string newPath)
+    static void link(
+            const std::string& extantPath,
+            const std::string& newPath)
     {
         ensureDir(dirPath(newPath), 0700);
 
         if (::link(extantPath.data(), newPath.data()))
             throw SYSTEM_ERROR("Couldn't link \"" + newPath + "\" to \"" +
                     extantPath + "\"");
-    }
-
-    template <class MAP, class ENTRY>
-    ProdInfo getProdInfo(
-            MAP&            prodFiles,
-            const ProdIndex prodIndex)
-    {
-        Guard  guard{mutex};
-        ENTRY* prodEntry = getProdEntry<MAP,ENTRY>(prodFiles, prodIndex);
-
-        return prodEntry
-                ? ProdInfo(prodIndex, prodEntry->prodFile.getProdSize(),
-                        prodEntry->namePath)
-                : ProdInfo();
-    }
-
-    template <class MAP, class ENTRY, class PFILE>
-    MemSeg getMemSeg(
-            MAP&         prodFiles,
-            const SegId& segId)
-    {
-        Guard  guard{mutex};
-        ENTRY* prodEntry = getProdEntry<MAP,ENTRY>(prodFiles,
-                segId.getProdIndex());
-
-        if (!prodEntry)
-            return MemSeg();
-
-        PFILE&    prodFile = prodEntry->prodFile;
-        ProdSize  prodSize = prodFile.getProdSize();
-        ProdSize  offset = segId.getSegOffset();
-        SegSize   segSize = prodFile.getSegSize(offset);
-        SegInfo   segInfo(segId, prodSize, segSize);
-
-        return MemSeg(segInfo, prodFile.getData(offset));
-    }
-
-    /**
-     * Performs cleanup actions. Closes product-files that haven't been accessed
-     * in 24 hours.
-     *
-     * @threadsafety       Safe
-     * @exceptionsafety    Basic guarantee
-     * @cancellationpoint  Yes
-     */
-    template <class MAP, class ENTRY>
-    void cleanup(MAP& prodFiles)
-    {
-        Guard guard{mutex};
-
-        while (auto prodIndex = headIndex)
-            if (time(nullptr) -
-                    getProdEntry<MAP, ENTRY>(prodFiles, prodIndex)->when >
-                    86400)
-                erase<MAP, ENTRY>(prodFiles, prodIndex);
     }
 
 public:
@@ -327,12 +303,15 @@ public:
         , namesDir{rootPathname + "/names/"} // Name paths don't have '/' prefix
         , segSize{segSize}
         , mutex{}
-        , headIndex{}
-        , tailIndex{}
     {}
 
     virtual ~Impl() noexcept
     {}
+
+    SegSize getSegSize() const noexcept
+    {
+        return segSize;
+    }
 
     const std::string& getRootDir() const noexcept
     {
@@ -349,17 +328,59 @@ public:
         return indexesDir + getIndexPath(prodIndex);
     }
 
-    std::string getPathname(const std::string name) const
+    std::string getPathname(const std::string& name) const
     {
         return namesDir + name;
     }
+
+    std::string getProdName(const std::string& namePath) const
+    {
+        const auto prefixLen = namesDir.length();
+        return namePath.substr(prefixLen, namePath.length()-prefixLen);
+    }
+
+    virtual bool exists(const ProdIndex prodIndex) =0;
+
+    virtual bool exists(const SegId& segId) =0;
+
+#if 0
+    /**
+     * Performs cleanup actions. Closes product-files that haven't been accessed
+     * in 24 hours.
+     *
+     * @threadsafety       Safe
+     * @exceptionsafety    Basic guarantee
+     * @cancellationpoint  Yes
+     */
+    void cleanup()
+    {
+        Guard guard{mutex};
+
+        ProdIndex next;
+        for (auto prodIndex = headIndex; prodIndex; prodIndex = next) {
+            auto iter = prodFiles.find(prodIndex);
+            if (iter == prodFiles.end())
+                break;
+            Entry& prodEntry = iter.second;
+            next = prodEntry.next;
+            if (time(nullptr) - prodEntry.when <= 86400)
+                break;
+            prodFiles.erase(iter);
+        }
+    }
+#endif
 };
 
 /******************************************************************************/
 
 Repository::Repository(Impl* impl)
-    : pImpl{impl}
+: pImpl{impl}
 {}
+
+SegSize Repository::getSegSize() const noexcept
+{
+    return pImpl->getSegSize();
+}
 
 const std::string& Repository::getRootDir() const noexcept
 {
@@ -384,42 +405,9 @@ std::string Repository::getPathname(const std::string name) const
 /******************************************************************************/
 /******************************************************************************/
 
-typedef struct SrcProdEntry : ProdEntry
+class SndRepo::Impl final : public Repository::Impl
 {
-    SndProdFile prodFile; ///< File of product to be sent
-
-    SrcProdEntry()
-        : ProdEntry()
-        , prodFile()
-    {}
-
-    SrcProdEntry(
-            const ProdIndex     prodIndex,
-            struct SndProdFile& prodFile)
-        : ProdEntry(prodIndex)
-        , prodFile(prodFile)
-    {}
-
-    SrcProdEntry& operator =(const SrcProdEntry& rhs)
-    {
-        ProdEntry::operator =(rhs);
-        prodFile = rhs.prodFile;
-        return *this;
-    }
-
-    bool isComplete() const
-    {
-        return true;
-    }
-} SrcProdEntry;
-
-class SrcRepo::Impl final : public Repository::Impl
-{
-    typedef SndProdFile                          PFILE;
-    typedef SrcProdEntry                         ENTRY;
-    typedef std::unordered_map<ProdIndex, ENTRY> MAP;
-
-    MAP prodFiles;
+    ProdFiles<SndProdEntry> prodFiles; ///< Product files
 
 public:
     Impl(   const std::string& rootPathname,
@@ -429,192 +417,289 @@ public:
 
     /**
      * Accepts notification of a new product-file in the repository's directory
-     * hierarchy for named products.
+     * for named products.
      *
-     * @param[in] prodName     Name of product
+     * @param[in] pathname     Pathname of product-file
      * @param[in] prodIndex    Product index
      * @throws    LogicError   Entry for product already exists
-     * @throws    SystemError  Couldn't construct product-file
+     * @throws    SystemError  Couldn't open product-file
      */
     void newProd(
             const std::string& prodName,
             const ProdIndex    prodIndex)
     {
-        const std::string namePath = getPathname(prodName);
+        Guard      guard{mutex};
+        const auto entry = prodFiles.find(prodIndex);
 
-        link(namePath, getPathname(prodIndex));
-        Repository::Impl::addProdEntry<MAP,ENTRY,PFILE>(prodFiles, prodIndex,
-                [=](const std::string& indexPath) {
-                    return SndProdFile(indexPath, segSize);
-                });
+        if (entry)
+            throw LOGIC_ERROR("Entry already exists for file \"" + prodName +
+                    "\"");
+
+        const auto namePath = getPathname(prodName);
+        const auto indexPath = getPathname(prodIndex);
+
+        link(namePath, indexPath);
+
+        SndProdFile  prodFile(indexPath, segSize);
+        SndProdEntry prodEntry{prodName, prodIndex, prodFile};
+        prodFiles.add(prodEntry);
+    }
+
+    bool exists(const ProdIndex prodIndex)
+    {
+        Guard guard{mutex};
+        return prodFiles.find(prodIndex) != nullptr;
+    }
+
+    bool exists(const SegId& segId)
+    {
+        Guard guard{mutex};
+        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+
+        return prodEntry && prodEntry->exists(segId.getOffset());
     }
 
     ProdInfo getProdInfo(const ProdIndex prodIndex)
     {
-        return Repository::Impl::getProdInfo<MAP,ENTRY>(prodFiles, prodIndex);
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(prodIndex);
+
+        return (prodEntry == nullptr)
+                ? ProdInfo{}
+                : prodEntry->getProdInfo();
     }
 
     MemSeg getMemSeg(const SegId& segId)
     {
-        return Repository::Impl::getMemSeg<MAP,ENTRY,PFILE>(prodFiles, segId);
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+
+        if (prodEntry == nullptr)
+            return MemSeg{};
+
+        auto prodFile = prodEntry->getProdFile();
+        auto offset = segId.getOffset();
+
+        return MemSeg(SegInfo(segId, prodFile.getProdSize(),
+                        prodFile.getSegSize(offset)),
+                    prodFile.getData(offset));
     }
 };
 
 /******************************************************************************/
 
-SrcRepo::SrcRepo(
+SndRepo::SndRepo(
         const std::string& rootPathname,
         const SegSize      segSize)
     : Repository{new Impl(rootPathname, segSize)}
 {}
 
-void SrcRepo::newProd(
+void SndRepo::newProd(
         const std::string& prodName,
         const ProdIndex    prodIndex)
 {
-    static_cast<SrcRepo::Impl*>(pImpl.get())->newProd(prodName, prodIndex);
+    static_cast<SndRepo::Impl*>(pImpl.get())->newProd(prodName, prodIndex);
 }
 
-ProdInfo SrcRepo::getProdInfo(const ProdIndex prodIndex) const
+bool SndRepo::exists(const ProdIndex prodIndex) const
 {
-    return static_cast<SrcRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+    return static_cast<SndRepo::Impl*>(pImpl.get())->exists(prodIndex);
 }
 
-MemSeg SrcRepo::getMemSeg(const SegId& segId) const
+bool SndRepo::exists(const SegId& segId) const
 {
-    return static_cast<SrcRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+    return static_cast<SndRepo::Impl*>(pImpl.get())->exists(segId);
+}
+
+ProdInfo SndRepo::getProdInfo(const ProdIndex prodIndex) const
+{
+    return static_cast<SndRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+}
+
+MemSeg SndRepo::getMemSeg(const SegId& segId) const
+{
+    return static_cast<SndRepo::Impl*>(pImpl.get())->getMemSeg(segId);
 }
 
 /******************************************************************************/
 /******************************************************************************/
 
-typedef struct SnkProdEntry : ProdEntry
+class RcvRepo::Impl final : public Repository::Impl
 {
-    RcvProdFile prodFile;     ///< File of product being received
-    bool        haveNamePath; ///< Have pathname based on product-name?
+    ProdFiles<RcvProdEntry> prodFiles; ///< Product files
+    RcvRepoObs&             repoObs;   ///< Observer of this instance
 
-    SnkProdEntry()
-        : ProdEntry()
-        , prodFile{}
-        , haveNamePath{false}
-    {}
-
-    SnkProdEntry(
-            const ProdIndex     prodIndex,
-            struct RcvProdFile& prodFile)
-        : ProdEntry(prodIndex)
-        , prodFile{prodFile}
-        , haveNamePath{false}
-    {}
-
-    SnkProdEntry& operator =(const SnkProdEntry& rhs)
+    void link(RcvProdEntry* entry)
     {
-        ProdEntry::operator =(rhs);
-        prodFile = rhs.prodFile;
-        haveNamePath = rhs.haveNamePath;
-        return *this;
+        const auto indexPath = entry->getProdFile().getPathname();
+        const auto namePath = getPathname(entry->getProdName());
+
+        Repository::Impl::link(indexPath, namePath);
     }
-
-    bool isComplete() const
-    {
-        return haveNamePath && prodFile.isComplete();
-    }
-} SnkProdEntry;
-
-class SnkRepo::Impl final : public Repository::Impl
-{
-    typedef RcvProdFile                          PFILE;
-    typedef SnkProdEntry                         ENTRY;
-    typedef std::unordered_map<ProdIndex, ENTRY> MAP;
-
-    MAP prodFiles;
 
 public:
     Impl(   const std::string& rootPathname,
-            const SegSize      segSize)
+            const SegSize      segSize,
+            RcvRepoObs&        repoObs)
         : Repository::Impl{rootPathname, segSize}
+        , repoObs(repoObs)
     {}
 
-    void save(const ProdInfo& prodInfo)
+    bool save(const ProdInfo& prodInfo)
     {
-        Lock          lock{mutex};
-        SnkProdEntry& prodEntry = getProdEntry<MAP,ENTRY,PFILE>(prodFiles,
-                prodInfo.getProdIndex(), [&](const std::string& indexPath) {
-                    return RcvProdFile(indexPath, prodInfo.getSize(), segSize);
-                });
+        Lock       lock{mutex};
+        bool       wasSaved;
+        const auto prodIndex = prodInfo.getProdIndex();
+        auto       entry = prodFiles.find(prodIndex);
 
-        if (!prodEntry.haveNamePath) {
-            prodEntry.namePath = prodInfo.getName();
-            prodEntry.haveNamePath = true;
+        if (entry == nullptr) {
+            LOG_DEBUG("Saving product-information %s",
+                    prodInfo.to_string().data());
+            RcvProdFile  prodFile{getPathname(prodIndex),
+                prodInfo.getProdSize(), segSize};
+            RcvProdEntry prodEntry{prodInfo, prodFile};
+
+            entry = prodFiles.add(prodEntry);
+            wasSaved = true;
+        }
+        else if (entry->getProdName().empty()) {
+            LOG_DEBUG("Saving product-information %s",
+                    prodInfo.to_string().data());
+            entry->setProdName(prodInfo.getProdName());
+            wasSaved = true;
+        }
+        else {
+            LOG_DEBUG("Ignoring product-information %s",
+                    prodInfo.to_string().data());
+            wasSaved = false;
         }
 
-        if (prodEntry.isComplete()) {
-            const std::string indexPath{prodEntry.prodFile.getPathname()};
-            const std::string namePath{getPathname(prodEntry.namePath)};
-
-            lock.unlock();
-            link(indexPath, namePath);
+        if (wasSaved && entry->isComplete()) {
+            link(entry);
+            repoObs.completed(prodInfo);
         }
+
+        return wasSaved;
     }
 
-    void save(DataSeg& dataSeg)
+    bool save(DataSeg& dataSeg)
     {
-        Lock           lock{mutex};
-        const SegInfo& segInfo = dataSeg.getSegInfo();
-        SnkProdEntry&  prodEntry = getProdEntry<MAP,ENTRY,PFILE>(prodFiles,
-                segInfo.getProdIndex(), [&](const std::string& indexPath) {
-                    return RcvProdFile(indexPath, segInfo.getProdSize(),
-                            segSize);
-                });
+        Guard           guard{mutex};
+        bool            wasSaved;
+        const auto      segInfo = dataSeg.getSegInfo();
+        const ProdIndex prodIndex = segInfo.getProdIndex();
+        auto            entry = prodFiles.find(prodIndex);
 
-        prodEntry.prodFile.accept(dataSeg);
+        if (entry == nullptr) {
+            LOG_DEBUG("Saving data-segment %s", dataSeg.to_string().data());
+            const auto     indexPath = getPathname(prodIndex);
+            const auto     prodSize = segInfo.getProdSize();
+            const ProdInfo prodInfo(prodIndex, prodSize, "");
+            RcvProdFile    prodFile{indexPath, prodSize, segSize};
+            RcvProdEntry   prodEntry{prodIndex, prodFile};
 
-        if (prodEntry.isComplete()) {
-            const std::string indexPath{prodEntry.prodFile.getPathname()};
-            const std::string namePath{getPathname(prodEntry.namePath)};
-
-            lock.unlock();
-            link(indexPath, namePath);
+            entry = prodFiles.add(prodEntry);
+            entry->getProdFile().save(dataSeg);
+            wasSaved = true;
         }
+        else if (entry->exists(segInfo.getId().getOffset())) {
+            LOG_DEBUG("Ignoring data-segment %s", dataSeg.to_string().data());
+            wasSaved = false;
+        }
+        else {
+            LOG_DEBUG("Saving data-segment %s", dataSeg.to_string().data());
+            entry->getProdFile().save(dataSeg);
+            wasSaved = true;
+
+            if (entry->isComplete()) {
+                link(entry);
+                repoObs.completed(entry->getProdInfo());
+            }
+        }
+
+        return wasSaved;
     }
 
     ProdInfo getProdInfo(const ProdIndex prodIndex)
     {
-        return Repository::Impl::getProdInfo<MAP,ENTRY>(prodFiles, prodIndex);
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(prodIndex);
+
+        return (prodEntry == nullptr || prodEntry->getProdName().empty())
+                ? ProdInfo{}
+                : prodEntry->getProdInfo();
     }
 
     MemSeg getMemSeg(const SegId& segId)
     {
-        return Repository::Impl::getMemSeg<MAP,ENTRY,PFILE>(prodFiles, segId);
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+
+        if (prodEntry == nullptr)
+            return MemSeg{};
+
+        auto prodFile = prodEntry->getProdFile();
+        auto offset = segId.getOffset();
+
+        return MemSeg(SegInfo(segId, prodFile.getProdSize(),
+                    prodFile.getSegSize(offset)),
+                    prodFile.getData(offset));
+    }
+
+    bool exists(const ProdIndex prodIndex)
+    {
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(prodIndex);
+
+        return prodEntry && !prodEntry->getProdName().empty();
+    }
+
+    bool exists(const SegId& segId)
+    {
+        Guard      guard{mutex};
+        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+
+        return prodEntry && prodEntry->exists(segId.getOffset());
     }
 };
 
 /******************************************************************************/
 
-SnkRepo::SnkRepo(
+RcvRepo::RcvRepo(
         const std::string& rootPathname,
-        const SegSize      segSize)
-    : Repository{new Impl(rootPathname, segSize)}
+        const SegSize      segSize,
+        RcvRepoObs&        repoObs)
+    : Repository{new Impl(rootPathname, segSize, repoObs)}
 {}
 
-void SnkRepo::save(const ProdInfo& prodInfo) const
+bool RcvRepo::save(const ProdInfo& prodInfo) const
 {
-    static_cast<SnkRepo::Impl*>(pImpl.get())->save(prodInfo);
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->save(prodInfo);
 }
 
-void SnkRepo::save(DataSeg& dataSeg) const
+bool RcvRepo::save(DataSeg& dataSeg) const
 {
-    static_cast<SnkRepo::Impl*>(pImpl.get())->save(dataSeg);
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->save(dataSeg);
 }
 
-ProdInfo SnkRepo::getProdInfo(const ProdIndex prodIndex) const
+ProdInfo RcvRepo::getProdInfo(const ProdIndex prodIndex) const
 {
-    return static_cast<SnkRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg SnkRepo::getMemSeg(const SegId& segId) const
+MemSeg RcvRepo::getMemSeg(const SegId& segId) const
 {
-    return static_cast<SnkRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+}
+
+bool RcvRepo::exists(const ProdIndex prodIndex) const
+{
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->exists(prodIndex);
+}
+
+bool RcvRepo::exists(const SegId& segId) const
+{
+    return static_cast<RcvRepo::Impl*>(pImpl.get())->exists(segId);
 }
 
 } // namespace

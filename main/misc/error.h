@@ -43,8 +43,8 @@ public:
             const char*       func,
             const std::string msg);
 
-#define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
 };
+#define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
 
 class NotFoundError : public std::runtime_error
 {
@@ -102,7 +102,7 @@ public:
             const char*       func,
             const std::string msg);
 };
-#define EOF_ERROR(msg) RuntimeError(__FILE__, __LINE__, __func__, "EOF")
+#define EOF_ERROR(msg) EofError(__FILE__, __LINE__, __func__, msg)
 
 class SystemError : public std::system_error
 {
@@ -184,6 +184,12 @@ void log(
         const int         line,
         const char*       func,
         const std::string msg);
+void log(
+        const LogLevel        level,
+        const char*           file,
+        const int             line,
+        const char*           func,
+        const std::exception& ex);
 void log(
         const LogLevel        level,
         const char*           file,

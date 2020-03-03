@@ -4,6 +4,7 @@ AC_PREREQ(2.59)
 AC_INIT(hycast, 1.0)
 AC_PROG_CXX
 AC_SUBST([AM_CXXFLAGS], [-std=c++11])
+CXXFLAGS='-g -O0'
 AC_DEFINE([_XOPEN_SOURCE], [700], [Level of X/OPEN compliance])
 
 AC_CANONICAL_SYSTEM
@@ -62,13 +63,13 @@ AC_CONFIG_FILES(Makefile
                 main/p2p/Makefile
                 main/protocol/Makefile
                 main/repository/Makefile
-                main/sender/Makefile
+                main/sender_receiver/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/protocol/Makefile
                 test/net_io/Makefile
                 test/p2p/Makefile
                 test/repository/Makefile
-                test/sender/Makefile
+                test/sender_receiver/Makefile
                 )
 AC_OUTPUT

@@ -57,7 +57,7 @@ class PeerSet::Impl {
 
         void execute(Impl* impl) const
         {
-            LOG_DEBUG("Creating peer-execution thread");
+            //LOG_DEBUG("Creating peer-execution thread");
             thread = std::thread(&Impl::execute, impl, peer);
         }
 
@@ -66,9 +66,14 @@ class PeerSet::Impl {
             return peer < rhs.peer;
         }
 
-        void notify(const ChunkId chunkId) const
+        void notify(ProdIndex prodIndex) const
         {
-            peer.notify(chunkId);
+            peer.notify(prodIndex);
+        }
+
+        void notify(const SegId segId) const
+        {
+            peer.notify(segId);
         }
 
         void terminate()
@@ -86,7 +91,7 @@ class PeerSet::Impl {
     std::thread                         reaperThread;
 
     void reapPeers() {
-        LOG_DEBUG("Reaping peers");
+        //LOG_DEBUG("Reaping peers");
         std::unique_lock<std::mutex> lock{mutex};
 
         // While not done or a peer exists
@@ -110,7 +115,7 @@ public:
         , inactive()
         , reaperThread()
     {
-        LOG_DEBUG("Creating reaper thread");
+        //LOG_DEBUG("Creating reaper thread");
         reaperThread = std::thread(&Impl::reapPeers, this);
     }
 
@@ -141,7 +146,7 @@ public:
      */
     void execute(Peer peer)
     {
-        LOG_DEBUG("Executing peer");
+        //LOG_DEBUG("Executing peer");
         try {
             peer();
         }
@@ -212,12 +217,20 @@ public:
         return success;
     }
 
-    void notify(const ChunkId chunkId)
+    void notify(ProdIndex prodIndex)
     {
         Guard guard(mutex);
 
         for (auto iter = active.begin(); iter != active.end(); ++iter)
-            iter->second->notify(chunkId);
+            iter->second->notify(prodIndex);
+    }
+
+    void notify(const SegId& segId)
+    {
+        Guard guard(mutex);
+
+        for (auto& pair : active)
+            pair.second->notify(segId);
     }
 
     size_t size() const noexcept
@@ -245,9 +258,14 @@ bool PeerSet::activate(const Peer peer)
     return pImpl->activate(peer);
 }
 
-void PeerSet::notify(const ChunkId chunkId)
+void PeerSet::notify(const ProdIndex prodIndex)
 {
-    pImpl->notify(chunkId);
+    pImpl->notify(prodIndex);
+}
+
+void PeerSet::notify(const SegId& segId)
+{
+    pImpl->notify(segId);
 }
 
 size_t PeerSet::size() const noexcept

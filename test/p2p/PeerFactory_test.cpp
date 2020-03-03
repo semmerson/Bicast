@@ -101,33 +101,42 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::ChunkId   chunkId,
+            const hycast::ProdIndex actual,
             const hycast::SockAddr& rmtAddr)
     {
-        if (chunkId.isProdIndex()) {
-            EXPECT_EQ(prodIndex, chunkId.getProdIndex());
-            orState(PROD_NOTICE_RCVD);
-        }
-        else {
-            EXPECT_EQ(segId, chunkId.getSegId());
-            orState(SEG_NOTICE_RCVD);
-        }
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_NOTICE_RCVD);
+
+        return true;
+    }
+
+    // Receiver-side
+    bool shouldRequest(
+            const hycast::SegId&    actual,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(segId, actual);
+        orState(SEG_NOTICE_RCVD);
 
         return true;
     }
 
     // Sender-side
-    const hycast::OutChunk& get(
-            const hycast::ChunkId   chunkId,
+    hycast::ProdInfo get(
+            const hycast::ProdIndex actual,
             const hycast::SockAddr& rmtAddr)
     {
-        if (chunkId.isProdIndex()) {
-            EXPECT_EQ(prodIndex, chunkId.getProdIndex());
-            orState(PROD_REQUEST_RCVD);
-            return prodInfo;
-        }
+        EXPECT_EQ(prodIndex, actual);
+        orState(PROD_REQUEST_RCVD);
+        return prodInfo;
+    }
 
-        EXPECT_EQ(segId, chunkId.getSegId());
+    // Sender-side
+    hycast::MemSeg get(
+            const hycast::SegId&    actual,
+            const hycast::SockAddr& rmtAddr)
+    {
+        EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
         return memSeg;
     }
@@ -148,7 +157,7 @@ public:
             hycast::TcpSeg&         actual,
             const hycast::SockAddr& rmtAddr)
     {
-        const hycast::SegSize size = actual.getInfo().getSegSize();
+        const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);
 
         char buf[size];

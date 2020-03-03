@@ -37,6 +37,10 @@ public:
     void push(ChunkId chunkId) const;
 
     ChunkId pop() const;
+
+    void close() const noexcept;
+
+    bool closed() const noexcept;
 };
 
 } // namespace

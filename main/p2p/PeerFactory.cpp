@@ -30,6 +30,7 @@ private:
     PortPool      portPool;
     TcpSrvrSock   srvrSock;
     PeerObs&      peerObs;
+    bool          isSource;
 
 public:
     /**
@@ -43,10 +44,12 @@ public:
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
-            PeerObs&        peerObs)
+            PeerObs&        peerObs,
+            const bool      isSource)
         : portPool{portPool}
         , srvrSock(srvrAddr, queueSize)
         , peerObs(peerObs) // Braces don't work
+        , isSource{isSource}
     {}
 
     ~Impl() {
@@ -73,8 +76,7 @@ public:
         if (!sock)
             return Peer{};
 
-        PeerProto peerProto(sock, portPool);
-        return Peer{peerProto, peerObs};
+        return Peer{sock, portPool, peerObs, isSource};
     }
 
     /**
@@ -90,19 +92,23 @@ public:
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        PeerProto peerProto{rmtSrvrAddr};
-
-        return Peer{peerProto, peerObs};
+        return Peer{rmtSrvrAddr, peerObs};
     }
 
     /**
      * Closes the factory. Causes `accept()` to throw an exception. Idempotent.
      *
-     * @throws std::system_error  `::shutdown()` failure
+     * @throws RuntimeError  Couldn't close peer-factory
      */
     void close()
     {
-        srvrSock.shutdown();
+        try {
+            srvrSock.shutdown();
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't close "
+                    "peer-factory"));
+        }
     }
 };
 
@@ -116,8 +122,9 @@ PeerFactory::PeerFactory(
         const SockAddr& srvrAddr,
         const int       queueSize,
         PortPool&       portPool,
-        PeerObs&        peerObs)
-    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs)}
+        PeerObs&        peerObs,
+        const bool      isSource)
+    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs, isSource)}
 {}
 
 in_port_t PeerFactory::getPort() const
