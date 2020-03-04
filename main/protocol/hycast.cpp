@@ -19,6 +19,7 @@
 #include "Repository.h"
 
 #include <cstring>
+#include <sstream>
 
 namespace hycast {
 
@@ -273,72 +274,306 @@ void ChunkId::request(Peer& peer) const
 
 /******************************************************************************/
 
-DataSeg::~DataSeg() noexcept
+class SegData::Impl
+{
+protected:
+    const SegSize segSize;
+
+    Impl(const SegSize segSize)
+        : segSize{segSize}
+    {}
+
+    virtual std::string getSubString() const =0;
+
+public:
+    virtual ~Impl() noexcept
+    {}
+
+    SegSize getSegSize() const noexcept
+    {
+        return segSize;
+    }
+
+    virtual void getData(void* buf) =0;
+
+    std::string to_string() const
+    {
+        return "{segSize: " + std::to_string(segSize) + ", " + getSubString() +
+                "}";
+    }
+};
+
+SegData::SegData(Impl* impl)
+    : pImpl{impl}
+{}
+
+SegData::~SegData() noexcept
+{}
+
+SegSize SegData::getSegSize() const noexcept
+{
+    return pImpl->getSegSize();
+}
+
+std::string SegData::to_string() const
+{
+    return pImpl->to_string();
+}
+
+void SegData::getData(void* buf)
+{
+    pImpl->getData(buf);
+}
+
+/******************************************************************************/
+
+class MemSegData::Impl final : public SegData::Impl
+{
+    const void* bytes;
+
+protected:
+    std::string getSubString() const
+    {
+        std::ostringstream buf;
+        buf << "data: " << bytes;
+        return buf.str();
+    }
+
+public:
+    Impl(   const void*   bytes,
+            const SegSize segSize)
+        : SegData::Impl{segSize}
+        , bytes(bytes)
+    {}
+
+    void getData(void* buf)
+    {
+        ::memcpy(buf, bytes, segSize);
+    }
+
+    const void* data() const noexcept
+    {
+        return bytes;
+    }
+
+    bool operator ==(const Impl& rhs)
+    {
+        return (segSize == rhs.segSize) &&
+                (::memcmp(bytes, rhs.bytes, segSize) == 0);
+    }
+};
+
+MemSegData::MemSegData(
+        const void*   data,
+        const SegSize segSize)
+    : SegData{new Impl(data, segSize)}
+{}
+
+const void* MemSegData::data() const noexcept
+{
+    return static_cast<Impl*>(pImpl.get())->data();
+}
+
+/******************************************************************************/
+
+class TcpSegData::Impl final : public SegData::Impl
+{
+    TcpSock sock;
+
+protected:
+    std::string getSubString() const
+    {
+        return "sock: " + sock.to_string();
+    }
+
+public:
+    Impl(   TcpSock& sock,
+            const SegSize segSize)
+        : SegData::Impl{segSize}
+        , sock{sock}
+    {}
+
+    void getData(void* buf)
+    {
+        sock.read(buf, segSize);
+    }
+};
+
+TcpSegData::TcpSegData(
+        TcpSock&      sock,
+        const SegSize segSize)
+    : SegData{new Impl(sock, segSize)}
 {}
 
 /******************************************************************************/
 
-class MemSeg::Impl
+class UdpSegData::Impl final : public SegData::Impl
 {
-    const SegInfo info;
-    const void*   data;
+    UdpSock sock;
+
+protected:
+    std::string getSubString() const
+    {
+        return "sock: " + sock.to_string();
+    }
 
 public:
-    Impl(   const SegInfo& info,
-            const void*    data)
-        : info{info}
-        , data{data}
+    Impl(   UdpSock&      sock,
+            const SegSize segSize)
+        : SegData::Impl{segSize}
+        , sock{sock}
     {}
 
-    const SegInfo& getInfo() const noexcept
+    void getData(void* buf)
     {
-        return info;
+        sock.addPeek(buf, segSize);
+        sock.peek();
+    }
+};
+
+UdpSegData::UdpSegData(
+        UdpSock&      sock,
+        const SegSize segSize)
+    : SegData{new Impl(sock, segSize)}
+{}
+
+/******************************************************************************/
+
+class DataSeg::Impl
+{
+protected:
+    const SegInfo segInfo;
+    SegData       segData;
+
+    Impl(const SegInfo& info,
+         SegData&       data)
+        : segInfo{info}
+        , segData{data}
+    {}
+
+    Impl(const SegInfo& info,
+         SegData&&      data)
+        : segInfo{info}
+        , segData{data}
+    {}
+
+public:
+    virtual ~Impl() noexcept
+    {}
+
+    void getData(void* buf)
+    {
+        segData.getData(buf);
+    }
+
+    const SegInfo& getSegInfo() const
+    {
+        return segInfo;
     }
 
     const SegId& getSegId() const noexcept
     {
-        return info.getId();
+        return segInfo.getSegId();
     }
 
-    const void* getData() const
+    const SegSize getSegSize() const noexcept
     {
-        return data;
+        return segInfo.getSegSize();
     }
 
-    SegSize getSegSize() const
+    ProdIndex getProdIndex() const noexcept
     {
-        return info.getSegSize();
+        return segInfo.getProdIndex();
     }
 
-    ProdIndex getProdId() const noexcept
+    ProdSize getProdSize() const noexcept
     {
-        return info.getId().getProdIndex();
+        return segInfo.getProdSize();
     }
 
-    ProdSize getProdSize() const
+    ProdSize getSegOffset() const noexcept
     {
-        return info.getProdSize();
-    }
-
-    ProdSize getOffset() const
-    {
-        return info.getId().getOffset();
+        return segInfo.getSegOffset();
     }
 
     std::string to_string() const
     {
-        return info.to_string();
+        return "{info: " + segInfo.to_string() + ", data: " + segData.to_string() +
+                "}";
     }
+};
 
-    void copyData(void* buf)
+DataSeg::DataSeg(Impl* impl)
+    : pImpl{impl}
+{}
+
+DataSeg::~DataSeg() noexcept
+{}
+
+DataSeg::operator bool() const noexcept
+{
+    return static_cast<bool>(pImpl);
+}
+
+void DataSeg::getData(void* buf) const
+{
+    pImpl->getData(buf);
+}
+
+const SegInfo& DataSeg::getSegInfo() const
+{
+    return pImpl->getSegInfo();
+}
+
+const SegId& DataSeg::getSegId() const noexcept
+{
+    return pImpl->getSegId();
+}
+
+SegSize DataSeg::getSegSize() const noexcept
+{
+    return pImpl->getSegSize();
+}
+
+ProdIndex DataSeg::getProdIndex() const noexcept
+{
+    return pImpl->getProdIndex();
+}
+
+ProdSize DataSeg::getProdSize() const noexcept
+{
+    return pImpl->getProdSize();
+}
+
+ProdSize DataSeg::getSegOffset() const noexcept
+{
+    return pImpl->getSegOffset();
+}
+
+std::string DataSeg::to_string() const
+{
+    return pImpl->to_string();
+}
+
+/******************************************************************************/
+
+class MemSeg::Impl : public DataSeg::Impl
+{
+public:
+    Impl(   const SegInfo& info,
+            const void*    data)
+        : DataSeg::Impl{info, MemSegData(data, info.getSegSize())}
+    {}
+
+    const void* data() const
     {
-        ::memcpy(buf, data, getSegSize());
+        return reinterpret_cast<const MemSegData*>(&segData)->data();
     }
 
     bool operator ==(const Impl& rhs) const
     {
-        return info == rhs.info &&
-                ::memcmp(data, rhs.data, info.getSegSize()) == 0;
+        return (segInfo == rhs.segInfo) &&
+                (::memcmp(data(), rhs.data(), segInfo.getSegSize()) == 0);
     }
 };
 
@@ -348,223 +583,52 @@ MemSeg::MemSeg()
 MemSeg::MemSeg(
         const SegInfo& info,
         const void*    data)
-    : pImpl(new Impl(info, data))
+    : DataSeg(new Impl(info, data))
 {}
-
-MemSeg::operator bool() const noexcept
-{
-    return static_cast<bool>(pImpl);
-}
-
-const SegInfo& MemSeg::getSegInfo() const noexcept
-{
-    return pImpl->getInfo();
-}
-
-const SegId& MemSeg::getSegId() const noexcept
-{
-    return pImpl->getSegId();
-}
 
 const void* MemSeg::data() const
 {
-    return pImpl->getData();
-}
-
-SegSize MemSeg::getSegSize() const
-{
-    return pImpl->getSegSize();
-}
-
-ProdIndex MemSeg::getProdIndex() const noexcept
-{
-    return pImpl->getProdId();
-}
-
-ProdSize MemSeg::getProdSize() const
-{
-    return pImpl->getProdSize();
-}
-
-ProdSize MemSeg::getOffset() const noexcept
-{
-    return pImpl->getOffset();
-}
-
-std::string MemSeg::to_string() const
-{
-    return pImpl->to_string();
-}
-
-void MemSeg::getData(void* buf) const
-{
-    pImpl->copyData(buf);
+    return static_cast<Impl*>(pImpl.get())->data();
 }
 
 bool MemSeg::operator ==(const MemSeg& rhs) const noexcept
 {
-    return *pImpl.get() == *rhs.pImpl.get();
+    return *static_cast<Impl*>(pImpl.get()) ==
+            *static_cast<Impl*>(rhs.pImpl.get());
 }
 
 /******************************************************************************/
 
-class SockSeg::Impl
+class UdpSeg::Impl final : public DataSeg::Impl
 {
-protected:
-    const SegInfo info;
-
-    Impl(const SegInfo& info)
-        : info{info}
-    {}
-
-public:
-    virtual ~Impl()
-    {}
-
-    const SegInfo& getSegInfo() const noexcept
-    {
-        return info;
-    }
-
-    const SegId& getSegId() const noexcept
-    {
-        return info.getId();
-    }
-
-    ProdIndex getProdId() const noexcept
-    {
-        return info.getId().getProdIndex();
-    }
-
-    virtual std::string to_string() const =0;
-};
-
-SockSeg::SockSeg(Impl* impl)
-    : pImpl{impl}
-{}
-
-const SegInfo& SockSeg::getSegInfo() const noexcept
-{
-    return pImpl->getSegInfo();
-}
-
-const SegId& SockSeg::getSegId() const noexcept
-{
-    return pImpl->getSegId();
-}
-
-ProdIndex SockSeg::getProdIndex() const noexcept
-{
-    return pImpl->getProdId();
-}
-
-/******************************************************************************/
-
-class UdpSeg::Impl final : public SockSeg::Impl
-{
-    UdpSock sock;
-
 public:
     Impl(   const SegInfo& info,
             UdpSock&       sock)
-        : SockSeg::Impl{info}
-        , sock{sock}
+        : DataSeg::Impl{info, UdpSegData(sock, info.getSegSize())}
     {}
-
-    std::string to_string() const
-    {
-        return "{segInfo: " + info.to_string() + ", udpSock: " +
-                sock.to_string() + "}";
-    }
-
-    void read(void* buf)
-    {
-        const auto nbytes = getSegInfo().getSegSize();
-        sock.addPeek(buf, nbytes);
-        sock.peek();
-    }
-
-    ProdSize getOffset() const noexcept
-    {
-        return info.getId().getOffset();
-    }
 };
 
 UdpSeg::UdpSeg(
         const SegInfo& info,
         UdpSock&       sock)
-    : SockSeg{new Impl(info, sock)}
+    : DataSeg{new Impl(info, sock)}
 {}
-
-std::string UdpSeg::to_string() const
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->to_string();
-}
-
-void UdpSeg::read(void* buf) const
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->read(buf);
-}
-
-ProdSize UdpSeg::getOffset() const noexcept
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->getOffset();
-}
 
 /******************************************************************************/
 
-class TcpSeg::Impl final : public SockSeg::Impl
+class TcpSeg::Impl final : public DataSeg::Impl
 {
-    TcpSock sock;
-
 public:
     Impl(   const SegInfo& info,
             TcpSock&       sock)
-        : SockSeg::Impl{info}
-        , sock{sock}
+        : DataSeg::Impl{info, TcpSegData(sock, info.getSegSize())}
     {}
-
-    std::string to_string() const
-    {
-        return "{segInfo: " + info.to_string() + ", tcpSock: " +
-                sock.to_string() + "}";
-    }
-
-    void read(void* buf)
-    {
-        const auto nbytes = getSegInfo().getSegSize();
-        if (!sock.read(buf, nbytes))
-            throw EOF_ERROR("EOF");
-    }
-
-    ProdSize getOffset() const noexcept
-    {
-        return info.getId().getOffset();
-    }
 };
 
 TcpSeg::TcpSeg(
         const SegInfo& info,
         TcpSock&       sock)
-    : SockSeg{new Impl(info, sock)}
-{}
-
-std::string TcpSeg::to_string() const
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->to_string();
-}
-
-void TcpSeg::read(void* buf) const
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->read(buf);
-}
-
-ProdSize TcpSeg::getOffset() const noexcept
-{
-    return static_cast<Impl*>(SockSeg::pImpl.get())->getOffset();
-}
-
-SockSeg::~SockSeg()
+    : DataSeg{new Impl(info, sock)}
 {}
 
 } // namespace

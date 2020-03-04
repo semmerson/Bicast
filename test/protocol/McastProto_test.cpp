@@ -77,7 +77,7 @@ public:
         EXPECT_EQ(segSize, size);
 
         char buf[size];
-        seg.read(buf);
+        seg.getData(buf);
 
         EXPECT_EQ(0, ::memcmp(memSeg.data(), buf, segSize));
 

@@ -602,7 +602,7 @@ public:
             entry->getProdFile().save(dataSeg);
             wasSaved = true;
         }
-        else if (entry->exists(segInfo.getId().getOffset())) {
+        else if (entry->exists(segInfo.getSegId().getOffset())) {
             LOG_DEBUG("Ignoring data-segment %s", dataSeg.to_string().data());
             wasSaved = false;
         }

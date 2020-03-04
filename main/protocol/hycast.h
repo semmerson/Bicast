@@ -325,7 +325,7 @@ public:
 
     std::string to_string() const;
 
-    const SegId& getId() const noexcept
+    const SegId& getSegId() const noexcept
     {
         return id;
     }
@@ -338,6 +338,11 @@ public:
     ProdSize getProdSize() const noexcept
     {
         return prodSize;
+    }
+
+    ProdSize getSegOffset() const noexcept
+    {
+        return id.getOffset();
     }
 
     SegSize getSegSize() const noexcept
@@ -356,24 +361,106 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for a data-segment.
+ * The data portion of a data-segment.
+ */
+class SegData
+{
+protected:
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+    SegData(Impl*);
+
+public:
+    virtual ~SegData() noexcept;
+
+    /**
+     * Returns the size of the data-segment in bytes.
+     *
+     * @return  Size of the data-segment in bytes
+     */
+    SegSize getSegSize() const noexcept;
+
+    std::string to_string() const;
+
+    /**
+     * Gets the data. <b>Should only be called once.</b>
+     *
+     * @param[in] buf     Destination for the data of at least `getSegSize()`
+     *                    bytes
+     */
+    void getData(void* buf);
+};
+
+class MemSegData final : public SegData
+{
+    class Impl;
+
+public:
+    MemSegData(
+            const void*   data,
+            const SegSize segSize);
+
+    const void* data() const noexcept;
+};
+
+class TcpSegData final : public SegData
+{
+    class Impl;
+
+public:
+    TcpSegData(
+            TcpSock&      sock,
+            const SegSize segSize);
+};
+
+class UdpSegData final : public SegData
+{
+    class Impl;
+
+public:
+    UdpSegData(
+            UdpSock&      sock,
+            const SegSize segSize);
+};
+
+/******************************************************************************/
+
+/**
+ * Abstract data-segment.
  */
 class DataSeg
 {
 public:
-    virtual ~DataSeg() noexcept;
+    class Impl;
 
-    virtual const SegInfo& getSegInfo() const =0;
+protected:
+    std::shared_ptr<Impl> pImpl;
 
-    virtual const SegId& getSegId() const noexcept =0;
+    DataSeg(Impl* impl);
 
-    virtual ProdIndex getProdIndex() const noexcept =0;
+public:
+    DataSeg() =default;
 
-    virtual ProdSize getOffset() const noexcept =0;
+    virtual ~DataSeg() noexcept =0;
 
-    virtual std::string to_string() const =0;
+    operator bool() const noexcept;
 
-    virtual void getData(void* buf) const =0;
+    const SegInfo& getSegInfo() const;
+
+    const SegId& getSegId() const noexcept;
+
+    SegSize getSegSize() const noexcept;
+
+    ProdIndex getProdIndex() const noexcept;
+
+    ProdSize getProdSize() const noexcept;
+
+    ProdSize getSegOffset() const noexcept;
+
+    std::string to_string() const;
+
+    void getData(void* buf) const;
 };
 
 /******************************************************************************/
@@ -385,33 +472,13 @@ class MemSeg final : public DataSeg
 {
     class Impl;
 
-    std::shared_ptr<Impl> pImpl;
-
 public:
     MemSeg();
 
     MemSeg(const SegInfo& info,
            const void*    data);
 
-    operator bool() const noexcept;
-
-    const SegInfo& getSegInfo() const noexcept override;
-
-    const SegId& getSegId() const noexcept override;
-
     const void* data() const;
-
-    SegSize getSegSize() const;
-
-    ProdIndex getProdIndex() const noexcept override;
-
-    ProdSize getProdSize() const;
-
-    ProdSize getOffset() const noexcept override;
-
-    std::string to_string() const override;
-
-    void getData(void* buf) const;
 
     bool operator ==(const MemSeg& rhs) const noexcept;
 };
@@ -419,71 +486,27 @@ public:
 /******************************************************************************/
 
 /**
- * Abstract, socket-based data-segment.
- */
-class SockSeg : public DataSeg
-{
-protected:
-    class                 Impl;
-    std::shared_ptr<Impl> pImpl;
-
-    SockSeg(Impl* impl);
-
-public:
-    virtual ~SockSeg();
-
-    const SegInfo& getSegInfo() const noexcept;
-
-    const SegId& getSegId() const noexcept;
-
-    ProdIndex getProdIndex() const noexcept;
-
-    virtual std::string to_string() const =0;
-
-    virtual void read(void* buf) const =0;
-
-    inline void getData(void* buf) const
-    {
-        read(buf);
-    }
-
-    virtual ProdSize getOffset() const noexcept =0;
-};
-
-/**
  * Data-segment from a UDP socket.
  */
-class UdpSeg final : public SockSeg
+class UdpSeg final : public DataSeg
 {
     class Impl;
 
 public:
     UdpSeg( const SegInfo& info,
             UdpSock&       sock);
-
-    std::string to_string() const override;
-
-    void read(void* buf) const override;
-
-    ProdSize getOffset() const noexcept;
 };
 
 /**
  * Data-segment from a TCP socket.
  */
-class TcpSeg final : public SockSeg
+class TcpSeg final : public DataSeg
 {
     class Impl;
 
 public:
     TcpSeg( const SegInfo& info,
             TcpSock&       sock);
-
-    std::string to_string() const override;
-
-    void read(void* buf) const override;
-
-    ProdSize getOffset() const noexcept;
 };
 
 } // namespace

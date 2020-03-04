@@ -805,9 +805,9 @@ public:
                 // The following perform host-to-network translation
                 srvrSock.write(DATA_SEG);
                 srvrSock.write(segSize);
-                srvrSock.write(info.getId().getProdIndex().getValue());
+                srvrSock.write(info.getSegId().getProdIndex().getValue());
                 srvrSock.write(info.getProdSize());
-                srvrSock.write(info.getId().getOffset());
+                srvrSock.write(info.getSegId().getOffset());
 
                 // No network translation
                 srvrSock.write(seg.data(), segSize);

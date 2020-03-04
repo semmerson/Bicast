@@ -356,7 +356,7 @@ public:
 
     bool accept(DataSeg& seg)
     {
-        const ProdSize offset = seg.getOffset();
+        const ProdSize offset = seg.getSegOffset();
         vet(offset);
 
         const auto segInfo = seg.getSegInfo();

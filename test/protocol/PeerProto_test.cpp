@@ -144,7 +144,7 @@ public:
         ASSERT_EQ(segSize, size);
 
         char buf[size];
-        seg.read(buf);
+        seg.getData(buf);
 
         const auto cmp = ::memcmp(memSeg.data(), buf, segSize);
         EXPECT_EQ(0, cmp);
