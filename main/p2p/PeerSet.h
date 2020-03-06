@@ -73,6 +73,28 @@ public:
     void notify(const SegId& segId);
 
     /**
+     * Notifies all the peers in the set -- except one -- of available
+     * product-information.
+     *
+     * @param[in] prodIndex  Identifier of product
+     * @param[in] notPeer    Peer not to be notified
+     */
+    void notifyExcept(
+            const ProdIndex prodIndex,
+            const Peer&     notPeer);
+
+    /**
+     * Notifies all the peers in the set -- except one -- of an available
+     * data-segment.
+     *
+     * @param[in] segId    Identifier of data-segment
+     * @param[in] notPeer  Peer not to be notified
+     */
+    void notifyExcept(
+            const SegId& segId,
+            const Peer&  notPeer);
+
+    /**
      * Returns the number of active peers in the set.
      *
      * @return        Number of active peers
