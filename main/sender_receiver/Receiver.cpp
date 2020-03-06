@@ -249,7 +249,7 @@ public:
     }
 
     /**
-     * Processes receipt of multicast product information.
+     * Processes receipt of product information from the multicast.
      *
      * @param[in] prodInfo  Product information
      * @retval    `false`   Information is old
@@ -258,7 +258,13 @@ public:
     bool hereIsMcast(const ProdInfo& prodInfo)
     {
         const bool saved = repo.save(prodInfo);
-        saved ? ++numMcastOrig : ++numMcastDup;
+        if (saved) {
+            ++numMcastOrig;
+            p2pMgr.notify(prodInfo.getProdIndex());
+        }
+        else {
+            ++numMcastDup;
+        }
         return saved;
     }
 
@@ -277,7 +283,7 @@ public:
     }
 
     /**
-     * Processes receipt of a multicast data-segment.
+     * Processes receipt of a data-segment from the multicast.
      *
      * @param[in] udpSeg   Multicast data-segment
      * @retval    `false`  Data-segment is old
@@ -286,12 +292,18 @@ public:
     bool hereIs(UdpSeg& udpSeg)
     {
         const bool saved = repo.save(udpSeg);
-        saved ? ++numMcastOrig : ++numMcastDup;
+        if (saved) {
+            ++numMcastOrig;
+            p2pMgr.notify(udpSeg.getSegId());
+        }
+        else {
+            ++numMcastDup;
+        }
         return saved;
     }
 
     /**
-     * Processes receipt of a unicast data-segment.
+     * Processes receipt of a data-segment from the P2P network.
      *
      * @param[in] tcpSeg   Unicast data-segment
      * @retval    `false`  Data-segment is old

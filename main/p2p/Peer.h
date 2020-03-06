@@ -191,7 +191,7 @@ public:
      *
      * @cancellationpoint No
      */
-    void halt() noexcept;
+    void halt() const noexcept;
 
     /**
      * Notifies the remote peer about the availability of product-information.

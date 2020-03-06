@@ -142,7 +142,8 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     /**
      * Adds a new peer, maybe.
      *
-     * @param[in] peer         Peer to be activated and added to active peer-set
+     * @param[in] peer         Peer to be potentially activated and added to
+     *                         active peer-set
      * @param[in] fromConnect  Was the remote peer obtained via `::connect()`?
      * @retval    `true`       Peer was activated and added
      * @retval    `false`      Peer was not activated and added
@@ -154,12 +155,15 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
             const bool fromConnect = false)
     {
         /*
-         * TODO:
-         * Add a remote peer when this instance
-         *   - Has fewer peers than `maxPeers`
-         *   - Has `maxPeers` peers, the P2P manager of new peer doesn't have
-         *     path to source, and most P2P managers of remote peers in peer-set
-         *     do
+         * TODO: Add a remote peer when this instance
+         *   - Has fewer than `maxPeers`; or
+         *   - Has `maxPeers` and is not the source site; and
+         *       - The new site has a path to the source and most sites in the
+         *         peer-set don't (=> replace worst peer that doesn't have a
+         *         path to the source); or
+         *       - The new site doesn't have a path to the source and
+         *         most remote sites in the peer-set have a path to the source
+         *         (=> replace worst peer that has a path to the source)
          */
 
         bool  success;

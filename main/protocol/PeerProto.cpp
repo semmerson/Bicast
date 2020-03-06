@@ -61,7 +61,6 @@ class PeerProto::Impl
     std::thread    noticeThread;  ///< Sends notices to remote peer
     std::thread    serverThread;  ///< Receives requests and sends chunks
     std::thread    clientThread;  ///< Sends requests and receives chunks
-    Flags          rmtFlags;      ///< Flags for remote peer
 
     static const unsigned char PROTO_VERSION = 1;
     static const MsgIdType     PROD_INFO_NOTICE = MsgId::PROD_INFO_NOTICE;
@@ -523,7 +522,8 @@ class PeerProto::Impl
 
 public:
     /**
-     * Server-side construction. Remote peer can't be the source.
+     * Server-side construction (i.e., from an `::accept()`). Remote peer can't
+     * be the source because the source doesn't call call `::connect()`.
      *
      * @param[in] sock      `::accept()`ed TCP socket
      * @param[in] portPool  Pool of potential port numbers for temporary servers
@@ -551,7 +551,6 @@ public:
         , noticeThread{}
         , serverThread{}
         , clientThread{}
-        , rmtFlags{}
     {
         InetAddr rmtInAddr{sock.getRmtAddr().getInetAddr()};
         //LOG_DEBUG("rmtInAddr: %s", rmtInAddr.to_string().c_str());
@@ -606,7 +605,8 @@ public:
     }
 
     /**
-     * Client-side construction. Can't be the source of data-products.
+     * Client-side construction (i.e., from `::connect()`). Can't be the source
+     * of data-products.
      *
      * @param[in] rmtSrvrAddr         Socket address of the remote peer-server
      * @param[in] observer            Observer of this instance
@@ -626,13 +626,12 @@ public:
         , srvrSock{}
         , string()
         , srvrSide{false}
-        , portPool{}
+        , portPool{} // Empty
         , observer(observer)
         , haltRequested{false}
         , noticeThread{}
         , serverThread{}
         , clientThread{}
-        , rmtFlags{}
     {
         noticeSock.setDelay(false);
 
@@ -642,7 +641,7 @@ public:
             throw RUNTIME_ERROR("EOF");
 
         if (rmtIsSource)
-            rmtFlags.setPathToSrc();
+            observer.pathToSrc();
 
         // Read port numbers of remote peer's temporary servers
         in_port_t rmtSrvrPort, rmtClntPort;

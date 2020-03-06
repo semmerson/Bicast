@@ -22,7 +22,7 @@
 namespace hycast {
 
 /**
- * Interface for an observer of a PeerProto.
+ * Interface for an observer of a `PeerProto`.
  */
 class PeerProtoObs
 {

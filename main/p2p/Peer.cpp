@@ -35,12 +35,15 @@ private:
     typedef std::lock_guard<Mutex>  Guard;
     typedef std::unique_lock<Mutex> Lock;
     typedef std::condition_variable Cond;
+    typedef std::atomic<bool>       AtomicBool;
     typedef std::exception_ptr      ExceptPtr;
 
     mutable Mutex  doneMutex;       ///< For protecting `done`
     mutable Cond   doneCond;        ///< For checking `done`
     ChunkIdQueue   noticeQueue;     ///< Queue for notices
     ChunkIdQueue   requestQueue;    ///< Queue for requests
+    /// Remote site has path to source? Must be initialized before `peerProto`.
+    AtomicBool     rmtHasPathToSrc;
     PeerProto      peerProto;       ///< Peer-to-peer protocol object
     const SockAddr rmtAddr;         ///< Address of remote peer
     PeerObs&       peerObs;         ///< Observer of this instance
@@ -49,7 +52,7 @@ private:
     std::thread    peerProtoThread; ///< Thread on which peerProto() executes
     ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
     bool           done;            ///< Terminate without an exception?
-    Peer&          peer;            ///< Containing peer
+    Peer&          peer;            ///< Containing `Peer`
 
     void handleException(const ExceptPtr& exPtr)
     {
@@ -193,8 +196,8 @@ private:
 
 public:
     /**
-     * Server-side construction. Constructs from a connection to a remote peer
-     * and an observer of this instance.
+     * Server-side construction (i.e., from an `::accept()`). Constructs from a
+     * connection to a remote peer and an observer of this instance.
      *
      * @param[in] sock      TCP socket with remote peer
      * @param[in] portPool  Pool of port numbers for temporary servers
@@ -211,7 +214,8 @@ public:
         , doneCond()
         , noticeQueue{}
         , requestQueue{}
-        , peerProto{sock, portPool, *this, isSource}
+        , rmtHasPathToSrc{false}
+        , peerProto{sock, portPool, *this, isSource} // Might call `pathToSrc()`
         , rmtAddr{peerProto.getRmtAddr()}
         , peerObs(peerObs) // Braces don't work
         , notifierThread{}
@@ -223,8 +227,8 @@ public:
     {}
 
     /**
-     * Client-side construction. Constructs from the address of a remote peer-
-     * server and an observer of this instance.
+     * Client-side construction (i.e., from a `::connect()`). Constructs from
+     * the address of a remote peer- server and an observer of this instance.
      *
      * @param[in] rmtSrvrAddr  Address of remote peer-server
      * @param[in] peerObs      Observer of this instance
@@ -237,6 +241,7 @@ public:
         , doneCond()
         , noticeQueue{}
         , requestQueue{}
+        , rmtHasPathToSrc{false}
         , peerProto{rmtSrvrAddr, *this}
         , rmtAddr{peerProto.getRmtAddr()}
         , peerObs(peerObs) // Braces don't work
@@ -350,14 +355,20 @@ public:
         return peerProto.to_string();
     }
 
+    /**
+     * Called by `peerProto`.
+     */
     void pathToSrc() noexcept
     {
-        // TODO
+        rmtHasPathToSrc = true;
     }
 
+    /**
+     * Called by `peerProto`.
+     */
     void noPathToSrc() noexcept
     {
-        // TODO
+        rmtHasPathToSrc = false;
     }
 
     void acceptNotice(ProdIndex prodIndex)
@@ -525,7 +536,7 @@ void Peer::operator ()()
     pImpl->operator()();
 }
 
-void Peer::halt() noexcept
+void Peer::halt() const noexcept
 {
     if (pImpl)
         pImpl->halt();
