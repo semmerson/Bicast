@@ -66,22 +66,22 @@ public:
     void notify(ProdIndex prodIndex);
 
     /**
-     * Notifies all the peers in the set of an available data-segment.
-     *
-     * @param[in] segId  Identifier of data-segment
-     */
-    void notify(const SegId& segId);
-
-    /**
      * Notifies all the peers in the set -- except one -- of available
      * product-information.
      *
      * @param[in] prodIndex  Identifier of product
      * @param[in] notPeer    Peer not to be notified
      */
-    void notifyExcept(
+    void notify(
             const ProdIndex prodIndex,
             const Peer&     notPeer);
+
+    /**
+     * Notifies all the peers in the set of an available data-segment.
+     *
+     * @param[in] segId  Identifier of data-segment
+     */
+    void notify(const SegId& segId);
 
     /**
      * Notifies all the peers in the set -- except one -- of an available
@@ -90,7 +90,7 @@ public:
      * @param[in] segId    Identifier of data-segment
      * @param[in] notPeer  Peer not to be notified
      */
-    void notifyExcept(
+    void notify(
             const SegId& segId,
             const Peer&  notPeer);
 

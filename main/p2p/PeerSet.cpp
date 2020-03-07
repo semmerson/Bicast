@@ -228,19 +228,19 @@ void PeerSet::notify(const ProdIndex prodIndex)
     pImpl->notify(prodIndex);
 }
 
-void PeerSet::notify(const SegId& segId)
-{
-    pImpl->notify(segId);
-}
-
-void PeerSet::notifyExcept(
+void PeerSet::notify(
         const ProdIndex prodIndex,
         const Peer&     notPeer)
 {
     pImpl->notifyExcept(prodIndex, notPeer);
 }
 
-void PeerSet::notifyExcept(
+void PeerSet::notify(const SegId& segId)
+{
+    pImpl->notify(segId);
+}
+
+void PeerSet::notify(
         const SegId& segId,
         const Peer&  notPeer)
 {
