@@ -45,7 +45,6 @@ private:
     /// Remote site has path to source? Must be initialized before `peerProto`.
     AtomicBool     rmtHasPathToSrc;
     PeerProto      peerProto;       ///< Peer-to-peer protocol object
-    const SockAddr rmtAddr;         ///< Address of remote peer
     PeerObs&       peerObs;         ///< Observer of this instance
     std::thread    notifierThread;  ///< Thread on which notices are sent
     std::thread    requesterThread; ///< Thread on which requests are made
@@ -216,7 +215,6 @@ public:
         , requestQueue{}
         , rmtHasPathToSrc{false}
         , peerProto{sock, portPool, *this, isSource} // Might call `pathToSrc()`
-        , rmtAddr{peerProto.getRmtAddr()}
         , peerObs(peerObs) // Braces don't work
         , notifierThread{}
         , requesterThread{}
@@ -243,7 +241,6 @@ public:
         , requestQueue{}
         , rmtHasPathToSrc{false}
         , peerProto{rmtSrvrAddr, *this}
-        , rmtAddr{peerProto.getRmtAddr()}
         , peerObs(peerObs) // Braces don't work
         , notifierThread{}
         , requesterThread{}
@@ -266,8 +263,8 @@ public:
      * @return            Socket address of the remote peer.
      * @cancellationpoint No
      */
-    const SockAddr& getRmtAddr() const noexcept {
-        return rmtAddr;
+    SockAddr getRmtAddr() const noexcept {
+        return peerProto.getRmtAddr();
     }
 
     /**
@@ -379,7 +376,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(prodIndex, rmtAddr);
+            const bool doRequest = peerObs.shouldRequest(prodIndex, peer);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (doRequest) {
@@ -396,7 +393,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(segId, rmtAddr);
+            const bool doRequest = peerObs.shouldRequest(segId, peer);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (doRequest) {
@@ -414,7 +411,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            auto prodInfo = peerObs.get(prodIndex, rmtAddr);
+            auto prodInfo = peerObs.get(prodIndex, peer);
         ::pthread_setcancelstate(entryState, &entryState);
 
         if (prodInfo) {
@@ -433,7 +430,7 @@ public:
             int entryState;
 
             //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-                auto memSeg = peerObs.get(segId, rmtAddr);
+                auto memSeg = peerObs.get(segId, peer);
             //::pthread_setcancelstate(entryState, &entryState);
 
             if (memSeg) {
@@ -459,7 +456,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)peerObs.hereIs(prodInfo, rmtAddr);
+            (void)peerObs.hereIs(prodInfo, peer);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 
@@ -470,7 +467,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)peerObs.hereIs(seg, rmtAddr);
+            (void)peerObs.hereIs(seg, peer);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 };

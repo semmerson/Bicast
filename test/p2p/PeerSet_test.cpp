@@ -116,7 +116,7 @@ public:
     // Receiver-side
     bool shouldRequest(
             const hycast::ProdIndex actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         EXPECT_EQ(prodIndex, actual);
         orState(PROD_NOTICE_RCVD);
@@ -127,7 +127,7 @@ public:
     // Receiver-side
     bool shouldRequest(
             const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
@@ -138,7 +138,7 @@ public:
     // Sender-side
     hycast::ProdInfo get(
             const hycast::ProdIndex actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         EXPECT_EQ(prodIndex, actual);
         orState(PROD_REQUEST_RCVD);
@@ -148,7 +148,7 @@ public:
     // Sender-side
     hycast::MemSeg get(
             const hycast::SegId&    actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
@@ -158,7 +158,7 @@ public:
     // Receiver-side
     bool hereIs(
             const hycast::ProdInfo& actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -169,7 +169,7 @@ public:
     // Receiver-side
     bool hereIs(
             hycast::TcpSeg&         actual,
-            const hycast::SockAddr& rmtAddr)
+            hycast::Peer&           peer)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);

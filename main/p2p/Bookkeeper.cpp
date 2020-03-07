@@ -49,9 +49,6 @@ class Bookkeeper::Impl
     /// Map of chunk identifiers -> alternative peers that can request a chunk
     std::unordered_map<ChunkId, Bookkeeper::Peers>   altPeers;
 
-    /// Map of remote peer address -> peer
-    std::unordered_map<SockAddr, Peer>               peers;
-
     /*
      * INVARIANTS:
      *   - If `peerInfos[peer].reqChunks` contains `chunkId`, then `peer`
@@ -70,7 +67,6 @@ public:
         : mutex()
         , peerInfos(maxPeers)
         , altPeers()
-        , peers(maxPeers)
     {}
 
     /**
@@ -90,13 +86,6 @@ public:
         Guard guard(mutex);
 
         peerInfos.emplace(peer, fromConnect);
-        try {
-            peers.emplace(peer.getRmtAddr(), peer);
-        }
-        catch (...) {
-            peerInfos.erase(peer);
-            throw;
-        }
     }
 
     /**
@@ -123,7 +112,7 @@ public:
      * chunk is added to the list of chunks requested by the peer; if no, then
      * the peer is added to a list of potential peers for the chunk.
      *
-     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] peer               Peer
      * @param[in] chunkId            Chunk Identifier
      * @return    `true`             Chunk should be requested
      * @return    `false`            Chunk shouldn't be requested
@@ -135,7 +124,7 @@ public:
      * @cancellationpoint            No
      */
     bool shouldRequest(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId)
     {
         bool  should;
@@ -144,7 +133,6 @@ public:
 
         if (elt == altPeers.end()) {
             // First request for this chunk
-            auto& peer = peers.at(rmtAddr);
             auto& reqChunks = peerInfos.at(peer).reqChunks;
 
             // Check invariant
@@ -158,7 +146,6 @@ public:
             should = true;
         }
         else {
-            Peer peer{peers.at(rmtAddr)};
             auto iter = peerInfos.find(peer);
 
             // Check invariant
@@ -174,7 +161,7 @@ public:
         }
 
         //LOG_DEBUG("Chunk %s %s be requested from %s", chunkId.to_string().data(),
-                //should ? "should" : "shouldn't", rmtAddr.to_string().data());
+                //should ? "should" : "shouldn't", peer.to_string().data());
         return should;
     }
 
@@ -184,7 +171,7 @@ public:
      * having received the chunk and the set of alternative peers that could but
      * haven't requested the chunk is cleared.
      *
-     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] peer               Peer
      * @param[in] chunkId            Chunk Identifier
      * @retval    `false`            Chunk wasn't requested by peer.
      * @retval    `true`             Chunk was requested by peer
@@ -194,11 +181,10 @@ public:
      * @cancellationpoint            No
      */
     bool received(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId)
     {
         Guard  guard(mutex);
-        auto&  peer = peers.at(rmtAddr);
         auto&  peerInfo = peerInfos.at(peer);
         bool   wasRequested;
 
@@ -316,18 +302,18 @@ public:
     /**
      * Marks a peer as being responsible for a chunk.
      *
-     * @param[in] rmtAddr  Address of associated remote peer
+     * @param[in] peer     Peer
      * @param[in] chunkId  Identifier of chunk
      * @see                `getRequested()`
      * @see                `popBestAlt()`
      * @see                `erase()`
      */
     void requested(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId)
     {
         Guard guard{mutex};
-        peerInfos[peers.at(rmtAddr)].reqChunks.insert(chunkId);
+        peerInfos[peer].reqChunks.insert(chunkId);
     }
 
     /**
@@ -350,7 +336,6 @@ public:
         for (auto& elt : altPeers)
             elt.second.remove(peer);
 
-        peers.erase(peer.getRmtAddr());
         peerInfos.erase(peer);
     }
 };
@@ -372,17 +357,17 @@ bool Bookkeeper::isFromConnect(const Peer& peer) const
 }
 
 bool Bookkeeper::shouldRequest(
-        const SockAddr& rmtAddr,
+        Peer&           peer,
         const ChunkId   chunkId) const
 {
-    return pImpl->shouldRequest(rmtAddr, chunkId);
+    return pImpl->shouldRequest(peer, chunkId);
 }
 
 void Bookkeeper::received(
-        const SockAddr& rmtAddr,
+        Peer&           peer,
         const ChunkId   chunkId) const
 {
-    pImpl->received(rmtAddr, chunkId);
+    pImpl->received(peer, chunkId);
 }
 
 Peer Bookkeeper::getWorstPeer() const
@@ -407,10 +392,10 @@ Peer Bookkeeper::popBestAlt(const ChunkId chunkId) const
 }
 
 void Bookkeeper::requested(
-        const SockAddr& rmtAddr,
+        Peer&           peer,
         const ChunkId   chunkId) const
 {
-    pImpl->requested(rmtAddr, chunkId);
+    pImpl->requested(peer, chunkId);
 }
 
 void Bookkeeper::erase(const Peer& peer) const

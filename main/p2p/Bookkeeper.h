@@ -76,7 +76,7 @@ public:
      * chunk is added to the list of chunks requested by the peer; if no, then
      * the peer is added to a list of potential peers for the chunk.
      *
-     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] peer               Peer
      * @param[in] chunkId            Chunk Identifier
      * @return    `true`             Chunk should be requested
      * @return    `false`            Chunk shouldn't be requested
@@ -88,7 +88,7 @@ public:
      * @cancellationpoint            No
      */
     bool shouldRequest(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId) const;
 
     /**
@@ -97,7 +97,7 @@ public:
      * having received the chunk and the set of alternative peers that could but
      * haven't requested the chunk is cleared.
      *
-     * @param[in] rmtAddr            Address of remote peer
+     * @param[in] peer               Peer
      * @param[in] chunkId            Chunk Identifier
      * @retval    `false`            Chunk wasn't requested by peer.
      * @retval    `true`             Chunk was requested by peer
@@ -107,7 +107,7 @@ public:
      * @cancellationpoint            No
      */
     void received(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId) const;
 
     /**
@@ -172,14 +172,14 @@ public:
     /**
      * Marks a peer as being responsible for a chunk.
      *
-     * @param[in] rmtAddr  Address of associated remote peer
+     * @param[in] peer     Peer
      * @param[in] chunkId  Identifier of chunk
      * @see                `getRequested()`
      * @see                `popBestAlt()`
      * @see                `erase()`
      */
     void requested(
-            const SockAddr& rmtAddr,
+            Peer&           peer,
             const ChunkId   chunkId) const;
 
     /**

@@ -39,72 +39,72 @@ public:
      * Indicates if product-information should be requested.
      *
      * @param[in] prodIndex  Identifier of product
-     * @param[in] rmtAddr    Address of the remote peer
+     * @param[in] peer       Relevant peer
      * @retval    `true`     The product-information should be requested
      * @retval    `false`    The product-information should not be requested
      */
     virtual bool shouldRequest(
             ProdIndex       prodIndex,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 
     /**
      * Indicates if a data-segment should be requested.
      *
      * @param[in] segId      Identifier of data-segment
-     * @param[in] rmtAddr    Address of the remote peer
+     * @param[in] peer       Relevant peer
      * @retval    `true`     The data-segment should be requested
      * @retval    `false`    The data-segment should not be requested
      */
     virtual bool shouldRequest(
             const SegId&    segId,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 
     /**
      * Returns product-information.
      *
      * @param[in] prodIndex  Identifier of product
-     * @param[in] rmtAddr    Address of remote peer
+     * @param[in] peer       Relevant peer
      * @return               Product-information. Will test false if it doesn't
      *                       exist.
      */
-    virtual ProdInfo  get(
+    virtual ProdInfo get(
             ProdIndex       prodIndex,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 
     /**
      * Returns a data-segment.
      *
      * @param[in] segId      Identifier of data-segment
-     * @param[in] rmtAddr    Address of remote peer
+     * @param[in] peer       Relevant peer
      * @return               Data-segment. Will test false if it doesn't exist.
      */
-    virtual MemSeg  get(
+    virtual MemSeg get(
             const SegId&    segId,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 
     /**
      * Accepts product-information.
      *
      * @param[in] prodInfo  Product information
-     * @param[in] rmtAddr   Socket address of remote peer
+     * @param[in] peer      Relevant peer
      * @retval    `true`    Product information was accepted
      * @retval    `false`   Product information was previously accepted
      */
     virtual bool hereIs(
             const ProdInfo& prodInfo,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 
     /**
      * Accepts a data-segment.
      *
      * @param[in] tcpSeg   TCP-based data-segment
-     * @param[in] rmtAddr  Socket address of remote peer
+     * @param[in] peer      Relevant peer
      * @retval    `true`   Chunk was accepted
      * @retval    `false`  Chunk was previously accepted
      */
     virtual bool hereIs(
             TcpSeg&         tcpSeg,
-            const SockAddr& rmtAddr) =0;
+            Peer&           peer) =0;
 };
 
 class Peer final

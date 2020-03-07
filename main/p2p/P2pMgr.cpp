@@ -451,7 +451,7 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
             Peer altPeer = bookkeeper.popBestAlt(chunkId);
             if (altPeer) {
                 chunkId.request(altPeer);
-                bookkeeper.requested(altPeer.getRmtAddr(), chunkId);
+                bookkeeper.requested(altPeer, chunkId);
             }
         }
     }
@@ -719,17 +719,17 @@ public:
      * Indicates if product-information should be requested from a remote peer.
      *
      * @param[in] prodIndex  Identifier of the product
-     * @param[in] rmtAddr    Socket address of the remote peer
+     * @param[in] peer       Peer
      * @retval    `true`     Product-information should be requested
      * @retval    `false`    Product-information should not be requested
      */
     bool shouldRequest(
             ProdIndex       prodIndex,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         Guard      guard{stateMutex};
         const bool should = p2pMgrObs.shouldRequest(prodIndex) &&
-                bookkeeper.shouldRequest(rmtAddr, prodIndex);
+                bookkeeper.shouldRequest(peer, prodIndex);
 
         LOG_DEBUG("Product-information %s %s be requested",
                 prodIndex.to_string().data(), should ? "should" : "shouldn't");
@@ -741,17 +741,17 @@ public:
      * Indicates if a data-segment should be requested from a remote peer.
      *
      * @param[in] segId    Identifier of the data-segment
-     * @param[in] rmtAddr  Socket address of the remote peer
+     * @param[in] peer     Peer
      * @retval    `true`   The segment should be requested from the peer
      * @retval    `false`  The segment should not be requested from the peer
      */
     bool shouldRequest(
             const SegId&    segId,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         Guard      guard{stateMutex};
         const bool should = p2pMgrObs.shouldRequest(segId) &&
-                bookkeeper.shouldRequest(rmtAddr, segId);
+                bookkeeper.shouldRequest(peer, segId);
 
         LOG_DEBUG("Data-segment %s %s be requested",
                 segId.to_string().data(), should ? "should" : "shouldn't");
@@ -763,12 +763,12 @@ public:
      * Obtains product-information for a remote peer.
      *
      * @param[in] prodIndex  Identifier of product
-     * @param[in] rmtAddr    Socket address of the remote peer
+     * @param[in] peer       Peer
      * @return               The information. Will be empty if it doesn't exist.
      */
     ProdInfo get(
             ProdIndex       prodIndex,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         return p2pMgrObs.get(prodIndex);
     }
@@ -777,12 +777,12 @@ public:
      * Obtains a data-segment for a remote peer.
      *
      * @param[in] segId      Identifier of the data-segment
-     * @param[in] rmtAddr    Socket address of the remote peer
+     * @param[in] peer       Peer
      * @return               The segment. Will be empty if it doesn't exist.
      */
     MemSeg get(
             const SegId&    segId,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         return p2pMgrObs.get(segId);
     }
@@ -791,16 +791,16 @@ public:
      * Processes product-information from a peer.
      *
      * @param[in] prodInfo  Product information
-     * @param[in] rmtAddr   Socket address of the remote peer
+     * @param[in] peer       Peer
      * @retval    `true`    Information was accepted
      * @retval    `false`   Information was previously accepted
      */
     bool hereIs(
             const ProdInfo& prodInfo,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         const bool isNew = p2pMgrObs.hereIsP2p(prodInfo);
-        bookkeeper.received(rmtAddr, prodInfo.getProdIndex());
+        bookkeeper.received(peer, prodInfo.getProdIndex());
         return isNew;
     }
 
@@ -808,16 +808,16 @@ public:
      * Processes a data-segment from a peer.
      *
      * @param[in] seg      The data-segment
-     * @param[in] rmtAddr  Socket address of the remote peer
+     * @param[in] peer     Peer
      * @retval    `true`   Chunk was accepted
      * @retval    `false`  Chunk was previously accepted
      */
     bool hereIs(
             TcpSeg&         seg,
-            const SockAddr& rmtAddr)
+            Peer&           peer)
     {
         const bool isNew = p2pMgrObs.hereIs(seg);
-        bookkeeper.received(rmtAddr, seg.getSegId());
+        bookkeeper.received(peer, seg.getSegId());
         return isNew;
     }
 };

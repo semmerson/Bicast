@@ -105,7 +105,7 @@ public:
     virtual MemSeg get(const SegId& segId) =0;
 
     /**
-     * Accepts product-information. This implementation throws an exception.
+     * Accepts product-information.
      *
      * @param[in] prodInfo    Product information
      * @retval    `true`      Product information was accepted
@@ -115,7 +115,7 @@ public:
     virtual bool hereIsP2p(const ProdInfo& prodInfo) =0;
 
     /**
-     * Accepts a data-segment. This implementation throws an exception.
+     * Accepts a data-segment.
      *
      * @param[in] tcpSeg      TCP-based data-segment
      * @retval    `true`      Chunk was accepted
