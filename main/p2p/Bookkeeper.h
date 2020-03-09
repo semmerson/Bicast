@@ -106,7 +106,7 @@ public:
      * @exceptionsafety              Basic guarantee
      * @cancellationpoint            No
      */
-    void received(
+    bool received(
             Peer&           peer,
             const ChunkId   chunkId) const;
 

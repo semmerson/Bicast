@@ -363,11 +363,11 @@ bool Bookkeeper::shouldRequest(
     return pImpl->shouldRequest(peer, chunkId);
 }
 
-void Bookkeeper::received(
+bool Bookkeeper::received(
         Peer&           peer,
         const ChunkId   chunkId) const
 {
-    pImpl->received(peer, chunkId);
+    return pImpl->received(peer, chunkId);
 }
 
 Peer Bookkeeper::getWorstPeer() const
