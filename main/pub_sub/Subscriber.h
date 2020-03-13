@@ -1,11 +1,11 @@
 /**
- * 
+ * Subscriber node.
  *
  * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *        File: Receiver.h
+ *        File: Subscriber.h
  *  Created on: Jan 13, 2020
  *      Author: Steven R. Emmerson
  */
@@ -43,10 +43,10 @@ public:
      */
     Subscriber(
             const SrcMcastAddrs& srcMcastInfo,
-            P2pInfo&            p2pInfo,
-            ServerPool&         p2pSrvrPool,
-            SubRepo&            repo,
-            PeerChngObs&        rcvrObs);
+            P2pInfo&             p2pInfo,
+            ServerPool&          p2pSrvrPool,
+            SubRepo&             repo,
+            PeerChngObs&         rcvrObs);
 
     /**
      * Executes this instance. Doesn't return until either `halt()` is called
