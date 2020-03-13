@@ -30,7 +30,7 @@ protected:
     int                   listenSize;
     hycast::PortPool      portPool;
     int                   maxPeers;
-    hycast::RcvRepo       repo;
+    hycast::SubRepo       repo;
     hycast::ProdIndex     prodIndex;
     char                  memData[1000];
     const hycast::SegSize segSize;

@@ -188,12 +188,12 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for an observer of a receiver-side repository.
+ * Interface for an observer of a subscriber-side repository.
  */
-class RcvRepoObs
+class SubRepoObs
 {
 public:
-    virtual ~RcvRepoObs()
+    virtual ~SubRepoObs()
     {}
 
     /**
@@ -205,9 +205,9 @@ public:
 };
 
 /**
- * Receiver-side repository.
+ * Subscriber-side repository.
  */
-class RcvRepo final : public Repository
+class SubRepo final : public Repository
 {
     class Impl;
 
@@ -218,9 +218,9 @@ public:
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
      */
-    RcvRepo(const std::string& rootPathname,
+    SubRepo(const std::string& rootPathname,
             SegSize            segSize,
-            RcvRepoObs&        repoObs);
+            SubRepoObs&        repoObs);
 
     /**
      * Saves product information.

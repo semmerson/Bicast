@@ -22,7 +22,7 @@
 namespace {
 
 /// The fixture for testing class `Repository`
-class RepositoryTest : public ::testing::Test, public hycast::RcvRepoObs
+class RepositoryTest : public ::testing::Test, public hycast::SubRepoObs
 {
 protected:
     const std::string     rootPath;
@@ -65,7 +65,7 @@ public:
 TEST_F(RepositoryTest, Construction)
 {
     hycast::PubRepo srcRepo(rootPath, segSize);
-    hycast::RcvRepo snkRepo(rootPath, segSize, *this);
+    hycast::SubRepo snkRepo(rootPath, segSize, *this);
 }
 
 // Tests pathname of file
@@ -84,7 +84,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
     int         status;
     std::string indexPath;
     {
-        hycast::RcvRepo repo(rootPath, segSize, *this);
+        hycast::SubRepo repo(rootPath, segSize, *this);
         indexPath = repo.getPathname(prodIndex);
         status = ::unlink(indexPath.data());
         if (status == -1)
@@ -107,7 +107,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
     std::string indexPath;
     std::string namePath;
     {
-        hycast::RcvRepo repo(rootPath, segSize, *this);
+        hycast::SubRepo repo(rootPath, segSize, *this);
 
         indexPath = repo.getPathname(prodIndex);
         namePath = repo.getPathname(prodInfo.getProdName());
@@ -152,7 +152,7 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
     std::string indexPath;
     std::string namePath;
     {
-        hycast::RcvRepo repo(rootPath, segSize, *this);
+        hycast::SubRepo repo(rootPath, segSize, *this);
         indexPath = repo.getPathname(prodIndex);
         namePath = repo.getPathname(prodInfo.getProdName());
         ::unlink(indexPath.data());

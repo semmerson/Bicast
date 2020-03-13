@@ -34,7 +34,7 @@ class Subscriber::Impl : public McastRcvrObs, public P2pMgrObs
     mutable Cond               doneCond;
     McastRcvr                  mcastRcvr;
     P2pMgr                     p2pMgr;
-    RcvRepo                    repo;
+    SubRepo                    repo;
     PeerChngObs&               rcvrObs;
     std::thread                mcastThread;
     std::thread                p2pThread;
@@ -96,7 +96,7 @@ public:
     Impl(   const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&            p2pInfo,
             ServerPool&         p2pSrvrPool,
-            RcvRepo&            repo,
+            SubRepo&            repo,
             PeerChngObs&        rcvrObs)
         : mcastRcvr{srcMcastInfo, *this}
         , p2pMgr{p2pInfo, p2pSrvrPool, *this}
@@ -322,7 +322,7 @@ Subscriber::Subscriber(
             const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&            p2pInfo,
             ServerPool&         p2pSrvrPool,
-            RcvRepo&            repo,
+            SubRepo&            repo,
             PeerChngObs&        rcvrObs)
     : pImpl{new Impl(srcMcastInfo, p2pInfo, p2pSrvrPool, repo, rcvrObs)}
 {}

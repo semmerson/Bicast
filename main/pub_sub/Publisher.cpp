@@ -39,7 +39,7 @@ class Publisher::Impl : public P2pMgrObs
     }
 
 public:
-    Impl(   P2pInfo&    p2pSrvrInfo,
+    Impl(   P2pInfo&        p2pSrvrInfo,
             const SockAddr& grpAddr,
             PubRepo&        repo,
             PeerChngObs&    sndrObs)

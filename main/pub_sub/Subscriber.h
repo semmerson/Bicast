@@ -45,7 +45,7 @@ public:
             const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&            p2pInfo,
             ServerPool&         p2pSrvrPool,
-            RcvRepo&            repo,
+            SubRepo&            repo,
             PeerChngObs&        rcvrObs);
 
     /**

@@ -27,7 +27,7 @@ namespace {
 
 /// The fixture for testing classes `Sender` and `Receiver`
 class PubSubTest : public ::testing::Test, public hycast::PeerChngObs,
-        public hycast::RcvRepoObs
+        public hycast::SubRepoObs
 {
 protected:
     std::mutex                mutex;
@@ -54,7 +54,7 @@ protected:
     hycast::P2pInfo           sndrP2pInfo;
     hycast::P2pInfo           rcvrP2pInfo;
     hycast::PubRepo           sndrRepo;
-    hycast::RcvRepo           rcvrRepo;
+    hycast::SubRepo           rcvrRepo;
     hycast::SrcMcastAddrs      srcMcastInfo;
     hycast::ServerPool        p2pSrvrPool;
     int                       numPeers;

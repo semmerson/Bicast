@@ -524,10 +524,10 @@ MemSeg PubRepo::getMemSeg(const SegId& segId) const
 /******************************************************************************/
 /******************************************************************************/
 
-class RcvRepo::Impl final : public Repository::Impl
+class SubRepo::Impl final : public Repository::Impl
 {
     ProdFiles<RcvProdEntry> prodFiles; ///< Product files
-    RcvRepoObs&             repoObs;   ///< Observer of this instance
+    SubRepoObs&             repoObs;   ///< Observer of this instance
 
     void link(RcvProdEntry* entry)
     {
@@ -540,7 +540,7 @@ class RcvRepo::Impl final : public Repository::Impl
 public:
     Impl(   const std::string& rootPathname,
             const SegSize      segSize,
-            RcvRepoObs&        repoObs)
+            SubRepoObs&        repoObs)
         : Repository::Impl{rootPathname, segSize}
         , repoObs(repoObs)
     {}
@@ -665,41 +665,41 @@ public:
 
 /******************************************************************************/
 
-RcvRepo::RcvRepo(
+SubRepo::SubRepo(
         const std::string& rootPathname,
         const SegSize      segSize,
-        RcvRepoObs&        repoObs)
+        SubRepoObs&        repoObs)
     : Repository{new Impl(rootPathname, segSize, repoObs)}
 {}
 
-bool RcvRepo::save(const ProdInfo& prodInfo) const
+bool SubRepo::save(const ProdInfo& prodInfo) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->save(prodInfo);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->save(prodInfo);
 }
 
-bool RcvRepo::save(DataSeg& dataSeg) const
+bool SubRepo::save(DataSeg& dataSeg) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->save(dataSeg);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->save(dataSeg);
 }
 
-ProdInfo RcvRepo::getProdInfo(const ProdIndex prodIndex) const
+ProdInfo SubRepo::getProdInfo(const ProdIndex prodIndex) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg RcvRepo::getMemSeg(const SegId& segId) const
+MemSeg SubRepo::getMemSeg(const SegId& segId) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->getMemSeg(segId);
 }
 
-bool RcvRepo::exists(const ProdIndex prodIndex) const
+bool SubRepo::exists(const ProdIndex prodIndex) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->exists(prodIndex);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->exists(prodIndex);
 }
 
-bool RcvRepo::exists(const SegId& segId) const
+bool SubRepo::exists(const SegId& segId) const
 {
-    return static_cast<RcvRepo::Impl*>(pImpl.get())->exists(segId);
+    return static_cast<SubRepo::Impl*>(pImpl.get())->exists(segId);
 }
 
 } // namespace
