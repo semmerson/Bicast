@@ -24,12 +24,12 @@
 
 namespace hycast {
 
-class Receiver
+class Subscriber
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    Receiver(Impl* const impl);
+    Subscriber(Impl* const impl);
 
 public:
     /**
@@ -41,7 +41,7 @@ public:
      * @param[in,out] repo          Data-product repository
      * @param[in]     rcvrObs       Observer of this instance
      */
-    Receiver(
+    Subscriber(
             const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&            p2pInfo,
             ServerPool&         p2pSrvrPool,

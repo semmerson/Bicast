@@ -3,7 +3,7 @@ AM_CPPFLAGS	= -I$(top_srcdir)/main/misc \
 		  -I$(top_srcdir)/main/protocol \
 		  -I$(top_srcdir)/main/p2p \
 		  -I$(top_srcdir)/main/repository \
-		  -I$(top_srcdir)/main/sender_receiver
+		  -I$(top_srcdir)/main/pub_sub
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
 CLEANFILES	= callgrind.out *.log *.vg *.supp
 
@@ -13,9 +13,9 @@ SUFFIXES: .i .cpp
 .cpp.i:
 	$(CXXCOMPILE) $(AM_CXXFLAGS) -E -o $@ $<
 
-check_PROGRAMS		= SndrRcvr_test
+check_PROGRAMS		= PubSub_test
 
-SndrRcvr_test_SOURCES	= SndrRcvr_test.cpp
+PubSub_test_SOURCES	= PubSub_test.cpp
 
 TESTS			= $(check_PROGRAMS)
 

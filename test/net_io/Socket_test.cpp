@@ -276,6 +276,16 @@ TEST_F(SocketTest, VectorExchange)
 }  // namespace
 
 int main(int argc, char **argv) {
+  /*
+   * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the
+   * process (the return-value from write() is always checked).
+   */
+  struct sigaction sigact;
+  sigact.sa_handler = SIG_IGN;
+  sigemptyset(&sigact.sa_mask);
+  sigact.sa_flags = 0;
+  (void)sigaction(SIGPIPE, &sigact, NULL);
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

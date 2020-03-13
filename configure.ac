@@ -63,13 +63,13 @@ AC_CONFIG_FILES(Makefile
                 main/p2p/Makefile
                 main/protocol/Makefile
                 main/repository/Makefile
-                main/sender_receiver/Makefile
+                main/pub_sub/Makefile
                 test/Makefile
                 test/misc/Makefile
                 test/protocol/Makefile
                 test/net_io/Makefile
                 test/p2p/Makefile
                 test/repository/Makefile
-                test/sender_receiver/Makefile
+                test/pub_sub/Makefile
                 )
 AC_OUTPUT

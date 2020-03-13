@@ -30,7 +30,7 @@ private:
     PortPool      portPool;
     TcpSrvrSock   srvrSock;
     PeerObs&      peerObs;
-    bool          isSource;
+    NodeType&     nodeType;
 
 public:
     /**
@@ -45,11 +45,11 @@ public:
             const int       queueSize,
             PortPool&       portPool,
             PeerObs&        peerObs,
-            const bool      isSource)
+            NodeType&       nodeType)
         : portPool{portPool}
         , srvrSock(srvrAddr, queueSize)
-        , peerObs(peerObs) // Braces don't work
-        , isSource{isSource}
+        , peerObs(peerObs)   // Braces don't work for references
+        , nodeType(nodeType) // Braces don't work for references
     {}
 
     ~Impl() {
@@ -76,7 +76,7 @@ public:
         if (!sock)
             return Peer{};
 
-        return Peer{sock, portPool, peerObs, isSource};
+        return Peer{sock, portPool, peerObs, nodeType};
     }
 
     /**
@@ -92,7 +92,7 @@ public:
      */
     Peer connect(const SockAddr& rmtSrvrAddr)
     {
-        return Peer{rmtSrvrAddr, peerObs};
+        return Peer{rmtSrvrAddr, peerObs, nodeType};
     }
 
     /**
@@ -123,8 +123,8 @@ PeerFactory::PeerFactory(
         const int       queueSize,
         PortPool&       portPool,
         PeerObs&        peerObs,
-        const bool      isSource)
-    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs, isSource)}
+        NodeType&       nodeType)
+    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs, nodeType)}
 {}
 
 in_port_t PeerFactory::getPort() const

@@ -8,7 +8,8 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= PeerMsgSndr.h \
+lib_la_SOURCES 	= NodeType.cpp          NodeType.h \
+                  PeerMsgSndr.h \
 		  Peer.cpp 		Peer.h \
 		  PeerFactory.cpp	PeerFactory.h \
 		  PeerSet.cpp		PeerSet.h \
@@ -22,7 +23,8 @@ lib_la_SOURCES 	= PeerMsgSndr.h \
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \
 	      -I$(srcdir)/../net_io \
-	      -I$(srcdir)/../protocol
+	      -I$(srcdir)/../protocol \
+	      -I$(srcdir)/../p2p
 	      
 SUFFIXES: .i .cpp
 .cpp.i:

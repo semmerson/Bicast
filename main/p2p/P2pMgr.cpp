@@ -15,6 +15,7 @@
 
 #include "Bookkeeper.h"
 #include "error.h"
+#include "NodeType.h"
 #include "PeerFactory.h"
 #include "Thread.h"
 
@@ -62,6 +63,7 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     mutable Cond      stateCond;     ///< For changes to this instance's state
     bool              haltRequested; ///< Termination requested?
     unsigned          timePeriod;    ///< Improvement period in seconds
+    NodeType          nodeType;      ///< Type of node
     PeerFactory       factory;       ///< Creates local peers
     const int         maxPeers;      ///< Maximum number of peers
     P2pMgrObs&        p2pMgrObs;     ///< Observer of this instance
@@ -109,13 +111,14 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
      * @param[in] peer          Peer to add
      * @throws    RuntimeError  Peer couldn't be added
      */
-    void add(
-            Peer       peer,
-            const bool fromConnect)
+    void add(Peer peer)
     {
-        bookkeeper.add(peer, fromConnect);
+        assert(peer);
+        bookkeeper.add(peer);
         try {
             (void)peerSet.activate(peer); // Fast
+            resetImprovement();
+            stateCond.notify_one();
         }
         catch (const std::exception& ex) {
             bookkeeper.erase(peer);
@@ -127,16 +130,37 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     /**
      * Replaces the worst-performing peer with a new peer.
      *
+     * @pre                    `stateMutex` is locked
+     * @param[in] isPathToSrc  Value worst peer's `isPathToSrc()` must return
+     * @param[in] peer         Replacement peer
+     */
+    void replaceWorst(
+            const bool isPathToSrc,
+            Peer       peer)
+    {
+        Peer worst = bookkeeper.getWorstPeer(isPathToSrc);
+
+        if (worst) {
+            worst.halt();
+            add(peer);
+        }
+    }
+
+    /**
+     * Replaces the worst-performing peer with a new peer.
+     *
      * @pre             `stateMutex` is locked
      * @param[in] peer  Replacement peer
      */
-    void replaceWorst(
-            Peer       peer,
-            const bool fromConnect)
+    void replaceWorst(Peer peer)
     {
-        bookkeeper.getWorstPeer().halt();
-        bookkeeper.add(peer, fromConnect);
-        (void)peerSet.activate(peer); // Fast
+        Peer worst = bookkeeper.getWorstPeer();
+
+        if (worst) {
+            worst.halt();
+            bookkeeper.add(peer);
+            (void)peerSet.activate(peer); // Fast
+        }
     }
 
     /**
@@ -144,20 +168,17 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
      *
      * @param[in] peer         Peer to be potentially activated and added to
      *                         active peer-set
-     * @param[in] fromConnect  Was the remote peer obtained via `::connect()`?
      * @retval    `true`       Peer was activated and added
      * @retval    `false`      Peer was not activated and added
      * @threadsafety           Safe
      * @exceptionsafety        Strong guarantee
      */
-    bool maybeAdd(
-            Peer       peer,
-            const bool fromConnect = false)
+    bool maybeAdd(Peer peer)
     {
         /*
          * TODO: Add a remote peer when this instance
          *   - Has fewer than `maxPeers`; or
-         *   - Has `maxPeers` and is not the source site; and
+         *   - Has `maxPeers`, is not the source site, and
          *       - The new site has a path to the source and most sites in the
          *         peer-set don't (=> replace worst peer that doesn't have a
          *         path to the source); or
@@ -173,7 +194,7 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
             auto  numPeers = peerSet.size();
 
             if (numPeers < maxPeers) {
-                add(peer, fromConnect);
+                add(peer);
                 success = true;
             }
             else if (numPeers > maxPeers) {
@@ -181,8 +202,17 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
                         peer.getRmtAddr().to_string().c_str());
                 success = false;
             }
-            else {
-                bookkeeper.add(peer, fromConnect);
+            else if (nodeType != NodeType::IS_SOURCE) {
+                unsigned   numPath, numNoPath;
+                const bool isPathToSrc = peer.isPathToSrc();
+
+                bookkeeper.getSrcPathCounts(numPath, numNoPath);
+
+                if ((numPath < numNoPath) == isPathToSrc) {
+                    replaceWorst(!isPathToSrc, peer);
+                }
+
+                bookkeeper.add(peer);
 
                 try {
                     (void)peerSet.activate(peer); // Fast
@@ -192,7 +222,7 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
 
                     success = true;
                     resetImprovement();
-                    stateCond.notify_all();
+                    stateCond.notify_one();
                 }
                 catch (const std::exception& ex) {
                     bookkeeper.erase(peer);
@@ -288,8 +318,12 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
                         time = improveStart + timeout)
                     stateCond.wait_until(lock, time); // Cancellation point
 
-                bookkeeper.getWorstPeer().halt();
-                resetImprovement();        // Not a cancellation point
+                Peer peer = bookkeeper.getWorstPeer();
+                if (peer) {
+                    peer.halt();
+                    resetImprovement();        // Not a cancellation point
+                    stateCond.notify_one();
+                }
             }
         }
         catch (const std::exception& ex) {
@@ -321,7 +355,7 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
 
                     {
                         Canceler canceler{false};
-                        if (!maybeAdd(peer, true))
+                        if (!maybeAdd(peer))
                             serverPool.consider(srvrAddr, timePeriod);
                     }
                 }
@@ -530,7 +564,9 @@ public:
         , stateCond{}
         , haltRequested{false}
         , timePeriod{60}
-        , factory{srvrAddr, listenSize, portPool, *this, serverPool.empty()}
+        , nodeType{serverPool.empty()
+                ? NodeType::Type::IS_SOURCE : NodeType::Type::NO_PATH_TO_SOURCE}
+        , factory{srvrAddr, listenSize, portPool, *this, nodeType}
         , maxPeers{maxPeers}
         , p2pMgrObs(p2pMgrObs)
         , taskException{}
@@ -632,6 +668,50 @@ public:
     }
 
     /**
+     * Handles a remote node transitioning from not having a path to the source
+     * of data-products to having one. Might be called by a peer only *after*
+     * `Peer::operator()()` is called.
+     *
+     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @threadsafety  Safe
+     */
+    void pathToSrc(Peer peer) noexcept
+    {
+        if (nodeType != NodeType::IS_SOURCE) {
+            Guard    guard(stateMutex);
+            unsigned numWithPath, numWithoutPath;
+
+            bookkeeper.getSrcPathCounts(numWithPath, numWithoutPath);
+            if (numWithPath == 1) {
+                nodeType = NodeType::PATH_TO_SOURCE;
+                peerSet.gotPath(peer);
+            }
+        }
+    }
+
+    /**
+     * Handles a remote node transitioning from having a path to the source of
+     * data-products to not having one. Might be called by a peer only *after*
+     * `Peer::operator()()` is called.
+     *
+     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @threadsafety  Safe
+     */
+    void noPathToSrc(Peer peer) noexcept
+    {
+        if (nodeType != NodeType::IS_SOURCE) {
+            Guard    guard(stateMutex);
+            unsigned numWithPath, numWithoutPath;
+
+            bookkeeper.getSrcPathCounts(numWithPath, numWithoutPath);
+            if (numWithPath == 0) {
+                nodeType = NodeType::NO_PATH_TO_SOURCE;
+                peerSet.lostPath(peer);
+            }
+        }
+    }
+
+    /**
      * Halts execution of this instance. If called before `operator()`, then
      * this instance will never execute.
      *
@@ -672,24 +752,17 @@ public:
         {
             Guard guard{stateMutex};
 
-            // Possibly add the remote peer-server to the pool of remote servers
-            bool fromConnect;
-            try {
-                fromConnect = bookkeeper.isFromConnect(peer);
-            }
-            catch (const std::exception& ex) {
-                std::throw_with_nested(LOGIC_ERROR("Peer " +
-                        rmtSockAddr.to_string() +
-                        " not found in performance map"));
-            }
-
-            if (fromConnect)
+            /*
+             * Add the remote site to the pool of remote sites if the local peer
+             * resulted from a `::connect`.
+             */
+            if (peer.isFromConnect())
                 serverPool.consider(rmtSockAddr, timePeriod);
 
             reassignPending(peer); // Reassign peer's outstanding requests
             bookkeeper.erase(peer);
             resetImprovement();    // Restart performance evaluation
-            stateCond.notify_all();
+            stateCond.notify_one();
         }
 
         p2pMgrObs.removed(peer);
@@ -799,9 +872,14 @@ public:
             const ProdInfo& prodInfo,
             Peer&           peer)
     {
-        const bool isNew = p2pMgrObs.hereIsP2p(prodInfo);
-        bookkeeper.received(peer, prodInfo.getProdIndex());
-        return isNew;
+        if (!bookkeeper.received(peer, prodInfo.getProdIndex()))
+            return false; // Wasn't requested
+
+        if (!p2pMgrObs.hereIsP2p(prodInfo))
+            return false; // Wasn't needed
+
+        peerSet.notify(prodInfo.getProdIndex(), peer);
+        return true;
     }
 
     /**
@@ -816,9 +894,14 @@ public:
             TcpSeg&         seg,
             Peer&           peer)
     {
-        const bool isNew = p2pMgrObs.hereIs(seg);
-        bookkeeper.received(peer, seg.getSegId());
-        return isNew;
+        if (!bookkeeper.received(peer, seg.getSegId()))
+            return false; // Wasn't requested
+
+        if (!p2pMgrObs.hereIs(seg))
+            return false; // Wasn't needed
+
+        peerSet.notify(seg.getSegId(), peer);
+        return true;
     }
 };
 

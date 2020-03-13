@@ -8,8 +8,8 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= Sender.cpp	Sender.h \
-		  Receiver.cpp	Receiver.h
+lib_la_SOURCES 	= Publisher.cpp		Publisher.h \
+		  Subscriber.cpp	Subscriber.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.

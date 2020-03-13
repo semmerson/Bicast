@@ -52,15 +52,16 @@ class PeerProto::Impl
      * peer is the source of data-product.
      */
     TcpSock        srvrSock;
-    std::string    string;        ///< `to_string()` string
-    bool           srvrSide;      ///< Server-side construction?
+    std::string    string;         ///< `to_string()` string
+    bool           srvrSide;       ///< Server-side construction?
     /// Pool of potential ports for temporary servers
     PortPool       portPool;
-    PeerProtoObs&  observer;      ///< Observer of this instance
-    bool           haltRequested; ///< Halt requested?
-    std::thread    noticeThread;  ///< Sends notices to remote peer
-    std::thread    serverThread;  ///< Receives requests and sends chunks
-    std::thread    clientThread;  ///< Sends requests and receives chunks
+    PeerProtoObs&  observer;       ///< Observer of this instance
+    bool           haltRequested;  ///< Halt requested?
+    std::thread    noticeThread;   ///< Sends notices to remote peer
+    std::thread    serverThread;   ///< Receives requests and sends chunks
+    std::thread    clientThread;   ///< Sends requests and receives chunks
+    bool           rmtIsPathToSrc; ///< Remote node is path to source?
 
     static const unsigned char PROTO_VERSION = 1;
     static const MsgIdType     PROD_INFO_NOTICE = MsgId::PROD_INFO_NOTICE;
@@ -527,15 +528,15 @@ public:
      *
      * @param[in] sock      `::accept()`ed TCP socket
      * @param[in] portPool  Pool of potential port numbers for temporary servers
+     * @param[in] nodeType  Type of node
      * @param[in] observer  Observer of this instance
-     * @param[in] isSource  This instance is source of data-products?
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   Yes
      */
     Impl(   TcpSock&      sock,
             PortPool&     portPool,
-            PeerProtoObs& observer,
-            bool          isSource)
+            NodeType&     nodeType,
+            PeerProtoObs& observer)
         : executing{false}
         , exceptPtr{}
         , doneMutex{}
@@ -551,6 +552,7 @@ public:
         , noticeThread{}
         , serverThread{}
         , clientThread{}
+        , rmtIsPathToSrc{false}
     {
         InetAddr rmtInAddr{sock.getRmtAddr().getInetAddr()};
         //LOG_DEBUG("rmtInAddr: %s", rmtInAddr.to_string().c_str());
@@ -562,6 +564,8 @@ public:
         TcpSrvrSock srvrSrvrSock{createSrvrSock(lclInAddr, portPool, 1)};
 
         try {
+            const bool isSource = (nodeType == NodeType::IS_SOURCE);
+
             // Temporary server for sending requests and receiving chunks
             TcpSrvrSock clntSrvrSock{};
             if (!isSource)
@@ -569,9 +573,17 @@ public:
                         1));
 
             try {
-                // Inform the remote peer if this instance is the source
-                const char yes = isSource;
-                noticeSock.write(&yes, 1);
+                // Exchange node types
+                uint16_t typeInt = nodeType;
+                noticeSock.write(typeInt);
+                noticeSock.read(typeInt);
+
+                /*
+                 * A client node can be a path to the source of data-products
+                 * but it can't *be* the source because the source doesn't call
+                 * `::connect()`.
+                 */
+                rmtIsPathToSrc = typeInt == NodeType::PATH_TO_SOURCE;
 
                 // Send port numbers of temporary server sockets to remote peer
                 noticeSock.write(srvrSrvrSock.getLclPort());
@@ -609,6 +621,7 @@ public:
      * of data-products.
      *
      * @param[in] rmtSrvrAddr         Socket address of the remote peer-server
+     * @param[in] nodeType            Type of local node
      * @param[in] observer            Observer of this instance
      * @throws    std::system_error   System error
      * @throws    std::runtime_error  Remote peer closed the connection
@@ -616,6 +629,7 @@ public:
      * @cancellationpoint             Yes
      */
     Impl(   const SockAddr& rmtSrvrAddr,
+            NodeType&       nodeType,
             PeerProtoObs&   observer)
         : executing{false}
         , exceptPtr{}
@@ -632,27 +646,30 @@ public:
         , noticeThread{}
         , serverThread{}
         , clientThread{}
+        , rmtIsPathToSrc{false}
     {
         noticeSock.setDelay(false);
 
-        // Read if the remote peer is the source of data-products
-        char rmtIsSource;
-        if (!noticeSock.read(&rmtIsSource, 1))
+        // Exchange node types
+        uint16_t typeInt = nodeType;
+        noticeSock.write(typeInt);
+        if (!noticeSock.read(typeInt))
             throw RUNTIME_ERROR("EOF");
 
-        if (rmtIsSource)
-            observer.pathToSrc();
+        rmtIsPathToSrc = (typeInt == NodeType::IS_SOURCE) ||
+                (typeInt == NodeType::PATH_TO_SOURCE);
 
         // Read port numbers of remote peer's temporary servers
         in_port_t rmtSrvrPort, rmtClntPort;
         if (!noticeSock.read(rmtSrvrPort))
             throw RUNTIME_ERROR("EOF");
-        if (!rmtIsSource && !noticeSock.read(rmtClntPort))
+        if ((typeInt != NodeType::IS_SOURCE) &&
+                !noticeSock.read(rmtClntPort))
             throw RUNTIME_ERROR("EOF");
 
-        // Create sockets to remote peer's temporary servers
+        // Create sockets using remote peer's temporary servers
         clntSock = TcpClntSock(rmtSrvrAddr.clone(rmtSrvrPort));
-        if (!rmtIsSource)
+        if (typeInt != NodeType::IS_SOURCE)
             srvrSock = TcpClntSock(rmtSrvrAddr.clone(rmtClntPort));
 
         clntSock.setDelay(false);
@@ -692,6 +709,11 @@ public:
     {
         return "{rmtAddr: " + getRmtAddr().to_string() + ", lclAddr: " +
                 getLclAddr().to_string() + "}";
+    }
+
+    bool isPathToSrc() const noexcept
+    {
+        return rmtIsPathToSrc;
     }
 
     /**
@@ -748,6 +770,16 @@ public:
 
         haltRequested = true;
         doneCond.notify_one();
+    }
+
+    void gotPath()
+    {
+        noticeSock.write(PATH_TO_SRC);
+    }
+
+    void lostPath()
+    {
+        noticeSock.write(NO_PATH_TO_SRC);
     }
 
     void notify(const ProdIndex prodIndex)
@@ -828,17 +860,18 @@ PeerProto::PeerProto(Impl* impl)
 {}
 
 PeerProto::PeerProto(
-        TcpSock&      sock,
-        PortPool&     portPool,
-        PeerProtoObs& observer,
-        const bool    isSource)
-    : PeerProto{new Impl(sock, portPool, observer, isSource)}
+        TcpSock&       sock,
+        PortPool&      portPool,
+        NodeType&      nodeType,
+        PeerProtoObs&  observer)
+    : PeerProto{new Impl(sock, portPool, nodeType, observer)}
 {}
 
 PeerProto::PeerProto(
         const SockAddr& rmtSrvrAddr,
+        NodeType&       nodeType,
         PeerProtoObs&   observer)
-    : PeerProto{new Impl(rmtSrvrAddr, observer)}
+    : PeerProto{new Impl(rmtSrvrAddr, nodeType, observer)}
 {}
 
 PeerProto::operator bool() const
@@ -861,6 +894,11 @@ std::string PeerProto::to_string() const
     return pImpl->to_string();
 }
 
+bool PeerProto::isPathToSrc() const noexcept
+{
+    return pImpl->isPathToSrc();
+}
+
 void PeerProto::operator()() const
 {
     pImpl->operator()();
@@ -869,6 +907,16 @@ void PeerProto::operator()() const
 void PeerProto::halt() const
 {
     pImpl->halt();
+}
+
+void PeerProto::gotPath() const
+{
+    pImpl->gotPath();
+}
+
+void PeerProto::lostPath() const
+{
+    pImpl->gotPath();
 }
 
 void PeerProto::notify(const ProdIndex prodId) const

@@ -46,30 +46,23 @@ public:
      * Adds a peer.
      *
      * @param[in] peer            The peer
-     * @param[in] fromConnect     Did the peer result from `::connect()`?
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void add(
-            const Peer& peer,
-            const bool  fromConnect) const;
+    void add(const Peer& peer) const;
 
     /**
-     * Indicates if a peer resulted from a call to `::connect()`.
+     * Returns the number of remote peers that are a path to the source of
+     * data-products and the number that aren't.
      *
-     * @param[in] peer            The peer
-     * @retval    `true`          The peer did result from a call to
-     *                            `::connect()`
-     * @retval    `false`         The peer did not result from a call to
-     *                            `::connect()`
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
+     * @param[out] numPath    Number of remote peers that are path to source
+     * @param[out] numNoPath  Number of remote peers that aren't path to source
      */
-    bool isFromConnect(const Peer& peer) const;
+    void getSrcPathCounts(
+            unsigned& numPath,
+            unsigned& numNoPath) const;
 
     /**
      * Indicates if a chunk should be requested by a peer. If yes, then the
@@ -122,6 +115,22 @@ public:
      * @cancellationpoint         No
      */
     Peer getWorstPeer() const;
+
+    /**
+     * Returns a worst performing peer.
+     *
+     * @param[in] isPathToSrc     Attribute that peer must have
+     * @return                    A worst performing peer -- whose
+     *                            `isPathToSrc()` return value equals
+     *                            `isPathToSrc` -- since construction or
+     *                            `resetCounts()` was called. Will test false if
+     *                            the set is empty.
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Strong guarantee
+     * @cancellationpoint         No
+     */
+    Peer getWorstPeer(bool isPathToSrc) const;
 
     /**
      * Resets the measure of utility for every peer.

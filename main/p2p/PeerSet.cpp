@@ -164,7 +164,7 @@ public:
             pair.first.notify(prodIndex);
     }
 
-    void notifyExcept(
+    void notify(
             ProdIndex   prodIndex,
             const Peer& notPeer)
     {
@@ -185,7 +185,7 @@ public:
             pair.first.notify(segId);
     }
 
-    void notifyExcept(
+    void notify(
             const SegId& segId,
             const Peer& notPeer)
     {
@@ -195,6 +195,28 @@ public:
             Peer peer = pair.first;
             if (peer != notPeer)
                 peer.notify(segId);
+        }
+    }
+
+    void gotPath(Peer notPeer)
+    {
+        Guard guard(mutex);
+
+        for (auto& pair : threads) {
+            Peer peer = pair.first;
+            if (peer != notPeer)
+                peer.gotPath();
+        }
+    }
+
+    void lostPath(Peer notPeer)
+    {
+        Guard guard(mutex);
+
+        for (auto& pair : threads) {
+            Peer peer = pair.first;
+            if (peer != notPeer)
+                peer.lostPath();
         }
     }
 
@@ -223,6 +245,16 @@ bool PeerSet::activate(const Peer peer)
     return pImpl->activate(peer);
 }
 
+void PeerSet::gotPath(Peer notPeer)
+{
+    pImpl->gotPath(notPeer);
+}
+
+void PeerSet::lostPath(Peer notPeer)
+{
+    pImpl->lostPath(notPeer);
+}
+
 void PeerSet::notify(const ProdIndex prodIndex)
 {
     pImpl->notify(prodIndex);
@@ -232,7 +264,7 @@ void PeerSet::notify(
         const ProdIndex prodIndex,
         const Peer&     notPeer)
 {
-    pImpl->notifyExcept(prodIndex, notPeer);
+    pImpl->notify(prodIndex, notPeer);
 }
 
 void PeerSet::notify(const SegId& segId)
@@ -244,7 +276,7 @@ void PeerSet::notify(
         const SegId& segId,
         const Peer&  notPeer)
 {
-    pImpl->notifyExcept(segId, notPeer);
+    pImpl->notify(segId, notPeer);
 }
 
 size_t PeerSet::size() const noexcept

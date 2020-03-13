@@ -1,4 +1,4 @@
-SUBDIRS			= misc net_io protocol p2p repository sender_receiver
+SUBDIRS			= misc net_io protocol p2p repository pub_sub
 AM_CPPFLAGS		= -I$(top_srcdir)/main/misc \
 			  -I$(top_srcdir)/main/net_io \
 			  -I$(top_srcdir)/main/protocol \

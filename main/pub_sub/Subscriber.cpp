@@ -10,9 +10,8 @@
  *      Author: Steven R. Emmerson
  */
 
+#include <main/pub_sub/Subscriber.h>
 #include "config.h"
-
-#include "Receiver.h"
 
 #include "error.h"
 
@@ -23,7 +22,7 @@
 
 namespace hycast {
 
-class Receiver::Impl : public McastRcvrObs, public P2pMgrObs
+class Subscriber::Impl : public McastRcvrObs, public P2pMgrObs
 {
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  Guard;
@@ -319,7 +318,7 @@ public:
 
 /******************************************************************************/
 
-Receiver::Receiver(
+Subscriber::Subscriber(
             const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&            p2pInfo,
             ServerPool&         p2pSrvrPool,
@@ -328,12 +327,12 @@ Receiver::Receiver(
     : pImpl{new Impl(srcMcastInfo, p2pInfo, p2pSrvrPool, repo, rcvrObs)}
 {}
 
-void Receiver::operator()() const
+void Subscriber::operator()() const
 {
     pImpl->operator()();
 }
 
-void Receiver::halt() const
+void Subscriber::halt() const
 {
     pImpl->halt();
 }

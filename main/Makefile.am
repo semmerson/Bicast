@@ -1,4 +1,4 @@
-SUBDIRS			= misc net_io protocol p2p repository sender_receiver
+SUBDIRS			= misc net_io protocol p2p repository pub_sub
 lib_LTLIBRARIES		= libhycast.la
 libhycast_la_SOURCES	= dummy.h
 libhycast_la_LIBADD	= misc/lib.la \
@@ -6,4 +6,4 @@ libhycast_la_LIBADD	= misc/lib.la \
 			  protocol/lib.la \
 			  p2p/lib.la \
 			  repository/lib.la \
-			  sender_receiver/lib.la
+			  pub_sub/lib.la

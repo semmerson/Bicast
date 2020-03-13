@@ -10,7 +10,7 @@
  *      Author: Steven R. Emmerson
  */
 
-#include <sender_receiver/Sender.h>
+#include <main/pub_sub/Publisher.h>
 #include "config.h"
 #include "error.h"
 #include "McastProto.h"
@@ -18,7 +18,7 @@
 
 namespace hycast {
 
-class Sender::Impl : public P2pMgrObs
+class Publisher::Impl : public P2pMgrObs
 {
     P2pMgr       p2pMgr;
     McastSndr    mcastSndr;
@@ -130,7 +130,7 @@ public:
 
 /******************************************************************************/
 
-Sender::Sender(
+Publisher::Publisher(
         P2pInfo&    p2pSrvrInfo,
         const SockAddr& grpAddr,
         SndRepo&        repo,
@@ -138,17 +138,17 @@ Sender::Sender(
     : pImpl{new Impl(p2pSrvrInfo,  grpAddr, repo, sndrObs)}
 {}
 
-void Sender::operator()() const
+void Publisher::operator()() const
 {
     pImpl->operator()();
 }
 
-void Sender::halt() const
+void Publisher::halt() const
 {
     pImpl->halt();
 }
 
-void Sender::send(
+void Publisher::send(
         const std::string& prodName,
         const ProdIndex    prodIndex) const
 {

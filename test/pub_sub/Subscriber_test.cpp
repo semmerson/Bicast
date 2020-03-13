@@ -10,12 +10,11 @@
  *     Author: Steven R. Emmerson
  */
 #include "config.h"
-#include "Receiver.h"
-
 #include "FileUtil.h"
 
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <main/pub_sub/Subscriber.h>
 #include <unistd.h>
 
 namespace {
@@ -85,7 +84,7 @@ protected:
 // Tests construction
 TEST_F(ReceiverTest, Construction)
 {
-    hycast::Receiver receiver(sndrSockAddr, listenSize, portPool, maxPeers,
+    hycast::Subscriber receiver(sndrSockAddr, listenSize, portPool, maxPeers,
             grpSockAddr, sndrInetAddr, repo);
 }
 

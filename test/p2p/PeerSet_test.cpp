@@ -54,6 +54,7 @@ protected:
     } State;
     State                   state;
     hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        clntAddr;
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
@@ -65,7 +66,10 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
-    hycast::PeerFactory     factory;
+    hycast::NodeType        srvrNodeType;
+    hycast::NodeType        clntNodeType;
+    hycast::PeerFactory     srvrFactory;
+    hycast::PeerFactory     clntFactory;
     hycast::Peer            srvrPeer;
     hycast::Peer            clntPeer;
 
@@ -75,11 +79,12 @@ protected:
     PeerSetTest()
         : state{INIT}
         , srvrAddr{"localhost:3880"}
+        , clntAddr{"localhost:3881"}
         /*
          * 3 potential port numbers for the server's 2 temporary servers because
          * the initial client connection could use one
          */
-        , portPool(3881, 3)
+        , portPool(3882, 3)
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -90,12 +95,18 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , factory()
+        , srvrNodeType{}
+        , clntNodeType{}
+        , srvrFactory()
+        , clntFactory()
         , srvrPeer()
         , clntPeer()
     {
         ::memset(memData, 0xbd, segSize);
-        factory = hycast::PeerFactory(srvrAddr, 1, portPool, *this);
+        srvrFactory = hycast::PeerFactory(srvrAddr, 1, portPool, *this,
+                srvrNodeType);
+        clntFactory = hycast::PeerFactory(clntAddr, 1, portPool, *this,
+                clntNodeType);
     }
 
 public:
@@ -112,6 +123,12 @@ public:
         while (this->state != state)
             cond.wait(lock);
     }
+
+    void pathToSrc(hycast::Peer peer)
+    {}
+
+    void noPathToSrc(hycast::Peer peer)
+    {}
 
     // Receiver-side
     bool shouldRequest(
@@ -199,7 +216,7 @@ public:
     void runServer(hycast::PeerSet& peerSet)
     {
         orState(LISTENING);
-        srvrPeer = factory.accept();
+        srvrPeer = srvrFactory.accept();
         EXPECT_EQ(0, peerSet.size());
         peerSet.activate(srvrPeer); // Executes peer on new thread
         EXPECT_EQ(1, peerSet.size());
@@ -224,7 +241,7 @@ TEST_F(PeerSetTest, Exchange)
 
     // Start client
     hycast::PeerSet clntPeerSet{*this};
-    clntPeer = factory.connect(srvrAddr);
+    clntPeer = clntFactory.connect(srvrAddr);
     EXPECT_EQ(0, clntPeerSet.size());
     clntPeerSet.activate(clntPeer); // Executes `clntPeer` on new thread
     EXPECT_EQ(1, clntPeerSet.size());

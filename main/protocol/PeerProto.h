@@ -14,6 +14,7 @@
 #define MAIN_PROTOCOL_PEERPROTO_H_
 
 #include "hycast.h"
+#include "NodeType.h"
 #include "PortPool.h"
 #include "Socket.h"
 
@@ -30,8 +31,16 @@ public:
     virtual ~PeerProtoObs() noexcept
     {}
 
+    /**
+     * Handles the remote node transitioning from not having a path to the
+     * source of data-products to having one.
+     */
     virtual void pathToSrc() noexcept =0;
 
+    /**
+     * Handles the remote node transitioning from having a path to the source of
+     * data-products to not having one.
+     */
     virtual void noPathToSrc() noexcept =0;
 
     /**
@@ -97,25 +106,26 @@ public:
      * @param[in]     sock      Server's listening TCP socket
      * @param[in,out] portPool  Pool of port numbers for transient servers
      * @param[in]     observer  Observer of this instance
-     * @param[in]     isSource  This instance will be the source of
-     *                          data-products
+     * @param[in]     nodeType  Type of node
      * @cancellationpoint       Yes
      */
     PeerProto(
-            TcpSock&      sock,
-            PortPool&     portPool,
-            PeerProtoObs& observer,
-            bool          isSource = false);
+            TcpSock&       sock,
+            PortPool&      portPool,
+            NodeType&      nodeType,
+            PeerProtoObs&  observer);
 
     /**
      * Client-side construction.
      *
      * @param[in] rmtSrvrAddr  Socket address of remote peer-server
+     * @param[in] nodeType     Type of local node
      * @param[in] observer     Observer of this instance
      * @cancellationpoint      Yes
      */
     PeerProto(
             const SockAddr& rmtSrvrAddr,
+            NodeType&       nodeType,
             PeerProtoObs&   observer);
 
     operator bool() const;
@@ -145,6 +155,16 @@ public:
     std::string to_string() const;
 
     /**
+     * Indicates if, after construction, the remote node is a path to the source
+     * of data-products. The result can be changed later by this instance
+     * calling `pathToSrc()` and `noPathToSrc()` after `operator()` is called.
+     *
+     * @retval `false`  Remove node is not a path to source
+     * @retval `true`   Remove node is a path to source
+     */
+    bool isPathToSrc() const noexcept;
+
+    /**
      * Executes this instance.
      *
      * @throws SystemError   System error
@@ -158,6 +178,18 @@ public:
      * remote peer.
      */
     void halt() const;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to being
+     * a path to the source of data-products.
+     */
+    void gotPath() const;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to not
+     * being a path to the source of data-products.
+     */
+    void lostPath() const;
 
     /**
      * Notifies the remote peer of available product information.

@@ -14,12 +14,11 @@
 #include "FileUtil.h"
 #include "hycast.h"
 #include "Peer.h"
-#include "Receiver.h"
-#include "Sender.h"
-
 #include <condition_variable>
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <main/pub_sub/Publisher.h>
+#include <main/pub_sub/Subscriber.h>
 #include <mutex>
 #include <thread>
 #include <unistd.h>
@@ -27,7 +26,7 @@
 namespace {
 
 /// The fixture for testing classes `Sender` and `Receiver`
-class SndrRcvrTest : public ::testing::Test, public hycast::PeerChngObs,
+class PubSubTest : public ::testing::Test, public hycast::PeerChngObs,
         public hycast::RcvRepoObs
 {
 protected:
@@ -60,7 +59,7 @@ protected:
     hycast::ServerPool        p2pSrvrPool;
     int                       numPeers;
 
-    SndrRcvrTest()
+    PubSubTest()
         : mutex()
         , cond()
         , rcvrConnected{false}
@@ -95,7 +94,7 @@ protected:
         ::memset(memData, 0xbd, segSize);
     }
 
-    virtual ~SndrRcvrTest()
+    virtual ~PubSubTest()
     {
     }
 
@@ -139,29 +138,29 @@ public:
 };
 
 // Tests sender construction
-TEST_F(SndrRcvrTest, SenderConstruction)
+TEST_F(PubSubTest, SenderConstruction)
 {
-    hycast::Sender(sndrP2pInfo, grpSockAddr, sndrRepo, *this);
+    hycast::Publisher(sndrP2pInfo, grpSockAddr, sndrRepo, *this);
 }
 
 // Tests receiver construction
-TEST_F(SndrRcvrTest, ReceiverConstruction)
+TEST_F(PubSubTest, ReceiverConstruction)
 {
-    hycast::Receiver(srcMcastInfo, rcvrP2pInfo, p2pSrvrPool, rcvrRepo, *this);
+    hycast::Subscriber(srcMcastInfo, rcvrP2pInfo, p2pSrvrPool, rcvrRepo, *this);
 }
 
 // Tests sending
-TEST_F(SndrRcvrTest, Sending)
+TEST_F(PubSubTest, Sending)
 {
     try {
         // Construct sender
-        hycast::Sender sender(sndrP2pInfo, grpSockAddr, sndrRepo, *this);
-        std::thread    sndrThread(&hycast::Sender::operator(), &sender);
+        hycast::Publisher sender(sndrP2pInfo, grpSockAddr, sndrRepo, *this);
+        std::thread    sndrThread(&hycast::Publisher::operator(), &sender);
 
         // Construct receiver
-        hycast::Receiver receiver(srcMcastInfo, rcvrP2pInfo, p2pSrvrPool,
+        hycast::Subscriber receiver(srcMcastInfo, rcvrP2pInfo, p2pSrvrPool,
                 rcvrRepo, *this);
-        std::thread      rcvrThread(&hycast::Receiver::operator(), &receiver);
+        std::thread      rcvrThread(&hycast::Subscriber::operator(), &receiver);
 
         // Wait until the receiver connects
         {

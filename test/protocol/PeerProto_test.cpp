@@ -161,7 +161,8 @@ public:
             orState(LISTENING);
 
             hycast::TcpSock    sock{srvrSock.accept()};
-            srvrProto = hycast::PeerProto(sock, portPool, *this, true);
+            hycast::NodeType   nodeType;
+            srvrProto = hycast::PeerProto(sock, portPool, nodeType, *this);
 
             orState(CONNECTED);
 
@@ -190,7 +191,8 @@ TEST_F(PeerProtoTest, Exchange)
         waitForBit(LISTENING);
 
         // Start client
-        hycast::PeerProto clntProto{srvrAddr, *this};
+        hycast::NodeType  nodeType;
+        hycast::PeerProto clntProto{srvrAddr, nodeType, *this};
         std::thread       clntThread(clntProto);
 
         try {

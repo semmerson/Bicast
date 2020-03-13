@@ -36,6 +36,22 @@ public:
     {}
 
     /**
+     * Handles the remote node transitioning from not having a path to the
+     * source of data-products to having one.
+     *
+     * @param peer  Relevant peer
+     */
+    virtual void pathToSrc(Peer peer) =0;
+
+    /**
+     * Handles the remote node transitioning from having a path to the source of
+     * data-products to not having one.
+     *
+     * @param peer  Relevant peer
+     */
+    virtual void noPathToSrc(Peer peer) =0;
+
+    /**
      * Indicates if product-information should be requested.
      *
      * @param[in] prodIndex  Identifier of product
@@ -125,21 +141,23 @@ public:
      * @param[in]     sock      `::accept()`ed connection to the client peer
      * @param[in,out] portPool  Pool of port numbers for temporary servers
      * @param[in]     peerObs   Observer of this instance
-     * @param[in]     isSource  Is this instance the source of data-products?
+     * @param[in]     nodeType  Type of node
      */
     Peer(   TcpSock&  sock,
             PortPool& portPool,
             PeerObs&  peerObs,
-            bool      isSource = false);
+            NodeType& nodeType);
 
     /**
      * Client-side construction.
      *
      * @param[in] sock      `::connect()`ed connection to the server peer
      * @param[in] peerObs   Observer of this instance
+     * @param[in] nodeType  Type of local node
      */
     Peer(   const SockAddr& rmtSrvrAddr,
-            PeerObs&        peerObs);
+            PeerObs&        peerObs,
+            NodeType&       nodeType);
 
     /**
      * Copy construction.
@@ -149,6 +167,8 @@ public:
     Peer(const Peer& peer);
 
     ~Peer() noexcept;
+
+    operator bool() const noexcept;
 
     /**
      * Returns the socket address of the remote peer. On the client-side, this
@@ -166,7 +186,13 @@ public:
      */
     const SockAddr getLclAddr() const noexcept;
 
-    operator bool() const noexcept;
+    /**
+     * Indicates if this instance resulted from a call to `::connect()`.
+     *
+     * @retval `false`  No
+     * @retval `true`   Yes
+     */
+    bool isFromConnect() const noexcept;
 
     Peer& operator=(const Peer& rhs);
 
@@ -192,6 +218,26 @@ public:
      * @cancellationpoint No
      */
     void halt() const noexcept;
+
+    /**
+     * Indicates if the remote peer is a path to the source of data-products.
+     *
+     * @retval `false`  Remote peer is not path to source
+     * @retval `true`   Remote peer is path to source
+     */
+    bool isPathToSrc() const noexcept;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to being
+     * a path to the source of data-products.
+     */
+    void gotPath() const;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to not
+     * being a path to the source of data-products.
+     */
+    void lostPath() const;
 
     /**
      * Notifies the remote peer about the availability of product-information.

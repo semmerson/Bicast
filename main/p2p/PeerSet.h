@@ -59,6 +59,24 @@ public:
     bool activate(const Peer peer);
 
     /**
+     * Notifies all peers in the set, except one, that the local node has
+     * transitioned from not having a path to the source of data-products to
+     * having one.
+     *
+     * @param[in] notPeer  Peer to skip
+     */
+    void gotPath(Peer notPeer);
+
+    /**
+     * Notifies all peers in the set, except one, that the local node has
+     * transitioned from having a path to the source of data-products to
+     * not having one.
+     *
+     * @param[in] notPeer  Peer to skip
+     */
+    void lostPath(Peer notPeer);
+
+    /**
      * Notifies all the peers in the set of available product-information.
      *
      * @param[in] prodIndex  Indentifier of product

@@ -10,8 +10,8 @@
  *      Author: Steven R. Emmerson
  */
 
-#ifndef MAIN_SENDER_RECEIVER_SENDER_H_
-#define MAIN_SENDER_RECEIVER_SENDER_H_
+#ifndef MAIN_PUB_SUB_PUBLISHER_H_
+#define MAIN_PUB_SUB_PUBLISHER_H_
 
 #include "Socket.h"
 #include "P2pMgr.h"
@@ -21,13 +21,13 @@
 
 namespace hycast {
 
-class Sender
+class Publisher
 {
 protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    Sender(Impl* const impl);
+    Publisher(Impl* const impl);
 
 public:
     /**
@@ -39,7 +39,7 @@ public:
      * @param[in] repo         Repository of transitory data-products to be sent
      * @param[in] sndrObs      Observer of this instance
      */
-    Sender(
+    Publisher(
         P2pInfo&        p2pSrvrInfo,
         const SockAddr& grpAddr,
         SndRepo&        repo,
@@ -56,4 +56,4 @@ public:
 
 } // namespace
 
-#endif /* MAIN_SENDER_RECEIVER_SENDER_H_ */
+#endif /* MAIN_PUB_SUB_PUBLISHER_H_ */

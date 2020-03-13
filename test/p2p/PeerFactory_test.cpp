@@ -99,6 +99,12 @@ public:
             cond.wait(lock);
     }
 
+    void pathToSrc(hycast::Peer peer)
+    {}
+
+    void noPathToSrc(hycast::Peer peer)
+    {}
+
     // Receiver-side
     bool shouldRequest(
             const hycast::ProdIndex actual,
@@ -193,7 +199,8 @@ public:
 TEST_F(PeerFactoryTest, FactoryClosure)
 {
     // Start a server. Calls `::listen()`.
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    hycast::NodeType    nodeType{hycast::NodeType::NO_PATH_TO_SOURCE};
+    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this, nodeType);
     std::thread         srvrThread(&PeerFactoryTest::runServer, this,
             std::ref(factory));
 
@@ -217,7 +224,8 @@ TEST_F(PeerFactoryTest, FactoryClosure)
 TEST_F(PeerFactoryTest, Exchange)
 {
     // Start a server. Calls `::listen()`.
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    hycast::NodeType    nodeType{hycast::NodeType::NO_PATH_TO_SOURCE};
+    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this, nodeType);
     std::thread         srvrThread(&PeerFactoryTest::runServer, this,
             std::ref(factory));
 

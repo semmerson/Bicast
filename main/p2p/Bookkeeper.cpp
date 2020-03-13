@@ -32,14 +32,10 @@ class Bookkeeper::Impl
         /// Requested chunks that haven't been received
         Bookkeeper::ChunkIds    reqChunks;
         uint_fast32_t           chunkCount;  ///< Number of received messages
-        bool                    fromConnect; ///< Resulted from `::connect()`?
 
-        PeerInfo() =default;
-
-        PeerInfo(const bool fromConnect)
+        PeerInfo()
             : reqChunks()
             , chunkCount{0}
-            , fromConnect{fromConnect}
         {}
     } PeerInfo;
 
@@ -73,38 +69,41 @@ public:
      * Adds a peer.
      *
      * @param[in] peer            The peer
-     * @param[in] fromConnect     Did the peer result from `::connect()`?
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void add(
-            const Peer& peer,
-            const bool  fromConnect)
+    void add(const Peer& peer)
     {
         Guard guard(mutex);
 
-        peerInfos.emplace(peer, fromConnect);
+        peerInfos.insert({peer, PeerInfo()});
     }
 
     /**
-     * Indicates if a peer resulted from a call to `::connect()`.
+     * Returns the number of remote peers that are a path to the source of
+     * data-products and the number that aren't.
      *
-     * @param[in] peer            The peer
-     * @retval    `true`          The peer did result from a call to
-     *                            `::connect()`
-     * @retval    `false`         The peer did not result from a call to
-     *                            `::connect()`
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
+     * @param[out] numPath    Number of remote peers that are path to source
+     * @param[out] numNoPath  Number of remote peers that aren't path to source
      */
-    bool isFromConnect(const Peer& peer) const
+    void getSrcPathCounts(
+            unsigned& numPath,
+            unsigned& numNoPath)
     {
         Guard guard(mutex);
-        return peerInfos.at(peer).fromConnect;
+
+        numPath = numNoPath = 0;
+
+        for (auto& pair : peerInfos) {
+            if (pair.first.isPathToSrc()) {
+                ++numPath;
+            }
+            else {
+                ++numNoPath;
+            }
+        }
     }
 
     /**
@@ -217,12 +216,46 @@ public:
         Peer          peer{};
         Guard         guard(mutex);
 
-        for (auto elt : peerInfos) {
+        for (auto& elt : peerInfos) {
             auto count = elt.second.chunkCount;
 
             if (count < minCount) {
                 minCount = count;
                 peer = elt.first;
+            }
+        }
+
+        return peer;
+    }
+
+    /**
+     * Returns a worst performing peer.
+     *
+     * @param[in] isPathToSrc     Attribute that peer must have
+     * @return                    A worst performing peer -- whose
+     *                            `isPathToSrc()` return value equals
+     *                            `isPathToSrc` -- since construction or
+     *                            `resetCounts()` was called. Will test false if
+     *                            the set is empty.
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Strong guarantee
+     * @cancellationpoint         No
+     */
+    Peer getWorstPeer(const bool isPathToSrc)
+    {
+        unsigned long minCount{ULONG_MAX};
+        Peer          peer{};
+        Guard         guard(mutex);
+
+        for (auto elt : peerInfos) {
+            if (elt.first.isPathToSrc() == isPathToSrc) {
+                auto count = elt.second.chunkCount;
+
+                if (count < minCount) {
+                    minCount = count;
+                    peer = elt.first;
+                }
             }
         }
 
@@ -344,16 +377,16 @@ Bookkeeper::Bookkeeper(const int maxPeers)
     : pImpl{new Impl(maxPeers)}
 {}
 
-void Bookkeeper::add(
-        const Peer& peer,
-        const bool  fromConnect) const
+void Bookkeeper::add(const Peer& peer) const
 {
-    pImpl->add(peer, fromConnect);
+    pImpl->add(peer);
 }
 
-bool Bookkeeper::isFromConnect(const Peer& peer) const
+void Bookkeeper::getSrcPathCounts(
+        unsigned& numPath,
+        unsigned& numNoPath) const
 {
-    return pImpl->isFromConnect(peer);
+    pImpl->getSrcPathCounts(numPath, numNoPath);
 }
 
 bool Bookkeeper::shouldRequest(
@@ -373,6 +406,11 @@ bool Bookkeeper::received(
 Peer Bookkeeper::getWorstPeer() const
 {
     return pImpl->getWorstPeer();
+}
+
+Peer Bookkeeper::getWorstPeer(const bool isPathToSrc) const
+{
+    return pImpl->getWorstPeer(isPathToSrc);
 }
 
 void Bookkeeper::resetCounts() const noexcept

@@ -18,6 +18,7 @@
 #include "ChunkIdQueue.h"
 #include "error.h"
 #include "hycast.h"
+#include "NodeType.h"
 #include "PeerProto.h"
 
 #include <condition_variable>
@@ -40,18 +41,19 @@ private:
 
     mutable Mutex  doneMutex;       ///< For protecting `done`
     mutable Cond   doneCond;        ///< For checking `done`
+    const bool     fromConnect;     ///< Instance is result of `::connect()`?
     ChunkIdQueue   noticeQueue;     ///< Queue for notices
     ChunkIdQueue   requestQueue;    ///< Queue for requests
     /// Remote site has path to source? Must be initialized before `peerProto`.
-    AtomicBool     rmtHasPathToSrc;
-    PeerProto      peerProto;       ///< Peer-to-peer protocol object
+    Peer&          peer;            ///< Containing `Peer`
     PeerObs&       peerObs;         ///< Observer of this instance
     std::thread    notifierThread;  ///< Thread on which notices are sent
     std::thread    requesterThread; ///< Thread on which requests are made
     std::thread    peerProtoThread; ///< Thread on which peerProto() executes
     ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
     bool           done;            ///< Terminate without an exception?
-    Peer&          peer;            ///< Containing `Peer`
+    PeerProto      peerProto;       ///< Peer-to-peer protocol object
+    AtomicBool     rmtHasPathToSrc;
 
     void handleException(const ExceptPtr& exPtr)
     {
@@ -198,30 +200,31 @@ public:
      * Server-side construction (i.e., from an `::accept()`). Constructs from a
      * connection to a remote peer and an observer of this instance.
      *
-     * @param[in] sock      TCP socket with remote peer
-     * @param[in] portPool  Pool of port numbers for temporary servers
-     * @param[in] peerObs   Observer of this instance
-     * @param[in] isSource  Is this instance the source of data-products?
-     * @param[in] peer      Containing local peer
+     * @param[in]     sock      TCP socket with remote peer
+     * @param[in]     portPool  Pool of port numbers for temporary servers
+     * @param[in]     peerObs   Observer of this instance
+     * @param[in,out] nodeType  Type of local node
+     * @param[in]     peer      Containing local peer
      */
     Impl(   TcpSock&   sock,
             PortPool&  portPool,
             PeerObs&   peerObs,
-            const bool isSource,
+            NodeType&  nodeType,
             Peer&      peer)
         : doneMutex()
         , doneCond()
+        , fromConnect{false}
         , noticeQueue{}
         , requestQueue{}
-        , rmtHasPathToSrc{false}
-        , peerProto{sock, portPool, *this, isSource} // Might call `pathToSrc()`
+        , peer(peer)
         , peerObs(peerObs) // Braces don't work
         , notifierThread{}
         , requesterThread{}
         , peerProtoThread{}
         , exceptPtr()
         , done{false}
-        , peer(peer)
+        , peerProto{sock, portPool, nodeType, *this}
+        , rmtHasPathToSrc{peerProto.isPathToSrc()}
     {}
 
     /**
@@ -230,24 +233,27 @@ public:
      *
      * @param[in] rmtSrvrAddr  Address of remote peer-server
      * @param[in] peerObs      Observer of this instance
-     * @param[in] peer         Containing local peer
+     * @param[in] nodeType     Type of local node
+     * @param[in] peer         Local peer that contains this instance
      */
     Impl(   const SockAddr& rmtSrvrAddr,
             PeerObs&        peerObs,
+            NodeType&       nodeType,
             Peer&           peer)
         : doneMutex()
         , doneCond()
+        , fromConnect{true}
         , noticeQueue{}
         , requestQueue{}
-        , rmtHasPathToSrc{false}
-        , peerProto{rmtSrvrAddr, *this}
+        , peer(peer)
         , peerObs(peerObs) // Braces don't work
         , notifierThread{}
         , requesterThread{}
         , peerProtoThread{}
         , exceptPtr()
         , done{false}
-        , peer(peer)
+        , peerProto{rmtSrvrAddr, nodeType, *this}
+        , rmtHasPathToSrc{peerProto.isPathToSrc()}
     {}
 
     ~Impl() noexcept
@@ -275,6 +281,16 @@ public:
      */
     SockAddr getLclAddr() const noexcept {
         return peerProto.getLclAddr();
+    }
+
+    /**
+     * Indicates if this instance resulted from a call to `::connect()`.
+     *
+     * @retval `false`  No
+     * @retval `true`   Yes
+     */
+    bool isFromConnect() const noexcept {
+        return fromConnect;
     }
 
     /**
@@ -327,6 +343,24 @@ public:
         setDone();
     }
 
+    /**
+     * Notifies the remote peer that this local node just transitioned to being
+     * a path to the source of data-products.
+     */
+    void gotPath()
+    {
+        peerProto.gotPath();
+    }
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to not
+     * being a path to the source of data-products.
+     */
+    void lostPath()
+    {
+        peerProto.lostPath();
+    }
+
     void notify(ProdIndex prodIndex)
     {
         noticeQueue.push(prodIndex);
@@ -353,19 +387,28 @@ public:
     }
 
     /**
-     * Called by `peerProto`.
+     * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
+     * called.
      */
     void pathToSrc() noexcept
     {
         rmtHasPathToSrc = true;
+        peerObs.pathToSrc(peer);
     }
 
     /**
-     * Called by `peerProto`.
+     * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
+     * called.
      */
     void noPathToSrc() noexcept
     {
         rmtHasPathToSrc = false;
+        peerObs.noPathToSrc(peer);
+    }
+
+    bool isPathToSrc() const noexcept
+    {
+        return rmtHasPathToSrc;
     }
 
     void acceptNotice(ProdIndex prodIndex)
@@ -479,17 +522,18 @@ Peer::Peer()
 {}
 
 Peer::Peer(
-        TcpSock&   sock,
-        PortPool&  portPool,
-        PeerObs&   peerObs,
-        const bool isSource)
-    : pImpl{new Impl(sock, portPool, peerObs, isSource, *this)}
+        TcpSock&  sock,
+        PortPool& portPool,
+        PeerObs&  peerObs,
+        NodeType& nodeType)
+    : pImpl{new Impl(sock, portPool, peerObs, nodeType, *this)}
 {}
 
 Peer::Peer(
         const SockAddr& rmtSrvrAddr,
-        PeerObs&        peerObs)
-    : pImpl{new Impl(rmtSrvrAddr, peerObs, *this)}
+        PeerObs&        peerObs,
+        NodeType&       nodeType)
+    : pImpl{new Impl(rmtSrvrAddr, peerObs, nodeType, *this)}
 {}
 
 Peer::Peer(const Peer& peer)
@@ -499,6 +543,10 @@ Peer::Peer(const Peer& peer)
 Peer::~Peer() noexcept
 {}
 
+Peer::operator bool() const noexcept {
+    return pImpl.operator bool();
+}
+
 const SockAddr Peer::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }
@@ -507,8 +555,8 @@ const SockAddr Peer::getLclAddr() const noexcept {
     return pImpl->getLclAddr();
 }
 
-Peer::operator bool() const noexcept {
-    return pImpl.operator bool();
+bool Peer::isFromConnect() const noexcept {
+    return pImpl->isFromConnect();
 }
 
 Peer& Peer::operator=(const Peer& rhs)
@@ -537,6 +585,21 @@ void Peer::halt() const noexcept
 {
     if (pImpl)
         pImpl->halt();
+}
+
+bool Peer::isPathToSrc() const noexcept
+{
+    return pImpl->isPathToSrc();
+}
+
+void Peer::gotPath() const
+{
+    pImpl->gotPath();
+}
+
+void Peer::lostPath() const
+{
+    pImpl->lostPath();
 }
 
 void Peer::notify(ProdIndex prodIndex) const

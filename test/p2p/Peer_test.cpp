@@ -83,6 +83,12 @@ public:
             cond.wait(lock);
     }
 
+    void pathToSrc(hycast::Peer peer)
+    {}
+
+    void noPathToSrc(hycast::Peer peer)
+    {}
+
     // Receiver-side
     bool shouldRequest(
             const hycast::ProdIndex actual,
@@ -162,7 +168,8 @@ public:
             orState(LISTENING);
 
             hycast::TcpSock   peerSock{srvrSock.accept()};
-            hycast::Peer      srvrPeer{peerSock, portPool, *this};
+            hycast::NodeType  nodeType{};
+            hycast::Peer      srvrPeer{peerSock, portPool, *this, nodeType};
 
             hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInetAddr());
@@ -196,8 +203,10 @@ TEST_F(PeerTest, DataExchange)
 
         {
             // Start the client
-            hycast::Peer clntPeer{srvrAddr, *this}; // Potentially slow
-            std::thread  clntThread(clntPeer);
+            hycast::NodeType  nodeType{};
+            // Potentially slow
+            hycast::Peer      clntPeer{srvrAddr, *this, nodeType};
+            std::thread       clntThread(clntPeer);
 
             try {
                 // Start an exchange
@@ -207,7 +216,8 @@ TEST_F(PeerTest, DataExchange)
                 // Wait for the exchange to complete
                 waitForState(DONE);
 
-                clntPeer.halt(); // `clntPeer()` returns & `clntThread` terminates
+                // `clntPeer()` returns & `clntThread` terminates
+                clntPeer.halt();
                 clntThread.join();
             }
             catch (const std::exception& ex) {
