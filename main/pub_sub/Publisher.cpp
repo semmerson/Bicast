@@ -1,20 +1,21 @@
 /**
- * Transmitts data-products via the Hycast protocol.
+ * Publisher node.
  *
  * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *        File: Sender.cpp
+ *        File: Publisher.cpp
  *  Created on: Jan 3, 2020
  *      Author: Steven R. Emmerson
  */
 
-#include <main/pub_sub/Publisher.h>
 #include "config.h"
+
 #include "error.h"
 #include "McastProto.h"
 #include "P2pMgr.h"
+#include "Publisher.h"
 
 namespace hycast {
 
@@ -131,7 +132,7 @@ public:
 /******************************************************************************/
 
 Publisher::Publisher(
-        P2pInfo&    p2pSrvrInfo,
+        P2pInfo&        p2pSrvrInfo,
         const SockAddr& grpAddr,
         PubRepo&        repo,
         PeerChngObs&    sndrObs)

@@ -1,11 +1,11 @@
 /**
- * Sends data-product via Hycast.
+ * Publisher node.
  *
  * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *        File: Sender.h
+ *        File: Publisher.h
  *  Created on: Jan 3, 2020
  *      Author: Steven R. Emmerson
  */
