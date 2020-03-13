@@ -405,7 +405,7 @@ std::string Repository::getPathname(const std::string name) const
 /******************************************************************************/
 /******************************************************************************/
 
-class SndRepo::Impl final : public Repository::Impl
+class PubRepo::Impl final : public Repository::Impl
 {
     ProdFiles<SndProdEntry> prodFiles; ///< Product files
 
@@ -488,37 +488,37 @@ public:
 
 /******************************************************************************/
 
-SndRepo::SndRepo(
+PubRepo::PubRepo(
         const std::string& rootPathname,
         const SegSize      segSize)
     : Repository{new Impl(rootPathname, segSize)}
 {}
 
-void SndRepo::newProd(
+void PubRepo::newProd(
         const std::string& prodName,
         const ProdIndex    prodIndex)
 {
-    static_cast<SndRepo::Impl*>(pImpl.get())->newProd(prodName, prodIndex);
+    static_cast<PubRepo::Impl*>(pImpl.get())->newProd(prodName, prodIndex);
 }
 
-bool SndRepo::exists(const ProdIndex prodIndex) const
+bool PubRepo::exists(const ProdIndex prodIndex) const
 {
-    return static_cast<SndRepo::Impl*>(pImpl.get())->exists(prodIndex);
+    return static_cast<PubRepo::Impl*>(pImpl.get())->exists(prodIndex);
 }
 
-bool SndRepo::exists(const SegId& segId) const
+bool PubRepo::exists(const SegId& segId) const
 {
-    return static_cast<SndRepo::Impl*>(pImpl.get())->exists(segId);
+    return static_cast<PubRepo::Impl*>(pImpl.get())->exists(segId);
 }
 
-ProdInfo SndRepo::getProdInfo(const ProdIndex prodIndex) const
+ProdInfo PubRepo::getProdInfo(const ProdIndex prodIndex) const
 {
-    return static_cast<SndRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+    return static_cast<PubRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg SndRepo::getMemSeg(const SegId& segId) const
+MemSeg PubRepo::getMemSeg(const SegId& segId) const
 {
-    return static_cast<SndRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+    return static_cast<PubRepo::Impl*>(pImpl.get())->getMemSeg(segId);
 }
 
 /******************************************************************************/

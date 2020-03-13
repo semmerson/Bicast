@@ -64,14 +64,14 @@ public:
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::SndRepo srcRepo(rootPath, segSize);
+    hycast::PubRepo srcRepo(rootPath, segSize);
     hycast::RcvRepo snkRepo(rootPath, segSize, *this);
 }
 
 // Tests pathname of file
 TEST_F(RepositoryTest, Pathname)
 {
-    hycast::SndRepo repo(rootPath, segSize);
+    hycast::PubRepo repo(rootPath, segSize);
     std::cout << "ProdId pathname: " << repo.getPathname(prodIndex) << '\n';
 
     const std::string& name = prodInfo.getProdName();
@@ -187,7 +187,7 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
 TEST_F(RepositoryTest, CreatProdForSending)
 {
     // Create file
-    hycast::SndRepo repo(rootPath, segSize);
+    hycast::PubRepo repo(rootPath, segSize);
     std::string     namePath = repo.getPathname(prodInfo.getProdName());
     int             status = ::unlink(namePath.data());
     ASSERT_TRUE(status == 0 || errno == ENOENT);

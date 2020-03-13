@@ -22,7 +22,7 @@ class Publisher::Impl : public P2pMgrObs
 {
     P2pMgr       p2pMgr;
     McastSndr    mcastSndr;
-    SndRepo      repo;
+    PubRepo      repo;
     PeerChngObs& sndrObs;
     SegSize      segSize;
 
@@ -41,7 +41,7 @@ class Publisher::Impl : public P2pMgrObs
 public:
     Impl(   P2pInfo&    p2pSrvrInfo,
             const SockAddr& grpAddr,
-            SndRepo&        repo,
+            PubRepo&        repo,
             PeerChngObs&    sndrObs)
         : p2pMgr{}
         , mcastSndr{UdpSock(grpAddr)}
@@ -133,7 +133,7 @@ public:
 Publisher::Publisher(
         P2pInfo&    p2pSrvrInfo,
         const SockAddr& grpAddr,
-        SndRepo&        repo,
+        PubRepo&        repo,
         PeerChngObs&    sndrObs)
     : pImpl{new Impl(p2pSrvrInfo,  grpAddr, repo, sndrObs)}
 {}

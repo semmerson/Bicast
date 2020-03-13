@@ -53,7 +53,7 @@ protected:
     const int                 maxPeers;
     hycast::P2pInfo           sndrP2pInfo;
     hycast::P2pInfo           rcvrP2pInfo;
-    hycast::SndRepo           sndrRepo;
+    hycast::PubRepo           sndrRepo;
     hycast::RcvRepo           rcvrRepo;
     hycast::SrcMcastAddrs      srcMcastInfo;
     hycast::ServerPool        p2pSrvrPool;

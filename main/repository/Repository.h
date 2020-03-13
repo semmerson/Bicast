@@ -133,9 +133,9 @@ public:
 /******************************************************************************/
 
 /**
- * Sender-side repository.
+ * Publisher-side repository.
  */
-class SndRepo final : public Repository
+class PubRepo final : public Repository
 {
     class Impl;
 
@@ -146,7 +146,7 @@ public:
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
      */
-    SndRepo(const std::string& rootPathname,
+    PubRepo(const std::string& rootPathname,
             SegSize            segSize);
 
     /**

@@ -42,7 +42,7 @@ public:
     Publisher(
         P2pInfo&        p2pSrvrInfo,
         const SockAddr& grpAddr,
-        SndRepo&        repo,
+        PubRepo&        repo,
         PeerChngObs&    sndrObs);
 
     void operator()() const;
