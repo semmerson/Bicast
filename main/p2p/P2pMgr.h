@@ -13,61 +13,49 @@
 #ifndef MAIN_PEER_P2PMGR_H_
 #define MAIN_PEER_P2PMGR_H_
 
-#include "PortPool.h"
+#include <main/inet/PortPool.h>
+#include <main/inet/SockAddr.h>
 #include "PeerSet.h"
 #include "ServerPool.h"
-#include "SockAddr.h"
-
 #include <memory>
 
 namespace hycast {
 
-/******************************************************************************/
-
-struct P2pInfo
+/**
+ * Interface for a sender on a P2P network.
+ */
+class P2pSndr
 {
-    SockAddr   sockAddr;    ///< Server's socket address
-    PortPool   portPool;    ///< Pool of port numbers for transitory servers
-    int        listenSize;  ///< Server's `::listen()` size
-    int        maxPeers;    ///< Maximum number of peers
+public:
+    virtual ~P2pSndr() noexcept =default;
+
+    /**
+     * Returns product-information.
+     *
+     * @param[in] prodIndex   identifier of product
+     * @return                The information. Will test false if it doesn't
+     *                        exist.
+     */
+    virtual ProdInfo getProdInfo(ProdIndex prodIndex) =0;
+
+    /**
+     * Returns a data-segment.
+     *
+     * @param[in] segId       Identifier of data-segment
+     * @return                The segment. Will test false if it doesn't exist.
+     */
+    virtual MemSeg getMemSeg(const SegId& segId) =0;
 };
 
 /******************************************************************************/
 
-class P2pMgr; // Forward declaration
-
 /**
- * Interface for an observer of peer changes.
+ * Interface for a subscriber on a P2P network.
  */
-class PeerChngObs
+class P2pSub : public P2pSndr
 {
 public:
-    virtual ~PeerChngObs() noexcept;
-
-    /**
-     * Accepts notification that a local peer has been added.
-     *
-     * @param[in] peer        Local peer
-     * @throws    logicError  Shouldn't have been called
-     */
-    virtual void added(Peer& peer);
-
-    /**
-     * Accepts notification that a local peer has been removed.
-     *
-     * @param[in] peer        Local peer
-     * @throws    logicError  Shouldn't have been called
-     */
-    virtual void removed(Peer& peer);
-};
-
-/**
- * Interface for an observer of a peer-to-peer manager.
- */
-class P2pMgrObs : public PeerChngObs
-{
-public:
-    virtual ~P2pMgrObs() noexcept =0;
+    virtual ~P2pSub() noexcept =default;
 
     /**
      * Indicates if product-information should be requested.
@@ -86,23 +74,6 @@ public:
      * @retval    `false`    The segment should not be requested
      */
     virtual bool shouldRequest(const SegId& segId) =0;
-
-    /**
-     * Returns product-information.
-     *
-     * @param[in] prodIndex   identifier of product
-     * @return                The information. Will test false if it doesn't
-     *                        exist.
-     */
-    virtual ProdInfo get(ProdIndex prodIndex) =0;
-
-    /**
-     * Returns a data-segment.
-     *
-     * @param[in] segId       Identifier of data-segment
-     * @return                The segment. Will test false if it doesn't exist.
-     */
-    virtual MemSeg get(const SegId& segId) =0;
 
     /**
      * Accepts product-information.
@@ -125,20 +96,25 @@ public:
     virtual bool hereIs(TcpSeg& tcpSeg) =0;
 };
 
+/******************************************************************************/
+
+struct P2pInfo
+{
+    SockAddr   sockAddr;    ///< Server's socket address
+    PortPool   portPool;    ///< Pool of port numbers for transitory servers
+    int        listenSize;  ///< Server's `::listen()` size
+    int        maxPeers;    ///< Maximum number of peers
+};
+
+/******************************************************************************/
+
 /**
- * Manager of a peer-to-peer network.
+ * A manager of a peer-to-peer network.
  */
 class P2pMgr
 {
-protected:
+public:
     class Impl;
-
-    /**
-     * Constructs from an implementation.
-     *
-     * @param[in] impl  The implementation
-     */
-    P2pMgr(Impl* const impl);
 
 private:
     std::shared_ptr<Impl> pImpl;
@@ -150,35 +126,24 @@ public:
     P2pMgr();
 
     /**
-     * Constructs. Calls `::listen()`.
+     * Constructs a publisher's peer-to-peer manager. Calls `::listen()`.
      *
-     * @param[in] srvrAddr    Socket address of local server that accepts
-     *                        connections from remote peers
-     * @param[in] listenSize  Size of server's `::listen()` queue
-     * @param[in] portPool    Pool of available port numbers for the local
-     *                        server to use when necessary
-     * @param[in] maxPeers    Maximum number of active peers in the set
-     * @param[in] serverPool  Pool of possible remote servers for remote peers
-     * @param[in] p2pMgrObs   Observer of this peer-to-peer manager
+     * @param[in] p2pInfo       Peer-to-peer execution parameters
+     * @param[in] p2pPub        Peer-to-peer publisher
      */
-    P2pMgr( const SockAddr& srvrAddr,
-            const int       listenSize,
-            PortPool&       portPool,
-            const int       maxPeers,
-            ServerPool&     serverPool,
-            P2pMgrObs&      p2pMgrObs);
+    P2pMgr( P2pInfo&  p2pInfo,
+            P2pSndr&  p2pPub);
 
     /**
-     * Constructs. Calls `::listen()`.
+     * Constructs a subscriber's peer-to-peer manager. Calls `::listen()`.
      *
-     * @param[in] p2pInfo      Peer-to-peer execution parameters
-     * @param[in] p2pSrvrPool  Pool of remote P2P servers
-     * @param[in] p2pMgrObs    Observer of this peer-to-peer manager
+     * @param[in] p2pInfo       Peer-to-peer execution parameters
+     * @param[in] p2pSrvrPool   Pool of remote P2P servers
+     * @param[in] p2pSub        Peer-to-peer subscriber
      */
-    P2pMgr(
-            P2pInfo&    p2pInfo,
-            ServerPool& p2pSrvrPool,
-            P2pMgrObs&  p2pMgrObs);
+    P2pMgr( P2pInfo&      p2pInfo,
+            ServerPool&   p2pSrvrPool,
+            P2pSub&       p2pSub);
 
     /**
      * Sets the time period over which this instance will attempt to replace the
@@ -217,14 +182,14 @@ public:
      *
      * @param[in] prodIndex  Identifier of product
      */
-    void notify(ProdIndex prodIndex);
+    void notify(const ProdIndex prodIndex) const;
 
     /**
      * Notifies all the managed peers about an available data-segment.
      *
      * @param[in] segId  Identifier of data-segment
      */
-    void notify(const SegId& segId);
+    void notify(const SegId& segId) const;
 
     /**
      * Halts execution of this instance. If called before `operator()`, then
@@ -235,6 +200,57 @@ public:
      */
     void halt() const;
 };
+#if 0
+/**
+ * A manager of a publisher's peer-to-peer network.
+ */
+class PubP2pMgr final : public P2pMgr
+{
+    class Impl;
+
+public:
+    /**
+     * Default constructs.
+     */
+    PubP2pMgr();
+
+    /**
+     * Constructs. Calls `::listen()`.
+     *
+     * @param[in] p2pInfo       Peer-to-peer execution parameters
+     * @param[in] p2pPub        Peer-to-peer publisher
+     */
+    PubP2pMgr(
+            P2pInfo&  p2pInfo,
+            P2pSndr&   p2pPub);
+};
+
+/**
+ * A manager of a subscriber's peer-to-peer network.
+ */
+class SubP2pMgr final : public P2pMgr
+{
+    class Impl;
+
+public:
+    /**
+     * Default constructs.
+     */
+    SubP2pMgr();
+
+    /**
+     * Constructs. Calls `::listen()`.
+     *
+     * @param[in] p2pInfo       Peer-to-peer execution parameters
+     * @param[in] p2pSrvrPool   Pool of remote P2P servers
+     * @param[in] p2pSub        Peer-to-peer subscriber
+     */
+    SubP2pMgr(
+            P2pInfo&      p2pInfo,
+            ServerPool&   p2pSrvrPool,
+            P2pSub&       p2pSub);
+};
+#endif
 
 } // namespace
 

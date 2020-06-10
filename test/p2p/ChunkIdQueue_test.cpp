@@ -43,6 +43,7 @@ TEST_F(NoticeQueueTest, AddProdIndex)
     hycast::ChunkId chunkId{prodId};
     queue.push(chunkId);
     EXPECT_EQ(1, queue.size());
+    EXPECT_EQ(chunkId, queue.pop());
 }
 
 // Tests adding a segment-ID
@@ -52,7 +53,19 @@ TEST_F(NoticeQueueTest, AddSegId)
     hycast::ChunkId chunkId{segId};
     queue.push(chunkId);
     EXPECT_EQ(1, queue.size());
+    EXPECT_EQ(chunkId, queue.pop());
 }
+
+#if 0
+// Tests begin() and end()
+TEST_F(NoticeQueueTest, BeginAndEnd)
+{
+    hycast::ChunkIdQueue queue{};
+    hycast::ChunkId chunkId{segId};
+    queue.push(chunkId);
+    EXPECT_EQ(1, queue.size());
+}
+#endif
 
 }  // namespace
 

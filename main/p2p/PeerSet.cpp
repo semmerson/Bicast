@@ -30,20 +30,55 @@
 
 namespace hycast {
 
-class PeerSet::Impl {
-    typedef std::lock_guard<std::mutex> Guard;
+class PeerSet::Impl
+{
+    typedef std::mutex                       Mutex;
+    typedef std::lock_guard<Mutex>           Guard;
+    typedef std::unique_lock<Mutex>          Lock;
+    typedef std::condition_variable          Cond;
+    typedef std::thread                      Thread;
+    typedef std::unordered_map<Peer, Thread> ThreadMap;
 
-    mutable std::mutex                    mutex;
-    mutable std::condition_variable       cond;
-    bool                                  done;
-    PeerSet::Observer*                    observer;
-    std::unordered_map<Peer, std::thread> threads;
-    std::queue<Peer>                      inactivePeers;
-    std::thread                           reaperThread;
+    mutable Mutex      mutex;
+    mutable Cond       cond;
+    bool               done;
+    ThreadMap          threads;
+    std::queue<Peer>   inactivePeers;
+    std::thread        reaperThread;
+    PeerSetMgr&        peerSetMgr;
+
+    /**
+     * Executes a peer. Called by `std::thread()`.
+     *
+     * @param[in] peer  Peer to be executed. A copy is used instead of a
+     *                  reference to obviate problems arising from the peer
+     *                  being destroyed elsewhere.
+     */
+    void execute(Peer peer)
+    {
+        //LOG_DEBUG("Executing peer");
+        try {
+            peer();
+
+            {
+                Guard guard(mutex);
+                inactivePeers.push(peer);
+                cond.notify_one();
+            }
+
+            peerSetMgr.stopped(peer);
+        }
+        catch (const std::system_error& ex) {
+            log_error(ex);
+        }
+        catch (const std::exception& ex) {
+            log_note(ex);
+        }
+    }
 
     void reapPeers() {
         //LOG_DEBUG("Reaping terminated peers");
-        std::unique_lock<std::mutex> lock{mutex};
+        Lock lock{mutex};
 
         // While not done or a peer exists
         while (!done || !threads.empty() || !inactivePeers.empty()) {
@@ -62,27 +97,25 @@ class PeerSet::Impl {
     }
 
 public:
-    Impl(PeerSet::Observer* observer = nullptr)
+    Impl(PeerSetMgr& peerSetMgr)
         : mutex()
         , cond()
         , done{false}
-        , observer(observer)
         , threads()
         , inactivePeers()
         , reaperThread()
-    {
-        //LOG_DEBUG("Creating reaper thread");
-        reaperThread = std::thread(&Impl::reapPeers, this);
-    }
+        , peerSetMgr(peerSetMgr)
+    {}
 
-    ~Impl() {
+    ~Impl()
+    {
         LOG_TRACE();
         {
             Guard guard{mutex};
 
             done = true;
 
-            // `execute()` will hang trying to de-activate the entry
+            // `execute()` would hang trying to de-activate the entry
             for (auto& pair : threads)
                 pair.first.halt();
 
@@ -93,67 +126,33 @@ public:
     }
 
     /**
-     * Executes a peer. Called by `std::thread()`.
+     * Executes a peer and adds it to the set of active peers.
      *
-     * @param[in] peer  Peer to be executed. A copy is used instead of a
-     *                  reference to obviate problems arising from the peer
-     *                  being destroyed elsewhere.
+     * @param[in] peer        Peer to be activated
+     * @throws    LogicError  Peer is already running
+     * @threadsafety          Safe
+     * @exceptionSafety       Strong guarantee
+     * @cancellationpoint     No
      */
-    void execute(Peer peer)
+    void activate(const Peer peer)
     {
-        //LOG_DEBUG("Executing peer");
-        try {
-            peer();
-        }
-        catch (const std::system_error& ex) {
-            log_error(ex);
-        }
-        catch (const std::exception& ex) {
-            log_note(ex);
-        }
+        Guard    guard(mutex);
 
-        // Must occur before destroying `peer` by removing it from active set
-        if (observer) {
-            try {
-                observer->stopped(peer);
-            }
-            catch (const std::exception& ex) {
-                log_error(ex);
-            }
-        }
+        if (threads.count(peer))
+            throw LOGIC_ERROR("Peer " + peer.to_string() + " is already "
+                    "running");
 
-        {
-            Guard guard(mutex);
-            auto  iter = threads.find(peer);
-            assert(iter != threads.end());
-            inactivePeers.push(iter->first);
-            cond.notify_one();
-        }
+        Canceler canceler{false};
+
+        threads.emplace(std::piecewise_construct,
+            std::forward_as_tuple(peer),
+            std::forward_as_tuple(std::thread(&Impl::execute, this, peer)));
     }
 
-    /**
-     * @param[in] peer     Peer to be activated
-     * @retval    `true`   Peer was successfully activated
-     * @retval    `false`  Peer was already activated
-     * @threadsafety       Safe
-     * @exceptionSafety    Strong guarantee
-     */
-    bool activate(const Peer peer)
+    size_t size() const noexcept
     {
-        bool  success;
         Guard guard(mutex);
-
-        if (done) {
-            success = false;
-        }
-        else {
-            Canceler canceler{false};
-            auto     pair = threads.emplace(std::piecewise_construct,
-                std::forward_as_tuple(peer),
-                std::forward_as_tuple(std::thread(&Impl::execute, this, peer)));
-        }
-
-        return success;
+        return threads.size() - inactivePeers.size();
     }
 
     void notify(ProdIndex prodIndex)
@@ -162,6 +161,14 @@ public:
 
         for (auto& pair : threads)
             pair.first.notify(prodIndex);
+    }
+
+    void notify(const SegId& segId)
+    {
+        Guard guard(mutex);
+
+        for (auto& pair : threads)
+            pair.first.notify(segId);
     }
 
     void notify(
@@ -175,14 +182,6 @@ public:
             if (peer != notPeer)
                 peer.notify(prodIndex);
         }
-    }
-
-    void notify(const SegId& segId)
-    {
-        Guard guard(mutex);
-
-        for (auto& pair : threads)
-            pair.first.notify(segId);
     }
 
     void notify(
@@ -203,7 +202,7 @@ public:
         Guard guard(mutex);
 
         for (auto& pair : threads) {
-            Peer peer = pair.first;
+            const Peer& peer = *static_cast<const Peer*>(&pair.first);
             if (peer != notPeer)
                 peer.gotPath();
         }
@@ -214,74 +213,51 @@ public:
         Guard guard(mutex);
 
         for (auto& pair : threads) {
-            Peer peer = pair.first;
+            const Peer& peer = *static_cast<const Peer*>(&pair.first);
             if (peer != notPeer)
                 peer.lostPath();
         }
     }
-
-    size_t size() const noexcept
-    {
-        Guard guard(mutex);
-        return threads.size() - inactivePeers.size();
-    }
 };
 
-/******************************************************************************/
+PeerSet::PeerSet(PeerSetMgr& peerSetMgr)
+    : pImpl(new Impl(peerSetMgr)) {
+}
 
-PeerSet::Observer::~Observer()
-{}
-
-PeerSet::PeerSet()
-    : pImpl(new Impl())
-{}
-
-PeerSet::PeerSet(Observer& obs)
-    : pImpl(new Impl(&obs))
-{}
-
-bool PeerSet::activate(const Peer peer)
-{
+void PeerSet::activate(const Peer peer) {
     return pImpl->activate(peer);
 }
 
-void PeerSet::gotPath(Peer notPeer)
-{
+size_t PeerSet::size() const noexcept {
+    return pImpl->size();
+}
+
+void PeerSet::gotPath(Peer notPeer) {
     pImpl->gotPath(notPeer);
 }
 
-void PeerSet::lostPath(Peer notPeer)
-{
+void PeerSet::lostPath(Peer notPeer) {
     pImpl->lostPath(notPeer);
 }
 
-void PeerSet::notify(const ProdIndex prodIndex)
-{
+void PeerSet::notify(const ProdIndex prodIndex) {
     pImpl->notify(prodIndex);
 }
 
 void PeerSet::notify(
         const ProdIndex prodIndex,
-        const Peer&     notPeer)
-{
+        const Peer&     notPeer) {
     pImpl->notify(prodIndex, notPeer);
 }
 
-void PeerSet::notify(const SegId& segId)
-{
+void PeerSet::notify(const SegId& segId) {
     pImpl->notify(segId);
 }
 
 void PeerSet::notify(
         const SegId& segId,
-        const Peer&  notPeer)
-{
+        const Peer&  notPeer) {
     pImpl->notify(segId, notPeer);
-}
-
-size_t PeerSet::size() const noexcept
-{
-    return pImpl->size();
 }
 
 } // namespace

@@ -26,13 +26,16 @@ class ChunkIdQueue::Impl
     typedef std::lock_guard<Mutex>  Guard;
     typedef std::unique_lock<Mutex> Lock;
     typedef std::condition_variable Cond;
+    typedef std::deque<ChunkId>     Queue;
 
-    mutable Mutex       mutex;
-    mutable Cond        cond;
-    std::queue<ChunkId> queue;
-    bool                isClosed;
+    mutable Mutex mutex;
+    mutable Cond  cond;
+    Queue         queue;
+    bool          isClosed;
 
 public:
+    typedef Queue::iterator Iterator;
+
     Impl()
         : mutex{}
         , cond{}
@@ -50,7 +53,7 @@ public:
     {
         Guard guard(mutex);
         if (!isClosed) {
-            queue.push(chunkId);
+            queue.push_back(chunkId);
             cond.notify_one();
         }
     }
@@ -63,9 +66,9 @@ public:
                 cond.wait(lock);
             if (isClosed)
                 return ChunkId();
-            ChunkId notice{queue.front()};
-            queue.pop();
-            return notice;
+            ChunkId chunkId{queue.front()};
+            queue.pop_front();
+            return chunkId;
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't pop notice-queue"));
@@ -76,8 +79,6 @@ public:
     {
         Guard guard{mutex};
         isClosed = true;
-        while (!queue.empty())
-            queue.pop();
         cond.notify_all();
     }
 
@@ -86,7 +87,114 @@ public:
         Guard guard{mutex};
         return isClosed;
     }
+
+    Iterator begin()
+    {
+        return queue.begin();
+    }
+
+    Iterator end()
+    {
+        return queue.end();
+    }
 };
+
+class ChunkIdQueue::Iterator::Impl
+    : public std::iterator<std::input_iterator_tag, ChunkId>
+{
+    ChunkIdQueue::Impl::Iterator iter;
+
+public:
+    Impl(const ChunkIdQueue::Impl::Iterator& iter)
+        : iter(iter)
+    {}
+
+    Impl(const ChunkIdQueue::Impl::Iterator&& iter)
+        : iter(iter)
+    {}
+
+    Impl(const Impl& that)
+        : iter(that.iter)
+    {}
+
+    Impl& operator=(const Impl& rhs)
+    {
+        iter = rhs.iter;
+        return *this;
+    }
+
+    bool operator==(const Impl& rhs)
+    {
+        return iter == rhs.iter;
+    }
+
+    bool operator!=(const Impl& rhs)
+    {
+        return iter != rhs.iter;
+    }
+
+    ChunkId operator*()
+    {
+        return *iter;
+    }
+
+    Impl& operator++()
+    {
+        ++iter;
+        return *this;
+    }
+
+    Impl operator++(int)
+    {
+        Impl tmp(*this);
+        ++iter;
+        return tmp;
+    }
+};
+
+ChunkIdQueue::Iterator::Iterator(Impl* impl)
+    : pImpl(impl)
+{}
+
+ChunkIdQueue::Iterator::Iterator(const Iterator& that)
+    : pImpl(new Impl(*pImpl))
+{}
+
+ChunkIdQueue::Iterator& ChunkIdQueue::Iterator::operator=(const Iterator& rhs)
+{
+    pImpl.reset(new Impl(*rhs.pImpl));
+    return *this;
+}
+
+bool ChunkIdQueue::Iterator::operator==(const Iterator& rhs)
+{
+    return *pImpl == *rhs.pImpl;
+}
+
+bool ChunkIdQueue::Iterator::operator!=(const Iterator& rhs)
+{
+    return *pImpl != *rhs.pImpl;
+}
+
+ChunkId ChunkIdQueue::Iterator::operator*()
+{
+    return **pImpl;
+}
+
+ChunkIdQueue::Iterator& ChunkIdQueue::Iterator::operator++()
+{
+    ++*pImpl;
+    return *this;
+}
+
+ChunkIdQueue::Iterator ChunkIdQueue::Iterator::operator++(int)
+{
+    Iterator tmp(*this);
+    ++*pImpl;
+    return tmp;
+}
+
+/******************************************************************************/
 
 ChunkIdQueue::ChunkIdQueue()
     : pImpl{new Impl()}
@@ -115,6 +223,16 @@ void ChunkIdQueue::close() const noexcept
 bool ChunkIdQueue::closed() const noexcept
 {
     return pImpl->closed();
+}
+
+ChunkIdQueue::Iterator ChunkIdQueue::begin()
+{
+    return Iterator(new Iterator::Impl(pImpl->begin()));
+}
+
+ChunkIdQueue::Iterator ChunkIdQueue::end()
+{
+    return Iterator(new Iterator::Impl(pImpl->end()));
 }
 
 } // namespace

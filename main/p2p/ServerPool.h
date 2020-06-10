@@ -13,8 +13,7 @@
 #ifndef MAIN_PEER_SERVERPOOL_H_
 #define MAIN_PEER_SERVERPOOL_H_
 
-#include "SockAddr.h"
-
+#include <main/inet/SockAddr.h>
 #include <memory>
 #include <set>
 

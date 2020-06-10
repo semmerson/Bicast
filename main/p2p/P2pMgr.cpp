@@ -11,6 +11,7 @@
  */
 
 #include "config.h"
+
 #include "P2pMgr.h"
 
 #include "Bookkeeper.h"
@@ -31,24 +32,45 @@
 
 namespace hycast {
 
-PeerChngObs::~PeerChngObs() noexcept
-{}
-
-void PeerChngObs::added(Peer& peer)
+/**
+ * Abstract base class implementation of a manager of a peer-to-peer network.
+ */
+class P2pMgr::Impl : public PeerSetMgr
 {
-    throw LOGIC_ERROR("Should be called");
-}
+    /**
+     * Improves the set of peers by periodically stopping the worst-performing
+     * peer -- providing the set is full and sufficient time has elapsed.
+     * Executes on a new thread.
+     *
+     * @cancellationpoint  Yes
+     */
+    void improve()
+    {
+        LOG_DEBUG("Improving P2P network");
+        try {
+            Lock lock{stateMutex};
 
-void PeerChngObs::removed(Peer& peer)
-{
-    throw LOGIC_ERROR("Should be called");
-}
+            for (;;) {
+                static auto timeout = std::chrono::seconds{timePeriod};
 
-P2pMgrObs::~P2pMgrObs() noexcept
-{}
+                for (auto time = improveStart + timeout;
+                        peerSet.size() < maxPeers || Clock::now() < time;
+                        time = improveStart + timeout)
+                    stateCond.wait_until(lock, time); // Cancellation point
 
-class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
-{
+                Peer peer = getBookkeeper().getWorstPeer();
+                if (peer) {
+                    peer.halt();
+                    resetImprovement();        // Not a cancellation point
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            setException(std::make_exception_ptr(ex));
+        }
+    }
+
+protected:
     typedef std::mutex                Mutex;
     typedef std::lock_guard<Mutex>    Guard;
     typedef std::unique_lock<Mutex>   Lock;
@@ -63,18 +85,17 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     mutable Cond      stateCond;     ///< For changes to this instance's state
     bool              haltRequested; ///< Termination requested?
     unsigned          timePeriod;    ///< Improvement period in seconds
-    NodeType          nodeType;      ///< Type of node
-    PeerFactory       factory;       ///< Creates local peers
     const int         maxPeers;      ///< Maximum number of peers
-    P2pMgrObs&        p2pMgrObs;     ///< Observer of this instance
+    P2pSndr&          p2pSndr;       ///< Peer-to-peer sender
     ExceptPtr         taskException; ///< Exception that terminated execution
-    ServerPool        serverPool;    ///< Pool of potential remote peer-servers
-    Bookkeeper        bookkeeper;    ///< Keeps track of peer behaviors
     PeerSet           peerSet;       ///< Set of active peers
     Clock::time_point improveStart;  ///< Time of start of improvement period
+    std::thread       acceptThread;  ///< Accepts remote peers
     std::thread       improveThread; ///< Improves set of peers
-    std::thread       connectThread; ///< Connects to remote peer-servers
-    std::thread       acceptThread;  ///< Accepts incoming connections
+
+    virtual PeerFactory& getFactory() =0;
+
+    virtual Bookkeeper& getBookkeeper() =0;
 
     /**
      * Sets the exception that caused this instance to terminate. Will only set
@@ -94,18 +115,20 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     }
 
     /**
-     * Resets the mechanism for improving the P2P network.
+     * Resets the mechanism for improving the P2P network. Notifies `stateCond`.
      *
      * @pre               State is locked
      * @cancellationpoint No
      */
     void resetImprovement() {
-        bookkeeper.resetCounts();
+        assert(!stateMutex.try_lock());
+        getBookkeeper().resetCounts();
         improveStart = Clock::now();
+        stateCond.notify_one();
     }
 
     /**
-     * Adds a new peer.
+     * Adds a peer to the set of active peers.
      *
      * @pre                     `stateMutex` is locked
      * @param[in] peer          Peer to add
@@ -113,58 +136,36 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
      */
     void add(Peer peer)
     {
+        assert(!stateMutex.try_lock());
         assert(peer);
-        bookkeeper.add(peer);
+        getBookkeeper().add(peer);
+
         try {
             (void)peerSet.activate(peer); // Fast
             resetImprovement();
-            stateCond.notify_one();
+            LOG_NOTE("Added peer %s", peer.getRmtAddr().to_string().c_str());
         }
         catch (const std::exception& ex) {
-            bookkeeper.erase(peer);
+            getBookkeeper().erase(peer);
             std::throw_with_nested(RUNTIME_ERROR("Couldn't add peer " +
                     peer.getRmtAddr().to_string()));
         }
     }
 
     /**
-     * Replaces the worst-performing peer with a new peer.
+     * Adds a peer, maybe. Implementation-specific.
      *
-     * @pre                    `stateMutex` is locked
-     * @param[in] isPathToSrc  Value worst peer's `isPathToSrc()` must return
-     * @param[in] peer         Replacement peer
+     * @param[in] peer         Peer to be potentially activated and added to
+     *                         active peer-set
+     * @retval    `true`       Peer was activated and added
+     * @retval    `false`      Peer was not activated and added
+     * @threadsafety           Safe
+     * @exceptionsafety        Strong guarantee
      */
-    void replaceWorst(
-            const bool isPathToSrc,
-            Peer       peer)
-    {
-        Peer worst = bookkeeper.getWorstPeer(isPathToSrc);
-
-        if (worst) {
-            worst.halt();
-            add(peer);
-        }
-    }
+    virtual bool maybeAdd2(Peer peer) =0;
 
     /**
-     * Replaces the worst-performing peer with a new peer.
-     *
-     * @pre             `stateMutex` is locked
-     * @param[in] peer  Replacement peer
-     */
-    void replaceWorst(Peer peer)
-    {
-        Peer worst = bookkeeper.getWorstPeer();
-
-        if (worst) {
-            worst.halt();
-            bookkeeper.add(peer);
-            (void)peerSet.activate(peer); // Fast
-        }
-    }
-
-    /**
-     * Adds a new peer, maybe.
+     * Adds a peer, maybe.
      *
      * @param[in] peer         Peer to be potentially activated and added to
      *                         active peer-set
@@ -188,7 +189,6 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
          */
 
         bool  success;
-
         {
             Guard guard{stateMutex};
             auto  numPeers = peerSet.size();
@@ -202,38 +202,10 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
                         peer.getRmtAddr().to_string().c_str());
                 success = false;
             }
-            else if (nodeType != NodeType::IS_SOURCE) {
-                unsigned   numPath, numNoPath;
-                const bool isPathToSrc = peer.isPathToSrc();
-
-                bookkeeper.getSrcPathCounts(numPath, numNoPath);
-
-                if ((numPath < numNoPath) == isPathToSrc) {
-                    replaceWorst(!isPathToSrc, peer);
-                }
-
-                bookkeeper.add(peer);
-
-                try {
-                    (void)peerSet.activate(peer); // Fast
-
-                    LOG_DEBUG("Added peer %s",
-                            peer.getRmtAddr().to_string().c_str());
-
-                    success = true;
-                    resetImprovement();
-                    stateCond.notify_one();
-                }
-                catch (const std::exception& ex) {
-                    bookkeeper.erase(peer);
-                    std::throw_with_nested(RUNTIME_ERROR("Couldn't add peer " +
-                            peer.getRmtAddr().to_string()));
-                }
+            else {
+                success = maybeAdd2(peer); // Implementation-specific
             }
         }
-
-        if (success)
-            p2pMgrObs.added(peer);
 
         return success;
     }
@@ -298,124 +270,43 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     }
 
     /**
-     * Improves the set of peers by periodically stopping the worst-performing
-     * peer -- providing the set is full and sufficient time has elapsed.
-     * Executes on a new thread.
-     *
-     * @cancellationpoint  Yes
-     */
-    void improve()
-    {
-        //LOG_DEBUG("Improving P2P network");
-        try {
-            Lock lock{stateMutex};
-
-            for (;;) {
-                static auto timeout = std::chrono::seconds{timePeriod};
-
-                for (auto time = improveStart + timeout;
-                        peerSet.size() < maxPeers || Clock::now() < time;
-                        time = improveStart + timeout)
-                    stateCond.wait_until(lock, time); // Cancellation point
-
-                Peer peer = bookkeeper.getWorstPeer();
-                if (peer) {
-                    peer.halt();
-                    resetImprovement();        // Not a cancellation point
-                    stateCond.notify_one();
-                }
-            }
-        }
-        catch (const std::exception& ex) {
-            setException(std::make_exception_ptr(ex));
-        }
-    }
-
-    /**
-     * Episodically connects to a remote peer-server from the pool of such
-     * servers to create a new peer and adds it to the set of peers if
-     * possible. Executes on a new thread.
-     *
-     * @cancellationpoint  Yes
-     */
-    void connect()
-    {
-        //LOG_DEBUG("Connecting to peers");
-        try {
-            for (;;) {
-                waitToConnect(); // Cancellation point
-
-                // Cancellation point
-                SockAddr srvrAddr = serverPool.pop(); // May block
-
-                try {
-                    LOG_DEBUG("Connecting to %s", srvrAddr.to_string().c_str());
-                    // Cancellation point
-                    Peer peer = factory.connect(srvrAddr); // Potentially slow
-
-                    {
-                        Canceler canceler{false};
-                        if (!maybeAdd(peer))
-                            serverPool.consider(srvrAddr, timePeriod);
-                    }
-                }
-                catch (const std::system_error& sysEx) {
-                    const auto errCond = sysEx.code().default_error_condition();
-
-                    if (errCond.category() == std::generic_category()) {
-                        const auto errNum = errCond.value();
-
-                        //LOG_DEBUG("errNum: %d", errNum);
-                        if (errNum != ECONNREFUSED &&
-                            errNum != ECONNRESET &&
-                            errNum != ENETUNREACH &&
-                            errNum != ENETRESET &&
-                            errNum != ENETDOWN &&
-                            errNum != EHOSTUNREACH)
-                            throw;
-                    }
-                    serverPool.consider(srvrAddr, timePeriod);
-                }
-                catch (const std::exception& ex) {
-                    log_note(ex);
-                    serverPool.consider(srvrAddr, timePeriod);
-                }
-            } // Indefinite loop
-        }
-        catch (const std::exception& ex) {
-            //LOG_DEBUG("Caught std::exception");
-            setException(std::make_exception_ptr(ex));
-        }
-        catch (...) {
-            //LOG_DEBUG("Caught ... exception");
-            throw;
-        }
-    }
-
-    /**
      * Accepts incoming connections from remote peers and attempts to add the
      * resulting local peer to the set of active peers. Executes on a new
      * thread.
      *
      * @cancellationpoint  Yes
      */
-    void accept()
-    {
-        //LOG_DEBUG("Accepting peers");
-        try {
-            for (;;) {
-                //LOG_DEBUG("Accepting connection");
-                Peer peer = factory.accept(); // Potentially slow
+    virtual void accept() =0;
 
-                if (!peer)
-                    break; // `factory.close()` called
+    /**
+     * Starts implementation-specific tasks.
+     */
+    virtual void startTasks2() =0;
 
-                (void)maybeAdd(peer);
-            }
+    void startImprover() {
+        //LOG_DEBUG("Creating \"improvement\" thread");
+        improveThread = std::thread(&Impl::improve, this);
+    }
+
+    void stopImprover() {
+        if (improveThread.joinable()) {
+            int status = ::pthread_cancel(improveThread.native_handle());
+            if (status)
+                throw SYSTEM_ERROR("Couldn't cancel \"improvement\" thread",
+                        status);
+            improveThread.join();
         }
-        catch (const std::exception& ex) {
-            //LOG_DEBUG(ex, "Caught std::exception");
-            setException(std::make_exception_ptr(ex));
+    }
+
+    void startAccepter() {
+        //LOG_DEBUG("Creating \"accept\" thread");
+        acceptThread = std::thread(&Impl::accept, this);
+    }
+
+    void stopAccepter() {
+        if (acceptThread.joinable()) {
+            getFactory().close(); // Causes `factory.accept()` to return
+            acceptThread.join();
         }
     }
 
@@ -424,71 +315,21 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
      */
     void startTasks()
     {
-        if (maxPeers > 1 && !serverPool.empty()) {
-            //LOG_DEBUG("Creating \"improvement\" thread");
-            improveThread = std::thread(&Impl::improve, this);
-        }
+        startAccepter();
 
         try {
-            if (!serverPool.empty()) {
-                //LOG_DEBUG("Creating \"connect\" thread");
-                connectThread = std::thread(&Impl::connect, this);
-            }
-
-            try {
-                //LOG_DEBUG("Creating \"accept\" thread");
-                acceptThread = std::thread(&Impl::accept, this);
-            } // Connect thread created
-            catch (const std::exception& ex) {
-                if (connectThread.joinable()) {
-                    int status =
-                            ::pthread_cancel(connectThread.native_handle());
-
-                    if (status)
-                        throw SYSTEM_ERROR("Couldn't cancel \"connect\" thread",
-                                status);
-
-                    connectThread.join();
-                }
-
-                throw;
-            }
-        } // Improvement thread possibly created
+            startTasks2(); // Implementation-specific tasks
+        }
         catch (const std::exception& ex) {
-            if (improveThread.joinable()) {
-                int status = ::pthread_cancel(improveThread.native_handle());
-
-                if (status)
-                    throw SYSTEM_ERROR("Couldn't cancel \"improvement\" thread",
-                            status);
-
-                improveThread.join();
-            }
+            stopAccepter();
             throw;
         }
     }
 
     /**
-     * Reassigns a stopped peer's outstanding requests to the next-best peers in
-     * the peer-set. For each request, if no peer in the set has been notified
-     * about the associated item, then the request is discarded in the
-     * expectation that one of the other remote peers will, eventually, notify.
-     * a local peer about the available item.
-     *
-     * @pre             The state is locked
-     * @param[in] peer  The stopped peer
+     * Stops implementation-specific tasks.
      */
-    void reassignPending(Peer& peer)
-    {
-        auto& chunkIds = bookkeeper.getRequested(peer);
-        for (auto chunkId : chunkIds) {
-            Peer altPeer = bookkeeper.popBestAlt(chunkId);
-            if (altPeer) {
-                chunkId.request(altPeer);
-                bookkeeper.requested(altPeer, chunkId);
-            }
-        }
-    }
+    virtual void stopTasks2() =0;
 
     /**
      * Stops the tasks of this instance.
@@ -496,29 +337,9 @@ class P2pMgr::Impl : public PeerObs, public PeerSet::Observer
     void stopTasks()
     {
         try {
-            factory.close(); // Causes `factory.accept()` to return
-
-            int status;
-
-            if (connectThread.joinable()) {
-                status = ::pthread_cancel(connectThread.native_handle());
-                if (status)
-                    throw SYSTEM_ERROR("Couldn't cancel \"connect\" thread",
-                            status);
-            }
-
-            if (improveThread.joinable()) {
-                status = ::pthread_cancel(improveThread.native_handle());
-                if (status)
-                    throw SYSTEM_ERROR("Couldn't cancel \"improve\" thread",
-                            status);
-            }
-
-            acceptThread.join();
-            if (connectThread.joinable())
-                connectThread.join();
-            if (improveThread.joinable())
-                improveThread.join();
+            stopTasks2(); // Implementation-specific tasks
+            stopAccepter();
+            stopImprover();
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't stop tasks"));
@@ -541,22 +362,12 @@ public:
      * Constructs. Calls `::listen()`. No peers are managed until `operator()()`
      * is called.
      *
-     * @param[in] srvrAddr     Socket address of local server that accepts
-     *                         connections from remote peers
-     * @param[in] listenSize   Size of server's `::listen()` queue
-     * @param[in] portPool     Pool of available port numbers
-     * @param[in] maxPeers     Maximum number of peers
-     * @param[in] serverPool   Pool of possible remote servers for remote peers.
-     *                         If empty, then this instance is the source of
-     *                         data-products.
-     * @param[in] p2pMgrObs    Observer of this instance
+     * @param[in] maxPeers  Maximum number of peers
+     * @param[in] p2pSndr   Peer-to-peer sender. Must exist for the duration of
+     *                      this instance
      */
-    Impl(   const SockAddr&  srvrAddr,
-            const int        listenSize,
-            PortPool&        portPool,
-            const int        maxPeers,
-            ServerPool&      serverPool,
-            P2pMgrObs&       p2pMgrObs)
+    Impl(   const int maxPeers,
+            P2pSndr&  p2pSndr)
         : executing{ATOMIC_FLAG_INIT}
         , stateMutex{}
         , doneMutex{}
@@ -564,35 +375,13 @@ public:
         , stateCond{}
         , haltRequested{false}
         , timePeriod{60}
-        , nodeType{serverPool.empty()
-                ? NodeType::Type::IS_SOURCE : NodeType::Type::NO_PATH_TO_SOURCE}
-        , factory{srvrAddr, listenSize, portPool, *this, nodeType}
         , maxPeers{maxPeers}
-        , p2pMgrObs(p2pMgrObs)
+        , p2pSndr(p2pSndr)
         , taskException{}
-        , serverPool{serverPool}
-        , bookkeeper(maxPeers)
-        , peerSet{*this} // Must be destroyed before `peerStats`
+        , peerSet{*this}
         , improveStart{Clock::now()}
         , improveThread{}
-        , connectThread{}
         , acceptThread{}
-    {}
-
-    /**
-     * Constructs. Calls `::listen()`. No peers are managed until `operator()()`
-     * is called.
-     *
-     * @param[in] p2pInfo      Peer-to-peer execution parameters
-     * @param[in] p2pSrvrPool  Pool of remote P2P servers. If empty, then this
-     *                         instance is the source of data-products.
-     * @param[in] p2pMgrObs    Observer of this instance
-     */
-    Impl(   P2pInfo&    p2pInfo,
-            ServerPool& p2pSrvrPool,
-            P2pMgrObs&  p2pMgrObs)
-        : Impl(p2pInfo.sockAddr, p2pInfo.listenSize, p2pInfo.portPool,
-                p2pInfo.maxPeers, p2pSrvrPool, p2pMgrObs)
     {}
 
     ~Impl() noexcept
@@ -600,15 +389,7 @@ public:
         LOG_TRACE();
         try {
             Guard guard(doneMutex);
-
-            if (acceptThread.joinable())
-                LOG_ERROR("Accept-thread is joinable");
-
-            if (connectThread.joinable())
-                LOG_ERROR("Connect-thread is joinable");
-
-            if (improveThread.joinable())
-                LOG_ERROR("Improve-thread is joinable");
+            stopTasks();
         }
         catch (const std::exception& ex) {
             log_error(ex);
@@ -668,50 +449,6 @@ public:
     }
 
     /**
-     * Handles a remote node transitioning from not having a path to the source
-     * of data-products to having one. Might be called by a peer only *after*
-     * `Peer::operator()()` is called.
-     *
-     * @param[in]     peer  Local peer whose remote peer transitioned
-     * @threadsafety  Safe
-     */
-    void pathToSrc(Peer peer) noexcept
-    {
-        if (nodeType != NodeType::IS_SOURCE) {
-            Guard    guard(stateMutex);
-            unsigned numWithPath, numWithoutPath;
-
-            bookkeeper.getSrcPathCounts(numWithPath, numWithoutPath);
-            if (numWithPath == 1) {
-                nodeType = NodeType::PATH_TO_SOURCE;
-                peerSet.gotPath(peer);
-            }
-        }
-    }
-
-    /**
-     * Handles a remote node transitioning from having a path to the source of
-     * data-products to not having one. Might be called by a peer only *after*
-     * `Peer::operator()()` is called.
-     *
-     * @param[in]     peer  Local peer whose remote peer transitioned
-     * @threadsafety  Safe
-     */
-    void noPathToSrc(Peer peer) noexcept
-    {
-        if (nodeType != NodeType::IS_SOURCE) {
-            Guard    guard(stateMutex);
-            unsigned numWithPath, numWithoutPath;
-
-            bookkeeper.getSrcPathCounts(numWithPath, numWithoutPath);
-            if (numWithPath == 0) {
-                nodeType = NodeType::NO_PATH_TO_SOURCE;
-                peerSet.lostPath(peer);
-            }
-        }
-    }
-
-    /**
      * Halts execution of this instance. If called before `operator()`, then
      * this instance will never execute.
      *
@@ -738,37 +475,6 @@ public:
     }
 
     /**
-     * Handles a stopped peer. Called by `peerSet`.
-     *
-     * @param[in] peer              The peer that stopped
-     * @throws    std::logic_error  `peer` not found in performance map
-     */
-    void stopped(Peer peer)
-    {
-        const SockAddr& rmtSockAddr{peer.getRmtAddr()};
-
-        LOG_NOTE("Removing peer %s", rmtSockAddr.to_string().c_str());
-
-        {
-            Guard guard{stateMutex};
-
-            /*
-             * Add the remote site to the pool of remote sites if the local peer
-             * resulted from a `::connect`.
-             */
-            if (peer.isFromConnect())
-                serverPool.consider(rmtSockAddr, timePeriod);
-
-            reassignPending(peer); // Reassign peer's outstanding requests
-            bookkeeper.erase(peer);
-            resetImprovement();    // Restart performance evaluation
-            stateCond.notify_one();
-        }
-
-        p2pMgrObs.removed(peer);
-    }
-
-    /**
      * Notifies all remote peers about available product-information.
      *
      * @param[in] prodIndex  Identifier of product
@@ -789,20 +495,420 @@ public:
     }
 
     /**
+     * Obtains product-information for a remote peer.
+     *
+     * @param[in] prodIndex  Identifier of product
+     * @param[in] peer       Peer
+     * @return               The information. Will be empty if it doesn't exist.
+     */
+    virtual ProdInfo getProdInfo(
+            Peer&           peer,
+            ProdIndex       prodIndex) =0;
+
+    /**
+     * Obtains a data-segment for a remote peer.
+     *
+     * @param[in] segId      Identifier of the data-segment
+     * @param[in] peer       Peer
+     * @return               The segment. Will be empty if it doesn't exist.
+     */
+    virtual MemSeg getMemSeg(
+            Peer&           peer,
+            const SegId&    segId) =0;
+
+    virtual void stopped2(Peer peer) =0;
+
+    /**
+     * Handles a stopped peer. Called by `peerSet`.
+     *
+     * @param[in] peer              The peer that stopped
+     * @throws    std::logic_error  `peer` not found in performance map
+     */
+    void stopped(Peer peer)
+    {
+        const SockAddr& rmtSockAddr{peer.getRmtAddr()};
+
+        LOG_NOTE("Peer %s stopped", rmtSockAddr.to_string().c_str());
+        {
+            Guard guard{stateMutex};
+
+            stopped2(peer); // Implementation-specific
+            getBookkeeper().erase(peer);
+            resetImprovement();    // Restart performance evaluation
+        }
+    }
+};
+
+/******************************************************************************/
+
+class PubP2pMgr final : public P2pMgr::Impl, public SendPeerMgr
+{
+    PubPeerFactory factory;    ///< Creates peers
+    PubBookkeeper  bookkeeper; ///< Keeps track of peer performance
+
+protected:
+    void startTasks2() {
+        if (maxPeers > 1) {
+            startImprover();
+        }
+    }
+
+    bool maybeAdd2(Peer peer) {
+        return false;
+    }
+
+    /**
+     * Accepts incoming connections from remote peers and attempts to add the
+     * resulting local peer to the set of active peers. Executes on a new
+     * thread.
+     *
+     * @cancellationpoint  Yes
+     */
+    void accept()
+    {
+        //LOG_DEBUG("Accepting peers");
+        try {
+            for (;;) {
+                //LOG_DEBUG("Accepting connection");
+                Peer peer = factory.accept(); // Potentially slow
+
+                if (!peer)
+                    break; // `factory.close()` called
+
+                (void)maybeAdd(peer);
+            }
+        }
+        catch (const std::exception& ex) {
+            //LOG_DEBUG(ex, "Caught std::exception");
+            setException(std::make_exception_ptr(ex));
+        }
+    }
+
+    PeerFactory& getFactory() {
+        return factory;
+    }
+
+    Bookkeeper& getBookkeeper() {
+        return bookkeeper;
+    }
+
+    void stopTasks2() {
+    }
+
+public:
+    PubP2pMgr(
+            P2pInfo&  p2pInfo,
+            P2pSndr&   p2pPub)
+        : P2pMgr::Impl(p2pInfo.maxPeers, p2pPub)
+        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, p2pInfo.portPool, *this}
+        , bookkeeper(p2pInfo.maxPeers)
+    {}
+
+    /**
+     * Obtains product-information for a remote peer.
+     *
+     * @param[in] prodIndex  Identifier of product
+     * @param[in] peer       Peer
+     * @return               The information. Will be empty if it doesn't exist.
+     */
+    ProdInfo getProdInfo(
+            Peer&           peer,
+            ProdIndex       prodIndex)
+    {
+        auto prodInfo = p2pSndr.getProdInfo(prodIndex);
+        bookkeeper.requested(peer, prodInfo);
+        return prodInfo;
+    }
+
+    /**
+     * Obtains a data-segment for a remote peer.
+     *
+     * @param[in] segId      Identifier of the data-segment
+     * @param[in] peer       Peer
+     * @return               The segment. Will be empty if it doesn't exist.
+     */
+    MemSeg getMemSeg(
+            Peer&           peer,
+            const SegId&    segId)
+    {
+        auto memSeg = p2pSndr.getMemSeg(segId);
+        bookkeeper.requested(peer, memSeg.getSegInfo());
+        return memSeg;
+    }
+
+    /**
+     * Handles a stopped peer. Called by `peerSet`.
+     *
+     * @param[in] peer              The peer that stopped
+     */
+    void stopped2(Peer peer) {
+    }
+};
+
+/******************************************************************************/
+
+class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
+{
+    SubPeerFactory factory;       ///< Creates peers
+    SubBookkeeper  bookkeeper;    ///< Keeps track of peer performance
+    NodeType       lclNodeType;   ///< Current type of local node
+    std::thread    connectThread; ///< Accepts incoming connections
+    ServerPool     serverPool;    ///< Pool of potential remote peer-servers
+    P2pSub&        p2pSub;        ///< Peer-to-peer subscriber
+
+    /**
+     * Episodically connects to a remote peer-server from the pool of such
+     * servers to create a new peer and adds it to the set of peers if
+     * possible. Executes on a new thread.
+     *
+     * @cancellationpoint  Yes
+     */
+    void connect()
+    {
+        //LOG_DEBUG("Connecting to peers");
+        try {
+            for (;;) {
+                waitToConnect(); // Cancellation point
+
+                // Cancellation point
+                SockAddr srvrAddr = serverPool.pop(); // May block
+
+                try {
+                    LOG_DEBUG("Connecting to %s", srvrAddr.to_string().c_str());
+                    // Cancellation point
+                    Peer peer = factory.connect(srvrAddr, lclNodeType); // Potentially slow
+
+                    {
+                        Canceler canceler{false};
+                        if (!maybeAdd(peer))
+                            serverPool.consider(srvrAddr, timePeriod);
+                    }
+                }
+                catch (const std::system_error& sysEx) {
+                    const auto errCond = sysEx.code().default_error_condition();
+
+                    if (errCond.category() == std::generic_category()) {
+                        const auto errNum = errCond.value();
+
+                        //LOG_DEBUG("errNum: %d", errNum);
+                        if (errNum != ECONNREFUSED &&
+                            errNum != ECONNRESET &&
+                            errNum != ENETUNREACH &&
+                            errNum != ENETRESET &&
+                            errNum != ENETDOWN &&
+                            errNum != EHOSTUNREACH)
+                            throw;
+                    }
+                    serverPool.consider(srvrAddr, timePeriod);
+                }
+                catch (const std::exception& ex) {
+                    log_note(ex);
+                    serverPool.consider(srvrAddr, timePeriod);
+                }
+            } // Indefinite loop
+        }
+        catch (const std::exception& ex) {
+            //LOG_DEBUG("Caught std::exception");
+            setException(std::make_exception_ptr(ex));
+        }
+        catch (...) {
+            //LOG_DEBUG("Caught ... exception");
+            throw;
+        }
+    }
+
+    void startTasks2() {
+        if (!serverPool.empty()) {
+            //LOG_DEBUG("Creating \"connect\" thread");
+            connectThread = std::thread(&SubP2pMgr::connect, this);
+        }
+
+        try {
+            if (maxPeers > 1 && !serverPool.empty())
+                startImprover();
+        }
+        catch (const std::exception& ex) {
+            if (connectThread.joinable()) {
+                int status = ::pthread_cancel(connectThread.native_handle());
+                if (status)
+                    throw SYSTEM_ERROR("Couldn't cancel \"connect\" thread",
+                            status);
+                connectThread.join();
+            }
+            throw;
+        }
+    }
+
+    void stopTasks2() {
+        if (connectThread.joinable()) {
+            int status = ::pthread_cancel(connectThread.native_handle());
+            if (status)
+                throw SYSTEM_ERROR("Couldn't cancel \"connect\" thread",
+                        status);
+        }
+    }
+
+    bool maybeAdd2(Peer peer) {
+        bool       success = false;
+        unsigned   numPath, numNoPath;
+        const bool isPathToPub = peer.isPathToPub();
+
+        bookkeeper.getPubPathCounts(numPath, numNoPath);
+
+        if ((numPath < numNoPath) == isPathToPub) {
+            Peer worst = bookkeeper.getWorstPeer(isPathToPub);
+
+            if (worst) {
+                worst.halt();
+                add(peer);
+                success = true;
+            }
+        }
+
+        return success;
+    }
+
+    /**
+     * Accepts incoming connections from remote peers and attempts to add the
+     * resulting local peer to the set of active peers. Executes on a new
+     * thread.
+     *
+     * @cancellationpoint  Yes
+     */
+    void accept()
+    {
+        //LOG_DEBUG("Accepting peers");
+        try {
+            for (;;) {
+                //LOG_DEBUG("Accepting connection");
+                Peer peer = factory.accept(lclNodeType); // Potentially slow
+
+                if (!peer)
+                    break; // `factory.close()` called
+
+                (void)maybeAdd(peer);
+            }
+        }
+        catch (const std::exception& ex) {
+            //LOG_DEBUG(ex, "Caught std::exception");
+            setException(std::make_exception_ptr(ex));
+        }
+    }
+
+    /**
+     * Reassigns a stopped peer's outstanding requests to the next-best peers in
+     * the peer-set. For each request, if no peer in the set has been notified
+     * about the associated item, then the request is discarded in the
+     * expectation that one of the other remote peers will, eventually, notify.
+     * a local peer about the available item.
+     *
+     * @pre             The state is locked
+     * @param[in] peer  The stopped peer
+     */
+    void reassignPending(Peer& peer)
+    {
+        auto& chunkIds = bookkeeper.getRequested(peer);
+        for (auto chunkId : chunkIds) {
+            Peer altPeer = bookkeeper.popBestAlt(chunkId);
+            if (altPeer) {
+                chunkId.request(altPeer);
+                bookkeeper.requested(altPeer, chunkId);
+            }
+        }
+    }
+
+    /**
+     * Handles a stopped peer. Called by `peerSet`.
+     *
+     * @param[in] peer              The peer that stopped
+     * @throws    std::logic_error  `peer` not found in performance map
+     */
+    void stopped2(Peer peer)
+    {
+        /*
+         * Add the remote site to the pool of remote sites if the local peer
+         * resulted from a `::connect`.
+         */
+        if (peer.isFromConnect())
+            serverPool.consider(peer.getRmtAddr(), timePeriod);
+
+        reassignPending(peer); // Reassign peer's outstanding requests
+    }
+
+    PeerFactory& getFactory() {
+        return factory;
+    }
+
+    Bookkeeper& getBookkeeper() {
+        return bookkeeper;
+    }
+
+public:
+    SubP2pMgr(
+            P2pInfo&    p2pInfo,
+            ServerPool& serverPool,
+            P2pSub&     p2pSub)
+        : P2pMgr::Impl(p2pInfo.maxPeers, p2pSub)
+        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, p2pInfo.portPool, *this}
+        , bookkeeper(maxPeers)
+        , serverPool{serverPool}
+        , p2pSub(p2pSub)
+    {}
+
+    /**
+     * Handles a remote node transitioning from not having a path to the source
+     * of data-products to having one. Might be called by a peer only *after*
+     * `Peer::operator()()` is called.
+     *
+     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @threadsafety  Safe
+     */
+    void pathToPub(Peer& peer)
+    {
+        Guard    guard(stateMutex);
+        unsigned numWithPath, numWithoutPath;
+
+        bookkeeper.getPubPathCounts(numWithPath, numWithoutPath);
+        if (numWithPath == 1) {
+            lclNodeType = NodeType::PATH_TO_PUBLISHER;
+            peerSet.gotPath(peer);
+        }
+    }
+
+    /**
+     * Handles a remote node transitioning from having a path to the source of
+     * data-products to not having one. Might be called by a peer only *after*
+     * `Peer::operator()()` is called.
+     *
+     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @threadsafety  Safe
+     */
+    void noPathToPub(Peer& peer)
+    {
+        Guard    guard(stateMutex);
+        unsigned numWithPath, numWithoutPath;
+
+        bookkeeper.getPubPathCounts(numWithPath, numWithoutPath);
+        if (numWithPath == 0) {
+            lclNodeType = NodeType::NO_PATH_TO_PUBLISHER;
+            peerSet.lostPath(peer);
+        }
+    }
+
+    /**
      * Indicates if product-information should be requested from a remote peer.
      *
+     * @param[in] peer       Peer making the offer
      * @param[in] prodIndex  Identifier of the product
-     * @param[in] peer       Peer
      * @retval    `true`     Product-information should be requested
      * @retval    `false`    Product-information should not be requested
      */
     bool shouldRequest(
-            ProdIndex       prodIndex,
-            Peer&           peer)
+            Peer&           peer,
+            ProdIndex       prodIndex)
     {
-        Guard      guard{stateMutex};
-        const bool should = p2pMgrObs.shouldRequest(prodIndex) &&
-                bookkeeper.shouldRequest(peer, prodIndex);
+        const bool should = p2pSub.shouldRequest(prodIndex) &&
+                bookkeeper.shouldRequest(peer, prodIndex); // Thread safe
 
         LOG_DEBUG("Product-information %s %s be requested",
                 prodIndex.to_string().data(), should ? "should" : "shouldn't");
@@ -813,18 +919,18 @@ public:
     /**
      * Indicates if a data-segment should be requested from a remote peer.
      *
+     * @param[in] peer     Peer making the offer
      * @param[in] segId    Identifier of the data-segment
-     * @param[in] peer     Peer
      * @retval    `true`   The segment should be requested from the peer
      * @retval    `false`  The segment should not be requested from the peer
      */
     bool shouldRequest(
-            const SegId&    segId,
-            Peer&           peer)
+            Peer&           peer,
+            const SegId&    segId)
     {
         Guard      guard{stateMutex};
-        const bool should = p2pMgrObs.shouldRequest(segId) &&
-                bookkeeper.shouldRequest(peer, segId);
+        const bool should = p2pSub.shouldRequest(segId) &&
+                bookkeeper.shouldRequest(peer, segId); // Thread safe
 
         LOG_DEBUG("Data-segment %s %s be requested",
                 segId.to_string().data(), should ? "should" : "shouldn't");
@@ -833,49 +939,21 @@ public:
     }
 
     /**
-     * Obtains product-information for a remote peer.
-     *
-     * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Peer
-     * @return               The information. Will be empty if it doesn't exist.
-     */
-    ProdInfo get(
-            ProdIndex       prodIndex,
-            Peer&           peer)
-    {
-        return p2pMgrObs.get(prodIndex);
-    }
-
-    /**
-     * Obtains a data-segment for a remote peer.
-     *
-     * @param[in] segId      Identifier of the data-segment
-     * @param[in] peer       Peer
-     * @return               The segment. Will be empty if it doesn't exist.
-     */
-    MemSeg get(
-            const SegId&    segId,
-            Peer&           peer)
-    {
-        return p2pMgrObs.get(segId);
-    }
-
-    /**
      * Processes product-information from a peer.
      *
+     * @param[in] peer      Providing peer
      * @param[in] prodInfo  Product information
-     * @param[in] peer       Peer
      * @retval    `true`    Information was accepted
      * @retval    `false`   Information was previously accepted
      */
     bool hereIs(
-            const ProdInfo& prodInfo,
-            Peer&           peer)
+            Peer&           peer,
+            const ProdInfo& prodInfo)
     {
         if (!bookkeeper.received(peer, prodInfo.getProdIndex()))
             return false; // Wasn't requested
 
-        if (!p2pMgrObs.hereIsP2p(prodInfo))
+        if (!p2pSub.hereIsP2p(prodInfo))
             return false; // Wasn't needed
 
         peerSet.notify(prodInfo.getProdIndex(), peer);
@@ -885,78 +963,95 @@ public:
     /**
      * Processes a data-segment from a peer.
      *
+     * @param[in] peer     Providing peer
      * @param[in] seg      The data-segment
-     * @param[in] peer     Peer
      * @retval    `true`   Chunk was accepted
      * @retval    `false`  Chunk was previously accepted
      */
     bool hereIs(
-            TcpSeg&         seg,
-            Peer&           peer)
+            Peer&           peer,
+            TcpSeg&         seg)
     {
         if (!bookkeeper.received(peer, seg.getSegId()))
             return false; // Wasn't requested
 
-        if (!p2pMgrObs.hereIs(seg))
+        if (!p2pSub.hereIs(seg))
             return false; // Wasn't needed
 
         peerSet.notify(seg.getSegId(), peer);
         return true;
+    }
+
+    /**
+     * Obtains product-information for a remote peer.
+     *
+     * @param[in] prodIndex  Identifier of product
+     * @param[in] peer       Peer
+     * @return               The information. Will be empty if it doesn't exist.
+     */
+    ProdInfo getProdInfo(
+            Peer&           peer,
+            ProdIndex       prodIndex)
+    {
+        return p2pSndr.getProdInfo(prodIndex);
+    }
+
+    /**
+     * Obtains a data-segment for a remote peer.
+     *
+     * @param[in] segId      Identifier of the data-segment
+     * @param[in] peer       Peer
+     * @return               The segment. Will be empty if it doesn't exist.
+     */
+    MemSeg getMemSeg(
+            Peer&           peer,
+            const SegId&    segId)
+    {
+        return p2pSndr.getMemSeg(segId);
     }
 };
 
 /******************************************************************************/
 
 P2pMgr::P2pMgr()
-    : pImpl{}
-{}
+    : pImpl{} {
+}
 
 P2pMgr::P2pMgr(
-        const SockAddr& srvrAddr,
-        const int       listenSize,
-        PortPool&       portPool,
-        const int       maxPeers,
-        ServerPool&     serverPool,
-        P2pMgrObs&      p2pMgrObs)
-    : pImpl{new Impl(srvrAddr, listenSize, portPool, maxPeers, serverPool,
-            p2pMgrObs)}
-{}
+        P2pInfo&  p2pInfo,
+        P2pSndr&   p2pPub)
+    : pImpl(new PubP2pMgr(p2pInfo, p2pPub)) {
+}
 
 P2pMgr::P2pMgr(
-        P2pInfo&    p2pInfo,
-        ServerPool& p2pSrvrPool,
-        P2pMgrObs&  p2pMgrObs)
-    : pImpl{new Impl(p2pInfo, p2pSrvrPool, p2pMgrObs)}
-{}
+        P2pInfo&      p2pInfo,
+        ServerPool&   p2pSrvrPool,
+        P2pSub&       p2pSub)
+    : pImpl(new SubP2pMgr(p2pInfo, p2pSrvrPool, p2pSub)) {
+}
 
-P2pMgr& P2pMgr::setTimePeriod(const unsigned timePeriod)
-{
+P2pMgr& P2pMgr::setTimePeriod(const unsigned timePeriod) {
     pImpl->setTimePeriod(timePeriod);
     return *this;
 }
 
-void P2pMgr::operator ()()
-{
+void P2pMgr::operator ()() {
     pImpl->operator()();
 }
 
-size_t P2pMgr::size() const
-{
+size_t P2pMgr::size() const {
     return pImpl->size();
 }
 
-void P2pMgr::notify(ProdIndex prodIndex)
-{
+void P2pMgr::notify(const ProdIndex prodIndex) const {
     return pImpl->notify(prodIndex);
 }
 
-void P2pMgr::notify(const SegId& segId)
-{
+void P2pMgr::notify(const SegId& segId) const {
     return pImpl->notify(segId);
 }
 
-void P2pMgr::halt() const
-{
+void P2pMgr::halt() const {
     pImpl->halt();
 }
 

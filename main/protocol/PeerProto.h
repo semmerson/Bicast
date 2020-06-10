@@ -1,7 +1,7 @@
 /**
  * Peer-to-peer protocol.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
@@ -13,63 +13,86 @@
 #ifndef MAIN_PROTOCOL_PEERPROTO_H_
 #define MAIN_PROTOCOL_PEERPROTO_H_
 
+#include <main/inet/PortPool.h>
+#include <main/inet/Socket.h>
 #include "hycast.h"
 #include "NodeType.h"
-#include "PortPool.h"
-#include "Socket.h"
-
 #include <memory>
 
 namespace hycast {
 
 /**
- * Interface for an observer of a `PeerProto`.
+ * Interface for a peer that sends data to another peer (publisher &
+ * subscriber).
  */
-class PeerProtoObs
+class SendPeer
 {
 public:
-    virtual ~PeerProtoObs() noexcept
-    {}
+    virtual ~SendPeer() noexcept =default;
 
     /**
-     * Handles the remote node transitioning from not having a path to the
-     * source of data-products to having one.
-     */
-    virtual void pathToSrc() noexcept =0;
-
-    /**
-     * Handles the remote node transitioning from having a path to the source of
-     * data-products to not having one.
-     */
-    virtual void noPathToSrc() noexcept =0;
-
-    /**
-     * Handles a notice of available product-information.
-     *
-     * @param[in] prodIndex  Index of product
-     */
-    virtual void acceptNotice(ProdIndex prodIndex) =0;
-
-    /**
-     * Handles a notice of an available data-segment.
-     *
-     * @param[in] segId  Data-segment identifier
-     */
-    virtual void acceptNotice(const SegId& segId) =0;
-
-    /**
-     * Handles a request for product-information.
+     * Handles a request for product-information from the remote peer. Won't be
+     * called if the remote node is the publisher.
      *
      * @param[in] prodIndex  Identifier of product
      */
-    virtual void acceptRequest(ProdIndex prodIndex) =0;
+    virtual void sendMe(const ProdIndex prodIndex) =0;
 
     /**
-     * Handles a request for a data-segment.
+     * Handles a request for a data-segment from the remote peer. Won't be
+     * called if the remote node is the publisher.
      *
      * @param[in] segId  Identifier of data-segment
      */
-    virtual void acceptRequest(const SegId& segId) =0;
+    virtual void sendMe(const SegId& segId) =0;
+};
+
+/**
+ * Interface for a peer that receives data from another peer (subscriber only).
+ */
+class RecvPeer
+{
+public:
+    virtual ~RecvPeer() noexcept =default;
+
+    /**
+     * Returns a view of this instance as a `SendPeer` (every `RecvPeer`s should
+     * also be a `SendPeer`). This avoids the multiple inheritance diamond in
+     * which `SendPeer` is the base, `PubPeer::Impl` and `RecvPeer` both derive
+     * from it, and `SubPeer::Impl` derives from both of them, which would
+     * require virtual inheritance with its complications and performance hits.
+     *
+     * @return View of this instance as a `SendPeer`
+     */
+    virtual SendPeer& asSendPeer() noexcept =0;
+
+    /**
+     * Handles the remote node transitioning from not having a path to the
+     * publisher of data-products to having one. Won't be called if the remote
+     * node is the publisher.
+     */
+    virtual void pathToPub() =0;
+
+    /**
+     * Handles the remote node transitioning from having a path to the publisher
+     * of data-products to not having one. Won't be called if he remote node is
+     * the publisher.
+     */
+    virtual void noPathToPub() =0;
+
+    /**
+     * Handles a notice of available product-information from the remote peer.
+     *
+     * @param[in] prodIndex  Index of product
+     */
+    virtual void available(ProdIndex prodIndex) =0;
+
+    /**
+     * Handles a notice of an available data-segment from the remote peer.
+     *
+     * @param[in] segId  Data-segment identifier
+     */
+    virtual void available(const SegId& segId) =0;
 
     /**
      * Accepts product-information from the remote peer.
@@ -78,7 +101,7 @@ public:
      * @retval    `true`     Accepted
      * @retval    `false`    Previously accepted
      */
-    virtual void accept(const ProdInfo& prodInfo) =0;
+    virtual void hereIs(const ProdInfo& prodInfo) =0;
 
     /**
      * Accepts a data-segment from the remote peer.
@@ -87,12 +110,18 @@ public:
      * @retval    `true`     Segment was accepted
      * @retval    `false`    Segment was previously accepted
      */
-    virtual void accept(TcpSeg& seg) =0;
+    virtual void hereIs(TcpSeg& seg) =0;
 };
 
-class PeerProto
+/**
+ * Peer protocol
+ */
+class PeerProto final
 {
-    class                 Impl;
+public:
+    class Impl;
+
+protected:
     std::shared_ptr<Impl> pImpl;
 
     PeerProto(Impl* impl);
@@ -101,34 +130,61 @@ public:
     PeerProto() =default;
 
     /**
-     * Server-side construction.
+     * Publisher & subscriber sending-side construction.
      *
-     * @param[in]     sock      Server's listening TCP socket
-     * @param[in,out] portPool  Pool of port numbers for transient servers
-     * @param[in]     observer  Observer of this instance
-     * @param[in]     nodeType  Type of node
-     * @cancellationpoint       Yes
+     * @param[in]     sock         Server's listening TCP socket
+     * @param[in,out] portPool     Pool of port numbers for transient servers
+     * @param[in]     peer         Sending Peer
+     * @cancellationpoint          Yes
      */
     PeerProto(
-            TcpSock&       sock,
-            PortPool&      portPool,
-            NodeType&      nodeType,
-            PeerProtoObs&  observer);
+            TcpSock&  sock,
+            PortPool& portPool,
+            SendPeer& peer);
 
     /**
-     * Client-side construction.
+     * Subscriber server-side construction.
+     *
+     * @param[in]     sock         Server's listening TCP socket
+     * @param[in,out] portPool     Pool of port numbers for transient servers
+     * @param[in]     lclNodeType  Type of local node
+     * @param[in]     subPeer      Subscriber peer
+     * @cancellationpoint          Yes
+     */
+    PeerProto(
+            TcpSock&   sock,
+            PortPool&  portPool,
+            NodeType   lclNodeType,
+            RecvPeer&  subPeer);
+
+    /**
+     * Subscriber client-side construction.
      *
      * @param[in] rmtSrvrAddr  Socket address of remote peer-server
-     * @param[in] nodeType     Type of local node
-     * @param[in] observer     Observer of this instance
+     * @param[in] lclNodeType  Type of local node
+     * @throws    LogicError   `lclNodeType == NodeType::PUBLISHER`
+     * @param[in] subPeer      Subscriber peer
      * @cancellationpoint      Yes
      */
     PeerProto(
             const SockAddr& rmtSrvrAddr,
-            NodeType&       nodeType,
-            PeerProtoObs&   observer);
+            const NodeType  lclNodeType,
+            RecvPeer&       subPeer);
 
+    /**
+     * Indicates if this instance is valid (i.e., not default constructed).
+     *
+     * @retval `true`   Valid
+     * @retval `false`  Not valid
+     */
     operator bool() const;
+
+    /**
+     * Returns the type of the remote node.
+     *
+     * @return  Type of remote node
+     */
+    NodeType getRmtNodeType() const noexcept;
 
     /**
      * Returns the socket address of the remote peer.
@@ -155,16 +211,6 @@ public:
     std::string to_string() const;
 
     /**
-     * Indicates if, after construction, the remote node is a path to the source
-     * of data-products. The result can be changed later by this instance
-     * calling `pathToSrc()` and `noPathToSrc()` after `operator()` is called.
-     *
-     * @retval `false`  Remove node is not a path to source
-     * @retval `true`   Remove node is a path to source
-     */
-    bool isPathToSrc() const noexcept;
-
-    /**
      * Executes this instance.
      *
      * @throws SystemError   System error
@@ -178,18 +224,6 @@ public:
      * remote peer.
      */
     void halt() const;
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to being
-     * a path to the source of data-products.
-     */
-    void gotPath() const;
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to not
-     * being a path to the source of data-products.
-     */
-    void lostPath() const;
 
     /**
      * Notifies the remote peer of available product information.
@@ -208,22 +242,6 @@ public:
     void notify(const SegId& id) const;
 
     /**
-     * Requests information on a product from the remote peer.
-     *
-     * @param[in] prodId     Product identifier
-     * @cancellationpoint    Yes
-     */
-    void request(ProdIndex prodId) const;
-
-    /**
-     * Requests a data-segment from the remote peer.
-     *
-     * @param[in] segId      Segment identifier
-     * @cancellationpoint    Yes
-     */
-    void request(SegId segId) const;
-
-    /**
      * Sends product-information to the remote peer.
      *
      * @param[in] info     Product-information
@@ -238,6 +256,42 @@ public:
      * @cancellationpoint  Yes
      */
     void send(const MemSeg& seg) const;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to being
+     * a path to the publisher of data-products.
+     *
+     * @throws LogicError    This instance is a publisher
+     * @cancellationpoint    Yes
+     */
+    void gotPath() const;
+
+    /**
+     * Notifies the remote peer that this local node just transitioned to not
+     * being a path to the publisher of data-products.
+     *
+     * @throws LogicError    This instance is a publisher
+     * @cancellationpoint    Yes
+     */
+    void lostPath() const;
+
+    /**
+     * Requests information on a product from the remote peer.
+     *
+     * @param[in] prodIndex   Product index
+     * @throws    LogicError  This instance is a publisher
+     * @cancellationpoint     Yes
+     */
+    void request(ProdIndex prodIndex) const;
+
+    /**
+     * Requests a data-segment from the remote peer.
+     *
+     * @param[in] segId       Segment identifier
+     * @throws    LogicError  This instance is a publisher
+     * @cancellationpoint     Yes
+     */
+    void request(SegId segId) const;
 };
 
 } // namespace

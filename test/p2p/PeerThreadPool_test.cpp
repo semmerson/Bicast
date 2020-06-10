@@ -23,7 +23,7 @@
 namespace {
 
 /// The fixture for testing class `PeerThreadPool`
-class PeerThreadPoolTest : public ::testing::Test, public hycast::PeerObs
+class PeerThreadPoolTest : public ::testing::Test, public hycast::PeerMgrApi
 {
 protected:
     typedef std::mutex              Mutex;

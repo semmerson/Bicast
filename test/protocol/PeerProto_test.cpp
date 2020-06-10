@@ -13,8 +13,8 @@
 #include <error.h>
 #include <gtest/gtest.h>
 #include <gtest/internal/gtest-internal.h>
+#include <main/inet/SockAddr.h>
 #include <PeerProto.h>
-#include <SockAddr.h>
 #include <condition_variable>
 #include <cstring>
 #include <exception>
@@ -24,7 +24,10 @@
 namespace {
 
 /// The fixture for testing class `PeerProto`
-class PeerProtoTest : public ::testing::Test, public hycast::PeerProtoObs
+class PeerProtoTest
+        : public ::testing::Test
+        , public hycast::SendPeer
+        , public hycast::RecvPeer
 {
 protected:
     typedef enum {
@@ -43,7 +46,7 @@ protected:
     State                   state;
     std::mutex              mutex;
     std::condition_variable cond;
-    hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        pubAddr;
     hycast::PortPool        portPool;
     hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
@@ -53,13 +56,13 @@ protected:
     hycast::SegInfo         segInfo;
     char*                   memData;
     hycast::MemSeg          memSeg;
-    hycast::PeerProto       srvrProto;
+    hycast::PeerProto       pubProto;
 
     PeerProtoTest()
         : state{INIT}
         , mutex{}
         , cond{}
-        , srvrAddr{"localhost:3880"}
+        , pubAddr{"localhost:3880"}
         /*
          * 3 potential port numbers for the client's 2 temporary servers because
          * the initial client connection could use one
@@ -73,7 +76,7 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{new char[segSize]}
         , memSeg{segInfo, memData}
-        , srvrProto{}
+        , pubProto{}
     {
         ::memset(memData, 0xbd, segSize);
     }
@@ -98,47 +101,52 @@ protected:
     }
 
 public:
-    void pathToSrc() noexcept
+    hycast::SendPeer& asSendPeer() noexcept
+    {
+        return *this;
+    }
+
+    void pathToPub() noexcept
     {
         orState(PATH_TO_SRC_RCVD);
     }
 
-    void noPathToSrc() noexcept
+    void noPathToPub() noexcept
     {
         orState(NO_PATH_TO_SRC_RCVD);
     }
 
-    void acceptNotice(hycast::ProdIndex actual)
+    void available(hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_NOTICE_RCVD);
     }
 
-    void acceptNotice(const hycast::SegId& actual)
+    void available(const hycast::SegId& actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
     }
 
-    void acceptRequest(hycast::ProdIndex actual)
+    void sendMe(hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_REQUEST_RCVD);
     }
 
-    void acceptRequest(const hycast::SegId& actual)
+    void sendMe(const hycast::SegId& actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
     }
 
-    void accept(const hycast::ProdInfo& actual)
+    void hereIs(const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
     }
 
-    void accept(hycast::TcpSeg& seg)
+    void hereIs(hycast::TcpSeg& seg)
     {
         const hycast::SegSize size = seg.getSegInfo().getSegSize();
         ASSERT_EQ(segSize, size);
@@ -152,21 +160,21 @@ public:
         orState(SEG_RCVD);
     }
 
-    void startServer()
+    void startPub()
     {
         try {
-            hycast::TcpSrvrSock srvrSock(srvrAddr);
+            hycast::TcpSrvrSock srvrSock(pubAddr);
 
             // Must be after listening socket creation and before accept
             orState(LISTENING);
 
             hycast::TcpSock    sock{srvrSock.accept()};
             hycast::NodeType   nodeType;
-            srvrProto = hycast::PeerProto(sock, portPool, nodeType, *this);
+            pubProto = hycast::PeerProto(sock, portPool, *this);
 
             orState(CONNECTED);
 
-            srvrProto();
+            pubProto();
         }
         catch (const std::exception& ex) {
             hycast::log_error(ex);
@@ -178,67 +186,67 @@ public:
 // Tests default construction
 TEST_F(PeerProtoTest, DefaultConstruction)
 {
-    hycast::PeerProto peerProto();
+    hycast::PeerProto pubProto();
 }
 
 // Tests exchange
 TEST_F(PeerProtoTest, Exchange)
 {
-    // Start server
-    std::thread srvrThread{&PeerProtoTest::startServer, this};
+    // Start publisher
+    std::thread pubThread{&PeerProtoTest::startPub, this};
 
     try {
         waitForBit(LISTENING);
 
-        // Start client
+        // Start subscriber
         hycast::NodeType  nodeType;
-        hycast::PeerProto clntProto{srvrAddr, nodeType, *this};
-        std::thread       clntThread(clntProto);
+        hycast::PeerProto subProto(pubAddr, nodeType, *this);
+        std::thread       subThread(subProto);
 
         try {
             waitForBit(CONNECTED);
 
             // Send
-            srvrProto.notify(prodIndex);
+            pubProto.notify(prodIndex);
             waitForBit(PROD_NOTICE_RCVD);
-            clntProto.request(prodIndex);
+            subProto.request(prodIndex);
             waitForBit(PROD_REQUEST_RCVD);
-            srvrProto.send(prodInfo);
+            pubProto.send(prodInfo);
             waitForBit(PROD_INFO_RCVD);
 
-            srvrProto.notify(segId);
+            pubProto.notify(segId);
             waitForBit(SEG_NOTICE_RCVD);
-            clntProto.request(segId);
+            subProto.request(segId);
             waitForBit(SEG_REQUEST_RCVD);
-            srvrProto.send(memSeg);
+            pubProto.send(memSeg);
             waitForBit(SEG_RCVD);
 
-            clntProto.halt();
-            clntThread.join();
-            srvrThread.join();
+            subProto.halt();
+            subThread.join();
+            pubThread.join();
         } // `clntThread` allocated
         catch (const std::exception& ex) {
             hycast::log_fatal(ex);
-            clntThread.join();
+            subThread.join();
             throw;
         }
         catch (...) {
             LOG_FATAL("Thread cancellation?");
-            clntThread.join();
+            subThread.join();
             throw;
         }
     } // `srvrThread` allocated
     catch (const std::exception& ex) {
         hycast::log_fatal(ex);
-        if (srvrProto)
-            srvrProto.halt();
-        srvrThread.join();
+        if (pubProto)
+            pubProto.halt();
+        pubThread.join();
         throw;
     }
     catch (...) {
         LOG_FATAL("Thread cancellation?");
-        srvrProto.halt();
-        srvrThread.join();
+        pubProto.halt();
+        pubThread.join();
         throw;
     }
 }

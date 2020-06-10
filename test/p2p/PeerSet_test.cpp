@@ -13,35 +13,34 @@
 
 #include "PeerFactory.h"
 #include "PeerSet.h"
-#include "SockAddr.h"
-
 #include <atomic>
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 
 namespace {
 
 /// The fixture for testing class `PeerSet`
-class PeerSetTest : public ::testing::Test, public hycast::PeerObs,
+class PeerSetTest : public ::testing::Test, public hycast::PeerMgrApi,
         public hycast::PeerSet::Observer
 {
 protected:
-    friend class Receiver;
+    friend class Subscriber;
 
     typedef enum {
         INIT = 0,
-        LISTENING = 1,
-        PROD_NOTICE_RCVD = 2,
-        SEG_NOTICE_RCVD = 4,
-        PROD_REQUEST_RCVD = 8,
-        SEG_REQUEST_RCVD = 16,
-        PROD_INFO_RCVD = 32,
-        SEG_RCVD = 64,
-        CLNT_PEER_STOPPED = 128,
-        SRVR_PEER_STOPPED = 256,
-        EXCHANGE_COMPLETE = LISTENING |
+        PUB_PEER_ACTIVE = 0x1,
+        PROD_NOTICE_RCVD = 0x2,
+        SEG_NOTICE_RCVD = 0x4,
+        PROD_REQUEST_RCVD = 0x8,
+        SEG_REQUEST_RCVD = 0x10,
+        PROD_INFO_RCVD = 0x20,
+        SEG_RCVD = 0x40,
+        CLNT_PEER_STOPPED = 0x80,
+        SRVR_PEER_STOPPED = 0x100,
+        EXCHANGE_COMPLETE = PUB_PEER_ACTIVE |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -53,8 +52,8 @@ protected:
                SRVR_PEER_STOPPED
     } State;
     State                   state;
-    hycast::SockAddr        srvrAddr;
-    hycast::SockAddr        clntAddr;
+    hycast::SockAddr        pubAddr;
+    hycast::SockAddr        subAddr;
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
@@ -66,20 +65,18 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
-    hycast::NodeType        srvrNodeType;
-    hycast::NodeType        clntNodeType;
-    hycast::PeerFactory     srvrFactory;
-    hycast::PeerFactory     clntFactory;
-    hycast::Peer            srvrPeer;
-    hycast::Peer            clntPeer;
+    hycast::PeerFactory     pubFactory;
+    hycast::PeerFactory     subFactory;
+    hycast::Peer            pubPeer;
+    hycast::Peer            subPeer;
 
     // You can remove any or all of the following functions if its body
     // is empty.
 
     PeerSetTest()
         : state{INIT}
-        , srvrAddr{"localhost:3880"}
-        , clntAddr{"localhost:3881"}
+        , pubAddr{"localhost:3880"}
+        , subAddr{"localhost:3881"}
         /*
          * 3 potential port numbers for the server's 2 temporary servers because
          * the initial client connection could use one
@@ -95,18 +92,14 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , srvrNodeType{}
-        , clntNodeType{}
-        , srvrFactory()
-        , clntFactory()
-        , srvrPeer()
-        , clntPeer()
+        , pubFactory()
+        , subFactory()
+        , pubPeer()
+        , subPeer()
     {
         ::memset(memData, 0xbd, segSize);
-        srvrFactory = hycast::PeerFactory(srvrAddr, 1, portPool, *this,
-                srvrNodeType);
-        clntFactory = hycast::PeerFactory(clntAddr, 1, portPool, *this,
-                clntNodeType);
+        pubFactory = hycast::PeerFactory(pubAddr, 1, portPool, *this);
+        subFactory = hycast::PeerFactory(subAddr, 1, portPool, *this);
     }
 
 public:
@@ -124,13 +117,13 @@ public:
             cond.wait(lock);
     }
 
-    void pathToSrc(hycast::Peer peer)
+    void pathToPub(hycast::Peer peer)
     {}
 
-    void noPathToSrc(hycast::Peer peer)
+    void noPathToPub(hycast::Peer peer)
     {}
 
-    // Receiver-side
+    // Subscriber-side
     bool shouldRequest(
             const hycast::ProdIndex actual,
             hycast::Peer&           peer)
@@ -141,7 +134,7 @@ public:
         return true;
     }
 
-    // Receiver-side
+    // Subscriber-side
     bool shouldRequest(
             const hycast::SegId&    actual,
             hycast::Peer&           peer)
@@ -152,7 +145,7 @@ public:
         return true;
     }
 
-    // Sender-side
+    // Publisher-side
     hycast::ProdInfo get(
             const hycast::ProdIndex actual,
             hycast::Peer&           peer)
@@ -162,7 +155,7 @@ public:
         return prodInfo;
     }
 
-    // Sender-side
+    // Publisher-side
     hycast::MemSeg get(
             const hycast::SegId&    actual,
             hycast::Peer&           peer)
@@ -172,7 +165,7 @@ public:
         return memSeg;
     }
 
-    // Receiver-side
+    // Subscriber-side
     bool hereIs(
             const hycast::ProdInfo& actual,
             hycast::Peer&           peer)
@@ -183,7 +176,7 @@ public:
         return true;
     }
 
-    // Receiver-side
+    // Subscriber-side
     bool hereIs(
             hycast::TcpSeg&         actual,
             hycast::Peer&           peer)
@@ -203,23 +196,24 @@ public:
 
     void stopped(hycast::Peer peer)
     {
-        EXPECT_TRUE(peer == srvrPeer || peer == clntPeer);
+        EXPECT_TRUE(peer == pubPeer || peer == subPeer);
 
-        if (peer == srvrPeer) {
+        if (peer == pubPeer) {
             orState(SRVR_PEER_STOPPED);
         }
-        else if (peer == clntPeer) {
+        else if (peer == subPeer) {
             orState(CLNT_PEER_STOPPED);
         }
     }
 
-    void runServer(hycast::PeerSet& peerSet)
+    void runPub(hycast::PeerSet& peerSet)
     {
-        orState(LISTENING);
-        srvrPeer = srvrFactory.accept();
+        // Calls listen()
+        pubPeer = pubFactory.accept(hycast::NodeType::PUBLISHER);
         EXPECT_EQ(0, peerSet.size());
-        peerSet.activate(srvrPeer); // Executes peer on new thread
+        peerSet.activate(pubPeer); // Executes peer on new thread
         EXPECT_EQ(1, peerSet.size());
+        orState(PUB_PEER_ACTIVE);
     }
 };
 
@@ -232,34 +226,33 @@ TEST_F(PeerSetTest, DefaultConstruction)
 // Tests complete exchange (notice, request, delivery)
 TEST_F(PeerSetTest, Exchange)
 {
-    // Start server
-    hycast::PeerSet srvrPeerSet{*this};
-    std::thread     srvrThread(&PeerSetTest::runServer, this,
-            std::ref(srvrPeerSet));
+    // Start publisher
+    hycast::PeerSet pubPeerSet{*this};
+    std::thread     pubThread(&PeerSetTest::runPub, this, std::ref(pubPeerSet));
 
-    waitForState(LISTENING);
-
-    // Start client
-    hycast::PeerSet clntPeerSet{*this};
-    clntPeer = clntFactory.connect(srvrAddr);
-    EXPECT_EQ(0, clntPeerSet.size());
-    clntPeerSet.activate(clntPeer); // Executes `clntPeer` on new thread
-    EXPECT_EQ(1, clntPeerSet.size());
+    // Start subscriber
+    hycast::PeerSet subPeerSet{*this};
+    subPeer = subFactory.connect(pubAddr,
+            hycast::NodeType::NO_PATH_TO_PUBLISHER);
+    EXPECT_EQ(0, subPeerSet.size());
+    subPeerSet.activate(subPeer); // Executes `subPeer` on new thread
+    EXPECT_EQ(1, subPeerSet.size());
 
     // Start an exchange
-    clntPeerSet.notify(prodIndex);
-    clntPeerSet.notify(segId);
+    waitForState(PUB_PEER_ACTIVE);
+    pubPeerSet.notify(prodIndex);
+    pubPeerSet.notify(segId);
 
     // Wait for the exchange to complete
     waitForState(EXCHANGE_COMPLETE);
 
-    // Terminate clnt peer. Causes server-peer to terminate.
-    clntPeer.halt();
+    // Terminate subscribing peer. Causes publishing-peer to terminate.
+    subPeer.halt();
 
     // Wait for the peers to be removed from their peer-sets
     waitForState(DONE);
 
-    srvrThread.join();
+    pubThread.join();
 }
 
 }  // namespace

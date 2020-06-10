@@ -16,11 +16,11 @@
 #include "error.h"
 #include "McastProto.h"
 #include "P2pMgr.h"
-#include "PortPool.h"
 #include "ServerPool.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/inet/PortPool.h>
 #include <mutex>
 
 namespace {
@@ -28,8 +28,8 @@ namespace {
 /// The fixture for testing
 class HycastTest :
         public ::testing::Test,
-        public hycast::P2pMgrObs,
-        public hycast::McastRcvrObs
+        public hycast::SendNode,
+        public hycast::McastSub
 {
 protected:
     hycast::SockAddr        grpAddr; // Multicast group address

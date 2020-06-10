@@ -1,7 +1,7 @@
 /**
- * Keeps track of peers and message exchanges in a thread-safe manner.
+ * Keeps track of peer performance in a thread-safe manner.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
@@ -22,17 +22,45 @@
 
 namespace hycast {
 
+/**
+ * Interface for performance monitoring of peers.
+ */
 class Bookkeeper
 {
-    class                 Impl;
+protected:
+    class Impl;
+
     std::shared_ptr<Impl> pImpl;
 
-public:
-    typedef std::unordered_set<ChunkId> ChunkIds;
-    typedef std::list<Peer>             Peers;
-    typedef ChunkIds::iterator          ChunkIdIter;
-    typedef Peers::iterator             PeerIter;
+    Bookkeeper(Impl* impl);
 
+public:
+    virtual ~Bookkeeper() noexcept =default;
+
+    virtual void add(const Peer& peer) const =0;
+
+    virtual Peer getWorstPeer() const =0;
+
+    /**
+     * Resets the measure of utility for every peer.
+     *
+     * @threadsafety       Safe
+     * @exceptionsafety    No throw
+     * @cancellationpoint  No
+     */
+    virtual void resetCounts() const noexcept =0;
+
+    virtual void erase(const Peer& peer) const =0;
+};
+
+/**
+ * Bookkeeper for a set of publisher-peers.
+ */
+class PubBookkeeper final : public Bookkeeper
+{
+    class Impl;
+
+public:
     /**
      * Constructs.
      *
@@ -40,17 +68,43 @@ public:
      * @throws std::system_error  Out of memory
      * @cancellationpoint         No
      */
-    Bookkeeper(int maxPeers);
+    PubBookkeeper(const int maxPeers);
 
+    void add(const Peer& peer) const;
+
+    void requested(const Peer& peer, const ProdInfo& prodInfo) const;
+
+    void requested(const Peer& peer, const SegInfo& segInfo) const;
+
+    Peer getWorstPeer() const;
+
+    void resetCounts() const noexcept;
+
+    void erase(const Peer& peer) const;
+};
+
+/**
+ * Bookkeeper for a set of subscriber-peers.
+ */
+class SubBookkeeper final : public Bookkeeper
+{
+    typedef std::unordered_set<ChunkId> ChunkIds;
+    typedef std::list<Peer>             Peers;
+    typedef ChunkIds::iterator          ChunkIdIter;
+    typedef Peers::iterator             PeerIter;
+
+    class Impl;
+
+public:
     /**
-     * Adds a peer.
+     * Constructs.
      *
-     * @param[in] peer            The peer
+     * @param[in] maxPeers        Maximum number of peers
      * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
+    SubBookkeeper(int maxPeers);
+
     void add(const Peer& peer) const;
 
     /**
@@ -60,7 +114,7 @@ public:
      * @param[out] numPath    Number of remote peers that are path to source
      * @param[out] numNoPath  Number of remote peers that aren't path to source
      */
-    void getSrcPathCounts(
+    void getPubPathCounts(
             unsigned& numPath,
             unsigned& numNoPath) const;
 
@@ -81,8 +135,8 @@ public:
      * @cancellationpoint            No
      */
     bool shouldRequest(
-            Peer&           peer,
-            const ChunkId   chunkId) const;
+            Peer&         peer,
+            const ChunkId chunkId) const;
 
     /**
      * Process a chunk as having been received from a peer. Nothing happens if
@@ -100,45 +154,21 @@ public:
      * @cancellationpoint            No
      */
     bool received(
-            Peer&           peer,
-            const ChunkId   chunkId) const;
+            Peer&         peer,
+            const ChunkId chunkId) const;
 
-    /**
-     * Returns a worst performing peer.
-     *
-     * @return                    A worst performing peer since construction
-     *                            or `resetCounts()` was called. Will test
-     *                            false if the set is empty.
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
-     */
+    void received(
+            const Peer&     peer,
+            const ProdInfo& prodInfo) const;
+
+    void received(
+            const Peer&    peer,
+            const SegInfo& segInfo) const;
+
     Peer getWorstPeer() const;
 
-    /**
-     * Returns a worst performing peer.
-     *
-     * @param[in] isPathToSrc     Attribute that peer must have
-     * @return                    A worst performing peer -- whose
-     *                            `isPathToSrc()` return value equals
-     *                            `isPathToSrc` -- since construction or
-     *                            `resetCounts()` was called. Will test false if
-     *                            the set is empty.
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
-     */
-    Peer getWorstPeer(bool isPathToSrc) const;
+    Peer getWorstPeer(const bool isPathToSrc) const;
 
-    /**
-     * Resets the measure of utility for every peer.
-     *
-     * @threadsafety       Safe
-     * @exceptionsafety    No throw
-     * @cancellationpoint  No
-     */
     void resetCounts() const noexcept;
 
     /**
@@ -159,7 +189,7 @@ public:
      * @see                       `requested()`
      * @see                       `erase()`
      */
-    Bookkeeper::ChunkIds& getRequested(const Peer& peer) const;
+    const ChunkIds& getRequested(const Peer& peer) const;
 
     /**
      * Returns the best peer to request a chunk that hasn't already requested
@@ -178,32 +208,10 @@ public:
      */
     Peer popBestAlt(const ChunkId chunkId) const;
 
-    /**
-     * Marks a peer as being responsible for a chunk.
-     *
-     * @param[in] peer     Peer
-     * @param[in] chunkId  Identifier of chunk
-     * @see                `getRequested()`
-     * @see                `popBestAlt()`
-     * @see                `erase()`
-     */
     void requested(
-            Peer&           peer,
-            const ChunkId   chunkId) const;
+            const Peer&    peer,
+            const ChunkId& chunkId) const;
 
-    /**
-     * Removes a peer. Should be called after processing the entire set
-     * returned by `getChunkIds()`.
-     *
-     * @param[in] peer            The peer to be removed
-     * @throws std::out_of_range  `peer` is unknown
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `getRequested()`
-     * @see                       `popBestAlt()`
-     * @see                       `requested()`
-     */
     void erase(const Peer& peer) const;
 };
 

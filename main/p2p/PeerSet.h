@@ -19,44 +19,62 @@
 
 namespace hycast {
 
-class PeerSet
+/**
+ * Interface for a manager of a set of active peers.
+ */
+class PeerSetMgr
 {
-protected:
-    class                 Impl;
+public:
+    /**
+     * Destroys.
+     */
+    virtual ~PeerSetMgr() noexcept =0;
+
+    /**
+     * Handles the stopping of a peer.
+     *
+     * @param[in] peer  Peer that stopped
+     */
+    virtual void stopped(Peer peer) =0;
+};
+
+
+/**
+ * A set of active peers.
+ */
+class PeerSet final
+{
+    class Impl;
+
     std::shared_ptr<Impl> pImpl;
 
 public:
-    class Observer
-    {
-    public:
-        virtual ~Observer() =0;
-
-        virtual void stopped(Peer peer) =0;
-    };
-
-    /**
-     * Default constructs.
-     */
-    PeerSet();
-
     /**
      * Constructs.
      *
      * @param[in] observer  Observer to be notified if and when a peer stops
-     *                      due to throwing an exception
+     *                      due to throwing an exception. Must exist for the
+     *                      duration of this instance.
      */
-    PeerSet(Observer& obs);
+    PeerSet(PeerSetMgr& peerSetMgr);
 
     /**
-     * Adds a peer to the set.
+     * Adds a peer to the set of active peers.
      *
-     * @param[in] peer     The peer to add. `peer()` should not have been
-     *                     called.
-     * @retval    `true`   Success
-     * @retval    `false`  The peer is already in the set
-     * @threadsafety       Safe
+     * @param[in] peer        Peer to be activated
+     * @threadsafety          Safe
+     * @exceptionSafety       Strong guarantee
+     * @cancellationpoint     No
      */
-    bool activate(const Peer peer);
+    void activate(const Peer peer);
+
+    /**
+     * Returns the number of active peers in the set.
+     *
+     * @return        Number of active peers
+     * @threadsafety  Safe
+     */
+    size_t size() const noexcept;
 
     /**
      * Notifies all peers in the set, except one, that the local node has
@@ -79,7 +97,7 @@ public:
     /**
      * Notifies all the peers in the set of available product-information.
      *
-     * @param[in] prodIndex  Indentifier of product
+     * @param[in] prodIndex  Identifier of product
      */
     void notify(ProdIndex prodIndex);
 
@@ -111,14 +129,6 @@ public:
     void notify(
             const SegId& segId,
             const Peer&  notPeer);
-
-    /**
-     * Returns the number of active peers in the set.
-     *
-     * @return        Number of active peers
-     * @threadsafety  Safe
-     */
-    size_t size() const noexcept;
 };
 
 } // namespace

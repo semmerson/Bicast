@@ -8,14 +8,15 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= ProdFile.cpp ProdFile.h \
+lib_la_SOURCES 	= ProdFile.cpp   ProdFile.h \
+		  Watcher.cpp    Watcher.h \
 		  Repository.cpp Repository.h
 
 # Compiler options. Here we are adding the include directory to be searched for
 # headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \
-	      -I$(srcdir)/../net_io \
+	      -I$(srcdir)/../inet \
 	      -I$(srcdir)/../protocol
 
 SUFFIXES: .i .cpp

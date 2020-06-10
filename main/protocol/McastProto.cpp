@@ -99,7 +99,7 @@ void McastSndr::multicast(const MemSeg& seg)
 class McastRcvr::Impl
 {
     UdpSock          sock;
-    McastRcvrObs*    observer;
+    McastSub*    mcastSub;
 
     void addCommon(
             SegSize&         varSize,
@@ -130,7 +130,7 @@ class McastRcvr::Impl
 
         sock.discard();
 
-        observer->hereIsMcast(ProdInfo{prodIndex, prodSize,
+        mcastSub->hereIsMcast(ProdInfo{prodIndex, prodSize,
             std::string(buf, nameLen)});
 
         return true;
@@ -152,7 +152,7 @@ class McastRcvr::Impl
 
         UdpSeg udpSeg{SegInfo{SegId{prodIndex, segOffset}, prodSize, segSize},
                 sock};
-        observer->hereIs(udpSeg);
+        mcastSub->hereIs(udpSeg);
         sock.discard();
 
         return true;
@@ -160,9 +160,9 @@ class McastRcvr::Impl
 
 public:
     Impl(   const SrcMcastAddrs& srcMcastInfo,
-            McastRcvrObs&       observer)
+            McastSub&            mcastSub)
         : sock{srcMcastInfo.grpAddr, srcMcastInfo.srcAddr}
-        , observer{&observer}
+        , mcastSub{&mcastSub}
     {}
 
     /**
@@ -208,8 +208,8 @@ public:
 
 McastRcvr::McastRcvr(
         const SrcMcastAddrs& srcMcastInfo,
-        McastRcvrObs&       observer)
-    : pImpl{new Impl(srcMcastInfo, observer)}
+        McastSub&            mcastSub)
+    : pImpl{new Impl(srcMcastInfo, mcastSub)}
 {}
 
 void McastRcvr::operator()()

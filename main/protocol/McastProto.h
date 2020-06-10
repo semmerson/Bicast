@@ -13,10 +13,9 @@
 #ifndef MAIN_PROTOCOL_INPROTO_H_
 #define MAIN_PROTOCOL_INPROTO_H_
 
+#include <main/inet/SockAddr.h>
+#include <main/inet/Socket.h>
 #include "hycast.h"
-#include "SockAddr.h"
-#include "Socket.h"
-
 #include <memory>
 
 namespace hycast {
@@ -103,12 +102,12 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for an observer of a multicast receiver.
+ * Interface for a subscriber of a multicast products.
  */
-class McastRcvrObs
+class McastSub
 {
 public:
-    virtual ~McastRcvrObs()
+    virtual ~McastSub()
     {}
 
     virtual bool hereIsMcast(const ProdInfo& prodInfo) =0;
@@ -131,12 +130,12 @@ public:
      * Constructs.
      *
      * @param[in] srcMcastInfo  Source-specific multicast information
-     * @param[in] observer      Observer of this instance
+     * @param[in] mcastSub      Subscriber of multicast products
      * @cancellationpoint       Yes
      */
     McastRcvr(
             const SrcMcastAddrs& srcMcastInfo,
-            McastRcvrObs&        observer);
+            McastSub&            mcastSub);
 
     /**
      * Executes the multicast receiver. Calls this instance's observer. Returns

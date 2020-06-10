@@ -41,7 +41,7 @@ protected:
     char*             data; ///< For `get()`
     const ProdSize    prodSize;
     const ProdSize    numSegs;
-    const int         fd;
+    int               fd;
     const SegSize     segSize;
     const SegSize     lastSegSize;
 
@@ -216,7 +216,7 @@ const void* ProdFile::getData(const ProdSize offset) const
 /******************************************************************************/
 
 /**
- * Product-file implementation for the source of data-products.
+ * Product-file implementation for the publisher of data-products.
  */
 class SndProdFile::Impl final : public ProdFile::Impl
 {
@@ -286,6 +286,22 @@ class RcvProdFile::Impl final : public ProdFile::Impl
 {
     std::vector<bool> haveSegs;
     ProdSize          segCount;
+    ProdInfo          prodInfo;
+
+    /**
+     * Opens a file-descriptor.
+     *
+     * @param[in] pathname  Pathname of file to open
+     * @return              File-descriptor
+     * @throws SystemError  `::open()` failure
+     */
+    static int open(const std::string& pathname)
+    {
+        const int fd = ::open(pathname.data(), O_RDWR|O_CREAT, 0600);
+        if (fd == -1)
+            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
+        return fd;
+    }
 
     /**
      * Creates a file. The file will have the given size and be zero-filled.
@@ -306,10 +322,7 @@ class RcvProdFile::Impl final : public ProdFile::Impl
                     "file \"" + pathname + "\"");
 
         ensureDir(dirPath(pathname), 0700);
-
-        const int fd = ::open(pathname.data(), O_RDWR|O_CREAT, 0600);
-        if (fd == -1)
-            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
+        const int fd = open(pathname.data());
 
         try {
             int status = ::ftruncate(fd, prodSize);
@@ -327,12 +340,20 @@ class RcvProdFile::Impl final : public ProdFile::Impl
     }
 
 public:
+    /**
+     * Constructs. The instance will be open on the file.
+     *
+     * @param[in] pathname  Pathname of file
+     * @param[in] prodSize  Product size in bytes
+     * @param[in] segSize   Canonical segment size in bytes
+     */
     Impl(   const std::string& pathname,
             const ProdSize     prodSize,
             const SegSize      segSize)
         : ProdFile::Impl{pathname, segSize, create(pathname, prodSize, segSize)}
         , haveSegs(numSegs, false)
         , segCount{0}
+        , prodInfo()
     {
         if (prodSize) {
             data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize,
@@ -379,10 +400,44 @@ public:
         return accepted;
     }
 
+    void setProdInfo(const ProdInfo& prodInfo)
+    {
+        Guard guard(mutex);
+        this->prodInfo = prodInfo;
+    }
+
+    const ProdInfo& getProdInfo() const
+    {
+        Guard guard(mutex);
+        return this->prodInfo;
+    }
+
     bool isComplete() const
     {
         Guard guard(mutex);
-        return segCount == numSegs;
+        return prodInfo && segCount == numSegs;
+    }
+
+    /**
+     * Closes the file-descriptor used to access the file. Idempotent.
+     */
+    void close()
+    {
+        if (fd >= 0) {
+            ::close(fd);
+            fd = -1;
+        }
+    }
+
+    /**
+     * Opens the file-descriptor used to access the file. Idempotent.
+     *
+     * @throws SystemError  `::open()` failure
+     */
+    void open()
+    {
+        if (fd < 0)
+            fd = open(pathname);
     }
 };
 
@@ -399,6 +454,11 @@ RcvProdFile::RcvProdFile(
     : ProdFile{new Impl(pathname, prodSize, segSize)}
 {}
 
+RcvProdFile::operator bool() const noexcept
+{
+    return static_cast<bool>(pImpl);
+}
+
 bool
 RcvProdFile::exists(const ProdSize offset) const
 {
@@ -411,9 +471,31 @@ RcvProdFile::save(DataSeg& seg) const
     return static_cast<Impl*>(pImpl.get())->accept(seg);
 }
 
+void
+RcvProdFile::setProdInfo(const ProdInfo& prodInfo) const
+{
+    static_cast<Impl*>(pImpl.get())->setProdInfo(prodInfo);
+}
+
+const ProdInfo&
+RcvProdFile::getProdInfo() const
+{
+    return static_cast<Impl*>(pImpl.get())->getProdInfo();
+}
+
 bool RcvProdFile::isComplete() const
 {
     return static_cast<Impl*>(pImpl.get())->isComplete();
+}
+
+void RcvProdFile::close() const
+{
+    return static_cast<Impl*>(pImpl.get())->close();
+}
+
+void RcvProdFile::open() const
+{
+    return static_cast<Impl*>(pImpl.get())->open();
 }
 
 } // namespace

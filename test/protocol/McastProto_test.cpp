@@ -22,7 +22,7 @@
 namespace {
 
 /// The fixture for testing module `McastProto`
-class McastProtoTest : public ::testing::Test, public hycast::McastRcvrObs
+class McastProtoTest : public ::testing::Test, public hycast::McastSub
 {
 protected:
     hycast::SockAddr        grpAddr; // Multicast group address

@@ -13,9 +13,8 @@
 #ifndef MAIN_HYCAST_H_
 #define MAIN_HYCAST_H_
 
+#include <main/inet/Socket.h>
 #include "error.h"
-#include "Socket.h"
-
 #include <climits>
 #include <memory>
 #include <string>
@@ -35,7 +34,7 @@ public:
     typedef uint32_t Type;
 
     ProdIndex() noexcept
-        : index{0}
+        : index{0} // Invalid index
     {}
 
     ProdIndex(const Type index)
@@ -56,6 +55,11 @@ public:
         return index != 0;
     }
 
+    operator Type() const noexcept
+    {
+        return index;
+    }
+
     Type getValue() const noexcept
     {
         return index;
@@ -67,6 +71,13 @@ public:
     }
 
     std::string to_string() const;
+
+    ProdIndex operator ++() noexcept
+    {
+        if (++index == 0)
+            index = 1;
+        return *this;
+    }
 
     bool operator ==(const ProdIndex rhs) const noexcept
     {
@@ -130,7 +141,9 @@ public:
 
 /******************************************************************************/
 
+class SubPeer;
 class PeerProto;
+class SubPeerProto;
 class Repository;
 
 /******************************************************************************/
@@ -189,8 +202,8 @@ public:
  */
 class SegId
 {
-    const ProdIndex prodIndex;
-    const ProdSize  segOffset;
+    ProdIndex prodIndex;
+    ProdSize  segOffset;
 
 public:
     SegId(  const ProdIndex prodIndex,
@@ -203,6 +216,25 @@ public:
         : prodIndex{}
         , segOffset{0}
     {}
+
+    SegId(const SegId& segId)
+        : prodIndex{segId.prodIndex}
+        , segOffset{segId.segOffset}
+    {}
+
+    SegId& operator=(const SegId& rhs)
+    {
+        prodIndex = rhs.prodIndex;
+        segOffset = rhs.segOffset;
+        return *this;
+    }
+
+    SegId& operator=(const SegId&& rhs)
+    {
+        prodIndex = rhs.prodIndex;
+        segOffset = rhs.segOffset;
+        return *this;
+    }
 
     ProdIndex getProdIndex() const noexcept
     {
@@ -270,12 +302,65 @@ public:
      */
     ChunkId(const SegId segId)
         : isProd{false}
-        , id{.segId=segId}
-    {}
+        , id{}
+    {
+        id.segId = segId;
+    }
 
     ChunkId()
         : ChunkId(ProdIndex{})
     {}
+
+    ChunkId(const ChunkId& chunkId)
+        : isProd(chunkId.isProd)
+        , id{}
+    {
+        if (isProd) {
+            id.prodIndex = chunkId.id.prodIndex;
+        }
+        else {
+            id.segId = chunkId.id.segId;
+        }
+    }
+
+    ChunkId(const ChunkId&& chunkId)
+        : isProd(chunkId.isProd)
+        , id{}
+    {
+        if (isProd) {
+            id.prodIndex = chunkId.id.prodIndex;
+        }
+        else {
+            id.segId = chunkId.id.segId;
+        }
+    }
+
+    ChunkId& operator=(const ChunkId& rhs)
+    {
+        if (rhs.isProd) {
+            id.prodIndex = rhs.id.prodIndex;
+        }
+        else {
+            id.segId = rhs.id.segId;
+        }
+        return *this;
+    }
+
+    ChunkId& operator=(const ChunkId&& rhs)
+    {
+        if (rhs.isProd) {
+            id.prodIndex = rhs.id.prodIndex;
+        }
+        else {
+            id.segId = rhs.id.segId;
+        }
+        return *this;
+    }
+
+    operator bool()
+    {
+        return !isProd || static_cast<bool>(id.prodIndex);
+    }
 
     bool operator ==(const ChunkId& rhs) const;
 

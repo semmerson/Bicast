@@ -22,9 +22,7 @@
 namespace hycast {
 
 /**
- * Repository of in-transit data-products.
- *
- * #tparam PF  Product-file type
+ * Repository for temporary data-products.
  */
 class Repository
 {
@@ -36,9 +34,13 @@ protected:
     Repository(Impl* impl);
 
 public:
-    virtual ~Repository()
-    {}
+    virtual ~Repository() =default;
 
+    /**
+     * Returns the size of a canonical data-segment in bytes.
+     *
+     * @return Size of canonical data-segment in bytes
+     */
     SegSize getSegSize() const noexcept;
 
     /**
@@ -52,28 +54,6 @@ public:
     const std::string& getRootDir() const noexcept;
 
     /**
-     * Returns the pathname of the root-directory for data-product files whose
-     * pathnames are based on data-product names.
-     *
-     * @return             Pathname of root-directory of named files
-     * @threadsafety       Safe
-     * @exceptionsafety    No throw
-     * @cancellationpoint  No
-     */
-    const std::string& getNamesDir() const noexcept;
-
-    /**
-     * Returns the pathname of the file associated with a product identifier.
-     *
-     * @param[in] prodId   Product identifier
-     * @return             Pathname of associated file
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  No
-     */
-    std::string getPathname(ProdIndex prodId) const;
-
-    /**
      * Returns the pathname of the file associated with a product name.
      *
      * @param[in] name     Product name
@@ -83,6 +63,17 @@ public:
      * @cancellationpoint  No
      */
     std::string getPathname(std::string name) const;
+
+    /**
+     * Returns the pathname of the file associated with a product index.
+     *
+     * @param[in] prodIndex  Product index
+     * @return               Pathname of associated file
+     * @threadsafety         Safe
+     * @exceptionsafety      Strong guarantee
+     * @cancellationpoint    No
+     */
+    std::string getPathname(ProdIndex prodIndex) const;
 
     /**
      * Returns information on a product.
@@ -110,30 +101,12 @@ public:
      * @see `MemSeg::operator bool()`
      */
     virtual MemSeg getMemSeg(const SegId& segId) const =0;
-
-    /**
-     * Indicates if information exists for a particular product.
-     *
-     * @param[in] prodIndex  Index of the product
-     * @retval    `false`    Information does not exist
-     * @retval    `true`     Information does exist
-     */
-    virtual bool exists(const ProdIndex prodIndex) const =0;
-
-    /**
-     * Indicates if a particular data-segment exists for a given product.
-     *
-     * @param[in] prodIndex  Index of the product
-     * @retval    `false`    Information does not exist
-     * @retval    `true`     Information does exist
-     */
-    virtual bool exists(const SegId& segId) const =0;
 };
 
 /******************************************************************************/
 
 /**
- * Publisher-side repository.
+ * Publisher's repository.
  */
 class PubRepo final : public Repository
 {
@@ -143,44 +116,57 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] rootPathname  Pathname of the root of the repository
-     * @param[in] segSize       Size of canonical data-segment in bytes
+     * @param[in] root     Pathname of the root of the repository
+     * @param[in] segSize  Size of canonical data-segment in bytes
      */
-    PubRepo(const std::string& rootPathname,
-            SegSize            segSize);
+    PubRepo(const std::string& root,
+            SegSize            segSize = 1460); // Max 4-byte UDP payload
 
     /**
-     * Processes the external creation of a new data-product.
+     * Links to a file (which could be a directory) that's outside the
+     * repository. The file or files will be eventually referenced by
+     * `getNextProd()`.
      *
-     * @param[in] prodName   Name of data-product. Must be under
-     *                       `getNamesDir()`.
-     * @param[in] prodIndex  Index of new data-product
-     * @threadsafety                Safe
-     * @exceptionsafety             Strong guarantee
-     * @cancellationpoint           No
-     * @see `getNamesDir()`
+     * @param[in] filePath  Pathname of outside file
+     * @param[in] prodName  Name of product
+     * @see `getNextProd()`
      */
-    void newProd(
-            const std::string& prodName,
-            ProdIndex          prodIndex);
+    void link(
+            const std::string& filePath,
+            const std::string& prodName);
 
-    bool exists(ProdIndex prodIndex) const;
-
-    bool exists(const SegId& segId) const;
+    /**
+     * Returns the index of the next product to publish. Blocks until one is
+     * ready.
+     *
+     * @return Index of next product to publish
+     */
+    ProdIndex getNextProd() const;
 
     /**
      * Returns information on a product.
      *
-     * @param[in] prodIndex  Index of the product
-     * @return               Corresponding information
+     * @param[in] prodIndex  Index of product
+     * @return               Information on product. Will test false if no such
+     *                       information exists.
+     * @threadsafety         Safe
+     * @exceptionsafety      Strong guarantee
+     * @cancellationpoint    No
+     * @see `ProdInfo::operator bool()`
      */
-    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
+    ProdInfo getProdInfo(ProdIndex prodIndex) const;
 
     /**
-     * Returns a data segment.
+     * Returns a data-segment
      *
-     * @param[in] segId  Segment identifier
-     * @return           Corresponding segment
+     * @param[in] segId             Segment identifier
+     * @return                      Data-segment. Will test false if no such
+     *                              segment exists.
+     * @throws    InvalidArgument   Segment identifier is invalid
+     * @threadsafety                Safe
+     * @exceptionsafety             Strong guarantee
+     * @cancellationpoint           No
+     * @see `MemSeg::operator bool()`
      */
     MemSeg getMemSeg(const SegId& segId) const;
 };
@@ -188,24 +174,7 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for an observer of a subscriber-side repository.
- */
-class SubRepoObs
-{
-public:
-    virtual ~SubRepoObs()
-    {}
-
-    /**
-     * Accepts notification that a data-product is complete.
-     *
-     * @param[in] prodInfo  Information on the completed data-product
-     */
-    virtual void completed(const ProdInfo& prodInfo) =0;
-};
-
-/**
- * Subscriber-side repository.
+ * Subscriber's repository.
  */
 class SubRepo final : public Repository
 {
@@ -219,8 +188,7 @@ public:
      * @param[in] segSize       Size of canonical data-segment in bytes
      */
     SubRepo(const std::string& rootPathname,
-            SegSize            segSize,
-            SubRepoObs&        repoObs);
+            SegSize            segSize);
 
     /**
      * Saves product information.
@@ -247,6 +215,33 @@ public:
     bool save(DataSeg& dataSeg) const;
 
     /**
+     * Returns information on a product.
+     *
+     * @param[in] prodIndex  Index of product
+     * @return               Information on product. Will test false if no such
+     *                       information exists.
+     * @threadsafety         Safe
+     * @exceptionsafety      Strong guarantee
+     * @cancellationpoint    No
+     * @see `ProdInfo::operator bool()`
+     */
+    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
+
+    /**
+     * Returns a data-segment
+     *
+     * @param[in] segId             Segment identifier
+     * @return                      Data-segment. Will test false if no such
+     *                              segment exists.
+     * @throws    InvalidArgument   Segment identifier is invalid
+     * @threadsafety                Safe
+     * @exceptionsafety             Strong guarantee
+     * @cancellationpoint           No
+     * @see `MemSeg::operator bool()`
+     */
+    MemSeg getMemSeg(const SegId& segId) const;
+
+    /**
      * Indicates if product-information exists.
      *
      * @param[in] prodIndex  Index of the product in question
@@ -263,22 +258,6 @@ public:
      * @retval    `true`     Data-segment does exist
      */
     bool exists(const SegId& segId) const;
-
-    /**
-     * Returns information on a product.
-     *
-     * @param[in] prodIndex  Index of the product
-     * @return               Corresponding information
-     */
-    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
-
-    /**
-     * Returns a data segment.
-     *
-     * @param[in] segId  Segment identifier
-     * @return           Corresponding segment
-     */
-    MemSeg getMemSeg(const SegId& segId) const;
 };
 
 } // namespace

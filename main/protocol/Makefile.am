@@ -16,6 +16,7 @@ lib_la_SOURCES 	= hycast.cpp     hycast.h \
 # headers included in the source code.
 AM_CPPFLAGS = -I$(srcdir)/.. \
 	      -I$(srcdir)/../misc \
-	      -I$(srcdir)/../net_io \
+	      -I$(srcdir)/../inet \
 	      -I$(srcdir)/../p2p \
-	      -I$(srcdir)/../repository
+	      -I$(srcdir)/../repository \
+	      -I$(srcdir)/../node

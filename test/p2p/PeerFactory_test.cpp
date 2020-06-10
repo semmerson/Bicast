@@ -13,31 +13,30 @@
 
 #include "error.h"
 #include "PeerFactory.h"
-#include "SockAddr.h"
-
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 
 namespace {
 
 /// The fixture for testing class `PeerFactory`
-class PeerFactoryTest : public ::testing::Test, public hycast::PeerObs
+class PeerFactoryTest : public ::testing::Test, public hycast::PeerMgrApi
 {
 protected:
     friend class Receiver;
 
     typedef enum {
         INIT = 0,
-        LISTENING = 1,
-        PROD_NOTICE_RCVD = 2,
-        SEG_NOTICE_RCVD = 4,
-        PROD_REQUEST_RCVD = 8,
-        SEG_REQUEST_RCVD = 16,
-        PROD_INFO_RCVD = 32,
-        SEG_RCVD = 64,
-        DONE = LISTENING |
+        PUB_PEER_CREATED = 0x1,
+        PROD_NOTICE_RCVD = 0x2,
+        SEG_NOTICE_RCVD = 0x4,
+        PROD_REQUEST_RCVD = 0x8,
+        SEG_REQUEST_RCVD = 0x10,
+        PROD_INFO_RCVD = 0x20,
+        SEG_RCVD = 0x40,
+        DONE = PUB_PEER_CREATED |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -58,6 +57,7 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
+    hycast::Peer            pubPeer;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -80,6 +80,7 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
+        , pubPeer()
     {
         ::memset(memData, 0xbd, segSize);
     }
@@ -99,10 +100,10 @@ public:
             cond.wait(lock);
     }
 
-    void pathToSrc(hycast::Peer peer)
+    void pathToPub(hycast::Peer peer)
     {}
 
-    void noPathToSrc(hycast::Peer peer)
+    void noPathToPub(hycast::Peer peer)
     {}
 
     // Receiver-side
@@ -176,21 +177,20 @@ public:
         return true;
     }
 
-    void runServer(hycast::PeerFactory& factory)
+    void runPub(hycast::PeerFactory& factory)
     {
         try {
-            orState(LISTENING);
-            hycast::Peer srvrPeer = factory.accept();
-            if (srvrPeer)
-                srvrPeer();
+            pubPeer = factory.accept(hycast::NodeType::PUBLISHER);
+            if (pubPeer) {
+                orState(PUB_PEER_CREATED);
+                pubPeer();
+            }
         }
         catch (const std::exception& ex) {
             hycast::log_error(ex);
-            throw;
         }
         catch (...) {
             LOG_NOTE("Server thread cancelled");
-            throw;
         }
     }
 };
@@ -199,23 +199,19 @@ public:
 TEST_F(PeerFactoryTest, FactoryClosure)
 {
     // Start a server. Calls `::listen()`.
-    hycast::NodeType    nodeType{hycast::NodeType::NO_PATH_TO_SOURCE};
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this, nodeType);
-    std::thread         srvrThread(&PeerFactoryTest::runServer, this,
+    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    std::thread         pubThread(&PeerFactoryTest::runPub, this,
             std::ref(factory));
 
     try {
-        // Ensure `listen()` called to test shutdown() effect on accept()
-        waitForState(LISTENING);
-
-        // Close the factory. Causes `runServer()` to return.
+        // Close the factory. Causes `runPub()` to return.
         factory.close();
 
-        srvrThread.join();
+        pubThread.join();
     }
     catch (const std::exception& ex) {
         hycast::log_error(ex);
-        srvrThread.join();
+        pubThread.join();
         throw;
     }
 }
@@ -223,27 +219,28 @@ TEST_F(PeerFactoryTest, FactoryClosure)
 // Tests complete exchange (notice, request, delivery)
 TEST_F(PeerFactoryTest, Exchange)
 {
-    // Start a server. Calls `::listen()`.
-    hycast::NodeType    nodeType{hycast::NodeType::NO_PATH_TO_SOURCE};
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this, nodeType);
-    std::thread         srvrThread(&PeerFactoryTest::runServer, this,
+    // Start a publisher. Calls `::listen()`.
+    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    std::thread         pubThread(&PeerFactoryTest::runPub, this,
             std::ref(factory));
 
-    // Start a client peer
-    hycast::Peer clntPeer = factory.connect(srvrAddr);
-    std::thread  clntThread(clntPeer); // `clntPeer` is connected
+    // Start a subscriber
+    hycast::Peer subPeer = factory.connect(srvrAddr,
+            hycast::NodeType::NO_PATH_TO_PUBLISHER);
+    std::thread  subThread(subPeer); // `clntPeer` is connected
 
     // Start an exchange
-    clntPeer.notify(prodIndex);
-    clntPeer.notify(segId);
+    waitForState(PUB_PEER_CREATED);
+    pubPeer.notify(prodIndex);
+    pubPeer.notify(segId);
 
     waitForState(DONE);
 
-    // Causes `clntPeer()` to return and `srvrThread` to terminate
-    clntPeer.halt();
+    // Causes `subPeer()` to return and `pubThread` to terminate
+    subPeer.halt();
 
-    clntThread.join();
-    srvrThread.join();
+    subThread.join();
+    pubThread.join();
 }
 
 }  // namespace

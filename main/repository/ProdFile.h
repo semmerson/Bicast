@@ -151,6 +151,14 @@ public:
             SegSize            segSize);
 
     /**
+     * Indicates if this instance is valid (i.e., not default-constructed).
+     *
+     * @retval `true`   Is valid
+     * @retval `false`  Is not valid
+     */
+    operator bool() const noexcept;
+
+    /**
      * Indicates if the file contains a data-segment.
      *
      * @param[in] offset           Offset of data-segment in bytes
@@ -178,12 +186,37 @@ public:
     bool save(DataSeg& seg) const;
 
     /**
-     * Indicates if the product is complete (i.e., all data-segments exist).
+     * Sets the product information.
+     *
+     * @param[in] prodInfo  Product information
+     */
+    void setProdInfo(const ProdInfo& prodInfo) const;
+
+    /**
+     * Gets the product information.
+     *
+     * @return  Product information
+     */
+    const ProdInfo& getProdInfo() const;
+
+    /**
+     * Indicates if the product is complete (i.e., all data-segments exist and
+     * the product-name is set).
      *
      * @retval `false`  No
      * @retval `true`   Yes
      */
     bool isComplete() const;
+
+    /**
+     * Closes the file-descriptor used to access the file. Idempotent.
+     */
+    void close() const;
+
+    /**
+     * Opens the file-descriptor used to access the file. Idempotent.
+     */
+    void open() const;
 };
 
 } // namespace

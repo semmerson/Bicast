@@ -17,20 +17,32 @@
 #include "error.h"
 #include "FileUtil.h"
 #include "hycast.h"
+#include "LinkedMap.h"
 #include "ProdFile.h"
+#include "Thread.h"
+#include "Watcher.h"
 
+#include <condition_variable>
 #include <cstring>
 #include <errno.h>
+#include <fcntl.h>
 #include <functional>
 #include <libgen.h>
 #include <limits.h>
 #include <mutex>
+#include <queue>
 #include <sys/stat.h>
+#include <thread>
 #include <time.h>
 #include <unistd.h>
 #include <unordered_map>
 
 namespace hycast {
+
+typedef std::mutex              Mutex;
+typedef std::lock_guard<Mutex>  Guard;
+typedef std::unique_lock<Mutex> Lock;
+typedef std::condition_variable Cond;
 
 template<class PE> class ProdFiles; // Forward declaration
 
@@ -98,7 +110,7 @@ public:
     //virtual bool isComplete() const =0;
 };
 
-class SndProdEntry : public ProdEntry<SndProdFile>
+class SndProdEntry final : public ProdEntry<SndProdFile>
 {
 public:
     SndProdEntry()
@@ -119,7 +131,7 @@ public:
     }
 };
 
-class RcvProdEntry : public ProdEntry<RcvProdFile>
+class RcvProdEntry final : public ProdEntry<RcvProdFile>
 {
 public:
     RcvProdEntry()
@@ -153,14 +165,20 @@ public:
 
 /******************************************************************************/
 
+/**
+ * Queue of open product-files.
+ *
+ * @tparam PF  Product-file type
+ */
 template <class PE>
 class ProdFiles
 {
     typedef std::unordered_map<ProdIndex,PE> Map;
 
-    Map       prodFiles; ///< Product files
-    ProdIndex headIndex; ///< Index of product at head of queue
-    ProdIndex tailIndex; ///< Index of product at tail of queue
+    size_t    maxOpenFiles; ///< Maximum number of open product-files
+    Map       prodFiles;    ///< Product files
+    ProdIndex headIndex;    ///< Index of product at head of queue
+    ProdIndex tailIndex;    ///< Index of product at tail of queue
 
     void removeFromQueue(PE& prodEntry)
     {
@@ -172,6 +190,12 @@ class ProdFiles
             headIndex = prodEntry.next;
         if (prodEntry.prodInfo.getProdIndex() == tailIndex)
             tailIndex = prodEntry.prev;
+    }
+
+    inline void ensureRoom()
+    {
+        while (prodFiles.size() >= maxOpenFiles)
+            removeFromQueue(prodFiles[headIndex]);
     }
 
     void addToTail(PE& prodEntry)
@@ -198,24 +222,45 @@ class ProdFiles
     }
 
 public:
-    ProdFiles()
-        : prodFiles{}
+    ProdFiles(const size_t maxSize = ::sysconf(_SC_OPEN_MAX)/2)
+        : maxOpenFiles(maxSize)
+        , prodFiles(maxSize)
         , headIndex{}
         , tailIndex{}
-    {}
+    {
+        if (maxSize == 0)
+            throw INVALID_ARGUMENT("Maximum size is 0");
+    }
 
+    /**
+     * Adds a product-entry.
+     *
+     * @param[in] prodEntry  Product entry
+     * @return               Pointer to added or previously-existing entry
+     * @threadsafety         Compatible but unsafe
+     */
     PE* add(PE& prodEntry)
     {
         auto  pair = prodFiles.emplace(std::piecewise_construct,
                 std::forward_as_tuple(prodEntry.getProdInfo().getProdIndex()),
                 std::forward_as_tuple(prodEntry));
 
-        if (pair.second)
+        if (pair.second) {
+            ensureRoom();
             addToTail(pair.first->second);
+        }
 
         return &pair.first->second;
     }
 
+    /**
+     * Returns the product-entry corresponding to a product-index.
+     *
+     * @param[in] prodIndex  Product index
+     * @retval    `nullptr`  No such entry
+     * @return               Pointer to entry corresponding to index
+     * @threadsafety         Compatible but unsafe
+     */
     PE* find(const ProdIndex prodIndex)
     {
         auto  iter = prodFiles.find(prodIndex);
@@ -229,6 +274,12 @@ public:
         return &prodEntry;
     }
 
+    /**
+     * Deletes the entry corresponding to a product-index.
+     *
+     * @param[in] prodIndex  Product index
+     * @threadsafety         Compatible but unsafe
+     */
     void erase(const ProdIndex prodIndex)
     {
         auto  iter = prodFiles.find(prodIndex);
@@ -249,37 +300,50 @@ public:
 /******************************************************************************/
 
 /**
- * @tparam PF  Product-file type
+ * Abstract implementation of a repository of temporary data-products.
  */
 class Repository::Impl
 {
 protected:
-    typedef std::mutex                          Mutex;
-    typedef std::lock_guard<Mutex>              Guard;
-    typedef std::unique_lock<Mutex>             Lock;
-
     mutable Mutex     mutex;        ///< For concurrency control
     const std::string rootPathname; ///< Pathname of root of repository
 
-    /// Pathname of root of directory hierarchy of product files based on
-    /// product-indexes
+    /**
+     * Pathname of root of directory hierarchy of product files based on
+     * product-indexes
+     */
     const std::string indexesDir;
 
-    /// Pathname of root of directory hierarchy of product files based on
-    /// product-names
+    /**
+     * Pathname of root of directory hierarchy of product files based on
+     * product-names
+     */
     const std::string namesDir;
 
     const SegSize     segSize;      ///< Size of canonical data-segment in bytes
 
-    static std::string getIndexPath(const ProdIndex prodId)
+    /**
+     * Returns the pathname corresponding to a product-index relative to the
+     * root directory for such pathnames. Beginning with the most significant
+     * byte of the index, each byte is hex-encoded into a directory component --
+     * except for the least significant byte which is encoded into the filename.
+     * For example, for a four-byte product index, the pathname corresponding to
+     * product-index 0xfedcba98 is "fe/dc/ba/98".
+     *
+     * @param prodIndex  Product index
+     * @return           Corresponding relative pathname
+     */
+    static std::string getIndexPath(const ProdIndex prodIndex)
     {
-        auto  id = prodId.getValue();
-        char  buf[sizeof(id)*3 + 1];
+        auto  index = prodIndex.getValue();
+        char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
+        char* cp = buf;
 
-        for (int i = 0; i < sizeof(id); ++i) {
-            (void)sprintf(buf+3*i, "/%.2x", id & 0xff);
-            id >>= 8;
+        for (int nshift = 8*(sizeof(index)-1); nshift >= 0; nshift -= 8) {
+            (void)sprintf(cp, "%.2x/", (index >> nshift) & 0xff);
+            cp += 3;
         }
+        *--cp = 0; // Squash final '/'
 
         return std::string(buf);
     }
@@ -295,15 +359,35 @@ protected:
                     extantPath + "\"");
     }
 
+    std::string getProdName(const std::string& namePath) const
+    {
+        return namePath.substr(namesDir.length()+1); // Remove `namesDir+"/"`
+    }
+
 public:
     Impl(   const std::string& rootPathname,
             const SegSize      segSize)
         : rootPathname{rootPathname}
-        , indexesDir{rootPathname + "/indexes"} // Index paths have '/' prefix
-        , namesDir{rootPathname + "/names/"} // Name paths don't have '/' prefix
+        , indexesDir{rootPathname + "/indexes"}
+        , namesDir{rootPathname + "/names"}
         , segSize{segSize}
         , mutex{}
-    {}
+    {
+        int status = ::mkdir(rootPathname.data(), 0777);
+        if (status && errno != EEXIST)
+            throw SYSTEM_ERROR("Couldn't create repository \"" + rootPathname +
+                    "\"");
+
+        status = ::mkdir(namesDir.data(), 0777);
+        if (status && errno != EEXIST)
+            throw SYSTEM_ERROR("Couldn't create name-directory \"" + namesDir +
+                    "\"");
+
+        status = ::mkdir(indexesDir.data(), 0777);
+        if (status && errno != EEXIST)
+            throw SYSTEM_ERROR("Couldn't create indexes-directory \"" +
+                    indexesDir + "\"");
+    }
 
     virtual ~Impl() noexcept
     {}
@@ -318,30 +402,15 @@ public:
         return rootPathname;
     }
 
-    const std::string& getNamesDir() const noexcept
-    {
-        return namesDir;
-    }
-
     std::string getPathname(const ProdIndex prodIndex) const
     {
-        return indexesDir + getIndexPath(prodIndex);
+        return indexesDir + "/" + getIndexPath(prodIndex);
     }
 
     std::string getPathname(const std::string& name) const
     {
-        return namesDir + name;
+        return namesDir + "/" + name;
     }
-
-    std::string getProdName(const std::string& namePath) const
-    {
-        const auto prefixLen = namesDir.length();
-        return namePath.substr(prefixLen, namePath.length()-prefixLen);
-    }
-
-    virtual bool exists(const ProdIndex prodIndex) =0;
-
-    virtual bool exists(const SegId& segId) =0;
 
 #if 0
     /**
@@ -374,105 +443,192 @@ public:
 /******************************************************************************/
 
 Repository::Repository(Impl* impl)
-: pImpl{impl}
-{}
+    : pImpl{impl} {
+}
 
-SegSize Repository::getSegSize() const noexcept
-{
+SegSize Repository::getSegSize() const noexcept {
     return pImpl->getSegSize();
 }
 
-const std::string& Repository::getRootDir() const noexcept
-{
+const std::string& Repository::getRootDir() const noexcept {
     return pImpl->getRootDir();
 }
 
-const std::string& Repository::getNamesDir() const noexcept
-{
-    return pImpl->getNamesDir();
-}
-
-std::string Repository::getPathname(const ProdIndex prodId) const
-{
-    return pImpl->getPathname(prodId);
-}
-
-std::string Repository::getPathname(const std::string name) const
-{
-    return pImpl->getPathname(name);
-}
-
 /******************************************************************************/
 /******************************************************************************/
 
+/**
+ * Implementation of a publisher's repository.
+ */
 class PubRepo::Impl final : public Repository::Impl
 {
-    ProdFiles<SndProdEntry> prodFiles; ///< Product files
+    ProdFiles<SndProdEntry> prodFiles;   ///< Active Product files
+    Mutex                   mutex;       ///< For concurrent access
+    Cond                    cond;        ///< For product-index queue
+    Watcher                 watcher;     ///< Watches filename hierarchy
+    std::queue<ProdIndex>   prodIndexes; ///< Queue of products to be sent
+    ProdIndex               prodIndex;   ///< Next product-index
 
-public:
-    Impl(   const std::string& rootPathname,
-            const SegSize      segSize)
-        : Repository::Impl{rootPathname, segSize}
-    {}
+    ProdIndex getNextIndex()
+    {
+        // TODO: Make persistent between sessions
+        return ++prodIndex;
+    }
 
     /**
-     * Accepts notification of a new product-file in the repository's directory
-     * for named products.
+     * Creates a product-entry and adds it to `prodFiles`.
      *
-     * @param[in] pathname     Pathname of product-file
-     * @param[in] prodIndex    Product index
-     * @throws    LogicError   Entry for product already exists
-     * @throws    SystemError  Couldn't open product-file
+     * @param[in] prodName   Product name
+     * @param[in] prodIndex  Product index
+     * @return               Pointer to added or previously-existing
+     *                       product-entry
      */
-    void newProd(
+    SndProdEntry* addProdEntry(
             const std::string& prodName,
             const ProdIndex    prodIndex)
     {
-        Guard      guard{mutex};
-        const auto entry = prodFiles.find(prodIndex);
-
-        if (entry)
-            throw LOGIC_ERROR("Entry already exists for file \"" + prodName +
-                    "\"");
-
-        const auto namePath = getPathname(prodName);
-        const auto indexPath = getPathname(prodIndex);
-
-        link(namePath, indexPath);
-
+        const auto   indexPath = getPathname(prodIndex);
         SndProdFile  prodFile(indexPath, segSize);
-        SndProdEntry prodEntry{prodName, prodIndex, prodFile};
-        prodFiles.add(prodEntry);
+        SndProdEntry prodEntry(prodName, prodIndex, prodFile);
+
+        return prodFiles.add(prodEntry);
     }
 
-    bool exists(const ProdIndex prodIndex)
+    /**
+     * Returns an active product-entry. If the product-entry isn't in the set of
+     * active product-entries, then one is created and added.
+     *
+     * @param[in] prodIndex  Product-index of product-entry
+     * @retval    `nullptr`  No such entry exists
+     * @return               Pointer to the product-entry
+     */
+    SndProdEntry* getProdEntry(const ProdIndex prodIndex)
     {
-        Guard guard{mutex};
-        return prodFiles.find(prodIndex) != nullptr;
+        SndProdEntry* prodEntry = prodFiles.find(prodIndex);
+
+        if (prodEntry == nullptr) {
+            char       namePath[PATH_MAX];
+            const auto indexPath = getPathname(prodIndex);
+            ssize_t    nbytes = ::readlink(indexPath.data(), namePath,
+                    sizeof(namePath));
+
+            if (nbytes != -1) {
+                namePath[nbytes] = 0;
+                prodEntry = addProdEntry(
+                        std::string(namePath+namesDir.size()+1), prodIndex);
+            }
+        }
+
+        return prodEntry;
     }
 
-    bool exists(const SegId& segId)
+public:
+    Impl(   const std::string& rootPathname,
+            const SegSize      segSize,
+            const size_t       maxOpenFiles = sysconf(_SC_OPEN_MAX)/2)
+        : Repository::Impl{rootPathname, segSize}
+        , prodFiles(maxOpenFiles)
+        , mutex()
+        , watcher(namesDir)
+        , prodIndex()
+    {}
+
+    /**
+     * Links to a file (which could be a directory) that's outside the
+     * repository. The watcher will notice and process the link.
+     *
+     * @param[in] filePath  Pathname of outside file
+     * @param[in] prodName  Name of product
+     */
+    void link(
+            const std::string& filePath,
+            const std::string& prodName)
     {
-        Guard guard{mutex};
-        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+        Guard guard(mutex);
 
-        return prodEntry && prodEntry->exists(segId.getOffset());
+        const std::string linkPath = getPathname(prodName);
+        int               status = ::link(filePath.data(), linkPath.data());
+
+        if (status == -1 && symlink(filePath.data(), linkPath.data()))
+            throw SYSTEM_ERROR("Couldn't link to file \"" + filePath +
+                    "\" from \"" + linkPath + "\"");
     }
 
+    /**
+     * Returns the index of the next product to publish. Blocks until one is
+     * ready. Watches the product-name directory hierarchy for new files. For
+     * each new non-directory file in the product-name hierarchy:
+     *   - A symbolic-link is created in the product-index hierarchy that
+     *     references the named file; and
+     *   - A product-entry is created and added to the set of active
+     *     product-entries.
+     *
+     * @return              Index of next product to publish
+     * @throws SystemError  System failure
+     * @threadsafety        Compatible but unsafe
+     */
+    ProdIndex getNextProd()
+    {
+        ProdIndex prodIndex = getNextIndex();
+
+        try {
+            Watcher::WatchEvent event;
+            watcher.getEvent(event);
+
+            // Event pathname has `namesDir+"/"` prefix
+            const auto  indexPath = getPathname(prodIndex);
+            const auto& namePath = event.pathname;
+            const auto  prodName = namePath.substr(namesDir.size()+1);
+
+            {
+                Canceler canceler(false);
+                if (::symlink(namePath.data(), indexPath.data()))
+                    throw SYSTEM_ERROR("Couldn't link \"" + namePath +
+                            " from \"" + indexPath + "\"");
+            }
+
+            // Create an active product-entry
+            Lock lock(mutex);
+            addProdEntry(prodName, prodIndex);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't get next "
+                    "product-file"));
+        }
+
+        return prodIndex;
+    }
+
+    /**
+     * Returns the product-information that corresponds to a product-index.
+     *
+     * @param[in] prodIndex  Product index
+     * @return               Corresponding product-information. Will test false
+     *                       if no such information exists.
+     */
     ProdInfo getProdInfo(const ProdIndex prodIndex)
     {
-        Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(prodIndex);
+        Guard guard{mutex};
+
+        const auto prodEntry = getProdEntry(prodIndex);
 
         return (prodEntry == nullptr)
                 ? ProdInfo{}
                 : prodEntry->getProdInfo();
     }
 
+    /**
+     * Returns the in-memory data-segment that corresponds to a
+     * segment-identifier.
+     *
+     * @param[in] segId  Data-segment identifier
+     * @return           Corresponding in-memory data-segment Will test false if
+     *                   no such segment exists.
+     */
     MemSeg getMemSeg(const SegId& segId)
     {
         Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+        const auto prodEntry = getProdEntry(segId.getProdIndex());
 
         if (prodEntry == nullptr)
             return MemSeg{};
@@ -489,177 +645,265 @@ public:
 /******************************************************************************/
 
 PubRepo::PubRepo(
-        const std::string& rootPathname,
+        const std::string& root,
         const SegSize      segSize)
-    : Repository{new Impl(rootPathname, segSize)}
-{}
-
-void PubRepo::newProd(
-        const std::string& prodName,
-        const ProdIndex    prodIndex)
-{
-    static_cast<PubRepo::Impl*>(pImpl.get())->newProd(prodName, prodIndex);
+    : Repository{new Impl(root, segSize)} {
 }
 
-bool PubRepo::exists(const ProdIndex prodIndex) const
-{
-    return static_cast<PubRepo::Impl*>(pImpl.get())->exists(prodIndex);
+void PubRepo::link(
+        const std::string& filePath,
+        const std::string& prodName) {
+    return static_cast<Impl*>(pImpl.get())->link(filePath, prodName);
 }
 
-bool PubRepo::exists(const SegId& segId) const
-{
-    return static_cast<PubRepo::Impl*>(pImpl.get())->exists(segId);
+ProdIndex PubRepo::getNextProd() const {
+    return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
-ProdInfo PubRepo::getProdInfo(const ProdIndex prodIndex) const
-{
-    return static_cast<PubRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+ProdInfo PubRepo::getProdInfo(const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg PubRepo::getMemSeg(const SegId& segId) const
-{
-    return static_cast<PubRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+MemSeg PubRepo::getMemSeg(const SegId& segId) const {
+    return static_cast<Impl*>(pImpl.get())->getMemSeg(segId);
 }
 
 /******************************************************************************/
 /******************************************************************************/
 
+/**
+ * Implementation of a subscriber's repository.
+ */
 class SubRepo::Impl final : public Repository::Impl
 {
-    ProdFiles<RcvProdEntry> prodFiles; ///< Product files
-    SubRepoObs&             repoObs;   ///< Observer of this instance
+    typedef LinkedMap<ProdIndex, RcvProdFile> LinkedProdMap;
 
-    void link(RcvProdEntry* entry)
+    LinkedProdMap        prodFiles;     ///< All existing product-files
+    LinkedProdMap        openFiles;     ///< All open product-files
+    size_t               maxOpenFiles;  ///< Max number open files
+    Cond                 cond;          ///< Concurrency condition-variable
+    std::queue<ProdInfo> completeProds; ///< Queue of completed products
+
+    void link(const ProdInfo& prodInfo)
     {
-        const auto indexPath = entry->getProdFile().getPathname();
-        const auto namePath = getPathname(entry->getProdName());
+        const auto indexPath = getPathname(prodInfo.getProdIndex());
+        const auto namePath = getPathname(prodInfo.getProdName());
 
         Repository::Impl::link(indexPath, namePath);
     }
 
+    void makeRoom()
+    {
+        while (openFiles.size() >= maxOpenFiles)
+            openFiles.remove(openFiles.getHead()).close();
+    }
+
+    /**
+     * Returns the product-file that corresponds to a product-index. The
+     * product-file is open. The product-file is added or moved to the tail-end
+     * of the open-files list.
+     *
+     * @param[in] prodIndex  Product-index
+     * @retval    `nullptr`  No such product-file
+     * @return               Open product-file corresponding to product-index
+     */
+    RcvProdFile* getProdFile(const ProdIndex prodIndex)
+    {
+        RcvProdFile* prodFile = openFiles.find(prodIndex);
+
+        if (prodFile == nullptr) {
+            prodFile = prodFiles.find(prodIndex);
+
+            if (prodFile) {
+                makeRoom();
+                prodFile->open();
+                openFiles.add(prodIndex, *prodFile);
+            }
+        }
+
+        return prodFile;
+    }
+
 public:
     Impl(   const std::string& rootPathname,
-            const SegSize      segSize,
-            SubRepoObs&        repoObs)
+            const SegSize      segSize)
         : Repository::Impl{rootPathname, segSize}
-        , repoObs(repoObs)
-    {}
+        , prodFiles() // TODO: Add existing files
+        , openFiles(maxOpenFiles)
+        , maxOpenFiles(maxOpenFiles)
+    {
+        if (maxOpenFiles == 0)
+            throw INVALID_ARGUMENT("Maximum number of open files is zero");
+    }
 
     bool save(const ProdInfo& prodInfo)
     {
-        Lock       lock{mutex};
-        bool       wasSaved;
+        bool       wasSaved = false;
         const auto prodIndex = prodInfo.getProdIndex();
-        auto       entry = prodFiles.find(prodIndex);
+        Guard      guard{mutex};
+        auto       prodFile = getProdFile(prodIndex);
 
-        if (entry == nullptr) {
+        if (prodFile) {
+            // Existing product-file
+            auto& prodName = prodInfo.getProdName();
             LOG_DEBUG("Saving product-information %s",
                     prodInfo.to_string().data());
-            RcvProdFile  prodFile{getPathname(prodIndex),
-                prodInfo.getProdSize(), segSize};
-            RcvProdEntry prodEntry{prodInfo, prodFile};
-
-            entry = prodFiles.add(prodEntry);
-            wasSaved = true;
-        }
-        else if (entry->getProdName().empty()) {
-            LOG_DEBUG("Saving product-information %s",
-                    prodInfo.to_string().data());
-            entry->setProdName(prodInfo.getProdName());
-            wasSaved = true;
+            if (!prodFile->getProdInfo()) {
+                prodFile->setProdInfo(prodInfo);
+                wasSaved = true;
+            }
         }
         else {
-            LOG_DEBUG("Ignoring product-information %s",
-                    prodInfo.to_string().data());
-            wasSaved = false;
+            // New product-file
+            LOG_DEBUG("Creating product %s", prodInfo.to_string().data());
+
+            RcvProdFile file{getPathname(prodIndex), prodInfo.getProdSize(),
+                segSize};
+
+            prodFiles.add(prodIndex, file);
+            prodFile = &openFiles.add(prodIndex, file).first;
+            wasSaved = true;
         }
 
-        if (wasSaved && entry->isComplete()) {
-            link(entry);
-            repoObs.completed(prodInfo);
+        if (wasSaved && prodFile->isComplete()) {
+            Repository::Impl::link(prodFile->getPathname(),
+                    getPathname(prodInfo.getProdName()));
+            completeProds.push(prodInfo);
+            cond.notify_one();
         }
 
-        return wasSaved;
+        return true;
     }
 
     bool save(DataSeg& dataSeg)
     {
-        Guard           guard{mutex};
-        bool            wasSaved;
+        bool            wasSaved = false;
         const auto      segInfo = dataSeg.getSegInfo();
         const ProdIndex prodIndex = segInfo.getProdIndex();
-        auto            entry = prodFiles.find(prodIndex);
+        Guard           guard{mutex};
+        auto            prodFile = getProdFile(prodIndex);
 
-        if (entry == nullptr) {
-            LOG_DEBUG("Saving data-segment %s", dataSeg.to_string().data());
-            const auto     indexPath = getPathname(prodIndex);
-            const auto     prodSize = segInfo.getProdSize();
-            const ProdInfo prodInfo(prodIndex, prodSize, "");
-            RcvProdFile    prodFile{indexPath, prodSize, segSize};
-            RcvProdEntry   prodEntry{prodIndex, prodFile};
-
-            entry = prodFiles.add(prodEntry);
-            entry->getProdFile().save(dataSeg);
-            wasSaved = true;
-        }
-        else if (entry->exists(segInfo.getSegId().getOffset())) {
-            LOG_DEBUG("Ignoring data-segment %s", dataSeg.to_string().data());
-            wasSaved = false;
+        if (prodFile) {
+            // Existing product-file
+            if (prodFile->exists(segInfo.getSegOffset())) {
+                // Product-file already has the segment
+                LOG_DEBUG("Ignoring data-segment %s",
+                        dataSeg.to_string().data());
+            }
+            else {
+                // Product-file doesn't have the segment
+                LOG_DEBUG("Saving data-segment %s", dataSeg.to_string().data());
+                prodFile->save(dataSeg);
+                wasSaved = true;
+            }
         }
         else {
+            // New product-file
             LOG_DEBUG("Saving data-segment %s", dataSeg.to_string().data());
-            entry->getProdFile().save(dataSeg);
-            wasSaved = true;
+            RcvProdFile file{getPathname(prodIndex), segInfo.getProdSize(),
+                segSize};
 
-            if (entry->isComplete()) {
-                link(entry);
-                repoObs.completed(entry->getProdInfo());
-            }
+            file.save(dataSeg);
+            prodFiles.add(prodIndex, file);
+            prodFile = &openFiles.add(prodIndex, file).first;
+            wasSaved = true;
+        }
+
+        if (wasSaved && prodFile->isComplete()) {
+            const ProdInfo& prodInfo = prodFile->getProdInfo();
+
+            Repository::Impl::link(prodFile->getPathname(),
+                    getPathname(prodInfo.getProdName()));
+            completeProds.push(prodInfo);
+            cond.notify_one();
         }
 
         return wasSaved;
     }
 
+    /**
+     * Returns the next, completed data-product. Blocks until one is available.
+     *
+     * @return Next, completed data-product
+     */
+    ProdInfo getCompleted()
+    {
+        Lock lock(mutex);
+
+        while(completeProds.empty())
+            cond.wait(lock);
+
+        ProdInfo prodInfo = completeProds.front();
+        completeProds.pop();
+
+        return prodInfo;
+    }
+
+    /**
+     * Returns information on a product given the product's index.
+     *
+     * @param prodIndex  Product's index
+     * @return           Product information. Will test false if no such product
+     *                   exists.
+     */
     ProdInfo getProdInfo(const ProdIndex prodIndex)
     {
-        Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(prodIndex);
+        Guard        guard{mutex};
+        RcvProdFile* prodFile = getProdFile(prodIndex);
 
-        return (prodEntry == nullptr || prodEntry->getProdName().empty())
-                ? ProdInfo{}
-                : prodEntry->getProdInfo();
+        return prodFile
+                ? prodFile->getProdInfo()
+                : ProdInfo();
     }
 
+    /**
+     * Returns the memory data-segment corresponding to a segment identifier.
+     *
+     * @param[in] segId  Segment identifier
+     * @return           Corresponding memory data-segment. Will test false if
+     *                   no such segment exists.
+     */
     MemSeg getMemSeg(const SegId& segId)
     {
-        Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+        auto         offset = segId.getOffset();
+        Guard        guard{mutex};
+        RcvProdFile* prodFile = getProdFile(segId.getProdIndex());
 
-        if (prodEntry == nullptr)
-            return MemSeg{};
-
-        auto prodFile = prodEntry->getProdFile();
-        auto offset = segId.getOffset();
-
-        return MemSeg(SegInfo(segId, prodFile.getProdSize(),
-                    prodFile.getSegSize(offset)),
-                    prodFile.getData(offset));
+        return prodFile
+                ? MemSeg(SegInfo(segId, prodFile->getProdSize(),
+                        prodFile->getSegSize(offset)),
+                        prodFile->getData(offset))
+                : MemSeg();
     }
 
+    /**
+     * Indicates if information on a data-product exists.
+     *
+     * @param[in] prodIndex  Product index
+     * @retval    `true`     Product information does exist
+     * @retval    `false`    Product information does not exist
+     */
     bool exists(const ProdIndex prodIndex)
     {
-        Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(prodIndex);
+        Guard        guard{mutex};
+        RcvProdFile* prodFile = getProdFile(prodIndex);
 
-        return prodEntry && !prodEntry->getProdName().empty();
+        return prodFile && prodFile->getProdInfo();
     }
 
+    /**
+     * Indicates if a data-segment exists.
+     *
+     * @param[in] prodIndex  Product index
+     * @retval    `true`     Data-segment does exist
+     * @retval    `false`    Data-segment does not exist
+     */
     bool exists(const SegId& segId)
     {
-        Guard      guard{mutex};
-        const auto prodEntry = prodFiles.find(segId.getProdIndex());
+        Guard        guard{mutex};
+        RcvProdFile* prodFile = getProdFile(segId.getProdIndex());
 
-        return prodEntry && prodEntry->exists(segId.getOffset());
+        return prodFile && prodFile->exists(segId.getOffset());
     }
 };
 
@@ -667,39 +911,32 @@ public:
 
 SubRepo::SubRepo(
         const std::string& rootPathname,
-        const SegSize      segSize,
-        SubRepoObs&        repoObs)
-    : Repository{new Impl(rootPathname, segSize, repoObs)}
-{}
-
-bool SubRepo::save(const ProdInfo& prodInfo) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->save(prodInfo);
+        const SegSize      segSize)
+    : Repository{new Impl(rootPathname, segSize)} {
 }
 
-bool SubRepo::save(DataSeg& dataSeg) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->save(dataSeg);
+bool SubRepo::save(const ProdInfo& prodInfo) const {
+    return static_cast<Impl*>(pImpl.get())->save(prodInfo);
 }
 
-ProdInfo SubRepo::getProdInfo(const ProdIndex prodIndex) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->getProdInfo(prodIndex);
+bool SubRepo::save(DataSeg& dataSeg) const {
+    return static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
 
-MemSeg SubRepo::getMemSeg(const SegId& segId) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->getMemSeg(segId);
+ProdInfo SubRepo::getProdInfo(const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-bool SubRepo::exists(const ProdIndex prodIndex) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->exists(prodIndex);
+MemSeg SubRepo::getMemSeg(const SegId& segId) const {
+    return static_cast<Impl*>(pImpl.get())->getMemSeg(segId);
 }
 
-bool SubRepo::exists(const SegId& segId) const
-{
-    return static_cast<SubRepo::Impl*>(pImpl.get())->exists(segId);
+bool SubRepo::exists(const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->exists(prodIndex);
+}
+
+bool SubRepo::exists(const SegId& segId) const {
+    return static_cast<Impl*>(pImpl.get())->exists(segId);
 }
 
 } // namespace

@@ -10,11 +10,11 @@
  *      Author: Steven R. Emmerson
  */
 
+#include <main/inet/Socket.h>
 #include "config.h"
 
 #include "error.h"
 #include "ProdInfo.h"
-#include "Socket.h"
 #include "UdpXprt.h"
 
 #include <sys/uio.h>

@@ -14,8 +14,7 @@
 #define MAIN_PROTOCOL_TCP_XPRT_H_
 
 #include <hycast.h>
-#include "SockAddr.h"
-
+#include <main/inet/SockAddr.h>
 #include <memory>
 
 namespace hycast {

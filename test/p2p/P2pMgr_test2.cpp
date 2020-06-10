@@ -1,7 +1,7 @@
-#include "SockAddr.h"
 #include "InAddr.h"
 
 #include <gtest/gtest.h>
+#include <main/inet/SockAddr.h>
 #include <iostream>
 
 namespace {

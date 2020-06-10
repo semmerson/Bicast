@@ -10,13 +10,12 @@
  *      Author: Steven R. Emmerson
  */
 
+#include <inet/InetAddr.h>
+#include <inet/Socket.h>
 #include "config.h"
 
 #include "error.h"
-#include "InetAddr.h"
 #include "PeerFactory.h"
-#include "Socket.h"
-
 #include <cerrno>
 #include <poll.h>
 #include <PeerProto.h>
@@ -24,15 +23,14 @@
 
 namespace hycast {
 
-class PeerFactory::Impl final
+class PeerFactory::Impl
 {
-private:
+protected:
     PortPool      portPool;
     TcpSrvrSock   srvrSock;
-    PeerObs&      peerObs;
-    NodeType&     nodeType;
 
-public:
+    Impl() =default;
+
     /**
      * Calls `::listen()`.
      *
@@ -43,56 +41,19 @@ public:
      */
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
-            PortPool&       portPool,
-            PeerObs&        peerObs,
-            NodeType&       nodeType)
+            PortPool&       portPool)
         : portPool{portPool}
         , srvrSock(srvrAddr, queueSize)
-        , peerObs(peerObs)   // Braces don't work for references
-        , nodeType(nodeType) // Braces don't work for references
     {}
 
-    ~Impl() {
+public:
+    SockAddr getSrvrAddr() const {
+        return srvrSock.getLclAddr();
     }
 
     in_port_t getPort()
     {
         return srvrSock.getLclPort();
-    }
-
-    /**
-     * Server-side peer construction. Creates a peer by accepting a connection
-     * from a remote peer. The returned peer is not executing. Potentially slow.
-     *
-     * @return               Local peer that's connected to a remote peer. Will
-     *                       test false if `close()` has been called.
-     * @throws  SystemError  `::accept()` failure
-     * @cancellationpoint    Yes
-     */
-    Peer accept()
-    {
-        TcpSock sock = srvrSock.accept();
-
-        if (!sock)
-            return Peer{};
-
-        return Peer{sock, portPool, peerObs, nodeType};
-    }
-
-    /**
-     * Client-side construction. Creates a peer by connecting to a remote
-     * server. The returned peer is not executing.
-     *
-     * @return                        Local peer that's connected to a remote
-     *                                counterpart
-     * @param[in] rmtSrvrAddr         Socket address of the remote server
-     * @throws    std::system_error   System error
-     * @throws    std::runtime_error  Remote peer closed the connection
-     * @cancellationpoint             Yes
-     */
-    Peer connect(const SockAddr& rmtSrvrAddr)
-    {
-        return Peer{rmtSrvrAddr, peerObs, nodeType};
     }
 
     /**
@@ -112,39 +73,168 @@ public:
     }
 };
 
-/******************************************************************************/
+PeerFactory::PeerFactory(Impl* impl)
+    : pImpl{impl} {
+}
 
-PeerFactory::PeerFactory()
-    : pImpl{}
-{}
+PeerFactory::~PeerFactory() noexcept =default;
 
-PeerFactory::PeerFactory(
-        const SockAddr& srvrAddr,
-        const int       queueSize,
-        PortPool&       portPool,
-        PeerObs&        peerObs,
-        NodeType&       nodeType)
-    : pImpl{new Impl(srvrAddr, queueSize, portPool, peerObs, nodeType)}
-{}
+SockAddr PeerFactory::getSrvrAddr() const {
+    return pImpl->getSrvrAddr();
+}
 
-in_port_t PeerFactory::getPort() const
-{
+in_port_t PeerFactory::getPort() const {
     return pImpl->getPort();
 }
 
-Peer PeerFactory::accept()
-{
-    return pImpl->accept();
-}
-
-Peer PeerFactory::connect(const SockAddr& rmtAddr)
-{
-    return pImpl->connect(rmtAddr);
-}
-
-void PeerFactory::close()
-{
+void PeerFactory::close() {
     pImpl->close();
+}
+
+/******************************************************************************/
+
+class PubPeerFactory::Impl final : public PeerFactory::Impl
+{
+private:
+    SendPeerMgr&      peerMgr;
+
+public:
+    /**
+     * Calls `::listen()`.
+     *
+     * @param srvrAddr
+     * @param queueSize
+     * @param portPool
+     * @param msgRcvr
+     */
+    Impl(   const SockAddr& srvrAddr,
+            const int       queueSize,
+            PortPool&       portPool,
+            SendPeerMgr&    peerMgr)
+        : PeerFactory::Impl(srvrAddr, queueSize, portPool)
+        , peerMgr(peerMgr)         // Braces don't work for references
+    {}
+
+    /**
+     * Server-side peer construction. Creates a peer by accepting a connection
+     * from a remote peer. The returned peer is not executing. Potentially slow.
+     *
+     * @param[in] lclNodeType  Current type of local node
+     * @return                 Local peer that's connected to a remote peer.
+     *                         Will test false if `close()` has been called.
+     * @throws  SystemError  `::accept()` failure
+     * @cancellationpoint    Yes
+     */
+    Peer accept()
+    {
+        TcpSock sock = srvrSock.accept();
+
+        return sock
+                ? Peer{sock, portPool, peerMgr}
+                : Peer{};
+    }
+};
+
+PubPeerFactory::PubPeerFactory()
+    : PeerFactory() {
+}
+
+PubPeerFactory::PubPeerFactory(
+        const SockAddr& srvrAddr,
+        const int       queueSize,
+        PortPool&       portPool,
+        SendPeerMgr&    peerMgr)
+    : PeerFactory{new Impl(srvrAddr, queueSize, portPool, peerMgr)} {
+}
+
+Peer PubPeerFactory::accept() {
+    return static_cast<Impl*>(pImpl.get())->accept();
+}
+
+/******************************************************************************/
+
+class SubPeerFactory::Impl final : public PeerFactory::Impl
+{
+private:
+    XcvrPeerMgr&      peerObs;
+
+public:
+    /**
+     * Calls `::listen()`.
+     *
+     * @param srvrAddr
+     * @param queueSize
+     * @param portPool
+     * @param msgRcvr
+     */
+    Impl(   const SockAddr& srvrAddr,
+            const int       queueSize,
+            PortPool&       portPool,
+            XcvrPeerMgr&     peerObs)
+        : PeerFactory::Impl(srvrAddr, queueSize, portPool)
+        , peerObs(peerObs)         // Braces don't work for references
+    {}
+
+    /**
+     * Server-side peer construction. Creates a peer by accepting a connection
+     * from a remote peer. The returned peer is not executing. Blocks until a
+     * remote connection is accepted or an exception is thrown.
+     *
+     * @param[in] lclNodeType  Current type of local node
+     * @return                 Local peer that's connected to a remote peer.
+     *                         Will test false if `close()` has been called.
+     * @throws  SystemError  `::accept()` failure
+     * @cancellationpoint    Yes
+     */
+    Peer accept(const NodeType lclNodeType)
+    {
+        TcpSock sock = srvrSock.accept();
+
+        return sock
+                ? Peer{sock, portPool, lclNodeType, peerObs}
+                : Peer{};
+    }
+
+    /**
+     * Client-side construction. Creates a peer by connecting to a remote
+     * server. The returned peer is not executing.
+     *
+     * @param[in] rmtSrvrAddr         Socket address of the remote server
+     * @param[in] lclNodeType         Current type of local node
+     * @return                        Local peer that's connected to a remote
+     *                                counterpart
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @cancellationpoint             Yes
+     */
+    Peer connect(
+            const SockAddr& rmtSrvrAddr,
+            const NodeType  lclNodeType)
+    {
+        return Peer(rmtSrvrAddr, lclNodeType, peerObs);
+    }
+};
+
+SubPeerFactory::SubPeerFactory()
+    : PeerFactory()
+{}
+
+SubPeerFactory::SubPeerFactory(
+        const SockAddr& srvrAddr,
+        const int       queueSize,
+        PortPool&       portPool,
+        XcvrPeerMgr&     peerObs)
+    : PeerFactory{new Impl(srvrAddr, queueSize, portPool, peerObs)} {
+}
+
+Peer SubPeerFactory::accept(const NodeType lclNodeType) {
+    return static_cast<Impl*>(pImpl.get())->accept(lclNodeType);
+}
+
+Peer SubPeerFactory::connect(
+        const SockAddr& rmtAddr,
+        const NodeType  lclNodeType) {
+    return static_cast<Impl*>(pImpl.get())->connect(rmtAddr, lclNodeType);
 }
 
 } // namespace

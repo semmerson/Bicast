@@ -1,10 +1,10 @@
 /**
- * A local peer that communicates with its associated remote peer. Besides
+ * A local peer that communicates with it's associated remote peer. Besides
  * sending notices to the remote peer, this class also creates and runs
- * independent threads that receive messages from a remote peer and pass them to
- * a peer message receiver.
+ * independent threads that receive messages from the remote peer and passes
+ * them to a peer manager.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
  * restrictions.
  *
@@ -20,114 +20,150 @@
 #include "PeerProto.h"
 
 #include <memory>
-#include <unordered_set>
 
 namespace hycast {
 
-class Peer; // Forward declaration
-
 /**
- * Interface for an observer of a peer.
+ * Interface for the manager of a peer that sends data to another peer.
  */
-class PeerObs
+class SendPeerMgr
 {
 public:
-    virtual ~PeerObs() noexcept
-    {}
+    /**
+     * Destroys.
+     */
+    virtual ~SendPeerMgr() noexcept =default;
+
+    /**
+     * Returns information on a product.
+     *
+     * @param[in] peer       Peer that wants the information
+     * @param[in] prodIndex  Index of product
+     * @return               Information on product. Will test false if no such
+     *                       information exists.
+     * @threadsafety         Safe
+     * @exceptionsafety      Strong guarantee
+     * @cancellationpoint    No
+     * @see `ProdInfo::operator bool()`
+     */
+    virtual ProdInfo getProdInfo(
+            Peer&           peer,
+            const ProdIndex prodIndex) =0;
+
+    /**
+     * Returns a data-segment
+     *
+     * @param[in] peer              Peer that wants the data
+     * @param[in] segId             Segment identifier
+     * @return                      Data-segment. Will test false if no such
+     *                              segment exists.
+     * @throws    InvalidArgument   Segment identifier is invalid
+     * @threadsafety                Safe
+     * @exceptionsafety             Strong guarantee
+     * @cancellationpoint           No
+     * @see `MemSeg::operator bool()`
+     */
+    virtual MemSeg getMemSeg(
+            Peer&        peer,
+            const SegId& segId) =0;
+};
+
+/**
+ * Interface for the manager of a peer that exchanges data with a remote peer.
+ */
+class XcvrPeerMgr : public SendPeerMgr
+{
+public:
+    virtual ~XcvrPeerMgr() noexcept =default;
 
     /**
      * Handles the remote node transitioning from not having a path to the
-     * source of data-products to having one.
+     * publisher of data-products to having one.
      *
-     * @param peer  Relevant peer
+     * @param[in] peer        Relevant peer
+     * @throws    LogicError  Local node is publisher
      */
-    virtual void pathToSrc(Peer peer) =0;
+    virtual void pathToPub(Peer& peer) =0;
 
     /**
-     * Handles the remote node transitioning from having a path to the source of
-     * data-products to not having one.
+     * Handles the remote node transitioning from having a path to the publisher
+     * of data-products to not having one.
      *
-     * @param peer  Relevant peer
+     * @param[in] peer        Relevant peer
+     * @throws    LogicError  Local node is publisher
      */
-    virtual void noPathToSrc(Peer peer) =0;
+    virtual void noPathToPub(Peer& peer) =0;
 
     /**
      * Indicates if product-information should be requested.
      *
-     * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Relevant peer
-     * @retval    `true`     The product-information should be requested
-     * @retval    `false`    The product-information should not be requested
+     * @param[in] peer        Relevant peer
+     * @param[in] prodIndex   Identifier of product
+     * @retval    `true`      The product-information should be requested
+     * @retval    `false`     The product-information should not be requested
+     * @throws    LogicError  Local node is publisher
      */
     virtual bool shouldRequest(
-            ProdIndex       prodIndex,
-            Peer&           peer) =0;
+            Peer&     peer,
+            ProdIndex prodIndex) =0;
 
     /**
      * Indicates if a data-segment should be requested.
      *
-     * @param[in] segId      Identifier of data-segment
-     * @param[in] peer       Relevant peer
-     * @retval    `true`     The data-segment should be requested
-     * @retval    `false`    The data-segment should not be requested
+     * @param[in] peer        Relevant peer
+     * @param[in] segId       Identifier of data-segment
+     * @retval    `true`      The data-segment should be requested
+     * @retval    `false`     The data-segment should not be requested
+     * @throws    LogicError  Local node is publisher
      */
     virtual bool shouldRequest(
-            const SegId&    segId,
-            Peer&           peer) =0;
-
-    /**
-     * Returns product-information.
-     *
-     * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Relevant peer
-     * @return               Product-information. Will test false if it doesn't
-     *                       exist.
-     */
-    virtual ProdInfo get(
-            ProdIndex       prodIndex,
-            Peer&           peer) =0;
-
-    /**
-     * Returns a data-segment.
-     *
-     * @param[in] segId      Identifier of data-segment
-     * @param[in] peer       Relevant peer
-     * @return               Data-segment. Will test false if it doesn't exist.
-     */
-    virtual MemSeg get(
-            const SegId&    segId,
-            Peer&           peer) =0;
+            Peer&        peer,
+            const SegId& segId) =0;
 
     /**
      * Accepts product-information.
      *
-     * @param[in] prodInfo  Product information
-     * @param[in] peer      Relevant peer
-     * @retval    `true`    Product information was accepted
-     * @retval    `false`   Product information was previously accepted
+     * @param[in] peer        Relevant peer
+     * @param[in] prodInfo    Product information
+     * @retval    `true`      Product information was accepted
+     * @retval    `false`     Product information was previously accepted
+     * @throws    LogicError  Local node is publisher
      */
     virtual bool hereIs(
-            const ProdInfo& prodInfo,
-            Peer&           peer) =0;
+            Peer&           peer,
+            const ProdInfo& prodInfo) =0;
 
     /**
      * Accepts a data-segment.
      *
-     * @param[in] tcpSeg   TCP-based data-segment
-     * @param[in] peer      Relevant peer
-     * @retval    `true`   Chunk was accepted
-     * @retval    `false`  Chunk was previously accepted
+     * @param[in] peer         Relevant peer
+     * @param[in] tcpSeg      TCP-based data-segment
+     * @retval    `true`      Chunk was accepted
+     * @retval    `false`     Chunk was previously accepted
+     * @throws    LogicError  Local node is publisher
      */
     virtual bool hereIs(
-            TcpSeg&         tcpSeg,
-            Peer&           peer) =0;
+            Peer&   peer,
+            TcpSeg& tcpSeg) =0;
 };
 
-class Peer final
+/**
+ * A peer of a peer-to-peer network.
+ */
+class Peer
 {
+public:
+    class Impl;
+
 protected:
-    class                 Impl;
     std::shared_ptr<Impl> pImpl;
+
+    /**
+     * Constructs from an implementation.
+     *
+     * @param[in] impl  Implementation
+     */
+    Peer(Impl* impl);
 
 public:
     /**
@@ -136,28 +172,40 @@ public:
     Peer();
 
     /**
-     * Server-side construction.
+     * Publisher-peer construction.
      *
      * @param[in]     sock      `::accept()`ed connection to the client peer
      * @param[in,out] portPool  Pool of port numbers for temporary servers
-     * @param[in]     peerObs   Observer of this instance
-     * @param[in]     nodeType  Type of node
+     * @param[in]     peerMgr   Manager of publisher-peer
      */
-    Peer(   TcpSock&  sock,
-            PortPool& portPool,
-            PeerObs&  peerObs,
-            NodeType& nodeType);
+    Peer(   TcpSock&     sock,
+            PortPool&    portPool,
+            SendPeerMgr& peerMgr);
 
     /**
-     * Client-side construction.
+     * Subscriber-peer server-side construction.
      *
-     * @param[in] sock      `::connect()`ed connection to the server peer
-     * @param[in] peerObs   Observer of this instance
-     * @param[in] nodeType  Type of local node
+     * @param[in]     sock           `::accept()`ed connection to the client peer
+     * @param[in,out] portPool       Pool of port numbers for temporary servers
+     * @param[in]     lclNodeType    Type of local node
+     * @param[in]     peerMgr        Manager of subscriber-peer
+     */
+    Peer(   TcpSock&     sock,
+            PortPool&    portPool,
+            NodeType     lclNodeType,
+            XcvrPeerMgr& subPeerMgrApi);
+
+    /**
+     * Subscriber-peer client-side construction.
+     *
+     * @param[in] rmtSrvrAddr    Address of remote peer-server
+     * @param[in] lclNodeType    Type of local node
+     * @param[in] subPeerMgrApi  Manager of subscriber peer
+     * @throws    LogicError     `lclNodeType == NodeType::PUBLISHER`
      */
     Peer(   const SockAddr& rmtSrvrAddr,
-            PeerObs&        peerObs,
-            NodeType&       nodeType);
+            const NodeType  lclNodeType,
+            XcvrPeerMgr&    peerMgr);
 
     /**
      * Copy construction.
@@ -166,7 +214,7 @@ public:
      */
     Peer(const Peer& peer);
 
-    ~Peer() noexcept;
+    virtual ~Peer() noexcept;
 
     operator bool() const noexcept;
 
@@ -186,14 +234,6 @@ public:
      */
     const SockAddr getLclAddr() const noexcept;
 
-    /**
-     * Indicates if this instance resulted from a call to `::connect()`.
-     *
-     * @retval `false`  No
-     * @retval `true`   Yes
-     */
-    bool isFromConnect() const noexcept;
-
     Peer& operator=(const Peer& rhs);
 
     bool operator==(const Peer& rhs) const noexcept;
@@ -202,42 +242,21 @@ public:
 
     /**
      * Executes asynchronous tasks that call the member functions of the
-     * constructor's `PeerMsgRcvr` argument. Doesn't return until the current
-     * thread is canceled or a task throws an exception.
+     * constructor's peer manager. Doesn't return until `halt()` is called a
+     * task throws an exception. If `halt()` is called before this method, then
+     * this instance will return immediately and won't execute. Idempotent.
      *
      * @throws    std::system_error   System error
      * @throws    std::runtime_error  Remote peer closed the connection
      */
-    void operator ()();
+    void operator ()() const;
 
     /**
-     * Halts execution. Terminates all subtasks. Causes `operator()()` to
-     * return. If `terminate()` is called before this method, then this instance
-     * will return immediately and won't execute. Idempotent.
+     * Halts execution. Causes `operator()()` to return if it has been called.
      *
      * @cancellationpoint No
      */
     void halt() const noexcept;
-
-    /**
-     * Indicates if the remote peer is a path to the source of data-products.
-     *
-     * @retval `false`  Remote peer is not path to source
-     * @retval `true`   Remote peer is path to source
-     */
-    bool isPathToSrc() const noexcept;
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to being
-     * a path to the source of data-products.
-     */
-    void gotPath() const;
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to not
-     * being a path to the source of data-products.
-     */
-    void lostPath() const;
 
     /**
      * Notifies the remote peer about the availability of product-information.
@@ -253,85 +272,94 @@ public:
      */
     void notify(const SegId& segId) const;
 
-    void request(const ProdIndex prodIndex) const;
-
-    void request(const SegId& segId) const;
-
+    /**
+     * Returns the hash value of this instance.
+     *
+     * @return Hash value of this instance
+     */
     size_t hash() const noexcept;
 
+    /**
+     * Returns a string representation of this instance.
+     *
+     * @return String representation of this instance
+     */
     std::string to_string() const noexcept;
 
-#if 0
     /**
-     * Handles a notice of available product-information.
+     * Indicates if this instance resulted from a call to `::connect()`.
      *
-     * @param[in] prodIndex  Identifier of product
+     * @retval `false`  No
+     * @retval `true`   Yes
      */
-    void acceptNotice(ProdIndex prodIndex);
+    bool isFromConnect() const noexcept;
 
     /**
-     * Handles a notice of an available data-segment.
+     * Indicates if the remote node is a path to the publisher of data-products.
      *
-     * @param[in] segId  Identifier of data-segment
+     * @retval `false`     Remote node is not path to source
+     * @retval `true`      Remote node is path to source
+     * @throws LogicError  This instance is a publisher-peer
      */
-    void acceptNotice(const SegId& segId);
+    bool isPathToPub() const noexcept;
 
     /**
-     * Handles a request for product-information.
+     * Notifies the remote peer that this local node just transitioned to being
+     * a path to the source of data-products.
      *
-     * @param[in] prodIndex  Identifier of product
+     * @throws LogicError  This instance is a publisher-peer
      */
-    void acceptRequest(ProdIndex prodIndex);
+    void gotPath() const;
 
     /**
-     * Handles a request for a data-segment.
+     * Notifies the remote peer that this local node just transitioned to not
+     * being a path to the source of data-products.
      *
-     * @param[in] segId  Identifier of data-segment
+     * @throws LogicError  This instance is a publisher-peer
      */
-    void acceptRequest(const SegId& segId);
+    void lostPath() const;
 
     /**
-     * Accepts product-information from the remote peer.
+     * Requests information on a product from the remote peer.
      *
-     * @param[in] prodInfo   Product-information
-     * @retval    `true`     Accepted
-     * @retval    `false`    Previously accepted
+     * @param[in] prodIndex   Product index
+     * @throws    LogicError  This instance is a publisher-peer
      */
-    void accept(const ProdInfo& prodInfo);
+    void request(const ProdIndex prodIndex) const;
 
     /**
-     * Accepts a data-segment from the remote peer.
+     * Requests a data-segment from the remote peer.
      *
-     * @param[in] seg        Data-segment
-     * @retval    `true`     Segment was accepted
-     * @retval    `false`    Segment was previously accepted
+     * @param[in] segId       Data-segment identifier
+     * @throws    LogicError  This instance is a publisher-peer
      */
-    void accept(TcpSeg& seg);
-#endif
+    void request(const SegId& segId) const;
 };
 
 } // namespace
 
 namespace std {
-    template<>
-    struct hash<hycast::Peer>
-    {
-        size_t operator()(const hycast::Peer& peer) const noexcept
-        {
-            return peer.hash();
-        }
-    };
 
-    template<>
-    struct equal_to<hycast::Peer>
+template<>
+struct hash<hycast::Peer>
+{
+    size_t operator()(const hycast::Peer& peer) const noexcept
     {
-        size_t operator()(
-                const hycast::Peer& peer1,
-                const hycast::Peer& peer2) const noexcept
-        {
-            return peer1 == peer2;
-        }
-    };
-}
+        return peer.hash();
+    }
+};
+
+template<>
+struct equal_to<hycast::Peer>
+{
+    size_t operator()(
+            const hycast::Peer& peer1,
+            const hycast::Peer& peer2) const noexcept
+    {
+        return peer1 == peer2;
+    }
+};
+
+} // "std" namespace
 
 #endif /* MAIN_PEER_PEER_H_ */

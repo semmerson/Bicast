@@ -1,5 +1,5 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc \
-		  -I$(top_srcdir)/main/net_io \
+		  -I$(top_srcdir)/main/inet \
 		  -I$(top_srcdir)/main/protocol \
 		  -I$(top_srcdir)/main/p2p \
 		  -I$(top_srcdir)/main/multicast

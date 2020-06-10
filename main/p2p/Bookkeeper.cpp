@@ -1,7 +1,7 @@
 /**
  * Keeps track of peers and chunks in a thread-safe manner.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
@@ -13,6 +13,7 @@
 #include "config.h"
 
 #include "Bookkeeper.h"
+#include "Peer.h"
 
 #include <climits>
 #include <mutex>
@@ -20,18 +21,142 @@
 
 namespace hycast {
 
+/// Concurrency types:
+typedef std::mutex             Mutex;
+typedef std::lock_guard<Mutex> Guard;
+
+/**
+ * Implementation interface for performance monitoring of peers.
+ */
 class Bookkeeper::Impl
 {
-    /// Concurrency stuff:
-    typedef std::mutex             Mutex;
-    typedef std::lock_guard<Mutex> Guard;
-    mutable Mutex                  mutex;
+protected:
+    mutable Mutex mutex;
 
+    /**
+     * Constructs.
+     *
+     * @throws std::system_error  Out of memory
+     * @cancellationpoint         No
+     */
+    Impl()
+        : mutex()
+    {}
+
+public:
+    virtual ~Impl() noexcept =default;
+
+    virtual void add(const Peer& peer) =0;
+
+    virtual Peer getWorstPeer() const =0;
+
+    virtual void resetCounts() noexcept =0;
+
+    virtual void erase(const Peer& peer) =0;
+};
+
+/**
+ * Bookkeeper implementation for a set of publisher-peers.
+ */
+class PubBookkeeper::Impl final : public Bookkeeper::Impl
+{
+    /// Map of peer -> number of chunks requested by remote peer
+    std::unordered_map<Peer, uint_fast32_t> numRequested;
+
+public:
+    Impl(const int maxPeers)
+        : Bookkeeper::Impl()
+        , numRequested(maxPeers)
+    {}
+
+    void add(const Peer& peer) override {
+        Guard guard(mutex);
+        numRequested.insert({peer, 0});
+    }
+
+    void requested(
+            const Peer&     peer,
+            const ProdInfo prodInfo) {
+        Guard guard(mutex);
+        ++numRequested[peer];
+    }
+
+    void requested(
+            const Peer&    peer,
+            const SegInfo& segId) {
+        Guard guard(mutex);
+        ++numRequested[peer];
+    }
+
+    Peer getWorstPeer() const override {
+        unsigned long minCount{ULONG_MAX};
+        Peer          peer{};
+        Guard         guard(mutex);
+
+        for (auto& elt : numRequested) {
+            auto count = elt.second;
+
+            if (count < minCount) {
+                minCount = count;
+                peer = elt.first;
+            }
+        }
+
+        return peer;
+    }
+
+    void resetCounts() noexcept override {
+        Guard guard(mutex);
+
+        for (auto& elt : numRequested)
+            elt.second = 0;
+    }
+
+    void erase(const Peer& peer) override {
+        Guard guard(mutex);
+        numRequested.erase(peer);
+    }
+};
+
+PubBookkeeper::PubBookkeeper(const int maxPeers)
+    : Bookkeeper(new Impl(maxPeers)) {
+}
+
+void PubBookkeeper::add(const Peer& peer) const {
+    static_cast<Impl*>(pImpl.get())->add(peer);
+}
+
+void PubBookkeeper::requested(const Peer& peer, const ProdInfo& prodInfo)
+        const {
+    static_cast<Impl*>(pImpl.get())->requested(peer, prodInfo);
+}
+
+void PubBookkeeper::requested(const Peer& peer, const SegInfo& segInfo) const {
+    static_cast<Impl*>(pImpl.get())->requested(peer, segInfo);
+}
+
+Peer PubBookkeeper::getWorstPeer() const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
+}
+
+void Bookkeeper::resetCounts() const noexcept {
+    static_cast<Impl*>(pImpl.get())->resetCounts();
+}
+
+void Bookkeeper::erase(const Peer& peer) const {
+    static_cast<Impl*>(pImpl.get())->erase(peer);
+}
+
+/**
+ * Bookkeeper implementation for a set of subscriber-peers.
+ */
+class SubBookkeeper::Impl final : public Bookkeeper::Impl
+{
     /// Information on a peer
     typedef struct PeerInfo {
         /// Requested chunks that haven't been received
-        Bookkeeper::ChunkIds    reqChunks;
-        uint_fast32_t           chunkCount;  ///< Number of received messages
+        ChunkIds      reqChunks;
+        uint_fast32_t chunkCount;  ///< Number of received chunks
 
         PeerInfo()
             : reqChunks()
@@ -40,13 +165,13 @@ class Bookkeeper::Impl
     } PeerInfo;
 
     /// Map of peer -> peer information
-    std::unordered_map<Peer, PeerInfo>               peerInfos;
+    std::unordered_map<Peer, PeerInfo> peerInfos;
 
     /// Map of chunk identifiers -> alternative peers that can request a chunk
-    std::unordered_map<ChunkId, Bookkeeper::Peers>   altPeers;
+    std::unordered_map<ChunkId, Peers> altPeers;
 
     /*
-     * INVARIANTS:
+     * INVARIANT:
      *   - If `peerInfos[peer].reqChunks` contains `chunkId`, then `peer`
      *     is not contained in `altPeers[chunkId]`
      */
@@ -60,7 +185,7 @@ public:
      * @cancellationpoint         No
      */
     Impl(const int maxPeers)
-        : mutex()
+        : Bookkeeper::Impl()
         , peerInfos(maxPeers)
         , altPeers()
     {}
@@ -68,36 +193,36 @@ public:
     /**
      * Adds a peer.
      *
-     * @param[in] peer            The peer
+     * @param[in] peer            Peer
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void add(const Peer& peer)
+    void add(const Peer& peer) override
     {
         Guard guard(mutex);
-
         peerInfos.insert({peer, PeerInfo()});
     }
 
     /**
-     * Returns the number of remote peers that are a path to the source of
+     * Returns the number of remote peers that are a path to the publisher of
      * data-products and the number that aren't.
      *
-     * @param[out] numPath    Number of remote peers that are path to source
-     * @param[out] numNoPath  Number of remote peers that aren't path to source
+     * @param[out] numPath    Number of remote peers that are path to publisher
+     * @param[out] numNoPath  Number of remote peers that aren't path to
+     *                        publisher
      */
     void getSrcPathCounts(
             unsigned& numPath,
-            unsigned& numNoPath)
+            unsigned& numNoPath) const
     {
         Guard guard(mutex);
 
         numPath = numNoPath = 0;
 
         for (auto& pair : peerInfos) {
-            if (pair.first.isPathToSrc()) {
+            if (pair.first.isPathToPub()) {
                 ++numPath;
             }
             else {
@@ -123,8 +248,8 @@ public:
      * @cancellationpoint            No
      */
     bool shouldRequest(
-            Peer&           peer,
-            const ChunkId   chunkId)
+            Peer&          peer,
+            const ChunkId  chunkId)
     {
         bool  should;
         Guard guard(mutex);
@@ -180,8 +305,8 @@ public:
      * @cancellationpoint            No
      */
     bool received(
-            Peer&           peer,
-            const ChunkId   chunkId)
+            Peer&         peer,
+            const ChunkId chunkId)
     {
         Guard  guard(mutex);
         auto&  peerInfo = peerInfos.at(peer);
@@ -210,7 +335,7 @@ public:
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer getWorstPeer()
+    Peer getWorstPeer() const override
     {
         unsigned long minCount{ULONG_MAX};
         Peer          peer{};
@@ -242,14 +367,14 @@ public:
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer getWorstPeer(const bool isPathToSrc)
+    Peer getWorstPeer(const bool isPathToSrc) const
     {
         unsigned long minCount{ULONG_MAX};
         Peer          peer{};
         Guard         guard(mutex);
 
         for (auto elt : peerInfos) {
-            if (elt.first.isPathToSrc() == isPathToSrc) {
+            if (elt.first.isPathToPub() == isPathToSrc) {
                 auto count = elt.second.chunkCount;
 
                 if (count < minCount) {
@@ -269,7 +394,7 @@ public:
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    void resetCounts() noexcept
+    void resetCounts() noexcept override
     {
         Guard guard(mutex);
 
@@ -295,8 +420,9 @@ public:
      * @see                       `requested()`
      * @see                       `erase()`
      */
-    Bookkeeper::ChunkIds& getRequested(const Peer& peer)
+    const ChunkIds& getRequested(const Peer& peer) const
     {
+        Guard guard(mutex);
         return peerInfos.at(peer).reqChunks;
     }
 
@@ -342,8 +468,8 @@ public:
      * @see                `erase()`
      */
     void requested(
-            Peer&           peer,
-            const ChunkId   chunkId)
+            const Peer&   peer,
+            const ChunkId chunkId)
     {
         Guard guard{mutex};
         peerInfos[peer].reqChunks.insert(chunkId);
@@ -362,7 +488,7 @@ public:
      * @see                       `popBestAlt()`
      * @see                       `requested()`
      */
-    void erase(const Peer& peer)
+    void erase(const Peer& peer) override
     {
         Guard    guard(mutex);
 
@@ -373,72 +499,55 @@ public:
     }
 };
 
-Bookkeeper::Bookkeeper(const int maxPeers)
-    : pImpl{new Impl(maxPeers)}
-{}
-
-void Bookkeeper::add(const Peer& peer) const
-{
-    pImpl->add(peer);
-}
-
-void Bookkeeper::getSrcPathCounts(
+void SubBookkeeper::getPubPathCounts(
         unsigned& numPath,
-        unsigned& numNoPath) const
-{
-    pImpl->getSrcPathCounts(numPath, numNoPath);
+        unsigned& numNoPath) const {
+    static_cast<Impl*>(pImpl.get())->getSrcPathCounts(numPath,
+            numNoPath);
 }
 
-bool Bookkeeper::shouldRequest(
-        Peer&           peer,
-        const ChunkId   chunkId) const
-{
-    return pImpl->shouldRequest(peer, chunkId);
+bool SubBookkeeper::shouldRequest(
+        Peer&         peer,
+        const ChunkId chunkId) const {
+    return static_cast<Impl*>(pImpl.get())->shouldRequest(peer,
+            chunkId);
 }
 
-bool Bookkeeper::received(
-        Peer&           peer,
-        const ChunkId   chunkId) const
-{
-    return pImpl->received(peer, chunkId);
+bool SubBookkeeper::received(
+        Peer&         peer,
+        const ChunkId chunkId) const {
+    return static_cast<Impl*>(pImpl.get())->received(peer, chunkId);
 }
 
-Peer Bookkeeper::getWorstPeer() const
-{
-    return pImpl->getWorstPeer();
+Peer SubBookkeeper::getWorstPeer() const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
 }
 
-Peer Bookkeeper::getWorstPeer(const bool isPathToSrc) const
-{
-    return pImpl->getWorstPeer(isPathToSrc);
+Peer SubBookkeeper::getWorstPeer(const bool isPathToSrc) const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer(isPathToSrc);
 }
 
-void Bookkeeper::resetCounts() const noexcept
-{
-    pImpl->resetCounts();
+void SubBookkeeper::resetCounts() const noexcept {
+    static_cast<Impl*>(pImpl.get())->resetCounts();
 }
 
-Bookkeeper::ChunkIds&
-Bookkeeper::getRequested(const Peer& peer) const
-{
-    return pImpl->getRequested(peer);
+const SubBookkeeper::ChunkIds&
+SubBookkeeper::getRequested(const Peer& peer) const {
+    return static_cast<Impl*>(pImpl.get())->getRequested(peer);
 }
 
-Peer Bookkeeper::popBestAlt(const ChunkId chunkId) const
-{
-    return pImpl->popBestAlt(chunkId);
+Peer SubBookkeeper::popBestAlt(const ChunkId chunkId) const {
+    return static_cast<Impl*>(pImpl.get())->popBestAlt(chunkId);
 }
 
-void Bookkeeper::requested(
-        Peer&           peer,
-        const ChunkId   chunkId) const
-{
-    pImpl->requested(peer, chunkId);
+void SubBookkeeper::requested(
+        const Peer&    peer,
+        const ChunkId& chunkId) const {
+    static_cast<Impl*>(pImpl.get())->requested(peer, chunkId);
 }
 
-void Bookkeeper::erase(const Peer& peer) const
-{
-    pImpl->erase(peer);
+void SubBookkeeper::erase(const Peer& peer) const {
+    static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 } // namespace

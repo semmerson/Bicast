@@ -1,10 +1,9 @@
 #include "config.h"
 
 #include "error.h"
-#include "SockAddr.h"
-
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/inet/SockAddr.h>
 #include <Peer.h>
 #include <mutex>
 #include <thread>
@@ -12,7 +11,7 @@
 namespace {
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public hycast::PeerObs
+class PeerTest : public ::testing::Test, public hycast::PeerMgrApi
 {
 protected:
     typedef enum {
@@ -83,10 +82,10 @@ public:
             cond.wait(lock);
     }
 
-    void pathToSrc(hycast::Peer peer)
+    void pathToPub(hycast::Peer peer)
     {}
 
-    void noPathToSrc(hycast::Peer peer)
+    void noPathToPub(hycast::Peer peer)
     {}
 
     // Receiver-side

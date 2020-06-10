@@ -24,8 +24,8 @@ typedef enum {
     DATA_SEG_REQUEST,
     PROD_INFO,
     DATA_SEG,
-    PATH_TO_SRC,
-    NO_PATH_TO_SRC
+    PATH_TO_PUB,
+    NO_PATH_TO_PUB
 } MsgId;
 
 } // namespace

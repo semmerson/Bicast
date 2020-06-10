@@ -1,10 +1,10 @@
 /**
  * A local peer that communicates with its associated remote peer. Besides
  * sending notices to the remote peer, this class also creates and runs
- * independent threads that receive messages from a remote peer and pass them to
- * a peer message receiver.
+ * independent threads that receive messages from the remote peer and pass them
+ * to a peer manager.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
@@ -13,25 +13,29 @@
  *      Author: Steven R. Emmerson
  */
 #include "config.h"
-#include "Peer.h"
 
 #include "ChunkIdQueue.h"
 #include "error.h"
 #include "hycast.h"
 #include "NodeType.h"
-#include "PeerProto.h"
+#include "Peer.h"
 
 #include <condition_variable>
 #include <exception>
 #include <mutex>
 #include <pthread.h>
+#include <PeerProto.h>
 #include <thread>
+#include <vector>
 
 namespace hycast {
 
-class Peer::Impl : public PeerProtoObs
+/**
+ * Abstract base class for a peer implementation.
+ */
+class Peer::Impl : public SendPeer
 {
-private:
+protected:
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  Guard;
     typedef std::unique_lock<Mutex> Lock;
@@ -39,54 +43,55 @@ private:
     typedef std::atomic<bool>       AtomicBool;
     typedef std::exception_ptr      ExceptPtr;
 
-    mutable Mutex  doneMutex;       ///< For protecting `done`
-    mutable Cond   doneCond;        ///< For checking `done`
-    const bool     fromConnect;     ///< Instance is result of `::connect()`?
-    ChunkIdQueue   noticeQueue;     ///< Queue for notices
-    ChunkIdQueue   requestQueue;    ///< Queue for requests
-    /// Remote site has path to source? Must be initialized before `peerProto`.
-    Peer&          peer;            ///< Containing `Peer`
-    PeerObs&       peerObs;         ///< Observer of this instance
-    std::thread    notifierThread;  ///< Thread on which notices are sent
-    std::thread    requesterThread; ///< Thread on which requests are made
-    std::thread    peerProtoThread; ///< Thread on which peerProto() executes
-    ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
-    bool           done;            ///< Terminate without an exception?
-    PeerProto      peerProto;       ///< Peer-to-peer protocol object
-    AtomicBool     rmtHasPathToSrc;
+    mutable Mutex   mutex;           ///< State-change mutex
+    mutable Cond    cond;            ///< State-change condition variable
+    SendPeerMgr&    peerMgr;         ///< Peer manager
+    ChunkIdQueue    noticeQueue;     ///< Queue for notices
+    Peer&           peer;            ///< Containing `Peer`
+    std::thread     notifierThread;  ///< Thread on which notices are sent
+    std::thread     peerProtoThread; ///< Thread on which peerProto() executes
+    ExceptPtr       exceptPtr;       ///< Pointer to terminating exception
+    bool            done;            ///< Terminate without an exception?
+    PeerProto&      peerProto;       ///< Peer-to-peer protocol object
 
     void handleException(const ExceptPtr& exPtr)
     {
-        Guard guard(doneMutex);
+        Guard guard(mutex);
 
         if (!exceptPtr) {
             exceptPtr = exPtr;
-            doneCond.notify_one();
+            cond.notify_one();
         }
     }
 
     void setDone()
     {
-        Guard guard{doneMutex};
+        Guard guard{mutex};
         done = true;
-        doneCond.notify_one();
+        cond.notify_one();
     }
 
     bool isDone()
     {
-        Guard guard{doneMutex};
+        Guard guard{mutex};
         return done;
+    }
+
+    void ensureNotDone()
+    {
+        if (done)
+            throw LOGIC_ERROR("Peer has been halted");
     }
 
     void waitUntilDone()
     {
-        Lock lock(doneMutex);
+        Lock lock(mutex);
 
         while (!done && !exceptPtr)
-            doneCond.wait(lock);
+            cond.wait(lock);
     }
 
-    void runNotifier(void)
+    void runNotifier()
     {
         try {
             for (;;) {
@@ -108,6 +113,410 @@ private:
         }
     }
 
+    void startNotifierThread()
+    {
+        notifierThread = std::thread{&Impl::runNotifier, this};
+    }
+
+    void runPeerProto()
+    {
+        try {
+            peerProto();
+            // The remote peer closed the connection
+            setDone();
+        }
+        catch (const std::exception& ex) {
+            handleException(std::current_exception());
+        }
+    }
+
+    void startPeerProtoThread()
+    {
+        peerProtoThread = std::thread{&Impl::runPeerProto, this};
+    }
+
+    virtual void startTasks() =0;
+
+    /**
+     * Idempotent.
+     */
+    virtual void stopTasks() =0;
+
+public:
+    /**
+     * Constructs. Applicable to both a publisher and a subscriber.
+     *
+     * @param[in] peerProto    Peer protocol
+     * @param[in] peerMgr      Peer manager
+     * @param[in] peer         Containing local peer
+     */
+    Impl(   PeerProto&&  peerProto,
+            SendPeerMgr& peerMgr,
+            Peer&        peer)
+        : mutex()
+        , cond()
+        , peerMgr(peerMgr)
+        , noticeQueue{}
+        , peer(peer)
+        , notifierThread{}
+        , peerProtoThread{}
+        , exceptPtr()
+        , done{false}
+        , peerProto(peerProto)
+    {}
+
+    virtual ~Impl() noexcept
+    {
+        LOG_TRACE();
+    }
+
+    /**
+     * Returns the socket address of the remote peer. On the client-side, this
+     * will be the address of the peer-server; on the server-side, this will be
+     * the address of the `accept()`ed socket.
+     *
+     * @return            Socket address of the remote peer.
+     * @cancellationpoint No
+     */
+    SockAddr getRmtAddr() const noexcept {
+        return peerProto.getRmtAddr();
+    }
+
+    /**
+     * Returns the local socket address.
+     *
+     * @return            Local socket address
+     * @cancellationpoint No
+     */
+    SockAddr getLclAddr() const noexcept {
+        return peerProto.getLclAddr();
+    }
+
+    /**
+     * Executes this instance by starting subtasks. Doesn't return until an
+     * exception is thrown by a subtask or `halt()` is called. Upon return,
+     * all subtasks have terminated. If `halt()` is called before this method,
+     * then this instance will return immediately and won't execute.
+     *
+     * @throws    std::system_error   System error
+     * @throws    std::runtime_error  Remote peer closed the connection
+     * @throws    std::logic_error    This method has already been called
+     */
+    void operator ()()
+    {
+        try {
+            startTasks();
+
+            try {
+                waitUntilDone();
+                stopTasks(); // Idempotent
+
+                Guard guard{mutex};
+                if (!done && exceptPtr)
+                    std::rethrow_exception(exceptPtr);
+            }
+            catch (...) {
+                stopTasks(); // Idempotent
+                throw;
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught \"%s\"", ex.what());
+            std::throw_with_nested(RUNTIME_ERROR("Failure"));
+        }
+        catch (...) {
+            LOG_DEBUG("Caught ...");
+            throw;
+        }
+    }
+
+    /**
+     * Halts execution. Does nothing if `operator()()` has not been called;
+     * otherwise, causes `operator()()` to return and disconnects from the
+     * remote peer. Idempotent.
+     *
+     * @cancellationpoint No
+     */
+    void halt() noexcept
+    {
+        setDone();
+    }
+
+    std::string to_string() const noexcept
+    {
+        return peerProto.to_string();
+    }
+
+    /**
+     * Indicates if this instance resulted from a call to `::connect()`.
+     *
+     * @retval `false`  No
+     * @retval `true`   Yes
+     */
+    virtual bool isFromConnect() const noexcept =0;
+
+    void notify(ProdIndex prodIndex)
+    {
+        Guard guard{mutex};
+
+        ensureNotDone();
+        noticeQueue.push(prodIndex);
+    }
+
+    void notify(const SegId& segId)
+    {
+        Guard guard{mutex};
+
+        ensureNotDone();
+        noticeQueue.push(segId);
+    }
+
+    void sendMe(const ProdIndex prodIndex)
+    {
+        LOG_DEBUG("Accepting request for product-information %s",
+                prodIndex.to_string().data());
+
+        int entryState;
+
+        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+            auto prodInfo = peerMgr.getProdInfo(peer, prodIndex);
+        ::pthread_setcancelstate(entryState, &entryState);
+
+        if (prodInfo) {
+            //LOG_DEBUG("Sending product-information %s",
+                    //prodInfo.to_string().data());
+            peerProto.send(prodInfo);
+        }
+    }
+
+    void sendMe(const SegId& segId)
+    {
+        try {
+            LOG_DEBUG("Accepting request for data-segment %s",
+                    segId.to_string().data());
+
+            int entryState;
+
+            //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
+                MemSeg memSeg = peerMgr.getMemSeg(peer, segId);
+            //::pthread_setcancelstate(entryState, &entryState);
+
+            if (memSeg) {
+                //LOG_DEBUG("Sending data-segment %s", memSeg.to_string().data());
+                peerProto.send(memSeg);
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught exception \"%s\"", ex.what());
+            throw;
+        }
+        catch (...) {
+            LOG_DEBUG("Caught exception ...");
+            throw;
+        }
+    }
+
+    virtual bool isPathToPub() const noexcept =0;
+
+    virtual void gotPath() const =0;
+
+    virtual void lostPath() const =0;
+
+    virtual void request(const ProdIndex prodIndex) =0;
+
+    virtual void request(const SegId& segId) =0;
+};
+
+Peer::Peer(Impl* impl)
+    : pImpl(impl) {
+}
+
+Peer::Peer(const Peer& peer)
+    : pImpl(peer.pImpl) {
+}
+
+Peer::operator bool() const noexcept {
+    return static_cast<bool>(pImpl);
+}
+
+const SockAddr Peer::getRmtAddr() const noexcept {
+    return pImpl->getRmtAddr();
+}
+
+const SockAddr Peer::getLclAddr() const noexcept {
+    return pImpl->getLclAddr();
+}
+
+size_t Peer::hash() const noexcept {
+    return std::hash<Impl*>()(pImpl.get());
+}
+
+std::string Peer::to_string() const noexcept {
+    return pImpl->to_string();
+}
+
+Peer& Peer::operator=(const Peer& rhs) {
+    pImpl = rhs.pImpl;
+
+    return *this;
+}
+
+bool Peer::operator==(const Peer& rhs) const noexcept {
+    return pImpl.get() == rhs.pImpl.get();
+}
+
+bool Peer::operator<(const Peer& rhs) const noexcept {
+    return pImpl.get() < rhs.pImpl.get();
+}
+
+void Peer::operator ()() const {
+    pImpl->operator()();
+}
+
+void Peer::halt() const noexcept {
+    if (pImpl)
+        pImpl->halt();
+}
+
+bool Peer::isFromConnect() const noexcept {
+    return pImpl->isFromConnect();
+}
+
+bool Peer::isPathToPub() const noexcept {
+    return pImpl->isPathToPub();
+}
+
+void Peer::gotPath() const {
+    pImpl->gotPath();
+}
+
+void Peer::lostPath() const {
+    pImpl->lostPath();
+}
+
+void Peer::request(const ProdIndex prodId) const {
+    pImpl->request(prodId);
+}
+
+void Peer::request(const SegId& segId) const {
+    pImpl->request(segId);
+}
+
+/******************************************************************************/
+
+/**
+ * A publisher-peer implementation.
+ */
+class PubPeer final : public Peer::Impl
+{
+protected:
+    void startTasks() override
+    {
+        startNotifierThread(); // Because `Impl::runNotifier` is protected!?
+
+        try {
+            startPeerProtoThread(); // Because `Impl::runPeerProto` is protected!?
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Caught \"%s\"", ex.what());
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+            throw;
+        }
+        catch (...) {
+            LOG_DEBUG("Caught ...");
+            (void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+            throw;
+        }
+    }
+
+    /**
+     * Idempotent.
+     */
+    void stopTasks() override
+    {
+        if (peerProtoThread.joinable()) {
+            peerProto.halt();
+            peerProtoThread.join();
+        }
+        if (notifierThread.joinable()) {
+            noticeQueue.close();
+            //(void)pthread_cancel(notifierThread.native_handle());
+            notifierThread.join();
+        }
+    }
+
+public:
+    /**
+     * Constructs. Server-side construction only.
+     *
+     * @param[in] sock         TCP socket with remote peer
+     * @param[in] portPool     Pool of port numbers for temporary servers
+     * @param[in] peerMgr      Peer manager
+     * @param[in] peer         Containing local peer
+     */
+    PubPeer(TcpSock&     sock,
+            PortPool&    portPool,
+            SendPeerMgr& peerMgr,
+            Peer&        peer)
+        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr, peer)
+    {}
+
+    /**
+     * Indicates if this instance resulted from a call to `::connect()`.
+     * Publisher-peers don't call `::connect()`.
+     *
+     * @return `false`  Always
+     */
+    bool isFromConnect() const noexcept {
+        return false;
+    }
+
+    bool isPathToPub() const noexcept {
+        throw LOGIC_ERROR("Invalid call");
+    }
+
+    void gotPath() const {
+        throw LOGIC_ERROR("Invalid call");
+    }
+
+    void lostPath() const {
+        throw LOGIC_ERROR("Invalid call");
+    }
+
+    void request(const ProdIndex prodIndex) {
+        throw LOGIC_ERROR("Invalid call");
+    }
+
+    void request(const SegId& segId) {
+        throw LOGIC_ERROR("Invalid call");
+    }
+};
+
+Peer::Peer(
+        TcpSock&     sock,
+        PortPool&    portPool,
+        SendPeerMgr& peerMgr)
+    : pImpl(new PubPeer(sock, portPool, peerMgr, *this)) {
+}
+
+/******************************************************************************/
+
+/**
+ * A subscriber-peer implementation.
+ */
+class SubPeer final : public Peer::Impl, public RecvPeer
+{
+private:
+    const bool      fromConnect;     ///< Instance is result of `::connect()`?
+    ChunkIdQueue    requestQueue;    ///< Queue for requests
+    std::thread     requesterThread; ///< Thread on which requests are made
+    PeerProto       peerProto;       ///< Peer-to-peer protocol
+    AtomicBool      rmtHasPathToPub; ///< Remote node has path to publisher?
+    XcvrPeerMgr&    recvPeerMgr;     ///< Manager of subscriber peer
+    Peer&           peer;            ///< Containing peer
+
     void runRequester(void)
     {
         try {
@@ -125,27 +534,15 @@ private:
         }
     }
 
-    void runPeerProto(void)
-    {
-        try {
-            peerProto();
-            // The remote peer closed the connection
-            setDone();
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
-    }
-
     void startTasks()
     {
-        notifierThread = std::thread{&Impl::runNotifier, this};
+        startNotifierThread();
 
         try {
-            requesterThread = std::thread{&Impl::runRequester, this};
+            requesterThread = std::thread{&SubPeer::runRequester, this};
 
             try {
-                peerProtoThread = std::thread{&Impl::runPeerProto, this};
+                startPeerProtoThread();
             }
             catch (const std::exception& ex) {
                 LOG_DEBUG("Caught \"%s\"", ex.what());
@@ -197,90 +594,55 @@ private:
 
 public:
     /**
-     * Server-side construction (i.e., from an `::accept()`). Constructs from a
-     * connection to a remote peer and an observer of this instance.
+     * Server-side construction (i.e., from an `::accept()`).
      *
-     * @param[in]     sock      TCP socket with remote peer
-     * @param[in]     portPool  Pool of port numbers for temporary servers
-     * @param[in]     peerObs   Observer of this instance
-     * @param[in,out] nodeType  Type of local node
-     * @param[in]     peer      Containing local peer
+     * @param[in] sock           TCP socket with remote peer
+     * @param[in] portPool       Pool of port numbers for temporary servers
+     * @param[in] lclNodeType    Type of local node
+     * @param[in] peer           Containing local peer
+     * @param[in] peerMgr        Peer Manager
      */
-    Impl(   TcpSock&   sock,
-            PortPool&  portPool,
-            PeerObs&   peerObs,
-            NodeType&  nodeType,
-            Peer&      peer)
-        : doneMutex()
-        , doneCond()
+    SubPeer(TcpSock&        sock,
+            PortPool&       portPool,
+            const NodeType& lclNodeType,
+            Peer&           peer,
+            XcvrPeerMgr&    peerMgr)
+        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr, peer)
         , fromConnect{false}
-        , noticeQueue{}
         , requestQueue{}
-        , peer(peer)
-        , peerObs(peerObs) // Braces don't work
-        , notifierThread{}
         , requesterThread{}
-        , peerProtoThread{}
-        , exceptPtr()
-        , done{false}
-        , peerProto{sock, portPool, nodeType, *this}
-        , rmtHasPathToSrc{peerProto.isPathToSrc()}
+        , peerProto{sock, portPool, lclNodeType, *this}
+        , rmtHasPathToPub{peerProto.getRmtNodeType()}
+        , recvPeerMgr(peerMgr)
+        , peer(peer)
     {}
 
     /**
-     * Client-side construction (i.e., from a `::connect()`). Constructs from
-     * the address of a remote peer- server and an observer of this instance.
+     * Client-side construction (i.e., from a `::connect()`).
      *
-     * @param[in] rmtSrvrAddr  Address of remote peer-server
-     * @param[in] peerObs      Observer of this instance
-     * @param[in] nodeType     Type of local node
-     * @param[in] peer         Local peer that contains this instance
+     * @param[in] rmtSrvrAddr    Address of remote peer-server
+     * @param[in] lclNodeType    Type of local node
+     * @param[in] peer           Local peer that contains this instance
+     * @param[in] subPeerMgrApi  Manager of subscriber peer
+     * @throws    LogicError     `lclNodeType == NodeType::PUBLISHER`
      */
-    Impl(   const SockAddr& rmtSrvrAddr,
-            PeerObs&        peerObs,
-            NodeType&       nodeType,
-            Peer&           peer)
-        : doneMutex()
-        , doneCond()
+    SubPeer(const SockAddr& rmtSrvrAddr,
+            const NodeType  lclNodeType,
+            Peer&           peer,
+            XcvrPeerMgr&    peerMgr)
+        : Peer::Impl(PeerProto(rmtSrvrAddr, lclNodeType, *this), peerMgr, peer)
         , fromConnect{true}
-        , noticeQueue{}
         , requestQueue{}
-        , peer(peer)
-        , peerObs(peerObs) // Braces don't work
-        , notifierThread{}
         , requesterThread{}
-        , peerProtoThread{}
-        , exceptPtr()
-        , done{false}
-        , peerProto{rmtSrvrAddr, nodeType, *this}
-        , rmtHasPathToSrc{peerProto.isPathToSrc()}
+        , peerProto{rmtSrvrAddr, lclNodeType, *this}
+        , rmtHasPathToPub{peerProto.getRmtNodeType()}
+        , recvPeerMgr(peerMgr)
+        , peer(peer)
     {}
 
-    ~Impl() noexcept
+    SendPeer& asSendPeer() noexcept
     {
-        LOG_TRACE();
-    }
-
-    /**
-     * Returns the socket address of the remote peer. On the client-side, this
-     * will be the address of the peer-server; on the server-side, this will be
-     * the address of the `accept()`ed socket.
-     *
-     * @return            Socket address of the remote peer.
-     * @cancellationpoint No
-     */
-    SockAddr getRmtAddr() const noexcept {
-        return peerProto.getRmtAddr();
-    }
-
-    /**
-     * Returns the local socket address.
-     *
-     * @return            Local socket address
-     * @cancellationpoint No
-     */
-    SockAddr getLclAddr() const noexcept {
-        return peerProto.getLclAddr();
+        return *this;
     }
 
     /**
@@ -294,124 +656,98 @@ public:
     }
 
     /**
-     * Executes this instance by starting subtasks. Doesn't return until an
-     * exception is thrown by a subtask or `halt()` is called. Upon return,
-     * all subtasks have terminated. If `halt()` is called before this method,
-     * then this instance will return immediately and won't execute.
-     *
-     * @throws    std::system_error   System error
-     * @throws    std::runtime_error  Remote peer closed the connection
-     * @throws    std::logic_error    This method has already been called
-     */
-    void operator ()()
-    {
-        try {
-            startTasks();
-
-            try {
-                waitUntilDone();
-                stopTasks(); // Idempotent
-
-                Guard guard{doneMutex};
-                if (!done && exceptPtr)
-                    std::rethrow_exception(exceptPtr);
-            }
-            catch (...) {
-                stopTasks(); // Idempotent
-                throw;
-            }
-        }
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Caught \"%s\"", ex.what());
-            std::throw_with_nested(RUNTIME_ERROR("Failure"));
-        }
-        catch (...) {
-            LOG_DEBUG("Caught ...");
-            throw;
-        }
-    }
-
-    /**
-     * Halts execution. Does nothing if `operator()()` has not been called;
-     * otherwise, causes `operator()()` to return and disconnects from the
-     * remote peer. Idempotent.
-     *
-     * @cancellationpoint No
-     */
-    void halt() noexcept
-    {
-        setDone();
-    }
-
-    /**
      * Notifies the remote peer that this local node just transitioned to being
      * a path to the source of data-products.
      */
-    void gotPath()
+    void gotPath() const
     {
-        peerProto.gotPath();
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER)
+            peerProto.gotPath();
     }
 
     /**
      * Notifies the remote peer that this local node just transitioned to not
      * being a path to the source of data-products.
      */
-    void lostPath()
+    void lostPath() const
     {
-        peerProto.lostPath();
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER)
+            peerProto.lostPath();
     }
 
     void notify(ProdIndex prodIndex)
     {
-        noticeQueue.push(prodIndex);
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
+            Guard guard{mutex};
+
+            ensureNotDone();
+            noticeQueue.push(prodIndex);
+        }
     }
 
     void notify(const SegId& segId)
     {
-        noticeQueue.push(segId);
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
+            Guard guard{mutex};
+
+            ensureNotDone();
+            noticeQueue.push(segId);
+        }
     }
 
     void request(const ProdIndex prodIndex)
     {
+        Guard guard{mutex};
+
+        ensureNotDone();
         requestQueue.push(prodIndex);
     }
 
     void request(const SegId& segId)
     {
+        Guard guard{mutex};
+
+        ensureNotDone();
         requestQueue.push(segId);
     }
 
-    std::string to_string() const noexcept
-    {
-        return peerProto.to_string();
-    }
-
     /**
+     * Handles the remote node transitioning from not having a path to the
+     * source of data-products to having one. Won't be called if he remote
+     * node is the publisher.
+     *
      * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
      * called.
      */
-    void pathToSrc() noexcept
+    void pathToPub()
     {
-        rmtHasPathToSrc = true;
-        peerObs.pathToSrc(peer);
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
+            rmtHasPathToPub = true;
+            recvPeerMgr.pathToPub(peer);
+        }
     }
 
     /**
+     * Handles the remote node transitioning from having a path to the source of
+     * data-products to not having one.
+     *
      * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
      * called.
      */
-    void noPathToSrc() noexcept
+    void noPathToPub()
     {
-        rmtHasPathToSrc = false;
-        peerObs.noPathToSrc(peer);
+        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
+            rmtHasPathToPub = false;
+            recvPeerMgr.noPathToPub(peer);
+        }
     }
 
-    bool isPathToSrc() const noexcept
+    bool isPathToPub() const noexcept
     {
-        return rmtHasPathToSrc;
+        return rmtHasPathToPub;
     }
 
-    void acceptNotice(ProdIndex prodIndex)
+    void available(ProdIndex prodIndex)
     {
         LOG_DEBUG("Accepting notice of product-information %s",
                 prodIndex.to_string().data());
@@ -419,79 +755,35 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(prodIndex, peer);
+            const bool yes = recvPeerMgr.shouldRequest(peer, prodIndex);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
-        if (doRequest) {
+        if (yes) {
             LOG_DEBUG("Sending request for product-information %s",
                     prodIndex.to_string().data());
             peerProto.request(prodIndex);
         }
     }
 
-    void acceptNotice(const SegId& segId)
+    void available(const SegId& segId)
     {
-        LOG_DEBUG("Accepting notice of data-segment %s", segId.to_string().data());
+        LOG_DEBUG("Accepting notice of data-segment %s",
+                segId.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool doRequest = peerObs.shouldRequest(segId, peer);
+            const bool yes = recvPeerMgr.shouldRequest(peer, segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
-        if (doRequest) {
+        if (yes) {
             LOG_DEBUG("Sending request for data-segment %s",
                     segId.to_string().data());
             peerProto.request(segId);
         }
     }
 
-    void acceptRequest(ProdIndex prodIndex)
-    {
-        LOG_DEBUG("Accepting request for product-information %s",
-                prodIndex.to_string().data());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            auto prodInfo = peerObs.get(prodIndex, peer);
-        ::pthread_setcancelstate(entryState, &entryState);
-
-        if (prodInfo) {
-            //LOG_DEBUG("Sending product-information %s",
-                    //prodInfo.to_string().data());
-            peerProto.send(prodInfo);
-        }
-    }
-
-    void acceptRequest(const SegId& segId)
-    {
-        try {
-            LOG_DEBUG("Accepting request for data-segment %s",
-                    segId.to_string().data());
-
-            int entryState;
-
-            //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-                auto memSeg = peerObs.get(segId, peer);
-            //::pthread_setcancelstate(entryState, &entryState);
-
-            if (memSeg) {
-                //LOG_DEBUG("Sending data-segment %s", memSeg.to_string().data());
-                peerProto.send(memSeg);
-            }
-        }
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Caught exception \"%s\"", ex.what());
-            throw;
-        }
-        catch (...) {
-            LOG_DEBUG("Caught exception ...");
-            throw;
-        }
-    }
-
-    void accept(const ProdInfo& prodInfo)
+    void hereIs(const ProdInfo& prodInfo)
     {
         LOG_DEBUG("Accepting information on product %s",
                 prodInfo.getProdIndex().to_string().data());
@@ -499,137 +791,35 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)peerObs.hereIs(prodInfo, peer);
+            (void)recvPeerMgr.hereIs(peer, prodInfo);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 
-    void accept(TcpSeg& seg)
+    void hereIs(TcpSeg& seg)
     {
         LOG_DEBUG("Accepting data-segment %s", seg.to_string().data());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)peerObs.hereIs(seg, peer);
+            (void)recvPeerMgr.hereIs(peer, seg);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 };
 
-/******************************************************************************/
-
-Peer::Peer()
-    : pImpl{}
-{}
-
 Peer::Peer(
-        TcpSock&  sock,
-        PortPool& portPool,
-        PeerObs&  peerObs,
-        NodeType& nodeType)
-    : pImpl{new Impl(sock, portPool, peerObs, nodeType, *this)}
-{}
+        TcpSock&     sock,
+        PortPool&    portPool,
+        NodeType     lclNodeType,
+        XcvrPeerMgr& peerMgr)
+    : Peer(new SubPeer(sock, portPool, lclNodeType, *this, peerMgr)) {
+}
 
 Peer::Peer(
         const SockAddr& rmtSrvrAddr,
-        PeerObs&        peerObs,
-        NodeType&       nodeType)
-    : pImpl{new Impl(rmtSrvrAddr, peerObs, nodeType, *this)}
-{}
-
-Peer::Peer(const Peer& peer)
-    : pImpl(peer.pImpl)
-{}
-
-Peer::~Peer() noexcept
-{}
-
-Peer::operator bool() const noexcept {
-    return pImpl.operator bool();
-}
-
-const SockAddr Peer::getRmtAddr() const noexcept {
-    return pImpl->getRmtAddr();
-}
-
-const SockAddr Peer::getLclAddr() const noexcept {
-    return pImpl->getLclAddr();
-}
-
-bool Peer::isFromConnect() const noexcept {
-    return pImpl->isFromConnect();
-}
-
-Peer& Peer::operator=(const Peer& rhs)
-{
-    pImpl = rhs.pImpl;
-
-    return *this;
-}
-
-bool Peer::operator==(const Peer& rhs) const noexcept
-{
-    return pImpl.get() == rhs.pImpl.get();
-}
-
-bool Peer::operator<(const Peer& rhs) const noexcept
-{
-    return pImpl.get() < rhs.pImpl.get();
-}
-
-void Peer::operator ()()
-{
-    pImpl->operator()();
-}
-
-void Peer::halt() const noexcept
-{
-    if (pImpl)
-        pImpl->halt();
-}
-
-bool Peer::isPathToSrc() const noexcept
-{
-    return pImpl->isPathToSrc();
-}
-
-void Peer::gotPath() const
-{
-    pImpl->gotPath();
-}
-
-void Peer::lostPath() const
-{
-    pImpl->lostPath();
-}
-
-void Peer::notify(ProdIndex prodIndex) const
-{
-    pImpl->notify(prodIndex);
-}
-
-void Peer::notify(const SegId& segId) const
-{
-    pImpl->notify(segId);
-}
-
-void Peer::request(const ProdIndex prodId) const
-{
-    pImpl->request(prodId);
-}
-
-void Peer::request(const SegId& segId) const
-{
-    pImpl->request(segId);
-}
-
-size_t Peer::hash() const noexcept
-{
-    return std::hash<Impl*>()(pImpl.get());
-}
-
-std::string Peer::to_string() const noexcept
-{
-    return pImpl->to_string();
+        const NodeType  lclNodeType,
+        XcvrPeerMgr&    peerMgr)
+    : Peer(new SubPeer(rmtSrvrAddr, lclNodeType, *this, peerMgr)) {
 }
 
 } // namespace

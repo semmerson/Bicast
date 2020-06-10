@@ -1,5 +1,5 @@
 AM_CPPFLAGS	= -I$(top_srcdir)/main/misc \
-		  -I$(top_srcdir)/main/net_io \
+		  -I$(top_srcdir)/main/inet \
 		  -I$(top_srcdir)/main/protocol \
 		  -I$(top_srcdir)/main/repository
 LDADD		= $(top_builddir)/main/libhycast.la -lgtest
@@ -13,10 +13,13 @@ SUFFIXES: .i .cpp
 	      
 SUFFIXES:	.vg .sup .supp
 
-check_PROGRAMS	= ProdFile_test Repository_test
+check_PROGRAMS	= ProdFile_test \
+                  Watcher_test \
+                  Repository_test
 
-Repository_test_SOURCES		= Repository_test.cpp
 ProdFile_test_SOURCES		= ProdFile_test.cpp
+Watcher_test_SOURCES	= Watcher_test.cpp
+Repository_test_SOURCES		= Repository_test.cpp
 
 TESTS	= $(check_PROGRAMS)
 

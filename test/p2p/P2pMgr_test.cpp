@@ -14,10 +14,9 @@
 #include "error.h"
 #include "P2pMgr.h"
 #include "PeerFactory.h"
-#include "SockAddr.h"
-
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 #include <unistd.h>
@@ -25,7 +24,7 @@
 namespace {
 
 /// The fixture for testing class `P2pMgr`
-class P2pMgrTest : public ::testing::Test, public hycast::P2pMgrObs
+class P2pMgrTest : public ::testing::Test, public hycast::SendNode
 {
 protected:
     hycast::SockAddr        srvrAddr;
@@ -207,7 +206,7 @@ TEST_F(P2pMgrTest, SimpleConstruction)
 }
 #endif
 
-// Tests exchanging data between two peers
+// Tests exchanging data between two nodes
 TEST_F(P2pMgrTest, DataExchange)
 {
     // Start server

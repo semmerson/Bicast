@@ -22,7 +22,8 @@ lib_la_SOURCES 	= \
 	Executor.cpp	Executor.h \
 	Completer.cpp	Completer.h \
 			LinkedHashMap.h \
-	RaiiThread.cpp	RaiiThread.h
+	RaiiThread.cpp	RaiiThread.h \
+	LinkedMap.cpp	LinkedMap.h
 
 #	Promise.cpp	Promise.h
 #			SyncQueue.h
