@@ -158,13 +158,6 @@ public:
 protected:
     std::shared_ptr<Impl> pImpl;
 
-    /**
-     * Constructs from an implementation.
-     *
-     * @param[in] impl  Implementation
-     */
-    Peer(Impl* impl);
-
 public:
     /**
      * Default construction.
@@ -172,7 +165,7 @@ public:
     Peer();
 
     /**
-     * Publisher-peer construction.
+     * Constructs a publisher-peer.
      *
      * @param[in]     sock      `::accept()`ed connection to the client peer
      * @param[in,out] portPool  Pool of port numbers for temporary servers
@@ -183,7 +176,7 @@ public:
             SendPeerMgr& peerMgr);
 
     /**
-     * Subscriber-peer server-side construction.
+     * Constructs a server-side subscriber-peer.
      *
      * @param[in]     sock           `::accept()`ed connection to the client peer
      * @param[in,out] portPool       Pool of port numbers for temporary servers
@@ -196,7 +189,7 @@ public:
             XcvrPeerMgr& subPeerMgrApi);
 
     /**
-     * Subscriber-peer client-side construction.
+     * Constructs a client-side subscriber-peer.
      *
      * @param[in] rmtSrvrAddr    Address of remote peer-server
      * @param[in] lclNodeType    Type of local node
@@ -213,8 +206,6 @@ public:
      * @param[in] peer  Peer to be copied
      */
     Peer(const Peer& peer);
-
-    virtual ~Peer() noexcept;
 
     operator bool() const noexcept;
 

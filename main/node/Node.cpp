@@ -63,13 +63,17 @@ protected:
     Repository*        repo;         ///< Data-product repository
     ExceptPtr          exPtr;        ///< Subtask exception
     bool               done;         ///< Halt requested?
+    P2pObs&            p2pObs;       ///< P2P network observer
 
     /**
      * Constructs.
      *
      * @param[in] p2pMgr  Peer-to-peer manager
+     * @param[in] repo    Data-product repository
      */
-    Impl(P2pMgr&& p2pMgr, Repository* repo)
+    Impl(   P2pMgr&&    p2pMgr,
+            Repository* repo,
+            P2pObs&     p2pObs)
         : mutex()
         , cond()
         , p2pMgr(p2pMgr)
@@ -77,6 +81,7 @@ protected:
         , repo(repo)
         , exPtr()
         , done(false)
+        , p2pObs(p2pObs)
     {}
 
     void handleException(const ExceptPtr& ptr)
@@ -130,6 +135,10 @@ public:
         Guard guard(mutex);
         done = true;
         cond.notify_one();
+    }
+
+    void peerAdded(Peer peer) {
+        p2pObs.peerAdded(peer);
     }
 
     ProdInfo getProdInfo(ProdIndex prodIndex)
@@ -224,21 +233,23 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] p2pSrvrInfo  Information on publishing P2P server
-     * @param[in] grpAddr      Destination address for multicast products
-     * @param[in] repoDir      Pathname of root directory of repository
+     * @param[in] p2pInfo  Information about the local P2P server
+     * @param[in] grpAddr  Destination address for multicast products
+     * @param[in] repoDir  Pathname of root directory of repository
+     * @param[in] p2pObs   Observer of the P2P network
      */
     Publisher(
-            P2pInfo&           p2pSrvrInfo,
+            P2pInfo&           p2pInfo,
             const SockAddr&    grpAddr,
-            const std::string& repoDir)
-        : Node::Impl(P2pMgr(p2pSrvrInfo, *this), &repo)
+            const std::string& repoDir,
+            P2pObs&            p2pObs)
+        : Node::Impl(P2pMgr(p2pInfo, *this), &repo, p2pObs)
         , mcastSndr{UdpSock(grpAddr)}
         , repo(repoDir)
         , segSize{repo.getSegSize()}
         , sendThread()
     {
-        mcastSndr.setMcastIface(p2pSrvrInfo.sockAddr.getInetAddr());
+        mcastSndr.setMcastIface(p2pInfo.sockAddr.getInetAddr());
     }
 
     /**
@@ -326,8 +337,8 @@ public:
      * Constructs.
      *
      * @param[in]     srcMcastInfo  Information on source-specific multicast
-     * @param[in,out] p2pInfo       Information on peer-to-peer network
-     * @param[in,out] p2pSrvrPool   Pool of potential peer-servers
+     * @param[in,out] p2pInfo       Information about the local P2P server
+     * @param[in,out] p2pSrvrPool   Pool of remote P2P-servers
      * @param[in,out] repo          Data-product repository
      * @param[in]     rcvrObs       Observer of this instance
      */
@@ -336,8 +347,9 @@ public:
             P2pInfo&             p2pInfo,
             ServerPool&          p2pSrvrPool,
             const std::string&   repoDir,
-            const SegSize        segSize)
-        : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), &repo)
+            const SegSize        segSize,
+            P2pObs&              p2pObs)
+        : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), &repo, p2pObs)
         , mcastRcvr{srcMcastInfo, *this}
         , repo(repoDir, segSize)
         , mcastThread{}
@@ -513,10 +525,11 @@ public:
 /******************************************************************************/
 
 Node::Node(
-        P2pInfo&           p2pSrvrInfo,
+        P2pInfo&           p2pInfo,
         const SockAddr&    grpAddr,
-        const std::string& repoDir)
-    : pImpl{new Publisher(p2pSrvrInfo,  grpAddr, repoDir)} {
+        const std::string& repoDir,
+        P2pObs&            p2pObs)
+    : pImpl{new Publisher(p2pInfo,  grpAddr, repoDir, p2pObs)} {
 }
 
 Node::Node(
@@ -524,9 +537,10 @@ Node::Node(
         P2pInfo&             p2pInfo,
         ServerPool&          p2pSrvrPool,
         const std::string&   repoDir,
-        const SegSize        segSize)
+        const SegSize        segSize,
+        P2pObs&              p2pObs)
     : pImpl{new Subscriber(srcMcastInfo, p2pInfo, p2pSrvrPool, repoDir,
-            segSize)} {
+            segSize, p2pObs)} {
 }
 
 void Node::operator()() const {

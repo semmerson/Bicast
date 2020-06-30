@@ -22,9 +22,25 @@
 namespace hycast {
 
 /**
+ * Interface for an observer of a P2P network.
+ */
+class P2pObs
+{
+public:
+    virtual ~P2pObs() noexcept =default;
+
+    /**
+     * Processes the addition of a peer to the peer-to-peer network.
+     *
+     * @param[in] peer  The added peer
+     */
+    virtual void peerAdded(Peer peer); // No-op default is defined
+};
+
+/**
  * Interface for a sender on a P2P network.
  */
-class P2pSndr
+class P2pSndr : public P2pObs
 {
 public:
     virtual ~P2pSndr() noexcept =default;
@@ -98,6 +114,9 @@ public:
 
 /******************************************************************************/
 
+/**
+ * Information on a P2P server. Applicable to both a publisher and subscriber.
+ */
 struct P2pInfo
 {
     SockAddr   sockAddr;    ///< Server's socket address

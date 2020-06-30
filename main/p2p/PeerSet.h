@@ -28,7 +28,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~PeerSetMgr() noexcept =0;
+    virtual ~PeerSetMgr() noexcept =default;
 
     /**
      * Handles the stopping of a peer.
@@ -49,6 +49,11 @@ class PeerSet final
     std::shared_ptr<Impl> pImpl;
 
 public:
+    /**
+     * Default constructs.
+     */
+    PeerSet() =default;
+
     /**
      * Constructs.
      *

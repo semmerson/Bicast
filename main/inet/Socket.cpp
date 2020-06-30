@@ -30,8 +30,8 @@ namespace hycast {
 class Socket::Impl
 {
 protected:
-    int              sd;   ///< Socket descriptor
-    std::atomic_bool halt; ///< `shutdown()` has been called?
+    int              sd;      ///< Socket descriptor
+    std::atomic_bool halt;    ///< `shutdown()` has been called?
 
     explicit Impl(const int sd) noexcept
         : sd{sd}
@@ -39,14 +39,12 @@ protected:
     {}
 
 public:
-    virtual ~Impl() noexcept
-    {
+    virtual ~Impl() noexcept {
         ::shutdown(sd, SHUT_RDWR);
         ::close(sd);
     }
 
-    SockAddr getLclAddr() const
-    {
+    SockAddr getLclAddr() const {
         struct sockaddr_storage storage = {};
         socklen_t               socklen = sizeof(storage);
 
@@ -55,29 +53,24 @@ public:
             throw SYSTEM_ERROR("getsockname() failure on socket " +
                     std::to_string(sd));
 
-        SockAddr sockAddr(storage);
-        //LOG_DEBUG("%s", sockAddr.to_string().c_str());
-        return sockAddr;
+        return SockAddr(storage);
     }
 
-    SockAddr getRmtAddr() const
-    {
+    SockAddr getRmtAddr() const {
         struct sockaddr_storage storage = {};
         socklen_t               socklen = sizeof(storage);
 
-        return (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                &socklen))
-                ? SockAddr()
-                : SockAddr(storage);
+        return ::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
+                &socklen)
+            ? SockAddr() // Appropriate for listening server sockets
+            : SockAddr(storage);
     }
 
-    in_port_t getLclPort() const
-    {
+    in_port_t getLclPort() const {
         return getLclAddr().getPort();
     }
 
-    in_port_t getRmtPort() const
-    {
+    in_port_t getRmtPort() const {
         return getRmtAddr().getPort();
     }
 
@@ -87,16 +80,14 @@ public:
      *
      * @throws SystemError  `::shutdown()` failure
      */
-    void shutdown()
-    {
+    void shutdown() {
         if (::shutdown(sd, SHUT_RDWR) && errno != ENOTCONN)
             throw SYSTEM_ERROR("::shutdown failure on socket " +
                     std::to_string(sd));
         halt = true;
     }
 
-    bool isShutdown()
-    {
+    bool isShutdown() {
         return halt;
     }
 };
@@ -588,14 +579,19 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] sockAddr           Address of remote endpoint
-     * @throw     std::system_error  Couldn't connect to `sockAddr`
-     * @exceptionsafety              Strong guarantee
-     * @cancellationpoint
+     * @param[in] sockAddr    Address of remote endpoint
+     * @throw     SystemError Couldn't connect to `sockAddr`
+     * @throw     LogicError  Destination port number is zero
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     Yes
      */
     Impl(const SockAddr& sockAddr)
         : TcpSock::Impl(sockAddr.socket(SOCK_STREAM, IPPROTO_TCP))
     {
+        if (sockAddr.getPort() == 0)
+            throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is "
+                    "zero");
+
         sockAddr.connect(sd);
     }
 };

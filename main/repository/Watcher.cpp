@@ -169,7 +169,7 @@ class Watcher::Impl final
      *                       `filePath` is not set.
      * @threadsafety         Unsafe
      */
-    bool getEventPath(std::string& filePath)
+    bool getNextEventPath(std::string& filePath)
     {
         if (nextEvent >= endEvent) {
             // Blocks
@@ -189,7 +189,7 @@ class Watcher::Impl final
         if (event->mask & IN_UNMOUNT)
             throw RUNTIME_ERROR("Watched file-system was unmounted");
         if (event->mask & IN_Q_OVERFLOW)
-            throw RUNTIME_ERROR("Inotify event-queue overflowed");
+            throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
 
         const std::string pathname = dirPaths.at(event->wd) + "/" + event->name;
         bool              success = false; // true => link or closed reg file
@@ -236,7 +236,7 @@ public:
             throw SYSTEM_ERROR("inotify_init() failure");
 
         if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
-            throw SYSTEM_ERROR("Couldn't set inotify file-descriptor to "
+            throw SYSTEM_ERROR("Couldn't set inotify(7) file-descriptor to "
                     "close-on-exec");
 
         watch(rootDir);
@@ -261,7 +261,7 @@ public:
                 regFiles.pop();
                 break;
             }
-            else if (getEventPath(watchEvent.pathname)) {
+            else if (getNextEventPath(watchEvent.pathname)) {
                 break;
             }
         }

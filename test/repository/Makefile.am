@@ -17,11 +17,13 @@ check_PROGRAMS	= ProdFile_test \
                   Watcher_test \
                   Repository_test
 
-ProdFile_test_SOURCES		= ProdFile_test.cpp
+ProdFile_test_SOURCES	= ProdFile_test.cpp
 Watcher_test_SOURCES	= Watcher_test.cpp
-Repository_test_SOURCES		= Repository_test.cpp
+Repository_test_SOURCES	= Repository_test.cpp
 
 TESTS	= $(check_PROGRAMS)
+
+SUFFIXES:	.vg .sup .supp
 
 # Precursor to Valgrind suppression file
 %.supp:	%

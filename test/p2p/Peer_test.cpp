@@ -11,19 +11,20 @@
 namespace {
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public hycast::PeerMgrApi
+class PeerTest : public ::testing::Test, public hycast::XcvrPeerMgr
 {
 protected:
     typedef enum {
         INIT = 0,
-        LISTENING = 1,
-        PROD_NOTICE_RCVD = 2,
-        SEG_NOTICE_RCVD = 4,
-        PROD_REQUEST_RCVD = 8,
-        SEG_REQUEST_RCVD = 16,
-        PROD_INFO_RCVD = 32,
-        SEG_RCVD = 64,
-        DONE = LISTENING |
+        LISTENING = 0x1,
+        CONNECTED = 0x2,
+        PROD_NOTICE_RCVD = 0x4,
+        SEG_NOTICE_RCVD = 0x8,
+        PROD_REQUEST_RCVD = 0x10,
+        SEG_REQUEST_RCVD = 0x20,
+        PROD_INFO_RCVD = 0x40,
+        SEG_RCVD = 0x80,
+        DONE = CONNECTED |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -32,7 +33,7 @@ protected:
                SEG_RCVD
     } State;
     State                   state;
-    hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        pubAddr;
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
@@ -44,10 +45,11 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
+    hycast::Peer            pubPeer;
 
     PeerTest()
         : state{INIT}
-        , srvrAddr{"localhost:38800"}
+        , pubAddr{"localhost:38800"}
         /*
          * 3 potential port numbers for the client's 2 temporary servers because
          * the initial client connection could use one
@@ -68,6 +70,12 @@ protected:
     }
 
 public:
+    void setState(const State state) {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        this->state = state;
+        cond.notify_one();
+    }
+
     void orState(const State state)
     {
         std::lock_guard<decltype(mutex)> guard{mutex};
@@ -82,18 +90,18 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer peer)
+    void pathToPub(hycast::Peer& peer)
     {}
 
-    void noPathToPub(hycast::Peer peer)
+    void noPathToPub(hycast::Peer& peer)
     {}
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_NOTICE_RCVD);
 
         return true;
@@ -101,8 +109,8 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
@@ -111,19 +119,19 @@ public:
     }
 
     // Sender-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+    hycast::ProdInfo getProdInfo(
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
 
     // Sender-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+    hycast::MemSeg getMemSeg(
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
@@ -132,8 +140,8 @@ public:
 
     // Receiver-side
     bool hereIs(
-            const hycast::ProdInfo& actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -143,8 +151,8 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::TcpSeg&         actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);
@@ -159,21 +167,23 @@ public:
         return true;
     }
 
-    void runServer()
+    void runPublisher()
     {
         try {
-            hycast::TcpSrvrSock srvrSock(srvrAddr);
+            hycast::TcpSrvrSock srvrSock(pubAddr);
 
-            orState(LISTENING);
+            setState(LISTENING);
 
-            hycast::TcpSock   peerSock{srvrSock.accept()};
-            hycast::NodeType  nodeType{};
-            hycast::Peer      srvrPeer{peerSock, portPool, *this, nodeType};
+            hycast::TcpSock pubSock(srvrSock.accept());
+            pubPeer = hycast::Peer(pubSock, portPool, *this);
 
+            auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
             hycast::InetAddr localhost("127.0.0.1");
-            EXPECT_EQ(localhost, srvrPeer.getRmtAddr().getInetAddr());
+            EXPECT_EQ(localhost, rmtAddr);
 
-            srvrPeer();
+            setState(CONNECTED);
+
+            pubPeer();
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Logging exception");
@@ -188,61 +198,59 @@ public:
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction)
 {
-    hycast::Peer job();
+    hycast::Peer peer();
 }
 
 // Tests data exchange
 TEST_F(PeerTest, DataExchange)
 {
-    // Start the server
-    std::thread srvrThread(&PeerTest::runServer, this);
+    // Start the publisher
+    std::thread pubThread(&PeerTest::runPublisher, this);
 
     try {
         waitForState(LISTENING);
 
-        {
-            // Start the client
-            hycast::NodeType  nodeType{};
-            // Potentially slow
-            hycast::Peer      clntPeer{srvrAddr, *this, nodeType};
-            std::thread       clntThread(clntPeer);
+        // Start the subscriber
+        hycast::NodeType nodeType{};
+        hycast::Peer     subPeer(pubAddr, nodeType, *this); // Potentially slow
+        std::thread      subThread(subPeer);
 
-            try {
-                // Start an exchange
-                clntPeer.notify(prodIndex);
-                clntPeer.notify(segId);
+        try {
+            waitForState(CONNECTED);
 
-                // Wait for the exchange to complete
-                waitForState(DONE);
+            // Start an exchange
+            pubPeer.notify(prodIndex);
+            pubPeer.notify(segId);
 
-                // `clntPeer()` returns & `clntThread` terminates
-                clntPeer.halt();
-                clntThread.join();
-            }
-            catch (const std::exception& ex) {
-                hycast::log_fatal(ex);
-                clntPeer.halt();
-                clntThread.join();
-                throw;
-            }
-            catch (...) {
-                LOG_FATAL("Thread cancellation?");
-                clntThread.join();
-                throw;
-            } // `srvrThread` active
+            // Wait for the exchange to complete
+            waitForState(DONE);
+
+            // `subPeer()` returns & `subThread` terminates
+            subPeer.halt();
+            subThread.join();
         }
+        catch (const std::exception& ex) {
+            hycast::log_fatal(ex);
+            subPeer.halt();
+            subThread.join();
+            throw;
+        }
+        catch (...) {
+            LOG_FATAL("Thread cancellation?");
+            subThread.join();
+            throw;
+        } // `subThread` active
 
-        //srvrPeer.halt(); // `runServer()` returns & `srvrThread` terminates
-        srvrThread.join();
-    } // `srvrThread` active
+        pubThread.join();
+    } // `pubThread` active
     catch (const std::exception& ex) {
         hycast::log_fatal(ex);
-        srvrThread.join();
+        pubThread.join();
         throw;
     }
     catch (...) {
         LOG_FATAL("Thread cancellation?");
-        srvrThread.join();
+        pubThread.join();
         throw;
     }
 }

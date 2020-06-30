@@ -35,60 +35,16 @@ namespace hycast {
  */
 class Peer::Impl : public SendPeer
 {
-protected:
-    typedef std::mutex              Mutex;
-    typedef std::lock_guard<Mutex>  Guard;
-    typedef std::unique_lock<Mutex> Lock;
-    typedef std::condition_variable Cond;
-    typedef std::atomic<bool>       AtomicBool;
-    typedef std::exception_ptr      ExceptPtr;
-
-    mutable Mutex   mutex;           ///< State-change mutex
-    mutable Cond    cond;            ///< State-change condition variable
-    SendPeerMgr&    peerMgr;         ///< Peer manager
-    ChunkIdQueue    noticeQueue;     ///< Queue for notices
-    Peer&           peer;            ///< Containing `Peer`
-    std::thread     notifierThread;  ///< Thread on which notices are sent
-    std::thread     peerProtoThread; ///< Thread on which peerProto() executes
-    ExceptPtr       exceptPtr;       ///< Pointer to terminating exception
-    bool            done;            ///< Terminate without an exception?
-    PeerProto&      peerProto;       ///< Peer-to-peer protocol object
-
-    void handleException(const ExceptPtr& exPtr)
+    void runPeerProto()
     {
-        Guard guard(mutex);
-
-        if (!exceptPtr) {
-            exceptPtr = exPtr;
-            cond.notify_one();
+        try {
+            peerProto();
+            // The remote peer closed the connection
+            setDone();
         }
-    }
-
-    void setDone()
-    {
-        Guard guard{mutex};
-        done = true;
-        cond.notify_one();
-    }
-
-    bool isDone()
-    {
-        Guard guard{mutex};
-        return done;
-    }
-
-    void ensureNotDone()
-    {
-        if (done)
-            throw LOGIC_ERROR("Peer has been halted");
-    }
-
-    void waitUntilDone()
-    {
-        Lock lock(mutex);
-
-        while (!done && !exceptPtr)
-            cond.wait(lock);
+        catch (const std::exception& ex) {
+            handleException(std::current_exception());
+        }
     }
 
     void runNotifier()
@@ -113,21 +69,66 @@ protected:
         }
     }
 
+protected:
+    typedef std::mutex              Mutex;
+    typedef std::lock_guard<Mutex>  Guard;
+    typedef std::unique_lock<Mutex> Lock;
+    typedef std::condition_variable Cond;
+    typedef std::atomic<bool>       AtomicBool;
+    typedef std::exception_ptr      ExceptPtr;
+
+    mutable Mutex   mutex;           ///< State-change mutex
+    mutable Cond    cond;            ///< State-change condition variable
+    SendPeerMgr&    peerMgr;         ///< Peer manager
+    ChunkIdQueue    noticeQueue;     ///< Queue for notices
+    Peer&           peer;            ///< Containing `Peer`
+    std::thread     notifierThread;  ///< Thread on which notices are sent
+    std::thread     peerProtoThread; ///< Thread on which peerProto() executes
+    ExceptPtr       exceptPtr;       ///< Pointer to terminating exception
+    bool            done;            ///< Terminate without an exception?
+    PeerProto       peerProto;       ///< Peer-to-peer protocol object
+
+    void handleException(const ExceptPtr& exPtr)
+    {
+        Guard guard(mutex);
+
+        if (!exceptPtr) {
+            LOG_DEBUG("Setting exception");
+            exceptPtr = exPtr;
+            cond.notify_all();
+        }
+    }
+
+    void setDone()
+    {
+        Guard guard{mutex};
+        done = true;
+        cond.notify_all();
+    }
+
+    bool isDone()
+    {
+        Guard guard{mutex};
+        return done;
+    }
+
+    void ensureNotDone()
+    {
+        if (done)
+            throw LOGIC_ERROR("Peer has been halted");
+    }
+
+    void waitUntilDone()
+    {
+        Lock lock(mutex);
+
+        while (!done && !exceptPtr)
+            cond.wait(lock);
+    }
+
     void startNotifierThread()
     {
         notifierThread = std::thread{&Impl::runNotifier, this};
-    }
-
-    void runPeerProto()
-    {
-        try {
-            peerProto();
-            // The remote peer closed the connection
-            setDone();
-        }
-        catch (const std::exception& ex) {
-            handleException(std::current_exception());
-        }
     }
 
     void startPeerProtoThread()
@@ -255,11 +256,12 @@ public:
      */
     virtual bool isFromConnect() const noexcept =0;
 
-    void notify(ProdIndex prodIndex)
+    void notify(const ProdIndex prodIndex)
     {
         Guard guard{mutex};
 
         ensureNotDone();
+        LOG_DEBUG("Enqueing product-index " + prodIndex.to_string());
         noticeQueue.push(prodIndex);
     }
 
@@ -268,6 +270,7 @@ public:
         Guard guard{mutex};
 
         ensureNotDone();
+        LOG_DEBUG("Enqueing segment-ID " + segId.to_string());
         noticeQueue.push(segId);
     }
 
@@ -326,10 +329,6 @@ public:
 
     virtual void request(const SegId& segId) =0;
 };
-
-Peer::Peer(Impl* impl)
-    : pImpl(impl) {
-}
 
 Peer::Peer(const Peer& peer)
     : pImpl(peer.pImpl) {
@@ -394,6 +393,14 @@ void Peer::lostPath() const {
     pImpl->lostPath();
 }
 
+void Peer::notify(const ProdIndex prodIndex) const {
+    pImpl->notify(prodIndex);
+}
+
+void Peer::notify(const SegId& segId) const {
+    pImpl->notify(segId);
+}
+
 void Peer::request(const ProdIndex prodId) const {
     pImpl->request(prodId);
 }
@@ -412,10 +419,10 @@ class PubPeer final : public Peer::Impl
 protected:
     void startTasks() override
     {
-        startNotifierThread(); // Because `Impl::runNotifier` is protected!?
+        startNotifierThread();
 
         try {
-            startPeerProtoThread(); // Because `Impl::runPeerProto` is protected!?
+            startPeerProtoThread();
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught \"%s\"", ex.what());
@@ -494,6 +501,8 @@ public:
     }
 };
 
+Peer::Peer() =default;
+
 Peer::Peer(
         TcpSock&     sock,
         PortPool&    portPool,
@@ -512,7 +521,6 @@ private:
     const bool      fromConnect;     ///< Instance is result of `::connect()`?
     ChunkIdQueue    requestQueue;    ///< Queue for requests
     std::thread     requesterThread; ///< Thread on which requests are made
-    PeerProto       peerProto;       ///< Peer-to-peer protocol
     AtomicBool      rmtHasPathToPub; ///< Remote node has path to publisher?
     XcvrPeerMgr&    recvPeerMgr;     ///< Manager of subscriber peer
     Peer&           peer;            ///< Containing peer
@@ -607,18 +615,18 @@ public:
             const NodeType& lclNodeType,
             Peer&           peer,
             XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr, peer)
+        : Peer::Impl(PeerProto(sock, portPool, lclNodeType, *this), peerMgr,
+                peer)
         , fromConnect{false}
         , requestQueue{}
         , requesterThread{}
-        , peerProto{sock, portPool, lclNodeType, *this}
         , rmtHasPathToPub{peerProto.getRmtNodeType()}
         , recvPeerMgr(peerMgr)
         , peer(peer)
     {}
 
     /**
-     * Client-side construction (i.e., from a `::connect()`).
+     * Client-side construction (i.e., uses `::connect()`).
      *
      * @param[in] rmtSrvrAddr    Address of remote peer-server
      * @param[in] lclNodeType    Type of local node
@@ -634,7 +642,6 @@ public:
         , fromConnect{true}
         , requestQueue{}
         , requesterThread{}
-        , peerProto{rmtSrvrAddr, lclNodeType, *this}
         , rmtHasPathToPub{peerProto.getRmtNodeType()}
         , recvPeerMgr(peerMgr)
         , peer(peer)
@@ -812,14 +819,14 @@ Peer::Peer(
         PortPool&    portPool,
         NodeType     lclNodeType,
         XcvrPeerMgr& peerMgr)
-    : Peer(new SubPeer(sock, portPool, lclNodeType, *this, peerMgr)) {
+    : pImpl(new SubPeer(sock, portPool, lclNodeType, *this, peerMgr)) {
 }
 
 Peer::Peer(
         const SockAddr& rmtSrvrAddr,
         const NodeType  lclNodeType,
         XcvrPeerMgr&    peerMgr)
-    : Peer(new SubPeer(rmtSrvrAddr, lclNodeType, *this, peerMgr)) {
+    : pImpl(new SubPeer(rmtSrvrAddr, lclNodeType, *this, peerMgr)) {
 }
 
 } // namespace

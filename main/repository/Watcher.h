@@ -31,7 +31,7 @@ protected:
 
 public:
     struct WatchEvent {
-        std::string pathname; ///< Pathname of a new file
+        std::string pathname; ///< Pathname of new file with root directory prefix
     };
 
     /**

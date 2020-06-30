@@ -22,7 +22,7 @@
 namespace {
 
 /// The fixture for testing class `PeerFactory`
-class PeerFactoryTest : public ::testing::Test, public hycast::PeerMgrApi
+class PeerFactoryTest : public ::testing::Test, public hycast::XcvrPeerMgr
 {
 protected:
     friend class Receiver;
@@ -45,7 +45,8 @@ protected:
                SEG_RCVD
     } State;
     State                   state;
-    hycast::SockAddr        srvrAddr;
+    hycast::SockAddr        pubAddr;
+    hycast::SockAddr        subAddr;
     hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
@@ -64,12 +65,13 @@ protected:
 
     PeerFactoryTest()
         : state{INIT}
-        , srvrAddr{"localhost:3880"}
+        , pubAddr{"localhost:3880"}
+        , subAddr{"localhost:3881"}
         /*
          * 3 potential port numbers for the server's 2 temporary servers because
          * the initial client connection could use one
          */
-        , portPool(3881, 3)
+        , portPool(3882, 3)
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -100,18 +102,18 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer peer)
+    void pathToPub(hycast::Peer& peer)
     {}
 
-    void noPathToPub(hycast::Peer peer)
+    void noPathToPub(hycast::Peer& peer)
     {}
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_NOTICE_RCVD);
 
         return true;
@@ -119,8 +121,8 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
@@ -129,19 +131,19 @@ public:
     }
 
     // Sender-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+    hycast::ProdInfo getProdInfo(
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
 
     // Sender-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+    hycast::MemSeg getMemSeg(
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
@@ -150,8 +152,8 @@ public:
 
     // Receiver-side
     bool hereIs(
-            const hycast::ProdInfo& actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -161,8 +163,8 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::TcpSeg&         actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);
@@ -177,10 +179,10 @@ public:
         return true;
     }
 
-    void runPub(hycast::PeerFactory& factory)
+    void runPub(hycast::PubPeerFactory& factory)
     {
         try {
-            pubPeer = factory.accept(hycast::NodeType::PUBLISHER);
+            pubPeer = factory.accept();
             if (pubPeer) {
                 orState(PUB_PEER_CREATED);
                 pubPeer();
@@ -199,8 +201,8 @@ public:
 TEST_F(PeerFactoryTest, FactoryClosure)
 {
     // Start a server. Calls `::listen()`.
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
-    std::thread         pubThread(&PeerFactoryTest::runPub, this,
+    hycast::PubPeerFactory factory(pubAddr, 1, portPool, *this);
+    std::thread            pubThread(&PeerFactoryTest::runPub, this,
             std::ref(factory));
 
     try {
@@ -220,14 +222,15 @@ TEST_F(PeerFactoryTest, FactoryClosure)
 TEST_F(PeerFactoryTest, Exchange)
 {
     // Start a publisher. Calls `::listen()`.
-    hycast::PeerFactory factory(srvrAddr, 1, portPool, *this);
+    hycast::PubPeerFactory pubFactory(pubAddr, 1, portPool, *this);
     std::thread         pubThread(&PeerFactoryTest::runPub, this,
-            std::ref(factory));
+            std::ref(pubFactory));
 
     // Start a subscriber
-    hycast::Peer subPeer = factory.connect(srvrAddr,
+    hycast::SubPeerFactory subFactory(subAddr, 1, portPool, *this);
+    hycast::Peer subPeer = subFactory.connect(pubAddr,
             hycast::NodeType::NO_PATH_TO_PUBLISHER);
-    std::thread  subThread(subPeer); // `clntPeer` is connected
+    std::thread  subThread(subPeer); // `subPeer` is connected
 
     // Start an exchange
     waitForState(PUB_PEER_CREATED);

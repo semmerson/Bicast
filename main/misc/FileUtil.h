@@ -21,18 +21,35 @@ std::string filename(const std::string& pathname);
 
 std::string dirPath(const std::string& pathname);
 
+/**
+ * Follows symbolic links.
+ *
+ * @param pathname
+ * @param mode
+ */
 void ensureDir(
         const std::string& pathname,
-        const mode_t       mode);
+        const mode_t       mode = 0700);
 
 /**
- * Prunes a directory. The given directory hierarchy is recursively
- * traversed depth first. All empty directories are deleted.
+ * Follows symbolic links.
  *
- * @param[in] pathname  Root of directory hierarchy. Will be deleted if
- *                      empty after recursive traversal.
+ * @param fd
+ * @param pathname
+ * @param mode
  */
-void pruneDir(const std::string& pathname);
+void ensureDir(
+        const int          fd,
+        const std::string& pathname,
+        const mode_t       mode = 0700);
+
+/**
+ * Removes a directory hierarchy. All files in the hierarchy -- including the
+ * root directory -- are removed.
+ *
+ * @param[in] pathname  Root of directory hierarchy
+ */
+void rmDirTree(const std::string& dirPath);
 
 /**
  * Deletes a directory. The given directory hierarchy is recursively

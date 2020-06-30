@@ -8,7 +8,7 @@ noinst_LTLIBRARIES = lib.la
 # Build information for each library
 
 # Library Sources
-lib_la_SOURCES 	= NodeType.cpp	NodeType.h \
+lib_la_SOURCES 	= NodeType.h \
 		  Node.cpp	Node.h
 
 # Compiler options. Here we are adding the include directory to be searched for

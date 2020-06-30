@@ -41,7 +41,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~PeerFactory() noexcept =0;
+    virtual ~PeerFactory() noexcept =default;
 
     SockAddr getSrvrAddr() const;
 

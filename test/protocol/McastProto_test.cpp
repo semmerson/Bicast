@@ -126,7 +126,7 @@ TEST_F(McastProtoTest, Multicasting)
 
         // Multicast
         mcastSndr.multicast(prodInfo);
-        ::usleep(5000); // To ensure no packet loss. 2000 failed eventually
+        ::usleep(10000); // To ensure no packet loss. 2000 failed eventually
         mcastSndr.multicast(memSeg);
 
         // Wait until multicast has been received

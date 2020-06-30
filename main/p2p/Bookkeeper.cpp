@@ -55,6 +55,26 @@ public:
     virtual void erase(const Peer& peer) =0;
 };
 
+Bookkeeper::Bookkeeper(Impl* impl)
+    : pImpl(impl) {
+}
+
+void Bookkeeper::add(const Peer& peer) const {
+    pImpl->add(peer);
+}
+
+Peer Bookkeeper::getWorstPeer() const {
+    return pImpl->getWorstPeer();
+}
+
+void Bookkeeper::resetCounts() const noexcept {
+    pImpl->resetCounts();
+}
+
+void Bookkeeper::erase(const Peer& peer) const {
+    pImpl->erase(peer);
+}
+
 /**
  * Bookkeeper implementation for a set of publisher-peers.
  */
@@ -89,16 +109,19 @@ public:
     }
 
     Peer getWorstPeer() const override {
-        unsigned long minCount{ULONG_MAX};
         Peer          peer{};
         Guard         guard(mutex);
 
-        for (auto& elt : numRequested) {
-            auto count = elt.second;
+        if (numRequested.size() > 1) {
+            unsigned long minCount{ULONG_MAX};
 
-            if (count < minCount) {
-                minCount = count;
-                peer = elt.first;
+            for (auto& elt : numRequested) {
+                auto count = elt.second;
+
+                if (count < minCount) {
+                    minCount = count;
+                    peer = elt.first;
+                }
             }
         }
 
@@ -122,10 +145,6 @@ PubBookkeeper::PubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
-void PubBookkeeper::add(const Peer& peer) const {
-    static_cast<Impl*>(pImpl.get())->add(peer);
-}
-
 void PubBookkeeper::requested(const Peer& peer, const ProdInfo& prodInfo)
         const {
     static_cast<Impl*>(pImpl.get())->requested(peer, prodInfo);
@@ -133,18 +152,6 @@ void PubBookkeeper::requested(const Peer& peer, const ProdInfo& prodInfo)
 
 void PubBookkeeper::requested(const Peer& peer, const SegInfo& segInfo) const {
     static_cast<Impl*>(pImpl.get())->requested(peer, segInfo);
-}
-
-Peer PubBookkeeper::getWorstPeer() const {
-    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
-}
-
-void Bookkeeper::resetCounts() const noexcept {
-    static_cast<Impl*>(pImpl.get())->resetCounts();
-}
-
-void Bookkeeper::erase(const Peer& peer) const {
-    static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 /**
@@ -369,17 +376,20 @@ public:
      */
     Peer getWorstPeer(const bool isPathToSrc) const
     {
-        unsigned long minCount{ULONG_MAX};
         Peer          peer{};
         Guard         guard(mutex);
 
-        for (auto elt : peerInfos) {
-            if (elt.first.isPathToPub() == isPathToSrc) {
-                auto count = elt.second.chunkCount;
+        if (peerInfos.size() > 1) {
+            unsigned long minCount{ULONG_MAX};
 
-                if (count < minCount) {
-                    minCount = count;
-                    peer = elt.first;
+            for (auto elt : peerInfos) {
+                if (elt.first.isPathToPub() == isPathToSrc) {
+                    auto count = elt.second.chunkCount;
+
+                    if (count < minCount) {
+                        minCount = count;
+                        peer = elt.first;
+                    }
                 }
             }
         }
@@ -499,6 +509,10 @@ public:
     }
 };
 
+SubBookkeeper::SubBookkeeper(const int maxPeers)
+    : Bookkeeper(new Impl(maxPeers)) {
+}
+
 void SubBookkeeper::getPubPathCounts(
         unsigned& numPath,
         unsigned& numNoPath) const {
@@ -519,16 +533,8 @@ bool SubBookkeeper::received(
     return static_cast<Impl*>(pImpl.get())->received(peer, chunkId);
 }
 
-Peer SubBookkeeper::getWorstPeer() const {
-    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
-}
-
 Peer SubBookkeeper::getWorstPeer(const bool isPathToSrc) const {
     return static_cast<Impl*>(pImpl.get())->getWorstPeer(isPathToSrc);
-}
-
-void SubBookkeeper::resetCounts() const noexcept {
-    static_cast<Impl*>(pImpl.get())->resetCounts();
 }
 
 const SubBookkeeper::ChunkIds&
@@ -544,10 +550,6 @@ void SubBookkeeper::requested(
         const Peer&    peer,
         const ChunkId& chunkId) const {
     static_cast<Impl*>(pImpl.get())->requested(peer, chunkId);
-}
-
-void SubBookkeeper::erase(const Peer& peer) const {
-    static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 } // namespace

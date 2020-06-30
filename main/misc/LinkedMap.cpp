@@ -29,7 +29,7 @@ namespace hycast {
  * @tparam VALUE  Value type
  */
 template<class KEY, class VALUE>
-class Impl final
+class LinkedMap<KEY,VALUE>::Impl final
 {
     /**
      * Mapped-to entry in the map.
@@ -88,16 +88,14 @@ public:
      *
      * @param[in] key    Key
      * @param[in] value  Value mapped-to by key
-     * @return           Pair whose first element is reference to value
-     *                   associated with key and whose second element is true if
-     *                   and only if new entry was created.
+     * @return           Pointer to value in map
      */
-    std::pair<VALUE&, bool> add(const KEY& key, VALUE& value)
+    VALUE* add(const KEY& key, VALUE& value)
     {
         if (!key)
             throw INVALID_ARGUMENT("Key is invalid");
 
-        auto pair = map.insert({key, Entry(value, tail)});
+        auto pair = map.insert(std::make_pair(key, Entry(value, tail)));
 
         if (pair.second) {
             // New entry
@@ -110,7 +108,7 @@ public:
             tail = key;
         }
 
-        return {pair.first->second, pair.second};
+        return &pair.first->second.value;
     }
 
     /**
@@ -184,53 +182,42 @@ public:
 };
 
 template<class KEY, class VALUE>
-LinkedMap<KEY,VALUE>::LinkedMap(Impl* impl)
-    : pImpl(impl)
-{}
-
-template<class KEY, class VALUE>
 LinkedMap<KEY,VALUE>::LinkedMap()
-    : LinkedMap(new Impl())
-{}
+    : pImpl() {
+}
 
 template<class KEY, class VALUE>
 LinkedMap<KEY,VALUE>::LinkedMap(const size_t initSize)
-    : LinkedMap(new Impl(initSize))
-{}
+    : pImpl(new Impl(initSize)) {
+}
 
 template<class KEY, class VALUE>
-size_t LinkedMap<KEY,VALUE>::size() const noexcept
-{
+size_t LinkedMap<KEY,VALUE>::size() const noexcept {
     return pImpl->size();
 }
 
 template<class KEY, class VALUE>
-std::pair<VALUE&, bool> LinkedMap<KEY,VALUE>::add(const KEY& key, VALUE& value)
-{
+VALUE* LinkedMap<KEY,VALUE>::add(const KEY& key, VALUE& value) {
     return pImpl->add(key, value);
 }
 
 template<class KEY, class VALUE>
-VALUE* LinkedMap<KEY,VALUE>::find(const KEY& key)
-{
+VALUE* LinkedMap<KEY,VALUE>::find(const KEY& key) {
     return pImpl->find(key);
 }
 
 template<class KEY, class VALUE>
-VALUE LinkedMap<KEY,VALUE>::remove(const KEY& key)
-{
+VALUE LinkedMap<KEY,VALUE>::remove(const KEY& key) {
     return pImpl->remove(key);
 }
 
 template<class KEY, class VALUE>
-KEY LinkedMap<KEY,VALUE>::getHead()
-{
+KEY LinkedMap<KEY,VALUE>::getHead() {
     return pImpl->getHead();
 }
 
 template<class KEY, class VALUE>
-KEY LinkedMap<KEY,VALUE>::getTail()
-{
+KEY LinkedMap<KEY,VALUE>::getTail() {
     return pImpl->getTail();
 }
 

@@ -9,8 +9,9 @@
  * Created On: Dec 6, 2019
  *     Author: Steven R. Emmerson
  */
-#include <ChunkIdQueue.h>
 #include "config.h"
+
+#include "ChunkIdQueue.h"
 
 #include "gtest/gtest.h"
 

@@ -1,91 +1,104 @@
 /**
- * A pool of port-numbers.
+ * A thread-safe pool of port-numbers.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *        File: PortQueue.cpp
+ *        File: PortPool.cpp
  *  Created on: Jul 13, 2019
  *      Author: Steven R. Emmerson
  */
 
-#include <inet/PortPool.h>
 #include "config.h"
 
 #include "error.h"
+#include "PortPool.h"
+
+#include <condition_variable>
 #include <list>
+#include <mutex>
 #include <queue>
 
 namespace hycast {
 
-class PortPool::Impl {
-    std::queue<in_port_t, std::list<in_port_t>> queue;
+class PortPool::Impl
+{
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+    using Lock = std::unique_lock<Mutex>;
+    using Cond = std::condition_variable;
+    using Queue = std::queue<in_port_t, std::list<in_port_t>>;
+
+    mutable Mutex mutex;
+    mutable Cond  cond;
+    Queue         queue;
 
 public:
     Impl() = default;
 
     Impl(   const in_port_t min,
             const unsigned  num)
-        : queue{}
+        : mutex()
+        , cond()
+        , queue{}
     {
         for (in_port_t port = min, end = min + num; port != end; ++port)
             queue.emplace(port);
     }
 
-    int size() const
-    {
+    int size() const {
+        Guard guard(mutex);
         return queue.size();
     }
 
-    in_port_t take()
-    {
-        if (queue.empty())
-            throw std::range_error("PortPool is empty");
+    in_port_t take() {
+        Lock lock(mutex);
+
+        while (queue.empty())
+            cond.wait(lock);
 
         auto port = queue.front();
         queue.pop();
 
-        //LOG_DEBUG("Returning port %u", port);
+        LOG_DEBUG("Returning port %u", port);
         return port;
     }
 
-    void add(const in_port_t port)
-    {
+    void add(const in_port_t port) {
+        Guard guard(mutex);
+
         //LOG_DEBUG("Adding port %u", port);
         queue.emplace(port);
+        cond.notify_one();
     }
 };
 
 /******************************************************************************/
 
 PortPool::PortPool()
-    : pImpl{}
-{}
+    : pImpl{} {
+}
 
 PortPool::PortPool(
         const in_port_t min,
         const unsigned  num)
-    : pImpl{new Impl(min, num)}
-{}
+    : pImpl{new Impl(min, num)} {
+}
 
-PortPool::operator bool() const noexcept
-{
+PortPool::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-int PortPool::size() const
-{
+int PortPool::size() const {
     return pImpl->size();
 }
 
-in_port_t PortPool::take()
-{
+in_port_t PortPool::take() const {
     return pImpl->take();
 }
 
-void PortPool::add(in_port_t port)
-{
+void PortPool::add(in_port_t port) const {
     return pImpl->add(port);
 }
 

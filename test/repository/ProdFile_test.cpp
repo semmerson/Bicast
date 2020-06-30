@@ -14,8 +14,10 @@
 #include "ProdFile.h"
 
 #include "error.h"
+#include "FileUtil.h"
 #include "hycast.h"
 
+#include <cassert>
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
@@ -27,6 +29,9 @@ namespace {
 class ProdFileTest : public ::testing::Test
 {
 protected:
+    const std::string rootPath;
+    int               rootFd;
+    const std::string prodName;
     const std::string pathname;
     hycast::ProdIndex prodIndex;
     hycast::ProdSize  prodSize;
@@ -41,7 +46,10 @@ protected:
     // is empty.
 
     ProdFileTest()
-        : pathname("ProdFile_test.dat")
+        : rootPath("/tmp/ProdFile_test")
+        , rootFd(-1)
+        , prodName("prod.dat")
+        , pathname(rootPath + "/" + prodName)
         , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
@@ -51,99 +59,102 @@ protected:
         , memData{}
         , memSeg{segInfo, memData}
     {
+        hycast::rmDirTree(rootPath);
+        hycast::ensureDir(rootPath, 0777);
+        rootFd = ::open(rootPath.data(), O_RDONLY);
+        assert(rootFd != -1);
+
         for (int i = 0; i < sizeof(memData); ++i)
             memData[i] = static_cast<char>(i);
+    }
+
+    ~ProdFileTest() noexcept {
+        if (rootFd >= 0)
+            ::close(rootFd);
+        hycast::rmDirTree(rootPath);
+        //hycast::rmDirTree(rootPath);
     }
 };
 
 // Tests a zero-size SndProdFile
 TEST_F(ProdFileTest, ZeroSndProdFile)
 {
-    (void)::unlink(pathname.data());
     const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
     ASSERT_NE(-1, fd);
     ASSERT_NE(-1, ::close(fd));
-    hycast::SndProdFile prodFile(pathname, 0);
+    hycast::SndProdFile prodFile(rootFd, prodName, 0);
     EXPECT_THROW(prodFile.getData(0), hycast::InvalidArgument);
-    EXPECT_EQ(0, ::unlink(pathname.data()));
 }
 
 // Tests a valid SndProdFile
 TEST_F(ProdFileTest, ValidSndProdFile)
 {
-    (void)::unlink(pathname.data());
     const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
     ASSERT_NE(-1, fd);
     const char bytes[2] = {1, 2};
     ASSERT_EQ(2, ::write(fd, bytes, sizeof(bytes)));
     ASSERT_NE(-1, ::close(fd));
-    hycast::SndProdFile prodFile(pathname, 2);
+    hycast::SndProdFile prodFile(rootFd, prodName, 2);
     const char* data = static_cast<const char*>(prodFile.getData(0));
     EXPECT_EQ(1, data[0]);
     EXPECT_EQ(2, data[1]);
     EXPECT_THROW(prodFile.getData(1), hycast::InvalidArgument);
-    EXPECT_EQ(0, ::unlink(pathname.data()));
 }
 
 // Tests a bad SndProdFile
 TEST_F(ProdFileTest, BadSndProdFile)
 {
-    (void)::unlink(pathname.data());
     try {
         const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
         ASSERT_NE(-1, fd);
         const char byte = 1;
         ASSERT_EQ(1, ::write(fd, &byte, sizeof(byte)));
         ASSERT_NE(-1, ::close(fd));
-        hycast::SndProdFile(pathname, 0);
+        hycast::SndProdFile(rootFd, prodName, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
     catch (...) {
         GTEST_FAIL();
     }
-    EXPECT_EQ(0, ::unlink(pathname.data()));
 }
 
 // Tests a bad RcvProdFile
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
-    (void)::unlink(pathname.data());
     try {
-        hycast::RcvProdFile(pathname, 1, 0);
+        hycast::RcvProdFile(rootFd, prodIndex, 1, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
     catch (...) {
         GTEST_FAIL();
     }
-    EXPECT_EQ(-1, ::unlink(pathname.data()));
 }
 
 // Tests a zero-size RcvProdFile
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
-    (void)::unlink(pathname.data());
-    hycast::RcvProdFile prodFile(pathname, 0, 0);
-    EXPECT_TRUE(prodFile.isComplete());
-    EXPECT_EQ(0, ::unlink(pathname.data()));
+    hycast::ProdSize    prodSize(0);
+    hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, 0);
+    hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
+    EXPECT_TRUE(prodFile.save(rootFd, prodInfo));
 }
 
 // Tests a RcvProdFile
 TEST_F(ProdFileTest, RcvProdFile)
 {
-    (void)::unlink(pathname.data());
-    hycast::ProdSize prodSize{static_cast<hycast::ProdSize>(2*segSize)};
-    hycast::RcvProdFile prodFile(pathname, prodSize, segSize);
+    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
+    hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
+    hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, segSize);
+    ASSERT_FALSE(prodFile.save(rootFd, prodInfo));
     {
-        ASSERT_FALSE(prodFile.isComplete());
         for (int i = 0; i < 2; ++i) {
             hycast::SegId     segId(prodIndex, i*segSize);
             hycast::SegInfo   segInfo(segId, prodSize, segSize);
             hycast::MemSeg    memSeg{segInfo, memData};
-            ASSERT_TRUE(prodFile.save(memSeg));
+            ASSERT_EQ(i == 1, prodFile.save(memSeg));
         }
-        ASSERT_TRUE(prodFile.isComplete());
     } // Closes file
     struct stat statBuf;
     ASSERT_EQ(0, ::stat(pathname.data(), &statBuf));
@@ -155,7 +166,6 @@ TEST_F(ProdFileTest, RcvProdFile)
         ASSERT_EQ(segSize, ::read(fd, buf, sizeof(buf)));
         ASSERT_EQ(0, ::memcmp(buf, memData, sizeof(buf)));
     }
-    EXPECT_EQ(0, ::unlink(pathname.data()));
 }
 
 }  // namespace

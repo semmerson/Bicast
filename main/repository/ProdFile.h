@@ -31,7 +31,9 @@ protected:
     ProdFile(Impl* impl);
 
 public:
-    virtual ~ProdFile() noexcept =0;
+    ProdFile() =default;
+
+    virtual ~ProdFile() noexcept;
 
     /**
      * Indicates if this instance is valid.
@@ -41,7 +43,7 @@ public:
      * @threadsafety       Safe
      * @cancellationpoint  No
      */
-    operator bool() noexcept;
+    operator bool() const noexcept;
 
     const std::string& getPathname() const noexcept;
 
@@ -62,13 +64,16 @@ public:
     SegSize getSegSize(const ProdSize offset) const;
 
     /**
-     * Vets a data-segment.
+     * Enables access to the underlying file.
      *
-     * @param[in] offset    Offset of data-segment in bytes
-     * @throws LOGIC_ERROR  Offset is greater than product's size or isn't an
-     *                      integral multiple of canonical segment size
+     * @param[in] rootFd  File descriptor open on the root directory
      */
-    void vet(const ProdSize offset);
+    virtual void open(const int rootFd) const =0;
+
+    /**
+     * Disables access to the underlying file.
+     */
+    void close() const;
 
     /**
      * Indicates if the file contains a particular data-segment.
@@ -107,21 +112,31 @@ class SndProdFile final : public ProdFile
     class Impl;
 
 public:
-    SndProdFile();
+    SndProdFile() =default;
 
     /**
-     * Constructs from an existing file.
+     * Constructs from an existing file. Access to the underlying file is
+     * closed.
      *
-     * @param[in] pathname      Pathname of the file
+     * @param[in] rootFd        File descriptor open on root directory
+     * @param[in] pathname      Pathname of file relative to root directory
      * @param[in] segSize       Size of a canonical segment in bytes
      * @throws    SystemError   Open failure
      * @cancellationpoint       No
      */
     SndProdFile(
+            const int          rootFd,
             const std::string& pathname,
             SegSize            segSize);
 
-    bool exists(ProdSize offset) const;
+    /**
+     * Enables access to the underlying file.
+     *
+     * @param[in] rootFd  File descriptor open on the root directory
+     */
+    void open(const int rootFd) const override;
+
+    bool exists(ProdSize offset) const override;
 };
 
 /******************************************************************************/
@@ -134,29 +149,30 @@ class RcvProdFile final : public ProdFile
     class Impl;
 
 public:
-    RcvProdFile();
+    RcvProdFile() =default;
 
     /**
-     * Constructs a new file.
+     * Constructs from product information. The instance is open.
      *
-     * @param[in] pathname         Pathname of the file
-     * @param[in] prodSize         Size of product in bytes
-     * @param[in] segSize          Size of canonical data-segment
+     * @param[in] rootFd           File descriptor open on root directory
+     * @param[in] prodIndex        Product index
+     * @param[in] prodSize         Product size in bytes
+     * @param[in] segSize          Size of canonical data-segment in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
-     * @throws    SystemError      Open failure
+     * @throws    SystemError      `open()` or `ftruncate()` failure
      */
     RcvProdFile(
-            const std::string& pathname,
-            ProdSize           prodSize,
-            SegSize            segSize);
+            const int       rootFd,
+            const ProdIndex prodIndex,
+            const ProdSize  prodSize,
+            const SegSize   segSize);
 
     /**
-     * Indicates if this instance is valid (i.e., not default-constructed).
+     * Enables access to the underlying file.
      *
-     * @retval `true`   Is valid
-     * @retval `false`  Is not valid
+     * @param[in] rootFd  File descriptor open on the root directory
      */
-    operator bool() const noexcept;
+    void open(const int rootFd) const override;
 
     /**
      * Indicates if the file contains a data-segment.
@@ -169,54 +185,44 @@ public:
      * @exceptionsafety            Strong guarantee
      * @cancellationpoint          No
      */
-    bool exists(ProdSize offset) const;
+    bool exists(ProdSize offset) const override;
+
+    /**
+     * Saves product information.
+     *
+     * @param[in] rootFd           File descriptor open on repository's root
+     *                             directory
+     * @param[in] prodInfo         Product information to be saved
+     * @retval    `true`           This item completed the product
+     * @retval    `false`          This item did not complete the product
+     * @throws    InvalidArgument  Segment's offset is invalid
+     * @threadsafety               Safe
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          Yes
+     */
+    bool save(
+            const int       rooFd,
+            const ProdInfo& prodInfo) const;
 
     /**
      * Saves a data-segment.
      *
-     * @param[in] seg               Data-segment to be saved
-     * @retval    `false`           Segment was not saved because it already
-     *                              exists
-     * @retval    `true`            Segment was saved
+     * @param[in] dataSeg           Data-segment to be saved
+     * @retval    `true`            This item completed the product
+     * @retval    `false`           This item did not complete the product
      * @throws    InvalidArgument   Segment's offset is invalid
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           Yes
      */
-    bool save(DataSeg& seg) const;
-
-    /**
-     * Sets the product information.
-     *
-     * @param[in] prodInfo  Product information
-     */
-    void setProdInfo(const ProdInfo& prodInfo) const;
+    bool save(DataSeg& dataSeg) const;
 
     /**
      * Gets the product information.
      *
      * @return  Product information
      */
-    const ProdInfo& getProdInfo() const;
-
-    /**
-     * Indicates if the product is complete (i.e., all data-segments exist and
-     * the product-name is set).
-     *
-     * @retval `false`  No
-     * @retval `true`   Yes
-     */
-    bool isComplete() const;
-
-    /**
-     * Closes the file-descriptor used to access the file. Idempotent.
-     */
-    void close() const;
-
-    /**
-     * Opens the file-descriptor used to access the file. Idempotent.
-     */
-    void open() const;
+    ProdInfo getProdInfo() const;
 };
 
 } // namespace

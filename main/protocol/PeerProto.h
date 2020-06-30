@@ -13,10 +13,11 @@
 #ifndef MAIN_PROTOCOL_PEERPROTO_H_
 #define MAIN_PROTOCOL_PEERPROTO_H_
 
-#include <main/inet/PortPool.h>
-#include <main/inet/Socket.h>
 #include "hycast.h"
 #include "NodeType.h"
+#include "PortPool.h"
+#include "Socket.h"
+
 #include <memory>
 
 namespace hycast {
@@ -124,8 +125,6 @@ public:
 protected:
     std::shared_ptr<Impl> pImpl;
 
-    PeerProto(Impl* impl);
-
 public:
     PeerProto() =default;
 
@@ -170,6 +169,16 @@ public:
             const SockAddr& rmtSrvrAddr,
             const NodeType  lclNodeType,
             RecvPeer&       subPeer);
+
+    /**
+     * Copy Constructs.
+     */
+    PeerProto(const PeerProto& peerProto) noexcept;
+
+    /**
+     * Move Constructs.
+     */
+    PeerProto(PeerProto&& peerProto) noexcept;
 
     /**
      * Indicates if this instance is valid (i.e., not default constructed).

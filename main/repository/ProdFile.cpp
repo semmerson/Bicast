@@ -27,17 +27,33 @@
 namespace hycast {
 
 /**
- * Abstract product-file implementation
+ * Abstract, base product-file implementation
  */
 class ProdFile::Impl
 {
+    void map(const int prot) {
+        if (prodSize) {
+            data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize,
+                    prot, MAP_SHARED, fd, 0));
+            if (data == MAP_FAILED) {
+                throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
+                        "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
+                        std::to_string(fd) + "}");
+            } // Memory-mapping failed
+        } // Positive product-size
+    }
+
+    void unmap() {
+        ::munmap(data, prodSize);
+    }
+
 protected:
     typedef std::mutex              Mutex;
     typedef std::lock_guard<Mutex>  Guard;
     typedef std::unique_lock<Mutex> Lock;
 
     mutable Mutex     mutex;
-    const std::string pathname;
+    std::string       pathname;
     char*             data; ///< For `get()`
     const ProdSize    prodSize;
     const ProdSize    numSegs;
@@ -46,96 +62,161 @@ protected:
     const SegSize     lastSegSize;
 
     /**
+     * Opens an existing file.
+     *
+     * @param[in] rootFd        File descriptor open on root directory
+     * @param[in] pathname      Pathname of file
+     * @param[in] mode          Open mode
+     * @return                  File descriptor that's open on file
+     * @throws    SYSTEM_ERROR  `open()` failure
+     */
+    static int open(
+            const int          rootFd,
+            const std::string& pathname,
+            const int          mode)
+    {
+        int fd = ::openat(rootFd, pathname.data(), mode, 0600);
+        if (fd == -1)
+            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
+        return fd;
+    }
+
+    /**
      * Returns the size of a file in bytes.
      *
-     * @param[in] fd            File descriptor that's open on file
+     * @param[in] rootFd        File descriptor open on root-directory of
+     *                          repository
+     * @param[in] pathname      Pathname of existing file
      * @return                  Size of file in bytes
      * @throws    SYSTEM_ERROR  `stat()` failure
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
-    static ProdSize getFileSize(const int fd)
+    static ProdSize getFileSize(
+            const int          rootFd,
+            const std::string& pathname)
     {
-        int         status;
-        struct stat statBuf;
-        {
-            // Because `fstat()` can be a cancellation point
-            Canceler canceler{false};
-            status = ::fstat(fd, &statBuf);
+        const int fd = open(rootFd, pathname, O_RDONLY);
+        if (fd == -1)
+            throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
+
+        try {
+            struct stat statBuf;
+            Canceler    canceler{false}; // Because `fstat()` can be cancellation point
+            int         status = ::fstat(fd, &statBuf);
+
+            if (status)
+                throw SYSTEM_ERROR("stat() failure");
+
+            ::close(fd);
+            return statBuf.st_size;
+        } // `fd` is open
+        catch (...) {
+            ::close(fd);
+            throw;
         }
-        if (status)
-            throw SYSTEM_ERROR("stat() failure");
-        return statBuf.st_size;
     }
 
     /**
-     * Constructs.
+     * Constructs. The instance is closed.
      *
      * @param[in] pathname         Pathname of file
+     * @param[in] prodSize         Size of file in bytes
      * @param[in] segSize          Size of a canonical segment in bytes. Shall
      *                             not be zero if file has positive size.
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
-     * @param[in] fd               File descriptor open on the file
      * @cancellationpoint          No
      */
     Impl(   const std::string& pathname,
-            const SegSize      segSize,
-            const int          fd)
+            const ProdSize     prodSize,
+            const SegSize      segSize)
         : mutex()
         , pathname{pathname}
         , data{nullptr}
-        , prodSize{getFileSize(fd)}
+        , prodSize{prodSize}
         , numSegs{segSize ? ((prodSize + segSize - 1) / segSize) : 0}
-        , fd{fd}
+        , fd{-1}
         , segSize{segSize}
         , lastSegSize{static_cast<SegSize>(segSize
                 ? (prodSize%segSize ? prodSize%segSize : segSize)
                 : 0)}
     {
-        if (prodSize && segSize == 0) {
-            ::close(fd);
+        if (prodSize && segSize == 0)
             throw INVALID_ARGUMENT("Zero segment-size specified for "
                     "non-empty file \"" + pathname + "\"");
+    }
+
+    /**
+     * Ensures access to the underlying file. Opens the file if necessary. Maps
+     * the file if necessary. Idempotent.
+     *
+     * @param[in] rootFd       File descriptor open on the root directory
+     * @param[in] mode         File open mode
+     * @throws    SystemError  Couldn't open file
+     */
+    void ensureAccess(
+            const int rootFd,
+            const int mode) {
+        const bool wasClosed = fd < 0;
+
+        if (wasClosed) {
+            fd = open(rootFd, pathname, mode);
+            if (fd == -1)
+                throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
+        }
+
+        try {
+            if (data == nullptr) {
+                const int prot = (mode == O_RDONLY)
+                        ? PROT_READ
+                        : PROT_READ|PROT_WRITE;
+                map(prot);
+            }
+        } // `fd` is open
+        catch (const std::exception& ex) {
+            if (wasClosed) {
+                ::close(fd);
+                fd = -1;
+            }
+            throw;
         }
     }
 
-    inline ProdSize segIndex(const ProdSize offset) const
-    {
+    /**
+     * Disables access to the data of the underlying file. Idempotent.
+     */
+    void disableAccess() noexcept {
+        if (data) {
+            unmap();
+            data = nullptr;
+        }
+
+        if (fd >= 0) {
+            ::close(fd);
+            fd = -1;
+        }
+    }
+
+    inline ProdSize segIndex(const ProdSize offset) const {
         return offset / segSize;
     }
 
-    inline SegSize segLen(const ProdSize offset) const
-    {
+    inline SegSize segLen(const ProdSize offset) const {
         return segIndex(offset) + 1 < numSegs
                 ? segSize
                 : lastSegSize;
     }
 
-public:
-    virtual ~Impl() noexcept =0;
-
-    const std::string& getPathname() const noexcept
-    {
-        return pathname;
-    }
-
-    ProdSize getProdSize() const noexcept
-    {
-        return prodSize;
-    }
-
-    SegSize getSegSize(const ProdSize offset) const
-    {
-        vet(offset);
-        return (offset + segSize > prodSize)
-                ? prodSize - offset
-                : segSize;
-    }
-
-    void vet(const ProdSize offset) const
-    {
-        // Following order works for zero segment-size; fails otherwise
+    /**
+     * Vets a data-segment.
+     *
+     * @param[in] offset       Offset of data-segment in bytes
+     * @throws    LOGIC_ERROR  Offset is greater than product's size or isn't an
+     *                         integral multiple of canonical segment size
+     */
+    void vet(const ProdSize offset) const {
+        // Following order works for zero segment-size
         if ((offset >= prodSize) || (offset % segSize))
             throw INVALID_ARGUMENT("Invalid offset: {offset: " +
                     std::to_string(offset) + ", segSize: " +
@@ -143,21 +224,43 @@ public:
                     std::to_string(prodSize) + "}");
     }
 
+public:
+    virtual ~Impl() noexcept {
+        disableAccess();
+    }
+
+    const std::string& getPathname() const noexcept {
+        return pathname;
+    }
+
+    ProdSize getProdSize() const noexcept {
+        return prodSize;
+    }
+
+    SegSize getSegSize(const ProdSize offset) const {
+        vet(offset);
+        return (offset + segSize > prodSize)
+                ? prodSize - offset
+                : segSize;
+    }
+
+    virtual void open(const int rootFd) =0;
+
+    void close() {
+        Guard guard(mutex);
+        disableAccess();
+    }
+
     /**
-     * This default implementation merely verifies the offset.
+     * Indicates if a data-segment exists.
      *
      * @param[in] offset  Segment offset in bytes
      * @retval    `false`  Segment does not exist
      * @retval    `true`   Segment does exist
      */
-    virtual bool exists(const ProdSize offset) const
-    {
-        vet(offset);
-        return true;
-    }
+    virtual bool exists(const ProdSize offset) const =0;
 
-    const void* getData(const ProdSize offset) const
-    {
+    const void* getData(const ProdSize offset) const {
         if (!exists(offset))
             throw INVALID_ARGUMENT("Segment at offset " + std::to_string(offset)
                     + " doesn't exist");
@@ -166,50 +269,37 @@ public:
     }
 };
 
-ProdFile::Impl::~Impl() noexcept
-{
-    if (data)
-        ::munmap(data, prodSize);
-    ::close(fd);
-}
-
 /******************************************************************************/
 
 ProdFile::ProdFile(Impl* impl)
-    : pImpl{impl}
-{}
+    : pImpl(impl) {
+}
 
-ProdFile::~ProdFile() noexcept
-{}
+ProdFile::~ProdFile() noexcept {
+}
 
-ProdFile::operator bool() noexcept
-{
+ProdFile::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-const std::string& ProdFile::getPathname() const noexcept
-{
+const std::string& ProdFile::getPathname() const noexcept {
     return pImpl->getPathname();
 }
 
-ProdSize ProdFile::getProdSize() const noexcept
-{
+ProdSize ProdFile::getProdSize() const noexcept {
     return pImpl->getProdSize();
 }
 
-SegSize ProdFile::getSegSize(const ProdSize offset) const
-{
+SegSize ProdFile::getSegSize(const ProdSize offset) const {
     return pImpl->getSegSize(offset);
 }
 
-void ProdFile::vet(const ProdSize offset)
-{
-    return pImpl->vet(offset);
+const void* ProdFile::getData(const ProdSize offset) const {
+    return pImpl->getData(offset);
 }
 
-const void* ProdFile::getData(const ProdSize offset) const
-{
-    return pImpl->getData(offset);
+void ProdFile::close() const {
+    return pImpl->close();
 }
 
 /******************************************************************************/
@@ -220,40 +310,28 @@ const void* ProdFile::getData(const ProdSize offset) const
  */
 class SndProdFile::Impl final : public ProdFile::Impl
 {
-    /**
-     * Opens an existing file.
-     *
-     * @param[in] pathname      Pathname of file
-     * @return                  File descriptor that's open on file
-     * @throws    SYSTEM_ERROR  `open()` failure
-     */
-    static int open(const std::string& pathname)
-    {
-        int fd = ::open(pathname.data(), O_RDONLY);
-        if (fd == -1)
-            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
-        return fd;
-    }
-
 public:
-    Impl(   const std::string& pathname,
+    /**
+     * Constructs. The instance is open.
+     *
+     * @param[in] rootFd    File descriptor open on root-directory of repository
+     * @param[in] pathname  Pathname of the file
+     * @param[in] segSize   Size of a canonical data-segment in bytes
+     */
+    Impl(   const int          rootFd,
+            const std::string& pathname,
             const SegSize      segSize)
-        : ProdFile::Impl{pathname, segSize, open(pathname)}
+        : ProdFile::Impl{pathname, getFileSize(rootFd, pathname), segSize}
     {
-        if (prodSize) {
-            data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize,
-                    PROT_READ, MAP_PRIVATE, fd, 0));
-            if (data == MAP_FAILED) {
-                ::close(fd);
-                throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
-                        "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
-                        std::to_string(fd) + "}");
-            } // Memory-mapping failed
-        } // Positive product-size
+        ensureAccess(rootFd, O_RDONLY);
     }
 
-    bool exists(const ProdSize offset)
-    {
+    void open(const int rootFd) override {
+        Guard guard(mutex);
+        ensureAccess(rootFd, O_RDONLY);
+    }
+
+    bool exists(const ProdSize offset) const override {
         vet(offset);
         return true;
     }
@@ -261,18 +339,18 @@ public:
 
 /******************************************************************************/
 
-SndProdFile::SndProdFile()
-    : ProdFile{nullptr}
-{}
-
 SndProdFile::SndProdFile(
+        const int          rootFd,
         const std::string& pathname,
         const SegSize      segSize)
-    : ProdFile{new Impl(pathname, segSize)}
-{}
+    : ProdFile(new Impl(rootFd, pathname, segSize)) {
+}
 
-bool SndProdFile::exists(ProdSize offset) const
-{
+void SndProdFile::open(const int rootFd) const {
+    static_cast<SndProdFile::Impl*>(pImpl.get())->open(rootFd);
+}
+
+bool SndProdFile::exists(ProdSize offset) const {
     return static_cast<SndProdFile::Impl*>(pImpl.get())->exists(offset);
 }
 
@@ -284,99 +362,167 @@ bool SndProdFile::exists(ProdSize offset) const
  */
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
-    std::vector<bool> haveSegs;
-    ProdSize          segCount;
-    ProdInfo          prodInfo;
+    ProdIndex         prodIndex;  ///< Product index
+    std::vector<bool> haveSegs;   ///< Bitmap of set data-segments
+    ProdSize          segCount;   ///< Number of set data-segments
+    bool              pathIsName; ///< File pathname is product name?
 
     /**
-     * Opens a file-descriptor.
+     * Creates a file from product-information. The file will have the given
+     * size and be zero-filled.
      *
-     * @param[in] pathname  Pathname of file to open
-     * @return              File-descriptor
-     * @throws SystemError  `::open()` failure
-     */
-    static int open(const std::string& pathname)
-    {
-        const int fd = ::open(pathname.data(), O_RDWR|O_CREAT, 0600);
-        if (fd == -1)
-            throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
-        return fd;
-    }
-
-    /**
-     * Creates a file. The file will have the given size and be zero-filled.
-     *
-     * @param[in] pathname      Pathname of file
-     * @param[in] prodSize      Size of file in bytes
+     * @param[in] rootFd        File descriptor open on root directory
+     * @param[in] prodInfo      Product-information
      * @param[in] segSize       Size of canonical segment in bytes
-     * @return                  File descriptor that's open on file
+     * @return                  File descriptor on open file
      * @throws    SYSTEM_ERROR  `open()` or `ftruncate()` failure
      */
     static int create(
+            const int          rootFd,
             const std::string& pathname,
-            const ProdSize     prodSize,
-            const SegSize      segSize)
+            const ProdSize&    prodSize)
     {
-        if (prodSize && segSize == 0)
-            throw INVALID_ARGUMENT("Zero segment-size specified for non-empty "
-                    "file \"" + pathname + "\"");
+        ensureDir(rootFd, dirPath(pathname), 0700);
 
-        ensureDir(dirPath(pathname), 0700);
-        const int fd = open(pathname.data());
+        const int fd = ProdFile::Impl::open(rootFd, pathname,
+                O_RDWR|O_CREAT|O_EXCL);
+        if (fd == -1)
+            throw SYSTEM_ERROR("Couldn't create file \"" + pathname + "\"");
 
         try {
-            int status = ::ftruncate(fd, prodSize);
-            if (status)
+            if (::ftruncate(fd, prodSize))
                 throw SYSTEM_ERROR("ftruncate() failure on \"" + pathname +
                         "\"");
-        }
+            return fd;
+        } // `fd` is open
         catch (...) {
             ::close(fd);
             ::unlink(pathname.data());
             throw;
         }
+    }
 
-        return fd;
+    static std::string getIndexPath(const ProdIndex prodIndex)
+    {
+        auto  index = prodIndex.getValue();
+        char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
+        char* cp = buf;
+
+        for (int nshift = 8*(sizeof(index)-1); nshift >= 0; nshift -= 8) {
+            (void)sprintf(cp, "%.2x/", (index >> nshift) & 0xff);
+            cp += 3;
+        }
+        *--cp = 0; // Squash final '/'
+
+        return buf;
+    }
+
+    /**
+     * Indicates if the product is complete.
+     *
+     * @pre             State is locked
+     * @retval `true`   Product is complete
+     * @retval `false`  Product is not complete
+     */
+    bool isComplete() const
+    {
+        assert(!mutex.try_lock());
+        return pathIsName && (segCount == numSegs);
     }
 
 public:
     /**
-     * Constructs. The instance will be open on the file.
+     * Constructs. The instance is open.
      *
-     * @param[in] pathname  Pathname of file
-     * @param[in] prodSize  Product size in bytes
-     * @param[in] segSize   Canonical segment size in bytes
+     * @param[in] rootFd           File descriptor open on root directory of
+     *                             repository
+     * @param[in] prodIndex        Product index
+     * @param[in] prodSize         Product size in bytes
+     * @param[in] segSize          Canonical segment size in bytes
+     * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
+     * @throws    SystemError      `open()` or `ftruncate()` failure
      */
-    Impl(   const std::string& pathname,
-            const ProdSize     prodSize,
-            const SegSize      segSize)
-        : ProdFile::Impl{pathname, segSize, create(pathname, prodSize, segSize)}
+    Impl(   const int       rootFd,
+            const ProdIndex prodIndex,
+            const ProdSize  prodSize,
+            const SegSize   segSize)
+        : ProdFile::Impl{prodIndex.to_string(), prodSize, segSize}
+        , prodIndex(prodIndex)
         , haveSegs(numSegs, false)
         , segCount{0}
-        , prodInfo()
+        , pathIsName(false)
     {
-        if (prodSize) {
-            data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize,
-                    PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0));
-            if (data == MAP_FAILED) {
-                ::close(fd);
-                ::unlink(pathname.data());
-                throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
-                        "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
-                        std::to_string(fd) + "}");
-            } // Memory-mapping failed
-        } // Positive product-size
+        fd = create(rootFd, pathname, prodSize);
+        ensureAccess(rootFd, O_RDWR);
     }
 
-    bool exists(const ProdSize offset) const
-    {
+    void open(const int rootFd) override {
+        Guard guard(mutex);
+        ensureAccess(rootFd, O_RDWR);
+    }
+
+    bool exists(const ProdSize offset) const {
         vet(offset);
         Guard guard(mutex);
         return haveSegs[segIndex(offset)];
     }
 
-    bool accept(DataSeg& seg)
-    {
+    /**
+     * Saves product-information.
+     *
+     * @param[in] rootFd       File descriptor open on repository's root
+     *                         directory
+     * @param[in] prodInfo     Product information to be saved
+     * @retval    `true`       This item completed the product
+     * @retval    `false`      This item did not complete the product
+     * @throws    SystemError  Couldn't save product information
+     */
+    bool save(
+            const int       rootFd,
+            const ProdInfo& prodInfo) {
+        assert(fd >= 0);
+
+        bool  bingo; // This item completed the product?
+        Guard guard(mutex);
+
+        ProdInfo expected(prodIndex, prodSize, prodInfo.getProdName());
+        if (!(prodInfo == expected))
+            throw INVALID_ARGUMENT("Actual prodInfo, " + prodInfo.to_string() +
+                    ", doesn't match expected, " + expected.to_string());
+
+        if (pathIsName) {
+            bingo = false;
+        }
+        else {
+            LOG_DEBUG("Saving product-information " + prodInfo.to_string());
+
+            const auto prodName = prodInfo.getProdName();
+
+            if (::renameat(rootFd, this->pathname.data(), rootFd,
+                    prodName.data()))
+                throw SYSTEM_ERROR("Couldn't rename product-file \"" +
+                        this->pathname + "\" to \"" + prodName + "\"");
+
+            this->pathname = prodName;
+            pathIsName = true;
+            bingo = isComplete();
+        }
+
+        return bingo;
+    }
+
+    /**
+     * Saves a data-segment.
+     *
+     * @pre                        Instance is open
+     * @param[in] seg              Data-segment to be saved
+     * @retval    `true`           This item completed the product
+     * @retval    `false`          This item did not complete the product
+     * @throws    InvalidArgument  Segment is invalid
+     */
+    bool save(DataSeg& seg) {
+        assert(fd >= 0);
+
         const ProdSize offset = seg.getSegOffset();
         vet(offset);
 
@@ -387,115 +533,77 @@ public:
             throw INVALID_ARGUMENT("Segment " + segInfo.to_string() + " should "
                     "have " + std::to_string(expectSize) + " data-bytes");
 
-        ProdSize   iSeg = segIndex(offset);
-        Guard      guard(mutex);
-        const bool accepted = !haveSegs[iSeg];
+        ProdSize iSeg = segIndex(offset);
+        bool     exists;
+        {
+            Guard      guard(mutex);
+            exists = haveSegs[iSeg];
+            if (exists) {
+                LOG_WARN("Duplicate data segment: " + seg.to_string());
+            }
+            else {
+                haveSegs[iSeg] = true;
+            }
+        }
 
-        if (accepted) {
+        bool bingo; // This item completed the product?
+        if (exists) {
+            bingo = false;
+        }
+        else {
+            // Setting data outside mutex supports concurrent data-setting
+            LOG_DEBUG("Saving data-segment " + seg.to_string());
+
             seg.getData(data+offset); // Potentially slow
-            ++segCount;
-            haveSegs[iSeg] = true;
+            {
+                Guard guard(mutex);
+                ++segCount;
+                bingo = isComplete();
+            }
         }
 
-        return accepted;
+        return bingo;
     }
 
-    void setProdInfo(const ProdInfo& prodInfo)
-    {
-        Guard guard(mutex);
-        this->prodInfo = prodInfo;
-    }
-
-    const ProdInfo& getProdInfo() const
-    {
-        Guard guard(mutex);
-        return this->prodInfo;
-    }
-
-    bool isComplete() const
-    {
-        Guard guard(mutex);
-        return prodInfo && segCount == numSegs;
-    }
-
-    /**
-     * Closes the file-descriptor used to access the file. Idempotent.
-     */
-    void close()
-    {
-        if (fd >= 0) {
-            ::close(fd);
-            fd = -1;
-        }
-    }
-
-    /**
-     * Opens the file-descriptor used to access the file. Idempotent.
-     *
-     * @throws SystemError  `::open()` failure
-     */
-    void open()
-    {
-        if (fd < 0)
-            fd = open(pathname);
+    ProdInfo getProdInfo() {
+        return ProdInfo(prodIndex, prodSize, pathname);
     }
 };
 
 /******************************************************************************/
 
-RcvProdFile::RcvProdFile()
-    : ProdFile{nullptr}
-{}
-
 RcvProdFile::RcvProdFile(
-        const std::string& pathname,
-        const ProdSize     prodSize,
-        const SegSize      segSize)
-    : ProdFile{new Impl(pathname, prodSize, segSize)}
-{}
+        const int       rootFd,
+        const ProdIndex prodIndex,
+        const ProdSize  prodSize,
+        const SegSize   segSize)
+    : ProdFile(new Impl(rootFd, prodIndex, prodSize, segSize)) {
+}
 
-RcvProdFile::operator bool() const noexcept
-{
-    return static_cast<bool>(pImpl);
+void RcvProdFile::open(const int rootFd) const {
+    return static_cast<Impl*>(pImpl.get())->open(rootFd);
 }
 
 bool
-RcvProdFile::exists(const ProdSize offset) const
-{
+RcvProdFile::exists(const ProdSize offset) const {
     return static_cast<Impl*>(pImpl.get())->exists(offset);
 }
 
 bool
-RcvProdFile::save(DataSeg& seg) const
-{
-    return static_cast<Impl*>(pImpl.get())->accept(seg);
+RcvProdFile::save(
+        const int       rootFd,
+        const ProdInfo& prodInfo) const {
+    static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
 }
 
-void
-RcvProdFile::setProdInfo(const ProdInfo& prodInfo) const
-{
-    static_cast<Impl*>(pImpl.get())->setProdInfo(prodInfo);
+bool
+RcvProdFile::save(DataSeg& dataSeg) const {
+    static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
 
-const ProdInfo&
-RcvProdFile::getProdInfo() const
-{
-    return static_cast<Impl*>(pImpl.get())->getProdInfo();
-}
-
-bool RcvProdFile::isComplete() const
-{
-    return static_cast<Impl*>(pImpl.get())->isComplete();
-}
-
-void RcvProdFile::close() const
-{
-    return static_cast<Impl*>(pImpl.get())->close();
-}
-
-void RcvProdFile::open() const
-{
-    return static_cast<Impl*>(pImpl.get())->open();
+ProdInfo
+RcvProdFile::getProdInfo() const {
+    static_cast<Impl*>(pImpl.get())->getProdInfo();
 }
 
 } // namespace

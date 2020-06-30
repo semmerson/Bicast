@@ -143,9 +143,9 @@ ProdInfo::ProdInfo()
 
 ProdInfo::ProdInfo(
         const ProdIndex    prodIndex,
-        const ProdSize     size,
-        const std::string& name)
-    : pImpl(new Impl(prodIndex, size, name))
+        const ProdSize     prodSize,
+        const std::string& prodName)
+    : pImpl(new Impl(prodIndex, prodSize, prodName))
 {}
 
 ProdInfo::operator bool() const noexcept

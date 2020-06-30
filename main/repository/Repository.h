@@ -18,11 +18,12 @@
 
 #include <memory>
 #include <string>
+#include <unistd.h>
 
 namespace hycast {
 
 /**
- * Repository for temporary data-products.
+ * Abstract base class of a repository for temporary data-products.
  */
 class Repository
 {
@@ -31,7 +32,7 @@ protected:
 
     std::shared_ptr<Impl> pImpl;
 
-    Repository(Impl* impl);
+    Repository(Impl* impl) noexcept;
 
 public:
     virtual ~Repository() =default;
@@ -54,28 +55,6 @@ public:
     const std::string& getRootDir() const noexcept;
 
     /**
-     * Returns the pathname of the file associated with a product name.
-     *
-     * @param[in] name     Product name
-     * @return             Pathname of associated file
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  No
-     */
-    std::string getPathname(std::string name) const;
-
-    /**
-     * Returns the pathname of the file associated with a product index.
-     *
-     * @param[in] prodIndex  Product index
-     * @return               Pathname of associated file
-     * @threadsafety         Safe
-     * @exceptionsafety      Strong guarantee
-     * @cancellationpoint    No
-     */
-    std::string getPathname(ProdIndex prodIndex) const;
-
-    /**
      * Returns information on a product.
      *
      * @param[in] prodIndex  Index of product
@@ -86,7 +65,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    virtual ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
+    virtual const ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
 
     /**
      * Returns a data-segment
@@ -116,11 +95,14 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] root     Pathname of the root of the repository
-     * @param[in] segSize  Size of canonical data-segment in bytes
+     * @param[in] root          Pathname of the root of the repository
+     * @param[in] segSize       Size of canonical data-segment in bytes
+     * @param[in] maxOpenFiles  Maximum number of files to have open
+     *                          simultaneously
      */
     PubRepo(const std::string& root,
-            SegSize            segSize = 1460); // Max 4-byte UDP payload
+            SegSize            segSize = 1460, // Max 4-byte UDP payload
+            size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
 
     /**
      * Links to a file (which could be a directory) that's outside the
@@ -154,7 +136,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    ProdInfo getProdInfo(ProdIndex prodIndex) const;
+    const ProdInfo getProdInfo(ProdIndex prodIndex) const override;
 
     /**
      * Returns a data-segment
@@ -168,7 +150,7 @@ public:
      * @cancellationpoint           No
      * @see `MemSeg::operator bool()`
      */
-    MemSeg getMemSeg(const SegId& segId) const;
+    MemSeg getMemSeg(const SegId& segId) const override;
 };
 
 /******************************************************************************/
@@ -186,16 +168,19 @@ public:
      *
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
+     * @param[in] maxOpenFiles  Maximum number of files to have open
+     *                          simultaneously
      */
     SubRepo(const std::string& rootPathname,
-            SegSize            segSize);
+            SegSize            segSize,
+            size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
 
     /**
-     * Saves product information.
+     * Saves product-information in the corresponding product-file.
      *
      * @param[in] prodInfo  Product information
-     * @retval    `false`   Product information was not used
-     * @retval    `true`    Product information was used
+     * @retval    `true`    This item completed the product
+     * @retval    `false`   This item did not complete the product
      * @threadsafety        Safe
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   No
@@ -203,11 +188,11 @@ public:
     bool save(const ProdInfo& prodInfo) const;
 
     /**
-     * Saves a data-segment.
+     * Saves a data-segment in the corresponding product-file.
      *
      * @param[in] dataSeg  Data-segment
-     * @retval    `false`  Data-segment was not used
-     * @retval    `true`   Data-segment was used
+     * @retval    `true`   This item completed the product
+     * @retval    `false`  This item did not complete the product
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
@@ -225,7 +210,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
+    const ProdInfo getProdInfo(const ProdIndex prodIndex) const override;
 
     /**
      * Returns a data-segment
@@ -239,7 +224,7 @@ public:
      * @cancellationpoint           No
      * @see `MemSeg::operator bool()`
      */
-    MemSeg getMemSeg(const SegId& segId) const;
+    MemSeg getMemSeg(const SegId& segId) const override;
 
     /**
      * Indicates if product-information exists.

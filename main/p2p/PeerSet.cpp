@@ -32,20 +32,20 @@ namespace hycast {
 
 class PeerSet::Impl
 {
-    typedef std::mutex                       Mutex;
-    typedef std::lock_guard<Mutex>           Guard;
-    typedef std::unique_lock<Mutex>          Lock;
-    typedef std::condition_variable          Cond;
-    typedef std::thread                      Thread;
-    typedef std::unordered_map<Peer, Thread> ThreadMap;
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+    using Lock = std::unique_lock<Mutex>;
+    using Cond = std::condition_variable;
+    using Thread = std::thread;
+    using ThreadMap = std::unordered_map<Peer, Thread>;
 
     mutable Mutex      mutex;
     mutable Cond       cond;
     bool               done;
     ThreadMap          threads;
     std::queue<Peer>   inactivePeers;
-    std::thread        reaperThread;
     PeerSetMgr&        peerSetMgr;
+    Thread             reaperThread;
 
     /**
      * Executes a peer. Called by `std::thread()`.
@@ -63,7 +63,7 @@ class PeerSet::Impl
             {
                 Guard guard(mutex);
                 inactivePeers.push(peer);
-                cond.notify_one();
+                cond.notify_all();
             }
 
             peerSetMgr.stopped(peer);
@@ -103,23 +103,25 @@ public:
         , done{false}
         , threads()
         , inactivePeers()
-        , reaperThread()
         , peerSetMgr(peerSetMgr)
-    {}
+        , reaperThread()
+    {
+        reaperThread = std::thread(&Impl::reapPeers, this);
+    }
 
     ~Impl()
     {
         LOG_TRACE();
+
         {
             Guard guard{mutex};
 
             done = true;
+            cond.notify_all();
 
             // `execute()` would hang trying to de-activate the entry
             for (auto& pair : threads)
                 pair.first.halt();
-
-            cond.notify_one();
         }
 
         reaperThread.join();
@@ -159,16 +161,26 @@ public:
     {
         Guard guard(mutex);
 
-        for (auto& pair : threads)
-            pair.first.notify(prodIndex);
+        if (threads.size() == 0) {
+            LOG_DEBUG("Peer set is empty");
+        }
+        else {
+            for (auto& pair : threads)
+                pair.first.notify(prodIndex);
+        }
     }
 
     void notify(const SegId& segId)
     {
         Guard guard(mutex);
 
-        for (auto& pair : threads)
-            pair.first.notify(segId);
+        if (threads.size() == 0) {
+            LOG_DEBUG("Peer set is empty");
+        }
+        else {
+            for (auto& pair : threads)
+                pair.first.notify(segId);
+        }
     }
 
     void notify(

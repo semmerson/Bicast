@@ -77,8 +77,6 @@ PeerFactory::PeerFactory(Impl* impl)
     : pImpl{impl} {
 }
 
-PeerFactory::~PeerFactory() noexcept =default;
-
 SockAddr PeerFactory::getSrvrAddr() const {
     return pImpl->getSrvrAddr();
 }
@@ -170,7 +168,7 @@ public:
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
             PortPool&       portPool,
-            XcvrPeerMgr&     peerObs)
+            XcvrPeerMgr&    peerObs)
         : PeerFactory::Impl(srvrAddr, queueSize, portPool)
         , peerObs(peerObs)         // Braces don't work for references
     {}

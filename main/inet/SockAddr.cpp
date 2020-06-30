@@ -134,6 +134,7 @@ public:
      */
     void connect(const int sd) const
     {
+        LOG_DEBUG("Connecting to " + to_string());
         struct sockaddr_storage storage;
 
         if (::connect(sd, inetAddr.get_sockaddr(storage, port),

@@ -37,9 +37,9 @@ protected:
 public:
     virtual ~Bookkeeper() noexcept =default;
 
-    virtual void add(const Peer& peer) const =0;
+    void add(const Peer& peer) const;
 
-    virtual Peer getWorstPeer() const =0;
+    Peer getWorstPeer() const;
 
     /**
      * Resets the measure of utility for every peer.
@@ -48,9 +48,9 @@ public:
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    virtual void resetCounts() const noexcept =0;
+    void resetCounts() const noexcept;
 
-    virtual void erase(const Peer& peer) const =0;
+    void erase(const Peer& peer) const;
 };
 
 /**

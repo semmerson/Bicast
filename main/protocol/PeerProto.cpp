@@ -72,28 +72,33 @@ protected:
 
         // Exchange node types
         MsgIdType typeInt = lclNodeType;
+        LOG_DEBUG("Writing node-type " + std::to_string(typeInt));
         noteSock.write(typeInt);
+
         if (!noteSock.read(typeInt))
             throw RUNTIME_ERROR("EOF");
-        rmtNodeType = typeInt;
+        LOG_DEBUG("Read node-type " + std::to_string(typeInt));
+        rmtNodeType = static_cast<NodeType>(typeInt);
     }
 
-    void handleException(const ExceptPtr& exPtr)
+    void handleExcept(const ExceptPtr& exPtr)
     {
         Guard guard(doneMutex);
 
         if (!exceptPtr) {
+            LOG_DEBUG("Setting exception");
             exceptPtr = exPtr;
-            doneCond.notify_one();
+            doneCond.notify_all();
         }
     }
 
-    bool recvProdRequest()
+    bool recvProdReq()
     {
         ProdIndex::Type prodIndex;
 
         if (!srvrSock.read(prodIndex)) // Performs network translation
             return false;
+        LOG_DEBUG("Received request for product " + std::to_string(prodIndex));
 
         int    cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
@@ -103,7 +108,7 @@ protected:
         return true;
     }
 
-    bool recvSegRequest()
+    bool recvSegReq()
     {
         try {
             ProdIndex::Type prodIndex;
@@ -117,6 +122,7 @@ protected:
                 return false;
 
             SegId segId{prodIndex, segOffset};
+            LOG_DEBUG("Received request for data-segment " + segId.to_string());
             {
                 //Canceler canceler{false}; // Disable thread cancellation
                 sendPeer.sendMe(segId);
@@ -149,11 +155,11 @@ protected:
                     break; // EOF
 
                 if (msgId == PROD_INFO_REQUEST) {
-                    if (!recvProdRequest())
+                    if (!recvProdReq())
                         break;
                 }
                 else if (msgId == DATA_SEG_REQUEST) {
-                    if (!recvSegRequest())
+                    if (!recvSegReq())
                         break;
                 }
                 else {
@@ -166,7 +172,7 @@ protected:
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught exception \"%s\"", ex.what());
-            handleException(std::current_exception());
+            handleExcept(std::current_exception());
         }
         catch (...) {
             LOG_DEBUG("Caught exception ...");
@@ -212,6 +218,8 @@ protected:
 
         while (!haltRequested && !exceptPtr)
             doneCond.wait(lock);
+
+        LOG_DEBUG("PeerProto should stop");
     }
 
     /**
@@ -229,14 +237,11 @@ protected:
             PortPool& portPool,
             const int queueSize)
     {
-        const int n = portPool.size();
-        int       i = 0;
-
-        while (++i <= n) {
-            const in_port_t port = portPool.take();
-            SockAddr        srvrAddr(inAddr.getSockAddr(port));
+        for (int n = portPool.size(), i = 0; i < n; ++i) {
+            const auto port = portPool.take();
 
             try {
+                auto srvrAddr = inAddr.getSockAddr(port);
                 return TcpSrvrSock(srvrAddr, queueSize);
             }
             catch (const std::exception& ex) {
@@ -253,6 +258,7 @@ protected:
             const ProdIndex prodIndex,
             TcpSock&        sock)
     {
+        LOG_DEBUG("Sending product-index " + prodIndex.to_string());
         // The following perform network translation
         sock.write(msgId);
         sock.write(prodIndex.getValue());
@@ -263,6 +269,7 @@ protected:
             const SegId&    id,
             TcpSock&        sock)
     {
+        LOG_DEBUG("Sending segment-ID " + id.to_string());
         // The following perform network translation
         sock.write(msgId);
         sock.write(id.getProdIndex().getValue());
@@ -306,15 +313,18 @@ public:
          * Temporary server for creating a socket for receiving requests and
          * sending chunks.
          */
-        TcpSrvrSock tmpSrvrSock{createSrvrSock(sock.getLclAddr().getInetAddr(),
-                portPool, 1)};
+        auto tmpSrvrSock = createSrvrSock(sock.getLclAddr().getInetAddr(),
+                portPool, 1);
 
         try {
             /*
              * Create a socket for receiving requests and sending chunks
              */
-            noteSock.write(tmpSrvrSock.getLclPort());
+            in_port_t port = tmpSrvrSock.getLclPort();
+            LOG_DEBUG("Writing port " + std::to_string(port));
+            noteSock.write(port);
             // TODO: Ensure connection is from remote peer
+            LOG_DEBUG("Accepting server socket");
             srvrSock = TcpSock{tmpSrvrSock.accept()};
             srvrSock.setDelay(true); // Consolidate ACK and chunk
         }
@@ -431,8 +441,10 @@ public:
     {
         Guard guard(doneMutex);
 
+        LOG_DEBUG("Halt requested");
+
         haltRequested = true;
-        doneCond.notify_one();
+        doneCond.notify_all();
     }
 
     void notify(const ProdIndex prodIndex)
@@ -518,10 +530,6 @@ public:
      */
     virtual void request(SegId segId) =0;
 };
-
-PeerProto::PeerProto(Impl* impl)
-    : pImpl{impl} {
-}
 
 PeerProto::operator bool() const {
     return pImpl.operator bool();
@@ -676,7 +684,7 @@ PeerProto::PeerProto(
         TcpSock&  sock,
         PortPool& portPool,
         SendPeer& peer)
-    : PeerProto(new PubPeerProto(sock, portPool, peer)) {
+    : pImpl(new PubPeerProto(sock, portPool, peer)) {
 }
 
 /******************************************************************************/
@@ -708,6 +716,8 @@ protected:
         if (!prodIndex)
             return false;
 
+        LOG_DEBUG("Received product-index " + prodIndex.to_string());
+
         int cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
             recvPeer.available(prodIndex);
@@ -727,9 +737,12 @@ protected:
         if (!noteSock.read(segOffset))
             return false;
 
+        const SegId segId(prodIndex, segOffset);
+        LOG_DEBUG("Received segment-ID " + segId.to_string());
+
         int   cancelState;
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-            recvPeer.available(SegId{prodIndex, segOffset});
+            recvPeer.available(segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
 
         return true;
@@ -772,7 +785,7 @@ protected:
             halt();
         }
         catch (const std::exception& ex) {
-            handleException(std::current_exception());
+            handleExcept(std::current_exception());
         }
     }
 
@@ -810,6 +823,8 @@ protected:
         ProdInfo    prodInfo{prodIndex, prodSize, name};
         int         cancelState;
 
+        LOG_DEBUG("Received product-information " + prodInfo.to_string());
+
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
             recvPeer.hereIs(prodInfo);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &cancelState);
@@ -834,6 +849,8 @@ protected:
         SegInfo segInfo{segId, prodSize, dataLen};
         TcpSeg  seg{segInfo, clntSock};
         int     cancelState;
+
+        LOG_DEBUG("Received data-segment " + seg.to_string());
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
             recvPeer.hereIs(seg);
@@ -874,7 +891,7 @@ protected:
             halt();
         }
         catch (const std::exception& ex) {
-            handleException(std::current_exception());
+            handleExcept(std::current_exception());
         }
     }
 
@@ -965,7 +982,9 @@ public:
             PortPool&   portPool,
             NodeType    lclNodeType,
             RecvPeer&   recvPeer)
-        : PeerProto::Impl(sock, portPool, lclNodeType, recvPeer.asSendPeer())
+        : PeerProto::Impl(sock, portPool, lclNodeType,
+                //recvPeer.asSendPeer())
+                *reinterpret_cast<SendPeer*>(&recvPeer))
         , clntSock{}
         , recvPeer(recvPeer)
         , rcvNoteThread{}
@@ -1008,7 +1027,8 @@ public:
             const NodeType  lclNodeType,
             RecvPeer&       recvPeer)
         : PeerProto::Impl(TcpClntSock(rmtSrvrAddr), lclNodeType,
-                recvPeer.asSendPeer())
+                //recvPeer.asSendPeer())
+                *reinterpret_cast<SendPeer*>(&recvPeer))
         , clntSock{}
         , recvPeer(recvPeer)
         , rcvNoteThread{}
@@ -1021,18 +1041,27 @@ public:
         in_port_t port;
         if (!noteSock.read(port))
             throw RUNTIME_ERROR("EOF");
+        LOG_DEBUG("Read port " + std::to_string(port));
         clntSock = TcpClntSock(rmtSrvrAddr.clone(port));
-        clntSock.setDelay(false);
 
-        if (rmtNodeType != NodeType::PUBLISHER) {
-            /*
-             * Create socket for receiving requests and sending chunks
-             */
-            in_port_t port;
-            if (!noteSock.read(port))
-                throw RUNTIME_ERROR("EOF");
-            srvrSock = TcpClntSock(rmtSrvrAddr.clone(port));
-            srvrSock.setDelay(true); // Consolidate ACK and chunk
+        try {
+            clntSock.setDelay(false);
+
+            if (rmtNodeType != NodeType::PUBLISHER) {
+                /*
+                 * Create socket for receiving requests and sending chunks
+                 */
+                in_port_t port;
+                if (!noteSock.read(port))
+                    throw RUNTIME_ERROR("EOF");
+                LOG_DEBUG("Read port " + std::to_string(port));
+                srvrSock = TcpClntSock(rmtSrvrAddr.clone(port));
+                srvrSock.setDelay(true); // Consolidate ACK and chunk
+            }
+        }
+        catch (const std::exception& ex) {
+            clntSock.shutdown();
+            throw;
         }
     }
 
@@ -1091,15 +1120,23 @@ PeerProto::PeerProto(
         TcpSock&    sock,
         PortPool&   portPool,
         NodeType    lclNodeType,
-        RecvPeer&   recvPeer)
-    : PeerProto(new SubPeerProto(sock, portPool, lclNodeType, recvPeer)) {
+        RecvPeer&   subPeer)
+    : pImpl(new SubPeerProto(sock, portPool, lclNodeType, subPeer)) {
 }
 
 PeerProto::PeerProto(
         const SockAddr& rmtSrvrAddr,
         const NodeType  lclNodeType,
-        RecvPeer&       recvPeer)
-    : PeerProto(new SubPeerProto(rmtSrvrAddr, lclNodeType, recvPeer)) {
+        RecvPeer&       subPeer)
+    : pImpl(new SubPeerProto(rmtSrvrAddr, lclNodeType, subPeer)) {
+}
+
+PeerProto::PeerProto(const PeerProto& peerProto) noexcept
+    : pImpl{peerProto.pImpl} {
+}
+
+PeerProto::PeerProto(PeerProto&& peerProto) noexcept
+    : pImpl{peerProto.pImpl} {
 }
 
 } // namespace

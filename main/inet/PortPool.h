@@ -1,11 +1,11 @@
 /**
- * A thread-compatible but thread-unsafe queue of port-numbers.
+ * A thread-safe queue of port-numbers.
  *
- * Copyright 2019 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "COPYING" in the top-level source-directory for usage
  * restrictions.
  *
- *        File: PortSet.h
+ *        File: PortPool.h
  *  Created on: Jul 13, 2019
  *      Author: Steven R. Emmerson
  */
@@ -20,11 +20,8 @@ namespace hycast {
 
 class PortPool
 {
-protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
-
-    PortPool(Impl* const impl);
 
 public:
     /**
@@ -54,26 +51,26 @@ public:
      * Returns the number of port-numbers in the queue.
      *
      * @return        Number of port numbers in the queue
-     * @threadsafety  Compatible but unsafe
+     * @threadsafety  Safe
      */
     int size() const;
 
     /**
-     * Removes port-number at the head of the queue.
+     * Removes port-number at the head of the queue. Blocks until one is
+     * available.
      *
-     * @return                   Port number at head of queue in host byte-order
-     * @throws std::range_error  The queue is empty
-     * @threadsafety             Compatible but unsafe
+     * @return       Port number at head of queue in host byte-order
+     * @threadsafety Safe
      */
-    in_port_t take();
+    in_port_t take() const;
 
     /**
      * Adds a port-number to the end of the queue.
      *
      * @param[in] port  The port-number in host byte-order
-     * @threadsafety    Compatible but unsafe
+     * @threadsafety    Safe
      */
-    void add(in_port_t port);
+    void add(in_port_t port) const;
 };
 
 } // namespace

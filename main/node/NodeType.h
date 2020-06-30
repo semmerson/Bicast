@@ -16,33 +16,13 @@
 #ifndef MAIN_NODE_NODETYPE_H_
 #define MAIN_NODE_NODETYPE_H_
 
-#include <atomic>
-
 namespace hycast {
 
-class NodeType
+enum NodeType
 {
-private:
-    std::atomic_int value;
-
-public:
-    static const NodeType PUBLISHER;
-    static const NodeType PATH_TO_PUBLISHER;
-    static const NodeType NO_PATH_TO_PUBLISHER;
-
-    NodeType(const int value);
-
-    NodeType(const NodeType& type);
-
-    NodeType()
-        : NodeType(NO_PATH_TO_PUBLISHER)
-    {}
-
-    operator unsigned() const noexcept;
-
-    NodeType& operator =(const NodeType& rhs) noexcept;
-
-    bool operator ==(const NodeType& rhs) const noexcept;
+    PUBLISHER,
+    PATH_TO_PUBLISHER,
+    NO_PATH_TO_PUBLISHER
 };
 
 } // namespace

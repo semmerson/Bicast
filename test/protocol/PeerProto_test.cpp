@@ -10,11 +10,11 @@
  *     Author: Steven R. Emmerson
  */
 
-#include <error.h>
+#include "error.h"
+#include "SockAddr.h"
+#include "PeerProto.h"
+
 #include <gtest/gtest.h>
-#include <gtest/internal/gtest-internal.h>
-#include <main/inet/SockAddr.h>
-#include <PeerProto.h>
 #include <condition_variable>
 #include <cstring>
 #include <exception>

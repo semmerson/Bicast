@@ -32,8 +32,6 @@ class LinkedMap
 
     std::shared_ptr<Impl> pImpl;
 
-    LinkedMap(Impl* impl);
-
 public:
     /**
      * Default constructs.
@@ -60,11 +58,9 @@ public:
      *
      * @param[in] key    Key
      * @param[in] value  Value mapped-to by key
-     * @return           Pair whose first element is reference to value
-     *                   associated with key and whose second element is true if
-     *                   and only if new entry was created.
+     * @return           Pointer to value in map
      */
-    std::pair<VALUE&, bool> add(const KEY& key, VALUE& value);
+    VALUE* add(const KEY& key, VALUE& value);
 
     /**
      * Returns the value that corresponds to a key.

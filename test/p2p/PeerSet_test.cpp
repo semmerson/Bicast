@@ -23,8 +23,10 @@
 namespace {
 
 /// The fixture for testing class `PeerSet`
-class PeerSetTest : public ::testing::Test, public hycast::PeerMgrApi,
-        public hycast::PeerSet::Observer
+class PeerSetTest
+        : public ::testing::Test
+        , public hycast::PeerSetMgr
+        , public hycast::XcvrPeerMgr
 {
 protected:
     friend class Subscriber;
@@ -65,8 +67,8 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
-    hycast::PeerFactory     pubFactory;
-    hycast::PeerFactory     subFactory;
+    hycast::PubPeerFactory  pubFactory;
+    hycast::SubPeerFactory  subFactory;
     hycast::Peer            pubPeer;
     hycast::Peer            subPeer;
 
@@ -92,14 +94,12 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , pubFactory()
-        , subFactory()
+        , pubFactory(pubAddr, 1, portPool, *this)
+        , subFactory(subAddr, 1, portPool, *this)
         , pubPeer()
         , subPeer()
     {
         ::memset(memData, 0xbd, segSize);
-        pubFactory = hycast::PeerFactory(pubAddr, 1, portPool, *this);
-        subFactory = hycast::PeerFactory(subAddr, 1, portPool, *this);
     }
 
 public:
@@ -117,18 +117,18 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer peer)
+    void pathToPub(hycast::Peer& peer)
     {}
 
-    void noPathToPub(hycast::Peer peer)
+    void noPathToPub(hycast::Peer& peer)
     {}
 
     // Subscriber-side
     bool shouldRequest(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_NOTICE_RCVD);
 
         return true;
@@ -136,8 +136,8 @@ public:
 
     // Subscriber-side
     bool shouldRequest(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_NOTICE_RCVD);
@@ -146,19 +146,19 @@ public:
     }
 
     // Publisher-side
-    hycast::ProdInfo get(
-            const hycast::ProdIndex actual,
-            hycast::Peer&           peer)
+    hycast::ProdInfo getProdInfo(
+            hycast::Peer&           peer,
+            const hycast::ProdIndex actual)
     {
-        EXPECT_EQ(prodIndex, actual);
+        EXPECT_TRUE(prodIndex == actual);
         orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
 
     // Publisher-side
-    hycast::MemSeg get(
-            const hycast::SegId&    actual,
-            hycast::Peer&           peer)
+    hycast::MemSeg getMemSeg(
+            hycast::Peer&           peer,
+            const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
         orState(SEG_REQUEST_RCVD);
@@ -167,8 +167,8 @@ public:
 
     // Subscriber-side
     bool hereIs(
-            const hycast::ProdInfo& actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
@@ -178,8 +178,8 @@ public:
 
     // Subscriber-side
     bool hereIs(
-            hycast::TcpSeg&         actual,
-            hycast::Peer&           peer)
+            hycast::Peer&           peer,
+            hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);
@@ -209,7 +209,7 @@ public:
     void runPub(hycast::PeerSet& peerSet)
     {
         // Calls listen()
-        pubPeer = pubFactory.accept(hycast::NodeType::PUBLISHER);
+        pubPeer = pubFactory.accept();
         EXPECT_EQ(0, peerSet.size());
         peerSet.activate(pubPeer); // Executes peer on new thread
         EXPECT_EQ(1, peerSet.size());
