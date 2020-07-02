@@ -138,8 +138,7 @@ public:
 
 /******************************************************************************/
 
-ProdInfo::ProdInfo()
-{}
+ProdInfo::ProdInfo() noexcept =default;
 
 ProdInfo::ProdInfo(
         const ProdIndex    prodIndex,
@@ -586,6 +585,10 @@ MemSeg::MemSeg(
     : DataSeg(new Impl(info, data))
 {}
 
+MemSeg::operator bool() const noexcept {
+    return static_cast<bool>(pImpl);
+}
+
 const void* MemSeg::data() const
 {
     return static_cast<Impl*>(pImpl.get())->data();
@@ -593,8 +596,9 @@ const void* MemSeg::data() const
 
 bool MemSeg::operator ==(const MemSeg& rhs) const noexcept
 {
-    return *static_cast<Impl*>(pImpl.get()) ==
-            *static_cast<Impl*>(rhs.pImpl.get());
+    return (pImpl.get() == rhs.pImpl.get()) ||
+           (static_cast<Impl*>(pImpl.get())->operator ==(
+            *static_cast<Impl*>(rhs.pImpl.get())));
 }
 
 /******************************************************************************/

@@ -62,7 +62,7 @@ class Watcher::Impl final
         if (::stat(pathname.data(), &stat)) // Follow symlinks
             throw SYSTEM_ERROR("Couldn't stat() \"" + pathname + "\"");
 
-        return (stat.st_mode & S_IFMT) == S_IFDIR;
+        return S_ISDIR(stat.st_mode);
     }
 
     /**
@@ -80,8 +80,7 @@ class Watcher::Impl final
         if (::lstat(pathname.data(), &stat)) // Don't follow symlinks
             throw SYSTEM_ERROR("Couldn't lstat() \"" + pathname + "\"");
 
-        return ((stat.st_mode & S_IFMT) == S_IFLNK) ||
-                (stat.st_nlink > 1);
+        return S_ISLNK(stat.st_mode) || (stat.st_nlink > 1);
     }
 
     /**

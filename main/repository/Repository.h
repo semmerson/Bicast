@@ -65,7 +65,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    virtual const ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
+    virtual ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
 
     /**
      * Returns a data-segment
@@ -136,7 +136,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    const ProdInfo getProdInfo(ProdIndex prodIndex) const override;
+    ProdInfo getProdInfo(ProdIndex prodIndex) const override;
 
     /**
      * Returns a data-segment
@@ -200,6 +200,13 @@ public:
     bool save(DataSeg& dataSeg) const;
 
     /**
+     * Returns the next, completed data-product. Blocks until one is available.
+     *
+     * @return Next, completed data-product
+     */
+    ProdInfo getCompleted() const;
+
+    /**
      * Returns information on a product.
      *
      * @param[in] prodIndex  Index of product
@@ -210,7 +217,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    const ProdInfo getProdInfo(const ProdIndex prodIndex) const override;
+    ProdInfo getProdInfo(const ProdIndex prodIndex) const override;
 
     /**
      * Returns a data-segment

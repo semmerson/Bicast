@@ -271,12 +271,21 @@ public:
 
 /******************************************************************************/
 
-ProdFile::ProdFile(Impl* impl)
-    : pImpl(impl) {
+ProdFile::ProdFile() noexcept =default;
+
+ProdFile::ProdFile(std::shared_ptr<Impl>&& pImpl) noexcept
+    : pImpl(pImpl) {
 }
 
-ProdFile::~ProdFile() noexcept {
-}
+ProdFile::ProdFile(const ProdFile& prodFile) noexcept =default;
+
+ProdFile::ProdFile(ProdFile&& prodFile) noexcept =default;
+
+ProdFile::~ProdFile() =default;
+
+ProdFile& ProdFile::operator =(const ProdFile& rhs) noexcept =default;
+
+ProdFile& ProdFile::operator =(ProdFile&& rhs) noexcept =default;
 
 ProdFile::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
@@ -339,11 +348,13 @@ public:
 
 /******************************************************************************/
 
+SndProdFile::SndProdFile() noexcept =default;
+
 SndProdFile::SndProdFile(
         const int          rootFd,
         const std::string& pathname,
         const SegSize      segSize)
-    : ProdFile(new Impl(rootFd, pathname, segSize)) {
+    : ProdFile(std::make_shared<Impl>(rootFd, pathname, segSize)) {
 }
 
 void SndProdFile::open(const int rootFd) const {
@@ -498,6 +509,8 @@ public:
 
             const auto prodName = prodInfo.getProdName();
 
+            ensureDir(rootFd, dirPath(prodName), 0755); // Only owner can write
+
             if (::renameat(rootFd, this->pathname.data(), rootFd,
                     prodName.data()))
                 throw SYSTEM_ERROR("Couldn't rename product-file \"" +
@@ -572,12 +585,14 @@ public:
 
 /******************************************************************************/
 
+RcvProdFile::RcvProdFile() noexcept =default;
+
 RcvProdFile::RcvProdFile(
         const int       rootFd,
         const ProdIndex prodIndex,
         const ProdSize  prodSize,
         const SegSize   segSize)
-    : ProdFile(new Impl(rootFd, prodIndex, prodSize, segSize)) {
+    : ProdFile(std::make_shared<Impl>(rootFd, prodIndex, prodSize, segSize)) {
 }
 
 void RcvProdFile::open(const int rootFd) const {
@@ -593,17 +608,17 @@ bool
 RcvProdFile::save(
         const int       rootFd,
         const ProdInfo& prodInfo) const {
-    static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
+    return static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
 }
 
 bool
 RcvProdFile::save(DataSeg& dataSeg) const {
-    static_cast<Impl*>(pImpl.get())->save(dataSeg);
+    return static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
 
 ProdInfo
 RcvProdFile::getProdInfo() const {
-    static_cast<Impl*>(pImpl.get())->getProdInfo();
+    return static_cast<Impl*>(pImpl.get())->getProdInfo();
 }
 
 } // namespace

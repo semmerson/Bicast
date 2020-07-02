@@ -28,12 +28,20 @@ protected:
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
-    ProdFile(Impl* impl);
+    ProdFile(std::shared_ptr<Impl>&& impl) noexcept;
 
 public:
-    ProdFile() =default;
+    ProdFile() noexcept;
 
-    virtual ~ProdFile() noexcept;
+    ProdFile(const ProdFile& prodFile) noexcept;
+
+    ProdFile(ProdFile&& prodFile) noexcept;
+
+    virtual ~ProdFile();
+
+    ProdFile& operator =(const ProdFile& rhs) noexcept;
+
+    ProdFile& operator =(ProdFile&& rhs) noexcept;
 
     /**
      * Indicates if this instance is valid.
@@ -112,7 +120,7 @@ class SndProdFile final : public ProdFile
     class Impl;
 
 public:
-    SndProdFile() =default;
+    SndProdFile() noexcept; // Will test false
 
     /**
      * Constructs from an existing file. Access to the underlying file is
@@ -149,7 +157,7 @@ class RcvProdFile final : public ProdFile
     class Impl;
 
 public:
-    RcvProdFile() =default;
+    RcvProdFile() noexcept; // Will test false
 
     /**
      * Constructs from product information. The instance is open.

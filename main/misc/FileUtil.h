@@ -17,6 +17,18 @@
 
 namespace hycast {
 
+/**
+ * Returns the absolute pathname of a generic (i.e., relative or absolute)
+ * pathname. The current working directory is used if the pathname is
+ * relative.
+ *
+ * @param[in] pathname  Pathname to have its absolute form returned
+ * @return              Corresponding absolute pathname. Will be the same
+ *                      if the pathname is absolute
+ * @throws OutOfRange   Pathname is empty
+ */
+std::string makeAbsolute(const std::string& pathname);
+
 std::string filename(const std::string& pathname);
 
 std::string dirPath(const std::string& pathname);

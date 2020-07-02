@@ -156,14 +156,14 @@ class ProdInfo
 
 public:
     /**
-     * Default constructs. The instance will be invalid.
+     * Default constructs. The instance will test false.
      *
      * @see `operator bool()`
      */
-    ProdInfo();
+    ProdInfo() noexcept;
 
     /**
-     * Constructs a valid instance.
+     * Constructs.
      *
      * @param[in] prodIndex        Product index
      * @param[in] size             Product size in bytes
@@ -562,6 +562,8 @@ public:
 
     MemSeg(const SegInfo& info,
            const void*    data);
+
+    operator bool() const noexcept;
 
     const void* data() const;
 

@@ -25,6 +25,15 @@
 
 namespace hycast {
 
+std::string makeAbsolute(const std::string& pathname)
+{
+    if (pathname.at(0) == '/')
+        return std::string(pathname);
+
+    char cwd[PATH_MAX];
+    return std::string(::getcwd(cwd, sizeof(cwd))) + "/" + pathname;
+}
+
 std::string filename(const std::string& pathname)
 {
     char buf[PATH_MAX];
@@ -98,7 +107,7 @@ void rmDirTree(const std::string& dirPath)
                     const std::string subName = dirPath + "/" + name;
                     struct stat       statBuf;
 
-                    if (::stat(subName.data(), &statBuf))
+                    if (::lstat(subName.data(), &statBuf))
                         throw SYSTEM_ERROR(std::string("Couldn't stat() \"") +
                                 subName + "\"");
 

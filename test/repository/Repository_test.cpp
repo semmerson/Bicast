@@ -11,6 +11,7 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "FileUtil.h"
 #include "hycast.h"
 #include "Repository.h"
@@ -36,7 +37,7 @@ protected:
     hycast::MemSeg        memSeg;
 
     RepositoryTest()
-        : rootPath("repo")
+        : rootPath("/tmp/Repository_test")
         , prodIndex{1}
         , memData{}
         , segSize{sizeof(memData)}
@@ -46,7 +47,12 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memSeg{segInfo, memData}
     {
+        hycast::rmDirTree(rootPath);
         ::memset(memData, 0xbd, segSize);
+    }
+
+    ~RepositoryTest() {
+        hycast::rmDirTree(rootPath);
     }
 
 public:
@@ -68,119 +74,49 @@ TEST_F(RepositoryTest, Construction)
     hycast::SubRepo subRepo(rootPath, segSize);
 }
 
-// Tests pathname of file
-TEST_F(RepositoryTest, Pathname)
-{
-    hycast::PubRepo repo(rootPath, segSize);
-    std::cout << "ProdId pathname: " << repo.getPathname(prodIndex) << '\n';
-
-    const std::string& name = prodInfo.getProdName();
-    std::cout << "ProdName pathname: " << repo.getPathname(name) << '\n';
-}
-
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    int         status;
-    std::string indexPath;
-    {
-        hycast::SubRepo repo(rootPath, segSize);
-        indexPath = repo.getPathname(prodIndex);
-        status = ::unlink(indexPath.data());
-        if (status == -1)
-            EXPECT_EQ(ENOENT, errno);
-        EXPECT_FALSE(repo.getProdInfo(prodIndex));
-        repo.save(prodInfo);
-        auto actual = repo.getProdInfo(prodIndex);
-        ASSERT_TRUE(actual);
-        EXPECT_EQ(prodInfo, actual);
-    } // Closes file
-    struct stat statBuf;
-    ASSERT_EQ(0, ::stat(indexPath.data(), &statBuf));
-    ASSERT_EQ(prodSize, statBuf.st_size);
-    EXPECT_EQ(0, ::unlink(indexPath.data()));
+    hycast::SubRepo repo(rootPath, segSize);
+    ASSERT_FALSE(repo.getProdInfo(prodIndex));
+    ASSERT_FALSE(repo.save(prodInfo));
+    hycast::ProdInfo actual = repo.getProdInfo(prodIndex);
+    ASSERT_TRUE(actual);
+    EXPECT_EQ(prodInfo, actual);
 }
 
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    std::string indexPath;
-    std::string namePath;
-    {
-        hycast::SubRepo repo(rootPath, segSize);
+    hycast::SubRepo repo(rootPath, segSize);
 
-        indexPath = repo.getPathname(prodIndex);
-        namePath = repo.getPathname(prodInfo.getProdName());
+    ASSERT_FALSE(repo.save(prodInfo));
+    ASSERT_TRUE(repo.save(memSeg));
 
-        ::unlink(indexPath.data());
-        ::unlink(namePath.data());
+    auto prodInfo = repo.getCompleted();
+    ASSERT_TRUE(prodInfo);
+    EXPECT_EQ(this->prodInfo, prodInfo);
 
-        repo.save(prodInfo);
-        auto actualProdInfo = repo.getProdInfo(prodIndex);
-        EXPECT_EQ(prodInfo, actualProdInfo);
-
-        repo.save(memSeg);
-        auto actualSegId = repo.getMemSeg(memSeg.getSegId());
-        EXPECT_EQ(memSeg, actualSegId);
-    } // Closes file
-
-    struct stat statBuf;
-
-    ASSERT_EQ(0, ::stat(indexPath.data(), &statBuf));
-    ASSERT_EQ(prodSize, statBuf.st_size);
-    int fd = ::open(indexPath.data(), O_RDONLY);
-    ASSERT_NE(-1, fd);
-    char buf[segSize];
-    ASSERT_EQ(segSize, ::read(fd, buf, sizeof(buf)));
-    ASSERT_EQ(0, ::memcmp(buf, memData, sizeof(buf)));
-    ASSERT_EQ(0, ::close(fd));
-    ::unlink(indexPath.data());
-
-    ASSERT_EQ(0, ::stat(namePath.data(), &statBuf));
-    ASSERT_EQ(prodSize, statBuf.st_size);
-    fd = ::open(namePath.data(), O_RDONLY);
-    ASSERT_NE(-1, fd);
-    ASSERT_EQ(segSize, ::read(fd, buf, sizeof(buf)));
-    ASSERT_EQ(0, ::memcmp(buf, memData, sizeof(buf)));
-    ASSERT_EQ(0, ::close(fd));
-    ::unlink(namePath.data());
+    auto actualMemSeg = repo.getMemSeg(memSeg.getSegId());
+    ASSERT_TRUE(actualMemSeg);
+    ASSERT_EQ(memSeg, actualMemSeg);
 }
 
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    std::string indexPath;
-    std::string namePath;
-    {
-        hycast::SubRepo repo(rootPath, segSize);
-        indexPath = repo.getPathname(prodIndex);
-        namePath = repo.getPathname(prodInfo.getProdName());
-        ::unlink(indexPath.data());
-        ::unlink(namePath.data());
-        repo.save(prodInfo);
-        repo.save(memSeg);
-    } // Closes file
+    hycast::SubRepo repo(rootPath, segSize);
 
-    struct stat statBuf;
+    ASSERT_FALSE(repo.save(memSeg));
+    ASSERT_TRUE(repo.save(prodInfo));
 
-    ASSERT_EQ(0, ::stat(indexPath.data(), &statBuf));
-    ASSERT_EQ(prodSize, statBuf.st_size);
-    int fd = ::open(indexPath.data(), O_RDONLY);
-    ASSERT_NE(-1, fd);
-    char buf[segSize];
-    ASSERT_EQ(segSize, ::read(fd, buf, sizeof(buf)));
-    ASSERT_EQ(0, ::memcmp(buf, memData, sizeof(buf)));
-    ASSERT_EQ(0, ::close(fd));
-    ::unlink(indexPath.data());
+    auto prodInfo = repo.getCompleted();
+    ASSERT_TRUE(prodInfo);
+    EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
-    ASSERT_EQ(0, ::stat(namePath.data(), &statBuf));
-    ASSERT_EQ(prodSize, statBuf.st_size);
-    fd = ::open(namePath.data(), O_RDONLY);
-    ASSERT_NE(-1, fd);
-    ASSERT_EQ(segSize, ::read(fd, buf, sizeof(buf)));
-    ASSERT_EQ(0, ::memcmp(buf, memData, sizeof(buf)));
-    ASSERT_EQ(0, ::close(fd));
-    ::unlink(namePath.data());
+    auto actualMemSeg = repo.getMemSeg(memSeg.getSegId());
+    ASSERT_TRUE(actualMemSeg);
+    ASSERT_EQ(RepositoryTest::memSeg, actualMemSeg);
 }
 
 // Tests creating a product and informing a publisher's repository
@@ -196,20 +132,27 @@ TEST_F(RepositoryTest, CreatProdForSending)
     ASSERT_EQ(segSize, ::write(fd, memData, segSize));
     ASSERT_EQ(0, ::close(fd));
 
-    // Create the repository and tell it about the file
+    // Create the publisher's repository and tell it about the file
     hycast::PubRepo repo(rootPath, segSize);
     repo.link(pathname, prodInfo.getProdName());
 
     // Verify repository access
-    auto prodIndex = repo.getNextProd();
-    auto prodInfo = repo.getProdInfo(prodIndex);
-    ASSERT_EQ(RepositoryTest::prodInfo, prodInfo);
-    auto memSeg = repo.getMemSeg(RepositoryTest::segId);
-    ASSERT_EQ(RepositoryTest::memSeg, memSeg);
+    try {
+        auto prodIndex = repo.getNextProd();
+        auto prodInfo = repo.getProdInfo(prodIndex);
+        ASSERT_TRUE(RepositoryTest::prodInfo == prodInfo);
+        auto memSeg = repo.getMemSeg(RepositoryTest::segId);
+        ASSERT_EQ(RepositoryTest::memSeg, memSeg);
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex, "Couldn't verify repository access");
+        GTEST_FAIL();
+    }
 
-    hycast::pruneDir(rootPath);
     ::unlink(pathname.data());
 }
+#if 0
+#endif
 
 }  // namespace
 
