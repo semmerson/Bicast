@@ -22,25 +22,9 @@
 namespace hycast {
 
 /**
- * Interface for an observer of a P2P network.
- */
-class P2pObs
-{
-public:
-    virtual ~P2pObs() noexcept =default;
-
-    /**
-     * Processes the addition of a peer to the peer-to-peer network.
-     *
-     * @param[in] peer  The added peer
-     */
-    virtual void peerAdded(Peer peer); // No-op default is defined
-};
-
-/**
  * Interface for a sender on a P2P network.
  */
-class P2pSndr : public P2pObs
+class P2pSndr
 {
 public:
     virtual ~P2pSndr() noexcept =default;
@@ -109,7 +93,7 @@ public:
      * @retval    `false`     Chunk was previously accepted
      * @throws    logicError  Shouldn't have been called
      */
-    virtual bool hereIs(TcpSeg& tcpSeg) =0;
+    virtual bool hereIsP2p(TcpSeg& tcpSeg) =0;
 };
 
 /******************************************************************************/

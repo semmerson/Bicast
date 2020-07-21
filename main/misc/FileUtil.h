@@ -41,7 +41,7 @@ std::string dirPath(const std::string& pathname);
  */
 void ensureDir(
         const std::string& pathname,
-        const mode_t       mode = 0700);
+        const mode_t       mode = 0777);
 
 /**
  * Follows symbolic links.
@@ -53,7 +53,17 @@ void ensureDir(
 void ensureDir(
         const int          fd,
         const std::string& pathname,
-        const mode_t       mode = 0700);
+        const mode_t       mode = 0777);
+
+/**
+ * Ensures that the parent directory of a file exists.
+ *
+ * @param[in] pathname  Pathname of file
+ * @param[in] mode      Directory creation mode
+ */
+void ensureParent(
+        const std::string& pathname,
+        const mode_t       mode = 0777);
 
 /**
  * Removes a directory hierarchy. All files in the hierarchy -- including the

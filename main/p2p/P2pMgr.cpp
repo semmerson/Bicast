@@ -29,18 +29,9 @@
 #include <sstream>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 
 namespace hycast {
-
-/**
- * Processes the addition of a peer to the peer-to-peer network.
- *
- * No-op default implementation of the virtual function.
- *
- * @param peer  The added peer
- */
-void P2pObs::peerAdded(Peer peer) {
-}
 
 /**
  * Abstract base class implementation of a manager of a peer-to-peer network.
@@ -76,17 +67,18 @@ class P2pMgr::Impl : public PeerSetMgr
             }
         }
         catch (const std::exception& ex) {
-            setException(std::make_exception_ptr(ex));
+            setException(ex);
         }
     }
 
 protected:
-    typedef std::mutex                Mutex;
-    typedef std::lock_guard<Mutex>    Guard;
-    typedef std::unique_lock<Mutex>   Lock;
-    typedef std::condition_variable   Cond;
-    typedef std::exception_ptr        ExceptPtr;
-    typedef std::chrono::steady_clock Clock;
+    typedef std::mutex                         Mutex;
+    typedef std::lock_guard<Mutex>             Guard;
+    typedef std::unique_lock<Mutex>            Lock;
+    typedef std::condition_variable            Cond;
+    typedef std::exception_ptr                 ExceptPtr;
+    typedef std::chrono::steady_clock          Clock;
+    typedef std::unordered_map<SockAddr, Peer> Peers;
 
     std::atomic_flag  executing;     ///< Has `operator()` been called?
     mutable Mutex     mutex;         ///< Guards state of this instance
@@ -100,6 +92,7 @@ protected:
     Clock::time_point improveStart;  ///< Time of start of improvement period
     std::thread       acceptThread;  ///< Accepts remote peers
     std::thread       improveThread; ///< Improves set of peers
+    Peers             peers;         ///< Remote address to peer converter
 
     virtual PeerFactory& getFactory() =0;
 
@@ -111,16 +104,31 @@ protected:
      *
      * @param[in] exPtr  Relevant exception pointer
      */
-    void setException(const std::exception_ptr exPtr)
+    void setException(const std::exception& ex)
     {
         LOG_TRACE();
         Guard guard{mutex};
 
         if (!taskException) {
             LOG_DEBUG("Setting exception");
-            taskException = exPtr; // No throw
+            taskException = std::make_exception_ptr(ex); // No throw
             cond.notify_all(); // No throw
         }
+    }
+
+    /**
+     * Waits until this instance should stop. Rethrows subtask exception if
+     * appropriate.
+     */
+    void waitUntilDone()
+    {
+        Lock lock(mutex);
+
+        while (!done && !taskException)
+            cond.wait(lock);
+
+        if (!done && taskException)
+            std::rethrow_exception(taskException);
     }
 
     /**
@@ -152,6 +160,7 @@ protected:
         try {
             LOG_NOTE("Adding peer %s", peer.getRmtAddr().to_string().c_str());
             (void)peerSet.activate(peer); // Fast
+            peers[peer.getRmtAddr()] = peer;
             resetImprovement();
         }
         catch (const std::exception& ex) {
@@ -214,8 +223,8 @@ protected:
             success = maybeAdd2(peer); // Implementation-specific
         }
 
-        if (success)
-            p2pSndr.peerAdded(peer);
+        //if (success)
+            //p2pSndr.peerAdded(peer);
 
         return success;
     }
@@ -358,19 +367,6 @@ protected:
 
     virtual void stopped2(Peer peer) =0;
 
-    /**
-     * Waits until this instance should stop.
-     */
-    void waitUntilDone()
-    {
-        Lock lock(mutex);
-
-        while (!done && !taskException)
-            cond.wait(lock);
-
-        LOG_DEBUG("This P2pMgr should stop");
-    }
-
 public:
     /**
      * Constructs. Calls `::listen()`. No peers are managed until `operator()()`
@@ -395,6 +391,13 @@ public:
         , improveThread{}
         , acceptThread{}
     {}
+
+    ~Impl() {
+        if (improveThread.joinable())
+            improveThread.join();
+        if (acceptThread.joinable())
+            acceptThread.join();
+    }
 
     void setTimePeriod(unsigned timePeriod)
     {
@@ -425,13 +428,6 @@ public:
             try {
                 waitUntilDone();
                 stopTasks();
-
-                Guard guard(mutex);
-
-                //LOG_DEBUG("haltRequested: %s", haltRequested ? "true" : "false");
-                //LOG_DEBUG("taskException: %s", taskException ? "set" : "not set");
-                if (!done && taskException)
-                    std::rethrow_exception(taskException);
             }
             catch (const std::exception& ex) {
                 LOG_DEBUG("Caught \"%s\"", ex.what());
@@ -493,29 +489,35 @@ public:
     {
         LOG_DEBUG("Notifying remote peers about data-segment " +
                 segId.to_string());
-        return peerSet.notify(segId);
+        try {
+            peerSet.notify(segId);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't notify remote peers "
+                    "about data-segment" + segId.to_string()));
+        }
     }
 
     /**
      * Obtains product-information for a remote peer.
      *
+     * @param[in] remote     Socket address of remote peer
      * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Peer
      * @return               The information. Will be empty if it doesn't exist.
      */
     virtual ProdInfo getProdInfo(
-            Peer&           peer,
-            ProdIndex       prodIndex) =0;
+            const SockAddr& remote,
+            const ProdIndex prodIndex) =0;
 
     /**
      * Obtains a data-segment for a remote peer.
      *
+     * @param[in] remote     Socket address of remote peer
      * @param[in] segId      Identifier of the data-segment
-     * @param[in] peer       Peer
      * @return               The segment. Will be empty if it doesn't exist.
      */
     virtual MemSeg getMemSeg(
-            Peer&           peer,
+            const SockAddr& remote,
             const SegId&    segId) =0;
 
     /**
@@ -533,6 +535,7 @@ public:
             if (!done) {
                 stopped2(peer);     // Implementation-specific
                 getBookkeeper().erase(peer);
+                peers.erase(peer.getRmtAddr());
                 resetImprovement(); // Restart performance evaluation
             }
         }
@@ -543,8 +546,8 @@ public:
 
 class PubP2pMgr final : public P2pMgr::Impl, public SendPeerMgr
 {
-    PubPeerFactory factory;    ///< Creates peers
-    PubBookkeeper  bookkeeper; ///< Keeps track of peer performance
+    PubPeerFactory factory;                   ///< Creates peers
+    PubBookkeeper  bookkeeper;                ///< Peer performance tracker
 
 protected:
     void startTasks2() override {
@@ -563,8 +566,8 @@ protected:
     }
 
     bool maybeAdd2(Peer peer) override {
-        LOG_DEBUG("Peer not added to publisher");
-        return false;
+        LOG_DEBUG("Peer added to publisher");
+        return true;
     }
 
     /**
@@ -590,7 +593,7 @@ protected:
         }
         catch (const std::exception& ex) {
             //LOG_DEBUG(ex, "Caught std::exception");
-            setException(std::make_exception_ptr(ex));
+            setException(ex);
         }
     }
 
@@ -619,42 +622,33 @@ public:
         , bookkeeper(p2pInfo.maxPeers)
     {}
 
-    ~PubP2pMgr() noexcept {
-        try {
-            halt();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-    }
-
     /**
      * Obtains product-information for a remote peer.
      *
+     * @param[in] remote     Socket address of remote peer
      * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Peer
      * @return               The information. Will be empty if it doesn't exist.
      */
     ProdInfo getProdInfo(
-            Peer&           peer,
-            ProdIndex       prodIndex) override {
+            const SockAddr& remote,
+            const ProdIndex prodIndex) override {
         auto prodInfo = p2pSndr.getProdInfo(prodIndex);
-        bookkeeper.requested(peer, prodInfo);
+        bookkeeper.requested(peers.at(remote), prodInfo);
         return prodInfo;
     }
 
     /**
      * Obtains a data-segment for a remote peer.
      *
+     * @param[in] remote     Socket address of remote peer
      * @param[in] segId      Identifier of the data-segment
-     * @param[in] peer       Peer
      * @return               The segment. Will be empty if it doesn't exist.
      */
     MemSeg getMemSeg(
-            Peer&           peer,
-            const SegId&    segId) override {
+            const SockAddr& remote,
+            const SegId& segId) override {
         auto memSeg = p2pSndr.getMemSeg(segId);
-        bookkeeper.requested(peer, memSeg.getSegInfo());
+        bookkeeper.requested(peers.at(remote), memSeg.getSegInfo());
         return memSeg;
     }
 };
@@ -723,7 +717,7 @@ class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
         }
         catch (const std::exception& ex) {
             //LOG_DEBUG("Caught std::exception");
-            setException(std::make_exception_ptr(ex));
+            setException(ex);
         }
         catch (...) {
             //LOG_DEBUG("Caught ... exception");
@@ -842,7 +836,7 @@ protected:
         }
         catch (const std::exception& ex) {
             //LOG_DEBUG(ex, "Caught std::exception");
-            setException(std::make_exception_ptr(ex));
+            setException(ex);
         }
     }
 
@@ -884,13 +878,9 @@ public:
         , p2pSub(p2pSub)
     {}
 
-    ~SubP2pMgr() noexcept {
-        try {
-            halt();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
+    ~SubP2pMgr() {
+        if (connectThread.joinable())
+            connectThread.join();
     }
 
     /**
@@ -1013,7 +1003,7 @@ public:
         if (!bookkeeper.received(peer, seg.getSegId()))
             return false; // Wasn't requested
 
-        if (!p2pSub.hereIs(seg))
+        if (!p2pSub.hereIsP2p(seg))
             return false; // Wasn't needed
 
         peerSet.notify(seg.getSegId(), peer);
@@ -1023,13 +1013,13 @@ public:
     /**
      * Obtains product-information for a remote peer.
      *
+     * @param[in] remote     Socket address of remote peer
      * @param[in] prodIndex  Identifier of product
-     * @param[in] peer       Peer
      * @return               The information. Will be empty if it doesn't exist.
      */
     ProdInfo getProdInfo(
-            Peer&           peer,
-            ProdIndex       prodIndex) override {
+            const SockAddr& remote,
+            const ProdIndex prodIndex) override {
         return p2pSndr.getProdInfo(prodIndex);
     }
 
@@ -1041,7 +1031,7 @@ public:
      * @return               The segment. Will be empty if it doesn't exist.
      */
     MemSeg getMemSeg(
-            Peer&           peer,
+            const SockAddr& remote,
             const SegId&    segId) override {
         return p2pSndr.getMemSeg(segId);
     }

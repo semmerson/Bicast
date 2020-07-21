@@ -196,13 +196,22 @@ public:
     bool exists(ProdSize offset) const override;
 
     /**
+     * Indicates if the product is complete.
+     *
+     * @retval `true`   The product is complete
+     * @retval `false`  The product is not complete
+     */
+    bool isComplete() const;
+
+    /**
      * Saves product information.
      *
      * @param[in] rootFd           File descriptor open on repository's root
      *                             directory
      * @param[in] prodInfo         Product information to be saved
-     * @retval    `true`           This item completed the product
-     * @retval    `false`          This item did not complete the product
+     * @retval    `true`           This item was written to the product-file
+     * @retval    `false`          This item is already in the product-file and
+     *                             was not written
      * @throws    InvalidArgument  Segment's offset is invalid
      * @threadsafety               Safe
      * @exceptionsafety            Strong guarantee
@@ -216,8 +225,9 @@ public:
      * Saves a data-segment.
      *
      * @param[in] dataSeg           Data-segment to be saved
-     * @retval    `true`            This item completed the product
-     * @retval    `false`           This item did not complete the product
+     * @retval    `true`            This item was written to the product-file
+     * @retval    `false`           This item is already in the product-file and
+     *                              was not written
      * @throws    InvalidArgument   Segment's offset is invalid
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee

@@ -21,6 +21,7 @@ check_PROGRAMS	= AutoReference \
 #		  Completer_test \
 #		  CancelNoexcept_test
 #		  Promise_test
+#		  PimplAB_test
 
 AutoReference_SOURCES           = AutoReference.cpp
 #CancelNoexcept_test_SOURCES	= CancelNoexcept_test.cpp
@@ -39,6 +40,7 @@ error_test_SOURCES		= error_test.cpp
 #Completer_test_SOURCES		= Completer_test.cpp
 DelayQueue_test_SOURCES		= DelayQueue_test.cpp
 reuseaddr_test_SOURCES		= reuseaddr_test.c
+#PimplAB_test_SOURCES		= PimplAB_test.cpp PimplA.cpp PimplB.cpp
 
 TESTS	= $(check_PROGRAMS)
 

@@ -11,12 +11,16 @@
  */
 #include "config.h"
 
+#include <Watcher.h>
+
 #include "error.h"
+#include "FileUtil.h"
+
 #include <fcntl.h>
 #include <limits.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
-#include <Watcher.h>
+#include <thread>
 
 namespace {
 
@@ -24,49 +28,35 @@ namespace {
 class WatcherTest : public ::testing::Test
 {
 protected:
+    std::string     testDir;
     std::string     rootDir;
-    std::string     filePath;
-    std::string     linkPath;
-    std::string     subDirPath;
-    std::string     subFilePath;
+    std::string     filename;
+    std::string     relFilePath;
 
     // You can remove any or all of the following functions if its body
     // is empty.
 
     WatcherTest()
-        : rootDir("/tmp/Watcher_test")
-        , filePath(rootDir + "/" + "file")
-        , linkPath()
-        , subDirPath(rootDir + "/subDir")
-        , subFilePath(subDirPath + "/" + "subFile")
+        : testDir("/tmp/Watcher_test")
+        , rootDir(testDir + "/watched")
+        , filename("file.dat")
+        , relFilePath(std::string("foo/bar/") + filename)
     {
         char buf[PATH_MAX];
-        linkPath = std::string(getcwd(buf, sizeof(buf))) + "/Watcher_test";
+        hycast::rmDirTree(testDir);
+        hycast::ensureDir(rootDir);
     }
 
     virtual ~WatcherTest()
     {
-        int status;
-
-        status = ::unlink(subFilePath.data());
-        EXPECT_TRUE(status == 0 || errno == ENOENT);
-
-        status = ::rmdir(subDirPath.data());
-        EXPECT_TRUE(status == 0 || errno == ENOENT);
-
-        status = ::unlink(filePath.data());
-        EXPECT_TRUE(status == 0 || errno == ENOENT);
-
-        EXPECT_EQ(0, ::rmdir(rootDir.data()));
+        hycast::rmDirTree(rootDir);
     }
 
     // If the constructor and destructor are not enough for setting up
     // and cleaning up each test, you can define the following methods:
 
     virtual void SetUp()
-    {
-        ASSERT_EQ(0, ::mkdir(rootDir.data(), 0777));
-    }
+    {}
 
     virtual void TearDown()
     {
@@ -75,6 +65,24 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for Error.
+
+    void createFile(const std::string pathname) {
+        hycast::ensureParent(pathname);
+        const int fd = ::open(pathname.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
+        ASSERT_NE(-1, fd);
+        ::close(fd);
+    }
+
+public:
+    void getNextFile(
+            hycast::Watcher*   watcher,
+            const std::string* pathname) {
+        struct hycast::Watcher::WatchEvent watchEvent;
+
+        watcher->getEvent(watchEvent);
+        ASSERT_EQ(*pathname, watchEvent.pathname);
+        LOG_NOTE("Event: \"%s\"", pathname->data());
+    }
 };
 
 // Tests default construction
@@ -86,60 +94,46 @@ TEST_F(WatcherTest, DefaultConstruction)
 // Tests adding a file
 TEST_F(WatcherTest, AddFile)
 {
-    hycast::Watcher watcher(rootDir);
+    hycast::Watcher   watcher(rootDir);
+    const std::string filePath = rootDir + "/" + relFilePath;
+    auto              thrd = std::thread(&WatcherTest::getNextFile, this,
+            &watcher, &filePath);
 
-    int             fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
-    ASSERT_NE(-1, fd);
-    ::close(fd);
+    createFile(filePath);
 
-    struct hycast::Watcher::WatchEvent watchEvent;
-    watcher.getEvent(watchEvent);
-    ASSERT_EQ(filePath, watchEvent.pathname);
-    LOG_NOTE("Event: \"%s\"", filePath.data());
+    thrd.join();
 }
 
 // Tests adding a symbolic link
 TEST_F(WatcherTest, AddSymbolicLink)
 {
-    hycast::Watcher watcher(rootDir);
+    hycast::Watcher   watcher(rootDir);
+    const std::string filePath = testDir + "/" + relFilePath;
+    const std::string linkPath = rootDir + "/" + relFilePath;
+    auto              thread = std::thread(&WatcherTest::getNextFile, this,
+            &watcher, &linkPath);
 
-    ASSERT_NE(-1, symlink(linkPath.data(), filePath.data()));
+    createFile(filePath);
+    hycast::ensureParent(linkPath);
+    ASSERT_NE(-1, ::symlink(filePath.data(), linkPath.data()));
 
-    struct hycast::Watcher::WatchEvent watchEvent;
-    watcher.getEvent(watchEvent);
-    ASSERT_EQ(filePath, watchEvent.pathname);
-    LOG_NOTE("Event: \"%s\"", filePath.data());
+    thread.join();
 }
 
 // Tests adding a hard link
 TEST_F(WatcherTest, AddHardLink)
 {
-    hycast::Watcher watcher(rootDir);
+    hycast::Watcher   watcher(rootDir);
+    const std::string filePath = testDir + "/" + relFilePath;
+    const std::string linkPath = rootDir + "/" + relFilePath;
+    auto              thread = std::thread(&WatcherTest::getNextFile, this,
+            &watcher, &linkPath);
 
-    ASSERT_NE(-1, link(linkPath.data(), filePath.data()));
+    createFile(filePath);
+    hycast::ensureParent(linkPath);
+    ASSERT_NE(-1, ::link(filePath.data(), linkPath.data()));
 
-    struct hycast::Watcher::WatchEvent watchEvent;
-    watcher.getEvent(watchEvent);
-    ASSERT_EQ(filePath, watchEvent.pathname);
-    LOG_NOTE("Event: \"%s\"", filePath.data());
-}
-
-// Tests adding a subdirectory and a file
-TEST_F(WatcherTest, AddSubDirFile)
-{
-    hycast::Watcher watcher(rootDir);
-
-    int status = ::mkdir(subDirPath.data(), 0777);
-    ASSERT_EQ(0, status);
-
-    int fd = ::open(subFilePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0666);
-    ASSERT_NE(-1, fd);
-    ::close(fd);
-
-    struct hycast::Watcher::WatchEvent watchEvent;
-    watcher.getEvent(watchEvent);
-    ASSERT_EQ(subFilePath, watchEvent.pathname);
-    LOG_NOTE("Event: \"%s\"", subFilePath.data());
+    thread.join();
 }
 
 }  // namespace

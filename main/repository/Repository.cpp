@@ -451,6 +451,16 @@ public:
         return rootPathname + "/" + name;
     }
 
+    /**
+     * Returns information on the next product to process. Blocks until one is
+     * ready.
+     *
+     * @return              Information on the next product to process
+     * @throws SystemError  System failure
+     * @threadsafety        Compatible but unsafe
+     */
+    virtual ProdInfo getNextProd() =0;
+
 #if 0
     /**
      * Performs cleanup actions. Closes product-files that haven't been accessed
@@ -481,8 +491,14 @@ public:
 
 /******************************************************************************/
 
+Repository::Repository() noexcept =default;
+
 Repository::Repository(Impl* impl) noexcept
     : pImpl(impl) {
+}
+
+Repository::operator bool() const noexcept {
+    return static_cast<bool>(pImpl);
 }
 
 SegSize Repository::getSegSize() const noexcept {
@@ -620,7 +636,7 @@ public:
     }
 
     /**
-     * Returns the index of the next product to publish. Blocks until one is
+     * Returns information on the next product to publish. Blocks until one is
      * ready. Watches the repository's directory hierarchy for new files. A
      * product-entry is created and added to the set of active product-entries.
      * for each new non-directory file in the repository's hierarchy:
@@ -629,9 +645,10 @@ public:
      * @throws SystemError  System failure
      * @threadsafety        Compatible but unsafe
      */
-    ProdIndex getNextProd()
+    ProdInfo getNextProd()
     {
-        auto prodIndex = getNextIndex();
+        ProdInfo   prodInfo{};
+        const auto prodIndex = getNextIndex();
 
         try {
             Watcher::WatchEvent event;
@@ -641,13 +658,15 @@ public:
 
             SndProdFile prodFile(rootFd, prodName, segSize);
             addProdFile(prodIndex, prodFile);
+
+            prodInfo = ProdInfo(prodIndex, prodFile.getProdSize(), prodName);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't get product-file "
                     "corresponding to product-index " + prodIndex.to_string()));
         }
 
-        return prodIndex;
+        return prodInfo;
     }
 
     /**
@@ -657,7 +676,7 @@ public:
      * @return               Corresponding product-information. Will test false
      *                       if no such information exists.
      */
-    const ProdInfo getProdInfo(const ProdIndex prodIndex)
+    ProdInfo getProdInfo(const ProdIndex prodIndex)
     {
         Guard      guard{mutex};
         const auto prodFile = getProdFile(prodIndex);
@@ -697,6 +716,7 @@ public:
 };
 
 /******************************************************************************/
+PubRepo::PubRepo() =default;
 
 PubRepo::PubRepo(
         const std::string& rootPathname,
@@ -711,7 +731,7 @@ void PubRepo::link(
     return static_cast<Impl*>(pImpl.get())->link(pathname, prodName);
 }
 
-ProdIndex PubRepo::getNextProd() const {
+ProdInfo PubRepo::getNextProd() const {
     return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
@@ -731,7 +751,6 @@ MemSeg PubRepo::getMemSeg(const SegId& segId) const {
  */
 class SubRepo::Impl final : public Repository::Impl
 {
-    Cond                       cond;          ///< Concurrency condition-variable
     std::queue<ProdInfo>       completeProds; ///< Queue of completed products
     LinkedProdMap<RcvProdFile> prodFiles;
     LinkedProdMap<RcvProdFile> openFiles;
@@ -843,56 +862,57 @@ public:
     /**
      * Saves product-information in the corresponding product-file. If the
      * resulting product becomes complete, then it will be eventually returned
-     * by `getCompleted()`.
+     * by `getNextProd()`.
      *
      * @param[in] rootFd       File descriptor open on repository's root
      *                         directory
      * @param[in] prodInfo     Product information
-     * @retval    `true`       This item completed the product
-     * @retval    `false`      This item did not complete the product
+     * @retval    `true`       This item was saved
+     * @retval    `false`      This item was not saved because it already exists
      * @throws    SystemError  System failure
-     * @see `getCompleted()`
+     * @see `getNextProd()`
      */
     bool save(const ProdInfo& prodInfo)
     {
         auto       prodFile = getProdFile(prodInfo.getProdIndex(),
                 prodInfo.getProdSize());
-        const bool bingo = prodFile.save(rootFd, prodInfo);
+        const bool wasSaved = prodFile.save(rootFd, prodInfo);
 
-        if (bingo)
+        if (wasSaved && prodFile.isComplete())
             finish(prodFile);
 
-        return bingo;
+        return wasSaved;
     }
 
     /**
      * Saves a data-segment in the corresponding product-file. If the resulting
      * product becomes complete, then it will be eventually returned by
-     * `getCompleted()`.
+     * `getNextProd()`.
      *
      * @param[in] dataSeg   Data segment
-     * @retval    `true`    This item completed the product
-     * @retval    `false`   This item did not complete the product
-     * @see `getCompleted()`
+     * @retval    `true`    This item was saved
+     * @retval    `false`   This item was not saved because it already exists
+     * @see `getNextProd()`
      */
     bool save(DataSeg& dataSeg)
     {
         auto       prodFile = getProdFile(dataSeg.getProdIndex(),
                 dataSeg.getProdSize());
-        const auto bingo = prodFile.save(dataSeg);
+        const auto wasSaved = prodFile.save(dataSeg);
 
-        if (bingo)
+        if (wasSaved && prodFile.isComplete())
             finish(prodFile);
 
-        return bingo;
+        return wasSaved;
     }
 
     /**
-     * Returns the next, completed data-product. Blocks until one is available.
+     * Returns information on the next, completed data-product. Blocks until one
+     * is available.
      *
      * @return Next, completed data-product
      */
-    ProdInfo getCompleted()
+    ProdInfo getNextProd()
     {
         Lock lock(mutex);
 
@@ -982,6 +1002,7 @@ public:
 };
 
 /******************************************************************************/
+SubRepo::SubRepo() =default;
 
 SubRepo::SubRepo(
         const std::string& rootPathname,
@@ -998,8 +1019,8 @@ bool SubRepo::save(DataSeg& dataSeg) const {
     return static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
 
-ProdInfo SubRepo::getCompleted() const {
-    return static_cast<Impl*>(pImpl.get())->getCompleted();
+ProdInfo SubRepo::getNextProd() const {
+    return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
 ProdInfo SubRepo::getProdInfo(const ProdIndex prodIndex) const {

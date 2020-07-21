@@ -1,10 +1,10 @@
 #include "config.h"
 
 #include "error.h"
+#include "Peer.h"
+
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <main/inet/SockAddr.h>
-#include <Peer.h>
 #include <mutex>
 #include <thread>
 
@@ -120,7 +120,7 @@ public:
 
     // Sender-side
     hycast::ProdInfo getProdInfo(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& remote,
             const hycast::ProdIndex actual)
     {
         EXPECT_TRUE(prodIndex == actual);
@@ -130,7 +130,7 @@ public:
 
     // Sender-side
     hycast::MemSeg getMemSeg(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& remote,
             const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
@@ -210,9 +210,9 @@ TEST_F(PeerTest, DataExchange)
     try {
         waitForState(LISTENING);
 
-        // Start the subscriber
-        hycast::NodeType nodeType{};
-        hycast::Peer     subPeer(pubAddr, nodeType, *this); // Potentially slow
+        // Start the subscriber. Potentially slow.
+        hycast::Peer     subPeer(pubAddr,
+                hycast::NodeType::NO_PATH_TO_PUBLISHER, *this);
         std::thread      subThread(subPeer);
 
         try {

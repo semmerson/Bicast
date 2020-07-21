@@ -15,6 +15,7 @@
 #include "FileUtil.h"
 
 #include "error.h"
+#include "FileUtil.h"
 
 #include <dirent.h>
 #include <libgen.h>
@@ -85,6 +86,13 @@ void ensureDir(
             throw SYSTEM_ERROR(std::string("mkdir() failure on \"") +
                     pathname + "\"");
     }
+}
+
+void ensureParent(
+        const std::string& pathname,
+        const mode_t       mode)
+{
+    ensureDir(dirPath(pathname), mode);
 }
 
 void rmDirTree(const std::string& dirPath)

@@ -26,7 +26,10 @@ namespace {
 class RepositoryTest : public ::testing::Test
 {
 protected:
-    const std::string     rootPath;
+    const std::string     testDir;
+    const std::string     rootDir;
+    std::string           prodName;
+    const std::string     filePath;
     hycast::ProdIndex     prodIndex;
     char                  memData[1000];
     const hycast::SegSize segSize;
@@ -37,22 +40,26 @@ protected:
     hycast::MemSeg        memSeg;
 
     RepositoryTest()
-        : rootPath("/tmp/Repository_test")
+        : testDir("/tmp/Repository_test")
+        , rootDir(testDir + "/repo")
+        , prodName{"foo/bar/product.dat"}
+        , filePath(testDir + "/" + prodName)
         , prodIndex{1}
         , memData{}
         , segSize{sizeof(memData)}
         , prodSize{segSize}
-        , prodInfo{prodIndex, prodSize, "foo/bar/product.dat"}
+        , prodInfo{prodIndex, prodSize, prodName}
         , segId(prodIndex, 0)
         , segInfo(segId, prodSize, segSize)
         , memSeg{segInfo, memData}
     {
-        hycast::rmDirTree(rootPath);
+        hycast::rmDirTree(testDir);
+        hycast::ensureDir(hycast::dirPath(filePath));
         ::memset(memData, 0xbd, segSize);
     }
 
     ~RepositoryTest() {
-        hycast::rmDirTree(rootPath);
+        hycast::rmDirTree(testDir);
     }
 
 public:
@@ -70,17 +77,17 @@ public:
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::PubRepo pubRepo(rootPath, segSize);
-    hycast::SubRepo subRepo(rootPath, segSize);
+    hycast::PubRepo pubRepo(rootDir, segSize);
+    hycast::SubRepo subRepo(rootDir, segSize);
 }
 
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    hycast::SubRepo repo(rootPath, segSize);
+    hycast::SubRepo repo(rootDir, segSize);
     ASSERT_FALSE(repo.getProdInfo(prodIndex));
-    ASSERT_FALSE(repo.save(prodInfo));
-    hycast::ProdInfo actual = repo.getProdInfo(prodIndex);
+    ASSERT_TRUE(repo.save(prodInfo));
+    auto actual = repo.getProdInfo(prodIndex);
     ASSERT_TRUE(actual);
     EXPECT_EQ(prodInfo, actual);
 }
@@ -88,58 +95,53 @@ TEST_F(RepositoryTest, SaveProdInfo)
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    hycast::SubRepo repo(rootPath, segSize);
+    hycast::SubRepo repo(rootDir, segSize);
 
-    ASSERT_FALSE(repo.save(prodInfo));
+    ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(memSeg));
 
-    auto prodInfo = repo.getCompleted();
+    auto prodInfo = repo.getNextProd();
     ASSERT_TRUE(prodInfo);
-    EXPECT_EQ(this->prodInfo, prodInfo);
+    EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
-    auto actualMemSeg = repo.getMemSeg(memSeg.getSegId());
-    ASSERT_TRUE(actualMemSeg);
-    ASSERT_EQ(memSeg, actualMemSeg);
+    auto actual = repo.getMemSeg(segId);
+    ASSERT_TRUE(actual);
+    ASSERT_EQ(memSeg, actual);
 }
 
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    hycast::SubRepo repo(rootPath, segSize);
+    hycast::SubRepo repo(rootDir, segSize);
 
-    ASSERT_FALSE(repo.save(memSeg));
+    ASSERT_TRUE(repo.save(memSeg));
     ASSERT_TRUE(repo.save(prodInfo));
 
-    auto prodInfo = repo.getCompleted();
+    auto prodInfo = repo.getNextProd();
     ASSERT_TRUE(prodInfo);
     EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
-    auto actualMemSeg = repo.getMemSeg(memSeg.getSegId());
-    ASSERT_TRUE(actualMemSeg);
-    ASSERT_EQ(RepositoryTest::memSeg, actualMemSeg);
+    auto actual = repo.getMemSeg(memSeg.getSegId());
+    ASSERT_TRUE(actual);
+    ASSERT_EQ(memSeg, actual);
 }
 
 // Tests creating a product and informing a publisher's repository
 TEST_F(RepositoryTest, CreatProdForSending)
 {
     // Create file
-    const std::string pathname("/tmp/Repository_test.data");
-    int               status = ::unlink(pathname.data());
-    ASSERT_TRUE(status == 0 || errno == ENOENT);
-    int               fd = ::open(pathname.data(),
-            O_WRONLY|O_CREAT|O_EXCL, 0600);
+    int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
     ASSERT_NE(-1, fd);
     ASSERT_EQ(segSize, ::write(fd, memData, segSize));
     ASSERT_EQ(0, ::close(fd));
 
     // Create the publisher's repository and tell it about the file
-    hycast::PubRepo repo(rootPath, segSize);
-    repo.link(pathname, prodInfo.getProdName());
+    hycast::PubRepo repo(rootDir, segSize);
+    repo.link(filePath, prodInfo.getProdName());
 
     // Verify repository access
     try {
-        auto prodIndex = repo.getNextProd();
-        auto prodInfo = repo.getProdInfo(prodIndex);
+        auto prodInfo = repo.getNextProd();
         ASSERT_TRUE(RepositoryTest::prodInfo == prodInfo);
         auto memSeg = repo.getMemSeg(RepositoryTest::segId);
         ASSERT_EQ(RepositoryTest::memSeg, memSeg);
@@ -148,8 +150,6 @@ TEST_F(RepositoryTest, CreatProdForSending)
         LOG_ERROR(ex, "Couldn't verify repository access");
         GTEST_FAIL();
     }
-
-    ::unlink(pathname.data());
 }
 #if 0
 #endif

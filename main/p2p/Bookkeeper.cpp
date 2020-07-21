@@ -95,7 +95,7 @@ public:
     }
 
     void requested(
-            const Peer&     peer,
+            const Peer&    peer,
             const ProdInfo prodInfo) {
         Guard guard(mutex);
         ++numRequested[peer];
@@ -145,8 +145,9 @@ PubBookkeeper::PubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
-void PubBookkeeper::requested(const Peer& peer, const ProdInfo& prodInfo)
-        const {
+void PubBookkeeper::requested(
+        const Peer&     peer,
+        const ProdInfo& prodInfo) const {
     static_cast<Impl*>(pImpl.get())->requested(peer, prodInfo);
 }
 

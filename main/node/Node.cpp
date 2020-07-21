@@ -10,13 +10,11 @@
  *      Author: Steven R. Emmerson
  */
 
-#include <node/Node.h>
 #include "config.h"
 
+#include "Node.h"
+
 #include "error.h"
-#include "McastProto.h"
-#include "P2pMgr.h"
-#include "Repository.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -30,25 +28,6 @@ namespace hycast {
  */
 class Node::Impl : public P2pSndr
 {
-    /**
-     * Executes the P2P manager.
-     */
-    void runP2p()
-    {
-        try {
-            p2pMgr();
-        }
-        catch (const std::exception& ex) {
-            Guard guard(mutex);
-            exPtr = std::make_exception_ptr(ex);
-            cond.notify_one();
-            // Not re-thrown so `std::terminate()` isn't called
-        }
-        catch (...) {
-            // Cancellation eaten so `std::terminate()` isn't called
-        }
-    }
-
 protected:
     typedef std::mutex              Mutex;
     typedef std::condition_variable Cond;
@@ -60,20 +39,18 @@ protected:
     Cond               cond;         ///< For concurrency
     P2pMgr             p2pMgr;       ///< Peer-to-peer manager
     std::thread        p2pMgrThread; ///< Thread on which P2P manager executes
-    Repository*        repo;         ///< Data-product repository
+    Repository&        repo;         ///< Data-product repository
     ExceptPtr          exPtr;        ///< Subtask exception
     bool               done;         ///< Halt requested?
-    P2pObs&            p2pObs;       ///< P2P network observer
 
     /**
      * Constructs.
      *
      * @param[in] p2pMgr  Peer-to-peer manager
-     * @param[in] repo    Data-product repository
+     * @param[in] repo    Data-product repository. Must exist for the duration.
      */
     Impl(   P2pMgr&&    p2pMgr,
-            Repository* repo,
-            P2pObs&     p2pObs)
+            Repository& repo)
         : mutex()
         , cond()
         , p2pMgr(p2pMgr)
@@ -81,17 +58,31 @@ protected:
         , repo(repo)
         , exPtr()
         , done(false)
-        , p2pObs(p2pObs)
     {}
 
-    void handleException(const ExceptPtr& ptr)
+    void setException(const std::exception& ex)
     {
         Guard guard(mutex);
 
         if (!exPtr) {
-            exPtr = ptr;
+            exPtr = std::make_exception_ptr(ex);
             cond.notify_one();
         }
+    }
+
+    /**
+     * Waits until this instance should stop. Rethrows subtask exception if
+     * appropriate.
+     */
+    void waitUntilDone()
+    {
+        Lock lock(mutex);
+
+        while (!done && !exPtr)
+            cond.wait(lock);
+
+        if (!done && exPtr)
+            std::rethrow_exception(exPtr);
     }
 
     void startP2pMgr() {
@@ -103,14 +94,6 @@ protected:
             p2pMgr.halt();
             p2pMgrThread.join();
         }
-    }
-
-    void waitUntilDone()
-    {
-        Lock lock(mutex);
-
-        while (!done && !exPtr)
-            cond.wait(lock);
     }
 
 public:
@@ -137,27 +120,78 @@ public:
         cond.notify_one();
     }
 
+    /*
     void peerAdded(Peer peer) {
         p2pObs.peerAdded(peer);
     }
+    */
 
     ProdInfo getProdInfo(ProdIndex prodIndex)
     {
-        return repo->getProdInfo(prodIndex);
+        return repo.getProdInfo(prodIndex);
     }
 
     MemSeg getMemSeg(const SegId& segId)
     {
-        return repo->getMemSeg(segId);
+        return repo.getMemSeg(segId);
+    }
+
+    /**
+     * Links to a file (which could be a directory) that's outside the
+     * repository. All regular files will be published.
+     *
+     * @param[in] pathname       Absolute pathname (with no trailing '/') of the
+     *                           file or directory to be linked to
+     * @param[in] prodName       Product name if the pathname references a file
+     *                           and Product name prefix if the pathname
+     *                           references a directory
+     * @throws LogicError        This instance doesn't support such linking
+     * @throws InvalidArgument  `pathname` is empty or a relative pathname
+     * @throws InvalidArgument  `prodName` is invalid
+     */
+    virtual void link(
+            const std::string& pathname,
+            const std::string& prodName) =0;
+
+private:
+    /**
+     * Executes the P2P manager.
+     */
+    void runP2p()
+    {
+        try {
+            p2pMgr();
+        }
+        catch (const std::exception& ex) {
+            setException(ex);
+        }
+        catch (...) {
+            LOG_DEBUG("Thread cancelled");
+            throw;
+        }
     }
 };
+
+Node::Node(std::shared_ptr<Impl> pImpl)
+    : pImpl{pImpl}
+{}
+
+Node::~Node() =default;
+
+void Node::operator()() const {
+    pImpl->operator()();
+}
+
+void Node::halt() const {
+    pImpl->halt();
+}
 
 /******************************************************************************/
 
 /**
  * Implementation of a publisher of data-products.
  */
-class Publisher final : public Node::Impl
+class Publisher::Impl final : public Node::Impl
 {
     McastSndr          mcastSndr;
     PubRepo            repo;
@@ -167,23 +201,39 @@ class Publisher final : public Node::Impl
     /**
      * Sends product-information.
      *
-     * @param[in] prodInfo  Product-information to be sent
+     * @param[in] prodInfo      Product-information to be sent
+     * @throws    RuntimeError  Couldn't send
      */
     void send(const ProdInfo& prodInfo)
     {
-        mcastSndr.multicast(prodInfo);
-        p2pMgr.notify(prodInfo.getProdIndex());
+        try {
+            mcastSndr.multicast(prodInfo);
+            p2pMgr.notify(prodInfo.getProdIndex());
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Exception thrown: %s", ex.what());
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send "
+                    "product-information " + prodInfo.to_string()));
+        }
     }
 
     /**
      * Sends a data-segment
      *
-     * @param[in] memSeg  Data-segment to be sent
+     * @param[in] memSeg        Data-segment to be sent
+     * @throws    RuntimeError  Couldn't send
      */
     void send(const MemSeg& memSeg)
     {
-        mcastSndr.multicast(memSeg);
-        p2pMgr.notify(memSeg.getSegId());
+        try {
+            mcastSndr.multicast(memSeg);
+            p2pMgr.notify(memSeg.getSegId());
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Exception thrown: %s", ex.what());
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send data-segment " +
+                    memSeg.to_string()));
+        }
     }
 
     /**
@@ -193,14 +243,13 @@ class Publisher final : public Node::Impl
     {
         try {
             for (;;) {
-                auto prodIndex = repo.getNextProd();
+                auto prodInfo = repo.getNextProd();
 
                 // Send product-information
-                auto prodInfo = repo.getProdInfo(prodIndex);
-                // TODO: Test for valid `prodInfo`
                 send(prodInfo);
 
                 // Send data-segments
+                auto prodIndex = prodInfo.getProdIndex();
                 auto prodSize = prodInfo.getProdSize();
                 for (ProdSize offset = 0; offset < prodSize; offset += segSize)
                     // TODO: Test for valid segment
@@ -208,18 +257,16 @@ class Publisher final : public Node::Impl
             }
         }
         catch (const std::exception& ex) {
-            Guard guard(mutex);
-            exPtr = std::make_exception_ptr(ex);
-            cond.notify_one();
-            // Not re-thrown so `std::terminate()` isn't called
+            setException(ex);
         }
         catch (...) {
-            // Cancellation eaten so `std::terminate()` isn't called
+            LOG_DEBUG("Thread cancelled");
+            throw;
         }
     }
 
     void startSender() {
-        sendThread = std::thread(&Publisher::runSender, this);
+        sendThread = std::thread(&Impl::runSender, this);
     }
 
     void stopSender() {
@@ -235,17 +282,14 @@ public:
      *
      * @param[in] p2pInfo  Information about the local P2P server
      * @param[in] grpAddr  Destination address for multicast products
-     * @param[in] repoDir  Pathname of root directory of repository
-     * @param[in] p2pObs   Observer of the P2P network
+     * @param[in] repo     Publisher's repository
      */
-    Publisher(
-            P2pInfo&           p2pInfo,
-            const SockAddr&    grpAddr,
-            const std::string& repoDir,
-            P2pObs&            p2pObs)
-        : Node::Impl(P2pMgr(p2pInfo, *this), &repo, p2pObs)
+    Impl(   P2pInfo&        p2pInfo,
+            const SockAddr& grpAddr,
+            PubRepo&        repo)
+        : Node::Impl(P2pMgr(p2pInfo, *this), repo)
         , mcastSndr{UdpSock(grpAddr)}
-        , repo(repoDir)
+        , repo(repo)
         , segSize{repo.getSegSize()}
         , sendThread()
     {
@@ -255,7 +299,7 @@ public:
     /**
      * Destroys.
      */
-    ~Publisher() noexcept
+    ~Impl()
     {
         Guard guard(mutex);
 
@@ -269,7 +313,7 @@ public:
      * Executes this instance. A P2P manager is executed and the repository is
      * watched for new data-products to be sent.
      */
-    void operator()() {
+    void operator()() override {
         startP2pMgr();
 
         try {
@@ -287,21 +331,57 @@ public:
             stopP2pMgr();
         } // P2P manager started
         catch (const std::exception& ex) {
+            LOG_DEBUG("Exception thrown: %s", ex.what());
             stopP2pMgr();
             throw;
         }
+    }
 
-        if (!done && exPtr)
-            std::rethrow_exception(exPtr);
+    /**
+     * Links to a file (which could be a directory) that's outside the
+     * repository. All regular files will be published.
+     *
+     * @param[in] pathname       Absolute pathname (with no trailing '/') of the
+     *                           file or directory to be linked to
+     * @param[in] prodName       Product name if the pathname references a file
+     *                           and Product name prefix if the pathname
+     *                           references a directory
+     * @throws LogicError        This instance doesn't support such linking
+     * @throws InvalidArgument  `pathname` is empty or a relative pathname
+     * @throws InvalidArgument  `prodName` is invalid
+     */
+    void link(
+            const std::string& pathname,
+            const std::string& prodName) {
+        repo.link(pathname, prodName);
     }
 };
+
+Publisher::Publisher(
+        P2pInfo&        p2pInfo,
+        const SockAddr& grpAddr,
+        PubRepo&        repo)
+    : Node{std::make_shared<Impl>(p2pInfo,  grpAddr, repo)} {
+}
+
+void Publisher::link(
+        const std::string& pathname,
+        const std::string& prodName) {
+    pImpl->link(pathname, prodName);
+}
+
+#if 0
+void Publisher::operator ()() const {
+    pImpl->operator()();
+}
+#endif
 
 /******************************************************************************/
 
 /**
  * Implementation of a subscriber of data-products.
  */
-class Subscriber final : public Node::Impl, public P2pSub, public McastSub
+class Subscriber::Impl final : public Node::Impl, public P2pSub, public McastSub
 {
     McastRcvr                  mcastRcvr;
     SubRepo                    repo;
@@ -317,12 +397,12 @@ class Subscriber final : public Node::Impl, public P2pSub, public McastSub
             mcastRcvr();
         }
         catch (const std::exception& ex) {
-            handleException(std::current_exception());
+            setException(ex);
         }
     }
 
     void startMcastRcvr() {
-        mcastThread = std::thread(&Subscriber::runMcast, this);
+        mcastThread = std::thread(&Impl::runMcast, this);
     }
 
     void stopMcastRcvr() {
@@ -342,16 +422,13 @@ public:
      * @param[in,out] repo          Data-product repository
      * @param[in]     rcvrObs       Observer of this instance
      */
-    Subscriber(
-            const SrcMcastAddrs& srcMcastInfo,
+    Impl(   const SrcMcastAddrs& srcMcastInfo,
             P2pInfo&             p2pInfo,
             ServerPool&          p2pSrvrPool,
-            const std::string&   repoDir,
-            const SegSize        segSize,
-            P2pObs&              p2pObs)
-        : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), &repo, p2pObs)
+            SubRepo&             repo)
+        : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), repo)
         , mcastRcvr{srcMcastInfo, *this}
-        , repo(repoDir, segSize)
+        , repo(repo)
         , mcastThread{}
         , numUdpOrig{0}
         , numTcpOrig{0}
@@ -365,8 +442,7 @@ public:
      *
      * @see `halt()`
      */
-    void operator()()
-    {
+    void operator()() override {
         startMcastRcvr();
 
         try {
@@ -380,22 +456,21 @@ public:
                         numUdpOrig.load(), numTcpOrig.load(),
                         numUdpDup.load(), numTcpDup.load());
 
-                stopP2pMgr();
+                stopP2pMgr(); // Idempotent
             } // P2P manager started
             catch (const std::exception& ex) {
-                stopP2pMgr();
+                LOG_DEBUG("Exception thrown: %s", ex.what());
+                stopP2pMgr(); // Idempotent
                 throw;
             }
 
-            stopMcastRcvr();
+            stopMcastRcvr(); // Idempotent
         } // Multicast receiver started
         catch (const std::exception& ex) {
-            stopMcastRcvr();
+            LOG_DEBUG("Exception thrown: %s", ex.what());
+            stopMcastRcvr(); // Idempotent
             throw;
         }
-
-        if (!done && exPtr)
-            std::rethrow_exception(exPtr);
     }
 
     /**
@@ -462,6 +537,7 @@ public:
      */
     bool hereIsMcast(const ProdInfo& prodInfo)
     {
+        LOG_DEBUG("Saving product-information " + prodInfo.to_string());
         const bool saved = repo.save(prodInfo);
         if (saved) {
             ++numUdpOrig;
@@ -482,6 +558,7 @@ public:
      */
     bool hereIsP2p(const ProdInfo& prodInfo)
     {
+        LOG_DEBUG("Saving product-information " + prodInfo.to_string());
         const bool saved = repo.save(prodInfo);
         saved ? ++numTcpOrig : ++numTcpDup;
         return saved;
@@ -494,8 +571,9 @@ public:
      * @retval    `false`  Data-segment is old
      * @retval    `true`   Data-segment is new
      */
-    bool hereIs(UdpSeg& udpSeg)
+    bool hereIsMcast(UdpSeg& udpSeg)
     {
+        LOG_DEBUG("Saving data-segment " + udpSeg.getSegId().to_string());
         const bool saved = repo.save(udpSeg);
         if (saved) {
             ++numUdpOrig;
@@ -514,41 +592,40 @@ public:
      * @retval    `false`  Data-segment is old
      * @retval    `true`   Data-segment is new
      */
-    bool hereIs(TcpSeg& tcpSeg)
+    bool hereIsP2p(TcpSeg& tcpSeg)
     {
+        LOG_DEBUG("Saving data-segment " + tcpSeg.getSegId().to_string());
         const bool saved = repo.save(tcpSeg);
         saved ? ++numTcpOrig : ++numTcpDup;
         return saved;
+    }
+
+    /**
+     * Throws an exception.
+     *
+     * @throws LogicError        This instance doesn't support linking
+     */
+    void link(
+            const std::string& pathname,
+            const std::string& prodName) {
+        throw LOGIC_ERROR("Unsupported operation");
     }
 };
 
 /******************************************************************************/
 
-Node::Node(
-        P2pInfo&           p2pInfo,
-        const SockAddr&    grpAddr,
-        const std::string& repoDir,
-        P2pObs&            p2pObs)
-    : pImpl{new Publisher(p2pInfo,  grpAddr, repoDir, p2pObs)} {
-}
-
-Node::Node(
+Subscriber::Subscriber(
         const SrcMcastAddrs& srcMcastInfo,
         P2pInfo&             p2pInfo,
         ServerPool&          p2pSrvrPool,
-        const std::string&   repoDir,
-        const SegSize        segSize,
-        P2pObs&              p2pObs)
-    : pImpl{new Subscriber(srcMcastInfo, p2pInfo, p2pSrvrPool, repoDir,
-            segSize, p2pObs)} {
+        SubRepo&             repo)
+    : Node{std::make_shared<Impl>(srcMcastInfo, p2pInfo, p2pSrvrPool, repo)} {
 }
 
-void Node::operator()() const {
+#if 0
+void Subscriber::operator ()() const {
     pImpl->operator()();
 }
-
-void Node::halt() const {
-    pImpl->halt();
-}
+#endif
 
 } // namespace

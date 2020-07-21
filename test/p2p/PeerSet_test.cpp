@@ -147,7 +147,7 @@ public:
 
     // Publisher-side
     hycast::ProdInfo getProdInfo(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& remote,
             const hycast::ProdIndex actual)
     {
         EXPECT_TRUE(prodIndex == actual);
@@ -157,7 +157,7 @@ public:
 
     // Publisher-side
     hycast::MemSeg getMemSeg(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& remote,
             const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);

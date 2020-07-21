@@ -42,7 +42,7 @@ protected:
     typedef uint16_t                MsgIdType;
 
     AtomicFlag    executing;
-    ExceptPtr     exceptPtr;
+    ExceptPtr     exPtr;
     mutable Mutex doneMutex;
     mutable Cond  doneCond;
     TcpSock       noteSock;       ///< For exchanging notices
@@ -50,7 +50,7 @@ protected:
     std::string   string;         ///< `to_string()` string
     PortPool      portPool;       ///< Pool of ports for temporary servers
     SendPeer&     sendPeer;       ///< Sending peer
-    bool          haltRequested;  ///< Halt requested?
+    bool          done;           ///< Halt requested or exception thrown?
     std::thread   rcvReqstThread; ///< Requests received and processed
     NodeType      lclNodeType;    ///< Type of local node
     NodeType      rmtNodeType;    ///< Type of remote node
@@ -81,15 +81,30 @@ protected:
         rmtNodeType = static_cast<NodeType>(typeInt);
     }
 
-    void handleExcept(const ExceptPtr& exPtr)
+    void setExcept(const std::exception& ex)
     {
         Guard guard(doneMutex);
 
-        if (!exceptPtr) {
+        if (!exPtr) {
             LOG_DEBUG("Setting exception");
-            exceptPtr = exPtr;
+            exPtr = std::make_exception_ptr(ex);
             doneCond.notify_all();
         }
+    }
+
+    /**
+     * Waits until this instance is done. Rethrows subtask exception if
+     * appropriate.
+     */
+    void waitUntilDone()
+    {
+        Lock lock(doneMutex);
+
+        while (!done && !exPtr)
+            doneCond.wait(lock);
+
+        if (!done && exPtr)
+            std::rethrow_exception(exPtr);
     }
 
     bool recvProdReq()
@@ -172,7 +187,7 @@ protected:
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught exception \"%s\"", ex.what());
-            handleExcept(std::current_exception());
+            setExcept(ex);
         }
         catch (...) {
             LOG_DEBUG("Caught exception ...");
@@ -211,16 +226,6 @@ protected:
     }
 
     virtual void startTasks() =0;
-
-    void waitUntilDone()
-    {
-        Lock lock(doneMutex);
-
-        while (!haltRequested && !exceptPtr)
-            doneCond.wait(lock);
-
-        LOG_DEBUG("PeerProto should stop");
-    }
 
     /**
      * Idempotent.
@@ -294,7 +299,7 @@ public:
             const NodeType lclNodeType,
             SendPeer&      peer)
         : executing{false}
-        , exceptPtr{}
+        , exPtr{}
         , doneMutex{}
         , doneCond{}
         , noteSock(sock)
@@ -302,7 +307,7 @@ public:
         , string{}
         , portPool{portPool}
         , sendPeer(peer)
-        , haltRequested{false}
+        , done{false}
         , rcvReqstThread{}
         , lclNodeType{lclNodeType}
         , rmtNodeType{}
@@ -347,7 +352,7 @@ public:
             const NodeType lclNodeType,
             SendPeer&      peer)
         : executing{false}
-        , exceptPtr{}
+        , exPtr{}
         , doneMutex{}
         , doneCond{}
         , noteSock(sock)
@@ -355,7 +360,7 @@ public:
         , string{}
         , portPool{}
         , sendPeer(peer)
-        , haltRequested{false}
+        , done{false}
         , rcvReqstThread{}
         , lclNodeType{lclNodeType}
         , rmtNodeType{}
@@ -415,10 +420,6 @@ public:
                 waitUntilDone();
                 stopTasks(); // Idempotent
                 disconnect(); // Idempotent
-
-                Guard guard{doneMutex};
-                if (!haltRequested && exceptPtr)
-                    std::rethrow_exception(exceptPtr);
             }
             catch (...) {
                 stopTasks(); // Idempotent
@@ -443,7 +444,7 @@ public:
 
         LOG_DEBUG("Halt requested");
 
-        haltRequested = true;
+        done = true;
         doneCond.notify_all();
     }
 
@@ -643,7 +644,7 @@ public:
     PubPeerProto(
             TcpSock&  sock,
             PortPool& portPool,
-            SendPeer&  peer)
+            SendPeer& peer)
         : PeerProto::Impl(sock, portPool, NodeType::PUBLISHER, peer)
     {}
 
@@ -785,7 +786,7 @@ protected:
             halt();
         }
         catch (const std::exception& ex) {
-            handleExcept(std::current_exception());
+            setExcept(ex);
         }
     }
 
@@ -850,7 +851,7 @@ protected:
         TcpSeg  seg{segInfo, clntSock};
         int     cancelState;
 
-        LOG_DEBUG("Received data-segment " + seg.to_string());
+        LOG_DEBUG("Received data-segment " + seg.getSegId().to_string());
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
             recvPeer.hereIs(seg);
@@ -891,7 +892,7 @@ protected:
             halt();
         }
         catch (const std::exception& ex) {
-            handleExcept(std::current_exception());
+            setExcept(ex);
         }
     }
 

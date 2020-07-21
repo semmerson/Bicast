@@ -43,30 +43,45 @@ public:
 
     void multicast(const ProdInfo& prodInfo)
     {
-        LOG_DEBUG("Multicasting product-information %s on socket %s",
-                prodInfo.to_string().data(), sock.to_string().data());
+        LOG_DEBUG("Multicasting product-information " + prodInfo.to_string());
 
-        sock.addWrite(prodInfoId);
-        const std::string& name = prodInfo.getProdName();
-        sock.addWrite(static_cast<SegSize>(name.length()));
-        sock.addWrite(prodInfo.getProdIndex().getValue());
-        sock.addWrite(prodInfo.getProdSize());
-        sock.addWrite(name.data(), name.length());
-        sock.write();
+        try {
+            sock.addWrite(prodInfoId);
+            const std::string& name = prodInfo.getProdName();
+            sock.addWrite(static_cast<SegSize>(name.length()));
+            sock.addWrite(prodInfo.getProdIndex().getValue());
+            sock.addWrite(prodInfo.getProdSize());
+            sock.addWrite(name.data(), name.length());
+            sock.write();
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't multicast "
+                    "product-information " + prodInfo.to_string()));
+        }
     }
 
+    /**
+     * @param[in] seg           Data-segment
+     * @throws    RuntimeError  Couldn't multicast data-segment
+     */
     void multicast(const MemSeg& seg)
     {
-        LOG_DEBUG("Multicasting data-segment %s on socket %s",
-                seg.to_string().data(), sock.to_string().data());
+        LOG_DEBUG("Multicasting data-segment " + seg.getSegId().to_string());
 
-        sock.addWrite(dataSegId);
-        sock.addWrite(seg.getSegSize());
-        sock.addWrite(seg.getProdIndex().getValue());
-        sock.addWrite(seg.getProdSize());
-        sock.addWrite(seg.getSegOffset());
-        sock.addWrite(seg.data(), seg.getSegSize());
-        sock.write();
+        try {
+            sock.addWrite(dataSegId);
+            sock.addWrite(seg.getSegSize());
+            sock.addWrite(seg.getProdIndex().getValue());
+            sock.addWrite(seg.getProdSize());
+            sock.addWrite(seg.getSegOffset());
+            sock.addWrite(seg.data(), seg.getSegSize());
+            sock.write();
+        }
+        catch (const std::exception& ex) {
+            LOG_DEBUG("Exception thrown: %s", ex.what());
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't multicast "
+                    "data-segment " + seg.getSegId().to_string()));
+        }
     }
 };
 
@@ -152,7 +167,7 @@ class McastRcvr::Impl
 
         UdpSeg udpSeg{SegInfo{SegId{prodIndex, segOffset}, prodSize, segSize},
                 sock};
-        mcastSub->hereIs(udpSeg);
+        mcastSub->hereIsMcast(udpSeg);
         sock.discard();
 
         return true;

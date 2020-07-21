@@ -32,10 +32,20 @@ protected:
 
     std::shared_ptr<Impl> pImpl;
 
+    Repository() noexcept;
+
     Repository(Impl* impl) noexcept;
 
 public:
     virtual ~Repository() =default;
+
+    /**
+     * Indicates if this instance is valid (i.e., not default constructed).
+     *
+     * @retval `true`   This instance is valid
+     * @retval `false`  This instance is not valid
+     */
+    operator bool() const noexcept;
 
     /**
      * Returns the size of a canonical data-segment in bytes.
@@ -53,6 +63,16 @@ public:
      * @cancellationpoint  No
      */
     const std::string& getRootDir() const noexcept;
+
+    /**
+     * Returns information on the next product to process. Blocks until one is
+     * ready.
+     *
+     * @return              Information on the next product to process
+     * @throws SystemError  System failure
+     * @threadsafety        Compatible but unsafe
+     */
+    virtual ProdInfo getNextProd() const =0;
 
     /**
      * Returns information on a product.
@@ -93,6 +113,11 @@ class PubRepo final : public Repository
 
 public:
     /**
+     * Default constructs. The resulting instance will test false.
+     */
+    PubRepo();
+
+    /**
      * Constructs.
      *
      * @param[in] root          Pathname of the root of the repository
@@ -101,7 +126,7 @@ public:
      *                          simultaneously
      */
     PubRepo(const std::string& root,
-            SegSize            segSize = 1460, // Max 4-byte UDP payload
+            SegSize            segSize = 1444, // Max 4-byte UDP data-segment
             size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
 
     /**
@@ -121,9 +146,9 @@ public:
      * Returns the index of the next product to publish. Blocks until one is
      * ready.
      *
-     * @return Index of next product to publish
+     * @return Information on the next product to publish
      */
-    ProdIndex getNextProd() const;
+    ProdInfo getNextProd() const;
 
     /**
      * Returns information on a product.
@@ -164,6 +189,11 @@ class SubRepo final : public Repository
 
 public:
     /**
+     * Default constructs. The resulting instance will test false.
+     */
+    SubRepo();
+
+    /**
      * Constructs.
      *
      * @param[in] rootPathname  Pathname of the root of the repository
@@ -172,15 +202,15 @@ public:
      *                          simultaneously
      */
     SubRepo(const std::string& rootPathname,
-            SegSize            segSize,
+            SegSize            segSize = 1444, // Max 4-byte UDP data-segment
             size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
 
     /**
      * Saves product-information in the corresponding product-file.
      *
      * @param[in] prodInfo  Product information
-     * @retval    `true`    This item completed the product
-     * @retval    `false`   This item did not complete the product
+     * @retval    `true`    This item was saved
+     * @retval    `false`   This item was not saved because it already exists
      * @threadsafety        Safe
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   No
@@ -191,8 +221,8 @@ public:
      * Saves a data-segment in the corresponding product-file.
      *
      * @param[in] dataSeg  Data-segment
-     * @retval    `true`   This item completed the product
-     * @retval    `false`  This item did not complete the product
+     * @retval    `true`   This item was saved
+     * @retval    `false`  This item was not saved because it already exists
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
@@ -200,11 +230,12 @@ public:
     bool save(DataSeg& dataSeg) const;
 
     /**
-     * Returns the next, completed data-product. Blocks until one is available.
+     * Returns information on the next completed data-product. Blocks until one
+     * is available.
      *
-     * @return Next, completed data-product
+     * @return Information on the next completed data-product
      */
-    ProdInfo getCompleted() const;
+    ProdInfo getNextProd() const;
 
     /**
      * Returns information on a product.

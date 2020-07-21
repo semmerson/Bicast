@@ -41,7 +41,7 @@ class Watcher::Impl final
     /// inotify(7) event-buffer
     union {
         struct inotify_event event; ///< For alignment
-        char                 buf[10*(sizeof(struct inotify_event)+NAME_MAX+1)];
+        char                 buf[100*(sizeof(struct inotify_event)+NAME_MAX+1)];
     }           eventBuf;
     char*       nextEvent;   ///< Next event to access in event-buffer
     char*       endEvent;    ///< End of events in event-buffer
@@ -114,19 +114,25 @@ class Watcher::Impl final
         try {
             DIR* const dirStream = ::opendir(dirPath.data());
 
-            if (dirStream == NULL)
+            if (dirStream == nullptr)
                 throw SYSTEM_ERROR(std::string("Couldn't open directory \"") +
                         dirPath + "\"");
             try {
-                for (struct dirent* fileEntry;;) {
-                    errno = 0; // readdir() returns NULL on both EOF and error
-                    if ((fileEntry = ::readdir(dirStream)) == NULL)
-                        break;
+                struct dirent  fileEntry;
+                struct dirent* entry = &fileEntry;
 
-                    if (::strcmp(fileEntry->d_name, ".") &&
-                            ::strcmp(fileEntry->d_name, "..")) {
+                for (;;) {
+                    int status = ::readdir_r(dirStream, entry, &entry);
+
+                    if (status)
+                        throw SYSTEM_ERROR("readdir_r() failure", status);
+                    if (entry == NULL)
+                        break; // End of directory stream
+
+                    if (::strcmp(entry->d_name, ".") &&
+                            ::strcmp(entry->d_name, "..")) {
                         const std::string pathname(dirPath + "/" +
-                                fileEntry->d_name);
+                                entry->d_name);
 
                         if (isDir(pathname)) {
                             watch(pathname, addRegFiles);
@@ -136,16 +142,14 @@ class Watcher::Impl final
                         }
                     }
                 }
-                if (errno)
-                    throw SYSTEM_ERROR("readdir() failure");
 
                 ::closedir(dirStream);
-            } // `stream` is open
+            } // `dirStream` is open
             catch (const std::exception& ex) {
                 ::closedir(dirStream);
                 throw;
             }
-        } // `wd`, `dirpaths[wd]`, and `wds[dir]` are set
+        } // `wd`, `dirPaths[wd]`, and `wds[dir]` are set
         catch (const std::exception& ex) {
             (void)inotify_rm_watch(fd, wd);
             dirPaths.erase(wd);
@@ -155,61 +159,59 @@ class Watcher::Impl final
     }
 
     /**
-     * Returns the pathname of the next next link or closed regular-file if
-     * appropriate. Reads the `inotify(7)` file-descriptor if necessary. If the
-     * next file is a directory, then `watch()` is called and pre-existing links
-     * and regular files are added to `regFiles`. Follows symbolic links. The
-     * returned pathname will have the pathname given to the constructor as a
-     * prefix.
+     * Adds pathnames of new files to be transmitted. Reads the `inotify(7)`
+     * file-descriptor. Recurses into new directories. Follows symbolic links.
+     * Blocks. Upon return, `regFiles.empty()` will be false.
      *
-     * @param[out] filePath  Pathname of link or closed, regular file
-     * @retval     `true`    Next event satisfied criteria. `filePath` is set.
-     * @retval     `false`   Next event didn't satisfy criteria. Try again.
-     *                       `filePath` is not set.
-     * @threadsafety         Unsafe
+     * @threadsafety Unsafe
+     * @throws       RuntimeError  A watched file-system was unmounted
+     * @throws       RuntimeError  The inotify(7) event-queue overflowed
      */
-    bool getNextEventPath(std::string& filePath)
+    void addNewFiles()
     {
-        if (nextEvent >= endEvent) {
-            // Blocks
-            ssize_t nbytes = ::read(fd, eventBuf.buf, sizeof(eventBuf));
+        do {
+            if (nextEvent >= endEvent) {
+                // Blocks
+                ssize_t nbytes = ::read(fd, eventBuf.buf, sizeof(eventBuf));
 
-            if (nbytes == -1)
-                throw SYSTEM_ERROR("Couldn't read inotify file-descriptor");
+                if (nbytes == -1)
+                    throw SYSTEM_ERROR("Couldn't read inotify(7) "
+                            "file-descriptor");
 
-            nextEvent = eventBuf.buf;
-            endEvent = eventBuf.buf + nbytes;
-        }
+                nextEvent = eventBuf.buf;
+                endEvent = eventBuf.buf + nbytes;
+            }
 
-        struct inotify_event* event =
-                reinterpret_cast<struct inotify_event*>(nextEvent);
-        nextEvent += sizeof(struct inotify_event) + event->len;
+            while (nextEvent < endEvent) {
+                struct inotify_event* event =
+                        reinterpret_cast<struct inotify_event*>(nextEvent);
+                nextEvent += sizeof(struct inotify_event) + event->len;
 
-        if (event->mask & IN_UNMOUNT)
-            throw RUNTIME_ERROR("Watched file-system was unmounted");
-        if (event->mask & IN_Q_OVERFLOW)
-            throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
+                if (event->mask & IN_UNMOUNT)
+                    throw RUNTIME_ERROR("Watched file-system was unmounted");
+                if (event->mask & IN_Q_OVERFLOW)
+                    throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
 
-        const std::string pathname = dirPaths.at(event->wd) + "/" + event->name;
-        bool              success = false; // true => link or closed reg file
+                const std::string pathname = dirPaths.at(event->wd) + "/" +
+                        event->name;
+                bool              success = false; // true => link or closed reg file
 
-        if (event->mask & IN_DELETE_SELF) { // Only directories are watched
-            inotify_rm_watch(fd, event->wd);
-            dirPaths.erase(event->wd);
-            wds.erase(pathname);
-        }
-        else if (isDir(pathname)) {
-            watch(pathname, true); // Might add to `regFiles`
-        }
-        else if (isLink(pathname)
-                ? (event->mask & IN_CREATE)
-                : (event->mask & IN_CLOSE_WRITE)) {
-            // `pathname` is link or closed regular file
-            filePath = pathname;
-            success = true;
-        }
-
-        return success;
+                if (event->mask & IN_DELETE_SELF) { // Only directories are watched
+                    ::inotify_rm_watch(fd, event->wd);
+                    dirPaths.erase(event->wd);
+                    wds.erase(pathname);
+                }
+                else if (event->mask & IN_ISDIR) {
+                    watch(pathname, true); // Might add to `regFiles`
+                }
+                else if (isLink(pathname)
+                        ? (event->mask & IN_CREATE)
+                        : (event->mask & IN_CLOSE_WRITE)) {
+                    // `pathname` is link or closed regular file
+                    regFiles.push(pathname);
+                }
+            } // While event-buffer needs processing
+        } while (regFiles.empty());
     }
 
 public:
@@ -254,16 +256,11 @@ public:
      */
     void getEvent(WatchEvent& watchEvent)
     {
-        for (;;) {
-            if (!regFiles.empty()) {
-                watchEvent.pathname = regFiles.front();
-                regFiles.pop();
-                break;
-            }
-            else if (getNextEventPath(watchEvent.pathname)) {
-                break;
-            }
-        }
+        if (regFiles.empty())
+            addNewFiles();
+
+        watchEvent.pathname = regFiles.front();
+        regFiles.pop();
     }
 };
 

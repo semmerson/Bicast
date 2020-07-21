@@ -428,19 +428,6 @@ class RcvProdFile::Impl final : public ProdFile::Impl
         return buf;
     }
 
-    /**
-     * Indicates if the product is complete.
-     *
-     * @pre             State is locked
-     * @retval `true`   Product is complete
-     * @retval `false`  Product is not complete
-     */
-    bool isComplete() const
-    {
-        assert(!mutex.try_lock());
-        return pathIsName && (segCount == numSegs);
-    }
-
 public:
     /**
      * Constructs. The instance is open.
@@ -479,13 +466,27 @@ public:
     }
 
     /**
+     * Indicates if the product is complete.
+     *
+     * @pre             State is locked
+     * @retval `true`   Product is complete
+     * @retval `false`  Product is not complete
+     */
+    bool isComplete() const
+    {
+        Guard guard{mutex};
+        return pathIsName && (segCount == numSegs);
+    }
+
+    /**
      * Saves product-information.
      *
      * @param[in] rootFd       File descriptor open on repository's root
      *                         directory
      * @param[in] prodInfo     Product information to be saved
-     * @retval    `true`       This item completed the product
-     * @retval    `false`      This item did not complete the product
+     * @retval    `true`       This item was written to the product-file
+     * @retval    `false`      This item is already in the product-file and was
+     *                         not written
      * @throws    SystemError  Couldn't save product information
      */
     bool save(
@@ -493,7 +494,7 @@ public:
             const ProdInfo& prodInfo) {
         assert(fd >= 0);
 
-        bool  bingo; // This item completed the product?
+        bool  wasSaved; // This item was written to the product-file?
         Guard guard(mutex);
 
         ProdInfo expected(prodIndex, prodSize, prodInfo.getProdName());
@@ -502,7 +503,7 @@ public:
                     ", doesn't match expected, " + expected.to_string());
 
         if (pathIsName) {
-            bingo = false;
+            wasSaved = false;
         }
         else {
             LOG_DEBUG("Saving product-information " + prodInfo.to_string());
@@ -518,10 +519,10 @@ public:
 
             this->pathname = prodName;
             pathIsName = true;
-            bingo = isComplete();
+            wasSaved = true;
         }
 
-        return bingo;
+        return wasSaved;
     }
 
     /**
@@ -529,8 +530,9 @@ public:
      *
      * @pre                        Instance is open
      * @param[in] seg              Data-segment to be saved
-     * @retval    `true`           This item completed the product
-     * @retval    `false`          This item did not complete the product
+     * @retval    `true`           This item was written to the product-file
+     * @retval    `false`          This item is already in the product-file and
+     *                             was not written
      * @throws    InvalidArgument  Segment is invalid
      */
     bool save(DataSeg& seg) {
@@ -547,11 +549,13 @@ public:
                     "have " + std::to_string(expectSize) + " data-bytes");
 
         ProdSize iSeg = segIndex(offset);
-        bool     exists;
+        bool     wasSaved; // This item was written to the product-file?
         {
-            Guard      guard(mutex);
-            exists = haveSegs[iSeg];
-            if (exists) {
+            Guard guard(mutex);
+
+            wasSaved = !haveSegs[iSeg];
+
+            if (!wasSaved) {
                 LOG_WARN("Duplicate data segment: " + seg.to_string());
             }
             else {
@@ -559,23 +563,18 @@ public:
             }
         }
 
-        bool bingo; // This item completed the product?
-        if (exists) {
-            bingo = false;
-        }
-        else {
+        if (wasSaved) {
             // Setting data outside mutex supports concurrent data-setting
-            LOG_DEBUG("Saving data-segment " + seg.to_string());
+            LOG_DEBUG("Saving data-segment " + seg.getSegId().to_string());
 
             seg.getData(data+offset); // Potentially slow
             {
                 Guard guard(mutex);
                 ++segCount;
-                bingo = isComplete();
             }
         }
 
-        return bingo;
+        return wasSaved;
     }
 
     ProdInfo getProdInfo() {
@@ -602,6 +601,10 @@ void RcvProdFile::open(const int rootFd) const {
 bool
 RcvProdFile::exists(const ProdSize offset) const {
     return static_cast<Impl*>(pImpl.get())->exists(offset);
+}
+
+bool RcvProdFile::isComplete() const {
+    return static_cast<Impl*>(pImpl.get())->isComplete();
 }
 
 bool

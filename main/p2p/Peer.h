@@ -18,6 +18,7 @@
 
 #include "hycast.h"
 #include "PeerProto.h"
+#include "SockAddr.h"
 
 #include <memory>
 
@@ -37,7 +38,7 @@ public:
     /**
      * Returns information on a product.
      *
-     * @param[in] peer       Peer that wants the information
+     * @param[in] remote     Socket address of remote peer
      * @param[in] prodIndex  Index of product
      * @return               Information on product. Will test false if no such
      *                       information exists.
@@ -47,13 +48,13 @@ public:
      * @see `ProdInfo::operator bool()`
      */
     virtual ProdInfo getProdInfo(
-            Peer&           peer,
+            const SockAddr& remote,
             const ProdIndex prodIndex) =0;
 
     /**
      * Returns a data-segment
      *
-     * @param[in] peer              Peer that wants the data
+     * @param[in] remote            Socket address of remote peer
      * @param[in] segId             Segment identifier
      * @return                      Data-segment. Will test false if no such
      *                              segment exists.
@@ -64,8 +65,8 @@ public:
      * @see `MemSeg::operator bool()`
      */
     virtual MemSeg getMemSeg(
-            Peer&        peer,
-            const SegId& segId) =0;
+            const SockAddr& remote,
+            const SegId&    segId) =0;
 };
 
 /**

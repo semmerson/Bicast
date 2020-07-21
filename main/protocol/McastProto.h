@@ -112,7 +112,7 @@ public:
 
     virtual bool hereIsMcast(const ProdInfo& prodInfo) =0;
 
-    virtual bool hereIs(UdpSeg& seg) =0;
+    virtual bool hereIsMcast(UdpSeg& seg) =0;
 };
 
 /******************************************************************************/

@@ -37,7 +37,6 @@ protected:
     std::condition_variable cond;
     typedef enum {
         INIT = 0,
-        CONNECTED = 0x1,
         PROD_NOTICE_RCVD = 0x4,
         SEG_NOTICE_RCVD = 0x8,
         PROD_REQUEST_RCVD = 0x10,
@@ -47,7 +46,6 @@ protected:
         CLNT_PEER_STOPPED = 0x100,
         SRVR_PEER_STOPPED = 0x200,
         EXCHANGE_COMPLETE =
-               CONNECTED |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -121,12 +119,6 @@ protected:
     }
 
 public:
-    // Sender and receiver
-    void peerAdded(hycast::Peer peer) {
-        if (++numAdded >= 2)
-            setState(CONNECTED);
-    }
-
     // Receiver-side
     bool shouldRequest(hycast::ProdIndex actual)
     {
@@ -222,7 +214,7 @@ TEST_F(P2pMgrTest, DataExchange)
     std::thread        subThread(&P2pMgrTest::runP2pMgr, this,
             std::ref(subP2pMgr));
 
-    waitForState(CONNECTED);
+    sleep(1);
 
     // Start an exchange
     pubP2pMgr.notify(prodIndex);

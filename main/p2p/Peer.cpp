@@ -79,9 +79,8 @@ protected:
 
     mutable Mutex   mutex;           ///< State-change mutex
     mutable Cond    cond;            ///< State-change condition variable
-    SendPeerMgr&    peerMgr;         ///< Peer manager
+    SendPeerMgr&    peerMgr;         ///< Peer manager interface
     ChunkIdQueue    noticeQueue;     ///< Queue for notices
-    Peer&           peer;            ///< Containing `Peer`
     std::thread     notifierThread;  ///< Thread on which notices are sent
     std::thread     peerProtoThread; ///< Thread on which peerProto() executes
     ExceptPtr       exceptPtr;       ///< Pointer to terminating exception
@@ -158,7 +157,6 @@ public:
         , cond()
         , peerMgr(peerMgr)
         , noticeQueue{}
-        , peer(peer)
         , notifierThread{}
         , peerProtoThread{}
         , exceptPtr()
@@ -276,13 +274,14 @@ public:
 
     void sendMe(const ProdIndex prodIndex)
     {
-        LOG_DEBUG("Accepting request for product-information %s",
-                prodIndex.to_string().data());
+        LOG_DEBUG("Accepting request for information on product " +
+                prodIndex.to_string());
 
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            auto prodInfo = peerMgr.getProdInfo(peer, prodIndex);
+            auto remote = peerProto.getRmtAddr();
+            auto prodInfo = peerMgr.getProdInfo(remote, prodIndex);
         ::pthread_setcancelstate(entryState, &entryState);
 
         if (prodInfo) {
@@ -301,7 +300,8 @@ public:
             int entryState;
 
             //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-                MemSeg memSeg = peerMgr.getMemSeg(peer, segId);
+                auto remote = peerProto.getRmtAddr();
+                MemSeg memSeg = peerMgr.getMemSeg(remote, segId);
             //::pthread_setcancelstate(entryState, &entryState);
 
             if (memSeg) {
@@ -756,8 +756,8 @@ public:
 
     void available(ProdIndex prodIndex)
     {
-        LOG_DEBUG("Accepting notice of product-information %s",
-                prodIndex.to_string().data());
+        LOG_DEBUG("Accepting notice of information on product " +
+                prodIndex.to_string());
 
         int entryState;
 
@@ -766,8 +766,8 @@ public:
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (yes) {
-            LOG_DEBUG("Sending request for product-information %s",
-                    prodIndex.to_string().data());
+            LOG_DEBUG("Sending request for information on product " +
+                    prodIndex.to_string());
             peerProto.request(prodIndex);
         }
     }
@@ -804,7 +804,8 @@ public:
 
     void hereIs(TcpSeg& seg)
     {
-        LOG_DEBUG("Accepting data-segment %s", seg.to_string().data());
+        LOG_DEBUG("Accepting data-segment %s",
+                seg.getSegId().to_string().data());
 
         int entryState;
 
