@@ -13,11 +13,10 @@
 #include "config.h"
 
 #include "error.h"
-#include "error.h"
+#include "InetAddr.h"
+#include "SockAddr.h"
 
 #include <arpa/inet.h>
-#include <main/inet/InetAddr.h>
-#include <main/inet/SockAddr.h>
 #include <cstring>
 #include <functional>
 #include <net/if.h>
