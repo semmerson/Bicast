@@ -159,59 +159,54 @@ class Watcher::Impl final
     }
 
     /**
-     * Adds pathnames of new files to be transmitted. Reads the `inotify(7)`
-     * file-descriptor. Recurses into new directories. Follows symbolic links.
-     * Blocks. Upon return, `regFiles.empty()` will be false.
+     * Blocks.
      *
-     * @threadsafety Unsafe
+     * @throws SystemError  Couldn't read inotify(7) file-descriptor
+     */
+    void readEvents() {
+        ssize_t nbytes = ::read(fd, eventBuf.buf, sizeof(eventBuf)); // Blocks
+
+        if (nbytes == -1)
+            throw SYSTEM_ERROR("Couldn't read inotify(7) file-descriptor");
+
+        nextEvent = eventBuf.buf;
+        endEvent = eventBuf.buf + nbytes;
+    }
+
+    /**
      * @throws       RuntimeError  A watched file-system was unmounted
      * @throws       RuntimeError  The inotify(7) event-queue overflowed
      */
-    void addNewFiles()
-    {
-        do {
-            if (nextEvent >= endEvent) {
-                // Blocks
-                ssize_t nbytes = ::read(fd, eventBuf.buf, sizeof(eventBuf));
+    void processEvents() {
+        while (nextEvent < endEvent) {
+            struct inotify_event* event =
+                    reinterpret_cast<struct inotify_event*>(nextEvent);
+            nextEvent += sizeof(struct inotify_event) + event->len;
 
-                if (nbytes == -1)
-                    throw SYSTEM_ERROR("Couldn't read inotify(7) "
-                            "file-descriptor");
+            if (event->mask & IN_UNMOUNT)
+                throw RUNTIME_ERROR("Watched file-system was unmounted");
+            if (event->mask & IN_Q_OVERFLOW)
+                throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
 
-                nextEvent = eventBuf.buf;
-                endEvent = eventBuf.buf + nbytes;
+            const std::string pathname = dirPaths.at(event->wd) + "/" +
+                    event->name;
+            bool              success = false; // true => link or closed reg file
+
+            if (event->mask & IN_DELETE_SELF) { // Only directories are watched
+                ::inotify_rm_watch(fd, event->wd);
+                dirPaths.erase(event->wd);
+                wds.erase(pathname);
             }
-
-            while (nextEvent < endEvent) {
-                struct inotify_event* event =
-                        reinterpret_cast<struct inotify_event*>(nextEvent);
-                nextEvent += sizeof(struct inotify_event) + event->len;
-
-                if (event->mask & IN_UNMOUNT)
-                    throw RUNTIME_ERROR("Watched file-system was unmounted");
-                if (event->mask & IN_Q_OVERFLOW)
-                    throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
-
-                const std::string pathname = dirPaths.at(event->wd) + "/" +
-                        event->name;
-                bool              success = false; // true => link or closed reg file
-
-                if (event->mask & IN_DELETE_SELF) { // Only directories are watched
-                    ::inotify_rm_watch(fd, event->wd);
-                    dirPaths.erase(event->wd);
-                    wds.erase(pathname);
-                }
-                else if (event->mask & IN_ISDIR) {
-                    watch(pathname, true); // Might add to `regFiles`
-                }
-                else if (isLink(pathname)
-                        ? (event->mask & IN_CREATE)
-                        : (event->mask & IN_CLOSE_WRITE)) {
-                    // `pathname` is link or closed regular file
-                    regFiles.push(pathname);
-                }
-            } // While event-buffer needs processing
-        } while (regFiles.empty());
+            else if (event->mask & IN_ISDIR) {
+                watch(pathname, true); // Might add to `regFiles`
+            }
+            else if (isLink(pathname)
+                    ? (event->mask & IN_CREATE)
+                    : (event->mask & IN_CLOSE_WRITE)) {
+                // `pathname` is link or closed regular file
+                regFiles.push(pathname);
+            }
+        } // While event-buffer needs processing
     }
 
 public:
@@ -249,15 +244,23 @@ public:
     }
 
     /**
-     * Returns a watched-for event. Blocks.
+     * Returns a watched-for event.  Reads the `inotify(7)` file-descriptor.
+     * Recurses into new directories. Follows symbolic links. Blocks.
      *
      * @param[out] watchEvent  The watched-for event
      * @threadsafety           Compatible but unsafe
+     *
+     * @threadsafety Unsafe
+     * @throws       SystemError   Couldn't read inotify(7) file-descriptor
+     * @throws       RuntimeError  A watched file-system was unmounted
+     * @throws       RuntimeError  The inotify(7) event-queue overflowed
      */
     void getEvent(WatchEvent& watchEvent)
     {
-        if (regFiles.empty())
-            addNewFiles();
+        while (regFiles.empty()) {
+            readEvents(); // Blocks
+            processEvents();
+        }
 
         watchEvent.pathname = regFiles.front();
         regFiles.pop();

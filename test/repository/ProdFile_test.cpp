@@ -139,6 +139,7 @@ TEST_F(ProdFileTest, ZeroRcvProdFile)
     hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, 0);
     hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
     EXPECT_TRUE(prodFile.save(rootFd, prodInfo));
+    ASSERT_TRUE(prodFile.isComplete());
 }
 
 // Tests a RcvProdFile
@@ -147,15 +148,16 @@ TEST_F(ProdFileTest, RcvProdFile)
     hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
     hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
     hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, segSize);
-    ASSERT_FALSE(prodFile.save(rootFd, prodInfo));
+    ASSERT_TRUE(prodFile.save(rootFd, prodInfo));
     {
         for (int i = 0; i < 2; ++i) {
             hycast::SegId     segId(prodIndex, i*segSize);
             hycast::SegInfo   segInfo(segId, prodSize, segSize);
             hycast::MemSeg    memSeg{segInfo, memData};
-            ASSERT_EQ(i == 1, prodFile.save(memSeg));
+            ASSERT_TRUE(prodFile.save(memSeg));
         }
     } // Closes file
+    ASSERT_TRUE(prodFile.isComplete());
     struct stat statBuf;
     ASSERT_EQ(0, ::stat(pathname.data(), &statBuf));
     ASSERT_EQ(prodSize, statBuf.st_size);

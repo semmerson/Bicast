@@ -71,7 +71,7 @@ public:
         return true;
     }
 
-    bool hereIs(hycast::UdpSeg& seg)
+    bool hereIsMcast(hycast::UdpSeg& seg)
     {
         const hycast::SegSize size = seg.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);

@@ -163,7 +163,7 @@ public:
     }
 
     // Receiver-side
-    bool hereIs(hycast::TcpSeg& actual)
+    bool hereIsP2p(hycast::TcpSeg& actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
         EXPECT_EQ(segSize, size);

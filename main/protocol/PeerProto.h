@@ -181,6 +181,11 @@ public:
     PeerProto(PeerProto&& peerProto) noexcept;
 
     /**
+     * Move assigns.
+     */
+    PeerProto& operator=(PeerProto&& peerProto) noexcept;
+
+    /**
      * Indicates if this instance is valid (i.e., not default constructed).
      *
      * @retval `true`   Valid

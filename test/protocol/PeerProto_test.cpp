@@ -199,8 +199,8 @@ TEST_F(PeerProtoTest, Exchange)
         waitForBit(LISTENING);
 
         // Start subscriber
-        hycast::NodeType  nodeType;
-        hycast::PeerProto subProto(pubAddr, nodeType, *this);
+        hycast::PeerProto subProto(pubAddr,
+                hycast::NodeType::NO_PATH_TO_PUBLISHER, *this);
         std::thread       subThread(subProto);
 
         try {

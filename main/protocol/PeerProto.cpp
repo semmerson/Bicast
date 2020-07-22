@@ -1140,4 +1140,9 @@ PeerProto::PeerProto(PeerProto&& peerProto) noexcept
     : pImpl{peerProto.pImpl} {
 }
 
+PeerProto& PeerProto::operator=(PeerProto&& peerProto) noexcept {
+    pImpl = peerProto.pImpl;
+    return *this;
+}
+
 } // namespace

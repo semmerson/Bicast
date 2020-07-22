@@ -168,7 +168,7 @@ TEST_F(NodeTest, Sending)
         std::thread        subThread(&NodeTest::runNode, std::ref(subscriber));
 
         // Give connection a chance
-        sleep(2);
+        sleep(3);
 
         // Publish
         pubRepo.link(filePath, prodName);
@@ -216,7 +216,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
+  //hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
 
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the
