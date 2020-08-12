@@ -20,6 +20,7 @@
 #include <limits.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <stddef.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -81,10 +82,10 @@ public:
      * @throws SystemError  `::shutdown()` failure
      */
     void shutdown() {
+        halt = true;
         if (::shutdown(sd, SHUT_RDWR) && errno != ENOTCONN)
             throw SYSTEM_ERROR("::shutdown failure on socket " +
                     std::to_string(sd));
-        halt = true;
     }
 
     bool isShutdown() {
@@ -623,6 +624,7 @@ class UdpSock::Impl final : public InetSock::Impl
     struct msghdr msghdr = {};            ///< UDP `::rcvmsg()` structure
     Ntoh          ntohs[IOV_MAX] = {};    ///< Network-to-host converters
     size_t        numPeek;                ///< Current number of bytes to peek
+    struct pollfd pollfd;                 ///< poll(2) structure
 
     /**
      * Vets adding an additional I/O vector element.
@@ -812,6 +814,8 @@ public:
             const InetAddr& rmtAddr)
         : Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
     {
+        pollfd.fd = sd;
+        pollfd.events = POLLIN;
         grpAddr.bind(sd);
         grpAddr.join(sd, rmtAddr);
     }
@@ -948,13 +952,23 @@ public:
      */
     bool peek()
     {
+        // poll(2) is used so `shutdown()` works
+        int status = ::poll(&pollfd, 1, -1); // -1 => indefinite wait
+
+        if (halt || (pollfd.revents & POLLHUP))
+            return false;
+
+        if (status == -1)
+            throw SYSTEM_ERROR("::poll() failure on socket" +
+                    std::to_string(sd));
+
+        if (pollfd.revents & (POLLERR | POLLNVAL))
+            return false;
+
         // Peek packet
         //LOG_DEBUG("Skipping %zu bytes; peeking at %zu", numPeeked, reqNumPeek);
         const ssize_t nread = ::recvmsg(sd, &msghdr, MSG_PEEK);
         //LOG_DEBUG("Read %zd bytes", nread);
-
-        if (halt)
-            return false;
 
         if (nread < 0)
             throw SYSTEM_ERROR("Couldn't read from socket" +
