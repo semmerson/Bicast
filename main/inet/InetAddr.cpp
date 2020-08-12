@@ -1,7 +1,7 @@
 /**
- * Internet address. Could be IPv4 or IPv6.
+ * Internet address. Could be IPv4, IPv6, or a name.
  *
- * Copyright 2017 University Corporation for Atmospheric Research. All Rights
+ * Copyright 2020 University Corporation for Atmospheric Research. All Rights
  * reserved. See file "Copying" in the top-level source-directory for usage
  * restrictions.
  *
