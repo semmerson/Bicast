@@ -85,8 +85,17 @@ protected:
             std::rethrow_exception(exPtr);
     }
 
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
     void startP2pMgr() {
-        p2pMgrThread = std::thread(&Impl::runP2p, this);
+        try {
+            p2pMgrThread = std::thread(&Impl::runP2p, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create P2P manager thread"));
+        }
     }
 
     void stopP2pMgr() {
@@ -383,13 +392,13 @@ void Publisher::operator ()() const {
  */
 class Subscriber::Impl final : public Node::Impl, public P2pSub, public McastSub
 {
-    McastRcvr                  mcastRcvr;
-    SubRepo                    repo;
-    std::thread                mcastThread;
-    std::atomic<unsigned long> numUdpOrig;
-    std::atomic<unsigned long> numTcpOrig;
-    std::atomic<unsigned long> numUdpDup;
-    std::atomic<unsigned long> numTcpDup;
+    McastRcvr                  mcastRcvr;       ///< Multicast receiver
+    SubRepo                    repo;            ///< Data-product repository
+    std::thread                mcastRcvrThread; ///< Multicast receiver thread
+    std::atomic<unsigned long> numUdpOrig;      ///< Number of original UDP chunks
+    std::atomic<unsigned long> numTcpOrig;      ///< Number of original TCP chunks
+    std::atomic<unsigned long> numUdpDup;       ///< Number of duplicate UDP chunks
+    std::atomic<unsigned long> numTcpDup;       ///< Number of duplicate TCP chunks
 
     void runMcast()
     {
@@ -401,14 +410,23 @@ class Subscriber::Impl final : public Node::Impl, public P2pSub, public McastSub
         }
     }
 
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
     void startMcastRcvr() {
-        mcastThread = std::thread(&Impl::runMcast, this);
+        try {
+            mcastRcvrThread = std::thread(&Impl::runMcast, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create multicast receiver thread"));
+        }
     }
 
     void stopMcastRcvr() {
-        if (mcastThread.joinable()) {
+        if (mcastRcvrThread.joinable()) {
             mcastRcvr.halt();
-            mcastThread.join();
+            mcastRcvrThread.join();
         }
     }
 
@@ -429,7 +447,7 @@ public:
         : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), repo)
         , mcastRcvr{srcMcastInfo, *this}
         , repo(repo)
-        , mcastThread{}
+        , mcastRcvrThread{}
         , numUdpOrig{0}
         , numTcpOrig{0}
         , numUdpDup{0}
@@ -440,7 +458,8 @@ public:
      * Executes this instance. Doesn't return until either `halt()` is called
      * or an exception is thrown.
      *
-     * @see `halt()`
+     * @throw std::runtime_error  Couldn't create necessary thread
+     * @see   `halt()`
      */
     void operator()() override {
         startMcastRcvr();
