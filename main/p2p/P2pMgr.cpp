@@ -528,16 +528,13 @@ public:
      */
     void stopped(Peer peer)
     {
-        LOG_NOTE("Peer " + peer.to_string() + " stopped");
-        {
-            Guard guard{mutex};
+        Guard guard{mutex};
 
-            if (!done) {
-                stopped2(peer);     // Implementation-specific
-                getBookkeeper().erase(peer);
-                peers.erase(peer.getRmtAddr());
-                resetImprovement(); // Restart performance evaluation
-            }
+        if (!done) {
+            stopped2(peer);     // Implementation-specific
+            getBookkeeper().erase(peer);
+            peers.erase(peer.getRmtAddr());
+            resetImprovement(); // Restart performance evaluation
         }
     }
 };
