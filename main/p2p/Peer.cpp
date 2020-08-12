@@ -20,6 +20,7 @@
 #include "NodeType.h"
 #include "Peer.h"
 
+#include <cassert>
 #include <condition_variable>
 #include <exception>
 #include <mutex>
@@ -40,10 +41,10 @@ class Peer::Impl : public SendPeer
         try {
             peerProto();
             // The remote peer closed the connection
-            setDone();
+            halt();
         }
         catch (const std::exception& ex) {
-            handleException(std::current_exception());
+            handleException(ex);
         }
     }
 
@@ -61,7 +62,7 @@ class Peer::Impl : public SendPeer
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught exception \"%s\"", ex.what());
-            handleException(std::current_exception());
+            handleException(ex);
         }
         catch (...) {
             LOG_DEBUG("Caught exception ...");
@@ -70,39 +71,36 @@ class Peer::Impl : public SendPeer
     }
 
 protected:
-    typedef std::mutex              Mutex;
-    typedef std::lock_guard<Mutex>  Guard;
-    typedef std::unique_lock<Mutex> Lock;
-    typedef std::condition_variable Cond;
-    typedef std::atomic<bool>       AtomicBool;
-    typedef std::exception_ptr      ExceptPtr;
+    using Thread = std::thread;
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+    using Lock = std::unique_lock<Mutex>;
+    using Cond = std::condition_variable;
+    using AtomicBool = std::atomic<bool>;
+    using ExceptPtr = std::exception_ptr;
 
-    mutable Mutex   mutex;           ///< State-change mutex
-    mutable Cond    cond;            ///< State-change condition variable
-    SendPeerMgr&    peerMgr;         ///< Peer manager interface
-    ChunkIdQueue    noticeQueue;     ///< Queue for notices
-    std::thread     notifierThread;  ///< Thread on which notices are sent
-    std::thread     peerProtoThread; ///< Thread on which peerProto() executes
-    ExceptPtr       exceptPtr;       ///< Pointer to terminating exception
-    bool            done;            ///< Terminate without an exception?
-    PeerProto       peerProto;       ///< Peer-to-peer protocol object
+    mutable Mutex mutex;           ///< State-change mutex
+    mutable Cond  cond;            ///< State-change condition variable
+    SendPeerMgr&  peerMgr;         ///< Peer manager interface
+    ChunkIdQueue  noticeQueue;     ///< Queue for notices
+    Thread        notifierThread;  ///< Thread on which notices are sent
+    Thread        protocolThread;  ///< Thread on which peerProto() executes
+    ExceptPtr     exceptPtr;       ///< Pointer to terminating exception
+    bool          done;            ///< Terminate without an exception?
+    AtomicBool    isRunning;       ///< `operator()()` is active?
+    PeerProto     peerProto;       ///< Peer-to-peer protocol object
+    SockAddr      rmtAddr;         ///< Socket address of remote peer
+    SockAddr      lclAddr;         ///< Socket address of local peer
 
-    void handleException(const ExceptPtr& exPtr)
+    void handleException(const std::exception& ex)
     {
         Guard guard(mutex);
 
         if (!exceptPtr) {
             LOG_DEBUG("Setting exception");
-            exceptPtr = exPtr;
+            exceptPtr = std::make_exception_ptr(ex);
             cond.notify_all();
         }
-    }
-
-    void setDone()
-    {
-        Guard guard{mutex};
-        done = true;
-        cond.notify_all();
     }
 
     bool isDone()
@@ -113,6 +111,7 @@ protected:
 
     void ensureNotDone()
     {
+        assert(!mutex.try_lock());
         if (done)
             throw LOGIC_ERROR("Peer has been halted");
     }
@@ -125,14 +124,46 @@ protected:
             cond.wait(lock);
     }
 
-    void startNotifierThread()
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
+    void startNotifier()
     {
-        notifierThread = std::thread{&Impl::runNotifier, this};
+        try {
+            notifierThread = std::thread{&Impl::runNotifier, this};
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create notifier thread"));
+        }
     }
 
-    void startPeerProtoThread()
+    void stopNotifier() {
+        if (notifierThread.joinable()) {
+            noticeQueue.close();
+            notifierThread.join();
+        }
+    }
+
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
+    void startProtocol()
     {
-        peerProtoThread = std::thread{&Impl::runPeerProto, this};
+        try {
+            protocolThread = std::thread{&Impl::runPeerProto, this};
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create protocol thread"));
+        }
+    }
+
+    void stopProtocol() {
+        if (protocolThread.joinable()) {
+            peerProto.halt();
+            protocolThread.join();
+        }
     }
 
     virtual void startTasks() =0;
@@ -148,25 +179,31 @@ public:
      *
      * @param[in] peerProto    Peer protocol
      * @param[in] peerMgr      Peer manager
-     * @param[in] peer         Containing local peer
      */
     Impl(   PeerProto&&  peerProto,
-            SendPeerMgr& peerMgr,
-            Peer&        peer)
+            SendPeerMgr& peerMgr)
         : mutex()
         , cond()
         , peerMgr(peerMgr)
         , noticeQueue{}
         , notifierThread{}
-        , peerProtoThread{}
+        , protocolThread{}
         , exceptPtr()
         , done{false}
+        , isRunning{false}
         , peerProto(peerProto)
+        , rmtAddr(peerProto.getRmtAddr())
+        , lclAddr(peerProto.getLclAddr())
     {}
 
-    virtual ~Impl() noexcept
+    /**
+     * Screams bloody murder if called before `halt()`: calls
+     * `std::terminate()`.
+     */
+    virtual ~Impl()
     {
-        LOG_TRACE();
+        if (isRunning)
+            throw LOGIC_ERROR("Peer being destroyed while executing!");
     }
 
     /**
@@ -178,7 +215,7 @@ public:
      * @cancellationpoint No
      */
     SockAddr getRmtAddr() const noexcept {
-        return peerProto.getRmtAddr();
+        return rmtAddr; // NB: Independent of connection state
     }
 
     /**
@@ -188,7 +225,7 @@ public:
      * @cancellationpoint No
      */
     SockAddr getLclAddr() const noexcept {
-        return peerProto.getLclAddr();
+        return lclAddr; // NB: Independent of connection state
     }
 
     /**
@@ -197,34 +234,49 @@ public:
      * all subtasks have terminated. If `halt()` is called before this method,
      * then this instance will return immediately and won't execute.
      *
-     * @throws    std::system_error   System error
-     * @throws    std::runtime_error  Remote peer closed the connection
-     * @throws    std::logic_error    This method has already been called
+     * @throw std::system_error   System error
+     * @throw std::runtime_error  Couldn't create necessary thread
+     * @throw std::runtime_error  Remote peer closed the connection
+     * @throw std::logic_error    This method has already been called
      */
     void operator ()()
     {
+        isRunning = true;
+
         try {
             startTasks();
 
             try {
                 waitUntilDone();
-                stopTasks(); // Idempotent
 
-                Guard guard{mutex};
-                if (!done && exceptPtr)
-                    std::rethrow_exception(exceptPtr);
-            }
+                {
+                    Guard guard{mutex};
+                    if (!done && exceptPtr)
+                        std::rethrow_exception(exceptPtr);
+                }
+
+                stopTasks(); // Idempotent
+                isRunning = false;
+                LOG_NOTE("Peer " + to_string() + " stopped");
+            } // Tasks started
             catch (...) {
                 stopTasks(); // Idempotent
                 throw;
             }
-        }
+        } // Tasks started
         catch (const std::exception& ex) {
-            LOG_DEBUG("Caught \"%s\"", ex.what());
-            std::throw_with_nested(RUNTIME_ERROR("Failure"));
+            isRunning = false;
+            Guard guard{mutex};
+            if (done) {
+                LOG_NOTE("Peer " + to_string() + " stopped");
+            }
+            else {
+                std::throw_with_nested(RUNTIME_ERROR("Peer " + to_string() +
+                        " failed"));
+            }
         }
         catch (...) {
-            LOG_DEBUG("Caught ...");
+            isRunning = false;
             throw;
         }
     }
@@ -232,18 +284,21 @@ public:
     /**
      * Halts execution. Does nothing if `operator()()` has not been called;
      * otherwise, causes `operator()()` to return and disconnects from the
-     * remote peer. Idempotent.
+     * remote peer. *Must* be called if `operator()()` is called. Idempotent.
      *
      * @cancellationpoint No
      */
     void halt() noexcept
     {
-        setDone();
+        Guard guard{mutex};
+        done = true;
+        cond.notify_all();
     }
 
     std::string to_string() const noexcept
     {
-        return peerProto.to_string();
+        return "{rmtAddr: " + rmtAddr.to_string() + ", lclAddr: " +
+                lclAddr.to_string() + "}";
     }
 
     /**
@@ -259,7 +314,7 @@ public:
         Guard guard{mutex};
 
         ensureNotDone();
-        LOG_DEBUG("Enqueing product-index " + prodIndex.to_string());
+        LOG_DEBUG("Enqueuing product-index " + prodIndex.to_string());
         noticeQueue.push(prodIndex);
     }
 
@@ -268,7 +323,7 @@ public:
         Guard guard{mutex};
 
         ensureNotDone();
-        LOG_DEBUG("Enqueing segment-ID " + segId.to_string());
+        LOG_DEBUG("Enqueuing segment-ID " + segId.to_string());
         noticeQueue.push(segId);
     }
 
@@ -417,23 +472,24 @@ void Peer::request(const SegId& segId) const {
 class PubPeer final : public Peer::Impl
 {
 protected:
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
     void startTasks() override
     {
-        startNotifierThread();
+        startNotifier();
 
         try {
-            startPeerProtoThread();
-        }
+            startProtocol();
+        } // Notifier started
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught \"%s\"", ex.what());
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+            stopNotifier();
             throw;
         }
         catch (...) {
             LOG_DEBUG("Caught ...");
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+            stopNotifier();
             throw;
         }
     }
@@ -443,15 +499,8 @@ protected:
      */
     void stopTasks() override
     {
-        if (peerProtoThread.joinable()) {
-            peerProto.halt();
-            peerProtoThread.join();
-        }
-        if (notifierThread.joinable()) {
-            noticeQueue.close();
-            //(void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
-        }
+        stopProtocol();
+        stopNotifier();
     }
 
 public:
@@ -465,9 +514,8 @@ public:
      */
     PubPeer(TcpSock&     sock,
             PortPool&    portPool,
-            SendPeerMgr& peerMgr,
-            Peer&        peer)
-        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr, peer)
+            SendPeerMgr& peerMgr)
+        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr)
     {}
 
     /**
@@ -507,7 +555,7 @@ Peer::Peer(
         TcpSock&     sock,
         PortPool&    portPool,
         SendPeerMgr& peerMgr)
-    : pImpl(new PubPeer(sock, portPool, peerMgr, *this)) {
+    : pImpl(new PubPeer(sock, portPool, peerMgr)) {
 }
 
 /******************************************************************************/
@@ -523,7 +571,7 @@ private:
     std::thread     requesterThread; ///< Thread on which requests are made
     AtomicBool      rmtHasPathToPub; ///< Remote node has path to publisher?
     XcvrPeerMgr&    recvPeerMgr;     ///< Manager of subscriber peer
-    Peer&           peer;            ///< Containing peer
+    Peer            peer;            ///< Containing peer
 
     void runRequester(void)
     {
@@ -538,43 +586,62 @@ private:
             }
         }
         catch (const std::exception& ex) {
-            handleException(std::current_exception());
+            handleException(ex);
         }
     }
 
-    void startTasks()
-    {
-        startNotifierThread();
-
+    /**
+     * @throw std::runtime_error  Couldn't create thread
+     */
+    void startRequester() {
         try {
             requesterThread = std::thread{&SubPeer::runRequester, this};
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create requester thread"));
+        }
+    }
+
+    void stopRequester() {
+        if (requesterThread.joinable()) {
+            requestQueue.close();
+            requesterThread.join();
+        }
+    }
+
+    /**
+     * @throw std::runtime_error  Couldn't create necessary thread
+     */
+    void startTasks()
+    {
+        startNotifier();
+
+        try {
+            startRequester();
 
             try {
-                startPeerProtoThread();
-            }
+                startProtocol();
+            } // Requester started
             catch (const std::exception& ex) {
                 LOG_DEBUG("Caught \"%s\"", ex.what());
-                (void)pthread_cancel(requesterThread.native_handle());
-                requesterThread.join();
+                stopRequester();
                 throw;
             }
             catch (...) {
                 LOG_DEBUG("Caught ...");
-                (void)pthread_cancel(requesterThread.native_handle());
-                requesterThread.join();
+                stopRequester();
                 throw;
             }
-        }
+        } // Notifier started
         catch (const std::exception& ex) {
             LOG_DEBUG("Caught \"%s\"", ex.what());
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+            stopNotifier();
             throw;
         }
         catch (...) {
             LOG_DEBUG("Caught ...");
-            (void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
+            stopNotifier();
             throw;
         }
     }
@@ -584,20 +651,9 @@ private:
      */
     void stopTasks()
     {
-        if (peerProtoThread.joinable()) {
-            peerProto.halt();
-            peerProtoThread.join();
-        }
-        if (requesterThread.joinable()) {
-            requestQueue.close();
-            //(void)pthread_cancel(requesterThread.native_handle());
-            requesterThread.join();
-        }
-        if (notifierThread.joinable()) {
-            noticeQueue.close();
-            //(void)pthread_cancel(notifierThread.native_handle());
-            notifierThread.join();
-        }
+        stopProtocol();
+        stopRequester();
+        stopNotifier();
     }
 
 public:
@@ -613,16 +669,13 @@ public:
     SubPeer(TcpSock&        sock,
             PortPool&       portPool,
             const NodeType& lclNodeType,
-            Peer&           peer,
             XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(sock, portPool, lclNodeType, *this), peerMgr,
-                peer)
+        : Peer::Impl(PeerProto(sock, portPool, lclNodeType, *this), peerMgr)
         , fromConnect{false}
         , requestQueue{}
         , requesterThread{}
         , rmtHasPathToPub{peerProto.getRmtNodeType()}
         , recvPeerMgr(peerMgr)
-        , peer(peer)
     {}
 
     /**
@@ -636,16 +689,27 @@ public:
      */
     SubPeer(const SockAddr& rmtSrvrAddr,
             const NodeType  lclNodeType,
-            Peer&           peer,
             XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(rmtSrvrAddr, lclNodeType, *this), peerMgr, peer)
+        : Peer::Impl(PeerProto(rmtSrvrAddr, lclNodeType, *this), peerMgr)
         , fromConnect{true}
         , requestQueue{}
         , requesterThread{}
         , rmtHasPathToPub{peerProto.getRmtNodeType()}
         , recvPeerMgr(peerMgr)
-        , peer(peer)
     {}
+
+    /**
+     * Sets the peer that uses this implementation. This obviates the
+     * possibility that the peer is destroyed while `available()` or
+     * `hereIs()` references it.
+     *
+     * @param[in] peer  Peer that uses this implementation
+     * @see             `available()`
+     * @see             `hereIs()`
+     */
+    void setPeer(Peer& peer) {
+        this->peer = peer;
+    }
 
     SendPeer& asSendPeer() noexcept
     {
@@ -820,14 +884,18 @@ Peer::Peer(
         PortPool&    portPool,
         NodeType     lclNodeType,
         XcvrPeerMgr& peerMgr)
-    : pImpl(new SubPeer(sock, portPool, lclNodeType, *this, peerMgr)) {
+    : pImpl(new SubPeer(sock, portPool, lclNodeType, peerMgr))
+{
+    static_cast<SubPeer*>(pImpl.get())->setPeer(*this);
 }
 
 Peer::Peer(
         const SockAddr& rmtSrvrAddr,
         const NodeType  lclNodeType,
         XcvrPeerMgr&    peerMgr)
-    : pImpl(new SubPeer(rmtSrvrAddr, lclNodeType, *this, peerMgr)) {
+    : pImpl(new SubPeer(rmtSrvrAddr, lclNodeType, peerMgr))
+{
+    static_cast<SubPeer*>(pImpl.get())->setPeer(*this);
 }
 
 } // namespace
