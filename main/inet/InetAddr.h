@@ -144,6 +144,18 @@ public:
      * @cancellationpoint     Unknown due to non-standard function usage
      */
     const InetAddr& setMcastIface(int sd) const;
+
+    /**
+     * Indicates if this instance is a valid, source-specific multicast address
+     * that is not reserved for allocation by IANA. I.e., this instance is in
+     * the range from 232.0.1.0 through 232.255.255.255 (for IPv4) or
+     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
+     * FF3X::FFFF:FFFF (for IPv6).
+     *
+     * @retval `true`   Address is valid and in appropriate range
+     * @retval `false`  Address is invalid or not in appropriate range
+     */
+    bool isSsm() const;
 };
 
 } // namespace

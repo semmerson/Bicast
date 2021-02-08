@@ -37,6 +37,21 @@ protected:
     Repository(Impl* impl) noexcept;
 
 public:
+    static const std::string& getDefRootPathname() {
+        static const std::string defRootPathname("repo");
+        return defRootPathname;
+    }
+
+    static SegSize getDefSegSize() {
+        static const SegSize defSegSize = 1444; // Max Ethernet UDP payload
+        return defSegSize;
+    }
+
+    static size_t getDefMaxOpenFiles() {
+        static const SegSize defMaxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2;
+        return defMaxOpenFiles;
+    }
+
     virtual ~Repository() =default;
 
     /**
@@ -125,9 +140,9 @@ public:
      * @param[in] maxOpenFiles  Maximum number of files to have open
      *                          simultaneously
      */
-    PubRepo(const std::string& root,
-            SegSize            segSize = 1444, // Max 4-byte UDP data-segment
-            size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+    PubRepo(const std::string& root = getDefRootPathname(),
+            SegSize            segSize = getDefSegSize(),
+            size_t             maxOpenFiles = getDefMaxOpenFiles());
 
     /**
      * Links to a file (which could be a directory) that's outside the
@@ -201,9 +216,9 @@ public:
      * @param[in] maxOpenFiles  Maximum number of files to have open
      *                          simultaneously
      */
-    SubRepo(const std::string& rootPathname,
-            SegSize            segSize = 1444, // Max 4-byte UDP data-segment
-            size_t             maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+    SubRepo(const std::string& rootPathname = getDefRootPathname(),
+            SegSize            segSize = getDefSegSize(),
+            size_t             maxOpenFiles = getDefMaxOpenFiles());
 
     /**
      * Saves product-information in the corresponding product-file.

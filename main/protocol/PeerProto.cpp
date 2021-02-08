@@ -48,7 +48,6 @@ protected:
     TcpSock       noteSock;       ///< For exchanging notices
     TcpSock       srvrSock;       ///< Receiving requests and sending chunks
     std::string   string;         ///< `to_string()` string
-    PortPool      portPool;       ///< Pool of ports for temporary servers
     SendPeer&     sendPeer;       ///< Sending peer
     bool          done;           ///< Halt requested or exception thrown?
     std::thread   rcvReqstThread; ///< Requests received and processed
@@ -239,23 +238,17 @@ protected:
 
     static TcpSrvrSock createSrvrSock(
             InetAddr  inAddr,
-            PortPool& portPool,
             const int queueSize)
     {
-        for (int n = portPool.size(), i = 0; i < n; ++i) {
-            const auto port = portPool.take();
-
-            try {
-                auto srvrAddr = inAddr.getSockAddr(port);
-                return TcpSrvrSock(srvrAddr, queueSize);
-            }
-            catch (const std::exception& ex) {
-                log_error(ex);
-                portPool.add(port);
-            }
+        try {
+            auto srvrAddr = inAddr.getSockAddr(0); // O/S assigned port number
+            return TcpSrvrSock(srvrAddr, queueSize);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create server socket"));
         }
 
-        throw RUNTIME_ERROR("Couldn't create server socket");
     }
 
     void send(
@@ -287,15 +280,12 @@ public:
      * a publisher and a subscriber.
      *
      * @param[in] sock         `::accept()`ed TCP socket
-     * @param[in] portPool     Pool of potential port numbers for temporary
-     *                         servers
      * @param[in] lclNodeType  Type of local node
      * @param[in] peer         Sending peer
      * @exceptionsafety        Strong guarantee
      * @cancellationpoint      Yes
      */
     Impl(   TcpSock&       sock,
-            PortPool&      portPool,
             const NodeType lclNodeType,
             SendPeer&      peer)
         : executing{false}
@@ -305,7 +295,6 @@ public:
         , noteSock(sock)
         , srvrSock{}
         , string{}
-        , portPool{portPool}
         , sendPeer(peer)
         , done{false}
         , rcvReqstThread{}
@@ -318,25 +307,18 @@ public:
          * Temporary server for creating a socket for receiving requests and
          * sending chunks.
          */
-        auto tmpSrvrSock = createSrvrSock(sock.getLclAddr().getInetAddr(),
-                portPool, 1);
+        auto tmpSrvrSock = createSrvrSock(sock.getLclAddr().getInetAddr(), 1);
 
-        try {
-            /*
-             * Create a socket for receiving requests and sending chunks
-             */
-            in_port_t port = tmpSrvrSock.getLclPort();
-            LOG_DEBUG("Writing port " + std::to_string(port));
-            noteSock.write(port);
-            // TODO: Ensure connection is from remote peer
-            LOG_DEBUG("Accepting server socket");
-            srvrSock = TcpSock{tmpSrvrSock.accept()};
-            srvrSock.setDelay(true); // Consolidate ACK and chunk
-        }
-        catch (...) {
-            portPool.add(tmpSrvrSock.getLclPort());
-            throw;
-        }
+        /*
+         * Create a socket for receiving requests and sending chunks
+         */
+        in_port_t port = tmpSrvrSock.getLclPort();
+        LOG_DEBUG("Writing port " + std::to_string(port));
+        noteSock.write(port);
+        // TODO: Ensure connection is from remote peer
+        LOG_DEBUG("Accepting server socket");
+        srvrSock = TcpSock{tmpSrvrSock.accept()};
+        srvrSock.setDelay(true); // Consolidate ACK and chunk
     }
 
     /**
@@ -358,7 +340,6 @@ public:
         , noteSock(sock)
         , srvrSock{}
         , string{}
-        , portPool{}
         , sendPeer(peer)
         , done{false}
         , rcvReqstThread{}
@@ -635,17 +616,14 @@ public:
      * Constructs.
      *
      * @param[in] sock         `::accept()`ed TCP socket
-     * @param[in] portPool     Pool of potential port numbers for temporary
-     *                         server
      * @param[in] peer         Peer
      * @exceptionsafety        Strong guarantee
      * @cancellationpoint      Yes
      */
     PubPeerProto(
             TcpSock&  sock,
-            PortPool& portPool,
             SendPeer& peer)
-        : PeerProto::Impl(sock, portPool, NodeType::PUBLISHER, peer)
+        : PeerProto::Impl(sock, NodeType::PUBLISHER, peer)
     {}
 
     ~PubPeerProto() noexcept override
@@ -653,7 +631,6 @@ public:
         try {
             stopTasks();  // Idempotent
             disconnect(); // Idempotent
-            portPool.add(srvrSock.getLclPort());
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "Failure");
@@ -683,9 +660,8 @@ public:
 
 PeerProto::PeerProto(
         TcpSock&  sock,
-        PortPool& portPool,
         SendPeer& peer)
-    : pImpl(new PubPeerProto(sock, portPool, peer)) {
+    : pImpl(new PubPeerProto(sock, peer)) {
 }
 
 /******************************************************************************/
@@ -972,18 +948,15 @@ public:
      * `::connect()`.
      *
      * @param[in] sock         `::accept()`ed TCP socket
-     * @param[in] portPool     Pool of potential port numbers for temporary
-     *                         servers
      * @param[in] subPeer      Subscriber peer
      * @exceptionsafety        Strong guarantee
      * @cancellationpoint      Yes
      */
     SubPeerProto(
             TcpSock&    sock,
-            PortPool&   portPool,
             NodeType    lclNodeType,
             RecvPeer&   recvPeer)
-        : PeerProto::Impl(sock, portPool, lclNodeType,
+        : PeerProto::Impl(sock, lclNodeType,
                 //recvPeer.asSendPeer())
                 *reinterpret_cast<SendPeer*>(&recvPeer))
         , clntSock{}
@@ -996,19 +969,13 @@ public:
          * receiving chunks.
          */
         TcpSrvrSock tmpSrvrSock(createSrvrSock(sock.getLclAddr().getInetAddr(),
-                portPool, 1));
+                1));
 
-        try {
-            // Create socket for sending requests and receiving chunks
-            noteSock.write(tmpSrvrSock.getLclPort());
-            // TODO: Ensure connections are from remote peer
-            clntSock = TcpSock{tmpSrvrSock.accept()};
-            clntSock.setDelay(false); // Requests are immediately sent
-        }
-        catch (...) {
-            portPool.add(tmpSrvrSock.getLclPort());
-            throw;
-        }
+        // Create socket for sending requests and receiving chunks
+        noteSock.write(tmpSrvrSock.getLclPort());
+        // TODO: Ensure connections are from remote peer
+        clntSock = TcpSock{tmpSrvrSock.accept()};
+        clntSock.setDelay(false); // Requests are immediately sent
     }
 
     /**
@@ -1071,11 +1038,6 @@ public:
         try {
             stopTasks();  // Idempotent
             disconnect(); // Idempotent
-            if (portPool) {
-                portPool.add(clntSock.getLclPort());
-                if (srvrSock)
-                    portPool.add(srvrSock.getLclPort());
-            }
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "Failure");
@@ -1119,10 +1081,9 @@ public:
 
 PeerProto::PeerProto(
         TcpSock&    sock,
-        PortPool&   portPool,
         NodeType    lclNodeType,
         RecvPeer&   subPeer)
-    : pImpl(new SubPeerProto(sock, portPool, lclNodeType, subPeer)) {
+    : pImpl(new SubPeerProto(sock, lclNodeType, subPeer)) {
 }
 
 PeerProto::PeerProto(

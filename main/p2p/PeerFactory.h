@@ -13,9 +13,10 @@
 #ifndef MAIN_PEER_PEERFACTORY_H_
 #define MAIN_PEER_PEERFACTORY_H_
 
-#include <main/inet/PortPool.h>
-#include <main/inet/SockAddr.h>
+#include "PortPool.h"
 #include "Peer.h"
+#include "SockAddr.h"
+
 #include <memory>
 
 namespace hycast {
@@ -81,13 +82,11 @@ public:
      * @param[in] srvrAddr      Socket address on which a local server will
      *                          accept connections from remote peers
      * @param[in] queueSize     Size of server's `listen()` queue
-     * @param[in] portPool      Pool of available port numbers
      * @param[in] peerMgr       Peer manager
      */
     PubPeerFactory(
             const SockAddr& srvrAddr,
             const int       queueSize,
-            PortPool&       portPool,
             SendPeerMgr&    peerMgr);
 
     /**
@@ -122,13 +121,11 @@ public:
      * @param[in] srvrAddr      Socket address on which a local server will
      *                          accept connections from remote peers
      * @param[in] queueSize     Size of server's `listen()` queue
-     * @param[in] portPool      Pool of available port numbers
      * @param[in] peerObs       Observer of the peer
      */
     SubPeerFactory(
             const SockAddr& srvrAddr,
             const int       queueSize,
-            PortPool&       portPool,
             XcvrPeerMgr&    peerObs);
 
     /**

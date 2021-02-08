@@ -175,7 +175,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
     hycast::log_setName(::basename(argv[0]));
-    hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
+    hycast::log_setLevel(hycast::LogLevel::DEBUG);
 
     std::set_terminate(&myTerminate);
 

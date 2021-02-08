@@ -57,9 +57,9 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] observer  Observer to be notified if and when a peer stops
-     *                      due to throwing an exception. Must exist for the
-     *                      duration of this instance.
+     * @param[in] peerSetMgr  Manager of this instance to be notified if and
+     *                        when a peer stops due to throwing an exception.
+     *                        Must exist for the duration of this instance.
      */
     PeerSet(PeerSetMgr& peerSetMgr);
 
@@ -72,6 +72,12 @@ public:
      * @cancellationpoint     No
      */
     void activate(const Peer peer);
+
+    /**
+     * Synchronously halts all peers in the set. Doesn't return until the set is
+     * empty.
+     */
+    void halt();
 
     /**
      * Returns the number of active peers in the set.

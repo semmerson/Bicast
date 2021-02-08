@@ -79,4 +79,26 @@ SystemError::SystemError(
             makeWhat(file, line, func, msg)}
 {}
 
+void terminate()
+{
+    auto exPtr = std::current_exception();
+
+    if (!exPtr) {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    else {
+        try {
+            std::rethrow_exception(exPtr);
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("terminate() called with a non-standard exception");
+        }
+    }
+
+    ::abort();
+}
+
 } // namespace

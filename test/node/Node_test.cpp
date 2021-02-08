@@ -53,7 +53,6 @@ protected:
     const hycast::SockAddr    pubSockAddr;
     const hycast::SockAddr    subSockAddr;
     const int                 listenSize;
-    hycast::PortPool          portPool;
     const int                 maxPeers;
     hycast::P2pInfo           pubP2pInfo;
     hycast::P2pInfo           subP2pInfo;
@@ -85,12 +84,11 @@ protected:
         , subInetAddr{"192.168.174.141"}
         , subSockAddr{subInetAddr, 3881} // NB: Not a Linux dynamic port number
         , listenSize{0}
-        , portPool(38800, 24) // NB: Linux Dynamic port numbers
         , maxPeers{3}
-        , pubP2pInfo{.sockAddr=pubSockAddr, .portPool=portPool,
-                .listenSize=listenSize, .maxPeers=maxPeers}
-        , subP2pInfo{.sockAddr=subSockAddr, .portPool=portPool,
-                .listenSize=listenSize, .maxPeers=maxPeers}
+        , pubP2pInfo{.sockAddr=pubSockAddr, .listenSize=listenSize,
+            .maxPeers=maxPeers}
+        , subP2pInfo{.sockAddr=subSockAddr, .listenSize=listenSize,
+            .maxPeers=maxPeers}
         , srcMcastInfo{.grpAddr=grpSockAddr, .srcAddr=pubInetAddr}
         , p2pSrvrPool{std::set<hycast::SockAddr>{pubSockAddr}}
         , numPeers{0}
@@ -209,14 +207,29 @@ TEST_F(NodeTest, Sending)
 
 static void myTerminate()
 {
-    LOG_FATAL("terminate() called %s an active exception",
-            std::current_exception() ? "with" : "without");
+    auto exPtr = std::current_exception();
+
+    if (!exPtr) {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    else {
+        try {
+            std::rethrow_exception(exPtr);
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("terminate() called with a non-standard exception");
+        }
+    }
+
     abort();
 }
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  //hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
+  hycast::log_setLevel(hycast::LogLevel::DEBUG);
 
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the

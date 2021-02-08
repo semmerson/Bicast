@@ -132,27 +132,23 @@ public:
      * Publisher & subscriber sending-side construction.
      *
      * @param[in]     sock         Server's listening TCP socket
-     * @param[in,out] portPool     Pool of port numbers for transient servers
      * @param[in]     peer         Sending Peer
      * @cancellationpoint          Yes
      */
     PeerProto(
             TcpSock&  sock,
-            PortPool& portPool,
             SendPeer& peer);
 
     /**
      * Subscriber server-side construction.
      *
      * @param[in]     sock         Server's listening TCP socket
-     * @param[in,out] portPool     Pool of port numbers for transient servers
      * @param[in]     lclNodeType  Type of local node
      * @param[in]     subPeer      Subscriber peer
      * @cancellationpoint          Yes
      */
     PeerProto(
             TcpSock&   sock,
-            PortPool&  portPool,
             NodeType   lclNodeType,
             RecvPeer&  subPeer);
 

@@ -39,6 +39,10 @@ public:
             in_port_t min,
             unsigned  num);
 
+    in_port_t getMin() const noexcept;
+
+    unsigned getNum() const noexcept;
+
     /**
      * Indicates if this instance is valid (i.e., not default constructed).
      *

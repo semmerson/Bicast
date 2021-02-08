@@ -13,10 +13,11 @@
 
 #include "PeerFactory.h"
 #include "PeerSet.h"
+#include "SockAddr.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 
@@ -56,7 +57,6 @@ protected:
     State                   state;
     hycast::SockAddr        pubAddr;
     hycast::SockAddr        subAddr;
-    hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::ProdIndex       prodIndex;
@@ -79,11 +79,6 @@ protected:
         : state{INIT}
         , pubAddr{"localhost:3880"}
         , subAddr{"localhost:3881"}
-        /*
-         * 3 potential port numbers for the server's 2 temporary servers because
-         * the initial client connection could use one
-         */
-        , portPool(3882, 3)
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -94,8 +89,8 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , pubFactory(pubAddr, 1, portPool, *this)
-        , subFactory(subAddr, 1, portPool, *this)
+        , pubFactory(pubAddr, 1, *this)
+        , subFactory(subAddr, 1, *this)
         , pubPeer()
         , subPeer()
     {
@@ -117,15 +112,15 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer& peer)
+    void pathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
-    void noPathToPub(hycast::Peer& peer)
+    void noPathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
     // Subscriber-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdIndex actual)
     {
         EXPECT_TRUE(prodIndex == actual);
@@ -136,7 +131,7 @@ public:
 
     // Subscriber-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
@@ -167,7 +162,7 @@ public:
 
     // Subscriber-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
@@ -178,7 +173,7 @@ public:
 
     // Subscriber-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();

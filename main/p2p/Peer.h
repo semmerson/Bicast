@@ -81,45 +81,45 @@ public:
      * Handles the remote node transitioning from not having a path to the
      * publisher of data-products to having one.
      *
-     * @param[in] peer        Relevant peer
+     * @param[in] rmtAddr     Socket address of remote peer
      * @throws    LogicError  Local node is publisher
      */
-    virtual void pathToPub(Peer& peer) =0;
+    virtual void pathToPub(const SockAddr& rmtAddr) =0;
 
     /**
      * Handles the remote node transitioning from having a path to the publisher
      * of data-products to not having one.
      *
-     * @param[in] peer        Relevant peer
+     * @param[in] rmtAddr     Socket address of remote peer
      * @throws    LogicError  Local node is publisher
      */
-    virtual void noPathToPub(Peer& peer) =0;
+    virtual void noPathToPub(const SockAddr& rmtAddr) =0;
 
     /**
      * Indicates if product-information should be requested.
      *
-     * @param[in] peer        Relevant peer
+     * @param[in] rmtAddr     Socket address of remote peer
      * @param[in] prodIndex   Identifier of product
      * @retval    `true`      The product-information should be requested
      * @retval    `false`     The product-information should not be requested
      * @throws    LogicError  Local node is publisher
      */
     virtual bool shouldRequest(
-            Peer&     peer,
-            ProdIndex prodIndex) =0;
+            const SockAddr& rmtAddr,
+            const ProdIndex prodIndex) =0;
 
     /**
      * Indicates if a data-segment should be requested.
      *
-     * @param[in] peer        Relevant peer
+     * @param[in] rmtAddr     Socket address of remote peer
      * @param[in] segId       Identifier of data-segment
      * @retval    `true`      The data-segment should be requested
      * @retval    `false`     The data-segment should not be requested
      * @throws    LogicError  Local node is publisher
      */
     virtual bool shouldRequest(
-            Peer&        peer,
-            const SegId& segId) =0;
+            const SockAddr& rmtAddr,
+            const SegId&    segId) =0;
 
     /**
      * Accepts product-information.
@@ -131,21 +131,21 @@ public:
      * @throws    LogicError  Local node is publisher
      */
     virtual bool hereIs(
-            Peer&           peer,
+            const SockAddr& rmtAddr,
             const ProdInfo& prodInfo) =0;
 
     /**
      * Accepts a data-segment.
      *
-     * @param[in] peer         Relevant peer
+     * @param[in] peer        Relevant peer
      * @param[in] tcpSeg      TCP-based data-segment
      * @retval    `true`      Chunk was accepted
      * @retval    `false`     Chunk was previously accepted
      * @throws    LogicError  Local node is publisher
      */
     virtual bool hereIs(
-            Peer&   peer,
-            TcpSeg& tcpSeg) =0;
+            const SockAddr& rmtAddr,
+            TcpSeg&         tcpSeg) =0;
 };
 
 /**
@@ -169,23 +169,19 @@ public:
      * Constructs a publisher-peer.
      *
      * @param[in]     sock      `::accept()`ed connection to the client peer
-     * @param[in,out] portPool  Pool of port numbers for temporary servers
      * @param[in]     peerMgr   Manager of publisher-peer
      */
     Peer(   TcpSock&     sock,
-            PortPool&    portPool,
             SendPeerMgr& peerMgr);
 
     /**
      * Constructs a server-side subscriber-peer.
      *
      * @param[in]     sock           `::accept()`ed connection to the client peer
-     * @param[in,out] portPool       Pool of port numbers for temporary servers
      * @param[in]     lclNodeType    Type of local node
      * @param[in]     peerMgr        Manager of subscriber-peer
      */
     Peer(   TcpSock&     sock,
-            PortPool&    portPool,
             NodeType     lclNodeType,
             XcvrPeerMgr& subPeerMgrApi);
 
@@ -210,6 +206,10 @@ public:
 
     operator bool() const noexcept;
 
+    long useCount() {
+        return pImpl.use_count();
+    }
+
     /**
      * Returns the socket address of the remote peer. On the client-side, this
      * will be the address of the peer-server; on the server-side, this will be
@@ -217,14 +217,14 @@ public:
      *
      * @return Socket address of the remote peer.
      */
-    const SockAddr getRmtAddr() const noexcept;
+    SockAddr getRmtAddr() const noexcept;
 
     /**
      * Returns the local socket address.
      *
      * @return Local socket address
      */
-    const SockAddr getLclAddr() const noexcept;
+    SockAddr getLclAddr() const noexcept;
 
     Peer& operator=(const Peer& rhs);
 
@@ -245,6 +245,7 @@ public:
 
     /**
      * Halts execution. Causes `operator()()` to return if it has been called.
+     * Idempotent.
      *
      * @cancellationpoint No
      */

@@ -13,7 +13,8 @@
 #ifndef MAIN_PEER_SERVERPOOL_H_
 #define MAIN_PEER_SERVERPOOL_H_
 
-#include <main/inet/SockAddr.h>
+#include "SockAddr.h"
+
 #include <memory>
 #include <set>
 
@@ -27,13 +28,6 @@ public:
 private:
     std::shared_ptr<Impl> pImpl;
 
-    /**
-     * Constructs from an implementation.
-     *
-     * @param[in] impl  The implementation
-     */
-    ServerPool(Impl* const impl);
-
 public:
     /**
      * Default constructs. The pool will be empty.
@@ -44,8 +38,18 @@ public:
      * Constructs from a set of addresses of potential servers.
      *
      * @param[in] servers  Set of addresses of potential servers
+     * @param[in] delay    Delay, in seconds, before a server given to
+     *                     `consider()` is made available
      */
-    ServerPool(const std::set<SockAddr>& servers);
+    ServerPool(const std::set<SockAddr>& servers, const unsigned delay = 60);
+
+    /**
+     * Constructs from the maximum number of socket addresses to contain.
+     *
+     * @param[in] maxServers  Maximum number of server socket addresses to
+     *                        contain.
+    ServerPool(const unsigned maxServers);
+     */
 
     /**
      * Indicates if `pop()` will immediately return.
@@ -81,9 +85,7 @@ public:
      * @exceptionsafety              Strong guarantee
      * @threadsafety                 Safe
      */
-    void consider(
-            const SockAddr& server,
-            const unsigned  delay = 0) const;
+    void consider(SockAddr& server) const;
 
     /**
      * Closes the pool of servers. Causes `pop()` and `consider()` to throw an

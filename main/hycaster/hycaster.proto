@@ -1,0 +1,35 @@
+syntax = "proto3";
+package hycast;
+
+// Subscription request
+message SubReq {
+}
+
+// Socket address
+message SockAddr {
+  /*
+   * Socket specification as
+   *   <host>':'<port>
+   * where:
+   *   <host>  Host identifier. One of
+   *             - <hostname>
+   *             - <IPv4 address>
+   *             - '['<IPv6 address>']'
+   *   <port>  Port number
+   */
+  string sock_addr = 1;
+}
+
+// Subscription response
+message SubResp {
+  // Address of multicast group
+  SockAddr          mcast_group = 1;
+  // Product lifetime in seconds
+  uint32            prod_lifetime = 2;
+  // List of peer-servers. First one is publisher's.
+  repeated SockAddr peer_servers = 3;
+}
+
+service Hycaster {
+  rpc Subscribe(SubReq) returns (SubResp) {};
+}

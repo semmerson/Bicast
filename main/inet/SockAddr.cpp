@@ -13,8 +13,9 @@
 #include "config.h"
 
 #include "error.h"
+#include "SockAddr.h"
+
 #include <arpa/inet.h>
-#include <inet/SockAddr.h>
 #include <climits>
 #include <functional>
 #include <netdb.h>
@@ -214,13 +215,12 @@ SockAddr::SockAddr(const struct sockaddr_in6& sockaddr)
 {}
 
 SockAddr::SockAddr(const struct sockaddr_storage& storage)
-    : SockAddr{}
+    : pImpl()
 {
     if (storage.ss_family == AF_INET) {
         const struct sockaddr_in* addr =
                 reinterpret_cast<const struct sockaddr_in*>(&storage);
-        pImpl.reset(new Impl(InetAddr(addr->sin_addr),
-                ntohs(addr->sin_port)));
+        pImpl.reset(new Impl(InetAddr(addr->sin_addr), ntohs(addr->sin_port)));
     }
     else if (storage.ss_family == AF_INET6) {
         const struct sockaddr_in6* addr =

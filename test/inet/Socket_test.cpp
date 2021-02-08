@@ -12,8 +12,9 @@
 #include "config.h"
 
 #include "error.h"
+#include "Socket.h"
+
 #include <gtest/gtest.h>
-#include <main/inet/Socket.h>
 #include <condition_variable>
 #include <mutex>
 #include <signal.h>

@@ -13,8 +13,9 @@
 #ifndef MAIN_HYCAST_H_
 #define MAIN_HYCAST_H_
 
-#include <main/inet/Socket.h>
+#include "Socket.h"
 #include "error.h"
+
 #include <climits>
 #include <memory>
 #include <string>

@@ -79,18 +79,18 @@ protected:
     using AtomicBool = std::atomic<bool>;
     using ExceptPtr = std::exception_ptr;
 
-    mutable Mutex mutex;           ///< State-change mutex
-    mutable Cond  cond;            ///< State-change condition variable
-    SendPeerMgr&  peerMgr;         ///< Peer manager interface
-    ChunkIdQueue  noticeQueue;     ///< Queue for notices
-    Thread        notifierThread;  ///< Thread on which notices are sent
-    Thread        protocolThread;  ///< Thread on which peerProto() executes
-    ExceptPtr     exceptPtr;       ///< Pointer to terminating exception
-    bool          done;            ///< Terminate without an exception?
-    AtomicBool    isRunning;       ///< `operator()()` is active?
-    PeerProto     peerProto;       ///< Peer-to-peer protocol object
-    SockAddr      rmtAddr;         ///< Socket address of remote peer
-    SockAddr      lclAddr;         ///< Socket address of local peer
+    mutable Mutex  mutex;           ///< State-change mutex
+    mutable Cond   cond;            ///< State-change condition variable
+    SendPeerMgr&   peerMgr;         ///< Peer manager interface
+    ChunkIdQueue   noticeQueue;     ///< Queue for notices
+    Thread         notifierThread;  ///< Thread on which notices are sent
+    Thread         protocolThread;  ///< Thread on which peerProto() executes
+    ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
+    bool           done;            ///< Terminate without an exception?
+    AtomicBool     isRunning;       ///< `operator()()` is active?
+    PeerProto      peerProto;       ///< Peer-to-peer protocol object
+    const SockAddr rmtAddr;         ///< Socket address of remote peer
+    const SockAddr lclAddr;         ///< Socket address of local peer
 
     void handleException(const std::exception& ex)
     {
@@ -203,13 +203,12 @@ public:
     virtual ~Impl()
     {
         if (isRunning)
-            throw LOGIC_ERROR("Peer being destroyed while executing!");
+            throw LOGIC_ERROR("Peer is still executing!");
     }
 
     /**
-     * Returns the socket address of the remote peer. On the client-side, this
-     * will be the address of the peer-server; on the server-side, this will be
-     * the address of the `accept()`ed socket.
+     * Returns the socket address of the remote peer regardless of the state of
+     * the connection.
      *
      * @return            Socket address of the remote peer.
      * @cancellationpoint No
@@ -219,7 +218,8 @@ public:
     }
 
     /**
-     * Returns the local socket address.
+     * Returns the local socket address regardless of the state of the
+     * connection.
      *
      * @return            Local socket address
      * @cancellationpoint No
@@ -286,7 +286,8 @@ public:
      * otherwise, causes `operator()()` to return and disconnects from the
      * remote peer. *Must* be called if `operator()()` is called. Idempotent.
      *
-     * @cancellationpoint No
+     * @cancellationpoint  No
+     * @asyncsignalsafety  Unsafe
      */
     void halt() noexcept
     {
@@ -335,8 +336,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            auto remote = peerProto.getRmtAddr();
-            auto prodInfo = peerMgr.getProdInfo(remote, prodIndex);
+            auto prodInfo = peerMgr.getProdInfo(rmtAddr, prodIndex);
         ::pthread_setcancelstate(entryState, &entryState);
 
         if (prodInfo) {
@@ -352,11 +352,9 @@ public:
             LOG_DEBUG("Accepting request for data-segment %s",
                     segId.to_string().data());
 
-            int entryState;
-
             //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-                auto remote = peerProto.getRmtAddr();
-                MemSeg memSeg = peerMgr.getMemSeg(remote, segId);
+                int entryState;
+                MemSeg memSeg = peerMgr.getMemSeg(rmtAddr, segId);
             //::pthread_setcancelstate(entryState, &entryState);
 
             if (memSeg) {
@@ -393,11 +391,11 @@ Peer::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-const SockAddr Peer::getRmtAddr() const noexcept {
+SockAddr Peer::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }
 
-const SockAddr Peer::getLclAddr() const noexcept {
+SockAddr Peer::getLclAddr() const noexcept {
     return pImpl->getLclAddr();
 }
 
@@ -508,14 +506,11 @@ public:
      * Constructs. Server-side construction only.
      *
      * @param[in] sock         TCP socket with remote peer
-     * @param[in] portPool     Pool of port numbers for temporary servers
      * @param[in] peerMgr      Peer manager
-     * @param[in] peer         Containing local peer
      */
     PubPeer(TcpSock&     sock,
-            PortPool&    portPool,
             SendPeerMgr& peerMgr)
-        : Peer::Impl(PeerProto(sock, portPool, *this), peerMgr)
+        : Peer::Impl(PeerProto(sock, *this), peerMgr)
     {}
 
     /**
@@ -553,9 +548,8 @@ Peer::Peer() =default;
 
 Peer::Peer(
         TcpSock&     sock,
-        PortPool&    portPool,
         SendPeerMgr& peerMgr)
-    : pImpl(new PubPeer(sock, portPool, peerMgr)) {
+    : pImpl(new PubPeer(sock, peerMgr)) {
 }
 
 /******************************************************************************/
@@ -571,7 +565,6 @@ private:
     std::thread     requesterThread; ///< Thread on which requests are made
     AtomicBool      rmtHasPathToPub; ///< Remote node has path to publisher?
     XcvrPeerMgr&    recvPeerMgr;     ///< Manager of subscriber peer
-    Peer            peer;            ///< Containing peer
 
     void runRequester(void)
     {
@@ -660,17 +653,14 @@ public:
     /**
      * Server-side construction (i.e., from an `::accept()`).
      *
-     * @param[in] sock           TCP socket with remote peer
-     * @param[in] portPool       Pool of port numbers for temporary servers
-     * @param[in] lclNodeType    Type of local node
-     * @param[in] peer           Containing local peer
-     * @param[in] peerMgr        Peer Manager
+     * @param[in] sock         TCP socket with remote peer
+     * @param[in] lclNodeType  Type of local node
+     * @param[in] peerMgr      This instance's manager
      */
     SubPeer(TcpSock&        sock,
-            PortPool&       portPool,
             const NodeType& lclNodeType,
             XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(sock, portPool, lclNodeType, *this), peerMgr)
+        : Peer::Impl(PeerProto(sock, lclNodeType, *this), peerMgr)
         , fromConnect{false}
         , requestQueue{}
         , requesterThread{}
@@ -681,11 +671,10 @@ public:
     /**
      * Client-side construction (i.e., uses `::connect()`).
      *
-     * @param[in] rmtSrvrAddr    Address of remote peer-server
-     * @param[in] lclNodeType    Type of local node
-     * @param[in] peer           Local peer that contains this instance
-     * @param[in] subPeerMgrApi  Manager of subscriber peer
-     * @throws    LogicError     `lclNodeType == NodeType::PUBLISHER`
+     * @param[in] rmtSrvrAddr  Address of remote peer-server
+     * @param[in] lclNodeType  Type of local node
+     * @param[in] peerMgr      This instance's manager
+     * @throws    LogicError   `lclNodeType == NodeType::PUBLISHER`
      */
     SubPeer(const SockAddr& rmtSrvrAddr,
             const NodeType  lclNodeType,
@@ -697,19 +686,6 @@ public:
         , rmtHasPathToPub{peerProto.getRmtNodeType()}
         , recvPeerMgr(peerMgr)
     {}
-
-    /**
-     * Sets the peer that uses this implementation. This obviates the
-     * possibility that the peer is destroyed while `available()` or
-     * `hereIs()` references it.
-     *
-     * @param[in] peer  Peer that uses this implementation
-     * @see             `available()`
-     * @see             `hereIs()`
-     */
-    void setPeer(Peer& peer) {
-        this->peer = peer;
-    }
 
     SendPeer& asSendPeer() noexcept
     {
@@ -794,7 +770,7 @@ public:
     {
         if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
             rmtHasPathToPub = true;
-            recvPeerMgr.pathToPub(peer);
+            recvPeerMgr.pathToPub(rmtAddr);
         }
     }
 
@@ -809,7 +785,7 @@ public:
     {
         if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
             rmtHasPathToPub = false;
-            recvPeerMgr.noPathToPub(peer);
+            recvPeerMgr.noPathToPub(rmtAddr);
         }
     }
 
@@ -826,7 +802,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool yes = recvPeerMgr.shouldRequest(peer, prodIndex);
+            const bool yes = recvPeerMgr.shouldRequest(rmtAddr, prodIndex);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (yes) {
@@ -844,7 +820,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool yes = recvPeerMgr.shouldRequest(peer, segId);
+            const bool yes = recvPeerMgr.shouldRequest(rmtAddr, segId);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
 
         if (yes) {
@@ -862,7 +838,7 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)recvPeerMgr.hereIs(peer, prodInfo);
+            (void)recvPeerMgr.hereIs(rmtAddr, prodInfo);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 
@@ -874,28 +850,23 @@ public:
         int entryState;
 
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)recvPeerMgr.hereIs(peer, seg);
+            (void)recvPeerMgr.hereIs(rmtAddr, seg);
         ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
     }
 };
 
 Peer::Peer(
         TcpSock&     sock,
-        PortPool&    portPool,
         NodeType     lclNodeType,
         XcvrPeerMgr& peerMgr)
-    : pImpl(new SubPeer(sock, portPool, lclNodeType, peerMgr))
-{
-    static_cast<SubPeer*>(pImpl.get())->setPeer(*this);
-}
+    : pImpl(new SubPeer(sock, lclNodeType, peerMgr))
+{}
 
 Peer::Peer(
         const SockAddr& rmtSrvrAddr,
         const NodeType  lclNodeType,
         XcvrPeerMgr&    peerMgr)
     : pImpl(new SubPeer(rmtSrvrAddr, lclNodeType, peerMgr))
-{
-    static_cast<SubPeer*>(pImpl.get())->setPeer(*this);
-}
+{}
 
 } // namespace

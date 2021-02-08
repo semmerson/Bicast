@@ -9,9 +9,10 @@
  * This file tests class `SockAddr`.
  */
 
+#include "SockAddr.h"
+
 #include <arpa/inet.h>
 #include <gtest/gtest.h>
-#include <main/inet/SockAddr.h>
 #include <netinet/in.h>
 #include <stdexcept>
 #include <string>

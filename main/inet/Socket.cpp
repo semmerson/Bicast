@@ -9,9 +9,10 @@
  *  Created on: May 9, 2019
  *      Author: Steven R. Emmerson
  */
-#include <inet/InetAddr.h>
-#include <inet/Socket.h>
 #include "config.h"
+
+#include "InetAddr.h"
+#include "Socket.h"
 
 #include "error.h"
 #include <atomic>
@@ -257,7 +258,7 @@ public:
             if (nwritten == -1) {
                 if (errno == ECONNRESET || errno == EPIPE)
                     throw EOF_ERROR("Connection to host " +
-                            getRmtAddr().to_string() + " is closed");
+                            getRmtAddr().to_string() + " was closed");
                 throw SYSTEM_ERROR("Couldn't write to host "
                         + getRmtAddr().to_string());
             }

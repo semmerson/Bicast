@@ -16,9 +16,7 @@
 
 #include "error.h"
 
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
+#include <semaphore.h>
 #include <thread>
 
 namespace hycast {
@@ -29,59 +27,60 @@ namespace hycast {
 class Node::Impl : public P2pSndr
 {
 protected:
-    typedef std::mutex              Mutex;
-    typedef std::condition_variable Cond;
-    typedef std::lock_guard<Mutex>  Guard;
-    typedef std::unique_lock<Mutex> Lock;
-    typedef std::exception_ptr      ExceptPtr;
+    using Thread    = std::thread;
+    using ExceptPtr = std::exception_ptr;
 
-    Mutex              mutex;        ///< For concurrency
-    Cond               cond;         ///< For concurrency
+    sem_t              sem;          ///< Halt semaphore
     P2pMgr             p2pMgr;       ///< Peer-to-peer manager
-    std::thread        p2pMgrThread; ///< Thread on which P2P manager executes
+    Thread             p2pMgrThread; ///< Thread on which P2P manager executes
     Repository&        repo;         ///< Data-product repository
     ExceptPtr          exPtr;        ///< Subtask exception
-    bool               done;         ///< Halt requested?
 
     /**
      * Constructs.
      *
-     * @param[in] p2pMgr  Peer-to-peer manager
-     * @param[in] repo    Data-product repository. Must exist for the duration.
+     * @param[in] p2pMgr             Peer-to-peer manager
+     * @param[in] repo               Data-product repository. Must exist for the
+     *                               duration.
+     * @throws    std::system_error  Couldn't initialize semaphore
      */
     Impl(   P2pMgr&&    p2pMgr,
             Repository& repo)
-        : mutex()
-        , cond()
-        , p2pMgr(p2pMgr)
+        : p2pMgr(p2pMgr)
         , p2pMgrThread()
         , repo(repo)
         , exPtr()
-        , done(false)
-    {}
+    {
+        if (::sem_init(&sem, 0, 0) == -1)
+            throw SYSTEM_ERROR("sem_init() failure");
+    }
 
     void setException(const std::exception& ex)
     {
-        Guard guard(mutex);
-
         if (!exPtr) {
             exPtr = std::make_exception_ptr(ex);
-            cond.notify_one();
+            if (::sem_post(&sem))
+                throw SYSTEM_ERROR("sem_post() failure");
         }
     }
 
     /**
      * Waits until this instance should stop. Rethrows subtask exception if
      * appropriate.
+     *
+     * @throws std::system_error  `sem_wait()` failure
+     * @throws                    Subtask exception if appropriate
      */
     void waitUntilDone()
     {
-        Lock lock(mutex);
+        int status;
+        while ((status = sem_wait(&sem)) && errno == EINTR)
+            continue;
 
-        while (!done && !exPtr)
-            cond.wait(lock);
+        if (status)
+            throw SYSTEM_ERROR("sem_wait() failure");
 
-        if (!done && exPtr)
+        if (exPtr)
             std::rethrow_exception(exPtr);
     }
 
@@ -90,7 +89,7 @@ protected:
      */
     void startP2pMgr() {
         try {
-            p2pMgrThread = std::thread(&Impl::runP2p, this);
+            p2pMgrThread = Thread(&Impl::runP2p, this);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(
@@ -110,7 +109,6 @@ public:
      * Destroys.
      */
     virtual ~Impl() noexcept {
-        Guard guard(mutex); // For visibility of changes
         stopP2pMgr();
     }
 
@@ -121,19 +119,14 @@ public:
 
     /**
      * Halts this instance.
+     *
+     * @asyncsignalsafety  Safe
      */
     void halt()
     {
-        Guard guard(mutex);
-        done = true;
-        cond.notify_one();
+        if (::sem_post(&sem))
+            throw SYSTEM_ERROR("sem_post() failure");
     }
-
-    /*
-    void peerAdded(Peer peer) {
-        p2pObs.peerAdded(peer);
-    }
-    */
 
     ProdInfo getProdInfo(ProdIndex prodIndex)
     {
@@ -181,8 +174,12 @@ private:
     }
 };
 
-Node::Node(std::shared_ptr<Impl> pImpl)
-    : pImpl{pImpl}
+Node::Node()
+    : pImpl{}
+{}
+
+Node::Node(Impl* impl)
+    : pImpl{impl}
 {}
 
 Node::~Node() =default;
@@ -205,7 +202,7 @@ class Publisher::Impl final : public Node::Impl
     McastSndr          mcastSndr;
     PubRepo            repo;
     SegSize            segSize;
-    std::thread        sendThread;
+    Thread             sendThread;
 
     /**
      * Sends product-information.
@@ -275,7 +272,13 @@ class Publisher::Impl final : public Node::Impl
     }
 
     void startSender() {
-        sendThread = std::thread(&Impl::runSender, this);
+        try {
+            sendThread = Thread(&Impl::runSender, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(
+                    RUNTIME_ERROR("Couldn't create sending thread"));
+        }
     }
 
     void stopSender() {
@@ -310,17 +313,20 @@ public:
      */
     ~Impl()
     {
-        Guard guard(mutex);
-
         if (sendThread.joinable()) {
             ::pthread_cancel(sendThread.native_handle());
             sendThread.join();
         }
+        if (::sem_destroy(&sem))
+            LOG_ERROR("sem_destroy() failure");
     }
 
     /**
      * Executes this instance. A P2P manager is executed and the repository is
      * watched for new data-products to be sent.
+     *
+     * @throw std::runtime_error  Couldn't create thread
+     * @throw std::system_error  `sem_wait()` failure
      */
     void operator()() override {
         startP2pMgr();
@@ -366,11 +372,15 @@ public:
     }
 };
 
+Publisher::Publisher()
+    : Node() {
+}
+
 Publisher::Publisher(
         P2pInfo&        p2pInfo,
         const SockAddr& grpAddr,
         PubRepo&        repo)
-    : Node{std::make_shared<Impl>(p2pInfo,  grpAddr, repo)} {
+    : Node(new Impl{p2pInfo,  grpAddr, repo}) {
 }
 
 void Publisher::link(
@@ -379,7 +389,7 @@ void Publisher::link(
     pImpl->link(pathname, prodName);
 }
 
-#if 0
+#if 1
 void Publisher::operator ()() const {
     pImpl->operator()();
 }
@@ -394,7 +404,7 @@ class Subscriber::Impl final : public Node::Impl, public P2pSub, public McastSub
 {
     McastRcvr                  mcastRcvr;       ///< Multicast receiver
     SubRepo                    repo;            ///< Data-product repository
-    std::thread                mcastRcvrThread; ///< Multicast receiver thread
+    Thread                     mcastRcvrThread; ///< Multicast receiver thread
     std::atomic<unsigned long> numUdpOrig;      ///< Number of original UDP chunks
     std::atomic<unsigned long> numTcpOrig;      ///< Number of original TCP chunks
     std::atomic<unsigned long> numUdpDup;       ///< Number of duplicate UDP chunks
@@ -415,7 +425,7 @@ class Subscriber::Impl final : public Node::Impl, public P2pSub, public McastSub
      */
     void startMcastRcvr() {
         try {
-            mcastRcvrThread = std::thread(&Impl::runMcast, this);
+            mcastRcvrThread = Thread(&Impl::runMcast, this);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(
@@ -434,18 +444,18 @@ public:
     /**
      * Constructs.
      *
-     * @param[in]     srcMcastInfo  Information on source-specific multicast
-     * @param[in,out] p2pInfo       Information about the local P2P server
-     * @param[in,out] p2pSrvrPool   Pool of remote P2P-servers
-     * @param[in,out] repo          Data-product repository
-     * @param[in]     rcvrObs       Observer of this instance
+     * @param[in]     srcMcastAddrs  Source-specific multicast addresses
+     * @param[in,out] p2pInfo        Information about the local P2P server
+     * @param[in,out] p2pSrvrPool    Pool of remote P2P-servers
+     * @param[in,out] repo           Data-product repository
+     * @param[in]     rcvrObs        Observer of this instance
      */
-    Impl(   const SrcMcastAddrs& srcMcastInfo,
-            P2pInfo&             p2pInfo,
+    Impl(   const SrcMcastAddrs& srcMcastAddrs,
+            const P2pInfo&       p2pInfo,
             ServerPool&          p2pSrvrPool,
             SubRepo&             repo)
         : Node::Impl(P2pMgr(p2pInfo, p2pSrvrPool, *this), repo)
-        , mcastRcvr{srcMcastInfo, *this}
+        , mcastRcvr{srcMcastAddrs, *this}
         , repo(repo)
         , mcastRcvrThread{}
         , numUdpOrig{0}
@@ -634,11 +644,11 @@ public:
 /******************************************************************************/
 
 Subscriber::Subscriber(
-        const SrcMcastAddrs& srcMcastInfo,
+        const SrcMcastAddrs& srcMcastAddrs,
         P2pInfo&             p2pInfo,
         ServerPool&          p2pSrvrPool,
         SubRepo&             repo)
-    : Node{std::make_shared<Impl>(srcMcastInfo, p2pInfo, p2pSrvrPool, repo)} {
+    : Node{new Impl{srcMcastAddrs, p2pInfo, p2pSrvrPool, repo}} {
 }
 
 #if 0

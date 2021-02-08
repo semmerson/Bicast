@@ -34,10 +34,11 @@ typedef Clock::time_point         TimePoint;
 template<typename Value, typename Dur>
 class DelayQueue<Value,Dur>::Impl final
 {
-    typedef Dur                       Duration;
-    typedef std::mutex                Mutex;
-    typedef std::unique_lock<Mutex>   Lock;
-    typedef std::lock_guard<Mutex>    Guard;
+    using Duration = Dur;
+    using Mutex    = std::mutex;
+    using Lock     = std::unique_lock<Mutex>;
+    using Guard    = std::lock_guard<Mutex>;
+    using Cond     = std::condition_variable;
 
     /**
      * An element in the queue.
@@ -48,7 +49,8 @@ class DelayQueue<Value,Dur>::Impl final
 
     public:
         /**
-         * Constructs from a value and a delay.
+         * Constructs.
+         *
          * @param[in] value  The value.
          * @param[in] when   The reveal-time
          */
@@ -98,14 +100,12 @@ class DelayQueue<Value,Dur>::Impl final
         }
     };
 
-    /// The mutex for concurrent access to the queue.
-    std::mutex mutable                                          mutex;
-    /// The condition variable for signaling when the queue has been modified
-    std::condition_variable                                     cond;
-    /// The queue.
-    std::priority_queue<Element, std::vector<Element>, Compare> queue;
-    /// Whether or not the queue is closed
-    bool                                                        isClosed;
+    using Queue = std::priority_queue<Element, std::vector<Element>, Compare>;
+
+    mutable Mutex mutex;    ///< For concurrent access
+    mutable Cond  cond;     ///< For signaling when the queue has been modified
+    Queue         queue;    ///< The queue.
+    bool          isClosed; ///< Whether or not the queue is closed
 
 public:
     /**
@@ -144,7 +144,7 @@ public:
     /**
      * Returns the value whose reveal-time is the earliest and not later than
      * the current time and removes it from the queue. Blocks until such a value
-     * is available.
+     * is available or `close()` is called.
      *
      * @return                    The value with the earliest reveal-time that's
      *                            not later than the current time.
@@ -152,50 +152,28 @@ public:
      * @exceptionsafety           Strong guarantee
      * @threadsafety              Safe
      * @cancellationpoint
+     * @see `close()`
      */
     Value pop()
     {
-        Value value;
         Lock  lock{mutex};
 
-        for (;;) {
-            //LOG_DEBUG("isClosed: %d", isClosed);
-            if (isClosed) {
-                //LOG_DEBUG("Throwing DOMAIN_ERROR");
-                throw DOMAIN_ERROR("DelayQueue is closed");
-            }
-
+        while (!isClosed) {
             if (queue.empty()) {
-                //LOG_DEBUG("Waiting");
-                //Canceler canceler{true};
-                try {
-                    cond.wait(lock);
-                }
-                catch (const std::exception& ex) {
-                    //LOG_DEBUG("Caught std::exception");
-                    throw;
-                }
-                catch (...) {
-                    //LOG_DEBUG("Caught ... exception");
-                    throw;
-                }
+                cond.wait(lock);
             }
-            else {
-                auto revealTime = queue.top().getTime();
-
-                if (revealTime > Clock::now()) {
-                    //LOG_DEBUG("Waiting until");
-                    cond.wait_until(lock, revealTime);
-                }
-                else {
-                    //LOG_DEBUG("Popping value");
-                    Canceler canceler{false};
-                    value = queue.top().getValue();
-                    queue.pop();
-                    break;
-                }
+            else if (cond.wait_until(lock, queue.top().getTime()) ==
+                    std::cv_status::timeout) {
+                break;
             }
         }
+
+        if (isClosed)
+            throw DOMAIN_ERROR("DelayQueue is closed");
+
+        Canceler canceler{false};
+        Value    value = queue.top().getValue();
+        queue.pop();
 
         return value;
     }

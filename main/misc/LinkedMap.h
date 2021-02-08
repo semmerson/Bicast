@@ -53,14 +53,24 @@ public:
     size_t size() const noexcept;
 
     /**
+     * Indicates if this instance is empty.
+     *
+     * @retval `true`   This instance is empty
+     * @retval `false`  This instance is not empty
+     */
+    bool empty() const noexcept;
+
+    /**
      * Adds an entry. If a new entry is created, then it is added to the tail of
      * the list.
      *
-     * @param[in] key    Key
-     * @param[in] value  Value mapped-to by key
-     * @return           Pointer to value in map
+     * @param[in] key      Key
+     * @param[in] value    Value mapped-to by key
+     * @return             Pair whose second element is true if the value didn't
+     *                     already exist and false, otherwise, and whose first
+     *                     element is a reference to the value in the set
      */
-    VALUE* add(const KEY& key, VALUE& value);
+    std::pair<VALUE&, bool> add(const KEY& key, VALUE& value);
 
     /**
      * Returns the value that corresponds to a key.
@@ -80,6 +90,14 @@ public:
      * @throws InvalidArgument  No such entry
      */
     VALUE remove(const KEY& key);
+
+    /**
+     * Removes the value at the head of the list.
+     *
+     * @return Value at head of list
+     * @throws InvalidArgument  No such entry
+     */
+    VALUE pop();
 
     /**
      * Returns the key of the head of the list.

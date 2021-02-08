@@ -24,7 +24,7 @@ protected:
 
 // Tests simple logging
 TEST_F(ErrorTest, SimpleLogging) {
-    hycast::logThreshold = hycast::LOG_LEVEL_DEBUG;
+    hycast::logThreshold = hycast::LogLevel::DEBUG;
     LOG_DEBUG("Debug message");
     LOG_INFO("Info message");
     LOG_NOTE("Notice message");
@@ -39,7 +39,7 @@ TEST_F(ErrorTest, SimpleLogging) {
 
 // Tests exception logging levels
 TEST_F(ErrorTest, ExceptionLoggingLevels) {
-    hycast::logThreshold = hycast::LOG_LEVEL_DEBUG;
+    hycast::logThreshold = hycast::LogLevel::DEBUG;
     hycast::log_error(hycast::RUNTIME_ERROR("Error level"));
     hycast::log_warn(hycast::RUNTIME_ERROR("Warning level"));
     hycast::log_note(hycast::RUNTIME_ERROR("Notice level"));

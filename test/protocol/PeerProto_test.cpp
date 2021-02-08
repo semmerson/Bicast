@@ -47,7 +47,6 @@ protected:
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::SockAddr        pubAddr;
-    hycast::PortPool        portPool;
     hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::ProdInfo        prodInfo;
@@ -67,7 +66,6 @@ protected:
          * 3 potential port numbers for the client's 2 temporary servers because
          * the initial client connection could use one
          */
-        , portPool(3881, 3)
         , prodIndex{1}
         , prodSize{1000000}
         , segSize{1000}
@@ -170,7 +168,7 @@ public:
 
             hycast::TcpSock    sock{srvrSock.accept()};
             hycast::NodeType   nodeType;
-            pubProto = hycast::PeerProto(sock, portPool, *this);
+            pubProto = hycast::PeerProto(sock, *this);
 
             orState(CONNECTED);
 

@@ -83,14 +83,29 @@ public:
     }
 
     /**
+     * Indicates if this instance is empty.
+     *
+     * @retval `true`   This instance is empty
+     * @retval `false`  This instance is not empty
+     */
+    bool empty() const noexcept
+    {
+        return map.empty();
+    }
+
+    /**
      * Adds an entry. If a new entry is created, then it is added to the tail of
      * the list.
      *
      * @param[in] key    Key
      * @param[in] value  Value mapped-to by key
-     * @return           Pointer to value in map
+     * @return           Pair whose second element is true if a new entry was
+     *                   created and false, otherwise, and whose first element
+     *                   is a reference to the value in the map
      */
-    VALUE* add(const KEY& key, VALUE& value)
+    std::pair<VALUE&, bool> add(
+            const KEY& key,
+            VALUE&     value)
     {
         if (!key)
             throw INVALID_ARGUMENT("Key is invalid");
@@ -108,7 +123,7 @@ public:
             tail = key;
         }
 
-        return &pair.first->second.value;
+        return std::make_pair(pair.first->second.value, pair.second);
     }
 
     /**
@@ -161,6 +176,16 @@ public:
     }
 
     /**
+     * Removes the value at the head of the list.
+     *
+     * @return  Value at head of the list
+     * @throws  InvalidArgument  No such entry
+     */
+    VALUE pop() {
+        return remove(getHead());
+    }
+
+    /**
      * Returns the key of the head of the list.
      *
      * @return Key of head of list. Will test false if the list is empty.
@@ -197,7 +222,12 @@ size_t LinkedMap<KEY,VALUE>::size() const noexcept {
 }
 
 template<class KEY, class VALUE>
-VALUE* LinkedMap<KEY,VALUE>::add(const KEY& key, VALUE& value) {
+bool LinkedMap<KEY,VALUE>::empty() const noexcept {
+    return pImpl->empty();
+}
+
+template<class KEY, class VALUE>
+std::pair<VALUE&, bool> LinkedMap<KEY,VALUE>::add(const KEY& key, VALUE& value) {
     return pImpl->add(key, value);
 }
 
@@ -209,6 +239,11 @@ VALUE* LinkedMap<KEY,VALUE>::find(const KEY& key) {
 template<class KEY, class VALUE>
 VALUE LinkedMap<KEY,VALUE>::remove(const KEY& key) {
     return pImpl->remove(key);
+}
+
+template<class KEY, class VALUE>
+VALUE LinkedMap<KEY,VALUE>::pop() {
+    return pImpl->pop();
 }
 
 template<class KEY, class VALUE>

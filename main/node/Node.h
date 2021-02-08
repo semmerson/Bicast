@@ -31,10 +31,16 @@ protected:
 
     std::shared_ptr<Impl> pImpl;
 
-    Node(std::shared_ptr<Impl> pImpl);
+    Node();
+
+    Node(Impl* impl);
 
 public:
     virtual ~Node() =0;
+
+    operator bool() {
+        return static_cast<bool>(pImpl);
+    }
 
     /**
      * Executes this instance.
@@ -52,6 +58,11 @@ class Publisher final : public Node
     class Impl;
 
 public:
+    /**
+     * Default constructs. Resulting instance will test false.
+     */
+    Publisher();
+
     /**
      * Constructs.
      *
@@ -80,7 +91,7 @@ public:
             const std::string& pathname,
             const std::string& prodName);
 
-#if 0
+#if 1
     /**
      * Executes this instance.
      */
@@ -96,13 +107,13 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] srcMcastInfo  Source-specific multicast information
-     * @param[in] p2pInfo       Information about the local P2P server
-     * @param[in] ServerPool    Pool of remote P2P servers
-     * @param[in] repoDir       Pathname of root of product repository
+     * @param[in] srcMcastAddrs  Source-specific multicast addresses
+     * @param[in] p2pInfo        Information about the local P2P server
+     * @param[in] ServerPool     Pool of remote P2P servers
+     * @param[in] repo           Subscriber's product repository
      */
     Subscriber(
-            const SrcMcastAddrs& srcMcastInfo,
+            const SrcMcastAddrs& srcMcastAddrs,
             P2pInfo&             p2pInfo,
             ServerPool&          p2pSrvrPool,
             SubRepo&             repo);

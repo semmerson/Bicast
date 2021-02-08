@@ -9,13 +9,14 @@
  *  Created on: May 13, 2019
  *      Author: Steven R. Emmerson
  */
-
-#include <inet/InetAddr.h>
-#include <inet/Socket.h>
 #include "config.h"
 
-#include "error.h"
 #include "PeerFactory.h"
+
+#include "error.h"
+#include "InetAddr.h"
+#include "Socket.h"
+
 #include <cerrno>
 #include <poll.h>
 #include <PeerProto.h>
@@ -26,7 +27,6 @@ namespace hycast {
 class PeerFactory::Impl
 {
 protected:
-    PortPool      portPool;
     TcpSrvrSock   srvrSock;
 
     Impl() =default;
@@ -40,10 +40,8 @@ protected:
      * @param msgRcvr
      */
     Impl(   const SockAddr& srvrAddr,
-            const int       queueSize,
-            PortPool&       portPool)
-        : portPool{portPool}
-        , srvrSock(srvrAddr, queueSize)
+            const int       queueSize)
+        : srvrSock(srvrAddr, queueSize)
     {}
 
 public:
@@ -107,9 +105,8 @@ public:
      */
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
-            PortPool&       portPool,
             SendPeerMgr&    peerMgr)
-        : PeerFactory::Impl(srvrAddr, queueSize, portPool)
+        : PeerFactory::Impl(srvrAddr, queueSize)
         , peerMgr(peerMgr)         // Braces don't work for references
     {}
 
@@ -128,7 +125,7 @@ public:
         TcpSock sock = srvrSock.accept();
 
         return sock
-                ? Peer{sock, portPool, peerMgr}
+                ? Peer{sock, peerMgr}
                 : Peer{};
     }
 };
@@ -140,9 +137,8 @@ PubPeerFactory::PubPeerFactory()
 PubPeerFactory::PubPeerFactory(
         const SockAddr& srvrAddr,
         const int       queueSize,
-        PortPool&       portPool,
         SendPeerMgr&    peerMgr)
-    : PeerFactory{new Impl(srvrAddr, queueSize, portPool, peerMgr)} {
+    : PeerFactory{new Impl(srvrAddr, queueSize, peerMgr)} {
 }
 
 Peer PubPeerFactory::accept() {
@@ -167,9 +163,8 @@ public:
      */
     Impl(   const SockAddr& srvrAddr,
             const int       queueSize,
-            PortPool&       portPool,
             XcvrPeerMgr&    peerObs)
-        : PeerFactory::Impl(srvrAddr, queueSize, portPool)
+        : PeerFactory::Impl(srvrAddr, queueSize)
         , peerObs(peerObs)         // Braces don't work for references
     {}
 
@@ -189,7 +184,7 @@ public:
         TcpSock sock = srvrSock.accept();
 
         return sock
-                ? Peer{sock, portPool, lclNodeType, peerObs}
+                ? Peer{sock, lclNodeType, peerObs}
                 : Peer{};
     }
 
@@ -220,9 +215,8 @@ SubPeerFactory::SubPeerFactory()
 SubPeerFactory::SubPeerFactory(
         const SockAddr& srvrAddr,
         const int       queueSize,
-        PortPool&       portPool,
-        XcvrPeerMgr&     peerObs)
-    : PeerFactory{new Impl(srvrAddr, queueSize, portPool, peerObs)} {
+        XcvrPeerMgr&    peerObs)
+    : PeerFactory{new Impl(srvrAddr, queueSize, peerObs)} {
 }
 
 Peer SubPeerFactory::accept(const NodeType lclNodeType) {

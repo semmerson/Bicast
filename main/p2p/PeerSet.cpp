@@ -81,12 +81,9 @@ public:
 
     ~Impl()
     {
-        Lock lock{mutex};
-        done = true;
-        for (auto& peer : peers)
-            peer.halt();
-        while (peers.size() > 0)
-            cond.wait(lock);
+        Guard guard{mutex};
+        if (peers.size())
+            throw RUNTIME_ERROR("Peer set isn't empty!");
     }
 
     /**
@@ -109,6 +106,25 @@ public:
                 thread.detach();
             }
         }
+    }
+
+    /**
+     * Synchronously halts all peers in the set. Doesn't return until the set is
+     * empty.
+     */
+    void halt() {
+        {
+            Guard guard{mutex};
+            done = true;
+        }
+        // No more peers will be added to the set
+
+        for (auto& peer : peers)
+            peer.halt();
+
+        Lock lock{mutex};
+        while (!peers.empty())
+            cond.wait(lock);
     }
 
     size_t size() const noexcept
@@ -157,7 +173,7 @@ public:
 
     void notify(
             const SegId& segId,
-            const Peer& notPeer)
+            const Peer&  notPeer)
     {
         Guard guard{mutex};
 
@@ -194,6 +210,10 @@ PeerSet::PeerSet(PeerSetMgr& peerSetMgr)
 
 void PeerSet::activate(const Peer peer) {
     return pImpl->activate(peer);
+}
+
+void PeerSet::halt() {
+    return pImpl->halt();
 }
 
 size_t PeerSet::size() const noexcept {

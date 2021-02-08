@@ -49,21 +49,19 @@ class P2pMgr::Impl : public PeerSetMgr
     {
         LOG_DEBUG("Improving P2P network");
         try {
-            Lock lock{mutex};
+            Lock        lock{mutex};
+            static auto timeout = std::chrono::seconds{timePeriod};
 
             for (;;) {
-                static auto timeout = std::chrono::seconds{timePeriod};
-
-                for (auto time = improveStart + timeout;
-                        peerSet.size() < maxPeers || Clock::now() < time;
-                        time = improveStart + timeout)
-                    cond.wait_until(lock, time); // Cancellation point
+                for (auto time = Clock::now() + timeout;
+                        cond.wait_until(lock, time) == std::cv_status::no_timeout
+                            || peerSet.size() < maxPeers;
+                        time = Clock::now() + timeout)
+                    getBookkeeper().resetCounts();
 
                 Peer peer = getBookkeeper().getWorstPeer();
-                if (peer) {
+                if (peer)
                     peer.halt();
-                    resetImprovement();        // Not a cancellation point
-                }
             }
         }
         catch (const std::exception& ex) {
@@ -72,27 +70,59 @@ class P2pMgr::Impl : public PeerSetMgr
     }
 
 protected:
-    typedef std::mutex                         Mutex;
-    typedef std::lock_guard<Mutex>             Guard;
-    typedef std::unique_lock<Mutex>            Lock;
-    typedef std::condition_variable            Cond;
-    typedef std::exception_ptr                 ExceptPtr;
-    typedef std::chrono::steady_clock          Clock;
-    typedef std::unordered_map<SockAddr, Peer> Peers;
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+    using Lock = std::unique_lock<Mutex>;
+    using Cond = std::condition_variable;
+    using ExceptPtr = std::exception_ptr;
+    using Clock = std::chrono::steady_clock;
+    using PeerMap = std::unordered_map<SockAddr, Peer>;
 
-    std::atomic_flag  executing;     ///< Has `operator()` been called?
-    mutable Mutex     mutex;         ///< Guards state of this instance
-    mutable Cond      cond;          ///< For changes to this instance's state
-    bool              done;          ///< Done?
-    unsigned          timePeriod;    ///< Improvement period in seconds
-    const int         maxPeers;      ///< Maximum number of peers
-    P2pSndr&          p2pSndr;       ///< Peer-to-peer sender
-    ExceptPtr         taskException; ///< Exception that terminated execution
-    PeerSet           peerSet;       ///< Set of active peers
-    Clock::time_point improveStart;  ///< Time of start of improvement period
-    std::thread       acceptThread;  ///< Accepts remote peers
-    std::thread       improveThread; ///< Improves set of peers
-    Peers             peers;         ///< Remote address to peer converter
+    class Peers {
+        mutable Mutex mutex; ///< Guards state of this instance
+        mutable Cond  cond;  ///< For changes to this instance's state
+        PeerMap       peers;
+
+    public:
+        Peers(const int maxPeers)
+            : peers(maxPeers)
+        {}
+
+        void add(
+                const SockAddr& rmtAddr,
+                Peer&           peer) {
+            Guard guard{mutex};
+            peers[rmtAddr] = peer;
+        }
+
+        Peer& at(const SockAddr& rmtAddr) {
+            Guard guard{mutex};
+            return peers.at(rmtAddr);
+        }
+
+        void erase(const SockAddr& rmtAddr) {
+            Guard guard{mutex};
+            peers.erase(rmtAddr);
+        }
+    };
+
+    std::atomic<bool>  executing;     ///< Has `operator()` been called?
+    mutable Mutex      mutex;         ///< Guards state of this instance
+    mutable Cond       cond;          ///< For changes to this instance's state
+    bool               done;          ///< Done?
+    unsigned           timePeriod;    ///< Improvement period in seconds
+    const int          maxPeers;      ///< Maximum number of peers
+    P2pSndr&           p2pSndr;       ///< Peer-to-peer sender
+    ExceptPtr          taskException; ///< Exception that terminated execution
+    PeerSet            peerSet;       ///< Set of active peers
+    std::thread        acceptThread;  ///< Accepts remote peers
+    std::thread        improveThread; ///< Improves set of peers
+    Peers              peers;         ///< Remote address to peer converter
+
+    /*
+     * INVARIANT: A peer is either in `peers`, the return value from
+     * `getBookkeeper()`, and `peerSet`, or it's in none of them
+     */
 
     virtual PeerFactory& getFactory() =0;
 
@@ -131,16 +161,20 @@ protected:
             std::rethrow_exception(taskException);
     }
 
+    void shutdown() {
+        stopTasks(); // Idempotent
+        peerSet.halt(); // Idempotent
+        executing = false;
+    }
+
     /**
      * Resets the mechanism for improving the P2P network. Notifies `stateCond`.
      *
      * @pre               State is locked
      * @cancellationpoint No
      */
-    void resetImprovement() {
+    void notifyImprover() {
         assert(!mutex.try_lock());
-        getBookkeeper().resetCounts();
-        improveStart = Clock::now();
         cond.notify_all();
     }
 
@@ -160,8 +194,8 @@ protected:
         try {
             LOG_NOTE("Adding peer %s", peer.getRmtAddr().to_string().c_str());
             (void)peerSet.activate(peer); // Fast
-            peers[peer.getRmtAddr()] = peer;
-            resetImprovement();
+            peers.add(peer.getRmtAddr(), peer);
+            notifyImprover();
         }
         catch (const std::exception& ex) {
             getBookkeeper().erase(peer);
@@ -180,7 +214,7 @@ protected:
      * @threadsafety           Safe
      * @exceptionsafety        Strong guarantee
      */
-    virtual bool maybeAdd2(Peer peer) =0;
+    virtual bool tryAdd2(Peer peer) =0;
 
     /**
      * Adds a peer, maybe.
@@ -192,7 +226,7 @@ protected:
      * @threadsafety           Safe
      * @exceptionsafety        Strong guarantee
      */
-    bool maybeAdd(Peer peer)
+    bool tryAdd(Peer peer)
     {
         /*
          * TODO: Add a remote peer when this instance
@@ -220,7 +254,7 @@ protected:
             success = false;
         }
         else {
-            success = maybeAdd2(peer); // Implementation-specific
+            success = tryAdd2(peer); // Implementation-specific
         }
 
         //if (success)
@@ -378,7 +412,7 @@ public:
      */
     Impl(   const int maxPeers,
             P2pSndr&  p2pSndr)
-        : executing{ATOMIC_FLAG_INIT}
+        : executing{false}
         , mutex{}
         , cond{}
         , done{false}
@@ -387,9 +421,9 @@ public:
         , p2pSndr(p2pSndr)
         , taskException{}
         , peerSet{*this}
-        , improveStart{Clock::now()}
         , improveThread{}
         , acceptThread{}
+        , peers(maxPeers)
     {}
 
     ~Impl() {
@@ -416,7 +450,7 @@ public:
      */
     void operator ()()
     {
-        if (executing.test_and_set())
+        if (executing)
             throw LOGIC_ERROR("Already called");
 
         { Guard guard(mutex); } // To update `done`
@@ -427,16 +461,16 @@ public:
 
             try {
                 waitUntilDone();
-                stopTasks();
+                shutdown();
             }
             catch (const std::exception& ex) {
                 LOG_DEBUG("Caught \"%s\"", ex.what());
-                stopTasks();
+                shutdown(); // Idempotent
                 throw;
             }
             catch (...) {
                 LOG_DEBUG("Caught ...");
-                stopTasks();
+                shutdown(); // Idempotent
                 throw;
             }
         }
@@ -534,7 +568,7 @@ public:
             stopped2(peer);     // Implementation-specific
             getBookkeeper().erase(peer);
             peers.erase(peer.getRmtAddr());
-            resetImprovement(); // Restart performance evaluation
+            notifyImprover(); // Restart performance evaluation
         }
     }
 };
@@ -562,7 +596,7 @@ protected:
         }
     }
 
-    bool maybeAdd2(Peer peer) override {
+    bool tryAdd2(Peer peer) override {
         LOG_DEBUG("Peer added to publisher");
         return true;
     }
@@ -585,7 +619,7 @@ protected:
                 if (!peer)
                     break; // `factory.close()` called
 
-                (void)maybeAdd(peer);
+                (void)tryAdd(peer);
             }
         }
         catch (const std::exception& ex) {
@@ -612,10 +646,10 @@ protected:
 
 public:
     PubP2pMgr(
-            P2pInfo& p2pInfo,
-            P2pSndr& p2pPub)
+            const P2pInfo& p2pInfo,
+            P2pSndr&       p2pPub)
         : P2pMgr::Impl(p2pInfo.maxPeers, p2pPub)
-        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, p2pInfo.portPool, *this}
+        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, *this}
         , bookkeeper(p2pInfo.maxPeers)
     {}
 
@@ -629,8 +663,13 @@ public:
     ProdInfo getProdInfo(
             const SockAddr& remote,
             const ProdIndex prodIndex) override {
-        auto prodInfo = p2pSndr.getProdInfo(prodIndex);
-        bookkeeper.requested(peers.at(remote), prodInfo);
+        auto  prodInfo = p2pSndr.getProdInfo(prodIndex);
+        Guard guard{mutex};
+        // Must exist or wouldn't have been called
+        auto  peer = peers.at(remote);
+
+        bookkeeper.requested(peer, prodInfo);
+
         return prodInfo;
     }
 
@@ -643,9 +682,14 @@ public:
      */
     MemSeg getMemSeg(
             const SockAddr& remote,
-            const SegId& segId) override {
-        auto memSeg = p2pSndr.getMemSeg(segId);
-        bookkeeper.requested(peers.at(remote), memSeg.getSegInfo());
+            const SegId&    segId) override {
+        auto  memSeg = p2pSndr.getMemSeg(segId);
+        Guard guard{mutex};
+        // Must exist or wouldn't have been called
+        auto  peer = peers.at(remote);
+
+        bookkeeper.requested(peer, memSeg.getSegInfo());
+
         return memSeg;
     }
 };
@@ -685,8 +729,8 @@ class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
 
                     {
                         Canceler canceler{false};
-                        if (!maybeAdd(peer))
-                            serverPool.consider(srvrAddr, timePeriod);
+                        if (!tryAdd(peer))
+                            serverPool.consider(srvrAddr);
                     }
                 }
                 catch (const std::system_error& sysEx) {
@@ -704,11 +748,11 @@ class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
                             errNum != EHOSTUNREACH)
                             throw;
                     }
-                    serverPool.consider(srvrAddr, timePeriod);
+                    serverPool.consider(srvrAddr);
                 }
                 catch (const std::exception& ex) {
                     log_note(ex);
-                    serverPool.consider(srvrAddr, timePeriod);
+                    serverPool.consider(srvrAddr);
                 }
             } // Indefinite loop
         }
@@ -745,10 +789,11 @@ class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
      * a local peer about the available item.
      *
      * @pre             The state is locked
-     * @param[in] peer  The stopped peer
+     * @param[in] peer  The peer whose outstanding requests should be reassigned
      */
     void reassignPending(Peer& peer)
     {
+        assert(!mutex.try_lock());
         auto& chunkIds = bookkeeper.getRequested(peer);
         for (auto chunkId : chunkIds) {
             Peer altPeer = bookkeeper.popBestAlt(chunkId);
@@ -761,15 +806,10 @@ class SubP2pMgr final : public P2pMgr::Impl, public XcvrPeerMgr
 
 protected:
     void startTasks2() override {
-        if (serverPool.empty()) {
-            LOG_DEBUG("Remote peer-server pool is empty");
-        }
-        else {
-            startConnector();
-        }
+        startConnector();
 
         try {
-            if (maxPeers > 1 && !serverPool.empty())
+            if (maxPeers > 1)
                 startImprover();
         } // "Connect" thread created
         catch (const std::exception& ex) {
@@ -783,7 +823,19 @@ protected:
         stopConnector();
     }
 
-    bool maybeAdd2(Peer peer) override {
+    /**
+     * Adds a local peer to the set of active peers if it would reduce the
+     * difference in number between those remote peers that have a path to the
+     * publisher and those that don't.
+     *
+     * @pre               Instance is locked
+     * @param[in] peer    Peer to try adding
+     * @retval    `true`  Peer was added
+     * @retval    `false` Peer was not added
+     */
+    bool tryAdd2(Peer peer) override {
+        assert(!mutex.try_lock());
+
         bool       success = false;
         unsigned   numPath, numNoPath;
         const bool rmtIsPathToPub = peer.isPathToPub();
@@ -807,9 +859,9 @@ protected:
     }
 
     /**
-     * Accepts incoming connections from remote peers and attempts to add the
-     * resulting local peer to the set of active peers. Executes on a new
-     * thread.
+     * Accepts incoming connections from remote peers and either adds the
+     * resulting local peer to the set of active peers or to the set of
+     * potential peers. Executes on a new thread.
      *
      * @cancellationpoint  Yes
      */
@@ -823,12 +875,14 @@ protected:
                 if (!peer)
                     break; // `factory.close()` called
 
-                if (!maybeAdd(peer))
+                if (!tryAdd(peer)) {
                     /*
                      * The following potentially increases the number of
-                     * available-but-unused remote peers
+                     * remote peers available for use
                      */
-                    serverPool.consider(peer.getRmtAddr(), timePeriod);
+                    auto srvrAddr = peer.getRmtAddr();
+                    serverPool.consider(srvrAddr);
+                }
             }
         }
         catch (const std::exception& ex) {
@@ -853,22 +907,22 @@ protected:
      */
     void stopped2(Peer peer) override {
         /*
-         * Add the remote site to the pool of remote sites if the local peer
-         * resulted from a `::connect`.
+         * The following potentially increases the number of remote peers
+         * available for use
          */
-        if (peer.isFromConnect())
-            serverPool.consider(peer.getRmtAddr(), timePeriod);
+        auto srvrAddr = peer.getRmtAddr();
+        serverPool.consider(srvrAddr);
 
         reassignPending(peer); // Reassign peer's outstanding requests
     }
 
 public:
     SubP2pMgr(
-            P2pInfo&    p2pInfo,
-            ServerPool& serverPool,
-            P2pSub&     p2pSub)
+            const P2pInfo& p2pInfo,
+            ServerPool&    serverPool,
+            P2pSub&        p2pSub)
         : P2pMgr::Impl(p2pInfo.maxPeers, p2pSub)
-        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, p2pInfo.portPool, *this}
+        , factory{p2pInfo.sockAddr, p2pInfo.listenSize, *this}
         , bookkeeper(maxPeers)
         , lclNodeType(NodeType::NO_PATH_TO_PUBLISHER)
         , serverPool{serverPool}
@@ -876,6 +930,11 @@ public:
     {}
 
     ~SubP2pMgr() {
+        Guard guard{mutex};
+
+        if (executing)
+            throw RUNTIME_ERROR("P2P manager is still executing!");
+
         if (connectThread.joinable())
             connectThread.join();
     }
@@ -885,10 +944,10 @@ public:
      * of data-products to having one. Might be called by a peer only *after*
      * `Peer::operator()()` is called.
      *
-     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @param[in]     rmtAddr  Socket address of remote peer
      * @threadsafety  Safe
      */
-    void pathToPub(Peer& peer)
+    void pathToPub(const SockAddr& rmtAddr)
     {
         Guard    guard(mutex);
         unsigned numWithPath, numWithoutPath;
@@ -896,7 +955,7 @@ public:
         bookkeeper.getPubPathCounts(numWithPath, numWithoutPath);
         if (numWithPath == 1) {
             lclNodeType = NodeType::PATH_TO_PUBLISHER;
-            peerSet.gotPath(peer);
+            peerSet.gotPath(peers.at(rmtAddr));
         }
     }
 
@@ -905,10 +964,10 @@ public:
      * data-products to not having one. Might be called by a peer only *after*
      * `Peer::operator()()` is called.
      *
-     * @param[in]     peer  Local peer whose remote peer transitioned
+     * @param[in]     rmtAddr  Socket address of remote peer
      * @threadsafety  Safe
      */
-    void noPathToPub(Peer& peer)
+    void noPathToPub(const SockAddr& rmtAddr)
     {
         Guard    guard(mutex);
         unsigned numWithPath, numWithoutPath;
@@ -916,24 +975,32 @@ public:
         bookkeeper.getPubPathCounts(numWithPath, numWithoutPath);
         if (numWithPath == 0) {
             lclNodeType = NodeType::NO_PATH_TO_PUBLISHER;
-            peerSet.lostPath(peer);
+            peerSet.lostPath(peers.at(rmtAddr));
         }
     }
 
     /**
      * Indicates if product-information should be requested from a remote peer.
      *
-     * @param[in] peer       Peer making the offer
+     * @param[in] rmtAddr    Socket address of remote peer
      * @param[in] prodIndex  Identifier of the product
      * @retval    `true`     Product-information should be requested
      * @retval    `false`    Product-information should not be requested
      */
     bool shouldRequest(
-            Peer&           peer,
-            ProdIndex       prodIndex)
+            const SockAddr& rmtAddr,
+            const ProdIndex prodIndex)
     {
-        const bool should = p2pSub.shouldRequest(prodIndex) &&
-                bookkeeper.shouldRequest(peer, prodIndex); // Thread safe
+        bool should;
+        {
+            Guard guard{mutex};
+            // Must exist or wouldn't have been called
+            auto  peer = peers.at(rmtAddr);
+            should = bookkeeper.shouldRequest(peer, prodIndex);
+        }
+
+        if (should)
+            should = p2pSub.shouldRequest(prodIndex);
 
         LOG_DEBUG("Product-information %s %s be requested",
                 prodIndex.to_string().data(), should ? "should" : "shouldn't");
@@ -944,18 +1011,25 @@ public:
     /**
      * Indicates if a data-segment should be requested from a remote peer.
      *
-     * @param[in] peer     Peer making the offer
+     * @param[in] rmtAddr  Socket address of remote peer
      * @param[in] segId    Identifier of the data-segment
      * @retval    `true`   The segment should be requested from the peer
      * @retval    `false`  The segment should not be requested from the peer
      */
     bool shouldRequest(
-            Peer&           peer,
+            const SockAddr& rmtAddr,
             const SegId&    segId)
     {
-        Guard      guard{mutex};
-        const bool should = p2pSub.shouldRequest(segId) &&
-                bookkeeper.shouldRequest(peer, segId); // Thread safe
+        bool should;
+        {
+            Guard guard{mutex};
+            // Must exist or wouldn't have been called
+            auto  peer = peers.at(rmtAddr);
+            should = bookkeeper.shouldRequest(peer, segId);
+        }
+
+        if (should)
+            should = p2pSub.shouldRequest(segId);
 
         LOG_DEBUG("Data-segment %s %s be requested",
                 segId.to_string().data(), should ? "should" : "shouldn't");
@@ -966,15 +1040,19 @@ public:
     /**
      * Processes product-information from a peer.
      *
-     * @param[in] peer      Providing peer
+     * @param[in] rmtAddr   Socket address of remote peer
      * @param[in] prodInfo  Product information
      * @retval    `true`    Information was accepted
      * @retval    `false`   Information was previously accepted
      */
     bool hereIs(
-            Peer&           peer,
+            const SockAddr& rmtAddr,
             const ProdInfo& prodInfo)
     {
+        Guard guard{mutex};
+        // Must exist or wouldn't have been called
+        auto  peer = peers.at(rmtAddr);
+
         if (!bookkeeper.received(peer, prodInfo.getProdIndex()))
             return false; // Wasn't requested
 
@@ -982,21 +1060,26 @@ public:
             return false; // Wasn't needed
 
         peerSet.notify(prodInfo.getProdIndex(), peer);
+
         return true;
     }
 
     /**
      * Processes a data-segment from a peer.
      *
-     * @param[in] peer     Providing peer
+     * @param[in] rmtAddr  Socket address of remote peer
      * @param[in] seg      The data-segment
      * @retval    `true`   Chunk was accepted
-     * @retval    `false`  Chunk was previously accepted
+     * @retval    `false`  Chunk wasn't requested or was previously accepted
      */
     bool hereIs(
-            Peer&           peer,
+            const SockAddr& rmtAddr,
             TcpSeg&         seg)
     {
+        Guard guard{mutex};
+        // Must exist or wouldn't have been called
+        auto  peer = peers.at(rmtAddr);
+
         if (!bookkeeper.received(peer, seg.getSegId()))
             return false; // Wasn't requested
 
@@ -1004,6 +1087,7 @@ public:
             return false; // Wasn't needed
 
         peerSet.notify(seg.getSegId(), peer);
+
         return true;
     }
 
@@ -1041,16 +1125,16 @@ P2pMgr::P2pMgr()
 }
 
 P2pMgr::P2pMgr(
-        P2pInfo&  p2pInfo,
-        P2pSndr&  p2pPub)
-    : pImpl(new PubP2pMgr(p2pInfo, p2pPub)) {
+        const P2pInfo& p2pInfo,
+        P2pSndr&       p2pPub)
+    : pImpl(std::make_shared<PubP2pMgr>(p2pInfo, p2pPub)) {
 }
 
 P2pMgr::P2pMgr(
-        P2pInfo&      p2pInfo,
-        ServerPool&   p2pSrvrPool,
-        P2pSub&       p2pSub)
-    : pImpl(new SubP2pMgr(p2pInfo, p2pSrvrPool, p2pSub)) {
+        const P2pInfo& p2pInfo,
+        ServerPool&    p2pSrvrPool,
+        P2pSub&        p2pSub)
+    : pImpl(std::make_shared<SubP2pMgr>(p2pInfo, p2pSrvrPool, p2pSub)) {
 }
 
 P2pMgr& P2pMgr::setTimePeriod(const unsigned timePeriod) {

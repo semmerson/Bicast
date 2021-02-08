@@ -573,6 +573,10 @@ public:
                 ++segCount;
             }
         }
+        else {
+            char buf[segSize];
+            seg.getData(buf);
+        }
 
         return wasSaved;
     }

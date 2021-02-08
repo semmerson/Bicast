@@ -13,7 +13,8 @@
 #ifndef MAIN_INET_SOCKET_H_
 #define MAIN_INET_SOCKET_H_
 
-#include <main/inet/SockAddr.h>
+#include "SockAddr.h"
+
 #include <memory>
 #include <string>
 

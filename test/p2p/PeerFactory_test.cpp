@@ -13,9 +13,10 @@
 
 #include "error.h"
 #include "PeerFactory.h"
+#include "SockAddr.h"
+
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 
@@ -47,7 +48,6 @@ protected:
     State                   state;
     hycast::SockAddr        pubAddr;
     hycast::SockAddr        subAddr;
-    hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::ProdIndex       prodIndex;
@@ -67,11 +67,6 @@ protected:
         : state{INIT}
         , pubAddr{"localhost:3880"}
         , subAddr{"localhost:3881"}
-        /*
-         * 3 potential port numbers for the server's 2 temporary servers because
-         * the initial client connection could use one
-         */
-        , portPool(3882, 3)
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -102,15 +97,15 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer& peer)
+    void pathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
-    void noPathToPub(hycast::Peer& peer)
+    void noPathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
     // Receiver-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdIndex actual)
     {
         EXPECT_TRUE(prodIndex == actual);
@@ -121,7 +116,7 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
@@ -152,7 +147,7 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
@@ -163,7 +158,7 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
@@ -201,7 +196,7 @@ public:
 TEST_F(PeerFactoryTest, FactoryClosure)
 {
     // Start a server. Calls `::listen()`.
-    hycast::PubPeerFactory factory(pubAddr, 1, portPool, *this);
+    hycast::PubPeerFactory factory(pubAddr, 1, *this);
     std::thread            pubThread(&PeerFactoryTest::runPub, this,
             std::ref(factory));
 
@@ -222,12 +217,12 @@ TEST_F(PeerFactoryTest, FactoryClosure)
 TEST_F(PeerFactoryTest, Exchange)
 {
     // Start a publisher. Calls `::listen()`.
-    hycast::PubPeerFactory pubFactory(pubAddr, 1, portPool, *this);
+    hycast::PubPeerFactory pubFactory(pubAddr, 1, *this);
     std::thread         pubThread(&PeerFactoryTest::runPub, this,
             std::ref(pubFactory));
 
     // Start a subscriber
-    hycast::SubPeerFactory subFactory(subAddr, 1, portPool, *this);
+    hycast::SubPeerFactory subFactory(subAddr, 1, *this);
     hycast::Peer subPeer = subFactory.connect(pubAddr,
             hycast::NodeType::NO_PATH_TO_PUBLISHER);
     std::thread  subThread(subPeer); // `subPeer` is connected

@@ -15,10 +15,10 @@
 
 #include "error.h"
 #include "PeerFactory.h"
+#include "SockAddr.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <main/inet/SockAddr.h>
 #include <mutex>
 #include <thread>
 #include <unistd.h>
@@ -37,20 +37,20 @@ protected:
     std::condition_variable cond;
     typedef enum {
         INIT = 0,
-        PROD_NOTICE_RCVD = 0x4,
-        SEG_NOTICE_RCVD = 0x8,
-        PROD_REQUEST_RCVD = 0x10,
-        SEG_REQUEST_RCVD = 0x20,
-        PROD_INFO_RCVD = 0x40,
-        SEG_RCVD = 0x80,
+        PROD_NOTICE_RCVD  =   0x4,
+        SEG_NOTICE_RCVD   =   0x8,
+        PROD_REQUEST_RCVD =  0x10,
+        SEG_REQUEST_RCVD  =  0x20,
+        PROD_INFO_RCVD    =  0x40,
+        SEG_RCVD          =  0x80,
         CLNT_PEER_STOPPED = 0x100,
         SRVR_PEER_STOPPED = 0x200,
         EXCHANGE_COMPLETE =
-               PROD_NOTICE_RCVD |
-               SEG_NOTICE_RCVD |
+               PROD_NOTICE_RCVD  |
+               SEG_NOTICE_RCVD   |
                PROD_REQUEST_RCVD |
-               SEG_REQUEST_RCVD |
-               PROD_INFO_RCVD |
+               SEG_REQUEST_RCVD  |
+               PROD_INFO_RCVD    |
                SEG_RCVD,
         DONE = EXCHANGE_COMPLETE |
                CLNT_PEER_STOPPED |
@@ -65,7 +65,6 @@ protected:
     hycast::SegInfo         segInfo;
     char                    memData[1000];
     hycast::MemSeg          memSeg;
-    hycast::PortPool        portPool;
     std::atomic<unsigned>   numAdded;
 
     P2pMgrTest()
@@ -83,11 +82,9 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , portPool(38840, 7) // NB: Linux Dynamic port numbers
         , numAdded{0}
     {
         pubP2pInfo.sockAddr = pubAddr;
-        pubP2pInfo.portPool = portPool;
         pubP2pInfo.listenSize = 1;
         pubP2pInfo.maxPeers = 1;
 
@@ -193,13 +190,11 @@ public:
     }
 };
 
-#if 0
 // Tests simple construction
 TEST_F(P2pMgrTest, SimpleConstruction)
 {
-    hycast::P2pMgr p2pMgr(pubAddr, 0, portPool, 0, srvrSrvrPool, *this);
+    hycast::P2pMgr pubP2pMgr(pubP2pInfo, *this);
 }
-#endif
 
 // Tests exchanging data between two nodes
 TEST_F(P2pMgrTest, DataExchange)
@@ -242,7 +237,7 @@ TEST_F(P2pMgrTest, MultiplePeers)
         try {
             for (int i = 0; i < 3; ++i) {
                 LOG_NOTE("Creating server %d", i);
-                srvrP2pMgrs[i] = hycast::P2pMgr(srvrAddrs[i], 0, portPool, 1,
+                srvrP2pMgrs[i] = hycast::P2pMgr(srvrAddrs[i], 0, 1,
                         srvrSrvrPool, *this);
                 LOG_NOTE("Executing server %d", i);
                 srvrThreads[i] = std::thread(&P2pMgrTest::runP2pMgr,
@@ -258,7 +253,7 @@ TEST_F(P2pMgrTest, MultiplePeers)
         LOG_NOTE("Starting client");
         hycast::ServerPool clntSrvrPool(std::set<hycast::SockAddr>{
             srvrAddrs[0], srvrAddrs[1], srvrAddrs[2]});
-        hycast::P2pMgr     clntP2pMgr(subAddr, 0, portPool, 2, clntSrvrPool,
+        hycast::P2pMgr     clntP2pMgr(subAddr, 0, 2, clntSrvrPool,
                 *this);
         std::thread        clntThread(&P2pMgrTest::runP2pMgr,
                 std::ref(clntP2pMgr));
@@ -294,22 +289,37 @@ TEST_F(P2pMgrTest, MultiplePeers)
         LOG_ERROR("Caught ... exception");
         throw;
     }
-}write
+}
 #endif
 
 } // namespace
 
 static void myTerminate()
 {
-    LOG_FATAL("terminate() called %s an active exception",
-            std::current_exception() ? "with" : "without");
+    auto exPtr = std::current_exception();
+
+    if (!exPtr) {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    else {
+        try {
+            std::rethrow_exception(exPtr);
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("terminate() called with a non-standard exception");
+        }
+    }
+
     abort();
 }
 
 int main(int argc, char **argv)
 {
   hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
+  hycast::log_setLevel("debug");
 
   std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);

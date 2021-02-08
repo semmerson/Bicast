@@ -34,7 +34,6 @@ protected:
     } State;
     State                   state;
     hycast::SockAddr        pubAddr;
-    hycast::PortPool        portPool;
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::ProdIndex       prodIndex;
@@ -50,11 +49,6 @@ protected:
     PeerTest()
         : state{INIT}
         , pubAddr{"localhost:38800"}
-        /*
-         * 3 potential port numbers for the client's 2 temporary servers because
-         * the initial client connection could use one
-         */
-        , portPool(38801, 3)
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -90,15 +84,15 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(hycast::Peer& peer)
+    void pathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
-    void noPathToPub(hycast::Peer& peer)
+    void noPathToPub(const hycast::SockAddr& rmtAddr)
     {}
 
     // Receiver-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdIndex actual)
     {
         EXPECT_TRUE(prodIndex == actual);
@@ -109,7 +103,7 @@ public:
 
     // Receiver-side
     bool shouldRequest(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::SegId&    actual)
     {
         EXPECT_EQ(segId, actual);
@@ -140,7 +134,7 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             const hycast::ProdInfo& actual)
     {
         EXPECT_EQ(prodInfo, actual);
@@ -151,7 +145,7 @@ public:
 
     // Receiver-side
     bool hereIs(
-            hycast::Peer&           peer,
+            const hycast::SockAddr& rmtAddr,
             hycast::TcpSeg&         actual)
     {
         const hycast::SegSize size = actual.getSegInfo().getSegSize();
@@ -175,7 +169,7 @@ public:
             setState(LISTENING);
 
             hycast::TcpSock pubSock(srvrSock.accept());
-            pubPeer = hycast::Peer(pubSock, portPool, *this);
+            pubPeer = hycast::Peer(pubSock, *this);
 
             auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
             hycast::InetAddr localhost("127.0.0.1");
@@ -266,7 +260,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LOG_LEVEL_TRACE);
+  hycast::log_setLevel(hycast::LogLevel::TRACE);
 
   std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);

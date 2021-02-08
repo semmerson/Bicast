@@ -30,9 +30,11 @@ class PortPool::Impl
     using Cond = std::condition_variable;
     using Queue = std::queue<in_port_t, std::list<in_port_t>>;
 
-    mutable Mutex mutex;
-    mutable Cond  cond;
-    Queue         queue;
+    mutable Mutex   mutex;
+    mutable Cond    cond;
+    Queue           queue;
+    const in_port_t min;
+    const unsigned  num;
 
 public:
     Impl() = default;
@@ -42,9 +44,19 @@ public:
         : mutex()
         , cond()
         , queue{}
+        , min{min}
+        , num{num}
     {
         for (in_port_t port = min, end = min + num; port != end; ++port)
             queue.emplace(port);
+    }
+
+    in_port_t getMin() const noexcept {
+        return min;
+    }
+
+    unsigned getNum() const noexcept {
+        return num;
     }
 
     int size() const {
@@ -84,6 +96,14 @@ PortPool::PortPool(
         const in_port_t min,
         const unsigned  num)
     : pImpl{new Impl(min, num)} {
+}
+
+in_port_t PortPool::getMin() const noexcept {
+    return pImpl->getMin();
+}
+
+unsigned PortPool::getNum() const noexcept {
+    return pImpl->getNum();
 }
 
 PortPool::operator bool() const noexcept {

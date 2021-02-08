@@ -13,9 +13,10 @@
 #ifndef MAIN_PROTOCOL_INPROTO_H_
 #define MAIN_PROTOCOL_INPROTO_H_
 
-#include <main/inet/SockAddr.h>
-#include <main/inet/Socket.h>
+#include "SockAddr.h"
+#include "Socket.h"
 #include "hycast.h"
+
 #include <memory>
 
 namespace hycast {

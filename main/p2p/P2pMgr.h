@@ -13,10 +13,11 @@
 #ifndef MAIN_PEER_P2PMGR_H_
 #define MAIN_PEER_P2PMGR_H_
 
-#include <main/inet/PortPool.h>
-#include <main/inet/SockAddr.h>
 #include "PeerSet.h"
+#include "PortPool.h"
+#include "SockAddr.h"
 #include "ServerPool.h"
+
 #include <memory>
 
 namespace hycast {
@@ -104,7 +105,6 @@ public:
 struct P2pInfo
 {
     SockAddr   sockAddr;    ///< Server's socket address
-    PortPool   portPool;    ///< Pool of port numbers for transitory servers
     int        listenSize;  ///< Server's `::listen()` size
     int        maxPeers;    ///< Maximum number of peers
 };
@@ -134,8 +134,8 @@ public:
      * @param[in] p2pInfo       Peer-to-peer execution parameters
      * @param[in] p2pPub        Peer-to-peer publisher
      */
-    P2pMgr( P2pInfo&  p2pInfo,
-            P2pSndr&  p2pPub);
+    P2pMgr( const P2pInfo& p2pInfo,
+            P2pSndr&       p2pPub);
 
     /**
      * Constructs a subscriber's peer-to-peer manager. Calls `::listen()`.
@@ -144,9 +144,9 @@ public:
      * @param[in] p2pSrvrPool   Pool of remote P2P servers
      * @param[in] p2pSub        Peer-to-peer subscriber
      */
-    P2pMgr( P2pInfo&      p2pInfo,
-            ServerPool&   p2pSrvrPool,
-            P2pSub&       p2pSub);
+    P2pMgr( const P2pInfo& p2pInfo,
+            ServerPool&    p2pSrvrPool,
+            P2pSub&        p2pSub);
 
     /**
      * Sets the time period over which this instance will attempt to replace the

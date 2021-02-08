@@ -12,9 +12,12 @@
 #ifndef MAIN_MISC_ERROR_H_
 #define MAIN_MISC_ERROR_H_
 
+#include "logging.h"
+
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <signal.h>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -124,153 +127,11 @@ std::string makeWhat(
         const char*        func,
         const std::string& msg);
 
-typedef enum {
-    LOG_LEVEL_TRACE,
-    LOG_LEVEL_DEBUG,
-    LOG_LEVEL_INFO,
-    LOG_LEVEL_NOTE,
-    LOG_LEVEL_WARN,
-    LOG_LEVEL_ERROR,
-    LOG_LEVEL_FATAL
-}                              LogLevel;
-typedef std::atomic<LogLevel>  LogThreshold;
-extern LogThreshold            logThreshold;
-
-void log_setName(const std::string& name);
-
 /**
- * @cancellationpoint No
+ * Replaces `std::terminate()` with one that ensures logging of the current
+ * exception if it exists. Calls `::abort()`.
  */
-void log_setLevel(const LogLevel level) noexcept;
-
-/**
- * @cancellationpoint No
- */
-bool log_enabled(const LogLevel level) noexcept;
-
-void log(
-        const LogLevel        level,
-        const std::exception& ex);
-void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
-        const char*    func,
-        const char*    fmt,
-        va_list        argList);
-void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
-        const char*    func);
-void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
-        const char*    func,
-        const char*    fmt,
-        ...);
-void log(
-        const LogLevel        level,
-        const char*           file,
-        const int             line,
-        const char*           func,
-        const std::exception& ex,
-        const char*           fmt,
-        ...);
-void log(
-        const LogLevel    level,
-        const char*       file,
-        const int         line,
-        const char*       func,
-        const std::string msg);
-void log(
-        const LogLevel        level,
-        const char*           file,
-        const int             line,
-        const char*           func,
-        const std::exception& ex);
-void log(
-        const LogLevel        level,
-        const char*           file,
-        const int             line,
-        const char*           func,
-        const std::exception& ex,
-        const std::string     msg);
-
-inline void log_debug(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_DEBUG)
-        log(LOG_LEVEL_DEBUG, ex);
-}
-inline void log_info(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_INFO)
-        log(LOG_LEVEL_INFO, ex);
-}
-inline void log_note(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_NOTE)
-        log(LOG_LEVEL_NOTE, ex);
-}
-inline void log_warn(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_WARN)
-        log(LOG_LEVEL_WARN, ex);
-}
-inline void log_error(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_ERROR)
-        log(LOG_LEVEL_ERROR, ex);
-}
-inline void log_fatal(const std::exception& ex) {
-    if (logThreshold <= LOG_LEVEL_FATAL)
-        log(LOG_LEVEL_FATAL, ex);
-}
-
-#define LOG_TRACE(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_TRACE) \
-            hycast::log(hycast::LOG_LEVEL_TRACE, __FILE__, __LINE__, \
-                    __func__); \
-    while(false)
-
-#define LOG_DEBUG(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_DEBUG) \
-            hycast::log(hycast::LOG_LEVEL_DEBUG, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
-
-#define LOG_INFO(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_INFO) \
-            hycast::log(hycast::LOG_LEVEL_INFO, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
-
-#define LOG_NOTE(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_NOTE) \
-            hycast::log(hycast::LOG_LEVEL_NOTE, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
-
-#define LOG_WARN(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_WARN) \
-            hycast::log(hycast::LOG_LEVEL_WARN, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
-
-#define LOG_ERROR(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_ERROR) \
-            hycast::log(hycast::LOG_LEVEL_ERROR, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
-
-#define LOG_FATAL(...) \
-    do \
-        if (hycast::logThreshold <= hycast::LOG_LEVEL_FATAL) \
-            hycast::log(hycast::LOG_LEVEL_FATAL, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
-    while(false)
+void terminate();
 
 } // namespace
 

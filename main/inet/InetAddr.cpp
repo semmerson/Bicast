@@ -16,6 +16,7 @@
 #include "InetAddr.h"
 #include "SockAddr.h"
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <cstring>
 #include <functional>
@@ -58,10 +59,10 @@ protected:
         int sd = ::socket(family, type, protocol);
 
         if (sd == -1)
-            throw SYSTEM_ERROR("::socket() failure: {"
-                    "family: " + std::to_string(family) + ", "
-                    "type: " + std::to_string(type) + ", "
-                    "protocol: " + std::to_string(protocol) + "}");
+            throw SYSTEM_ERROR("::socket() failure: "
+                    "family=" + std::to_string(family) + ","
+                    "type=" + std::to_string(type) + ","
+                    "protocol=" + std::to_string(protocol));
 
         return sd;
     }
@@ -121,6 +122,8 @@ public:
             const in_port_t          port) const =0;
 
     virtual void setMcastIface(int sd) const =0;
+
+    virtual bool isSsm() const =0;
 
     /**
      * Joins the source-specific multicast group identified by this instance
@@ -253,7 +256,7 @@ public:
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
-    void setMcastIface(int sd) const
+    void setMcastIface(int sd) const override
     {
         LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s",
                 sd, to_string().data());
@@ -261,6 +264,11 @@ public:
                 0)
             throw SYSTEM_ERROR("Couldn't set multicast interface for IPv4 UDP "
                     "socket " + std::to_string(sd) + " to " + to_string());
+    }
+
+    bool isSsm() const override {
+        auto ip = ntohl(addr.s_addr);
+        return ip >= 0XE8000100 && ip <= 0XE8FFFFFF;
     }
 };
 
@@ -478,6 +486,32 @@ public:
                     "socket " + std::to_string(sd) + " to " +
                     std::to_string(ifaceIndex));
     }
+
+    /*
+     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
+     * FF3X::FFFF:FFFF (for IPv6).
+     */
+    bool isSsm() const override {
+        // Get address in host byte-order
+        uint8_t ip[16];
+        if (htons(1) == 1) {
+            ::memcpy(ip, addr.s6_addr, 16);
+        }
+        else {
+            std::reverse_copy(addr.s6_addr, addr.s6_addr+16, ip);
+        }
+        ip[1] &= 0XF0; // Clear irrelevant bits
+
+        // Check first 12 bytes
+        static const uint8_t first12[12] = {0XFF, 0X30};
+        if (::memcmp(ip, first12, 12))
+            return false;
+
+        // Check last 4 bytes
+        const uint32_t last4 = (ip[12] << 24) | (ip[13] << 16) |
+                (ip[14] << 8) | ip[15];
+        return last4 <= 0X40000000 || last4 >= 0X80000000;
+    }
 };
 
 /******************************************************************************/
@@ -656,6 +690,10 @@ public:
                     std::to_string(storage.ss_family));
         }
     }
+
+    bool isSsm() const override {
+        return false;
+    }
 };
 
 /******************************************************************************/
@@ -754,6 +792,11 @@ const InetAddr& InetAddr::setMcastIface(int sd) const
 {
     pImpl->setMcastIface(sd);
     return *this;
+}
+
+bool InetAddr::isSsm() const
+{
+    return pImpl->isSsm();
 }
 
 } // namespace
