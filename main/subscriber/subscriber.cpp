@@ -56,7 +56,7 @@ static size_t     maxOpenFiles; ///< Maximum number of open files in repository
 
 // Runtime variable defaults:
 static InetAddr   defMcastAddr;    ///< Multicast group IP address
-static String         mcastIpAddrDef = "232.128.117.1"; // Source-specific mcast
+static String     mcastIpAddrDef = "232.128.117.1"; // Source-specific mcast
 static in_port_t  defMcastPort;    ///< Multicast group port number
 static InetAddr   defPubAddr;      ///< Publisher's IP address
 static InetAddr   defP2pSrvrAddr;  ///< Local P2P server's IP address
