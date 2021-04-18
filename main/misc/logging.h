@@ -178,9 +178,9 @@ inline void log_fatal(const std::exception& ex) {
         log(LogLevel::FATAL, ex);
 }
 
-#define LOG_TRACE(...) \
+#define LOG_TRACE \
     do \
-        if (log_enabled(LogLevel::TRACE)) \
+        if (hycast::log_enabled(hycast::LogLevel::TRACE)) \
             hycast::log(hycast::LogLevel::TRACE, __FILE__, __LINE__, \
                     __func__); \
     while(false)

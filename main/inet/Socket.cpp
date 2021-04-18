@@ -279,6 +279,12 @@ public:
         }
     }
 
+    void write(std::string str)
+    {
+        write(str.size());
+        write(str.data(), str.size());
+    }
+
     void write(const uint8_t value)
     {
         write(&value, sizeof(value));
@@ -354,6 +360,29 @@ public:
         }
 
         return true;
+    }
+
+    /**
+     * Reads a string from the socket.
+     *
+     * @param[out] str      String to be read
+     * @retval     `true`   Success
+     * @retval     `false`  EOF
+     */
+    bool read(std::string& str)
+    {
+        bool                   success = false;
+        std::string::size_type size;
+
+        if (read(size)) {
+            char bytes[size];
+            if (read(bytes, size)) {
+                str.assign(bytes, size);
+                success = true;
+            }
+        }
+
+        return success;
     }
 
     /**
@@ -438,6 +467,11 @@ void TcpSock::write(
     static_cast<TcpSock::Impl*>(pImpl.get())->write(bytes, nbytes);
 }
 
+void TcpSock::write(const std::string str) const
+{
+    static_cast<TcpSock::Impl*>(pImpl.get())->write(str);
+}
+
 void TcpSock::write(const bool value) const
 {
     static_cast<TcpSock::Impl*>(pImpl.get())->write(static_cast<uint8_t>(value));
@@ -468,6 +502,11 @@ bool TcpSock::read(
         const size_t nbytes) const
 {
     return static_cast<TcpSock::Impl*>(pImpl.get())->read(bytes, nbytes);
+}
+
+bool TcpSock::read(std::string& str) const
+{
+    return static_cast<TcpSock::Impl*>(pImpl.get())->read(str);
 }
 
 bool TcpSock::read(bool& value) const

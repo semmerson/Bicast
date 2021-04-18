@@ -11,4 +11,6 @@ add_library(misc OBJECT
         Thread.cpp      Thread.h
 			LinkedHashMap.h
 	LinkedMap.cpp	LinkedMap.h
+	SslHelp.cpp     SslHelp.h
+	Ed25519.cpp     Ed25519.h
 )

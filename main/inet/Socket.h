@@ -201,6 +201,12 @@ public:
             size_t      nbytes) const;
 
     /**
+     * Writes a string to the socket.
+     * @param[in] str  String to be written
+     */
+    void write(const std::string str) const;
+
+    /**
      * Writes a value to the socket. No host-to-network translation is
      * performed.
      *
@@ -259,6 +265,16 @@ public:
     bool read(
             void*        bytes,
             const size_t nbytes) const;
+
+    /**
+     * Reads a string from the socket.
+     *
+     * @param[out] str           String to be read
+     * @retval     `true`        Success
+     * @retval     `false`       EOF or `shutdown()` called
+     * @throws     SystemError   Read error
+     */
+    bool read(std::string& str) const;
 
     /**
      * Reads a value from the socket. No network-to-host translation is
