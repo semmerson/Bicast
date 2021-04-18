@@ -21,6 +21,7 @@ add_subdirectory(inet)
 add_subdirectory(proto)
 #add_subdirectory(repository)
 #add_subdirectory(node)
+add_subdirectory(proto)
 add_subdirectory(lib)
 #add_subdirectory(publisher)
 
