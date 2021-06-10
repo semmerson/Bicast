@@ -7,6 +7,10 @@ add_executable(SockAddr_test SockAddr_test.cpp)
 target_link_libraries(SockAddr_test hycast gtest)
 add_test(SockAddr_test SockAddr_test)
 
+add_executable(socket_test socket_test.cpp)
+target_link_libraries(socket_test hycast gtest pthread)
+add_test(socket_test socket_test)
+
 add_executable(Socket_test Socket_test.cpp)
 target_link_libraries(Socket_test hycast gtest pthread)
 add_test(Socket_test Socket_test)

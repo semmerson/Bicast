@@ -29,9 +29,11 @@
 #include <cerrno>
 #include <cstdint>
 #include <limits.h>
+#include <mutex>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <signal.h>
 #include <stddef.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -42,18 +44,72 @@ namespace hycast {
 class Socket::Impl
 {
 protected:
-    int              sd;      ///< Socket descriptor
-    std::atomic_bool halt;    ///< `shutdown()` has been called?
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+
+    mutable Mutex mutex;
+    SockAddr      rmtSockAddr;
+    int           sd;      ///< Socket descriptor
+    bool          halt;    ///< `shutdown()` has been called?
 
     explicit Impl(const int sd) noexcept
-        : sd{sd}
+        : mutex()
+        , rmtSockAddr()
+        , sd{sd}
         , halt{false}
-    {}
+    {
+        if (sd < 0)
+            throw INVALID_ARGUMENT("Socket descriptor is " +
+                    std::to_string(sd));
+
+        struct sockaddr_storage storage = {};
+        socklen_t               socklen = sizeof(storage);
+
+        if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
+                &socklen) == 0)
+            rmtSockAddr = SockAddr(storage);
+    }
+
+    /**
+     * @pre `mutex` is locked
+     */
+    void shut() {
+        if (::shutdown(sd, SHUT_RDWR) && errno != ENOTCONN)
+            throw SYSTEM_ERROR("::shutdown failure on socket " +
+                    std::to_string(sd));
+        halt = true;
+    }
 
 public:
     virtual ~Impl() noexcept {
-        ::shutdown(sd, SHUT_RDWR);
         ::close(sd);
+    }
+
+    size_t hash() const noexcept {
+        return getLclAddr().hash() ^ getRmtAddr().hash();
+    }
+
+    bool operator<(const Impl& rhs) const noexcept {
+        auto lhsAddr = getLclAddr();
+        auto rhsAddr = rhs.getLclAddr();
+
+        if (lhsAddr < rhsAddr)
+            return true;
+        if (rhsAddr < lhsAddr)
+            return false;
+
+        lhsAddr = getRmtAddr();
+        rhsAddr = rhs.getRmtAddr();
+
+        if (lhsAddr < rhsAddr)
+            return true;
+
+        return false;
+    }
+
+    operator bool() const {
+        Guard guard{mutex};
+        return !halt && sd >= 0;
     }
 
     SockAddr getLclAddr() const {
@@ -68,21 +124,15 @@ public:
         return SockAddr(storage);
     }
 
-    SockAddr getRmtAddr() const {
-        struct sockaddr_storage storage = {};
-        socklen_t               socklen = sizeof(storage);
-
-        return ::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                &socklen)
-            ? SockAddr() // Appropriate for listening server sockets
-            : SockAddr(storage);
+    SockAddr getRmtAddr() const noexcept {
+        return rmtSockAddr;
     }
 
     in_port_t getLclPort() const {
         return getLclAddr().getPort();
     }
 
-    in_port_t getRmtPort() const {
+    in_port_t getRmtPort() const noexcept {
         return getRmtAddr().getPort();
     }
 
@@ -93,14 +143,20 @@ public:
      * @throws SystemError  `::shutdown()` failure
      */
     void shutdown() {
-        halt = true;
-        if (::shutdown(sd, SHUT_RDWR) && errno != ENOTCONN)
-            throw SYSTEM_ERROR("::shutdown failure on socket " +
-                    std::to_string(sd));
+        Guard guard{mutex};
+        shut();
     }
 
-    bool isShutdown() {
+    bool isShutdown() const {
+        Guard guard{mutex};
         return halt;
+    }
+
+    void close() {
+        Guard guard{mutex};
+        if (!halt)
+            shut();
+        ::close(sd);
     }
 };
 
@@ -110,6 +166,29 @@ Socket::Socket(Impl* impl)
 
 Socket::~Socket()
 {}
+
+Socket::operator bool() const noexcept {
+    return pImpl && pImpl->operator bool();
+}
+
+size_t Socket::hash() const noexcept {
+    return pImpl ? pImpl->hash() : 0;
+}
+
+bool Socket::operator<(const Socket& rhs) const noexcept {
+    auto impl1 = pImpl.get();
+    auto impl2 = rhs.pImpl.get();
+
+    return (impl1 == impl2)
+            ? false
+            : (impl1 == nullptr || impl2 == nullptr)
+                  ? (impl1 == nullptr)
+                  : *impl1 < *impl2;
+}
+
+void Socket::swap(Socket& socket) noexcept {
+    pImpl.swap(socket.pImpl);
+}
 
 SockAddr Socket::getLclAddr() const
 {
@@ -143,6 +222,10 @@ bool Socket::isShutdown() const
     return pImpl->isShutdown();
 }
 
+void Socket::close() const {
+    pImpl->close();
+}
+
 /******************************************************************************/
 
 class InetSock::Impl : public Socket::Impl
@@ -170,11 +253,6 @@ InetSock::InetSock(Impl* impl)
 
 InetSock::~InetSock()
 {}
-
-InetSock::operator bool() noexcept
-{
-    return pImpl.operator bool();
-}
 
 /******************************************************************************/
 
@@ -259,17 +337,32 @@ public:
     {
         //LOG_DEBUG("Writing %zu bytes", nbytes);
 
-        const char* bytes = static_cast<const char*>(data);
+        const char*   bytes = static_cast<const char*>(data);
+        struct pollfd pollfd;
+
+        pollfd.fd = sd;
+        pollfd.events = POLLOUT;
 
         while (nbytes) {
+            /*
+             * poll(2) is used because SIGPIPE was always delivered by the
+             * development system even if it was explicitly ignored.
+             */
+            if (::poll(&pollfd, 1, -1) == -1)
+                throw SYSTEM_ERROR("poll() failure for host " +
+                        getRmtAddr().to_string());
+            if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL))
+                throw EOF_ERROR("Lost connection with host " +
+                        getRmtAddr().to_string());
+
             // Cancellation point
             auto nwritten = ::write(sd, bytes, nbytes);
 
             if (nwritten == -1) {
                 if (errno == ECONNRESET || errno == EPIPE)
-                    throw EOF_ERROR("Connection to host " +
-                            getRmtAddr().to_string() + " was closed");
-                throw SYSTEM_ERROR("Couldn't write to host "
+                    throw EOF_ERROR("Lost connection to host " +
+                            getRmtAddr().to_string());
+                throw SYSTEM_ERROR("write() failure to host "
                         + getRmtAddr().to_string());
             }
 
@@ -341,16 +434,29 @@ public:
          */
         //LOG_DEBUG("Reading %zu bytes", nbytes);
 
-        char* bytes = static_cast<char*>(data);
-        auto  nleft = nbytes;
+        char*         bytes = static_cast<char*>(data);
+        auto          nleft = nbytes;
+        struct pollfd pollfd;
+
+        pollfd.fd = sd;
+        pollfd.events = POLLIN;
 
         while (nleft) {
+            /*
+             * poll(2) is used to learn if this end has closed the socket.
+             */
+            if (::poll(&pollfd, 1, -1) == -1)
+                throw SYSTEM_ERROR("poll() failure for host " +
+                        getRmtAddr().to_string());
+            if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL))
+                throw EOF_ERROR("Lost connection with host " +
+                        getRmtAddr().to_string());
+
             auto nread = ::read(sd, bytes, nleft);
 
             if (nread == -1)
                 throw SYSTEM_ERROR("Couldn't read from connection with host "
                         + getRmtAddr().to_string());
-
             if (nread == 0)
                 return false; // EOF
 
@@ -585,7 +691,7 @@ public:
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
-     * @retval  `nullptr`          `shutdown()` was called
+     * @retval  `nullptr`          Socket was closed
      * @return                     The accepted socket
      * @throws  std::system_error  `::accept()` failure
      * @cancellationpoint          Yes
@@ -595,8 +701,11 @@ public:
         const int fd = ::accept(sd, nullptr, nullptr);
 
         if (fd == -1) {
-            if (halt)
-                return nullptr;
+            {
+                Guard guard{mutex};
+                if (halt)
+                    return nullptr;
+            }
 
             throw SYSTEM_ERROR("accept() failure on socket " +
                         std::to_string(sd));

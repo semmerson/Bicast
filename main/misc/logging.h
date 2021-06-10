@@ -26,6 +26,7 @@
 #include <exception>
 #include <iostream>
 #include <signal.h>
+#include <stdlib.h>
 
 namespace hycast {
 
@@ -226,6 +227,33 @@ inline void log_fatal(const std::exception& ex) {
             hycast::log(hycast::LogLevel::FATAL, __FILE__, __LINE__, __func__, \
                     __VA_ARGS__); \
     while(false)
+
+
+/**
+ * Logs an error message and then aborts the current process.
+ *
+ * @param[in] ...  Optional arguments of the message -- starting with the
+ *                 format of the message.
+ */
+#define LOG_ABORT(...) do { \
+    LOG_FATAL(__VA_ARGS__); \
+    ::abort(); \
+} while (false)
+
+#ifdef NDEBUG
+    #define LOG_ASSERT(expr)
+#else
+    /**
+     * Tests an assertion. Logs an error-message and then aborts the process
+     * if the assertion is false.
+     *
+     * @param[in] expr  The assertion to be tested.
+     */
+    #define LOG_ASSERT(expr) do { \
+        if (!(expr)) \
+            LOG_ABORT("Assertion failure: %s", #expr); \
+    } while (false)
+#endif
 
 } // namespace
 

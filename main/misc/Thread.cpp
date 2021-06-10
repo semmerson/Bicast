@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "Shield.h"
 #include "Thread.h"
 
 #include <atomic>
@@ -66,10 +67,8 @@ public:
     void wait()
     {
         UniqueLock lock(mutex);
-        while (!cued) {
-            Canceler canceler{};
+        while (!cued)
             cond.wait(lock);
-        }
     }
 };
 
@@ -257,7 +256,6 @@ void Thread::Impl::privateJoin()
                     "std::thread::join() failure"));
         int status;
         {
-            Canceler canceler{};
             status = ::pthread_join(stdThread.native_handle(), nullptr);
         }
         if (status)
@@ -303,7 +301,6 @@ void Thread::Impl::ensureJoined()
         THREAD_CLEANUP_POP(false);
     }
     else while (!isJoined()) {
-        Canceler canceler{};
         cond.wait(lock);
     }
 }

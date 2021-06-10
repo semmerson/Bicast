@@ -39,7 +39,7 @@ class SockAddr::Impl
 {
 protected:
     InetAddr             inetAddr;
-    in_port_t            port;
+    in_port_t            port;     // Port number in host byte-order
     std::hash<in_port_t> portHash;
 
 public:
@@ -68,14 +68,16 @@ public:
         return port;
     }
 
-    std::string to_string() const noexcept
+    std::string to_string(const bool withName = false) const noexcept
     {
-        return (inetAddr.getFamily() == AF_INET6)
-                ? "[" + inetAddr.to_string() + "]:" + std::to_string(port)
-                : inetAddr.to_string() + ":" + std::to_string(port);
+        return (withName ? "SockAddr{" : "") +
+                ((inetAddr.getFamily() == AF_INET6)
+                    ? "[" + inetAddr.to_string() + "]:" + std::to_string(port)
+                    : inetAddr.to_string() + ":" + std::to_string(port)) +
+               (withName ? "}" : "");
     }
 
-    bool operator <(const Impl& rhs) const
+    bool operator<(const Impl& rhs) const noexcept
     {
         return (inetAddr < rhs.inetAddr)
                 ? true
@@ -84,7 +86,7 @@ public:
                   : (port < rhs.port);
     }
 
-    bool operator ==(const Impl& rhs) const
+    bool operator==(const Impl& rhs) const
     {
         return !((*this < rhs) || (rhs < *this));
     }
@@ -374,24 +376,34 @@ int SockAddr::socket(
     return pImpl->socket(type, protocol);
 }
 
-bool SockAddr::operator <(const SockAddr& rhs) const
+bool SockAddr::operator<(const SockAddr& rhs) const noexcept
 {
-    return *pImpl.get() < *rhs.pImpl.get();
+    auto impl1 = pImpl.get();
+    auto impl2 = rhs.pImpl.get();
+    return (impl1 == impl2)
+            ? false
+            : (impl1 == nullptr || impl2 == nullptr)
+                ? (impl1 == nullptr)
+                : *impl1 < *impl2;
 }
 
-bool SockAddr::operator ==(const SockAddr& rhs) const
+bool SockAddr::operator==(const SockAddr& rhs) const noexcept
 {
     return *pImpl.get() == *rhs.pImpl.get();
 }
 
 size_t SockAddr::hash() const noexcept
 {
-    return pImpl->hash();
+    return pImpl ? pImpl->hash() : 0;
 }
 
-std::string SockAddr::to_string() const noexcept
+std::string SockAddr::to_string(const bool withName) const noexcept
 {
-    return pImpl ? pImpl->to_string() : "<unset>";
+    return pImpl
+            ? pImpl->to_string(withName)
+            : withName
+                  ? "SockAddr{<unset>}"
+                  : "<unset>";
 }
 
 void SockAddr::bind(const int sd) const

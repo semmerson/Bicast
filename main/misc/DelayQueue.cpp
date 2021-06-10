@@ -21,7 +21,8 @@
  */
 #include "config.h"
 
-#include "Thread.h"
+#include "error.h"
+#include "Shield.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -181,7 +182,7 @@ public:
         if (isClosed)
             throw DOMAIN_ERROR("DelayQueue is closed");
 
-        Canceler canceler{false};
+        Shield shield{};
         Value    value = queue.top().getValue();
         queue.pop();
 

@@ -45,10 +45,13 @@ public:
 
     virtual ~Socket() noexcept =0;
 
-    operator bool() const noexcept
-    {
-        return (bool)pImpl;
-    }
+    operator bool() const noexcept;
+
+    size_t hash() const noexcept;
+
+    bool operator<(const Socket& rhs) const noexcept;
+
+    void swap(Socket& socket) noexcept;
 
     /**
      * Returns the local socket address.
@@ -84,6 +87,8 @@ public:
     void shutdown() const;
 
     bool isShutdown() const;
+
+    void close() const;
 };
 
 /******************************************************************************/
@@ -102,8 +107,6 @@ public:
     InetSock() =default;
 
     virtual ~InetSock() noexcept =0;
-
-    operator bool() noexcept;
 
     static inline uint8_t hton(const uint8_t value)
     {
@@ -174,8 +177,10 @@ public:
     virtual std::string to_string() const;
 
     /**
-     * If the socket protocol is TCP or SCTP, there's an outstanding packet
-     * acknowledgment, and there's less than an MSS in the send buffer,
+     * If the following are all true:
+     *   - The socket protocol is TCP or SCTP;
+     *   - There's an outstanding packet acknowledgment; and
+     *   - There's less than an MSS in the send buffer;
      * then this function sets whether or not the protocol layer will wait for
      * the outstanding acknowledgment before sending the sub-MSS packet. This is
      * the Nagle algorithm.
@@ -257,7 +262,7 @@ public:
      * Reads bytes from the socket. No network-to-host translation is performed.
      *
      * @param[out] bytes         Buffer into which data will be read
-     * @param[in]  nbytes        Maximum mount of data to read in bytes
+     * @param[in]  nbytes        Number of bytes to read
      * @retval     `true`        Success
      * @retval     `false`       EOF or `shutdown()` called
      * @throws     SystemError   Read error

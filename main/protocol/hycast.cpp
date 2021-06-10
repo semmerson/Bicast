@@ -505,10 +505,13 @@ public:
         return segInfo.getSegOffset();
     }
 
-    std::string to_string() const
+    std::string to_string(const bool withName) const
     {
-        return "{info: " + segInfo.to_string() + ", data: " + segData.to_string() +
-                "}";
+        std::string string;
+        if (withName)
+            string += "DataSeg";
+        return string += "{info=" + segInfo.to_string() + ", data=" +
+                segData.to_string() + "}";
     }
 };
 
@@ -559,9 +562,9 @@ ProdSize DataSeg::getSegOffset() const noexcept
     return pImpl->getSegOffset();
 }
 
-std::string DataSeg::to_string() const
+std::string DataSeg::to_string(const bool withName) const
 {
-    return pImpl->to_string();
+    return pImpl->to_string(withName);
 }
 
 /******************************************************************************/

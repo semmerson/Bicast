@@ -22,6 +22,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "logging.h"
 #include "Socket.h"
 
 #include <gtest/gtest.h>
@@ -30,26 +31,24 @@
 #include <signal.h>
 #include <thread>
 
-#undef USE_SIGTERM
-
 namespace {
-
-#ifdef USE_SIGTERM
-static void signal_handler(int const sig)
-{}
-#endif
 
 /// The fixture for testing class `Socket`
 class SocketTest : public ::testing::Test
 {
 protected:
+    typedef enum {
+        INIT = 0,
+        LISTENING = 0x1,
+        CONNECTED = 0x3,
+        READ_SOMETHING = 0x7,
+    } State;
     hycast::SockAddr        srvrAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     bool                    srvrReady;
     std::thread             srvrThread;
-    hycast::TcpSrvrSock     acceptSock; ///< Server's `::accept()` socket
-    hycast::TcpSock         srvrSock;       ///< Socket from `::accept()`
+    State                   state;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -60,199 +59,174 @@ protected:
         , cond{}
         , srvrReady{false}
         , srvrThread()
-        , acceptSock()
-        , srvrSock()
+        , state(INIT)
     {
         // You can do set-up work for each test here.
     }
 
-    virtual ~SocketTest()
-    {
-        // You can do clean-up work that doesn't throw exceptions here.
+    void setState(const State state) {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        this->state = state;
+        cond.notify_one();
     }
 
-    // If the constructor and destructor are not enough for setting up
-    // and cleaning up each test, you can define the following methods:
-
-    virtual void SetUp()
+    void waitForState(const State nextState)
     {
-        // Code here will be called immediately after the constructor (right
-        // before each test).
-#ifdef USE_SIGTERM
-        struct sigaction sigact;
-        (void)::sigemptyset(&sigact.sa_mask);
-        sigact.sa_flags = 0;
-        sigact.sa_handler = signal_handler;
-        (void)sigaction(SIGTERM, &sigact, NULL);
-#endif
-    }
-
-    virtual void TearDown()
-    {
-        // Code here will be called immediately after each test (right
-        // before the destructor).
-#ifdef USE_SIGTERM
-        struct sigaction sigact;
-        (void)::sigemptyset(&sigact.sa_mask);
-        sigact.sa_flags = 0;
-        sigact.sa_handler = SIG_DFL;
-        (void)sigaction(SIGTERM, &sigact, NULL);
-#endif
+        std::unique_lock<decltype(mutex)> lock{mutex};
+        while (state != nextState)
+            cond.wait(lock);
     }
 
     // Objects declared here can be used by all tests in the test case for Socket.
 
-public:
-    void runServer()
+    void runServer(hycast::TcpSrvrSock lstnSock,
+                   hycast::TcpSock&    srvrSock)
     {
-        {
-            std::lock_guard<decltype(mutex)> lock{mutex};
-            srvrReady = true;
-            cond.notify_one();
-        }
-
         try {
-            srvrSock = acceptSock.accept();
+            srvrSock = lstnSock.accept();
+            setState(CONNECTED);
 
             if (srvrSock) {
                 for (;;) {
-                    int readInt;
+                    unsigned char byte;
 
-                    srvrSock.read(&readInt, sizeof(readInt));
-                    srvrSock.write(&readInt, sizeof(readInt));
+                    srvrSock.read(&byte, sizeof(byte));
+                    setState(READ_SOMETHING);
+                    srvrSock.write(&byte, sizeof(byte));
                 }
             }
         }
         catch (std::exception const& ex) {
-            std::cout << "runserver(): Exception caught\n";
+            LOG_ERROR(ex, "Server failure");
         }
     }
 
-    void startServer()
+    void startServer(hycast::TcpSrvrSock& lstnSock,
+                     hycast::TcpSock&     srvrSock)
     {
-        acceptSock = hycast::TcpSrvrSock(srvrAddr);
-        srvrThread = std::thread(&SocketTest::runServer, this);
-
-        // Necessary because `ClntSock` constructor throws if `connect()` fails
-        std::unique_lock<decltype(mutex)> lock{mutex};
-        while (!srvrReady)
-            cond.wait(lock);
+        lstnSock = hycast::TcpSrvrSock(srvrAddr);
+        setState(LISTENING);
+        srvrThread = std::thread(&SocketTest::runServer, this, lstnSock,
+                std::ref(srvrSock));
     }
 };
 
 // Tests copy construction
 TEST_F(SocketTest, CopyConstruction)
 {
-    hycast::TcpSrvrSock srvrSock{srvrAddr};
-    hycast::TcpSrvrSock sock(srvrSock);
+    hycast::TcpSrvrSock lstnSock{srvrAddr};
+    hycast::TcpSrvrSock sock(lstnSock);
 }
 
 // Tests setting the Nagle algorithm
 TEST_F(SocketTest, SettingNagle)
 {
-    hycast::TcpSrvrSock srvrSock(srvrAddr);
+    hycast::TcpSrvrSock lstnSock(srvrAddr);
 
-    EXPECT_TRUE(&srvrSock.setDelay(false) == &srvrSock);
+    EXPECT_TRUE(&lstnSock.setDelay(false) == &lstnSock);
 }
 
 // Tests server-socket construction
 TEST_F(SocketTest, ServerConstruction)
 {
-    hycast::TcpSrvrSock srvrSock(srvrAddr);
+    hycast::TcpSrvrSock lstnSock(srvrAddr);
 
-    hycast::SockAddr sockAddr(srvrSock.getLclAddr());
+    hycast::SockAddr sockAddr(lstnSock.getLclAddr());
     LOG_DEBUG("%s", sockAddr.to_string().c_str());
     EXPECT_TRUE(!(srvrAddr < sockAddr) && !(sockAddr < srvrAddr));
 }
 
-#if 0
-// Calling shutdown() on a TCP connection doesn't cause poll() to return
-
-// Tests shutdown of socket while reading
-TEST_F(SocketTest, ReadShutdown)
-{
-    startServer();
-
-    hycast::TcpClntSock clntSock(srvrAddr);
-
-    ::sleep(1);
-    acceptSock.shutdown();
-    srvrThread.join();
-}
-#endif
-
 // Tests canceling the server thread while accept() is executing
-TEST_F(SocketTest, CancelAccept)
+TEST_F(SocketTest, CancelServerAccepting)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock;
+    hycast::TcpSock     srvrSock;
 
-#ifdef USE_SIGTERM
-    ::pthread_kill(srvrThread.native_handle(), SIGTERM);
-#else
+    startServer(lstnSock, srvrSock);
+
     ::pthread_cancel(srvrThread.native_handle());
-#endif
     srvrThread.join();
 }
 
-// Tests shutting down the server's accept-socket
-TEST_F(SocketTest, ShutdownAccept)
+// Tests closing the server's listening-socket
+TEST_F(SocketTest, CloseAcceptSocket)
 {
-    startServer();
-    acceptSock.shutdown();
+    hycast::TcpSrvrSock lstnSock{};
+    hycast::TcpSock     srvrSock{};
+
+    startServer(lstnSock, srvrSock);
+    lstnSock.close();
     srvrThread.join();
 }
 
 // Tests canceling the server thread while read() is executing
-TEST_F(SocketTest, CancelRead)
+TEST_F(SocketTest, CancelServerReading)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock{};
+    hycast::TcpSock     srvrSock{};
+
+    startServer(lstnSock, srvrSock);
 
     hycast::TcpClntSock clntSock(srvrAddr);
+    clntSock.write(true);
 
-    ::usleep(100000);
-#ifdef USE_SIGTERM
-    ::pthread_kill(srvrThread.native_handle(), SIGTERM);
-#else
+    waitForState(READ_SOMETHING);
     ::pthread_cancel(srvrThread.native_handle());
-#endif
     srvrThread.join();
 }
 
-// Tests shutting down the server's socket while read() is executing
-TEST_F(SocketTest, shutdownRead)
+// Tests closing the server's socket
+TEST_F(SocketTest, CloseServerSocket)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock;
+    hycast::TcpSock     srvrSock;
+
+    startServer(lstnSock, srvrSock);
 
     hycast::TcpClntSock clntSock(srvrAddr);
+    clntSock.write(true);
 
-    ::usleep(100000);
-    srvrSock.shutdown();
+    waitForState(READ_SOMETHING);
+    srvrSock.close(); // Sends FIN to client's socket, but too late
     srvrThread.join();
+
+    //sleep(1); // Even if this is enabled
+
+    // The following amount is necessary for an EOF
+    char bytes[5000000];
+    //char bytes[1]; // Not enough even if the sleep is enabled
+    ASSERT_THROW(clntSock.write(bytes, sizeof(bytes)), hycast::EofError);
 }
 
-// Tests shutting down the server's socket while write() is executing
-TEST_F(SocketTest, shutdownWrite)
+// Tests closing the client's socket
+TEST_F(SocketTest, CloseClientSocket)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock;
+    hycast::TcpSock     srvrSock;
+
+    startServer(lstnSock, srvrSock);
 
     hycast::TcpClntSock clntSock(srvrAddr);
+    clntSock.write(true);
 
-    int writeInt = 0xff00;
-    clntSock.write(&writeInt, sizeof(writeInt));
+    waitForState(READ_SOMETHING);
+    clntSock.close(); // Sends FIN to server's socket
+    ASSERT_THROW(clntSock.write(true), hycast::EofError);
 
-    ::usleep(100000);
-    srvrSock.shutdown();
     srvrThread.join();
 }
 
 // Tests round-trip scalar exchange
 TEST_F(SocketTest, ScalarExchange)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock;
+    hycast::TcpSock     srvrSock;
+
+    startServer(lstnSock, srvrSock);
 
     hycast::TcpClntSock clntSock(srvrAddr);
-    int              writeInt = 0xff00;
-    int              readInt = ~writeInt;
+    int                 writeInt = 0xff00;
+    int                 readInt = ~writeInt;
 
     clntSock.write(&writeInt, sizeof(writeInt));
     clntSock.read(&readInt, sizeof(readInt));
@@ -263,10 +237,13 @@ TEST_F(SocketTest, ScalarExchange)
     srvrThread.join();
 }
 
-// Tests round-trip vector exchange
+// Tests round-trip I/O-vector exchange
 TEST_F(SocketTest, VectorExchange)
 {
-    startServer();
+    hycast::TcpSrvrSock lstnSock;
+    hycast::TcpSock     srvrSock;
+
+    startServer(lstnSock, srvrSock);
 
     hycast::TcpClntSock clntSock(srvrAddr);
     int                 writeInt[2] = {0xff00, 0x00ff};
@@ -295,6 +272,9 @@ int main(int argc, char **argv) {
   sigemptyset(&sigact.sa_mask);
   sigact.sa_flags = 0;
   (void)sigaction(SIGPIPE, &sigact, NULL);
+
+  hycast::log_setName(::basename(argv[0]));
+  //LOG_ERROR
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -679,31 +679,6 @@ public:
     static size_t size();
 };
 
-/**
- * RAII class that enables/disables thread cancellation on construction and
- * returns it to its previous state on destruction.
- */
-class Canceler
-{
-    const bool previous;
-
-public:
-    /**
-     * Set thread cancellation.
-     */
-    inline Canceler(const bool enable = true)
-        : previous{Thread::enableCancel(enable)}
-    {}
-
-    /**
-     * Returns thread cancellation to previous state.
-     */
-    inline ~Canceler()
-    {
-        Thread::enableCancel(previous);
-    }
-};
-
 } // namespace
 
 /******************************************************************************/

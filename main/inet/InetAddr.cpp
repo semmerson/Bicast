@@ -82,21 +82,21 @@ public:
 
     virtual std::string to_string() const =0;
 
-    virtual bool operator <(const Impl& rhs) const noexcept =0;
+    virtual bool operator<(const Impl& rhs) const noexcept =0;
 
-    virtual bool operator <(const Inet4Addr& rhs) const noexcept =0;
+    virtual bool operator<(const Inet4Addr& rhs) const noexcept =0;
 
-    virtual bool operator <(const Inet6Addr& rhs) const noexcept =0;
+    virtual bool operator<(const Inet6Addr& rhs) const noexcept =0;
 
-    virtual bool operator <(const NameAddr& rhs) const noexcept =0;
+    virtual bool operator<(const NameAddr& rhs) const noexcept =0;
 
-    virtual bool operator ==(const Impl& rhs) const noexcept =0;
+    virtual bool operator==(const Impl& rhs) const noexcept =0;
 
-    virtual bool operator ==(const Inet4Addr& rhs) const noexcept =0;
+    virtual bool operator==(const Inet4Addr& rhs) const noexcept =0;
 
-    virtual bool operator ==(const Inet6Addr& rhs) const noexcept =0;
+    virtual bool operator==(const Inet6Addr& rhs) const noexcept =0;
 
-    virtual bool operator ==(const NameAddr& rhs) const noexcept =0;
+    virtual bool operator==(const NameAddr& rhs) const noexcept =0;
 
     virtual size_t hash() const noexcept =0;
 
@@ -418,7 +418,7 @@ public:
     }
 
     bool operator <(const Inet4Addr& rhs) const noexcept
-    {;
+    {
         return false;
     }
 
@@ -755,19 +755,25 @@ std::string InetAddr::to_string() const
     return pImpl ? pImpl->to_string() : "(unset)";
 }
 
-bool InetAddr::operator <(const InetAddr& rhs) const noexcept
+bool InetAddr::operator<(const InetAddr& rhs) const noexcept
 {
-    return pImpl->operator <(*rhs.pImpl.get());
+    auto impl1 = pImpl.get();
+    auto impl2 = rhs.pImpl.get();
+    return (impl1 == impl2)
+            ? false
+            : (impl1 == nullptr || impl2 == nullptr)
+                  ? (impl1 == nullptr)
+                  : *impl1 < *impl2;
 }
 
-bool InetAddr::operator ==(const InetAddr& rhs) const noexcept
+bool InetAddr::operator==(const InetAddr& rhs) const noexcept
 {
-    return pImpl->operator ==(*rhs.pImpl.get());
+    return !(*pImpl < *rhs.pImpl || *rhs.pImpl < *pImpl);
 }
 
 size_t InetAddr::hash() const noexcept
 {
-    return pImpl->hash();
+    return pImpl ? pImpl->hash() : 0;
 }
 
 SockAddr InetAddr::getSockAddr(const in_port_t port) const

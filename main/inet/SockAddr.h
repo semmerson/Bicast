@@ -48,9 +48,8 @@ public:
      * @param[in] inetAddr  Internet address
      * @param[in] port      Port number in host byte-order
      */
-    SockAddr(
-            const InetAddr& inetAddr,
-            in_port_t       port);
+    SockAddr(const InetAddr& inetAddr,
+             in_port_t       port);
 
     /**
      * Constructs from an IPv4 socket address.
@@ -59,9 +58,8 @@ public:
      * @param[in] port  Port number in host byte-order. `0` obtains a system-
      *                  chosen port number.
      */
-    SockAddr(
-            const in_addr_t addr,
-            const in_port_t port);
+    SockAddr(const in_addr_t addr,
+             const in_port_t port);
 
     /**
      * Constructs from an IPv4 socket address.
@@ -70,9 +68,8 @@ public:
      * @param[in] port  Port number in host byte-order. `0` obtains a system-
      *                  chosen port number.
      */
-    SockAddr(
-            const struct in_addr& addr,
-            const in_port_t       port);
+    SockAddr(const struct in_addr& addr,
+             const in_port_t       port);
 
     /**
      * Constructs an IPv4 socket address.
@@ -88,9 +85,8 @@ public:
      * @param[in] addr  IPv6 address
      * @param[in] port  Port number in host byte-order
      */
-    SockAddr(
-            const struct in6_addr& addr,
-            const in_port_t        port);
+    SockAddr(const struct in6_addr& addr,
+             const in_port_t        port);
 
     /**
      * Constructs from an IPv6 socket address.
@@ -122,9 +118,8 @@ public:
      * @param[in] port  Port number in host byte-order. `0` obtains a system-
      *                  chosen port number.
      */
-    SockAddr(
-            const std::string& name,
-            const in_port_t    port);
+    SockAddr(const std::string& name,
+             const in_port_t    port);
 
     /**
      * Constructs from a string specification.
@@ -165,7 +160,7 @@ public:
      *
      * @return String representation of this instance
      */
-    std::string to_string() const noexcept;
+    std::string to_string(const bool withName = false) const noexcept;
 
     /**
      * Returns the hash value of this instance.
@@ -204,7 +199,7 @@ public:
      * @retval    `true`   This instance is less than `rhs`
      * @retval    `false`  This instance is not less than `rhs`
      */
-    bool operator <(const SockAddr& rhs) const;
+    bool operator <(const SockAddr& rhs) const noexcept;
 
     /**
      * Indicates if this instance is considered equal to another.
@@ -213,7 +208,7 @@ public:
      * @retval    `true`   This instance is equal to `rhs`
      * @retval    `false`  This instance is not equal to `rhs`
      */
-    bool operator ==(const SockAddr& rhs) const;
+    bool operator ==(const SockAddr& rhs) const noexcept;
 
     /**
      * Binds a socket to a local socket address.

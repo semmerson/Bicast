@@ -2,7 +2,7 @@
 
 #include "HycastProto.h"
 #include "logging.h"
-#include "Peer.h"
+#include "P2pConn.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
@@ -12,8 +12,8 @@
 
 namespace {
 
-/// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public hycast::P2pNode
+/// The fixture for testing class `P2pConn`
+class P2pTest : public ::testing::Test, public hycast::P2pNode
 {
 protected:
     typedef enum {
@@ -45,7 +45,7 @@ protected:
     char                    memData[hycast::DataSeg::CANON_DATASEG_SIZE];
     hycast::DataSeg         dataSeg;
 
-    PeerTest()
+    P2pTest()
         : state{INIT}
         , pubAddr{"localhost:38800"}
         , mutex{}
@@ -196,18 +196,18 @@ public:
 };
 
 // Tests default construction
-TEST_F(PeerTest, DefaultConstruction)
+TEST_F(P2pTest, DefaultConstruction)
 {
     hycast::Peer peer{};
     EXPECT_FALSE(peer);
 }
 
 // Tests data exchange
-TEST_F(PeerTest, DataExchange)
+TEST_F(P2pTest, DataExchange)
 {
     // Create and execute reception by publishing peer on separate thread
     hycast::Peer pubPeer{};
-    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
+    std::thread srvrThread(&P2pTest::startPubPeer, this, std::ref(pubPeer));
 
     waitForState(LISTENING);
 
@@ -229,11 +229,11 @@ TEST_F(PeerTest, DataExchange)
 }
 
 // Tests broken connection
-TEST_F(PeerTest, BrokenConnection)
+TEST_F(P2pTest, BrokenConnection)
 {
     // Create and execute reception by publishing peer on separate thread
     hycast::Peer pubPeer{};
-    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
+    std::thread srvrThread(&P2pTest::startPubPeer, this, std::ref(pubPeer));
 
     waitForState(LISTENING);
 
