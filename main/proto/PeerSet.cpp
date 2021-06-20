@@ -69,7 +69,8 @@ class PeerSet::Impl
                      * thread must be cancelled in order to stop it and this
                      * must be done before this instance is destroyed.
                      */
-                    noticeQueue.send(readIndex, peer);
+                    if (!noticeQueue.send(readIndex, peer))
+                        break; // Remote peer disconnected
                     /*
                      * To avoid prematurely purging the current PDU, the
                      * read-index must be incremented *after* the notice has
@@ -79,6 +80,7 @@ class PeerSet::Impl
                 }
             }
             catch (const std::exception& ex) {
+                LOG_ERROR(ex);
                 threadEx.set(ex);
             }
         }

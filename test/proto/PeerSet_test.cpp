@@ -51,7 +51,7 @@ protected:
     int                     prodInfoCount;
     int                     dataSegCount;
 
-    static const int        NUM_SUBSCRIBERS = 10;
+    static const int        NUM_SUBSCRIBERS = 4;
 
     PeerSetTest()
         : state{INIT}
@@ -189,8 +189,8 @@ public:
             orState(SEG_RCVD);
     }
 
-    void died(hycast::Peer peer) {
-        //LOG_ERROR("Peer %s died", peer.to_string().data());
+    void offline(hycast::Peer peer) {
+        LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
     void reassigned(const hycast::ProdIndex  notice,
                     hycast::Peer             peer) {}
@@ -199,20 +199,16 @@ public:
 
     void startPublisher(hycast::PeerSet& pubPeerSet)
     {
-        hycast::TcpSrvrSock srvrSock(pubAddr);
-        {
-            std::lock_guard<std::mutex> guard{mutex};
-            orState(LISTENING);
-        }
+        hycast::PeerSrvr peerSrvr{*this, pubAddr};
+        orState(LISTENING);
 
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
-            auto             pubSock = srvrSock.accept();
-            auto             rmtAddr = pubSock.getRmtAddr().getInetAddr();
-            hycast::InetAddr localhost("127.0.0.1");
+            auto             pubPeer = peerSrvr.accept();
 
+            auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
+            hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, rmtAddr);
 
-            hycast::Peer pubPeer{pubSock, *this};
             // Starts receiving and becomes ready to notify
             pubPeerSet.insert(pubPeer, true);
             ASSERT_EQ(i+1, pubPeerSet.size());
@@ -240,7 +236,7 @@ TEST_F(PeerSetTest, DataExchange)
         // Create and execute reception by subscribing peers on separate threads
         hycast::PeerSet subPeerSet{*this};
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
-            hycast::Peer subPeer{pubAddr, *this};
+            hycast::Peer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
             ASSERT_EQ(i+1, subPeerSet.size());
         }

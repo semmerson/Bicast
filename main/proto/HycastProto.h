@@ -171,36 +171,29 @@ struct Timestamp
 /// Product information
 struct ProdInfo
 {
-    ProdIndex index;   ///< Product index
-    String    name;    ///< Name of product
-    ProdSize  size;    ///< Size of product in bytes
-    Timestamp created; ///< When product was created
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
-    ProdInfo() =default;
+    ProdInfo();
 
     ProdInfo(const ProdIndex   index,
              const std::string name,
-             const ProdSize    size)
-        : index{index}
-        , name(name)
-        , size{size}
-        , created{}
-    {
-        struct timespec now;
-        ::clock_gettime(CLOCK_REALTIME, &now);
-        created.sec = now.tv_sec;
-        created.nsec = now.tv_nsec;
-    }
+             const ProdSize    size,
+             const Timestamp   created);
 
-    bool operator==(const ProdInfo& rhs) const {
-        return index == rhs.index &&
-               name == rhs.name &&
-               size == rhs.size &&
-               created == rhs.created;
-    }
+    ProdInfo(const ProdIndex   index,
+             const std::string name,
+             const ProdSize    size);
 
-    std::string to_string(bool withName = false) const;
+    const ProdIndex& getProdIndex() const;
+    const String&    getName() const;
+    const ProdSize&  getProdSize() const;
+    const Timestamp& getTimestamp() const;
+
+    bool operator==(const ProdInfo& rhs) const;
+
+    String to_string(bool withName = false) const;
 };
 
 class Peer;
@@ -316,7 +309,7 @@ class P2pMgr
 {
 public:
     virtual ~P2pMgr() {}
-    virtual void died(Peer peer) =0;
+    virtual void offline(Peer peer) =0;
     virtual void reassigned(const ProdIndex  notice,
                             Peer             peer) =0;
     virtual void reassigned(const DataSegId& notice,

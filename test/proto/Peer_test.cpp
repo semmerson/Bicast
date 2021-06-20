@@ -159,8 +159,8 @@ public:
         orState(SEG_RCVD);
     }
 
-    void died(hycast::Peer peer) {
-        LOG_ERROR("Peer %s died", peer.to_string().data());
+    void offline(hycast::Peer peer) {
+        LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
     void reassigned(const hycast::ProdIndex  notice,
                     hycast::Peer             peer) {}
@@ -169,29 +169,30 @@ public:
 
     void startPubPeer(hycast::Peer& pubPeer)
     {
-        hycast::TcpSrvrSock srvrSock(pubAddr);
+        hycast::PeerSrvr peerSrvr{*this, pubAddr};
         orState(LISTENING);
 
-        auto                pubSock = srvrSock.accept();
-        auto                rmtAddr = pubSock.getRmtAddr().getInetAddr();
-        hycast::InetAddr    localhost("127.0.0.1");
+        pubPeer = peerSrvr.accept();
+        ASSERT_TRUE(pubPeer);
 
+        auto rmtAddr = pubPeer.getRmtAddr().getInetAddr();
+        hycast::InetAddr localhost("127.0.0.1");
         EXPECT_EQ(localhost, rmtAddr);
 
-        pubPeer = hycast::Peer{pubSock, *this};
-        ASSERT_TRUE(pubPeer);
-        pubPeer.start();
+        LOG_DEBUG("Starting publishing peer");
+        ASSERT_TRUE(pubPeer.start());
     }
 
-    void notify(hycast::Peer pubPeer) {
+    bool notify(hycast::Peer pubPeer) {
         // Start an exchange
-        pubPeer.notify(prodIndex);
-        pubPeer.notify(segId);
+        return pubPeer.notify(prodIndex) &&
+                pubPeer.notify(segId);
     }
 
-    void loopNotify(hycast::Peer pubPeer) {
-        for (;;)
-            notify(pubPeer);
+    bool loopNotify(hycast::Peer pubPeer) {
+        while (notify(pubPeer))
+            ::pthread_yield();
+        return false;
     }
 };
 
@@ -205,22 +206,22 @@ TEST_F(PeerTest, DefaultConstruction)
 // Tests data exchange
 TEST_F(PeerTest, DataExchange)
 {
-    // Create and execute reception by publishing peer on separate thread
+    // Create and execute reception by publishing-peer on separate thread
     hycast::Peer pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     waitForState(LISTENING);
 
-    // Create and execute reception by subscribing peer on separate thread
-    hycast::Peer subPeer(pubAddr, *this);
+    // Create and execute reception by subscribing-peer on separate thread
+    hycast::Peer subPeer(*this, pubAddr);
     ASSERT_TRUE(subPeer);
-    subPeer.start();
+    ASSERT_TRUE(subPeer.start());
 
     ASSERT_TRUE(srvrThread.joinable());
     srvrThread.join(); // `pubPeer` is running upon return
 
     // Start an exchange
-    notify(pubPeer);
+    ASSERT_TRUE(notify(pubPeer));
 
     // Wait for the exchange to complete
     waitForState(DONE);
@@ -239,9 +240,11 @@ TEST_F(PeerTest, BrokenConnection)
 
     {
         // Create and execute reception by subscribing peer on separate thread
-        hycast::Peer subPeer{pubAddr, *this};
+        hycast::Peer subPeer{*this, pubAddr};
         ASSERT_TRUE(subPeer);
-        subPeer.start();
+        LOG_DEBUG("Starting subscribing peer");
+        ASSERT_TRUE(subPeer.start());
+        LOG_DEBUG("Stopping subscribing peer");
         subPeer.stop();
     } // `subPeer` destroyed
 
@@ -249,8 +252,11 @@ TEST_F(PeerTest, BrokenConnection)
     srvrThread.join(); // `pubPeer` is running upon return
 
     // Try to send to subscribing peer
-    ASSERT_THROW(loopNotify(pubPeer), hycast::EofError);
+    LOG_DEBUG("Notifying subscribing peer");
+    ASSERT_FALSE(loopNotify(pubPeer));
 
+    LOG_TRACE;
+    LOG_DEBUG("Stopping subscribing peer");
     pubPeer.stop();
 }
 
@@ -278,7 +284,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  //hycast::log_setLevel(hycast::LogLevel::TRACE);
+  hycast::log_setLevel(hycast::LogLevel::TRACE);
 
   std::set_terminate(&myTerminate);
 

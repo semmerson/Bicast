@@ -35,11 +35,23 @@ namespace hycast {
  */
 class P2pConn
 {
+    friend class P2pSrvr;
+
 public:
     class                 Impl;
 
 private:
     std::shared_ptr<Impl> pImpl;
+
+    /**
+     * Sets the next, individual connection. Server-side only.
+     *
+     * @param[in] sock        Relevant socket
+     * @retval    `false`     P2P connection isn't complete
+     * @retval    `true`      P2P connection is complete
+     * @throw     LogicError  Connection is already complete
+     */
+    bool set(TcpSock sock);
 
 public:
     /**
@@ -53,16 +65,6 @@ public:
      * @param[in] srvrAddr  Socket address of Hycast server
      */
     explicit P2pConn(SockAddr srvrAddr);
-
-    /**
-     * Sets the next, individual connection. Server-side only.
-     *
-     * @param[in] sock        Relevant socket
-     * @retval    `false`     P2P connection isn't complete
-     * @retval    `true`      P2P connection is complete
-     * @throw     LogicError  Connection is already complete
-     */
-    bool set(TcpSock sock);
 
     operator bool() noexcept;
 

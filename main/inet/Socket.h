@@ -45,6 +45,12 @@ public:
 
     virtual ~Socket() noexcept =0;
 
+    /**
+     * Indicates if this instance is valid (i.e., not default constructed).
+     *
+     * @return `true`   Instance is valid
+     * @return `false`  Instance is not valid
+     */
     operator bool() const noexcept;
 
     size_t hash() const noexcept;
@@ -84,7 +90,7 @@ public:
     /**
      * Idempotent.
      */
-    void shutdown() const;
+    void shutdown(const int what = SHUT_RDWR) const;
 
     bool isShutdown() const;
 
@@ -198,65 +204,73 @@ public:
      *
      * @param[in] bytes        Data to be written
      * @param[in] nbytes       Number of bytes
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(
-            const void* bytes,
-            size_t      nbytes) const;
+    bool write(const void* bytes,
+               size_t      nbytes) const;
 
     /**
      * Writes a string to the socket.
-     * @param[in] str  String to be written
+     *
+     * @param[in] str      String to be written
+     * @retval    `false`  Remote peer disconnected
+     * @retval    `true`   Success
      */
-    void write(const std::string str) const;
+    bool write(const std::string str) const;
 
     /**
      * Writes a value to the socket. No host-to-network translation is
      * performed.
      *
      * @param[in] value        Value to be written
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(bool value) const;
+    bool write(bool value) const;
 
     /**
      * Writes a value to the socket. No host-to-network translation is
      * performed.
      *
      * @param[in] value        Value to be written
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(uint8_t value) const;
+    bool write(uint8_t value) const;
 
     /**
      * Writes a value to the socket. Host-to-network translation is performed.
      *
      * @param[in] value        Value to be written
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(uint16_t value) const;
+    bool write(uint16_t value) const;
+
+    /**
+     * Writes a value to the socket. Host-to-network translation is performed.
+     *
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
+     * @param[in] value        Value to be written
+     * @throws    SystemError  System error
+     */
+    bool write(uint32_t value) const;
 
     /**
      * Writes a value to the socket. Host-to-network translation is performed.
      *
      * @param[in] value        Value to be written
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Remote peer disconnected
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(uint32_t value) const;
-
-    /**
-     * Writes a value to the socket. Host-to-network translation is performed.
-     *
-     * @param[in] value        Value to be written
-     * @throws    EofError     Socket is closed
-     * @throws    SystemError  System error
-     */
-    void write(uint64_t value) const;
+    bool write(uint64_t value) const;
 
     /**
      * Reads bytes from the socket. No network-to-host translation is performed.

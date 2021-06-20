@@ -134,13 +134,15 @@ class PduQueue
     Map           map;
     QueueIndex    oldestIndex;
     P2pMgr&       p2pMgr;
+    const String  desc;
 
 public:
-    PduQueue(P2pMgr& p2pMgr)
+    PduQueue(P2pMgr& p2pMgr, const String desc)
         : mutex()
         , map()
         , oldestIndex(0)
         , p2pMgr(p2pMgr)
+        , desc(desc)
     {}
 
     /**
@@ -173,27 +175,28 @@ public:
     }
 
     /**
-     * Sends a given notice to a peer.
+     * Sends a given notice to a peer. Blocks while sending.
      *
-     * @param[in] index       Index of notice
-     * @param[in] peer        Peer to be sent notice
-     * @throws    LogicError  No such notice
+     * @param[in] index         Index of notice
+     * @param[in] peer          Peer to be sent notice
+     * @retval    `false`       Remote peer disconnected
+     * @retval    `true`        Success
+     * @throws    RuntimeError  Failure
      */
-    void send(const QueueIndex index, Peer peer) {
-        {
-            // Make changes to `map` visible
-            Guard guard(mutex);
-            if (map.count(index) == 0)
-                throw LOGIC_ERROR("No entry for index " +
-                        std::to_string(index));
-        }
-        const auto& notice = map.at(index);
+    bool send(const QueueIndex index, Peer peer) const {
         try {
-            peer.notify(notice);
+            PDU notice{};
+            {
+                Guard guard(mutex);
+                notice = map.at(index);
+            }
+            // Don't make foreign calls with locked mutex
+            return peer.notify(notice);
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-            p2pMgr.died(peer);
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't send " + desc +
+                    " notice #" + std::to_string(index) + " to peer "+
+                    peer.to_string()));
         }
     }
 };
@@ -212,18 +215,16 @@ public:
     Impl(P2pMgr& p2pMgr)
         : mutex()
         , pduIdQueue()
-        , pubPaths(p2pMgr)
-        , prodIndexes(p2pMgr)
-        , dataSegIds(p2pMgr)
+        , pubPaths(p2pMgr, "path-to-publisher")
+        , prodIndexes(p2pMgr, "product-index")
+        , dataSegIds(p2pMgr, "data-segment ID")
     {}
 
     QueueIndex getWriteIndex() const {
-        Guard guard{mutex};
         return pduIdQueue.getWriteIndex();
     }
 
     QueueIndex getOldestIndex() const {
-        Guard guard{mutex};
         return pduIdQueue.getOldestIndex();
     }
 
@@ -251,23 +252,23 @@ public:
     /**
      * Sends a given notice to a peer.
      *
-     * @param[in] index       Index of notice
-     * @param[in] peer        Peer to be sent notice
-     * @throws    LogicError  No such notice
+     * @param[in] index         Index of notice
+     * @param[in] peer          Peer to be sent notice
+     * @retval    `false`       Remote peer disconnected
+     * @retval    `true`        Success
+     * @throws    LogicError    Invalid PDU ID
+     * @throws    RuntimeError  Failure
      */
-    void send(const QueueIndex index, Peer peer) {
+    bool send(const QueueIndex index, Peer peer) const {
         LOG_TRACE;
 
         switch (pduIdQueue.get(index)) {
         case PduId::PUB_PATH_NOTICE:
-            pubPaths.send(index, peer);
-            break;
+            return pubPaths.send(index, peer);
         case PduId::PROD_INFO_NOTICE:
-            prodIndexes.send(index, peer);
-            break;
+            return prodIndexes.send(index, peer);
         case PduId::DATA_SEG_NOTICE:
-            dataSegIds.send(index, peer);
-            break;
+            return dataSegIds.send(index, peer);
         default:
             throw LOGIC_ERROR("Invalid PDU ID");
         }
@@ -275,6 +276,7 @@ public:
 
     // Purge queue of entries that will no longer be read
     void eraseTo(const QueueIndex index) {
+        Guard guard{mutex};
         pduIdQueue .eraseTo(index);
         pubPaths   .eraseTo(index);
         prodIndexes.eraseTo(index);
@@ -310,7 +312,7 @@ void NoticeQueue::eraseTo(const QueueIndex index) const {
     pImpl->eraseTo(index);
 }
 
-void NoticeQueue::send(const QueueIndex index, Peer peer) const {
+bool NoticeQueue::send(const QueueIndex index, Peer peer) const {
     pImpl->send(index, peer);
 }
 

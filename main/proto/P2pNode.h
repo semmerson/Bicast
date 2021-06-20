@@ -67,7 +67,13 @@ public:
     virtual void recvData(const DataSeg&  dataSeg,
                           Peer            peer) =0;
 
-    virtual void died(Peer peer) =0;
+    /**
+     * Called when a peer's remote counterpart goes offline. Doesn't create a
+     * new thread and returns immediately.
+     *
+     * @param[in] peer  Peer whose remote counterpart went offline
+     */
+    virtual void offline(Peer peer) =0;
 
     virtual void reassigned(const ProdIndex  notice,
                             Peer             peer) =0;

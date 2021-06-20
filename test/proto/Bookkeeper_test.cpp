@@ -25,8 +25,8 @@ protected:
         : pubAddr{"localhost:38800"}
         , prodIndex{1}
         , segId(prodIndex, hycast::DataSeg::CANON_DATASEG_SIZE) // Second data-segment
-        , peer1(pubAddr, *this)
-        , peer2(pubAddr, *this)
+        , peer1(*this, pubAddr)
+        , peer2(*this, pubAddr)
     {}
 
 public:
@@ -70,8 +70,8 @@ public:
             override
     {}
 
-    void died(hycast::Peer peer) {
-        LOG_ERROR("Peer %s died", peer.to_string().data());
+    void offline(hycast::Peer peer) {
+        LOG_ERROR("Peer %s is offline", peer.to_string().data());
     }
     void reassigned(const hycast::ProdIndex notice,
                     hycast::Peer            peer) {
@@ -94,7 +94,7 @@ TEST_F(BookkeeperTest, DefaultConstruction)
 TEST_F(BookkeeperTest, PeerAddition)
 {
     hycast::SubBookkeeper bookkeeper{};
-    hycast::Peer          peer{pubAddr, *this};
+    hycast::Peer          peer{*this, pubAddr};
 
     bookkeeper.add(peer);
 }

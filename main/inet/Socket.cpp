@@ -49,14 +49,14 @@ protected:
 
     mutable Mutex mutex;
     SockAddr      rmtSockAddr;
-    int           sd;      ///< Socket descriptor
-    bool          halt;    ///< `shutdown()` has been called?
+    int           sd;             ///< Socket descriptor
+    bool          shutdownCalled; ///< `shutdown()` has been called?
 
     explicit Impl(const int sd) noexcept
         : mutex()
         , rmtSockAddr()
         , sd{sd}
-        , halt{false}
+        , shutdownCalled{false}
     {
         if (sd < 0)
             throw INVALID_ARGUMENT("Socket descriptor is " +
@@ -71,13 +71,18 @@ protected:
     }
 
     /**
-     * @pre `mutex` is locked
+     * Idempotent.
+     *
+     * @pre                `mutex` is locked
+     * @param[in] what     What to shut down. One of `SHUT_RD`, `SHUT_WR`, or
+     *                     `SHUT_RDWR`.
+     * @throw SystemError  `::shutdown()` failure
      */
-    void shut() {
-        if (::shutdown(sd, SHUT_RDWR) && errno != ENOTCONN)
+    void shut(const int what) {
+        if (::shutdown(sd, what) && errno != ENOTCONN)
             throw SYSTEM_ERROR("::shutdown failure on socket " +
                     std::to_string(sd));
-        halt = true;
+        shutdownCalled = true;
     }
 
 public:
@@ -109,7 +114,7 @@ public:
 
     operator bool() const {
         Guard guard{mutex};
-        return !halt && sd >= 0;
+        return !shutdownCalled && sd >= 0;
     }
 
     SockAddr getLclAddr() const {
@@ -137,25 +142,27 @@ public:
     }
 
     /**
-     * Shuts down the socket for both reading and writing. Causes `accept()` to
-     * throw an exception. Idempotent.
+     * Shuts down the socket. If reading is shut down, then `accept()` will
+     * return `nullptr` and `read()` will return false. Idempotent.
      *
+     * @param what          What to shut down. One of `SHUT_RD`, `SHUT_WR`, or
+     *                      `SHUT_RDWR`
      * @throws SystemError  `::shutdown()` failure
      */
-    void shutdown() {
+    void shutdown(const int what) {
         Guard guard{mutex};
-        shut();
+        shut(what);
     }
 
     bool isShutdown() const {
         Guard guard{mutex};
-        return halt;
+        return shutdownCalled;
     }
 
     void close() {
         Guard guard{mutex};
-        if (!halt)
-            shut();
+        if (!shutdownCalled)
+            shut(SHUT_RDWR);
         ::close(sd);
     }
 };
@@ -168,7 +175,7 @@ Socket::~Socket()
 {}
 
 Socket::operator bool() const noexcept {
-    return pImpl && pImpl->operator bool();
+    return static_cast<bool>(pImpl);
 }
 
 size_t Socket::hash() const noexcept {
@@ -212,9 +219,9 @@ in_port_t Socket::getRmtPort() const
     return pImpl->getRmtPort();
 }
 
-void Socket::shutdown() const
+void Socket::shutdown(const int what) const
 {
-    pImpl->shutdown();
+    pImpl->shutdown(what);
 }
 
 bool Socket::isShutdown() const
@@ -288,13 +295,13 @@ protected:
         return (align - nbytes) % align;
     }
 
-    inline void alignWriteTo(size_t nbytes)
+    inline bool alignWriteTo(size_t nbytes)
     {
         static MaxType pad;
-        write(&pad, padLen(bytesWritten, nbytes));
+        return write(&pad, padLen(bytesWritten, nbytes));
     }
 
-    inline void alignReadTo(size_t nbytes)
+    inline bool alignReadTo(size_t nbytes)
     {
         static MaxType pad;
         read(&pad, padLen(bytesRead, nbytes));
@@ -328,13 +335,14 @@ public:
      *
      * @param[in] data         Bytes to write
      * @param[in] nbytes       Number of bytes to write
-     * @throws    EofError     Socket is closed
+     * @retval    `false`      Connection is closed
+     * @retval    `true`       Success
      * @throws    SystemError  System error
      */
-    void write(
-            const void* data,
-            size_t      nbytes) const
+    bool write(const void* data,
+               size_t      nbytes) const
     {
+        LOG_TRACE;
         //LOG_DEBUG("Writing %zu bytes", nbytes);
 
         const char*   bytes = static_cast<const char*>(data);
@@ -348,69 +356,80 @@ public:
              * poll(2) is used because SIGPIPE was always delivered by the
              * development system even if it was explicitly ignored.
              */
+            LOG_TRACE;
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure for host " +
                         getRmtAddr().to_string());
-            if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL))
-                throw EOF_ERROR("Lost connection with host " +
-                        getRmtAddr().to_string());
+            LOG_TRACE;
+            if (pollfd.revents & POLLHUP)
+                return false;
+            LOG_TRACE;
+            if (pollfd.revents & (POLLOUT | POLLERR)) {
+                // Cancellation point
+                LOG_DEBUG("sd=%d, bytes=%p, nbytes=%zu", sd, bytes, nbytes);
+                auto nwritten = ::write(sd, bytes, nbytes);
+                LOG_DEBUG("nwritten=%zd", nwritten);
 
-            // Cancellation point
-            auto nwritten = ::write(sd, bytes, nbytes);
+                if (nwritten == -1) {
+                    if (errno == ECONNRESET || errno == EPIPE) {
+                        LOG_TRACE;
+                        return false;
+                    }
+                    LOG_TRACE;
+                    throw SYSTEM_ERROR("write() failure to host "
+                            + getRmtAddr().to_string());
+                }
 
-            if (nwritten == -1) {
-                if (errno == ECONNRESET || errno == EPIPE)
-                    throw EOF_ERROR("Lost connection to host " +
-                            getRmtAddr().to_string());
-                throw SYSTEM_ERROR("write() failure to host "
-                        + getRmtAddr().to_string());
+                LOG_TRACE;
+                nbytes -= nwritten;
+                bytes += nwritten;
+                bytesWritten += nwritten;
             }
-
-            nbytes -= nwritten;
-            bytes += nwritten;
-            bytesWritten += nwritten;
+            else {
+                LOG_TRACE;
+                throw RUNTIME_ERROR("poll() failure for host " +
+                        getRmtAddr().to_string());
+            }
         }
+
+        return true;
     }
 
-    void write(std::string str)
+    bool write(std::string str)
     {
-        write(str.size());
-        write(str.data(), str.size());
+        return write(str.size()) && write(str.data(), str.size());
     }
 
-    void write(const uint8_t value)
+    bool write(const uint8_t value)
     {
-        write(&value, sizeof(value));
-    }
-
-    /**
-     * Performs network-translation and value-alignment.
-     */
-    void write(uint16_t value)
-    {
-        value = hton(value);
-        alignWriteTo(sizeof(value));
-        write(&value, sizeof(value));
+        return write(&value, sizeof(value));
     }
 
     /**
      * Performs network-translation and value-alignment.
      */
-    void write(uint32_t value)
+    bool write(uint16_t value)
     {
         value = hton(value);
-        alignWriteTo(sizeof(value));
-        write(&value, sizeof(value));
+        return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
     }
 
     /**
      * Performs network-translation and value-alignment.
      */
-    void write(uint64_t value)
+    bool write(uint32_t value)
     {
         value = hton(value);
-        alignWriteTo(sizeof(value));
-        write(&value, sizeof(value));
+        return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
+    }
+
+    /**
+     * Performs network-translation and value-alignment.
+     */
+    bool write(uint64_t value)
+    {
+        value = hton(value);
+        return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
     }
 
     /**
@@ -422,9 +441,8 @@ public:
      * @retval     `false`      EOF or `shutdown()` called
      * @throw      SystemError  I/O failure
      */
-    bool read(
-            void* const  data,
-            const size_t nbytes) const
+    bool read(void* const  data,
+              const size_t nbytes) const
     {
         /*
          * Sending process closes connection => FIN sent => EOF
@@ -448,21 +466,25 @@ public:
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure for host " +
                         getRmtAddr().to_string());
-            if (pollfd.revents & (POLLERR | POLLHUP | POLLNVAL))
-                throw EOF_ERROR("Lost connection with host " +
-                        getRmtAddr().to_string());
-
-            auto nread = ::read(sd, bytes, nleft);
-
-            if (nread == -1)
-                throw SYSTEM_ERROR("Couldn't read from connection with host "
-                        + getRmtAddr().to_string());
-            if (nread == 0)
+            if (pollfd.revents & POLLHUP)
                 return false; // EOF
+            if (pollfd.revents & (POLLIN | POLLERR)) {
+                auto nread = ::read(sd, bytes, nleft);
 
-            nleft -= nread;
-            bytes += nread;
-            bytesRead += nread;
+                if (nread == -1)
+                    throw SYSTEM_ERROR("Couldn't read from connection with host "
+                            + getRmtAddr().to_string());
+                if (nread == 0)
+                    return false; // EOF
+
+                nleft -= nread;
+                bytes += nread;
+                bytesRead += nread;
+            }
+            else {
+                throw RUNTIME_ERROR("poll() failure for host " +
+                        getRmtAddr().to_string());
+            }
         }
 
         return true;
@@ -566,46 +588,45 @@ TcpSock& TcpSock::setDelay(bool enable)
     return *this;
 }
 
-void TcpSock::write(
+bool TcpSock::write(
         const void* bytes,
         size_t      nbytes) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(bytes, nbytes);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(bytes, nbytes);
 }
 
-void TcpSock::write(const std::string str) const
+bool TcpSock::write(const std::string str) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(str);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(str);
 }
 
-void TcpSock::write(const bool value) const
+bool TcpSock::write(const bool value) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(static_cast<uint8_t>(value));
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(static_cast<uint8_t>(value));
 }
 
-void TcpSock::write(const uint8_t value) const
+bool TcpSock::write(const uint8_t value) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-void TcpSock::write(const uint16_t value) const
+bool TcpSock::write(const uint16_t value) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-void TcpSock::write(const uint32_t value) const
+bool TcpSock::write(const uint32_t value) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-void TcpSock::write(const uint64_t value) const
+bool TcpSock::write(const uint64_t value) const
 {
-    static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
+    return static_cast<TcpSock::Impl*>(pImpl.get())->write(value);
 }
 
-bool TcpSock::read(
-        void* const  bytes,
-        const size_t nbytes) const
+bool TcpSock::read(void* const  bytes,
+                   const size_t nbytes) const
 {
     return static_cast<TcpSock::Impl*>(pImpl.get())->read(bytes, nbytes);
 }
@@ -703,7 +724,7 @@ public:
         if (fd == -1) {
             {
                 Guard guard{mutex};
-                if (halt)
+                if (shutdownCalled)
                     return nullptr;
             }
 
@@ -1114,7 +1135,7 @@ public:
         // poll(2) is used so `shutdown()` works
         int status = ::poll(&pollfd, 1, -1); // -1 => indefinite wait
 
-        if (halt || (pollfd.revents & POLLHUP))
+        if (shutdownCalled || (pollfd.revents & POLLHUP))
             return false;
 
         if (status == -1)

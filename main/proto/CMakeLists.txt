@@ -2,7 +2,6 @@
 add_library(proto OBJECT
         HycastProto.cpp HycastProto.h
         DataSeg.cpp
-        P2pConn.cpp     P2pConn.h
         Peer.cpp        Peer.h
                         P2pNode.h
         NoticeQueue.cpp NoticeQueue.h

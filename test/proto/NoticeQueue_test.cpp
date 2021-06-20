@@ -50,7 +50,7 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for Error.
-    void died(hycast::Peer peer) {
+    void offline(hycast::Peer peer) {
     }
     void reassigned(const hycast::ProdIndex  notice,
                     hycast::Peer             peer) {

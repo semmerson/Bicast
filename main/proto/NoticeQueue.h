@@ -156,9 +156,11 @@ public:
      *
      * @param[in] index       Index of notice to be sent
      * @param[in] peer        Peer to be sent notice
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
      * @throws    LogicError  No such notice
      */
-    void send(const QueueIndex index, Peer peer) const;
+    bool send(const QueueIndex index, Peer peer) const;
 };
 
 } // namespace
