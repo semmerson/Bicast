@@ -36,9 +36,10 @@ namespace hycast {
 class Peer::Impl
 {
 protected:
-    mutable Mutex     mutex;
-    mutable Mutex     rmtSockAddrMutex;
-    P2pNode&          node;
+    mutable Mutex      sockMutex;
+    mutable Mutex      rmtSockAddrMutex;
+    mutable Mutex      exceptMutex;
+    P2pNode&           node;
     /*
      * If a single socket is used for asynchronous communication and reading and
      * writing occur on the same thread, then deadlock will occur if both
@@ -47,121 +48,107 @@ protected:
      * write to another. The pipeline might block for a while, but it won't
      * deadlock.
      */
-    TcpSock           noticeSock;
-    TcpSock           requestSock;
-    TcpSock           dataSock;
-    Thread            noticeThread;
-    Thread            requestThread;
-    Thread            dataThread;
-    SockAddr          rmtSockAddr;
-    std::atomic<bool> rmtPubPath;
+    TcpSock            noticeSock;
+    TcpSock            requestSock;
+    TcpSock            dataSock;
+    Thread             noticeThread;
+    Thread             requestThread;
+    Thread             dataThread;
+    SockAddr           rmtSockAddr;
+    std::atomic<bool>  rmtPubPath;
     enum class State {
-        CONSTRUCTED,
+        INITED,
+        STARTING,
         STARTED,
         STOPPING
-    }                 state;
-    const bool        clientSide;
+    };
+    using AtomicState = std::atomic<State>;
+    AtomicState        state;
+    const bool         clientSide;
+    std::exception_ptr exPtr;
 
     /**
      * Orders the sockets so that the notice socket has the lowest client-side
      * port number, then the request socket, and then the data socket.
+     *
+     * @param[in] notSock  Notice socket
+     * @param[in] reqSock  Request socket
+     * @param[in] datSock  Data socket
      */
-    void orderSocks() {
+    void orderSocks(TcpSock& notSock,
+                    TcpSock& reqSock,
+                    TcpSock& datSock) {
         if (clientSide) {
-            if (requestSock.getLclPort() < noticeSock.getLclPort())
-                requestSock.swap(noticeSock);
+            if (reqSock.getLclPort() < notSock.getLclPort())
+                reqSock.swap(notSock);
 
-            if (dataSock.getLclPort() < requestSock.getLclPort()) {
-                dataSock.swap(requestSock);
-                if (requestSock.getLclPort() < noticeSock.getLclPort())
-                    requestSock.swap(noticeSock);
+            if (datSock.getLclPort() < reqSock.getLclPort()) {
+                datSock.swap(reqSock);
+                if (reqSock.getLclPort() < notSock.getLclPort())
+                    reqSock.swap(notSock);
             }
         }
         else {
-            if (requestSock.getRmtPort() < noticeSock.getRmtPort())
-                requestSock.swap(noticeSock);
+            if (reqSock.getRmtPort() < notSock.getRmtPort())
+                reqSock.swap(notSock);
 
-            if (dataSock.getRmtPort() < requestSock.getRmtPort()) {
-                dataSock.swap(requestSock);
-                if (requestSock.getRmtPort() < noticeSock.getRmtPort())
-                    requestSock.swap(noticeSock);
+            if (datSock.getRmtPort() < reqSock.getRmtPort()) {
+                datSock.swap(reqSock);
+                if (reqSock.getRmtPort() < notSock.getRmtPort())
+                    reqSock.swap(notSock);
             }
         }
     }
 
     /**
+     * Connects a client-side peer to a remote peer. Blocks while connecting.
+     *
      * @retval    `false`     Remote peer disconnected
      * @retval    `true`      Success
      */
     bool connectClient() {
         bool     success = false;
-        SockAddr rmtSock;
+        SockAddr srvrAddr;
 
         {
             Guard guard{rmtSockAddrMutex};
-            rmtSock = rmtSockAddr;
+            srvrAddr = rmtSockAddr;
         }
 
         // Connect to Peer server.
         // Keep consonant with `PeerSrvr::accept()`
-        noticeSock = TcpClntSock(rmtSock);
+        TcpClntSock notSock{srvrAddr};
 
-        try {
-            const in_port_t noticePort = noticeSock.getLclPort();
+        const in_port_t noticePort = notSock.getLclPort();
 
-            if (noticeSock.write(noticePort)) {
-                requestSock = TcpClntSock(rmtSock);
+        if (notSock.write(noticePort)) {
+            TcpClntSock reqSock{srvrAddr};
 
-                try {
-                    if (requestSock.write(noticePort)) {
-                        dataSock = TcpClntSock(rmtSock);
+            if (reqSock.write(noticePort)) {
+                TcpClntSock datSock{srvrAddr};
 
-                        try {
-                            if (!dataSock.write(noticePort)) {
-                                dataSock.close();
-                            }
-                            else {
-                                orderSocks();
-                                success = true;
-                            }
-                        } // `dataSock` open
-                        catch (const std::exception& ex) {
-                            dataSock.close();
-                            throw;
-                        }
-                    }
-
-                    if (!success)
-                        requestSock.close();
-                } // `requestSock` open
-                catch (const std::exception& ex) {
-                    requestSock.close();
-                    throw;
+                if (datSock.write(noticePort)) {
+                    // Use of local RAII sockets => sockets close on error
+                    orderSocks(notSock, reqSock, datSock); // Might throw
+                    noticeSock  = notSock;
+                    requestSock = reqSock;
+                    dataSock    = datSock;
+                    success = true;
                 }
             }
-
-            if (!success)
-                noticeSock.close();
-        } // `noticeSock` open
-        catch (const std::exception& ex) {
-            noticeSock.close();
-            throw;
         }
 
         return success;
     }
 
-    void startThreads(Peer peer) {
-        noticeThread = Thread(&Impl::run, this, noticeSock, peer);
+    void startThreads() {
+        noticeThread = Thread(&Impl::run, this, noticeSock);
 
         try {
-            requestThread = Thread(&Impl::run, this, requestSock, peer);
+            requestThread = Thread(&Impl::run, this, requestSock);
 
             try {
-                dataThread = Thread(&Impl::run, this, dataSock, peer);
-                noticeThread.detach();
-                requestThread.detach();
-                dataThread.detach();
+                dataThread = Thread(&Impl::run, this, dataSock);
             } // `requestThread` created
             catch (const std::exception& ex) {
                 ::pthread_cancel(requestThread.native_handle());
@@ -181,9 +168,12 @@ protected:
      */
     void stopThreads() {
         LOG_TRACE;
-        dataSock.shutdown(SHUT_RD);
-        requestSock.shutdown(SHUT_RD);
-        noticeSock.shutdown(SHUT_RD);
+        if (dataSock)
+            dataSock.shutdown(SHUT_RD);
+        if (requestSock)
+            requestSock.shutdown(SHUT_RD);
+        if (noticeSock)
+            noticeSock.shutdown(SHUT_RD);
         LOG_TRACE;
     }
 
@@ -200,7 +190,7 @@ protected:
         LOG_TRACE;
     }
 
-    static inline bool write(TcpSock& sock, PduId id) {
+    static inline bool write(TcpSock& sock, const PduId id) {
         LOG_TRACE;
         return sock.write(static_cast<PduType>(id));
     }
@@ -293,12 +283,11 @@ protected:
      * peer.
      *
      * @param[in] id            Message type
-     * @param[in] peer          Local peer associated with remote peer
      * @retval    `false`       End-of-file encountered.
      * @retval    `true`        Success
      * @throw std::logic_error  `id` is unknown
      */
-    bool processPdu(const PduId id, Peer& peer) {
+    bool processPdu(const PduId id) {
         bool success = false;
         int  cancelState;
 
@@ -307,9 +296,7 @@ protected:
             LOG_TRACE;
             bool notice;
             if (read(noticeSock, notice)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvNotice(PubPath(notice), peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
+                node.recvNotice(PubPath(notice), rmtSockAddr);
                 rmtPubPath = notice;
                 success = true;
             }
@@ -318,33 +305,25 @@ protected:
         case PduId::PROD_INFO_NOTICE: {
             LOG_TRACE;
             ProdIndex notice;
-            if (read(noticeSock, notice)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvNotice(notice, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
-                success = true;
-            }
+            if (read(noticeSock, notice) &&
+                    node.recvNotice(notice, rmtSockAddr))
+                success = request(notice);
             break;
         }
         case PduId::DATA_SEG_NOTICE: {
             LOG_TRACE;
             DataSegId notice;
-            if (read(noticeSock, notice)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvNotice(notice, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
-                success = true;
-            }
+            if (read(noticeSock, notice) &&
+                    node.recvNotice(notice, rmtSockAddr))
+                success = request(notice);
             break;
         }
         case PduId::PROD_INFO_REQUEST: {
             LOG_TRACE;
             ProdIndex request;
             if (read(requestSock, request)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvRequest(request, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
-                success = true;
+                auto prodInfo = node.recvRequest(request, rmtSockAddr);
+                success = prodInfo && send(prodInfo);
             }
             break;
         }
@@ -352,10 +331,8 @@ protected:
             LOG_TRACE;
             DataSegId request;
             if (read(requestSock, request)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvRequest(request, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
-                success = true;
+                auto dataSeg = node.recvRequest(request, rmtSockAddr);
+                success = dataSeg && send(dataSeg);
             }
             break;
         }
@@ -363,9 +340,7 @@ protected:
             LOG_TRACE;
             ProdInfo data;
             if (read(dataSock, data)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvData(data, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
+                node.recvData(data, rmtSockAddr);
                 success = true;
             }
             break;
@@ -374,9 +349,7 @@ protected:
             LOG_TRACE;
             DataSeg dataSeg;
             if (read(dataSock, dataSeg)) {
-                ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &cancelState);
-                node.recvData(dataSeg, peer);
-                ::pthread_setcancelstate(cancelState, &cancelState);
+                node.recvData(dataSeg, rmtSockAddr);
                 success = true;
             }
             break;
@@ -389,30 +362,39 @@ protected:
         return success;
     }
 
+    void setExPtr() {
+        Guard guard{exceptMutex};
+        if (!exPtr)
+            exPtr = std::current_exception();
+    }
+
+    void throwIfExPtr() {
+        bool throwEx = false;
+        {
+            Guard guard{exceptMutex};
+            throwEx = static_cast<bool>(exPtr);
+        }
+        if (throwEx)
+            std::rethrow_exception(exPtr);
+    }
+
     /**
      * Reads one socket from the remote peer and processes incoming messages.
      * Doesn't return until either EOF is encountered or an error occurs.
      *
      * @param[in] sock    Socket with remote peer
-     * @param[in] peer    Associated local peer
      * @throw LogicError  Message type is unknown
      */
-    void run(TcpSock sock,
-             Peer    peer) {
+    void run(TcpSock sock) {
         try {
             for (;;) {
                 PduId id;
-                if (!read(sock, id) || !processPdu(id, peer))
+                if (!read(sock, id) || !processPdu(id))
                     break; // EOF
             }
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-
-        {
-            Guard guard{mutex};
-            state = State::STOPPING;
+            setExPtr();
         }
     }
 
@@ -425,7 +407,9 @@ public:
      *                      invalid if server-side constructed.
      */
     Impl(P2pNode& node, const SockAddr& srvrAddr)
-        : mutex()
+        : sockMutex()
+        , rmtSockAddrMutex()
+        , exceptMutex()
         , node(node)
         , noticeSock()
         , requestSock()
@@ -435,8 +419,9 @@ public:
         , dataThread()
         , rmtSockAddr(srvrAddr)
         , rmtPubPath(false)
-        , state(State::CONSTRUCTED)
+        , state(State::INITED)
         , clientSide(static_cast<bool>(srvrAddr))
+        , exPtr()
     {}
 
     /**
@@ -452,12 +437,8 @@ public:
 
     ~Impl() noexcept {
         LOG_TRACE;
-        Guard guard{mutex};
-        if (state == State::STARTED)
-            LOG_ERROR("Peer wasn't stopped");
         try {
-            stopThreads(); // Idempotent
-            //joinThreads();
+            stop(); // Idempotent
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
@@ -476,7 +457,7 @@ public:
         if (clientSide)
             throw LOGIC_ERROR("Can't set client-side socket");
 
-        Guard guard{mutex};
+        Guard guard{sockMutex};
 
         // NB: Keep function consonant with `Impl(SockAddr)`
 
@@ -490,7 +471,7 @@ public:
         }
         else if (!dataSock) {
             dataSock = sock;
-            orderSocks();
+            orderSocks(noticeSock, requestSock, dataSock);
         }
         else {
             throw LOGIC_ERROR("Server-side P2P connection is complete");
@@ -504,7 +485,7 @@ public:
      * @retval `true`   Instance is complete
      */
     bool isComplete() const noexcept {
-        Guard guard{mutex};
+        Guard guard{sockMutex};
         return noticeSock && requestSock && dataSock;
     }
 
@@ -516,28 +497,38 @@ public:
      *       - The sockets are read; and
      *       - The P2P node is called.
      *
-     * @param[in] peer     Associated peer
-     * @retval    `false`  Remote peer disconnected
+     * @retval    `false`  Peer is client-side and couldn't connect with remote
+     *                     peer
+     * @retval    `false`  `stop()` was called
      * @retval    `true`   Success
-     * @throw LogicError   Already started
+     * @throw LogicError   Already called
      * @throw SystemError  Thread couldn't be created
      * @see   `stop()`
      */
-    bool start(Peer& peer) {
+    bool start() {
         LOG_TRACE;
-        Guard guard{mutex};
+        bool  success;
+        State lclState{State::INITED};
 
-        if (state != State::CONSTRUCTED)
-            throw LOGIC_ERROR("Peer wasn't just constructed");
+        if (!state.compare_exchange_strong(lclState, State::STARTING)) {
+            if (lclState == State::STARTING || lclState == State::STARTED)
+                throw LOGIC_ERROR("start() already called");
+        }
+        else {
+            success = clientSide
+                    ? connectClient()
+                    : true;
 
-        bool success = clientSide
-                ? connectClient()
-                : true;
-
-        if (success) {
-            startThreads(peer);
-            state = State::STARTED;
-            // `stop()` is now effective
+            if (success) {
+                startThreads();
+                lclState = State::STARTING;
+                if (!state.compare_exchange_strong(lclState, State::STARTED)) {
+                    stopThreads();
+                    joinThreads();
+                    success = false;
+                }
+                // `stop()` is now effective
+            }
         }
 
         return success;
@@ -554,26 +545,30 @@ public:
     }
 
     /**
-     * Stops this instance from serving its remote counterpart.
-     *   - Cancels the thread on which the remote peer is being served
-     *   - Joins with that thread
+     * Stops this instance from serving its remote counterpart. Causes the
+     * threads serving the remote peer to terminate. If called before `start()`,
+     * then the remote peer will not be served.
      *
-     * @throw LogicError  Peer wasn't started
+     * Idempotent.
+     *
      * @see   `start()`
      */
     void stop() {
         LOG_TRACE;
-        {
-            Guard guard{mutex};
-            LOG_TRACE;
-            if (state != State::STOPPING) {
-                if (state != State::STARTED)
-                    throw LOGIC_ERROR("Peer wasn't started");
-                stopThreads();
-                state = State::STOPPING;
+        State expected = State::INITED;
+
+        if (!state.compare_exchange_strong(expected, State::STOPPING)) {
+            expected = State::STARTING;
+
+            if (!state.compare_exchange_strong(expected, State::STOPPING)) {
+                expected = State::STARTED;
+
+                if (state.compare_exchange_strong(expected, State::STOPPING)) {
+                    stopThreads();
+                    joinThreads();
+                }
             }
         }
-        LOG_TRACE;
     }
 
     String to_string(const bool withName) const {
@@ -588,16 +583,19 @@ public:
      * @retval    `true`      Success
      */
     bool notify(const PubPath notice) {
+        throwIfExPtr();
         return write(noticeSock, PduId::PUB_PATH_NOTICE) &&
                 noticeSock.write(notice.operator bool());
     }
     bool notify(const ProdIndex notice) {
         LOG_TRACE;
+        throwIfExPtr();
         return write(noticeSock, PduId::PROD_INFO_NOTICE) &&
             write(noticeSock, notice);
     }
     bool notify(const DataSegId& notice) {
         LOG_TRACE;
+        throwIfExPtr();
         return write(noticeSock, PduId::DATA_SEG_NOTICE) &&
             write(noticeSock, notice);
     }
@@ -609,10 +607,12 @@ public:
      * @retval    `true`      Success
      */
     bool request(const ProdIndex request) {
+        throwIfExPtr();
         return write(requestSock, PduId::PROD_INFO_REQUEST) &&
                 write(requestSock, request);
     }
     bool request(const DataSegId& request) {
+        throwIfExPtr();
         return write(requestSock, PduId::DATA_SEG_REQUEST) &&
             write(requestSock, request);
     }
@@ -624,10 +624,12 @@ public:
      * @retval    `true`      Success
      */
     bool send(const ProdInfo& data) {
+        throwIfExPtr();
         return write(dataSock, PduId::PROD_INFO) &&
                 write(dataSock, data);
     }
     bool send(const DataSeg& data) {
+        throwIfExPtr();
         write(dataSock, PduId::DATA_SEG) &&
                 write(dataSock, data);
     }
@@ -669,7 +671,7 @@ bool Peer::isComplete() const noexcept {
 }
 
 bool Peer::start() {
-    return pImpl->start(*this);
+    return pImpl->start();
 }
 
 SockAddr Peer::getRmtAddr() noexcept {
@@ -862,7 +864,9 @@ public:
         while (acceptQ.empty()) {
             // TODO: Limit number of threads
             // TODO: Lower priority of thread to favor data transmission
-            Thread(&Impl::acceptSock, this, srvrSock.accept()).detach();
+            auto sock = srvrSock.accept();
+            if (sock)
+                Thread(&Impl::acceptSock, this, sock).detach();
             cond.wait(lock);
         }
 

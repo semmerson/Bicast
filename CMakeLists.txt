@@ -19,6 +19,11 @@ PROJECT(Hycast VERSION 1.0
 #    FetchContent_MakeAvailable(gRPC)
 #endif()
 
+# Specify the C standard
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED True)
+set(CMAKE_BUILD_TYPE Debug)
+
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)

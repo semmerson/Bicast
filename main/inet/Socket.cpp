@@ -158,13 +158,6 @@ public:
         Guard guard{mutex};
         return shutdownCalled;
     }
-
-    void close() {
-        Guard guard{mutex};
-        if (!shutdownCalled)
-            shut(SHUT_RDWR);
-        ::close(sd);
-    }
 };
 
 Socket::Socket(Impl* impl)
@@ -227,10 +220,6 @@ void Socket::shutdown(const int what) const
 bool Socket::isShutdown() const
 {
     return pImpl->isShutdown();
-}
-
-void Socket::close() const {
-    pImpl->close();
 }
 
 /******************************************************************************/

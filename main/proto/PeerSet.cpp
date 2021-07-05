@@ -1,8 +1,8 @@
 /**
- * This file implements a set of peers whose remote counterparts can all be
- * notified together.
+ * This file implements a set of active peers whose remote counterparts can all
+ * be notified together.
  *
- *  @file: PeerSet.cpp
+ *  @file:  PeerSet.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
@@ -60,7 +60,7 @@ class PeerSet::Impl
                  * won't block other peers if it was client-side constructed and
                  * has yet to connect to the remote peer.
                  */
-                peer.start(); // Starts serving the remote peer
+                peer.start(); // Starts reading messages from the remote peer
                 peer.notify(PubPath(pubPath));
 
                 for(;;) {
@@ -70,9 +70,9 @@ class PeerSet::Impl
                      * must be done before this instance is destroyed.
                      */
                     if (!noticeQueue.send(readIndex, peer))
-                        break; // Remote peer disconnected
+                        break; // Connection lost
                     /*
-                     * To avoid prematurely purging the current PDU, the
+                     * To avoid prematurely purging the current notice, the
                      * read-index must be incremented *after* the notice has
                      * been sent.
                      */
@@ -123,36 +123,32 @@ class PeerSet::Impl
     using PeerEntries = std::map<Peer, PeerEntry>;
 
     mutable Mutex mutex;
+    // Placed before peer entries to ensure existence for `PeerEntry.run()`
     NoticeQueue   noticeQueue;
-    // Placed after notice queue to ensure existence for `PeerEntry.run()`
     PeerEntries   peerEntries;
 
     /**
-     * Purges notification queues of entries that will no longer be read.
-     *
-     * @pre `mutex` is locked
-     * @pre `!peerEntries.empty()`
+     * Purges notice-queue of notices that will not be read.
      */
     void purge() {
-        LOG_ASSERT(!mutex.try_lock());
-        LOG_ASSERT(!peerEntries.empty());
-
         const auto writeIndex = noticeQueue.getWriteIndex();
-        // Guaranteed to be no older than oldest read-index:
+        // Guaranteed to be equal to or greater than oldest read-index:
         auto       oldestIndex = writeIndex;
 
         // Find oldest read-index
-        for (const auto& peerEntry : peerEntries) {
-            const auto readIndex = peerEntry.second.getReadIndex();
+        {
+            Guard guard(mutex); // No changes allowed to peer-set
+            for (const auto& peerEntry : peerEntries) {
+                const auto readIndex = peerEntry.second.getReadIndex();
 
-            if (readIndex < oldestIndex)
-                oldestIndex = readIndex;
+                if (readIndex < oldestIndex)
+                    oldestIndex = readIndex;
+            }
         }
 
-        if (oldestIndex < writeIndex) {
-            // Purge notice queue of entries that will no longer be read
+        if (oldestIndex < writeIndex)
+            // Purge notice-queue of entries that will not be read
             noticeQueue.eraseTo(oldestIndex);
-        }
     }
 
 public:
@@ -204,27 +200,18 @@ public:
     }
 
     void notify(const PubPath notice) {
-        Guard guard(mutex);
-        if (!peerEntries.empty()) {
-            noticeQueue.putPubPath(notice);
-            purge();
-        }
+        purge();
+        noticeQueue.putPubPath(notice);
     }
 
     void notify(const ProdIndex notice) {
-        Guard guard(mutex);
-        if (!peerEntries.empty()) {
-            noticeQueue.putProdIndex(notice);
-            purge();
-        }
+        purge();
+        noticeQueue.putProdIndex(notice);
     }
 
     void notify(const DataSegId& notice) {
-        Guard guard(mutex);
-        if (!peerEntries.empty()) {
-            noticeQueue.put(notice);
-            purge();
-        }
+        purge();
+        noticeQueue.put(notice);
     }
 };
 

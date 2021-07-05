@@ -186,6 +186,8 @@ public:
              const std::string name,
              const ProdSize    size);
 
+    operator bool() const;
+
     const ProdIndex& getProdIndex() const;
     const String&    getName() const;
     const ProdSize&  getProdSize() const;
@@ -228,6 +230,8 @@ public:
             const ProdSize   prodSize,
             TcpSock&         sock);
 
+    operator bool() const;
+
     const DataSegId& segId() const noexcept;
 
     ProdSize prodSize() const noexcept;
@@ -263,8 +267,8 @@ class McastRcvr
 {
 public:
     virtual ~McastRcvr() {}
-    virtual void recvMcast(const ProdInfo& prodInfo) =0;
-    virtual void recvMcast(const DataSeg& dataSeg) =0;
+    virtual void recvMcast(const ProdInfo prodInfo) =0;
+    virtual void recvMcast(const DataSeg dataSeg) =0;
 };
 
 class Peer;
@@ -274,12 +278,12 @@ class NoticeRcvr
 {
 public:
     virtual ~NoticeRcvr() {}
-    virtual void recvNotice(const PubPath  notice,
-                            Peer           peer) =0;
-    virtual void recvNotice(const ProdIndex notice,
-                            Peer            peer) =0;
-    virtual void recvNotice(const DataSegId&  notice,
-                            Peer              peer) =0;
+    virtual void recvNotice(const PubPath   notice,
+                            SockAddr        rmtPeerAddr) =0;
+    virtual bool recvNotice(const ProdIndex notice,
+                            SockAddr        rmtPeerAddr) =0;
+    virtual bool recvNotice(const DataSegId notice,
+                            SockAddr        rmtPeerAddr) =0;
 };
 
 /// Request receiver/server
@@ -287,10 +291,10 @@ class RequestRcvr
 {
 public:
     virtual ~RequestRcvr() {}
-    virtual void recvRequest(const ProdIndex request,
-                             Peer            peer) =0;
-    virtual void recvRequest(const DataSegId& request,
-                             Peer             peer) =0;
+    virtual ProdInfo recvRequest(const ProdIndex request,
+                                 SockAddr        rmtPeerAddr) =0;
+    virtual DataSeg recvRequest(const DataSegId  request,
+                                SockAddr         rmtPeerAddr) =0;
 };
 
 /// Data receiver/server
@@ -298,10 +302,10 @@ class DataRcvr
 {
 public:
     virtual ~DataRcvr() {}
-    virtual void recvData(const ProdInfo& prodInfo,
-                          Peer            peer) =0;
-    virtual void recvData(const DataSeg&  dataSeg,
-                          Peer            peer) =0;
+    virtual void recvData(const ProdInfo prodInfo,
+                          SockAddr       rmtPeerAddr) =0;
+    virtual void recvData(const DataSeg  dataSeg,
+                          SockAddr       rmtPeerAddr) =0;
 };
 
 /// Peer-to-peer manager interface
@@ -311,9 +315,9 @@ public:
     virtual ~P2pMgr() {}
     virtual void offline(Peer peer) =0;
     virtual void reassigned(const ProdIndex  notice,
-                            Peer             peer) =0;
+                            SockAddr         rmtPeerAddr) =0;
     virtual void reassigned(const DataSegId& notice,
-                            Peer             peer) =0;
+                            SockAddr         rmtPeerAddr) =0;
 };
 
 } // namespace

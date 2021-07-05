@@ -50,35 +50,68 @@ public:
         return false;
     }
 
-    virtual void recvRequest(const ProdIndex  request,
-                             Peer             peer) =0;
-    virtual void recvRequest(const DataSegId& request,
-                             Peer             peer) =0;
-
     virtual void recvNotice(const PubPath    notice,
-                            Peer             peer) =0;
-    virtual void recvNotice(const ProdIndex  notice,
-                            Peer             peer) =0;
-    virtual void recvNotice(const DataSegId& notice,
-                            Peer             peer) =0;
+                            const SockAddr   rmtPeerAddr) =0;
+    /**
+     * Receives a notice of available product information from a remote peer.
+     *
+     * @param[in] notice       Which product
+     * @param[in] rmtPeerAddr  Socket address of remote peer
+     * @retval    `false`      Local peer shouldn't request from remote peer
+     * @retval    `true`       Local peer should request from remote peer
+     */
+    virtual bool recvNotice(const ProdIndex  notice,
+                            const SockAddr   rmtPeerAddr) =0;
+    /**
+     * Receives a notice of an available data-segment from a remote peer.
+     *
+     * @param[in] notice       Which data-segment
+     * @param[in] rmtPeerAddr  Socket address of remote peer
+     * @retval    `false`      Local peer shouldn't request from remote peer
+     * @retval    `true`       Local peer should request from remote peer
+     */
+    virtual bool recvNotice(const DataSegId notice,
+                            const SockAddr  rmtPeerAddr) =0;
 
-    virtual void recvData(const ProdInfo& prodInfo,
-                          Peer            peer) =0;
-    virtual void recvData(const DataSeg&  dataSeg,
-                          Peer            peer) =0;
+    /**
+     * Receives a request for product information from a remote peer.
+     *
+     * @param[in] request      Which product
+     * @param[in] rmtPeerAddr  Socket address of remote peer
+     * @return                 Product information. Will test false if it
+     *                         shouldn't be sent to remote peer.
+     */
+    virtual ProdInfo recvRequest(const ProdIndex  request,
+                                 const SockAddr   rmtPeerAddr) =0;
+    /**
+     * Receives a request for a data-segment from a remote peer.
+     *
+     * @param[in] request      Which data-segment
+     * @param[in] rmtPeerAddr  Socket address of remote peer
+     * @return                 Product information. Will test false if it
+     *                         shouldn't be sent to remote peer.
+     */
+    virtual DataSeg  recvRequest(const DataSegId request,
+                                 const SockAddr  rmtPeerAddr) =0;
+
+    virtual void recvData(const ProdInfo prodInfo,
+                          const SockAddr rmtPeerAddr) =0;
+    virtual void recvData(const DataSeg  dataSeg,
+                          const SockAddr rmtPeerAddr) =0;
 
     /**
      * Called when a peer's remote counterpart goes offline. Doesn't create a
      * new thread and returns immediately.
      *
+     * @param[in] rmtPeerAddr  Socket address of remote peer
      * @param[in] peer  Peer whose remote counterpart went offline
      */
     virtual void offline(Peer peer) =0;
 
     virtual void reassigned(const ProdIndex  notice,
-                            Peer             peer) =0;
+                            const SockAddr   rmtPeerAddr) =0;
     virtual void reassigned(const DataSegId& notice,
-                            Peer             peer) =0;
+                            const SockAddr   rmtPeerAddr) =0;
 };
 
 } // namespace

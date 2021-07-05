@@ -56,40 +56,70 @@ public:
 
     ~QueueIndex() =default;
 
-    QueueIndex operator=(const QueueIndex& queueIndex) {
-        index = (Type)queueIndex.index;
+    String to_string() const {
+        return std::to_string(static_cast<Type>(index));
     }
 
-    operator Type() const {
+    size_t hash() const noexcept {
+        static std::hash<Type> hasher;
+        return hasher(index);
+    }
+
+    QueueIndex& operator=(const QueueIndex& queueIndex) noexcept {
+        index = (Type)queueIndex.index;
+        return *this;
+    }
+
+    operator Type() const noexcept {
         return index;
     }
 
-    bool operator==(const QueueIndex& rhs) const {
+    bool operator==(const QueueIndex& rhs) const noexcept {
         return index == rhs.index;
     }
 
-    bool operator!=(const QueueIndex& rhs) const {
+    bool operator!=(const QueueIndex& rhs) const noexcept {
         return index != rhs.index;
     }
 
-    bool operator<(const QueueIndex& rhs) const {
+    bool operator<(const QueueIndex& rhs) const noexcept {
         /*
          * The following expression correctly handles the values being equal.
          */
         return index - rhs.index > MAX_INDEX/2;
     }
 
-    QueueIndex& operator++() { // Prefix version
+    QueueIndex& operator++() noexcept { // Prefix version
         ++index;
         return *this;
     }
 
-    QueueIndex operator++(int) { // Postfix version
-        QueueIndex result(index);
+    QueueIndex operator++(int) noexcept { // Postfix version
+        QueueIndex result{index};
         ++index;
         return result;
     }
+
+    QueueIndex& operator--() noexcept { // Prefix version
+        --index;
+        return *this;
+    }
 };
+
+} // Namespace
+
+namespace std {
+    using namespace hycast;
+
+    template<> struct hash<QueueIndex>
+    {
+        inline size_t operator()(const QueueIndex& index) const noexcept {
+            return index.hash();
+        }
+    };
+} // Namespace
+
+namespace hycast {
 
 /**
  * Indexed, circular queue of notice-type identifiers.
@@ -160,7 +190,7 @@ public:
      * @retval    `true`      Success
      * @throws    LogicError  No such notice
      */
-    bool send(const QueueIndex index, Peer peer) const;
+    bool send(const QueueIndex& index, Peer& peer) const;
 };
 
 } // namespace

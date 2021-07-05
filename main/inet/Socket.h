@@ -69,7 +69,8 @@ public:
     /**
      * Returns the local port number in host byte-order.
      *
-     * @return Local port number in host byte-order
+     * @return             Local port number in host byte-order
+     * @throw SystemError  Couldn't get name of local socket
      */
     in_port_t getLclPort() const;
 
@@ -93,8 +94,6 @@ public:
     void shutdown(const int what = SHUT_RDWR) const;
 
     bool isShutdown() const;
-
-    void close() const;
 };
 
 /******************************************************************************/

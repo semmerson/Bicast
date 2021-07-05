@@ -128,6 +128,10 @@ ProdInfo::ProdInfo(const ProdIndex   index,
     : pImpl{std::make_shared<Impl>(index, name, size)}
 {}
 
+ProdInfo::operator bool() const {
+    return static_cast<bool>(pImpl);
+}
+
 const ProdIndex& ProdInfo::getProdIndex() const {
     return pImpl->index;
 }
@@ -150,3 +154,9 @@ String ProdInfo::to_string(const bool withName) const {
 }
 
 } // namespace
+
+namespace std {
+    string to_string(const hycast::ProdInfo& prodInfo) {
+        return prodInfo.to_string();
+    }
+}

@@ -90,9 +90,11 @@ protected:
                 for (;;) {
                     unsigned char byte;
 
-                    srvrSock.read(&byte, sizeof(byte));
+                    if (!srvrSock.read(&byte, sizeof(byte)))
+                        break;
                     setState(READ_SOMETHING);
-                    srvrSock.write(&byte, sizeof(byte));
+                    if (!srvrSock.write(&byte, sizeof(byte)))
+                        break;
                 }
             }
         }
@@ -148,14 +150,14 @@ TEST_F(SocketTest, CancelServerAccepting)
     srvrThread.join();
 }
 
-// Tests closing the server's listening-socket
-TEST_F(SocketTest, CloseAcceptSocket)
+// Tests shutting down the server's listening-socket
+TEST_F(SocketTest, ShutdownAcceptSocket)
 {
     hycast::TcpSrvrSock lstnSock{};
     hycast::TcpSock     srvrSock{};
 
     startServer(lstnSock, srvrSock);
-    lstnSock.close();
+    lstnSock.shutdown();
     srvrThread.join();
 }
 
@@ -175,19 +177,20 @@ TEST_F(SocketTest, CancelServerReading)
     srvrThread.join();
 }
 
-// Tests closing the server's socket
-TEST_F(SocketTest, CloseServerSocket)
+// Tests shutting down the server's socket
+TEST_F(SocketTest, ShutdownServerSocket)
 {
     hycast::TcpSrvrSock lstnSock;
     hycast::TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
+    waitForState(LISTENING);
 
     hycast::TcpClntSock clntSock(srvrAddr);
     clntSock.write(true);
 
     waitForState(READ_SOMETHING);
-    srvrSock.close(); // Sends FIN to client's socket, but too late
+    srvrSock.shutdown(); // Sends FIN to client's socket, but too late
     srvrThread.join();
 
     //sleep(1); // Even if this is enabled
@@ -195,23 +198,24 @@ TEST_F(SocketTest, CloseServerSocket)
     // The following amount is necessary for an EOF
     char bytes[5000000];
     //char bytes[1]; // Not enough even if the sleep is enabled
-    ASSERT_THROW(clntSock.write(bytes, sizeof(bytes)), hycast::EofError);
+    ASSERT_EQ(false, clntSock.write(bytes, sizeof(bytes)));
 }
 
-// Tests closing the client's socket
-TEST_F(SocketTest, CloseClientSocket)
+// Tests shutting down the client's socket
+TEST_F(SocketTest, ShutdownClientSocket)
 {
     hycast::TcpSrvrSock lstnSock;
     hycast::TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
+    waitForState(LISTENING);
 
     hycast::TcpClntSock clntSock(srvrAddr);
-    clntSock.write(true);
+    EXPECT_EQ(true, clntSock.write(true));
 
     waitForState(READ_SOMETHING);
-    clntSock.close(); // Sends FIN to server's socket
-    ASSERT_THROW(clntSock.write(true), hycast::EofError);
+    clntSock.shutdown(); // Sends FIN to server's socket
+    EXPECT_EQ(false, clntSock.write(true));
 
     srvrThread.join();
 }
@@ -264,7 +268,7 @@ TEST_F(SocketTest, VectorExchange)
 
 int main(int argc, char **argv) {
   /*
-   * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the
+   * Ignore SIGPIPE so that writing to a shut down socket doesn't terminate the
    * process (the return-value from write() is always checked).
    */
   struct sigaction sigact;

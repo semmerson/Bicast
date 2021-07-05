@@ -12,13 +12,16 @@
 #include "config.h"
 
 #include "NoticeQueue.h"
+#include "P2pNode.h"
 
 #include "gtest/gtest.h"
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `NoticeQueue`
-class NoticeQueueTest : public ::testing::Test, public hycast::P2pMgr
+class NoticeQueueTest : public ::testing::Test, public hycast::P2pNode
 {
 protected:
     // You can remove any or all of the following functions if its body
@@ -50,13 +53,13 @@ protected:
     }
 
     // Objects declared here can be used by all tests in the test case for Error.
-    void offline(hycast::Peer peer) {
+    void offline(Peer peer) override {
     }
     void reassigned(const hycast::ProdIndex  notice,
-                    hycast::Peer             peer) {
+                    const SockAddr           rmtAddr) override {
     }
     void reassigned(const hycast::DataSegId& notice,
-                    hycast::Peer             peer) {
+                    const SockAddr           rmtAddr) override {
     }
 };
 

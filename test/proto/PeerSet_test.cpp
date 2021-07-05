@@ -11,6 +11,8 @@
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `PeerSet`
 class PeerSetTest : public ::testing::Test, public hycast::P2pNode
 {
@@ -103,7 +105,7 @@ public:
     }
 
     // Both sides
-    void recvNotice(const hycast::PubPath notice, hycast::Peer peer)
+    void recvNotice(const hycast::PubPath notice, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -112,7 +114,7 @@ public:
     }
 
     // Subscriber-side
-    void recvNotice(const hycast::ProdIndex notice, hycast::Peer peer)
+    bool recvNotice(const hycast::ProdIndex notice, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -122,11 +124,11 @@ public:
             if (++prodInfoNoticeCount == NUM_SUBSCRIBERS)
                 orState(PROD_NOTICE_RCVD);
         }
-        peer.request(notice);
+        return true;
     }
 
     // Subscriber-side
-    void recvNotice(const hycast::DataSegId& notice, hycast::Peer peer)
+    bool recvNotice(const hycast::DataSegId notice, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -136,11 +138,11 @@ public:
             if (++dataSegNoticeCount == NUM_SUBSCRIBERS)
                 orState(SEG_NOTICE_RCVD);
         }
-        peer.request(notice);
+        return true;
     }
 
     // Publisher-side
-    void recvRequest(const hycast::ProdIndex request, hycast::Peer peer)
+    ProdInfo recvRequest(const hycast::ProdIndex request, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -150,11 +152,11 @@ public:
             if (++prodInfoRequestCount == NUM_SUBSCRIBERS)
                 orState(PROD_REQUEST_RCVD);
         }
-        peer.send(prodInfo);
+        return prodInfo;
     }
 
     // Publisher-side
-    void recvRequest(const hycast::DataSegId& request, hycast::Peer peer)
+    DataSeg recvRequest(const hycast::DataSegId request, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -164,11 +166,11 @@ public:
             if (++dataSegRequestCount == NUM_SUBSCRIBERS)
                 orState(SEG_REQUEST_RCVD);
         }
-        peer.send(dataSeg);
+        return dataSeg;
     }
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo& data, hycast::Peer peer) override
+    void recvData(const hycast::ProdInfo data, const SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodInfo, data);
@@ -178,7 +180,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::DataSeg& actualDataSeg, hycast::Peer peer)
+    void recvData(const hycast::DataSeg actualDataSeg, const SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -193,9 +195,9 @@ public:
         LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
     void reassigned(const hycast::ProdIndex  notice,
-                    hycast::Peer             peer) {}
+                    const SockAddr           rmtAddr) {}
     void reassigned(const hycast::DataSegId& notice,
-                    hycast::Peer             peer) {}
+                    const SockAddr           rmtAddr) {}
 
     void startPublisher(hycast::PeerSet& pubPeerSet)
     {

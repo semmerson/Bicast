@@ -93,6 +93,10 @@ DataSeg::DataSeg(const DataSegId& segId,
     : pImpl(std::make_shared<SockSeg>(segId, prodSize, sock))
 {}
 
+DataSeg::operator bool() const {
+    return static_cast<bool>(pImpl);
+}
+
 const DataSegId& DataSeg::segId() const noexcept {
     return pImpl->segId;
 }
