@@ -1,3 +1,3 @@
 add_subdirectory(misc)
 add_subdirectory(inet)
-add_subdirectory(proto)
+add_subdirectory(p2p)

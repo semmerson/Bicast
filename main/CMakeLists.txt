@@ -14,9 +14,14 @@ if(BUILD_SHARED_LIBS)
     endif()
 endif()
 
+add_library(main OBJECT
+        HycastProto.cpp HycastProto.h
+)
+include_directories(inet)
+
 add_subdirectory(misc)
 add_subdirectory(inet)
-add_subdirectory(proto)
+add_subdirectory(p2p)
 add_subdirectory(lib)
 
 # Check for Doxygen(1)

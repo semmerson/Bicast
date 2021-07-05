@@ -20,12 +20,11 @@
  * limitations under the License.
  */
 
-#ifndef MAIN_P2P_BOOKKEEPER_H_
-#define MAIN_P2P_BOOKKEEPER_H_
+#ifndef MAIN_PROTO_BOOKKEEPER_H_
+#define MAIN_PROTO_BOOKKEEPER_H_
 
 #include "Peer.h"
 
-#include <list>
 #include <memory>
 #include <unordered_set>
 #include <utility>
@@ -47,9 +46,7 @@ protected:
 public:
     virtual ~Bookkeeper() noexcept =default;
 
-    void add(const Peer& peer) const;
-
-    Peer getWorstPeer() const;
+    virtual void add(const Peer peer) const =0;
 
     /**
      * Resets the measure of utility for every peer.
@@ -58,9 +55,9 @@ public:
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    void resetCounts() const noexcept;
+    virtual void reset() const noexcept =0;
 
-    void erase(const Peer& peer) const;
+    virtual void erase(const Peer peer) const =0;
 };
 
 /**
@@ -78,19 +75,17 @@ public:
      * @throws std::system_error  Out of memory
      * @cancellationpoint         No
      */
-    PubBookkeeper(const int maxPeers);
+    PubBookkeeper(const int maxPeers = 8);
 
-    void add(const Peer& peer) const;
+    void requested(const Peer peer) const;
 
-    void requested(const Peer& peer, const ProdInfo& prodInfo) const;
+    Peer getWorstPeer()             const;
 
-    void requested(const Peer& peer, const SegInfo& segInfo) const;
+    void add(const Peer peer)       const          override;
 
-    Peer getWorstPeer() const;
+    void reset()                    const noexcept override;
 
-    void resetCounts() const noexcept;
-
-    void erase(const Peer& peer) const;
+    void erase(const Peer peer)     const          override;
 };
 
 /**
@@ -98,11 +93,6 @@ public:
  */
 class SubBookkeeper final : public Bookkeeper
 {
-    typedef std::unordered_set<ChunkId> ChunkIds;
-    typedef std::list<Peer>             Peers;
-    typedef ChunkIds::iterator          ChunkIdIter;
-    typedef Peers::iterator             PeerIter;
-
     class Impl;
 
 public:
@@ -113,9 +103,7 @@ public:
      * @throws std::system_error  Out of memory
      * @cancellationpoint         No
      */
-    SubBookkeeper(int maxPeers);
-
-    void add(const Peer& peer) const;
+    SubBookkeeper(int maxPeers = 8);
 
     /**
      * Returns the number of remote peers that are a path to the source of
@@ -124,107 +112,93 @@ public:
      * @param[out] numPath    Number of remote peers that are path to source
      * @param[out] numNoPath  Number of remote peers that aren't path to source
      */
-    void getPubPathCounts(
-            unsigned& numPath,
-            unsigned& numNoPath) const;
+    void getPubPathCounts(unsigned& numPath,
+                          unsigned& numNoPath) const;
 
     /**
-     * Indicates if a chunk should be requested by a peer. If yes, then the
-     * chunk is added to the list of chunks requested by the peer; if no, then
-     * the peer is added to a list of potential peers for the chunk.
+     * Indicates if information on a product should be requested by a peer. If
+     * yes, then the concomitant request is added to the peer's list requests;
+     * if no, then the peer is added to a list of potential peers for the
+     * request.
      *
      * @param[in] peer               Peer
-     * @param[in] chunkId            Chunk Identifier
-     * @return    `true`             Chunk should be requested
-     * @return    `false`            Chunk shouldn't be requested
-     * @throws    std::out_of_range  Remote peer is unknown
-     * @throws    logicError         Chunk has already been requested from
-     *                               remote peer or remote peer is already
-     *                               alternative peer for chunk
+     * @param[in] prodIndex          Product index
+     * @return    `true`             Request should be made
+     * @return    `false`            Request shouldn't be made
+     * @throws    std::out_of_range  Peer is unknown
+     * @throws    logicError         This request has already been made or the
+     *                               peer is already alternative peer for the
+     *                               request
      * @threadsafety                 Safe
      * @cancellationpoint            No
      */
-    bool shouldRequest(
-            Peer&         peer,
-            const ChunkId chunkId) const;
+    bool shouldRequest(Peer            peer,
+                       const ProdIndex prodindex) const;
 
     /**
-     * Process a chunk as having been received from a peer. Nothing happens if
-     * the chunk wasn't requested by the peer; otherwise, the peer is marked as
-     * having received the chunk and the set of alternative peers that could but
-     * haven't requested the chunk is cleared.
+     * Indicates if a data segment should be requested by a peer. If yes, then
+     * the concomitant request is added to the peer's list requests; if no, then
+     * the peer is added to a list of potential peers for the request.
      *
      * @param[in] peer               Peer
-     * @param[in] chunkId            Chunk Identifier
-     * @retval    `false`            Chunk wasn't requested by peer.
-     * @retval    `true`             Chunk was requested by peer
-     * @throws    std::out_of_range  `peer` is unknown
+     * @param[in] dataSegId          Data segment identifier
+     * @return    `true`             Request should be made
+     * @return    `false`            Request shouldn't be made
+     * @throws    std::out_of_range  Peer is unknown
+     * @throws    logicError         This request has already been made or the
+     *                               peer is already alternative peer for the
+     *                               request
+     * @threadsafety                 Safe
+     * @cancellationpoint            No
+     */
+    bool shouldRequest(Peer             peer,
+                       const DataSegId& dataSegId) const;
+
+    /**
+     * Process a peer having received product information. Nothing happens if it
+     * wasn't requested by the peer; otherwise, the corresponding request is
+     * removed from the peer's outstanding requests and the set of alternative
+     * peers for that request is cleared.
+     *
+     * @param[in] peer               Peer
+     * @param[in] prodIndex          Product index
+     * @retval    `false`            Request wasn't made by peer
+     * @retval    `true`             Request was made by peer
+     * @throws    std::out_of_range  Peer is unknown
      * @threadsafety                 Safe
      * @exceptionsafety              Basic guarantee
      * @cancellationpoint            No
      */
-    bool received(
-            Peer&         peer,
-            const ChunkId chunkId) const;
-
-    void received(
-            const Peer&     peer,
-            const ProdInfo& prodInfo) const;
-
-    void received(
-            const Peer&    peer,
-            const SegInfo& segInfo) const;
-
-    Peer getWorstPeer() const;
-
-    Peer getWorstPeer(const bool isPathToSrc) const;
-
-    void resetCounts() const noexcept;
+    bool received(Peer            peer,
+                  const ProdIndex prodIndex) const;
 
     /**
-     * Returns a reference to the identifiers of chunks that a peer has
-     * requested but that have not yet been received. The set of identifiers
-     * is deleted when `erase()` is called -- so the reference must not be
-     * dereferenced after that.
+     * Process a peer having received a data segment. Nothing happens if it
+     * wasn't requested by the peer; otherwise, the corresponding request is
+     * removed from the peer's outstanding requests and the set of alternative
+     * peers for that request is cleared.
      *
-     * @param[in] peer            The peer in question
-     * @return                    [first, last) iterators over the chunk
-     *                            identifiers
-     * @throws std::out_of_range  `peer` is unknown
-     * @validity                  No changes to the peer's account
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `popBestAlt()`
-     * @see                       `requested()`
-     * @see                       `erase()`
+     * @param[in] peer               Peer
+     * @param[in] dataSegId          Data segment identifier
+     * @retval    `false`            Request wasn't made by peer
+     * @retval    `true`             Request was made by peer
+     * @throws    std::out_of_range  Peer is unknown
+     * @threadsafety                 Safe
+     * @exceptionsafety              Basic guarantee
+     * @cancellationpoint            No
      */
-    const ChunkIds& getRequested(const Peer& peer) const;
+    bool received(Peer             peer,
+                  const DataSegId& datasegId) const;
 
-    /**
-     * Returns the best peer to request a chunk that hasn't already requested
-     * it. The peer is removed from the set of such peers.
-     *
-     * @param[in] chunkId         Chunk Identifier
-     * @return                    The peer. Will test `false` if no such peer
-     *                            exists.
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `getRequested()`
-     * @see                       `requested()`
-     * @see                       `erase()`
-     */
-    Peer popBestAlt(const ChunkId chunkId) const;
+    Peer getWorstPeer(const bool pubPath)     const;
 
-    void requested(
-            const Peer&    peer,
-            const ChunkId& chunkId) const;
+    void add(const Peer peer)                 const          override;
 
-    void erase(const Peer& peer) const;
+    void reset()                              const noexcept override;
+
+    void erase(const Peer peer)               const          override;
 };
 
 } // namespace
 
-#endif /* MAIN_P2P_BOOKKEEPER_H_ */
+#endif /* MAIN_PROTO_BOOKKEEPER_H_ */

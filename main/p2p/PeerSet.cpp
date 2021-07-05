@@ -1,9 +1,9 @@
 /**
- * Thread-safe, dynamic set of active peers.
+ * This file implements a set of active peers whose remote counterparts can all
+ * be notified together.
  *
- *        File: PeerSet.cpp
- *  Created on: Jun 7, 2019
- *      Author: Steven R. Emmerson
+ *  @file:  PeerSet.cpp
+ * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
  *
@@ -21,241 +21,228 @@
  */
 
 #include "config.h"
+
+#include "HycastProto.h"
+#include "logging.h"
+#include "NoticeQueue.h"
 #include "PeerSet.h"
+#include "ThreadException.h"
 
-#include "error.h"
-#include "hycast.h"
-#include "Thread.h"
-
-#include <cassert>
-#include <condition_variable>
-#include <set>
-#include <memory>
-#include <mutex>
-#include <thread>
+#include <map>
+#include <pthread.h>
+#include <unordered_map>
+#include <utility>
 
 namespace hycast {
 
+/**
+ * Thread-safe set of active peers.
+ */
 class PeerSet::Impl
 {
-    using Mutex = std::mutex;
-    using Cond = std::condition_variable;
-    using Guard = std::lock_guard<Mutex>;
-    using Lock = std::unique_lock<Mutex>;
-    using Peers = std::set<Peer>;
+    /**
+     * A thread-safe class responsible for sending notifications in a
+     * notice-queue to a single peer.
+     */
+    class PeerEntry {
+        mutable Mutex    mutex;
+        mutable ThreadEx threadEx;
+        Peer             peer;
+        NoticeQueue      noticeQueue;
+        QueueIndex       readIndex;
+        Thread           thread;
 
-    mutable Mutex      mutex;
-    mutable Cond       cond;
-    bool               done;
-    Peers              peers;
-    PeerSetMgr&        peerSetMgr;
+        void run(const bool pubPath) {
+            LOG_TRACE;
+            try {
+                /*
+                 * Starting the peer here, on a separate thread, means that it
+                 * won't block other peers if it was client-side constructed and
+                 * has yet to connect to the remote peer.
+                 */
+                peer.start(); // Starts reading messages from the remote peer
+                peer.notify(PubPath(pubPath));
+
+                for(;;) {
+                    /*
+                     * Because the following blocks indefinitely, the current
+                     * thread must be cancelled in order to stop it and this
+                     * must be done before this instance is destroyed.
+                     */
+                    if (!noticeQueue.send(readIndex, peer))
+                        break; // Connection lost
+                    /*
+                     * To avoid prematurely purging the current notice, the
+                     * read-index must be incremented *after* the notice has
+                     * been sent.
+                     */
+                    ++readIndex;
+                }
+            }
+            catch (const std::exception& ex) {
+                LOG_ERROR(ex);
+                threadEx.set(ex);
+            }
+        }
+
+    public:
+        PeerEntry(Peer        peer,
+                  NoticeQueue noticeQueue,
+                  const bool  pubPath)
+            : mutex()
+            , threadEx()
+            , peer(peer)
+            , noticeQueue(noticeQueue)
+            , readIndex(noticeQueue.getOldestIndex())
+            , thread(&PeerEntry::run, this, pubPath)
+        {}
+
+        PeerEntry(const PeerEntry& peerEntry) =delete;
+        PeerEntry& operator=(const PeerEntry& entry) =delete;
+
+        PeerEntry(PeerEntry&& peerEntry) =default;
+
+        ~PeerEntry() {
+            /*
+             * Canceling the thread should be safe because it's only sending
+             * notifications to the remote peer.
+             */
+            ::pthread_cancel(thread.native_handle());
+            thread.join();
+
+            peer.stop();
+        }
+
+        QueueIndex getReadIndex() const {
+            Guard guard(mutex);
+            threadEx.throwIfSet();
+            return readIndex;
+        }
+    };
+
+    using PeerEntries = std::map<Peer, PeerEntry>;
+
+    mutable Mutex mutex;
+    // Placed before peer entries to ensure existence for `PeerEntry.run()`
+    NoticeQueue   noticeQueue;
+    PeerEntries   peerEntries;
 
     /**
-     * Executes a peer. Called by `std::thread()`.
-     *
-     * @param[in] peer  Peer to be executed. A copy is used instead of a
-     *                  reference to obviate problems arising from the peer
-     *                  being destroyed elsewhere.
+     * Purges notice-queue of notices that will not be read.
      */
-    void execute(Peer peer)
-    {
-        //LOG_DEBUG("Executing peer");
-        try {
-            peer();
-        }
-        catch (const std::system_error& ex) {
-            log_error(ex);
-        }
-        catch (const std::exception& ex) {
-            log_note(ex);
-        }
+    void purge() {
+        const auto writeIndex = noticeQueue.getWriteIndex();
+        // Guaranteed to be equal to or greater than oldest read-index:
+        auto       oldestIndex = writeIndex;
 
-        peerSetMgr.stopped(peer);
-
+        // Find oldest read-index
         {
-            Guard guard{mutex};
-            peers.erase(peer);
-            if (peers.empty())
-                cond.notify_one();
+            Guard guard(mutex); // No changes allowed to peer-set
+            for (const auto& peerEntry : peerEntries) {
+                const auto readIndex = peerEntry.second.getReadIndex();
+
+                if (readIndex < oldestIndex)
+                    oldestIndex = readIndex;
+            }
         }
+
+        if (oldestIndex < writeIndex)
+            // Purge notice-queue of entries that will not be read
+            noticeQueue.eraseTo(oldestIndex);
     }
 
 public:
-    Impl(PeerSetMgr& peerSetMgr)
-        : mutex{}
-        , cond{}
-        , done{false}
-        , peers()
-        , peerSetMgr(peerSetMgr)
+    Impl(P2pNode& node)
+        : mutex()
+        , noticeQueue(node)
+        , peerEntries()
     {}
 
-    ~Impl()
-    {
-        Guard guard{mutex};
-        if (peers.size())
-            throw RUNTIME_ERROR("Peer set isn't empty!");
-    }
-
     /**
-     * Executes a peer and adds it to the set of active peers.
+     * Adds a peer to this instance and starts it iff the peer is not already in
+     * the set.
      *
-     * @param[in] peer        Peer to be activated
-     * @throws    LogicError  Peer is already running
-     * @threadsafety          Safe
-     * @exceptionSafety       Strong guarantee
-     * @cancellationpoint     No
+     * @param[in] peer           Peer to be added
+     * @param[in] pubPath        Is local peer path to publisher?
+     * @retval    `false`        Peer was not added because it already exists
+     * @retval    `true`         Peer was added
+     * @throw std::system_error  Couldn't create new thread
      */
-    void activate(const Peer peer)
-    {
-        Guard    guard{mutex};
+    bool insert(Peer peer, const bool pubPath) {
+        Guard guard(mutex);
+        bool  added;
 
-        if (!done) {
-            if (peers.insert(peer).second) {
-                Canceler canceler{false};
-                auto thread = std::thread(&Impl::execute, this, peer);
-                thread.detach();
-            }
-        }
-    }
-
-    /**
-     * Synchronously halts all peers in the set. Doesn't return until the set is
-     * empty.
-     */
-    void halt() {
-        {
-            Guard guard{mutex};
-            done = true;
-        }
-        // No more peers will be added to the set
-
-        for (auto& peer : peers)
-            peer.halt();
-
-        Lock lock{mutex};
-        while (!peers.empty())
-            cond.wait(lock);
-    }
-
-    size_t size() const noexcept
-    {
-        Guard guard{mutex};
-        return peers.size();
-    }
-
-    void notify(ProdIndex prodIndex)
-    {
-        Guard guard{mutex};
-
-        if (peers.empty()) {
-            LOG_DEBUG("Peer set is empty");
+        if (peerEntries.count(peer)) {
+            added = false;
         }
         else {
-            for (auto& peer : peers)
-                peer.notify(prodIndex);
+            // NB: The following requires that `peer.hash()` works now
+            const auto  pair = peerEntries.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(peer),
+                    std::forward_as_tuple(peer, noticeQueue, pubPath));
+
+            LOG_ASSERT(pair.second); // Because `peerEntries.count(peer) != 0`
+
+            added = true;
         }
+
+        return added;
     }
 
-    void notify(const SegId& segId)
-    {
-        Guard guard{mutex};
-
-        if (peers.empty()) {
-            LOG_DEBUG("Peer set is empty");
-        }
-        else {
-            for (auto& peer : peers)
-                peer.notify(segId);
-        }
+    bool erase(Peer peer) {
+        Guard guard(mutex);
+        return peerEntries.erase(peer);
     }
 
-    void notify(
-            ProdIndex   prodIndex,
-            const Peer& notPeer)
-    {
-        Guard guard{mutex};
-
-        for (auto& peer : peers) {
-            if (peer != notPeer)
-                peer.notify(prodIndex);
-        }
+    PeerEntries::size_type size() const {
+        Guard guard(mutex);
+        return peerEntries.size();
     }
 
-    void notify(
-            const SegId& segId,
-            const Peer&  notPeer)
-    {
-        Guard guard{mutex};
-
-        for (auto& peer : peers) {
-            if (peer != notPeer)
-                peer.notify(segId);
-        }
+    void notify(const PubPath notice) {
+        purge();
+        noticeQueue.putPubPath(notice);
     }
 
-    void gotPath(Peer notPeer)
-    {
-        Guard guard{mutex};
-
-        for (auto& peer : peers) {
-            if (peer != notPeer)
-                peer.gotPath();
-        }
+    void notify(const ProdIndex notice) {
+        purge();
+        noticeQueue.putProdIndex(notice);
     }
 
-    void lostPath(Peer notPeer)
-    {
-        Guard guard{mutex};
-
-        for (auto& peer : peers) {
-            if (peer != notPeer)
-                peer.lostPath();
-        }
+    void notify(const DataSegId& notice) {
+        purge();
+        noticeQueue.put(notice);
     }
 };
 
-PeerSet::PeerSet(PeerSetMgr& peerSetMgr)
-    : pImpl(new Impl(peerSetMgr)) {
+/******************************************************************************/
+
+PeerSet::PeerSet(P2pNode& node)
+    : pImpl{std::make_shared<Impl>(node)}
+{}
+
+bool PeerSet::insert(Peer peer, const bool pubPath) const {
+    return pImpl->insert(peer, pubPath);
 }
 
-void PeerSet::activate(const Peer peer) {
-    return pImpl->activate(peer);
+bool PeerSet::erase(Peer peer) const {
+    return pImpl->erase(peer);
 }
 
-void PeerSet::halt() {
-    return pImpl->halt();
-}
-
-size_t PeerSet::size() const noexcept {
+PeerSet::size_type PeerSet::size() const {
     return pImpl->size();
 }
 
-void PeerSet::gotPath(Peer notPeer) {
-    pImpl->gotPath(notPeer);
+void PeerSet::notify(const PubPath notice) const {
+    pImpl->notify(notice);
 }
 
-void PeerSet::lostPath(Peer notPeer) {
-    pImpl->lostPath(notPeer);
+void PeerSet::notify(const ProdIndex notice) const {
+    pImpl->notify(notice);
 }
 
-void PeerSet::notify(const ProdIndex prodIndex) {
-    pImpl->notify(prodIndex);
-}
-
-void PeerSet::notify(
-        const ProdIndex prodIndex,
-        const Peer&     notPeer) {
-    pImpl->notify(prodIndex, notPeer);
-}
-
-void PeerSet::notify(const SegId& segId) {
-    pImpl->notify(segId);
-}
-
-void PeerSet::notify(
-        const SegId& segId,
-        const Peer&  notPeer) {
-    pImpl->notify(segId, notPeer);
+void PeerSet::notify(const DataSegId& notice) const {
+    pImpl->notify(notice);
 }
 
 } // namespace

@@ -22,11 +22,10 @@
 #include "config.h"
 
 #include "error.h"
-#include "PeerFactory.h"
-#include "PeerThreadPool.h"
-
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/p2p-old/PeerFactory.h>
+#include <main/p2p-old/PeerThreadPool.h>
 #include <mutex>
 #include <thread>
 

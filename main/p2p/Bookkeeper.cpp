@@ -1,5 +1,5 @@
 /**
- * Keeps track of peers and chunks in a thread-safe manner.
+ * Tracks the status of peers in a thread-safe manner.
  *
  *        File: Bookkeeper.cpp
  *  Created on: Oct 17, 2019
@@ -23,20 +23,19 @@
 #include "config.h"
 
 #include "Bookkeeper.h"
-#include "Peer.h"
+#include "HycastProto.h"
+#include "logging.h"
 
 #include <climits>
+#include <list>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace hycast {
 
-/// Concurrency types:
-typedef std::mutex             Mutex;
-typedef std::lock_guard<Mutex> Guard;
-
 /**
- * Implementation interface for performance monitoring of peers.
+ * Implementation interface for status monitoring of peers.
  */
 class Bookkeeper::Impl
 {
@@ -56,98 +55,70 @@ protected:
 public:
     virtual ~Impl() noexcept =default;
 
-    virtual void add(const Peer& peer) =0;
+    virtual void add(const Peer peer) =0;
 
-    virtual Peer getWorstPeer() const =0;
+    virtual void reset() noexcept =0;
 
-    virtual void resetCounts() noexcept =0;
-
-    virtual void erase(const Peer& peer) =0;
+    virtual void erase(const Peer peer) =0;
 };
 
 Bookkeeper::Bookkeeper(Impl* impl)
     : pImpl(impl) {
 }
 
-void Bookkeeper::add(const Peer& peer) const {
-    pImpl->add(peer);
-}
-
-Peer Bookkeeper::getWorstPeer() const {
-    return pImpl->getWorstPeer();
-}
-
-void Bookkeeper::resetCounts() const noexcept {
-    pImpl->resetCounts();
-}
-
-void Bookkeeper::erase(const Peer& peer) const {
-    pImpl->erase(peer);
-}
+/******************************************************************************/
 
 /**
- * Bookkeeper implementation for a set of publisher-peers.
+ * Bookkeeper implementation for a publisher
  */
 class PubBookkeeper::Impl final : public Bookkeeper::Impl
 {
-    /// Map of peer -> number of chunks requested by remote peer
-    std::unordered_map<Peer, uint_fast32_t> numRequested;
+    /// Map of peer -> number of requests by remote peer
+    std::unordered_map<Peer, uint_fast32_t> numRequests;
 
 public:
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
-        , numRequested(maxPeers)
+        , numRequests()
     {}
 
-    void add(const Peer& peer) override {
+    void add(const Peer peer) override {
         Guard guard(mutex);
-        numRequested.insert({peer, 0});
+        numRequests[peer] = 0;
     }
 
-    void requested(
-            const Peer&    peer,
-            const ProdInfo prodInfo) {
+    void requested(const Peer peer) {
         Guard guard(mutex);
-        ++numRequested[peer];
+        ++numRequests[peer];
     }
 
-    void requested(
-            const Peer&    peer,
-            const SegInfo& segId) {
-        Guard guard(mutex);
-        ++numRequested[peer];
-    }
-
-    Peer getWorstPeer() const override {
+    Peer getWorstPeer() const {
         Peer          peer{};
+        unsigned long minCount{ULONG_MAX};
         Guard         guard(mutex);
 
-        if (numRequested.size() > 1) {
-            unsigned long minCount{ULONG_MAX};
+        for (auto& elt : numRequests) {
+            auto count = elt.second;
 
-            for (auto& elt : numRequested) {
-                auto count = elt.second;
-
-                if (count < minCount) {
-                    minCount = count;
-                    peer = elt.first;
-                }
+            if (count < minCount) {
+                minCount = count;
+                peer = elt.first;
             }
         }
 
         return peer;
     }
 
-    void resetCounts() noexcept override {
+    void reset() noexcept override {
         Guard guard(mutex);
 
-        for (auto& elt : numRequested)
+        for (auto& elt : numRequests)
             elt.second = 0;
     }
 
-    void erase(const Peer& peer) override {
+    void erase(const Peer peer) override {
         Guard guard(mutex);
-        numRequested.erase(peer);
+        numRequests.erase(peer);
     }
 };
 
@@ -155,44 +126,217 @@ PubBookkeeper::PubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
-void PubBookkeeper::requested(
-        const Peer&     peer,
-        const ProdInfo& prodInfo) const {
-    static_cast<Impl*>(pImpl.get())->requested(peer, prodInfo);
+void PubBookkeeper::add(const Peer peer) const {
+    static_cast<Impl*>(pImpl.get())->add(peer);
 }
 
-void PubBookkeeper::requested(const Peer& peer, const SegInfo& segInfo) const {
-    static_cast<Impl*>(pImpl.get())->requested(peer, segInfo);
+void PubBookkeeper::requested(const Peer peer) const {
+    static_cast<Impl*>(pImpl.get())->requested(peer);
 }
+
+Peer PubBookkeeper::getWorstPeer() const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
+}
+
+void PubBookkeeper::reset() const noexcept {
+    static_cast<Impl*>(pImpl.get())->reset();
+}
+
+void PubBookkeeper::erase(const Peer peer) const {
+    static_cast<Impl*>(pImpl.get())->erase(peer);
+}
+
+/******************************************************************************/
 
 /**
- * Bookkeeper implementation for a set of subscriber-peers.
+ * Bookkeeper implementation for a subscriber
  */
 class SubBookkeeper::Impl final : public Bookkeeper::Impl
 {
+    struct Request
+    {
+        PduId pduId;
+        union {
+            ProdIndex prodIndex;
+            DataSegId dataSegId;
+        };
+
+        Request(ProdIndex prodIndex)
+            : pduId(PduId::PROD_INFO_REQUEST)
+            , prodIndex(prodIndex)
+        {}
+        Request(DataSegId dataSegId)
+            : pduId(PduId::DATA_SEG_REQUEST)
+            , dataSegId(dataSegId)
+        {}
+        String to_string() const {
+            return (pduId == PduId::PROD_INFO_REQUEST)
+                    ? prodIndex.to_string()
+                    : dataSegId.to_string();
+        }
+        void beRequestedBy(Peer peer) const {
+            (pduId == PduId::PROD_INFO_REQUEST)
+                ? peer.request(prodIndex)
+                : peer.request(dataSegId);
+        }
+        size_t hash() const noexcept {
+            return (pduId == PduId::PROD_INFO_REQUEST)
+                    ? prodIndex.hash()
+                    : dataSegId.hash();
+        }
+        bool operator==(const Request& rhs) const noexcept {
+            return (pduId == rhs.pduId) &&
+                    ((pduId == PduId::PROD_INFO_REQUEST)
+                        ? prodIndex == rhs.prodIndex
+                        : dataSegId == rhs.dataSegId);
+        }
+    };
+
+    struct RequestHash {
+        size_t operator()(const Request& request) const noexcept {
+            return request.hash();
+        }
+    };
+
+    using RequestSet = std::unordered_set<Request, RequestHash>;
+
     /// Information on a peer
-    typedef struct PeerInfo {
-        /// Requested chunks that haven't been received
-        ChunkIds      reqChunks;
-        uint_fast32_t chunkCount;  ///< Number of received chunks
+    struct PeerInfo {
+        /// Outstanding requests that haven't been satisfied yet
+        RequestSet    requests;
+        uint_fast32_t count;  ///< Number of received PDU-s
 
         PeerInfo()
-            : reqChunks()
-            , chunkCount{0}
+            : requests(100)
+            , count{0}
         {}
-    } PeerInfo;
+    };
+
+    class PeerQueue {
+        std::list<Peer> peers;
+
+    public:
+        PeerQueue() =default;
+
+        /**
+         * Appends a peer to the queue.
+         *
+         * @param[in] peer          Peer to append
+         * @throw std::logic_error  Peer is already in queue
+         */
+        void append(Peer peer) {
+            for (const auto& elt : peers)
+                if (elt == peer)
+                    throw LOGIC_ERROR("Peer " + peer.to_string() + " is "
+                            "already in the queue");
+            peers.push_back(peer);
+        }
+
+        Peer pop() {
+            Peer peer{};
+            if (!peers.empty()) {
+                peer = peers.front();
+                peers.pop_front();
+            }
+            return peer;
+        }
+    };
+
+    using PeerInfos = std::unordered_map<Peer, PeerInfo>;
+    using ReqPeers  = std::unordered_map<Request, PeerQueue, RequestHash>;
 
     /// Map of peer -> peer information
-    std::unordered_map<Peer, PeerInfo> peerInfos;
-
-    /// Map of chunk identifiers -> alternative peers that can request a chunk
-    std::unordered_map<ChunkId, Peers> altPeers;
-
-    /*
-     * INVARIANT:
-     *   - If `peerInfos[peer].reqChunks` contains `chunkId`, then `peer`
-     *     is not contained in `altPeers[chunkId]`
+    PeerInfos peerInfos;
+    /**
+     * Map of request -> peers that can make the request in the order in which
+     * their notifications arrived.
      */
+    ReqPeers  reqPeers;
+
+    /**
+     * Indicates if a request should be made by a peer. If yes, then the
+     * request is added to the list of requests by the peer; if no, then
+     * the peer is added to a list of potential peers for the request.
+     *
+     * @param[in] peer               Peer
+     * @param[in] request            Request
+     * @return    `true`             Request should be made
+     * @return    `false`            Request shouldn't be made
+     * @throws    logic_error        Peer is not in the set
+     * @threadsafety                 Safe
+     * @cancellationpoint            No
+     */
+    bool shouldRequest(
+            Peer           peer,
+            const Request& request)
+    {
+        Guard guard(mutex);
+        bool  should = reqPeers.count(request) == 0;
+
+        if (should) {
+            try {
+                auto& peerRequests = peerInfos.at(peer).requests;
+
+                LOG_ASSERT(peerRequests.count(request) == 0);
+
+                peerRequests.insert(request); // Add request to peer
+
+                should = true;
+            }
+            catch (const std::out_of_range& ex) {
+                std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
+                        " is not in the set"));
+            }
+        }
+
+        reqPeers[request].append(peer); // Add peer to request. Throws
+
+        return should;
+    }
+
+    /**
+     * Process a satisfied request. Nothing happens if the peer didn't make the
+     * request; otherwise, the request is deleted from the peer's list of
+     * outstanding requests and the set of alternative peers that could make the
+     * request is cleared.
+     *
+     * @param[in] peer               Peer
+     * @param[in] request            Request
+     * @retval    `false`            Peer didn't make request
+     * @retval    `true`             Peer made request
+     * @throws    logic_error        Peer is not in the set
+     * @threadsafety                 Safe
+     * @exceptionsafety              Basic guarantee
+     * @cancellationpoint            No
+     */
+    bool received(Peer          peer,
+                  const Request request)
+    {
+        Guard  guard(mutex);
+        bool   wasRequested;
+
+        try {
+            auto& peerInfo = peerInfos.at(peer);
+
+            if (peerInfo.requests.erase(request) == 0) {
+                // Peer didn't make request
+                wasRequested = false;
+            }
+            else {
+                // Peer made request
+                ++peerInfo.count;
+                wasRequested = true;
+            }
+
+            reqPeers.erase(request); // No longer relevant
+        }
+        catch (const std::out_of_range& ex) {
+            std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
+                    " is not in the set"));
+        }
+
+        return wasRequested;
+    }
 
 public:
     /**
@@ -205,7 +349,7 @@ public:
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
         , peerInfos(maxPeers)
-        , altPeers()
+        , reqPeers(8)
     {}
 
     /**
@@ -217,21 +361,39 @@ public:
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void add(const Peer& peer) override
+    void add(Peer peer) override
     {
         Guard guard(mutex);
         peerInfos.insert({peer, PeerInfo()});
     }
 
+    bool shouldRequest(Peer peer, const ProdIndex prodIndex) {
+        return shouldRequest(peer, Request(prodIndex));
+    }
+
+    bool shouldRequest(Peer peer, const DataSegId& dataSegId) {
+        return shouldRequest(peer, Request(dataSegId));
+    }
+
+    bool received(Peer            peer,
+                  const ProdIndex prodIndex) {
+        return received(peer, Request(prodIndex));
+    }
+
+    bool received(Peer             peer,
+                  const DataSegId& dataSegId) {
+        return received(peer, Request(dataSegId));
+    }
+
     /**
-     * Returns the number of remote peers that are a path to the publisher of
-     * data-products and the number that aren't.
+     * Returns the number of remote peers that are a path to the publisher and
+     * the number that aren't.
      *
      * @param[out] numPath    Number of remote peers that are path to publisher
      * @param[out] numNoPath  Number of remote peers that aren't path to
      *                        publisher
      */
-    void getSrcPathCounts(
+    void getPubPathCounts(
             unsigned& numPath,
             unsigned& numNoPath) const
     {
@@ -240,7 +402,7 @@ public:
         numPath = numNoPath = 0;
 
         for (auto& pair : peerInfos) {
-            if (pair.first.isPathToPub()) {
+            if (pair.first.rmtIsPubPath()) {
                 ++numPath;
             }
             else {
@@ -250,152 +412,29 @@ public:
     }
 
     /**
-     * Indicates if a chunk should be requested by a peer. If yes, then the
-     * chunk is added to the list of chunks requested by the peer; if no, then
-     * the peer is added to a list of potential peers for the chunk.
-     *
-     * @param[in] peer               Peer
-     * @param[in] chunkId            Chunk Identifier
-     * @return    `true`             Chunk should be requested
-     * @return    `false`            Chunk shouldn't be requested
-     * @throws    std::out_of_range  Remote peer is unknown
-     * @throws    logicError         Chunk has already been requested from
-     *                               remote peer or remote peer is already
-     *                               alternative peer for chunk
-     * @threadsafety                 Safe
-     * @cancellationpoint            No
-     */
-    bool shouldRequest(
-            Peer&          peer,
-            const ChunkId  chunkId)
-    {
-        bool  should;
-        Guard guard(mutex);
-        auto  elt = altPeers.find(chunkId);
-
-        if (elt == altPeers.end()) {
-            // First request for this chunk
-            auto& reqChunks = peerInfos.at(peer).reqChunks;
-
-            // Check invariant
-            if (reqChunks.find(chunkId) != reqChunks.end())
-                throw LOGIC_ERROR("Peer " + peer.to_string() + " has "
-                        "already requested chunk " + chunkId.to_string());
-
-            altPeers[chunkId]; // Creates empty alternative-peer list
-            // Add chunk to list of chunks requested by this peer
-            reqChunks.insert(chunkId);
-            should = true;
-        }
-        else {
-            auto iter = peerInfos.find(peer);
-
-            // Check invariant
-            if (iter != peerInfos.end()) {
-                auto& reqChunks = iter->second.reqChunks;
-                if (reqChunks.find(chunkId) != reqChunks.end())
-                    throw LOGIC_ERROR("Peer " + peer.to_string() + "requested "
-                            "chunk " + chunkId.to_string());
-            }
-
-            elt->second.push_back(peer); // Add alternative peer for this chunk
-            should = false;
-        }
-
-        //LOG_DEBUG("Chunk %s %s be requested from %s", chunkId.to_string().data(),
-                //should ? "should" : "shouldn't", peer.to_string().data());
-        return should;
-    }
-
-    /**
-     * Process a chunk as having been received from a peer. Nothing happens if
-     * the chunk wasn't requested by the peer; otherwise, the peer is marked as
-     * having received the chunk and the set of alternative peers that could but
-     * haven't requested the chunk is cleared.
-     *
-     * @param[in] peer               Peer
-     * @param[in] chunkId            Chunk Identifier
-     * @retval    `false`            Chunk wasn't requested by peer.
-     * @retval    `true`             Chunk was requested by peer
-     * @throws    std::out_of_range  `peer` is unknown
-     * @threadsafety                 Safe
-     * @exceptionsafety              Basic guarantee
-     * @cancellationpoint            No
-     */
-    bool received(
-            Peer&         peer,
-            const ChunkId chunkId)
-    {
-        Guard  guard(mutex);
-        auto&  peerInfo = peerInfos.at(peer);
-        bool   wasRequested;
-
-        if (peerInfo.reqChunks.erase(chunkId) == 0) {
-            wasRequested = false;
-        }
-        else {
-            ++peerInfo.chunkCount;
-            altPeers.erase(chunkId); // Chunk is no longer relevant
-            wasRequested = true;
-        }
-
-        return wasRequested;
-    }
-
-    /**
      * Returns a worst performing peer.
      *
-     * @return                    A worst performing peer since construction
-     *                            or `resetCounts()` was called. Will test
-     *                            false if the set is empty.
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
-     */
-    Peer getWorstPeer() const override
-    {
-        unsigned long minCount{ULONG_MAX};
-        Peer          peer{};
-        Guard         guard(mutex);
-
-        for (auto& elt : peerInfos) {
-            auto count = elt.second.chunkCount;
-
-            if (count < minCount) {
-                minCount = count;
-                peer = elt.first;
-            }
-        }
-
-        return peer;
-    }
-
-    /**
-     * Returns a worst performing peer.
-     *
-     * @param[in] isPathToSrc     Attribute that peer must have
+     * @param[in] pubPath         Attribute that peer must have
      * @return                    A worst performing peer -- whose
-     *                            `isPathToSrc()` return value equals
-     *                            `isPathToSrc` -- since construction or
-     *                            `resetCounts()` was called. Will test false if
-     *                            the set is empty.
+     *                            `rmtPubPath()` return value equals `pubPath`
+     *                            -- since construction or `reset()` was called.
+     *                            Will test false if the set is empty.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer getWorstPeer(const bool isPathToSrc) const
+    Peer getWorstPeer(const bool pubPath) const
     {
-        Peer          peer{};
-        Guard         guard(mutex);
+        Peer  peer{};
+        Guard guard(mutex);
 
         if (peerInfos.size() > 1) {
             unsigned long minCount{ULONG_MAX};
 
             for (auto elt : peerInfos) {
-                if (elt.first.isPathToPub() == isPathToSrc) {
-                    auto count = elt.second.chunkCount;
+                if (elt.first.rmtIsPubPath() == pubPath) {
+                    auto count = elt.second.count;
 
                     if (count < minCount) {
                         minCount = count;
@@ -415,106 +454,53 @@ public:
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    void resetCounts() noexcept override
+    void reset() noexcept override
     {
         Guard guard(mutex);
 
         for (auto& elt : peerInfos)
-            elt.second.chunkCount = 0;
+            elt.second.count = 0;
     }
 
     /**
-     * Returns a reference to the identifiers of chunks that a peer has
-     * requested but that have not yet been received. The set of identifiers
-     * is deleted when `erase()` is called -- so the reference must not be
-     * dereferenced after that.
-     *
-     * @param[in] peer            The peer in question
-     * @return                    [first, last) iterators over the chunk
-     *                            identifiers
-     * @throws std::out_of_range  `peer` is unknown
-     * @validity                  No changes to the peer's account
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `popBestAlt()`
-     * @see                       `requested()`
-     * @see                       `erase()`
-     */
-    const ChunkIds& getRequested(const Peer& peer) const
-    {
-        Guard guard(mutex);
-        return peerInfos.at(peer).reqChunks;
-    }
-
-    /**
-     * Returns the best peer to request a chunk that hasn't already requested
-     * it. The peer is removed from the set of such peers.
-     *
-     * @param[in] chunkId         Chunk Identifier
-     * @return                    The peer. Will test `false` if no such peer
-     *                            exists.
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     * @see                       `getRequested()`
-     * @see                       `requested()`
-     * @see                       `erase()`
-     */
-    Peer popBestAlt(const ChunkId chunkId)
-    {
-        Guard guard(mutex);
-        Peer  peer{};
-        auto  iter = altPeers.find(chunkId);
-
-        if (iter != altPeers.end()) {
-            auto& peers = iter->second;
-            if (!peers.empty()) {
-                peer = peers.front();
-                peers.pop_front();
-            }
-        }
-
-        return peer;
-    }
-
-    /**
-     * Marks a peer as being responsible for a chunk.
-     *
-     * @param[in] peer     Peer
-     * @param[in] chunkId  Identifier of chunk
-     * @see                `getRequested()`
-     * @see                `popBestAlt()`
-     * @see                `erase()`
-     */
-    void requested(
-            const Peer&   peer,
-            const ChunkId chunkId)
-    {
-        Guard guard{mutex};
-        peerInfos[peer].reqChunks.insert(chunkId);
-    }
-
-    /**
-     * Removes a peer. Should be called after processing the entire set
-     * returned by `getChunkIds()`.
+     * Removes a peer. The peer's unsatisfied requests are transferred to
+     * alternative peers.
      *
      * @param[in] peer            The peer to be removed
-     * @throws std::out_of_range  `peer` is unknown
+     * @throws    logic_error     Peer is not in set
+     * @throws    logic_error     Alternative peer is not in set
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
-     * @see                       `getRequested()`
-     * @see                       `popBestAlt()`
-     * @see                       `requested()`
      */
-    void erase(const Peer& peer) override
+    void erase(const Peer peer) override
     {
-        Guard    guard(mutex);
+        Guard guard(mutex);
 
-        for (auto& elt : altPeers)
-            elt.second.remove(peer);
+        try {
+            for (const auto& outRequest : peerInfos.at(peer).requests) {
+                auto& peers = reqPeers[outRequest];
+
+                auto  altPeer = peers.pop();
+                LOG_ASSERT(altPeer == peer);
+                altPeer = peers.pop();
+
+                if (altPeer) {
+                    try {
+                        peerInfos.at(altPeer).requests.insert(outRequest);
+                        outRequest.beRequestedBy(altPeer);
+                    }
+                    catch (const std::out_of_range& ex) {
+                        std::throw_with_nested(LOGIC_ERROR("Alternative peer "
+                                + altPeer.to_string() + " is not in the set"));
+                    }
+                }
+            }
+        }
+        catch (const std::out_of_range& ex) {
+            std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
+                    " is not in the set"));
+        }
 
         peerInfos.erase(peer);
     }
@@ -524,43 +510,50 @@ SubBookkeeper::SubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
+void SubBookkeeper::add(const Peer peer) const {
+    static_cast<Impl*>(pImpl.get())->add(peer);
+}
+
 void SubBookkeeper::getPubPathCounts(
         unsigned& numPath,
         unsigned& numNoPath) const {
-    static_cast<Impl*>(pImpl.get())->getSrcPathCounts(numPath,
-            numNoPath);
+    static_cast<Impl*>(pImpl.get())->getPubPathCounts(numPath, numNoPath);
 }
 
 bool SubBookkeeper::shouldRequest(
-        Peer&         peer,
-        const ChunkId chunkId) const {
-    return static_cast<Impl*>(pImpl.get())->shouldRequest(peer,
-            chunkId);
+        Peer            peer,
+        const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->shouldRequest(peer, prodIndex);
+}
+
+bool SubBookkeeper::shouldRequest(
+        Peer             peer,
+        const DataSegId& dataSegId) const {
+    return static_cast<Impl*>(pImpl.get())->shouldRequest(peer, dataSegId);
 }
 
 bool SubBookkeeper::received(
-        Peer&         peer,
-        const ChunkId chunkId) const {
-    return static_cast<Impl*>(pImpl.get())->received(peer, chunkId);
+        Peer            peer,
+        const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->received(peer, prodIndex);
 }
 
-Peer SubBookkeeper::getWorstPeer(const bool isPathToSrc) const {
-    return static_cast<Impl*>(pImpl.get())->getWorstPeer(isPathToSrc);
+bool SubBookkeeper::received(
+        Peer             peer,
+        const DataSegId& dataSegId) const {
+    return static_cast<Impl*>(pImpl.get())->received(peer, dataSegId);
 }
 
-const SubBookkeeper::ChunkIds&
-SubBookkeeper::getRequested(const Peer& peer) const {
-    return static_cast<Impl*>(pImpl.get())->getRequested(peer);
+Peer SubBookkeeper::getWorstPeer(const bool pubPath) const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer(pubPath);
 }
 
-Peer SubBookkeeper::popBestAlt(const ChunkId chunkId) const {
-    return static_cast<Impl*>(pImpl.get())->popBestAlt(chunkId);
+void SubBookkeeper::reset() const noexcept {
+    static_cast<Impl*>(pImpl.get())->reset();
 }
 
-void SubBookkeeper::requested(
-        const Peer&    peer,
-        const ChunkId& chunkId) const {
-    static_cast<Impl*>(pImpl.get())->requested(peer, chunkId);
+void SubBookkeeper::erase(const Peer peer) const {
+    static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 } // namespace

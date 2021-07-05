@@ -1,30 +1,31 @@
 #include "config.h"
 
-#include "error.h"
+#include "HycastProto.h"
+#include "logging.h"
 #include "Peer.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
 #include <mutex>
+#include <signal.h>
 #include <thread>
 
 namespace {
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public hycast::XcvrPeerMgr
+class PeerTest : public ::testing::Test, public hycast::P2pNode
 {
 protected:
     typedef enum {
         INIT = 0,
         LISTENING = 0x1,
-        CONNECTED = 0x2,
         PROD_NOTICE_RCVD = 0x4,
         SEG_NOTICE_RCVD = 0x8,
         PROD_REQUEST_RCVD = 0x10,
         SEG_REQUEST_RCVD = 0x20,
         PROD_INFO_RCVD = 0x40,
         SEG_RCVD = 0x80,
-        DONE = CONNECTED |
+        DONE = LISTENING |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -40,11 +41,9 @@ protected:
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
-    hycast::SegId           segId;
-    hycast::SegInfo         segInfo;
-    char                    memData[1000];
-    hycast::MemSeg          memSeg;
-    hycast::Peer            pubPeer;
+    hycast::DataSegId       segId;
+    char                    memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    hycast::DataSeg         dataSeg;
 
     PeerTest()
         : state{INIT}
@@ -54,11 +53,10 @@ protected:
         , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, prodSize, "product"}
-        , segId(prodIndex, segSize)
-        , segInfo(segId, prodSize, segSize)
+        , prodInfo{prodIndex, "product", prodSize}
+        , segId(prodIndex, sizeof(memData)) // Second data-segment
         , memData{}
-        , memSeg{segInfo, memData}
+        , dataSeg{segId, prodSize, memData}
     {
         ::memset(memData, 0xbd, segSize);
     }
@@ -84,168 +82,263 @@ public:
             cond.wait(lock);
     }
 
-    void pathToPub(const hycast::SockAddr& rmtAddr)
-    {}
+    // Publisher-side
+    bool isPublisher() const override {
+        LOG_TRACE;
+        return true;
+    }
 
-    void noPathToPub(const hycast::SockAddr& rmtAddr)
-    {}
+    // Publisher-side
+    bool isPathToPub() const override {
+        LOG_TRACE;
+        return true;
+    }
 
-    // Receiver-side
-    bool shouldRequest(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::ProdIndex actual)
+    // Both sides
+    void recvNotice(const hycast::PubPath notice, hycast::SockAddr rmtPeerAddr)
+            override
     {
-        EXPECT_TRUE(prodIndex == actual);
+        LOG_TRACE;
+    }
+
+    // Subscriber-side
+    bool recvNotice(const hycast::ProdIndex notice, hycast::SockAddr rmtPeerAddr)
+            override
+    {
+        LOG_TRACE;
+        EXPECT_EQ(notice, prodIndex);
         orState(PROD_NOTICE_RCVD);
-
         return true;
     }
 
-    // Receiver-side
-    bool shouldRequest(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::SegId&    actual)
+    // Subscriber-side
+    bool recvNotice(const hycast::DataSegId notice, hycast::SockAddr rmtPeerAddr)
+            override
     {
-        EXPECT_EQ(segId, actual);
+        LOG_TRACE;
+        EXPECT_EQ(segId, notice);
         orState(SEG_NOTICE_RCVD);
-
         return true;
     }
 
-    // Sender-side
-    hycast::ProdInfo getProdInfo(
-            const hycast::SockAddr& remote,
-            const hycast::ProdIndex actual)
+    // Publisher-side
+    hycast::ProdInfo recvRequest(const hycast::ProdIndex request,
+                                 hycast::SockAddr        rmtPeerAddr) override
     {
-        EXPECT_TRUE(prodIndex == actual);
+        LOG_TRACE;
+        EXPECT_TRUE(prodIndex == request);
         orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
 
-    // Sender-side
-    hycast::MemSeg getMemSeg(
-            const hycast::SockAddr& remote,
-            const hycast::SegId&    actual)
+    // Publisher-side
+    hycast::DataSeg recvRequest(const hycast::DataSegId request,
+                                hycast::SockAddr        rmtPeerAddr ) override
     {
-        EXPECT_EQ(segId, actual);
+        LOG_TRACE;
+        EXPECT_EQ(segId, request);
         orState(SEG_REQUEST_RCVD);
-        return memSeg;
+        return dataSeg;
     }
 
-    // Receiver-side
-    bool hereIs(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::ProdInfo& actual)
+    // Subscriber-side
+    void recvData(const hycast::ProdInfo data, hycast::SockAddr rmtPeerAddr) override
     {
-        EXPECT_EQ(prodInfo, actual);
+        LOG_TRACE;
+        EXPECT_EQ(prodInfo, data);
         orState(PROD_INFO_RCVD);
-
-        return true;
     }
 
-    // Receiver-side
-    bool hereIs(
-            const hycast::SockAddr& rmtAddr,
-            hycast::TcpSeg&         actual)
+    // Subscriber-side
+    void recvData(const hycast::DataSeg actualDataSeg, hycast::SockAddr rmtPeerAddr)
+            override
     {
-        const hycast::SegSize size = actual.getSegInfo().getSegSize();
-        EXPECT_EQ(segSize, size);
-
-        char buf[size];
-        actual.getData(buf);
-
-        EXPECT_EQ(0, ::memcmp(memSeg.data(), buf, segSize));
-
+        LOG_TRACE;
+        ASSERT_EQ(segSize, actualDataSeg.size());
+        EXPECT_EQ(0, ::memcmp(dataSeg.data(), actualDataSeg.data(), segSize));
         orState(SEG_RCVD);
-
-        return true;
     }
 
-    void runPublisher()
+    void offline(hycast::Peer peer) {
+        LOG_INFO("Peer %s is offline", peer.to_string().data());
+    }
+    void reassigned(const hycast::ProdIndex  notice,
+                    hycast::SockAddr         rmtPeerAddr) {}
+    void reassigned(const hycast::DataSegId& notice,
+                    hycast::SockAddr         rmtPeerAddr) {}
+
+    void startPubPeer(hycast::Peer& pubPeer)
     {
-        try {
-            hycast::TcpSrvrSock srvrSock(pubAddr);
+        hycast::PeerSrvr peerSrvr{*this, pubAddr};
+        orState(LISTENING);
 
-            setState(LISTENING);
+        pubPeer = peerSrvr.accept();
+        ASSERT_TRUE(pubPeer);
 
-            hycast::TcpSock pubSock(srvrSock.accept());
-            pubPeer = hycast::Peer(pubSock, *this);
+        auto rmtAddr = pubPeer.getRmtAddr().getInetAddr();
+        hycast::InetAddr localhost("127.0.0.1");
+        EXPECT_EQ(localhost, rmtAddr);
 
-            auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
-            hycast::InetAddr localhost("127.0.0.1");
-            EXPECT_EQ(localhost, rmtAddr);
+        LOG_DEBUG("Starting publishing peer");
+        ASSERT_TRUE(pubPeer.start());
+    }
 
-            setState(CONNECTED);
+    bool notify(hycast::Peer& pubPeer) {
+        // Start an exchange
+        return pubPeer.notify(prodIndex) &&
+                pubPeer.notify(segId);
+    }
 
-            pubPeer();
-        }
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Logging exception");
-            hycast::log_error(ex);
-        }
-        catch (...) {
-            LOG_NOTE("Caught ...");
-        }
+    bool loopNotify(hycast::Peer pubPeer) {
+        while (notify(pubPeer))
+            ::pthread_yield();
+        return false;
     }
 };
 
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction)
 {
-    hycast::Peer peer();
+    hycast::Peer peer{};
+    EXPECT_FALSE(peer);
+}
+
+// Tests premature stopping
+TEST_F(PeerTest, PrematureStop)
+{
+    // Create and execute reception by publishing-peer on separate thread
+    hycast::Peer pubPeer{};
+    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
+
+    try {
+        waitForState(LISTENING);
+
+        hycast::Peer subPeer(*this, pubAddr);
+        ASSERT_TRUE(subPeer);
+        ASSERT_TRUE(subPeer.start());
+
+        subPeer.stop();
+
+        ASSERT_TRUE(srvrThread.joinable());
+        srvrThread.join();
+    } // `srvrThread` created
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        if (srvrThread.joinable())
+            srvrThread.join();
+    }
+}
+
+// Tests premature destruction
+TEST_F(PeerTest, PrematureDtor)
+{
+    // Create and execute reception by publishing-peer on separate thread
+    hycast::Peer pubPeer{};
+    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
+
+    try {
+        waitForState(LISTENING);
+
+        hycast::Peer subPeer(*this, pubAddr);
+        ASSERT_TRUE(subPeer);
+        ASSERT_TRUE(subPeer.start());
+
+        ASSERT_TRUE(srvrThread.joinable());
+        srvrThread.join();
+    } // `srvrThread` created
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        if (srvrThread.joinable())
+            srvrThread.join();
+    }
 }
 
 // Tests data exchange
 TEST_F(PeerTest, DataExchange)
 {
-    // Start the publisher
-    std::thread pubThread(&PeerTest::runPublisher, this);
+    // Create and execute reception by publishing-peer on separate thread
+    hycast::Peer pubPeer{};
+    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
         waitForState(LISTENING);
 
-        // Start the subscriber. Potentially slow.
-        hycast::Peer     subPeer(pubAddr,
-                hycast::NodeType::NO_PATH_TO_PUBLISHER, *this);
-        std::thread      subThread(subPeer);
+        // Create and execute reception by subscribing-peer on separate thread
+        hycast::Peer subPeer(*this, pubAddr);
+        ASSERT_TRUE(subPeer);
+        /*
+         * If this program is executed in a "while" loop, then the following
+         * will cause the process to hang somewhere around the 7e3-th execution
+         * because the subscribing peer will be unable to establish a 3 socket
+         * connection with the publishing peer because a `::connect()` call
+         * will have failed because it was unable to assign the socket a local
+         * address using the O/S-chosen port number.  Apparently, there's a race
+         * condition for O/S-assigned port numbers in a `::connect()` call for
+         * an unbound socket. Sheesh!
+         */
+        ASSERT_TRUE(subPeer.start());
 
-        try {
-            waitForState(CONNECTED);
+        ASSERT_TRUE(srvrThread.joinable());
+        srvrThread.join();
+        // `pubPeer` is running
 
-            // Start an exchange
-            pubPeer.notify(prodIndex);
-            pubPeer.notify(segId);
+        // Start an exchange
+        ASSERT_TRUE(notify(pubPeer));
 
-            // Wait for the exchange to complete
-            waitForState(DONE);
-
-            // `subPeer()` returns & `subThread` terminates
-            subPeer.halt();
-            subThread.join();
-        }
-        catch (const std::exception& ex) {
-            hycast::log_fatal(ex);
-            subPeer.halt();
-            subThread.join();
-            throw;
-        }
-        catch (...) {
-            LOG_FATAL("Thread cancellation?");
-            subThread.join();
-            throw;
-        } // `subThread` active
-
-        pubThread.join();
-    } // `pubThread` active
+        // Wait for the exchange to complete
+        waitForState(DONE);
+    } // `srvrThread` created
     catch (const std::exception& ex) {
-        hycast::log_fatal(ex);
-        pubThread.join();
-        throw;
+        LOG_ERROR(ex);
+        if (srvrThread.joinable())
+            srvrThread.join();
     }
-    catch (...) {
-        LOG_FATAL("Thread cancellation?");
-        pubThread.join();
-        throw;
+}
+
+// Tests broken connection
+TEST_F(PeerTest, BrokenConnection)
+{
+    // Create and execute reception by publishing peer on separate thread
+    hycast::Peer pubPeer{};
+    std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
+
+    try {
+        waitForState(LISTENING);
+
+        {
+            // Create and execute reception by subscribing peer on separate thread
+            hycast::Peer subPeer{*this, pubAddr};
+            ASSERT_TRUE(subPeer);
+            LOG_DEBUG("Starting subscribing peer");
+            /*
+             * If this program is executed in a "while" loop, then the following
+             * will cause the process to hang somewhere around the 7e3-th
+             * execution because the subscribing peer will be unable to
+             * establish a 3 socket connection with the publishing peer because
+             * a `::connect()` call will have failed because it was unable to
+             * assign the socket a local address using the O/S-chosen port
+             * number. Apparently, there's a race condition for O/S-assigned
+             * port numbers in a `::connect()` call for an unbound socket.
+             * Sheesh!
+             */
+            ASSERT_TRUE(subPeer.start());
+
+            ASSERT_TRUE(srvrThread.joinable());
+            srvrThread.join();
+            // `pubPeer` is running
+
+            LOG_DEBUG("Stopping subscribing peer");
+            subPeer.stop();
+        } // `subPeer` destroyed
+
+        // Try to send to subscribing peer
+        LOG_DEBUG("Notifying subscribing peer");
+        ASSERT_FALSE(loopNotify(pubPeer));
+    } // `srvrThread` running
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        if (srvrThread.joinable())
+            srvrThread.join();
     }
 }
 
@@ -253,16 +346,30 @@ TEST_F(PeerTest, DataExchange)
 
 static void myTerminate()
 {
-    LOG_FATAL("terminate() called %s an active exception",
-            std::current_exception() ? "with" : "without");
+    if (!std::current_exception()) {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    else {
+        LOG_FATAL("terminate() called with an active exception");
+        try {
+            std::rethrow_exception(std::current_exception());
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("Exception is unknown");
+        }
+    }
     abort();
 }
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LogLevel::TRACE);
+  //hycast::log_setLevel(hycast::LogLevel::TRACE);
 
   std::set_terminate(&myTerminate);
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

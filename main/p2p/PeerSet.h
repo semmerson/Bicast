@@ -1,9 +1,8 @@
 /**
- * Thread-safe, dynamic set of active peers.
+ * This file declares a set of peers.
  *
- *        File: PeerSet.h
- *  Created on: Jun 7, 2019
- *      Author: Steven R. Emmerson
+ *  @file: PeerSet.h
+ * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
  *
@@ -20,8 +19,8 @@
  * limitations under the License.
  */
 
-#ifndef MAIN_PEER_PEERSET_H_
-#define MAIN_PEER_PEERSET_H_
+#ifndef MAIN_PROTO_PEERSET_H_
+#define MAIN_PROTO_PEERSET_H_
 
 #include "Peer.h"
 
@@ -29,129 +28,43 @@
 
 namespace hycast {
 
-/**
- * Interface for a manager of a set of active peers.
- */
-class PeerSetMgr
+class PeerSet
 {
 public:
-    /**
-     * Destroys.
-     */
-    virtual ~PeerSetMgr() noexcept =default;
+    class                 Impl;
 
-    /**
-     * Handles the stopping of a peer.
-     *
-     * @param[in] peer  Peer that stopped
-     */
-    virtual void stopped(Peer peer) =0;
-};
-
-
-/**
- * A set of active peers.
- */
-class PeerSet final
-{
-    class Impl;
-
+protected:
     std::shared_ptr<Impl> pImpl;
 
 public:
-    /**
-     * Default constructs.
-     */
-    PeerSet() =default;
+    using size_type = size_t;
+
+    PeerSet(P2pNode& node);
 
     /**
-     * Constructs.
+     * Adds a peer. If the peer is already in the set, then nothing is done;
+     * otherwise, the peer is added and starts receiving from its associated
+     * remote peer and becomes ready to notify its remote peer.
      *
-     * @param[in] peerSetMgr  Manager of this instance to be notified if and
-     *                        when a peer stops due to throwing an exception.
-     *                        Must exist for the duration of this instance.
+     * @param[in] peer     Peer to try adding
+     * @param[in] pubPath  Is the local peer a path to the publisher?
+     * @retval    `false`  Peer was already in the set. Nothing was done.
+     * @retval    `true`   Peer was not in the set. Peer was added and started.
+     * @see Peer::start()
      */
-    PeerSet(PeerSetMgr& peerSetMgr);
+    bool insert(Peer peer, const bool pubPath = false) const;
 
-    /**
-     * Adds a peer to the set of active peers.
-     *
-     * @param[in] peer        Peer to be activated
-     * @threadsafety          Safe
-     * @exceptionSafety       Strong guarantee
-     * @cancellationpoint     No
-     */
-    void activate(const Peer peer);
+    bool erase(Peer peer) const;
 
-    /**
-     * Synchronously halts all peers in the set. Doesn't return until the set is
-     * empty.
-     */
-    void halt();
+    size_type size() const;
 
-    /**
-     * Returns the number of active peers in the set.
-     *
-     * @return        Number of active peers
-     * @threadsafety  Safe
-     */
-    size_t size() const noexcept;
+    void notify(const PubPath notice) const;
 
-    /**
-     * Notifies all peers in the set, except one, that the local node has
-     * transitioned from not having a path to the source of data-products to
-     * having one.
-     *
-     * @param[in] notPeer  Peer to skip
-     */
-    void gotPath(Peer notPeer);
+    void notify(const ProdIndex notice) const;
 
-    /**
-     * Notifies all peers in the set, except one, that the local node has
-     * transitioned from having a path to the source of data-products to
-     * not having one.
-     *
-     * @param[in] notPeer  Peer to skip
-     */
-    void lostPath(Peer notPeer);
-
-    /**
-     * Notifies all the peers in the set of available product-information.
-     *
-     * @param[in] prodIndex  Identifier of product
-     */
-    void notify(ProdIndex prodIndex);
-
-    /**
-     * Notifies all the peers in the set -- except one -- of available
-     * product-information.
-     *
-     * @param[in] prodIndex  Identifier of product
-     * @param[in] notPeer    Peer not to be notified
-     */
-    void notify(
-            const ProdIndex prodIndex,
-            const Peer&     notPeer);
-
-    /**
-     * Notifies all the peers in the set of an available data-segment.
-     *
-     * @param[in] segId  Identifier of data-segment
-     */
-    void notify(const SegId& segId);
-
-    /**
-     * Notifies all the peers in the set -- except one -- of an available
-     * data-segment.
-     *
-     * @param[in] segId    Identifier of data-segment
-     * @param[in] notPeer  Peer not to be notified
-     */
-    void notify(
-            const SegId& segId,
-            const Peer&  notPeer);
+    void notify(const DataSegId& notice) const;
 };
 
 } // namespace
 
-#endif /* MAIN_PEER_PEERSET_H_ */
+#endif /* MAIN_PROTO_PEERSET_H_ */

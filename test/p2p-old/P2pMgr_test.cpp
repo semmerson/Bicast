@@ -21,14 +21,13 @@
  */
 #include "config.h"
 
-#include "P2pMgr.h"
-
 #include "error.h"
-#include "PeerFactory.h"
 #include "SockAddr.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/p2p-old/P2pMgr.h>
+#include <main/p2p-old/PeerFactory.h>
 #include <mutex>
 #include <thread>
 #include <unistd.h>

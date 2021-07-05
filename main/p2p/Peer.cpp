@@ -1,12 +1,9 @@
 /**
- * A local peer that communicates with its associated remote peer. Besides
- * sending notices to the remote peer, this class also creates and runs
- * independent threads that receive messages from the remote peer and pass them
- * to a peer manager.
+ * This file defines the Peer class. The Peer class handles low-level,
+ * bidirectional messaging with its remote counterpart.
  *
- *        File: Peer.cpp
- *  Created on: May 29, 2019
- *      Author: Steven R. Emmerson
+ *  @file:  Peer.cpp
+ * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
  *
@@ -24,859 +21,870 @@
  */
 #include "config.h"
 
-#include "ChunkIdQueue.h"
-#include "error.h"
-#include "hycast.h"
-#include "NodeType.h"
+#include "logging.h"
 #include "Peer.h"
+#include "ThreadException.h"
 
-#include <cassert>
-#include <condition_variable>
-#include <exception>
-#include <mutex>
-#include <pthread.h>
-#include <PeerProto.h>
-#include <thread>
-#include <vector>
+#include <atomic>
+#include <list>
+#include <queue>
+#include <unordered_map>
+#include <utility>
 
 namespace hycast {
 
-/**
- * Abstract base class for a peer implementation.
- */
-class Peer::Impl : public SendPeer
+class Peer::Impl
 {
-    void runPeerProto()
-    {
-        try {
-            peerProto();
-            // The remote peer closed the connection
-            halt();
-        }
-        catch (const std::exception& ex) {
-            handleException(ex);
-        }
-    }
+protected:
+    mutable Mutex      sockMutex;
+    mutable Mutex      rmtSockAddrMutex;
+    mutable Mutex      exceptMutex;
+    P2pNode&           node;
+    /*
+     * If a single socket is used for asynchronous communication and reading and
+     * writing occur on the same thread, then deadlock will occur if both
+     * receive buffers are full and each end is trying to write. To prevent
+     * this, three sockets are used and a thread that reads from one socket will
+     * write to another. The pipeline might block for a while, but it won't
+     * deadlock.
+     */
+    TcpSock            noticeSock;
+    TcpSock            requestSock;
+    TcpSock            dataSock;
+    Thread             noticeThread;
+    Thread             requestThread;
+    Thread             dataThread;
+    SockAddr           rmtSockAddr;
+    std::atomic<bool>  rmtPubPath;
+    enum class State {
+        INITED,
+        STARTING,
+        STARTED,
+        STOPPING
+    };
+    using AtomicState = std::atomic<State>;
+    AtomicState        state;
+    const bool         clientSide;
+    std::exception_ptr exPtr;
 
-    void runNotifier()
-    {
-        try {
-            for (;;) {
-                auto chunkId = noticeQueue.pop();
+    /**
+     * Orders the sockets so that the notice socket has the lowest client-side
+     * port number, then the request socket, and then the data socket.
+     *
+     * @param[in] notSock  Notice socket
+     * @param[in] reqSock  Request socket
+     * @param[in] datSock  Data socket
+     */
+    void orderSocks(TcpSock& notSock,
+                    TcpSock& reqSock,
+                    TcpSock& datSock) {
+        if (clientSide) {
+            if (reqSock.getLclPort() < notSock.getLclPort())
+                reqSock.swap(notSock);
 
-                if (isDone())
-                    break;
-
-                chunkId.notify(peerProto);
+            if (datSock.getLclPort() < reqSock.getLclPort()) {
+                datSock.swap(reqSock);
+                if (reqSock.getLclPort() < notSock.getLclPort())
+                    reqSock.swap(notSock);
             }
         }
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Caught exception \"%s\"", ex.what());
-            handleException(ex);
-        }
-        catch (...) {
-            LOG_DEBUG("Caught exception ...");
-            throw;
-        }
-    }
+        else {
+            if (reqSock.getRmtPort() < notSock.getRmtPort())
+                reqSock.swap(notSock);
 
-protected:
-    using Thread = std::thread;
-    using Mutex = std::mutex;
-    using Guard = std::lock_guard<Mutex>;
-    using Lock = std::unique_lock<Mutex>;
-    using Cond = std::condition_variable;
-    using AtomicBool = std::atomic<bool>;
-    using ExceptPtr = std::exception_ptr;
-
-    mutable Mutex  mutex;           ///< State-change mutex
-    mutable Cond   cond;            ///< State-change condition variable
-    SendPeerMgr&   peerMgr;         ///< Peer manager interface
-    ChunkIdQueue   noticeQueue;     ///< Queue for notices
-    Thread         notifierThread;  ///< Thread on which notices are sent
-    Thread         protocolThread;  ///< Thread on which peerProto() executes
-    ExceptPtr      exceptPtr;       ///< Pointer to terminating exception
-    bool           done;            ///< Terminate without an exception?
-    AtomicBool     isRunning;       ///< `operator()()` is active?
-    PeerProto      peerProto;       ///< Peer-to-peer protocol object
-    const SockAddr rmtAddr;         ///< Socket address of remote peer
-    const SockAddr lclAddr;         ///< Socket address of local peer
-
-    void handleException(const std::exception& ex)
-    {
-        Guard guard(mutex);
-
-        if (!exceptPtr) {
-            LOG_DEBUG("Setting exception");
-            exceptPtr = std::make_exception_ptr(ex);
-            cond.notify_all();
-        }
-    }
-
-    bool isDone()
-    {
-        Guard guard{mutex};
-        return done;
-    }
-
-    void ensureNotDone()
-    {
-        assert(!mutex.try_lock());
-        if (done)
-            throw LOGIC_ERROR("Peer has been halted");
-    }
-
-    void waitUntilDone()
-    {
-        Lock lock(mutex);
-
-        while (!done && !exceptPtr)
-            cond.wait(lock);
-    }
-
-    /**
-     * @throw std::runtime_error  Couldn't create thread
-     */
-    void startNotifier()
-    {
-        try {
-            notifierThread = std::thread{&Impl::runNotifier, this};
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(
-                    RUNTIME_ERROR("Couldn't create notifier thread"));
-        }
-    }
-
-    void stopNotifier() {
-        if (notifierThread.joinable()) {
-            noticeQueue.close();
-            notifierThread.join();
+            if (datSock.getRmtPort() < reqSock.getRmtPort()) {
+                datSock.swap(reqSock);
+                if (reqSock.getRmtPort() < notSock.getRmtPort())
+                    reqSock.swap(notSock);
+            }
         }
     }
 
     /**
-     * @throw std::runtime_error  Couldn't create thread
-     */
-    void startProtocol()
-    {
-        try {
-            protocolThread = std::thread{&Impl::runPeerProto, this};
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(
-                    RUNTIME_ERROR("Couldn't create protocol thread"));
-        }
-    }
-
-    void stopProtocol() {
-        if (protocolThread.joinable()) {
-            peerProto.halt();
-            protocolThread.join();
-        }
-    }
-
-    virtual void startTasks() =0;
-
-    /**
-     * Idempotent.
-     */
-    virtual void stopTasks() =0;
-
-public:
-    /**
-     * Constructs. Applicable to both a publisher and a subscriber.
+     * Connects a client-side peer to a remote peer. Blocks while connecting.
      *
-     * @param[in] peerProto    Peer protocol
-     * @param[in] peerMgr      Peer manager
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
      */
-    Impl(   PeerProto&&  peerProto,
-            SendPeerMgr& peerMgr)
-        : mutex()
-        , cond()
-        , peerMgr(peerMgr)
-        , noticeQueue{}
-        , notifierThread{}
-        , protocolThread{}
-        , exceptPtr()
-        , done{false}
-        , isRunning{false}
-        , peerProto(peerProto)
-        , rmtAddr(peerProto.getRmtAddr())
-        , lclAddr(peerProto.getLclAddr())
-    {}
+    bool connectClient() {
+        bool     success = false;
+        SockAddr srvrAddr;
 
-    /**
-     * Screams bloody murder if called before `halt()`: calls
-     * `std::terminate()`.
-     */
-    virtual ~Impl()
-    {
-        if (isRunning)
-            throw LOGIC_ERROR("Peer is still executing!");
+        {
+            Guard guard{rmtSockAddrMutex};
+            srvrAddr = rmtSockAddr;
+        }
+
+        // Connect to Peer server.
+        // Keep consonant with `PeerSrvr::accept()`
+        TcpClntSock notSock{srvrAddr};
+
+        const in_port_t noticePort = notSock.getLclPort();
+
+        if (notSock.write(noticePort)) {
+            TcpClntSock reqSock{srvrAddr};
+
+            if (reqSock.write(noticePort)) {
+                TcpClntSock datSock{srvrAddr};
+
+                if (datSock.write(noticePort)) {
+                    // Use of local RAII sockets => sockets close on error
+                    orderSocks(notSock, reqSock, datSock); // Might throw
+                    noticeSock  = notSock;
+                    requestSock = reqSock;
+                    dataSock    = datSock;
+                    success = true;
+                }
+            }
+        }
+
+        return success;
     }
 
-    /**
-     * Returns the socket address of the remote peer regardless of the state of
-     * the connection.
-     *
-     * @return            Socket address of the remote peer.
-     * @cancellationpoint No
-     */
-    SockAddr getRmtAddr() const noexcept {
-        return rmtAddr; // NB: Independent of connection state
-    }
-
-    /**
-     * Returns the local socket address regardless of the state of the
-     * connection.
-     *
-     * @return            Local socket address
-     * @cancellationpoint No
-     */
-    SockAddr getLclAddr() const noexcept {
-        return lclAddr; // NB: Independent of connection state
-    }
-
-    /**
-     * Executes this instance by starting subtasks. Doesn't return until an
-     * exception is thrown by a subtask or `halt()` is called. Upon return,
-     * all subtasks have terminated. If `halt()` is called before this method,
-     * then this instance will return immediately and won't execute.
-     *
-     * @throw std::system_error   System error
-     * @throw std::runtime_error  Couldn't create necessary thread
-     * @throw std::runtime_error  Remote peer closed the connection
-     * @throw std::logic_error    This method has already been called
-     */
-    void operator ()()
-    {
-        isRunning = true;
+    void startThreads() {
+        noticeThread = Thread(&Impl::run, this, noticeSock);
 
         try {
-            startTasks();
+            requestThread = Thread(&Impl::run, this, requestSock);
 
             try {
-                waitUntilDone();
-
-                {
-                    Guard guard{mutex};
-                    if (!done && exceptPtr)
-                        std::rethrow_exception(exceptPtr);
-                }
-
-                stopTasks(); // Idempotent
-                isRunning = false;
-                LOG_NOTE("Peer " + to_string() + " stopped");
-            } // Tasks started
-            catch (...) {
-                stopTasks(); // Idempotent
+                dataThread = Thread(&Impl::run, this, dataSock);
+            } // `requestThread` created
+            catch (const std::exception& ex) {
+                ::pthread_cancel(requestThread.native_handle());
+                requestThread.join();
                 throw;
             }
-        } // Tasks started
-        catch (const std::exception& ex) {
-            isRunning = false;
-            Guard guard{mutex};
-            if (done) {
-                LOG_NOTE("Peer " + to_string() + " stopped");
-            }
-            else {
-                std::throw_with_nested(RUNTIME_ERROR("Peer " + to_string() +
-                        " failed"));
-            }
-        }
-        catch (...) {
-            isRunning = false;
-            throw;
-        }
-    }
-
-    /**
-     * Halts execution. Does nothing if `operator()()` has not been called;
-     * otherwise, causes `operator()()` to return and disconnects from the
-     * remote peer. *Must* be called if `operator()()` is called. Idempotent.
-     *
-     * @cancellationpoint  No
-     * @asyncsignalsafety  Unsafe
-     */
-    void halt() noexcept
-    {
-        Guard guard{mutex};
-        done = true;
-        cond.notify_all();
-    }
-
-    std::string to_string() const noexcept
-    {
-        return "{rmtAddr: " + rmtAddr.to_string() + ", lclAddr: " +
-                lclAddr.to_string() + "}";
-    }
-
-    /**
-     * Indicates if this instance resulted from a call to `::connect()`.
-     *
-     * @retval `false`  No
-     * @retval `true`   Yes
-     */
-    virtual bool isFromConnect() const noexcept =0;
-
-    void notify(const ProdIndex prodIndex)
-    {
-        Guard guard{mutex};
-
-        ensureNotDone();
-        LOG_DEBUG("Enqueuing product-index " + prodIndex.to_string());
-        noticeQueue.push(prodIndex);
-    }
-
-    void notify(const SegId& segId)
-    {
-        Guard guard{mutex};
-
-        ensureNotDone();
-        LOG_DEBUG("Enqueuing segment-ID " + segId.to_string());
-        noticeQueue.push(segId);
-    }
-
-    void sendMe(const ProdIndex prodIndex)
-    {
-        LOG_DEBUG("Accepting request for information on product " +
-                prodIndex.to_string());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            auto prodInfo = peerMgr.getProdInfo(rmtAddr, prodIndex);
-        ::pthread_setcancelstate(entryState, &entryState);
-
-        if (prodInfo) {
-            //LOG_DEBUG("Sending product-information %s",
-                    //prodInfo.to_string().data());
-            peerProto.send(prodInfo);
-        }
-    }
-
-    void sendMe(const SegId& segId)
-    {
-        try {
-            LOG_DEBUG("Accepting request for data-segment %s",
-                    segId.to_string().data());
-
-            //::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-                int entryState;
-                MemSeg memSeg = peerMgr.getMemSeg(rmtAddr, segId);
-            //::pthread_setcancelstate(entryState, &entryState);
-
-            if (memSeg) {
-                //LOG_DEBUG("Sending data-segment %s", memSeg.to_string().data());
-                peerProto.send(memSeg);
-            }
         }
         catch (const std::exception& ex) {
-            LOG_DEBUG("Caught exception \"%s\"", ex.what());
+            ::pthread_cancel(noticeThread.native_handle());
+            noticeThread.join();
             throw;
-        }
-        catch (...) {
-            LOG_DEBUG("Caught exception ...");
-            throw;
-        }
-    }
-
-    virtual bool isPathToPub() const noexcept =0;
-
-    virtual void gotPath() const =0;
-
-    virtual void lostPath() const =0;
-
-    virtual void request(const ProdIndex prodIndex) =0;
-
-    virtual void request(const SegId& segId) =0;
-};
-
-Peer::Peer(const Peer& peer)
-    : pImpl(peer.pImpl) {
-}
-
-Peer::operator bool() const noexcept {
-    return static_cast<bool>(pImpl);
-}
-
-SockAddr Peer::getRmtAddr() const noexcept {
-    return pImpl->getRmtAddr();
-}
-
-SockAddr Peer::getLclAddr() const noexcept {
-    return pImpl->getLclAddr();
-}
-
-size_t Peer::hash() const noexcept {
-    return std::hash<Impl*>()(pImpl.get());
-}
-
-std::string Peer::to_string() const noexcept {
-    return pImpl->to_string();
-}
-
-Peer& Peer::operator=(const Peer& rhs) {
-    pImpl = rhs.pImpl;
-
-    return *this;
-}
-
-bool Peer::operator==(const Peer& rhs) const noexcept {
-    return pImpl.get() == rhs.pImpl.get();
-}
-
-bool Peer::operator<(const Peer& rhs) const noexcept {
-    return pImpl.get() < rhs.pImpl.get();
-}
-
-void Peer::operator ()() const {
-    pImpl->operator()();
-}
-
-void Peer::halt() const noexcept {
-    if (pImpl)
-        pImpl->halt();
-}
-
-bool Peer::isFromConnect() const noexcept {
-    return pImpl->isFromConnect();
-}
-
-bool Peer::isPathToPub() const noexcept {
-    return pImpl->isPathToPub();
-}
-
-void Peer::gotPath() const {
-    pImpl->gotPath();
-}
-
-void Peer::lostPath() const {
-    pImpl->lostPath();
-}
-
-void Peer::notify(const ProdIndex prodIndex) const {
-    pImpl->notify(prodIndex);
-}
-
-void Peer::notify(const SegId& segId) const {
-    pImpl->notify(segId);
-}
-
-void Peer::request(const ProdIndex prodId) const {
-    pImpl->request(prodId);
-}
-
-void Peer::request(const SegId& segId) const {
-    pImpl->request(segId);
-}
-
-/******************************************************************************/
-
-/**
- * A publisher-peer implementation.
- */
-class PubPeer final : public Peer::Impl
-{
-protected:
-    /**
-     * @throw std::runtime_error  Couldn't create thread
-     */
-    void startTasks() override
-    {
-        startNotifier();
-
-        try {
-            startProtocol();
-        } // Notifier started
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Caught \"%s\"", ex.what());
-            stopNotifier();
-            throw;
-        }
-        catch (...) {
-            LOG_DEBUG("Caught ...");
-            stopNotifier();
-            throw;
-        }
+        } // `noticeThread` created
     }
 
     /**
      * Idempotent.
      */
-    void stopTasks() override
-    {
-        stopProtocol();
-        stopNotifier();
+    void stopThreads() {
+        LOG_TRACE;
+        if (dataSock)
+            dataSock.shutdown(SHUT_RD);
+        if (requestSock)
+            requestSock.shutdown(SHUT_RD);
+        if (noticeSock)
+            noticeSock.shutdown(SHUT_RD);
+        LOG_TRACE;
     }
 
-public:
-    /**
-     * Constructs. Server-side construction only.
-     *
-     * @param[in] sock         TCP socket with remote peer
-     * @param[in] peerMgr      Peer manager
-     */
-    PubPeer(TcpSock&     sock,
-            SendPeerMgr& peerMgr)
-        : Peer::Impl(PeerProto(sock, *this), peerMgr)
-    {}
+    void joinThreads() {
+        LOG_TRACE;
+        if (dataThread.joinable())
+            dataThread.join();
+        LOG_TRACE;
+        if (requestThread.joinable())
+            requestThread.join();
+        LOG_TRACE;
+        if (noticeThread.joinable())
+            noticeThread.join();
+        LOG_TRACE;
+    }
 
-    /**
-     * Indicates if this instance resulted from a call to `::connect()`.
-     * Publisher-peers don't call `::connect()`.
-     *
-     * @return `false`  Always
-     */
-    bool isFromConnect() const noexcept {
+    static inline bool write(TcpSock& sock, const PduId id) {
+        LOG_TRACE;
+        return sock.write(static_cast<PduType>(id));
+    }
+
+    static inline bool read(TcpSock& sock, PduId& pduId) {
+        PduType id;
+        auto    success = sock.read(id);
+        pduId = static_cast<PduId>(id);
+        return success;
+    }
+
+    static inline bool write(TcpSock& sock, const ProdIndex index) {
+        LOG_TRACE;
+        return sock.write((ProdIndex::Type)index);
+    }
+
+    static inline bool read(TcpSock& sock, ProdIndex& index) {
+        ProdIndex::Type i;
+        if (sock.read(i)) {
+            index = ProdIndex(i);
+            return true;
+        }
         return false;
     }
 
-    bool isPathToPub() const noexcept {
-        throw LOGIC_ERROR("Invalid call");
+    static inline bool write(TcpSock& sock, const Timestamp& timestamp) {
+        LOG_TRACE;
+        return sock.write(timestamp.sec) && sock.write(timestamp.nsec);
     }
 
-    void gotPath() const {
-        throw LOGIC_ERROR("Invalid call");
+    static inline bool read(TcpSock& sock, Timestamp& timestamp) {
+        LOG_TRACE;
+        return sock.read(timestamp.sec) && sock.read(timestamp.nsec);
     }
 
-    void lostPath() const {
-        throw LOGIC_ERROR("Invalid call");
+    static inline bool write(TcpSock& sock, const DataSegId& id) {
+        return write(sock, id.prodIndex) && sock.write(id.offset);
     }
 
-    void request(const ProdIndex prodIndex) {
-        throw LOGIC_ERROR("Invalid call");
+    static inline bool write(TcpSock& sock, const ProdInfo& prodInfo) {
+        return write(sock, prodInfo.getProdIndex()) &&
+                sock.write(prodInfo.getName()) &&
+                sock.write(prodInfo.getProdSize()) &&
+                write(sock, prodInfo.getTimestamp());
     }
 
-    void request(const SegId& segId) {
-        throw LOGIC_ERROR("Invalid call");
+    static bool read(TcpSock& sock, ProdInfo& prodInfo) {
+        ProdIndex index;
+        String    name;
+        ProdSize  size;
+        Timestamp timestamp;
+
+        if (!read(sock, index) ||
+               !sock.read(name) ||
+               !sock.read(size) ||
+               !read(sock, timestamp))
+            return false;
+
+        prodInfo = ProdInfo(index, name, size, timestamp);
+        return true;
+    }
+
+    static inline bool write(TcpSock& sock, const DataSeg& dataSeg) {
+        return write(sock, dataSeg.segId()) &&
+                sock.write(dataSeg.prodSize()) &&
+                sock.write(dataSeg.data(), dataSeg.size());
+    }
+
+    static inline bool read(TcpSock& sock, DataSegId& id) {
+        return read(sock, id.prodIndex) && sock.read(id.offset);
+    }
+
+    static inline bool read(TcpSock& sock, bool& value) {
+        return sock.read(value);
+    }
+
+    static bool read(TcpSock& sock, DataSeg& dataSeg) {
+        bool success = false;
+        DataSegId id;
+        ProdSize  size;
+        if (read(sock, id) && sock.read(size)) {
+            dataSeg = DataSeg(id, size, sock);
+            success = true;;
+        }
+        return success;
+    }
+
+    /**
+     * Dispatch function for processing an incoming message from the remote
+     * peer.
+     *
+     * @param[in] id            Message type
+     * @retval    `false`       End-of-file encountered.
+     * @retval    `true`        Success
+     * @throw std::logic_error  `id` is unknown
+     */
+    bool processPdu(const PduId id) {
+        bool success = false;
+        int  cancelState;
+
+        switch (id) {
+        case PduId::PUB_PATH_NOTICE: {
+            LOG_TRACE;
+            bool notice;
+            if (read(noticeSock, notice)) {
+                node.recvNotice(PubPath(notice), rmtSockAddr);
+                rmtPubPath = notice;
+                success = true;
+            }
+            break;
+        }
+        case PduId::PROD_INFO_NOTICE: {
+            LOG_TRACE;
+            ProdIndex notice;
+            if (read(noticeSock, notice) &&
+                    node.recvNotice(notice, rmtSockAddr))
+                success = request(notice);
+            break;
+        }
+        case PduId::DATA_SEG_NOTICE: {
+            LOG_TRACE;
+            DataSegId notice;
+            if (read(noticeSock, notice) &&
+                    node.recvNotice(notice, rmtSockAddr))
+                success = request(notice);
+            break;
+        }
+        case PduId::PROD_INFO_REQUEST: {
+            LOG_TRACE;
+            ProdIndex request;
+            if (read(requestSock, request)) {
+                auto prodInfo = node.recvRequest(request, rmtSockAddr);
+                success = prodInfo && send(prodInfo);
+            }
+            break;
+        }
+        case PduId::DATA_SEG_REQUEST: {
+            LOG_TRACE;
+            DataSegId request;
+            if (read(requestSock, request)) {
+                auto dataSeg = node.recvRequest(request, rmtSockAddr);
+                success = dataSeg && send(dataSeg);
+            }
+            break;
+        }
+        case PduId::PROD_INFO: {
+            LOG_TRACE;
+            ProdInfo data;
+            if (read(dataSock, data)) {
+                node.recvData(data, rmtSockAddr);
+                success = true;
+            }
+            break;
+        }
+        case PduId::DATA_SEG: {
+            LOG_TRACE;
+            DataSeg dataSeg;
+            if (read(dataSock, dataSeg)) {
+                node.recvData(dataSeg, rmtSockAddr);
+                success = true;
+            }
+            break;
+        }
+        default:
+            throw std::logic_error("Invalid PDU type: " +
+                    std::to_string(static_cast<PduType>(id)));
+        }
+
+        return success;
+    }
+
+    void setExPtr() {
+        Guard guard{exceptMutex};
+        if (!exPtr)
+            exPtr = std::current_exception();
+    }
+
+    void throwIfExPtr() {
+        bool throwEx = false;
+        {
+            Guard guard{exceptMutex};
+            throwEx = static_cast<bool>(exPtr);
+        }
+        if (throwEx)
+            std::rethrow_exception(exPtr);
+    }
+
+    /**
+     * Reads one socket from the remote peer and processes incoming messages.
+     * Doesn't return until either EOF is encountered or an error occurs.
+     *
+     * @param[in] sock    Socket with remote peer
+     * @throw LogicError  Message type is unknown
+     */
+    void run(TcpSock sock) {
+        try {
+            for (;;) {
+                PduId id;
+                if (!read(sock, id) || !processPdu(id))
+                    break; // EOF
+            }
+        }
+        catch (const std::exception& ex) {
+            setExPtr();
+        }
+    }
+
+public:
+    /**
+     * Constructs.
+     *
+     * @param[in] node      P2P node
+     * @param[in] srvrAddr  Socket address of remote P2P server. Must be
+     *                      invalid if server-side constructed.
+     */
+    Impl(P2pNode& node, const SockAddr& srvrAddr)
+        : sockMutex()
+        , rmtSockAddrMutex()
+        , exceptMutex()
+        , node(node)
+        , noticeSock()
+        , requestSock()
+        , dataSock()
+        , noticeThread()
+        , requestThread()
+        , dataThread()
+        , rmtSockAddr(srvrAddr)
+        , rmtPubPath(false)
+        , state(State::INITED)
+        , clientSide(static_cast<bool>(srvrAddr))
+        , exPtr()
+    {}
+
+    /**
+     * Server-side construction.
+     *
+     * @param[in] node  P2P node
+     */
+    explicit Impl(P2pNode& node)
+        : Impl(node, SockAddr{})
+    {}
+
+    Impl(const Impl& impl) =delete; // Rule of three
+
+    ~Impl() noexcept {
+        LOG_TRACE;
+        try {
+            stop(); // Idempotent
+        }
+        catch (const std::exception& ex) {
+            LOG_ERROR(ex);
+        }
+    }
+
+    Impl& operator=(const Impl& rhs) noexcept =delete; // Rule of three
+
+    /**
+     * Sets the next, individual socket. Server-side only.
+     *
+     * @param[in] sock        Relevant socket
+     * @throw     LogicError  Connection is already complete
+     */
+    void set(TcpSock& sock) {
+        if (clientSide)
+            throw LOGIC_ERROR("Can't set client-side socket");
+
+        Guard guard{sockMutex};
+
+        // NB: Keep function consonant with `Impl(SockAddr)`
+
+        if (!noticeSock) {
+            noticeSock = sock;
+            Guard guard{rmtSockAddrMutex};
+            rmtSockAddr = noticeSock.getRmtAddr();
+        }
+        else if (!requestSock) {
+            requestSock = sock;
+        }
+        else if (!dataSock) {
+            dataSock = sock;
+            orderSocks(noticeSock, requestSock, dataSock);
+        }
+        else {
+            throw LOGIC_ERROR("Server-side P2P connection is complete");
+        }
+    }
+
+    /**
+     * Indicates if instance is complete (i.e., has all individual sockets).
+     *
+     * @retval `false`  Instance is not complete
+     * @retval `true`   Instance is complete
+     */
+    bool isComplete() const noexcept {
+        Guard guard{sockMutex};
+        return noticeSock && requestSock && dataSock;
+    }
+
+    /**
+     * Starts this instance. Does the following:
+     *   - If client-side constructed, blocks while connecting to the remote
+     *     peer
+     *   - Creates threads on which
+     *       - The sockets are read; and
+     *       - The P2P node is called.
+     *
+     * @retval    `false`  Peer is client-side and couldn't connect with remote
+     *                     peer
+     * @retval    `false`  `stop()` was called
+     * @retval    `true`   Success
+     * @throw LogicError   Already called
+     * @throw SystemError  Thread couldn't be created
+     * @see   `stop()`
+     */
+    bool start() {
+        LOG_TRACE;
+        bool  success;
+        State lclState{State::INITED};
+
+        if (!state.compare_exchange_strong(lclState, State::STARTING)) {
+            if (lclState == State::STARTING || lclState == State::STARTED)
+                throw LOGIC_ERROR("start() already called");
+        }
+        else {
+            success = clientSide
+                    ? connectClient()
+                    : true;
+
+            if (success) {
+                startThreads();
+                lclState = State::STARTING;
+                if (!state.compare_exchange_strong(lclState, State::STARTED)) {
+                    stopThreads();
+                    joinThreads();
+                    success = false;
+                }
+                // `stop()` is now effective
+            }
+        }
+
+        return success;
+    }
+
+    /**
+     * Returns the socket address of the remote peer.
+     *
+     * @return Socket address of remote peer
+     */
+    SockAddr getRmtAddr() const noexcept {
+        Guard guard{rmtSockAddrMutex};
+        return rmtSockAddr;
+    }
+
+    /**
+     * Stops this instance from serving its remote counterpart. Causes the
+     * threads serving the remote peer to terminate. If called before `start()`,
+     * then the remote peer will not be served.
+     *
+     * Idempotent.
+     *
+     * @see   `start()`
+     */
+    void stop() {
+        LOG_TRACE;
+        State expected = State::INITED;
+
+        if (!state.compare_exchange_strong(expected, State::STOPPING)) {
+            expected = State::STARTING;
+
+            if (!state.compare_exchange_strong(expected, State::STOPPING)) {
+                expected = State::STARTED;
+
+                if (state.compare_exchange_strong(expected, State::STOPPING)) {
+                    stopThreads();
+                    joinThreads();
+                }
+            }
+        }
+    }
+
+    String to_string(const bool withName) const {
+        Guard guard{rmtSockAddrMutex};
+        return rmtSockAddr.to_string(withName);
+    }
+
+    /**
+     * Notifies the remote peer.
+     *
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
+     */
+    bool notify(const PubPath notice) {
+        throwIfExPtr();
+        return write(noticeSock, PduId::PUB_PATH_NOTICE) &&
+                noticeSock.write(notice.operator bool());
+    }
+    bool notify(const ProdIndex notice) {
+        LOG_TRACE;
+        throwIfExPtr();
+        return write(noticeSock, PduId::PROD_INFO_NOTICE) &&
+            write(noticeSock, notice);
+    }
+    bool notify(const DataSegId& notice) {
+        LOG_TRACE;
+        throwIfExPtr();
+        return write(noticeSock, PduId::DATA_SEG_NOTICE) &&
+            write(noticeSock, notice);
+    }
+
+    /**
+     * Requests data from the remote peer.
+     *
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
+     */
+    bool request(const ProdIndex request) {
+        throwIfExPtr();
+        return write(requestSock, PduId::PROD_INFO_REQUEST) &&
+                write(requestSock, request);
+    }
+    bool request(const DataSegId& request) {
+        throwIfExPtr();
+        return write(requestSock, PduId::DATA_SEG_REQUEST) &&
+            write(requestSock, request);
+    }
+
+    /**
+     * Sends data to the remote peer.
+     *
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
+     */
+    bool send(const ProdInfo& data) {
+        throwIfExPtr();
+        return write(dataSock, PduId::PROD_INFO) &&
+                write(dataSock, data);
+    }
+    bool send(const DataSeg& data) {
+        throwIfExPtr();
+        write(dataSock, PduId::DATA_SEG) &&
+                write(dataSock, data);
+    }
+
+    bool rmtIsPubPath() const noexcept {
+        return rmtPubPath;
     }
 };
 
-Peer::Peer() =default;
+/******************************************************************************/
 
-Peer::Peer(
-        TcpSock&     sock,
-        SendPeerMgr& peerMgr)
-    : pImpl(new PubPeer(sock, peerMgr)) {
+Peer::Peer(SharedPtr& pImpl)
+    : pImpl(pImpl)
+{}
+
+Peer::Peer(P2pNode& node)
+    /*
+     * Passing `this` or `*this` to the `Impl` ctor doesn't make changes to
+     * `pImpl` visible: `pImpl` isn't visible while `Impl` is being constructed.
+     */
+    : pImpl(std::make_shared<Impl>(node))
+{
+    LOG_TRACE;
+}
+
+Peer::Peer(P2pNode& node, const SockAddr& srvrAddr)
+    : pImpl(std::make_shared<Impl>(node, srvrAddr))
+{
+    LOG_TRACE;
+}
+
+Peer& Peer::set(TcpSock& sock) {
+    pImpl->set(sock);
+    return *this;
+}
+
+bool Peer::isComplete() const noexcept {
+    return pImpl->isComplete();
+}
+
+bool Peer::start() {
+    return pImpl->start();
+}
+
+SockAddr Peer::getRmtAddr() noexcept {
+    return pImpl->getRmtAddr();
+}
+
+void Peer::stop() {
+    pImpl->stop();
+}
+
+Peer::operator bool() const {
+    return static_cast<bool>(pImpl);
+}
+
+size_t Peer::hash() const noexcept {
+    /*
+     * The underlying pointer is used instead of `pImpl->hash()` because
+     * hashing a client-side socket in the implementation won't work until
+     * `connect()` returns -- which could be a while -- and `PeerSet`, at least,
+     * requires a hash before it calls `Peer::start()`.
+     *
+     * This means, however, that it's possible to have multiple client-side
+     * peers connected to the same remote host within the same process.
+     */
+    return std::hash<Impl*>()(pImpl.get());
+}
+
+bool Peer::operator<(const Peer rhs) const noexcept {
+    // Must be consistent with `hash()`
+    return pImpl.get() < rhs.pImpl.get();
+}
+
+bool Peer::operator==(const Peer& rhs) const noexcept {
+    return !(*this < rhs) && !(rhs < *this);
+}
+
+String Peer::to_string(const bool withName) const {
+    return pImpl->to_string(withName);
+}
+
+bool Peer::notify(const PubPath notice) const {
+    return pImpl->notify(notice);
+}
+
+bool Peer::notify(const ProdIndex notice) const {
+    return pImpl->notify(notice);
+}
+
+bool Peer::notify(const DataSegId& notice) const {
+    return pImpl->notify(notice);
+}
+
+bool Peer::request(const ProdIndex request) const {
+    return pImpl->request(request);
+}
+
+bool Peer::request(const DataSegId& request) const {
+    return pImpl->request(request);
+}
+
+bool Peer::send(const ProdInfo& data) const {
+    return pImpl->send(data);
+}
+
+bool Peer::send(const DataSeg& data) const {
+    return pImpl->send(data);
+}
+
+bool Peer::rmtIsPubPath() const noexcept {
+    pImpl->rmtIsPubPath();
 }
 
 /******************************************************************************/
 
 /**
- * A subscriber-peer implementation.
+ * Peer server implementation.
  */
-class SubPeer final : public Peer::Impl, public RecvPeer
+class PeerSrvr::Impl
 {
-private:
-    const bool      fromConnect;     ///< Instance is result of `::connect()`?
-    ChunkIdQueue    requestQueue;    ///< Queue for requests
-    std::thread     requesterThread; ///< Thread on which requests are made
-    AtomicBool      rmtHasPathToPub; ///< Remote node has path to publisher?
-    XcvrPeerMgr&    recvPeerMgr;     ///< Manager of subscriber peer
-
-    void runRequester(void)
+    class PeerFactory
     {
-        try {
-            for (;;) {
-                auto chunkId = requestQueue.pop();
+        struct Hash {
+            size_t operator()(const SockAddr& sockAddr) const {
+                return sockAddr.hash();
+            };
+        };
 
-                if (isDone())
-                    break;
+        struct areEqual {
+            bool operator()(const SockAddr& lhs, const SockAddr& rhs) const {
+                return lhs == rhs;
+            };
+        };
 
-                chunkId.request(peerProto);
-            }
+        using Map = std::unordered_map<SockAddr, Peer, Hash, areEqual>;
+
+        P2pNode& node;
+        Map      peers;
+
+    public:
+        PeerFactory(P2pNode& node)
+            : node(node)
+            , peers()
+        {}
+
+        /**
+         * Adds an individual socket to a peer. If the addition completes the
+         * peer, then it is removed from this instance.
+         *
+         * @param[in] sock  Individual socket
+         * @return          Corresponding peer. `Peer::isComplete()` is true,
+         *                  then the peer has been removed from this instance.
+         */
+        Peer add(TcpSock& sock, in_port_t noticePort) {
+            // TODO: Limit number of outstanding connections
+            // TODO: Purge old entries
+            auto key = sock.getRmtAddr().clone(noticePort);
+            auto peer = peers[key];
+
+            if (!peer)
+                peers[key] = peer = Peer{node}; // Entry was default constructed
+
+            if (peer.set(sock).isComplete())
+                peers.erase(key);
+
+            return peer;
         }
-        catch (const std::exception& ex) {
-            handleException(ex);
-        }
-    }
+    };
+
+    using PeerQ = std::queue<Peer, std::list<Peer>>;
+
+    mutable Mutex     mutex;
+    mutable Cond      cond;
+    PeerFactory       peerFactory;
+    const SockAddr    srvrAddr;
+    const TcpSrvrSock srvrSock;
+    PeerQ             acceptQ;
+    PeerQ::size_type  maxAccept;
 
     /**
-     * @throw std::runtime_error  Couldn't create thread
+     * Executes on separate thread.
+     *
+     * @param[in] sock  Newly-accepted socket
      */
-    void startRequester() {
-        try {
-            requesterThread = std::thread{&SubPeer::runRequester, this};
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(
-                    RUNTIME_ERROR("Couldn't create requester thread"));
-        }
-    }
+    void acceptSock(TcpSock sock) {
+        in_port_t noticePort;
 
-    void stopRequester() {
-        if (requesterThread.joinable()) {
-            requestQueue.close();
-            requesterThread.join();
-        }
-    }
+        if (sock.read(noticePort)) { // Might take a while
+            // The rest is fast
+            Guard guard{mutex};
 
-    /**
-     * @throw std::runtime_error  Couldn't create necessary thread
-     */
-    void startTasks()
-    {
-        startNotifier();
+            if (acceptQ.size() < maxAccept) {
+                auto peer = peerFactory.add(sock, noticePort);
 
-        try {
-            startRequester();
+                if (peer.isComplete())
+                    acceptQ.push(peer);
 
-            try {
-                startProtocol();
-            } // Requester started
-            catch (const std::exception& ex) {
-                LOG_DEBUG("Caught \"%s\"", ex.what());
-                stopRequester();
-                throw;
+                cond.notify_one();
             }
-            catch (...) {
-                LOG_DEBUG("Caught ...");
-                stopRequester();
-                throw;
-            }
-        } // Notifier started
-        catch (const std::exception& ex) {
-            LOG_DEBUG("Caught \"%s\"", ex.what());
-            stopNotifier();
-            throw;
         }
-        catch (...) {
-            LOG_DEBUG("Caught ...");
-            stopNotifier();
-            throw;
-        }
-    }
-
-    /**
-     * Idempotent.
-     */
-    void stopTasks()
-    {
-        stopProtocol();
-        stopRequester();
-        stopNotifier();
     }
 
 public:
     /**
-     * Server-side construction (i.e., from an `::accept()`).
+     * Constructs from the local address of the server.
      *
-     * @param[in] sock         TCP socket with remote peer
-     * @param[in] lclNodeType  Type of local node
-     * @param[in] peerMgr      This instance's manager
+     * @param[in] node       P2P node
+     * @param[in] srvrAddr   Local Address of P2P server
+     * @param[in] maxAccept  Maximum number of outstanding P2P connections
      */
-    SubPeer(TcpSock&        sock,
-            const NodeType& lclNodeType,
-            XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(sock, lclNodeType, *this), peerMgr)
-        , fromConnect{false}
-        , requestQueue{}
-        , requesterThread{}
-        , rmtHasPathToPub{peerProto.getRmtNodeType()}
-        , recvPeerMgr(peerMgr)
+    Impl(   P2pNode&        node,
+            const SockAddr& srvrAddr,
+            const unsigned  maxAccept)
+        : mutex()
+        , cond()
+        , peerFactory(node)
+        , srvrAddr(srvrAddr)
+        , srvrSock(srvrAddr, 3*maxAccept)
+        , acceptQ()
+        , maxAccept(maxAccept)
     {}
 
     /**
-     * Client-side construction (i.e., uses `::connect()`).
+     * Returns the next, accepted, peer-to-peer connection.
      *
-     * @param[in] rmtSrvrAddr  Address of remote peer-server
-     * @param[in] lclNodeType  Type of local node
-     * @param[in] peerMgr      This instance's manager
-     * @throws    LogicError   `lclNodeType == NodeType::PUBLISHER`
+     * @return Next P2P connection
      */
-    SubPeer(const SockAddr& rmtSrvrAddr,
-            const NodeType  lclNodeType,
-            XcvrPeerMgr&    peerMgr)
-        : Peer::Impl(PeerProto(rmtSrvrAddr, lclNodeType, *this), peerMgr)
-        , fromConnect{true}
-        , requestQueue{}
-        , requesterThread{}
-        , rmtHasPathToPub{peerProto.getRmtNodeType()}
-        , recvPeerMgr(peerMgr)
-    {}
+    Peer accept() {
+        Lock lock{mutex};
 
-    SendPeer& asSendPeer() noexcept
-    {
-        return *this;
-    }
-
-    /**
-     * Indicates if this instance resulted from a call to `::connect()`.
-     *
-     * @retval `false`  No
-     * @retval `true`   Yes
-     */
-    bool isFromConnect() const noexcept {
-        return fromConnect;
-    }
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to being
-     * a path to the source of data-products.
-     */
-    void gotPath() const
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER)
-            peerProto.gotPath();
-    }
-
-    /**
-     * Notifies the remote peer that this local node just transitioned to not
-     * being a path to the source of data-products.
-     */
-    void lostPath() const
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER)
-            peerProto.lostPath();
-    }
-
-    void notify(ProdIndex prodIndex)
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
-            Guard guard{mutex};
-
-            ensureNotDone();
-            noticeQueue.push(prodIndex);
+        while (acceptQ.empty()) {
+            // TODO: Limit number of threads
+            // TODO: Lower priority of thread to favor data transmission
+            auto sock = srvrSock.accept();
+            if (sock)
+                Thread(&Impl::acceptSock, this, sock).detach();
+            cond.wait(lock);
         }
-    }
 
-    void notify(const SegId& segId)
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
-            Guard guard{mutex};
+        auto peer = acceptQ.front();
+        acceptQ.pop();
 
-            ensureNotDone();
-            noticeQueue.push(segId);
-        }
-    }
-
-    void request(const ProdIndex prodIndex)
-    {
-        Guard guard{mutex};
-
-        ensureNotDone();
-        requestQueue.push(prodIndex);
-    }
-
-    void request(const SegId& segId)
-    {
-        Guard guard{mutex};
-
-        ensureNotDone();
-        requestQueue.push(segId);
-    }
-
-    /**
-     * Handles the remote node transitioning from not having a path to the
-     * source of data-products to having one. Won't be called if he remote
-     * node is the publisher.
-     *
-     * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
-     * called.
-     */
-    void pathToPub()
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
-            rmtHasPathToPub = true;
-            recvPeerMgr.pathToPub(rmtAddr);
-        }
-    }
-
-    /**
-     * Handles the remote node transitioning from having a path to the source of
-     * data-products to not having one.
-     *
-     * Possibly called by `peerProto` *after* `PeerProto::operator()()` is
-     * called.
-     */
-    void noPathToPub()
-    {
-        if (peerProto.getRmtNodeType() != NodeType::PUBLISHER) {
-            rmtHasPathToPub = false;
-            recvPeerMgr.noPathToPub(rmtAddr);
-        }
-    }
-
-    bool isPathToPub() const noexcept
-    {
-        return rmtHasPathToPub;
-    }
-
-    void available(ProdIndex prodIndex)
-    {
-        LOG_DEBUG("Accepting notice of information on product " +
-                prodIndex.to_string());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool yes = recvPeerMgr.shouldRequest(rmtAddr, prodIndex);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-        if (yes) {
-            LOG_DEBUG("Sending request for information on product " +
-                    prodIndex.to_string());
-            peerProto.request(prodIndex);
-        }
-    }
-
-    void available(const SegId& segId)
-    {
-        LOG_DEBUG("Accepting notice of data-segment %s",
-                segId.to_string().data());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            const bool yes = recvPeerMgr.shouldRequest(rmtAddr, segId);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-
-        if (yes) {
-            LOG_DEBUG("Sending request for data-segment %s",
-                    segId.to_string().data());
-            peerProto.request(segId);
-        }
-    }
-
-    void hereIs(const ProdInfo& prodInfo)
-    {
-        LOG_DEBUG("Accepting information on product %s",
-                prodInfo.getProdIndex().to_string().data());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)recvPeerMgr.hereIs(rmtAddr, prodInfo);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
-    }
-
-    void hereIs(TcpSeg& seg)
-    {
-        LOG_DEBUG("Accepting data-segment %s",
-                seg.getSegId().to_string().data());
-
-        int entryState;
-
-        ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &entryState);
-            (void)recvPeerMgr.hereIs(rmtAddr, seg);
-        ::pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &entryState);
+        return peer;
     }
 };
 
-Peer::Peer(
-        TcpSock&     sock,
-        NodeType     lclNodeType,
-        XcvrPeerMgr& peerMgr)
-    : pImpl(new SubPeer(sock, lclNodeType, peerMgr))
+PeerSrvr::PeerSrvr(P2pNode&        node,
+                   const SockAddr& srvrAddr,
+                   const unsigned  maxAccept)
+    : pImpl(std::make_shared<Impl>(node, srvrAddr, maxAccept))
 {}
 
-Peer::Peer(
-        const SockAddr& rmtSrvrAddr,
-        const NodeType  lclNodeType,
-        XcvrPeerMgr&    peerMgr)
-    : pImpl(new SubPeer(rmtSrvrAddr, lclNodeType, peerMgr))
-{}
+Peer PeerSrvr::accept() {
+    return pImpl->accept();
+}
 
 } // namespace

@@ -1,7 +1,8 @@
 add_library(hycast
         $<TARGET_OBJECTS:misc>
         $<TARGET_OBJECTS:inet>
-        $<TARGET_OBJECTS:proto>
+        $<TARGET_OBJECTS:p2p>
+        $<TARGET_OBJECTS:main>
 )
 #       $<TARGET_OBJECTS:protocol>
 #       $<TARGET_OBJECTS:p2p>

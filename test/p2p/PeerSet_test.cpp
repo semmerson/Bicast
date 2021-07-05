@@ -1,31 +1,9 @@
-/**
- * This file tests class `PeerSet`.
- *
- *       File: PeetSet.cpp
- * Created On: June 11, 2019
- *     Author: Steven R. Emmerson
- *
- *    Copyright 2021 University Corporation for Atmospheric Research
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 #include "config.h"
 
-#include "PeerFactory.h"
+#include "P2pNode.h"
 #include "PeerSet.h"
-#include "SockAddr.h"
+#include "logging.h"
 
-#include <atomic>
 #include <condition_variable>
 #include <gtest/gtest.h>
 #include <mutex>
@@ -33,76 +11,69 @@
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `PeerSet`
-class PeerSetTest
-        : public ::testing::Test
-        , public hycast::PeerSetMgr
-        , public hycast::XcvrPeerMgr
+class PeerSetTest : public ::testing::Test, public hycast::P2pNode
 {
 protected:
-    friend class Subscriber;
-
     typedef enum {
-        INIT = 0,
-        PUB_PEER_ACTIVE = 0x1,
-        PROD_NOTICE_RCVD = 0x2,
-        SEG_NOTICE_RCVD = 0x4,
-        PROD_REQUEST_RCVD = 0x8,
-        SEG_REQUEST_RCVD = 0x10,
-        PROD_INFO_RCVD = 0x20,
-        SEG_RCVD = 0x40,
-        CLNT_PEER_STOPPED = 0x80,
-        SRVR_PEER_STOPPED = 0x100,
-        EXCHANGE_COMPLETE = PUB_PEER_ACTIVE |
-               PROD_NOTICE_RCVD |
-               SEG_NOTICE_RCVD |
+        INIT              =    0,
+        LISTENING         =  0x1,
+        PROD_NOTICE_RCVD  =  0x2,
+        SEG_NOTICE_RCVD   =  0x4,
+        PROD_REQUEST_RCVD = 0x08,
+        SEG_REQUEST_RCVD  = 0x10,
+        PROD_INFO_RCVD    = 0x20,
+        SEG_RCVD          = 0x40,
+        DONE = LISTENING         |
+               PROD_NOTICE_RCVD  |
+               SEG_NOTICE_RCVD   |
                PROD_REQUEST_RCVD |
-               SEG_REQUEST_RCVD |
-               PROD_INFO_RCVD |
-               SEG_RCVD,
-        DONE = EXCHANGE_COMPLETE |
-               CLNT_PEER_STOPPED |
-               SRVR_PEER_STOPPED
+               SEG_REQUEST_RCVD  |
+               PROD_INFO_RCVD    |
+               SEG_RCVD
     } State;
     State                   state;
     hycast::SockAddr        pubAddr;
-    hycast::SockAddr        subAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::ProdIndex       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
-    hycast::SegId           segId;
-    hycast::SegInfo         segInfo;
-    char                    memData[1000];
-    hycast::MemSeg          memSeg;
-    hycast::PubPeerFactory  pubFactory;
-    hycast::SubPeerFactory  subFactory;
-    hycast::Peer            pubPeer;
-    hycast::Peer            subPeer;
+    hycast::DataSegId       segId;
+    char                    memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    hycast::DataSeg         dataSeg;
+    int                     pubPathNoticeCount;
+    int                     prodInfoNoticeCount;
+    int                     dataSegNoticeCount;
+    int                     prodInfoRequestCount;
+    int                     dataSegRequestCount;
+    int                     prodInfoCount;
+    int                     dataSegCount;
 
-    // You can remove any or all of the following functions if its body
-    // is empty.
+    static const int        NUM_SUBSCRIBERS = 4;
 
     PeerSetTest()
         : state{INIT}
-        , pubAddr{"localhost:3880"}
-        , subAddr{"localhost:3881"}
+        , pubAddr{"localhost:38800"}
         , mutex{}
         , cond{}
         , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, prodSize, "product"}
-        , segId(prodIndex, segSize)
-        , segInfo(segId, prodSize, segSize)
+        , prodInfo{prodIndex, "product", prodSize}
+        , segId(prodIndex, sizeof(memData)) // Second data-segment
         , memData{}
-        , memSeg{segInfo, memData}
-        , pubFactory(pubAddr, 1, *this)
-        , subFactory(subAddr, 1, *this)
-        , pubPeer()
-        , subPeer()
+        , dataSeg{segId, prodSize, memData}
+        , pubPathNoticeCount(0)
+        , prodInfoNoticeCount(0)
+        , dataSegNoticeCount(0)
+        , prodInfoRequestCount(0)
+        , dataSegRequestCount(0)
+        , prodInfoCount(0)
+        , dataSegCount(0)
     {
         ::memset(memData, 0xbd, segSize);
     }
@@ -110,159 +81,210 @@ protected:
 public:
     void orState(const State state)
     {
-        std::lock_guard<decltype(mutex)> guard{mutex};
         this->state = static_cast<State>(this->state | state);
         cond.notify_all();
     }
 
-    void waitForState(const State state)
+    void waitForState(const State nextState)
     {
         std::unique_lock<decltype(mutex)> lock{mutex};
-        while (this->state != state)
+        while (state != nextState)
             cond.wait(lock);
     }
 
-    void pathToPub(const hycast::SockAddr& rmtAddr)
-    {}
-
-    void noPathToPub(const hycast::SockAddr& rmtAddr)
-    {}
-
-    // Subscriber-side
-    bool shouldRequest(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::ProdIndex actual)
-    {
-        EXPECT_TRUE(prodIndex == actual);
-        orState(PROD_NOTICE_RCVD);
-
-        return true;
-    }
-
-    // Subscriber-side
-    bool shouldRequest(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::SegId&    actual)
-    {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_NOTICE_RCVD);
-
+    // Publisher-side
+    bool isPublisher() const override {
+        LOG_TRACE;
         return true;
     }
 
     // Publisher-side
-    hycast::ProdInfo getProdInfo(
-            const hycast::SockAddr& remote,
-            const hycast::ProdIndex actual)
+    bool isPathToPub() const override {
+        LOG_TRACE;
+        return true;
+    }
+
+    // Both sides
+    void recvNotice(const hycast::PubPath notice, const SockAddr rmtAddr)
+            override
     {
-        EXPECT_TRUE(prodIndex == actual);
-        orState(PROD_REQUEST_RCVD);
+        LOG_TRACE;
+        std::lock_guard<std::mutex> guard{mutex};
+        ++pubPathNoticeCount;
+    }
+
+    // Subscriber-side
+    bool recvNotice(const hycast::ProdIndex notice, const SockAddr rmtAddr)
+            override
+    {
+        LOG_TRACE;
+        EXPECT_EQ(notice, prodIndex);
+        {
+            std::lock_guard<std::mutex> guard{mutex};
+            if (++prodInfoNoticeCount == NUM_SUBSCRIBERS)
+                orState(PROD_NOTICE_RCVD);
+        }
+        return true;
+    }
+
+    // Subscriber-side
+    bool recvNotice(const hycast::DataSegId notice, const SockAddr rmtAddr)
+            override
+    {
+        LOG_TRACE;
+        EXPECT_EQ(segId, notice);
+        {
+            std::lock_guard<std::mutex> guard{mutex};
+            if (++dataSegNoticeCount == NUM_SUBSCRIBERS)
+                orState(SEG_NOTICE_RCVD);
+        }
+        return true;
+    }
+
+    // Publisher-side
+    ProdInfo recvRequest(const hycast::ProdIndex request, const SockAddr rmtAddr)
+            override
+    {
+        LOG_TRACE;
+        EXPECT_TRUE(prodIndex == request);
+        {
+            std::lock_guard<std::mutex> guard{mutex};
+            if (++prodInfoRequestCount == NUM_SUBSCRIBERS)
+                orState(PROD_REQUEST_RCVD);
+        }
         return prodInfo;
     }
 
     // Publisher-side
-    hycast::MemSeg getMemSeg(
-            const hycast::SockAddr& remote,
-            const hycast::SegId&    actual)
+    DataSeg recvRequest(const hycast::DataSegId request, const SockAddr rmtAddr)
+            override
     {
-        EXPECT_EQ(segId, actual);
-        orState(SEG_REQUEST_RCVD);
-        return memSeg;
+        LOG_TRACE;
+        EXPECT_EQ(segId, request);
+        {
+            std::lock_guard<std::mutex> guard{mutex};
+            if (++dataSegRequestCount == NUM_SUBSCRIBERS)
+                orState(SEG_REQUEST_RCVD);
+        }
+        return dataSeg;
     }
 
     // Subscriber-side
-    bool hereIs(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::ProdInfo& actual)
+    void recvData(const hycast::ProdInfo data, const SockAddr rmtAddr) override
     {
-        EXPECT_EQ(prodInfo, actual);
-        orState(PROD_INFO_RCVD);
-
-        return true;
+        LOG_TRACE;
+        EXPECT_EQ(prodInfo, data);
+        std::lock_guard<std::mutex> guard{mutex};
+        if (++prodInfoCount == NUM_SUBSCRIBERS)
+            orState(PROD_INFO_RCVD);
     }
 
     // Subscriber-side
-    bool hereIs(
-            const hycast::SockAddr& rmtAddr,
-            hycast::TcpSeg&         actual)
+    void recvData(const hycast::DataSeg actualDataSeg, const SockAddr rmtAddr)
+            override
     {
-        const hycast::SegSize size = actual.getSegInfo().getSegSize();
-        EXPECT_EQ(segSize, size);
-
-        char buf[size];
-        actual.getData(buf);
-
-        EXPECT_EQ(0, ::memcmp(memSeg.data(), buf, segSize));
-
-        orState(SEG_RCVD);
-
-        return true;
+        LOG_TRACE;
+        ASSERT_EQ(segSize, actualDataSeg.size());
+        EXPECT_EQ(0, ::memcmp(dataSeg.data(), actualDataSeg.data(), segSize));
+        std::lock_guard<std::mutex> guard{mutex};
+        if (++dataSegCount == NUM_SUBSCRIBERS)
+            orState(SEG_RCVD);
     }
 
-    void stopped(hycast::Peer peer)
-    {
-        EXPECT_TRUE(peer == pubPeer || peer == subPeer);
-
-        if (peer == pubPeer) {
-            orState(SRVR_PEER_STOPPED);
-        }
-        else if (peer == subPeer) {
-            orState(CLNT_PEER_STOPPED);
-        }
+    void offline(hycast::Peer peer) {
+        LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
+    void reassigned(const hycast::ProdIndex  notice,
+                    const SockAddr           rmtAddr) {}
+    void reassigned(const hycast::DataSegId& notice,
+                    const SockAddr           rmtAddr) {}
 
-    void runPub(hycast::PeerSet& peerSet)
+    void startPublisher(hycast::PeerSet& pubPeerSet)
     {
-        // Calls listen()
-        pubPeer = pubFactory.accept();
-        EXPECT_EQ(0, peerSet.size());
-        peerSet.activate(pubPeer); // Executes peer on new thread
-        EXPECT_EQ(1, peerSet.size());
-        orState(PUB_PEER_ACTIVE);
+        hycast::PeerSrvr peerSrvr{*this, pubAddr};
+        orState(LISTENING);
+
+        for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
+            auto             pubPeer = peerSrvr.accept();
+
+            auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
+            hycast::InetAddr localhost("127.0.0.1");
+            EXPECT_EQ(localhost, rmtAddr);
+
+            // Starts receiving and becomes ready to notify
+            pubPeerSet.insert(pubPeer, true);
+            ASSERT_EQ(i+1, pubPeerSet.size());
+        }
     }
 };
 
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction)
 {
-    hycast::PeerSet{};
+    hycast::PeerSet peerSet{*this};
 }
 
-// Tests complete exchange (notice, request, delivery)
-TEST_F(PeerSetTest, Exchange)
+// Tests data exchange
+TEST_F(PeerSetTest, DataExchange)
 {
-    // Start publisher
-    hycast::PeerSet pubPeerSet{*this};
-    std::thread     pubThread(&PeerSetTest::runPub, this, std::ref(pubPeerSet));
+    try {
+        // Create and execute publisher
+        hycast::PeerSet pubPeerSet{*this};
+        std::thread     srvrThread{&PeerSetTest::startPublisher, this,
+                std::ref(pubPeerSet)};
 
-    // Start subscriber
-    hycast::PeerSet subPeerSet{*this};
-    subPeer = subFactory.connect(pubAddr,
-            hycast::NodeType::NO_PATH_TO_PUBLISHER);
-    EXPECT_EQ(0, subPeerSet.size());
-    subPeerSet.activate(subPeer); // Executes `subPeer` on new thread
-    EXPECT_EQ(1, subPeerSet.size());
+        waitForState(LISTENING);
 
-    // Start an exchange
-    waitForState(PUB_PEER_ACTIVE);
-    pubPeerSet.notify(prodIndex);
-    pubPeerSet.notify(segId);
+        // Create and execute reception by subscribing peers on separate threads
+        hycast::PeerSet subPeerSet{*this};
+        for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
+            hycast::Peer subPeer{*this, pubAddr};
+            ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
+            ASSERT_EQ(i+1, subPeerSet.size());
+        }
 
-    // Wait for the exchange to complete
-    waitForState(EXCHANGE_COMPLETE);
+        ASSERT_TRUE(srvrThread.joinable());
+        srvrThread.join();
 
-    // Terminate subscribing peer. Causes publishing-peer to terminate.
-    subPeer.halt();
+        // Start an exchange
+        pubPeerSet.notify(prodIndex);
+        pubPeerSet.notify(segId);
 
-    // Wait for the peers to be removed from their peer-sets
-    waitForState(DONE);
-
-    pubThread.join();
+        // Wait for the exchange to complete
+        waitForState(DONE);
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+    }
 }
 
 }  // namespace
 
+static void myTerminate()
+{
+    if (std::current_exception()) {
+        LOG_FATAL("terminate() called with an active exception");
+        try {
+            std::rethrow_exception(std::current_exception());
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("Exception is unknown");
+        }
+    }
+    else {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    abort();
+}
+
 int main(int argc, char **argv) {
+  hycast::log_setName(::basename(argv[0]));
+  //hycast::log_setLevel(hycast::LogLevel::TRACE);
+
+  std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

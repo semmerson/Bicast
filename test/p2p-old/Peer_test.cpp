@@ -1,53 +1,29 @@
-/**
- * This file tests class `PeerFactory`.
- *
- *       File: PeetFactory_test.cpp
- * Created On: June 6, 2019
- *     Author: Steven R. Emmerson
- *
- *    Copyright 2021 University Corporation for Atmospheric Research
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 #include "config.h"
 
 #include "error.h"
-#include "PeerFactory.h"
-#include "SockAddr.h"
-
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <main/p2p-old/Peer.h>
 #include <mutex>
 #include <thread>
 
 namespace {
 
-/// The fixture for testing class `PeerFactory`
-class PeerFactoryTest : public ::testing::Test, public hycast::XcvrPeerMgr
+/// The fixture for testing class `Peer`
+class PeerTest : public ::testing::Test, public hycast::XcvrPeerMgr
 {
 protected:
-    friend class Receiver;
-
     typedef enum {
         INIT = 0,
-        PUB_PEER_CREATED = 0x1,
-        PROD_NOTICE_RCVD = 0x2,
-        SEG_NOTICE_RCVD = 0x4,
-        PROD_REQUEST_RCVD = 0x8,
-        SEG_REQUEST_RCVD = 0x10,
-        PROD_INFO_RCVD = 0x20,
-        SEG_RCVD = 0x40,
-        DONE = PUB_PEER_CREATED |
+        LISTENING = 0x1,
+        CONNECTED = 0x2,
+        PROD_NOTICE_RCVD = 0x4,
+        SEG_NOTICE_RCVD = 0x8,
+        PROD_REQUEST_RCVD = 0x10,
+        SEG_REQUEST_RCVD = 0x20,
+        PROD_INFO_RCVD = 0x40,
+        SEG_RCVD = 0x80,
+        DONE = CONNECTED |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |
@@ -57,7 +33,6 @@ protected:
     } State;
     State                   state;
     hycast::SockAddr        pubAddr;
-    hycast::SockAddr        subAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     hycast::ProdIndex       prodIndex;
@@ -70,13 +45,9 @@ protected:
     hycast::MemSeg          memSeg;
     hycast::Peer            pubPeer;
 
-    // You can remove any or all of the following functions if its body
-    // is empty.
-
-    PeerFactoryTest()
+    PeerTest()
         : state{INIT}
-        , pubAddr{"localhost:3880"}
-        , subAddr{"localhost:3881"}
+        , pubAddr{"localhost:38800"}
         , mutex{}
         , cond{}
         , prodIndex{1}
@@ -87,12 +58,17 @@ protected:
         , segInfo(segId, prodSize, segSize)
         , memData{}
         , memSeg{segInfo, memData}
-        , pubPeer()
     {
         ::memset(memData, 0xbd, segSize);
     }
 
 public:
+    void setState(const State state) {
+        std::lock_guard<decltype(mutex)> lock{mutex};
+        this->state = state;
+        cond.notify_one();
+    }
+
     void orState(const State state)
     {
         std::lock_guard<decltype(mutex)> guard{mutex};
@@ -100,10 +76,10 @@ public:
         cond.notify_all();
     }
 
-    void waitForState(const State state)
+    void waitForState(const State nextState)
     {
         std::unique_lock<decltype(mutex)> lock{mutex};
-        while (this->state != state)
+        while (state != nextState)
             cond.wait(lock);
     }
 
@@ -184,76 +160,108 @@ public:
         return true;
     }
 
-    void runPub(hycast::PubPeerFactory& factory)
+    void runPublisher()
     {
         try {
-            pubPeer = factory.accept();
-            if (pubPeer) {
-                orState(PUB_PEER_CREATED);
-                pubPeer();
-            }
+            hycast::TcpSrvrSock srvrSock(pubAddr);
+
+            setState(LISTENING);
+
+            hycast::TcpSock pubSock(srvrSock.accept());
+            pubPeer = hycast::Peer(pubSock, *this);
+
+            auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
+            hycast::InetAddr localhost("127.0.0.1");
+            EXPECT_EQ(localhost, rmtAddr);
+
+            setState(CONNECTED);
+
+            pubPeer();
         }
         catch (const std::exception& ex) {
+            LOG_DEBUG("Logging exception");
             hycast::log_error(ex);
         }
         catch (...) {
-            LOG_NOTE("Server thread cancelled");
+            LOG_NOTE("Caught ...");
         }
     }
 };
 
-// Tests closing the factory
-TEST_F(PeerFactoryTest, FactoryClosure)
+// Tests default construction
+TEST_F(PeerTest, DefaultConstruction)
 {
-    // Start a server. Calls `::listen()`.
-    hycast::PubPeerFactory factory(pubAddr, 1, *this);
-    std::thread            pubThread(&PeerFactoryTest::runPub, this,
-            std::ref(factory));
+    hycast::Peer peer();
+}
+
+// Tests data exchange
+TEST_F(PeerTest, DataExchange)
+{
+    // Start the publisher
+    std::thread pubThread(&PeerTest::runPublisher, this);
 
     try {
-        // Close the factory. Causes `runPub()` to return.
-        factory.close();
+        waitForState(LISTENING);
+
+        // Start the subscriber. Potentially slow.
+        hycast::Peer     subPeer(pubAddr,
+                hycast::NodeType::NO_PATH_TO_PUBLISHER, *this);
+        std::thread      subThread(subPeer);
+
+        try {
+            waitForState(CONNECTED);
+
+            // Start an exchange
+            pubPeer.notify(prodIndex);
+            pubPeer.notify(segId);
+
+            // Wait for the exchange to complete
+            waitForState(DONE);
+
+            // `subPeer()` returns & `subThread` terminates
+            subPeer.halt();
+            subThread.join();
+        }
+        catch (const std::exception& ex) {
+            hycast::log_fatal(ex);
+            subPeer.halt();
+            subThread.join();
+            throw;
+        }
+        catch (...) {
+            LOG_FATAL("Thread cancellation?");
+            subThread.join();
+            throw;
+        } // `subThread` active
 
         pubThread.join();
-    }
+    } // `pubThread` active
     catch (const std::exception& ex) {
-        hycast::log_error(ex);
+        hycast::log_fatal(ex);
+        pubThread.join();
+        throw;
+    }
+    catch (...) {
+        LOG_FATAL("Thread cancellation?");
         pubThread.join();
         throw;
     }
 }
 
-// Tests complete exchange (notice, request, delivery)
-TEST_F(PeerFactoryTest, Exchange)
-{
-    // Start a publisher. Calls `::listen()`.
-    hycast::PubPeerFactory pubFactory(pubAddr, 1, *this);
-    std::thread         pubThread(&PeerFactoryTest::runPub, this,
-            std::ref(pubFactory));
-
-    // Start a subscriber
-    hycast::SubPeerFactory subFactory(subAddr, 1, *this);
-    hycast::Peer subPeer = subFactory.connect(pubAddr,
-            hycast::NodeType::NO_PATH_TO_PUBLISHER);
-    std::thread  subThread(subPeer); // `subPeer` is connected
-
-    // Start an exchange
-    waitForState(PUB_PEER_CREATED);
-    pubPeer.notify(prodIndex);
-    pubPeer.notify(segId);
-
-    waitForState(DONE);
-
-    // Causes `subPeer()` to return and `pubThread` to terminate
-    subPeer.halt();
-
-    subThread.join();
-    pubThread.join();
-}
-
 }  // namespace
 
+static void myTerminate()
+{
+    LOG_FATAL("terminate() called %s an active exception",
+            std::current_exception() ? "with" : "without");
+    abort();
+}
+
 int main(int argc, char **argv) {
+  hycast::log_setName(::basename(argv[0]));
+  hycast::log_setLevel(hycast::LogLevel::TRACE);
+
+  std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

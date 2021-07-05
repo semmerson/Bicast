@@ -1,11 +1,10 @@
 # Add the library
 add_library(p2p OBJECT
-        Peer.cpp 		Peer.h
-        PeerFactory.cpp	        PeerFactory.h
-        PeerSet.cpp		PeerSet.h
-        ServerPool.cpp	        ServerPool.h
-        P2pMgr.cpp		P2pMgr.h
-        Bookkeeper.cpp	        Bookkeeper.h
-        ChunkIdQueue.cpp	ChunkIdQueue.h
+        DataSeg.cpp
+        Peer.cpp        Peer.h
+                        P2pNode.h
+        NoticeQueue.cpp NoticeQueue.h
+        PeerSet.cpp     PeerSet.h
+        Bookkeeper.cpp  Bookkeeper.h
 )
-include_directories(../misc ../inet ../protocol ../node ../repository)
+include_directories(.. ../misc ../inet)
