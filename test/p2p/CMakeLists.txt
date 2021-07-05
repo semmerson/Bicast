@@ -9,10 +9,6 @@ add_executable(Peer_test Peer_test.cpp)
 target_link_libraries(Peer_test hycast gtest)
 add_test(Peer_test Peer_test)
 
-add_executable(InvalGuard_test InvalGuard_test.cpp)
-target_link_libraries(InvalGuard_test hycast gtest)
-add_test(InvalGuard_test InvalGuard_test)
-
 #add_executable(NoticeQueue_test NoticeQueue_test.cpp)
 #target_link_libraries(NoticeQueue_test hycast gtest)
 #add_test(NoticeQueue_test NoticeQueue_test)

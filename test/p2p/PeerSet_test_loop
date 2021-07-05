@@ -1,5 +1,0 @@
-i=0
-while true; do
-    echo $((++i))
-    ./PeerSet_test >&PeerSet_test.log || break
-done
