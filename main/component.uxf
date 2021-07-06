@@ -336,7 +336,7 @@ Only in publisher</panel_attributes>
       <x>170</x>
       <y>210</y>
       <w>140</w>
-      <h>110</h>
+      <h>140</h>
     </coordinates>
     <panel_attributes>&lt;&lt;component&gt;&gt;
 Bookkeeper</panel_attributes>
@@ -375,7 +375,19 @@ remove remote</panel_attributes>
       <h>40</h>
     </coordinates>
     <panel_attributes>lt=&lt;-
-advance remote</panel_attributes>
+promote remote</panel_attributes>
+    <additional_attributes>10.0;20.0;180.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>300</x>
+      <y>320</y>
+      <w>200</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+get worst remote</panel_attributes>
     <additional_attributes>10.0;20.0;180.0;20.0</additional_attributes>
   </element>
   <element>
@@ -386,8 +398,8 @@ advance remote</panel_attributes>
       <w>200</w>
       <h>40</h>
     </coordinates>
-    <panel_attributes>lt=&lt;&lt;-
-get worst remote</panel_attributes>
+    <panel_attributes>lt=&lt;-
+demote remote</panel_attributes>
     <additional_attributes>10.0;20.0;180.0;20.0</additional_attributes>
   </element>
 </diagram>
