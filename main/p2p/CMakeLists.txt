@@ -5,6 +5,6 @@ add_library(p2p OBJECT
                         P2pNode.h
         NoticeQueue.cpp NoticeQueue.h
         PeerSet.cpp     PeerSet.h
-        Bookkeeper.cpp  Bookkeeper.h
+#       Bookkeeper.cpp  Bookkeeper.h
 )
 include_directories(.. ../misc ../inet)

@@ -105,7 +105,7 @@ public:
     }
 
     // Both sides
-    void recvNotice(const hycast::PubPath notice, const SockAddr rmtAddr)
+    void recvNotice(const hycast::PubPath notice, Peer peer)
             override
     {
         LOG_TRACE;
@@ -114,7 +114,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::ProdIndex notice, const SockAddr rmtAddr)
+    bool recvNotice(const hycast::ProdIndex notice, Peer peer)
             override
     {
         LOG_TRACE;
@@ -128,7 +128,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::DataSegId notice, const SockAddr rmtAddr)
+    bool recvNotice(const hycast::DataSegId notice, Peer peer)
             override
     {
         LOG_TRACE;
@@ -142,7 +142,7 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const hycast::ProdIndex request, const SockAddr rmtAddr)
+    ProdInfo recvRequest(const hycast::ProdIndex request, Peer peer)
             override
     {
         LOG_TRACE;
@@ -156,7 +156,7 @@ public:
     }
 
     // Publisher-side
-    DataSeg recvRequest(const hycast::DataSegId request, const SockAddr rmtAddr)
+    DataSeg recvRequest(const hycast::DataSegId request, Peer peer)
             override
     {
         LOG_TRACE;
@@ -170,7 +170,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo data, const SockAddr rmtAddr) override
+    void recvData(const hycast::ProdInfo data, Peer peer) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodInfo, data);
@@ -180,7 +180,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::DataSeg actualDataSeg, const SockAddr rmtAddr)
+    void recvData(const hycast::DataSeg actualDataSeg, Peer peer)
             override
     {
         LOG_TRACE;
@@ -194,10 +194,12 @@ public:
     void offline(hycast::Peer peer) {
         LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
+#if 0
     void reassigned(const hycast::ProdIndex  notice,
                     const hycast::Peer       peer) override {}
     void reassigned(const hycast::DataSegId& notice,
                     const hycast::Peer       peer) override {}
+#endif
 
     void startPublisher(hycast::PeerSet& pubPeerSet)
     {

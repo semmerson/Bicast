@@ -12,19 +12,21 @@
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `Peer`
 class PeerTest : public ::testing::Test, public hycast::P2pNode
 {
 protected:
     typedef enum {
         INIT = 0,
-        LISTENING = 0x1,
-        PROD_NOTICE_RCVD = 0x4,
-        SEG_NOTICE_RCVD = 0x8,
+        LISTENING         =  0x1,
+        PROD_NOTICE_RCVD  =  0x4,
+        SEG_NOTICE_RCVD   =  0x8,
         PROD_REQUEST_RCVD = 0x10,
-        SEG_REQUEST_RCVD = 0x20,
-        PROD_INFO_RCVD = 0x40,
-        SEG_RCVD = 0x80,
+        SEG_REQUEST_RCVD  = 0x20,
+        PROD_INFO_RCVD    = 0x40,
+        SEG_RCVD          = 0x80,
         DONE = LISTENING |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
@@ -95,14 +97,14 @@ public:
     }
 
     // Both sides
-    void recvNotice(const hycast::PubPath notice, hycast::SockAddr rmtPeerAddr)
+    void recvNotice(const hycast::PubPath notice, Peer peer)
             override
     {
         LOG_TRACE;
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::ProdIndex notice, hycast::SockAddr rmtPeerAddr)
+    bool recvNotice(const hycast::ProdIndex notice, Peer peer)
             override
     {
         LOG_TRACE;
@@ -112,7 +114,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::DataSegId notice, hycast::SockAddr rmtPeerAddr)
+    bool recvNotice(const hycast::DataSegId notice, Peer peer)
             override
     {
         LOG_TRACE;
@@ -123,7 +125,7 @@ public:
 
     // Publisher-side
     hycast::ProdInfo recvRequest(const hycast::ProdIndex request,
-                                 hycast::SockAddr        rmtPeerAddr) override
+                                 Peer peer) override
     {
         LOG_TRACE;
         EXPECT_TRUE(prodIndex == request);
@@ -133,7 +135,7 @@ public:
 
     // Publisher-side
     hycast::DataSeg recvRequest(const hycast::DataSegId request,
-                                hycast::SockAddr        rmtPeerAddr ) override
+                                Peer peer) override
     {
         LOG_TRACE;
         EXPECT_EQ(segId, request);
@@ -142,7 +144,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo data, hycast::SockAddr rmtPeerAddr) override
+    void recvData(const hycast::ProdInfo data, Peer peer) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodInfo, data);
@@ -150,7 +152,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::DataSeg actualDataSeg, hycast::SockAddr rmtPeerAddr)
+    void recvData(const hycast::DataSeg actualDataSeg, Peer peer)
             override
     {
         LOG_TRACE;
@@ -162,10 +164,12 @@ public:
     void offline(hycast::Peer peer) {
         LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
+#if 0
     void reassigned(const hycast::ProdIndex  notice,
                     hycast::Peer             peer) override {}
     void reassigned(const hycast::DataSegId& notice,
                     hycast::Peer             peer) override {}
+#endif
 
     void startPubPeer(hycast::Peer& pubPeer)
     {
@@ -217,18 +221,22 @@ TEST_F(PeerTest, PrematureStop)
         ASSERT_TRUE(subPeer);
         ASSERT_TRUE(subPeer.start());
 
-        subPeer.stop();
-
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
+
+        subPeer.stop();
+
+        pubPeer.stop();
     } // `srvrThread` created
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
+        pubPeer.stop();
         if (srvrThread.joinable())
             srvrThread.join();
     }
 }
 
+#if 0
 // Tests premature destruction
 TEST_F(PeerTest, PrematureDtor)
 {
@@ -252,6 +260,7 @@ TEST_F(PeerTest, PrematureDtor)
             srvrThread.join();
     }
 }
+#endif
 
 // Tests data exchange
 TEST_F(PeerTest, DataExchange)
@@ -287,9 +296,12 @@ TEST_F(PeerTest, DataExchange)
 
         // Wait for the exchange to complete
         waitForState(DONE);
+        subPeer.stop();
+        pubPeer.stop();
     } // `srvrThread` created
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
+        pubPeer.stop();
         if (srvrThread.joinable())
             srvrThread.join();
     }
@@ -334,9 +346,11 @@ TEST_F(PeerTest, BrokenConnection)
         // Try to send to subscribing peer
         LOG_DEBUG("Notifying subscribing peer");
         ASSERT_FALSE(loopNotify(pubPeer));
+        pubPeer.stop();
     } // `srvrThread` running
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
+        pubPeer.stop();
         if (srvrThread.joinable())
             srvrThread.join();
     }

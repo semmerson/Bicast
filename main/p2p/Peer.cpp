@@ -66,7 +66,9 @@ class Peer::Impl
     AtomicState        state;
     const bool         clientSide;
     std::exception_ptr exPtr;
+#if 0
     RequestQueue       requestQ;
+#endif
 
     /**
      * Orders the sockets so that the notice socket has the lowest client-side
@@ -142,15 +144,16 @@ class Peer::Impl
         return success;
     }
 
-    void startThreads() {
-        noticeReader = Thread(&Impl::runReader, this, noticeSock);
+    void startThreads(Peer peer) {
+        noticeReader = Thread(&Impl::runReader, this, noticeSock, peer);
 
         try {
-            requestReader = Thread(&Impl::runReader, this, requestSock);
+            requestReader = Thread(&Impl::runReader, this, requestSock, peer);
 
             try {
-                dataReader = Thread(&Impl::runReader, this, dataSock);
+                dataReader = Thread(&Impl::runReader, this, dataSock, peer);
 
+#if 0
                 try {
                     requestWriter = Thread(&Impl::runRequester, this);
                 } // `dataReader` created
@@ -159,6 +162,7 @@ class Peer::Impl
                     dataReader.join();
                     throw;
                 }
+#endif
             } // `requestReader` created
             catch (const std::exception& ex) {
                 ::pthread_cancel(requestReader.native_handle());
@@ -293,11 +297,12 @@ class Peer::Impl
      * peer.
      *
      * @param[in] id            Message type
+     * @param[in] peer          Associated local peer
      * @retval    `false`       End-of-file encountered.
      * @retval    `true`        Success
      * @throw std::logic_error  `id` is unknown
      */
-    bool processPdu(const PduId id) {
+    bool processPdu(const PduId id, Peer peer) {
         bool success = false;
         int  cancelState;
 
@@ -306,7 +311,7 @@ class Peer::Impl
             LOG_TRACE;
             bool notice;
             if (read(noticeSock, notice)) {
-                node.recvNotice(PubPath(notice), rmtSockAddr);
+                node.recvNotice(PubPath(notice), peer);
                 rmtPubPath = notice;
                 success = true;
             }
@@ -316,7 +321,7 @@ class Peer::Impl
             LOG_TRACE;
             ProdIndex notice;
             if (read(noticeSock, notice) &&
-                    node.recvNotice(notice, rmtSockAddr))
+                    node.recvNotice(notice, peer))
                 success = request(notice);
             break;
         }
@@ -324,7 +329,7 @@ class Peer::Impl
             LOG_TRACE;
             DataSegId notice;
             if (read(noticeSock, notice) &&
-                    node.recvNotice(notice, rmtSockAddr))
+                    node.recvNotice(notice, peer))
                 success = request(notice);
             break;
         }
@@ -332,7 +337,7 @@ class Peer::Impl
             LOG_TRACE;
             ProdIndex request;
             if (read(requestSock, request)) {
-                auto prodInfo = node.recvRequest(request, rmtSockAddr);
+                auto prodInfo = node.recvRequest(request, peer);
                 success = prodInfo && send(prodInfo);
             }
             break;
@@ -341,7 +346,7 @@ class Peer::Impl
             LOG_TRACE;
             DataSegId request;
             if (read(requestSock, request)) {
-                auto dataSeg = node.recvRequest(request, rmtSockAddr);
+                auto dataSeg = node.recvRequest(request, peer);
                 success = dataSeg && send(dataSeg);
             }
             break;
@@ -350,7 +355,7 @@ class Peer::Impl
             LOG_TRACE;
             ProdInfo data;
             if (read(dataSock, data)) {
-                node.recvData(data, rmtSockAddr);
+                node.recvData(data, peer);
                 success = true;
             }
             break;
@@ -359,7 +364,7 @@ class Peer::Impl
             LOG_TRACE;
             DataSeg dataSeg;
             if (read(dataSock, dataSeg)) {
-                node.recvData(dataSeg, rmtSockAddr);
+                node.recvData(dataSeg, peer);
                 success = true;
             }
             break;
@@ -393,13 +398,14 @@ class Peer::Impl
      * Doesn't return until either EOF is encountered or an error occurs.
      *
      * @param[in] sock    Socket with remote peer
+     * @param[in] peer    Associated local peer
      * @throw LogicError  Message type is unknown
      */
-    void runReader(TcpSock sock) {
+    void runReader(TcpSock sock, Peer peer) {
         try {
             for (;;) {
                 PduId id;
-                if (!read(sock, id) || !processPdu(id))
+                if (!read(sock, id) || !processPdu(id, peer))
                     break; // EOF
             }
         }
@@ -408,6 +414,7 @@ class Peer::Impl
         }
     }
 
+#if 0
     void runRequester() {
         try {
             for (;;)
@@ -417,6 +424,7 @@ class Peer::Impl
             setExPtr();
         }
     }
+#endif
 
 public:
     /**
@@ -518,6 +526,7 @@ public:
      *       - The sockets are read; and
      *       - The P2P node is called.
      *
+     * @param[in] peer     Associated local peer
      * @retval    `false`  Peer is client-side and couldn't connect with remote
      *                     peer
      * @retval    `false`  `stop()` was called
@@ -526,7 +535,7 @@ public:
      * @throw SystemError  Thread couldn't be created
      * @see   `stop()`
      */
-    bool start() {
+    bool start(Peer peer) {
         LOG_TRACE;
         bool  success;
         State lclState{State::INITED};
@@ -541,7 +550,7 @@ public:
                     : true;
 
             if (success) {
-                startThreads();
+                startThreads(peer);
                 lclState = State::STARTING;
                 if (!state.compare_exchange_strong(lclState, State::STARTED)) {
                     stopThreads();
@@ -703,7 +712,7 @@ bool Peer::isComplete() const noexcept {
 }
 
 bool Peer::start() {
-    return pImpl->start();
+    return pImpl->start(*this);
 }
 
 SockAddr Peer::getRmtAddr() noexcept {

@@ -86,10 +86,8 @@ public:
      * Starts this instance. Does the following:
      *   - If client-side constructed, blocks while connecting to the remote
      *     peer
-     *   - Creates a thread on which
-     *       - The connection is read; and
-     *       - The P2P node is called.
-     * Upon return, this instance must be stopped before being destroyed.
+     *   - Creates threads that serve the remote peer
+     * Upon return, this instance *must* be stopped before it can be destroyed.
      *
      * @retval `false`     Remote peer disconnected
      * @retval `true`      Success
@@ -109,8 +107,9 @@ public:
     /**
      * Stops this instance from serving its remote counterpart. Does the
      * following:
-     *   - Cancels the thread on which the remote peer is being served
-     *   - Joins with that thread
+     *   - Stops the threads that are serving the remote peer
+     *   - Joins those threads
+     * *Must* be called in order for this instance to be destroyed
      *
      * @throw LogicError  Peer hasn't been started
      * @see   `start()`

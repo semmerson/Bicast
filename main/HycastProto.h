@@ -280,11 +280,11 @@ class NoticeRcvr
 public:
     virtual ~NoticeRcvr() {}
     virtual void recvNotice(const PubPath   notice,
-                            SockAddr        rmtPeerAddr) =0;
+                            Peer            peer) =0;
     virtual bool recvNotice(const ProdIndex notice,
-                            SockAddr        rmtPeerAddr) =0;
+                            Peer            peer) =0;
     virtual bool recvNotice(const DataSegId notice,
-                            SockAddr        rmtPeerAddr) =0;
+                            Peer            peer) =0;
 };
 
 /// Request receiver/server
@@ -293,9 +293,9 @@ class RequestRcvr
 public:
     virtual ~RequestRcvr() {}
     virtual ProdInfo recvRequest(const ProdIndex request,
-                                 SockAddr        rmtPeerAddr) =0;
+                                 Peer            peer) =0;
     virtual DataSeg recvRequest(const DataSegId  request,
-                                SockAddr         rmtPeerAddr) =0;
+                                Peer             peer) =0;
 };
 
 /// Data receiver/server
@@ -304,9 +304,9 @@ class DataRcvr
 public:
     virtual ~DataRcvr() {}
     virtual void recvData(const ProdInfo prodInfo,
-                          SockAddr       rmtPeerAddr) =0;
+                          Peer           peer) =0;
     virtual void recvData(const DataSeg  dataSeg,
-                          SockAddr       rmtPeerAddr) =0;
+                          Peer           peer) =0;
 };
 
 } // namespace
