@@ -104,13 +104,13 @@ class PduQueue
     using Map   = std::map<QueueIndex, PDU>;
 
     Map           map;
-    P2pMgr&       p2pMgr;
+    P2pNode&      p2pNode;
     const String  desc;
 
 public:
-    PduQueue(P2pMgr& p2pMgr, const String& desc)
+    PduQueue(P2pNode& p2pNode, const String& desc)
         : map()
-        , p2pMgr(p2pMgr)
+        , p2pNode(p2pNode)
         , desc(desc)
     {}
 
@@ -215,13 +215,13 @@ class NoticeQueue::Impl
     }
 
 public:
-    Impl(P2pMgr& p2pMgr)
+    Impl(P2pNode& p2pNode)
         : mutex()
         , cond()
         , pduIdQueue()
-        , pubPaths(p2pMgr, "path-to-publisher")
-        , prodIndexes(p2pMgr, "product-index")
-        , dataSegIds(p2pMgr, "data-segment ID")
+        , pubPaths(p2pNode, "path-to-publisher")
+        , prodIndexes(p2pNode, "product-index")
+        , dataSegIds(p2pNode, "data-segment ID")
         , writeIndex(0)
         , oldestIndex(0)
     {}
@@ -305,8 +305,8 @@ public:
     }
 };
 
-NoticeQueue::NoticeQueue(P2pMgr& p2pMgr)
-    : pImpl(std::make_shared<Impl>(p2pMgr))
+NoticeQueue::NoticeQueue(P2pNode& p2pNode)
+    : pImpl(std::make_shared<Impl>(p2pNode))
 {}
 
 QueueIndex NoticeQueue::getWriteIndex() const {

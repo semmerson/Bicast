@@ -35,7 +35,6 @@ namespace hycast {
 
 class Peer::Impl
 {
-protected:
     mutable Mutex      sockMutex;
     mutable Mutex      rmtSockAddrMutex;
     mutable Mutex      exceptMutex;
@@ -51,9 +50,10 @@ protected:
     TcpSock            noticeSock;
     TcpSock            requestSock;
     TcpSock            dataSock;
-    Thread             noticeThread;
-    Thread             requestThread;
-    Thread             dataThread;
+    Thread             noticeReader;
+    Thread             requestReader;
+    Thread             dataReader;
+    Thread             requestWriter;
     SockAddr           rmtSockAddr;
     std::atomic<bool>  rmtPubPath;
     enum class State {
@@ -66,6 +66,7 @@ protected:
     AtomicState        state;
     const bool         clientSide;
     std::exception_ptr exPtr;
+    RequestQueue       requestQ;
 
     /**
      * Orders the sockets so that the notice socket has the lowest client-side
@@ -142,25 +143,34 @@ protected:
     }
 
     void startThreads() {
-        noticeThread = Thread(&Impl::run, this, noticeSock);
+        noticeReader = Thread(&Impl::runReader, this, noticeSock);
 
         try {
-            requestThread = Thread(&Impl::run, this, requestSock);
+            requestReader = Thread(&Impl::runReader, this, requestSock);
 
             try {
-                dataThread = Thread(&Impl::run, this, dataSock);
-            } // `requestThread` created
+                dataReader = Thread(&Impl::runReader, this, dataSock);
+
+                try {
+                    requestWriter = Thread(&Impl::runRequester, this);
+                } // `dataReader` created
+                catch (const std::exception& ex) {
+                    ::pthread_cancel(dataReader.native_handle());
+                    dataReader.join();
+                    throw;
+                }
+            } // `requestReader` created
             catch (const std::exception& ex) {
-                ::pthread_cancel(requestThread.native_handle());
-                requestThread.join();
+                ::pthread_cancel(requestReader.native_handle());
+                requestReader.join();
                 throw;
             }
-        }
+        } // `noticeReader` created
         catch (const std::exception& ex) {
-            ::pthread_cancel(noticeThread.native_handle());
-            noticeThread.join();
+            ::pthread_cancel(noticeReader.native_handle());
+            noticeReader.join();
             throw;
-        } // `noticeThread` created
+        }
     }
 
     /**
@@ -179,14 +189,14 @@ protected:
 
     void joinThreads() {
         LOG_TRACE;
-        if (dataThread.joinable())
-            dataThread.join();
+        if (dataReader.joinable())
+            dataReader.join();
         LOG_TRACE;
-        if (requestThread.joinable())
-            requestThread.join();
+        if (requestReader.joinable())
+            requestReader.join();
         LOG_TRACE;
-        if (noticeThread.joinable())
-            noticeThread.join();
+        if (noticeReader.joinable())
+            noticeReader.join();
         LOG_TRACE;
     }
 
@@ -385,13 +395,23 @@ protected:
      * @param[in] sock    Socket with remote peer
      * @throw LogicError  Message type is unknown
      */
-    void run(TcpSock sock) {
+    void runReader(TcpSock sock) {
         try {
             for (;;) {
                 PduId id;
                 if (!read(sock, id) || !processPdu(id))
                     break; // EOF
             }
+        }
+        catch (const std::exception& ex) {
+            setExPtr();
+        }
+    }
+
+    void runRequester() {
+        try {
+            for (;;)
+                requestQ.request(*this);
         }
         catch (const std::exception& ex) {
             setExPtr();
@@ -414,9 +434,10 @@ public:
         , noticeSock()
         , requestSock()
         , dataSock()
-        , noticeThread()
-        , requestThread()
-        , dataThread()
+        , noticeReader()
+        , requestReader()
+        , dataReader()
+        , requestWriter()
         , rmtSockAddr(srvrAddr)
         , rmtPubPath(false)
         , state(State::INITED)
@@ -601,20 +622,31 @@ public:
     }
 
     /**
-     * Requests data from the remote peer.
+     * Requests product information from the remote peer. Blocks while writing.
      *
+     * @param[in] prodIndex   Index of product
      * @retval    `false`     Remote peer disconnected
      * @retval    `true`      Success
      */
-    bool request(const ProdIndex request) {
+    bool request(const ProdIndex prodIndex) {
         throwIfExPtr();
+        Guard guard{sockMutex}; // To support internal & external threads
         return write(requestSock, PduId::PROD_INFO_REQUEST) &&
-                write(requestSock, request);
+                write(requestSock, prodIndex);
     }
-    bool request(const DataSegId& request) {
+
+    /**
+     * Requests a data-segment from the remote peer. Blocks while writing.
+     *
+     * @param[in] segId       ID of data-segment
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
+     */
+    bool request(const DataSegId& segId) {
         throwIfExPtr();
+        Guard guard{sockMutex}; // To support internal & external threads
         return write(requestSock, PduId::DATA_SEG_REQUEST) &&
-            write(requestSock, request);
+            write(requestSock, segId);
     }
 
     /**

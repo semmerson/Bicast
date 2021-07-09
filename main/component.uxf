@@ -17,9 +17,9 @@ Multicast Receiver</panel_attributes>
     <id>UMLGeneric</id>
     <coordinates>
       <x>480</x>
-      <y>210</y>
+      <y>130</y>
       <w>140</w>
-      <h>330</h>
+      <h>410</h>
     </coordinates>
     <panel_attributes>&lt;&lt;component&gt;&gt;
 Node</panel_attributes>
@@ -301,17 +301,17 @@ Not in publisher</panel_attributes>
       <x>410</x>
       <y>460</y>
       <w>90</w>
-      <h>280</h>
+      <h>260</h>
     </coordinates>
     <panel_attributes>lt=&lt;-
 r1=notify</panel_attributes>
-    <additional_attributes>70.0;20.0;10.0;20.0;10.0;260.0;70.0;260.0</additional_attributes>
+    <additional_attributes>70.0;20.0;10.0;20.0;10.0;240.0;70.0;240.0</additional_attributes>
   </element>
   <element>
     <id>UMLNote</id>
     <coordinates>
       <x>230</x>
-      <y>630</y>
+      <y>620</y>
       <w>140</w>
       <h>70</h>
     </coordinates>
@@ -323,7 +323,7 @@ Only in publisher</panel_attributes>
     <id>Relation</id>
     <coordinates>
       <x>360</x>
-      <y>660</y>
+      <y>650</y>
       <w>80</w>
       <h>30</h>
     </coordinates>
@@ -334,9 +334,9 @@ Only in publisher</panel_attributes>
     <id>UMLGeneric</id>
     <coordinates>
       <x>170</x>
-      <y>210</y>
+      <y>130</y>
       <w>140</w>
-      <h>140</h>
+      <h>220</h>
     </coordinates>
     <panel_attributes>&lt;&lt;component&gt;&gt;
 Bookkeeper</panel_attributes>
@@ -346,7 +346,7 @@ Bookkeeper</panel_attributes>
     <id>Relation</id>
     <coordinates>
       <x>300</x>
-      <y>200</y>
+      <y>120</y>
       <w>200</w>
       <h>40</h>
     </coordinates>
@@ -358,7 +358,7 @@ add remote</panel_attributes>
     <id>Relation</id>
     <coordinates>
       <x>300</x>
-      <y>230</y>
+      <y>150</y>
       <w>200</w>
       <h>40</h>
     </coordinates>
@@ -400,6 +400,18 @@ get worst remote</panel_attributes>
     </coordinates>
     <panel_attributes>lt=&lt;-
 demote remote</panel_attributes>
+    <additional_attributes>10.0;20.0;180.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>300</x>
+      <y>180</y>
+      <w>200</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-
+notify</panel_attributes>
     <additional_attributes>10.0;20.0;180.0;20.0</additional_attributes>
   </element>
 </diagram>

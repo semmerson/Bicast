@@ -195,9 +195,9 @@ public:
         LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
     void reassigned(const hycast::ProdIndex  notice,
-                    const SockAddr           rmtAddr) {}
+                    const hycast::Peer       peer) override {}
     void reassigned(const hycast::DataSegId& notice,
-                    const SockAddr           rmtAddr) {}
+                    const hycast::Peer       peer) override {}
 
     void startPublisher(hycast::PeerSet& pubPeerSet)
     {

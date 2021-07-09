@@ -250,6 +250,7 @@ public:
 
 using PduType = unsigned char;
 enum class PduId : PduType {
+    UNSET,
     PUB_PATH_NOTICE,
     PROD_INFO_NOTICE,
     DATA_SEG_NOTICE,
@@ -306,18 +307,6 @@ public:
                           SockAddr       rmtPeerAddr) =0;
     virtual void recvData(const DataSeg  dataSeg,
                           SockAddr       rmtPeerAddr) =0;
-};
-
-/// Peer-to-peer manager interface
-class P2pMgr
-{
-public:
-    virtual ~P2pMgr() {}
-    virtual void offline(Peer peer) =0;
-    virtual void reassigned(const ProdIndex  notice,
-                            SockAddr         rmtPeerAddr) =0;
-    virtual void reassigned(const DataSegId& notice,
-                            SockAddr         rmtPeerAddr) =0;
 };
 
 } // namespace

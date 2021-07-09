@@ -48,16 +48,7 @@ public:
 
     virtual void add(const Peer peer) const =0;
 
-    /**
-     * Resets the measure of utility for every peer.
-     *
-     * @threadsafety       Safe
-     * @exceptionsafety    No throw
-     * @cancellationpoint  No
-     */
-    virtual void reset() const noexcept =0;
-
-    virtual void erase(const Peer peer) const =0;
+    virtual void remove(const Peer peer) const =0;
 };
 
 /**
@@ -79,13 +70,11 @@ public:
 
     void requested(const Peer peer) const;
 
-    Peer getWorstPeer()             const;
-
     void add(const Peer peer)       const          override;
 
-    void reset()                    const noexcept override;
+    Peer getWorstPeer()             const;
 
-    void erase(const Peer peer)     const          override;
+    void remove(const Peer peer)    const          override;
 };
 
 /**
@@ -117,9 +106,9 @@ public:
 
     /**
      * Indicates if information on a product should be requested by a peer. If
-     * yes, then the concomitant request is added to the peer's list requests;
-     * if no, then the peer is added to a list of potential peers for the
-     * request.
+     * yes, then the concomitant request is added to the peer's list of
+     * requests; if no, then the peer is added to a list of alternative peers
+     * for the request.
      *
      * @param[in] peer               Peer
      * @param[in] prodIndex          Product index
@@ -137,8 +126,8 @@ public:
 
     /**
      * Indicates if a data segment should be requested by a peer. If yes, then
-     * the concomitant request is added to the peer's list requests; if no, then
-     * the peer is added to a list of potential peers for the request.
+     * the concomitant request is added to the peer's list of requests; if no,
+     * then the peer is added to a list of alternative peers for the request.
      *
      * @param[in] peer               Peer
      * @param[in] dataSegId          Data segment identifier
@@ -194,9 +183,13 @@ public:
 
     void add(const Peer peer)                 const          override;
 
-    void reset()                              const noexcept override;
-
-    void erase(const Peer peer)               const          override;
+    /**
+     * Removes a peer. The peer's outstanding requests are reassigned to the
+     * best alternative peer.
+     *
+     * @param[in] peer  Peer to be removed.
+     */
+    void remove(const Peer peer)              const          override;
 };
 
 } // namespace

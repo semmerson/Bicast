@@ -37,7 +37,6 @@ class Peer; // Forward declaration
 class P2pNode : public RequestRcvr
               , public NoticeRcvr
               , public DataRcvr
-              , public P2pMgr
 {
 public:
     virtual ~P2pNode() {}
@@ -98,20 +97,6 @@ public:
                           const SockAddr rmtPeerAddr) =0;
     virtual void recvData(const DataSeg  dataSeg,
                           const SockAddr rmtPeerAddr) =0;
-
-    /**
-     * Called when a peer's remote counterpart goes offline. Doesn't create a
-     * new thread and returns immediately.
-     *
-     * @param[in] rmtPeerAddr  Socket address of remote peer
-     * @param[in] peer  Peer whose remote counterpart went offline
-     */
-    virtual void offline(Peer peer) =0;
-
-    virtual void reassigned(const ProdIndex  notice,
-                            const SockAddr   rmtPeerAddr) =0;
-    virtual void reassigned(const DataSegId& notice,
-                            const SockAddr   rmtPeerAddr) =0;
 };
 
 } // namespace

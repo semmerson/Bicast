@@ -29,6 +29,7 @@
 #include <climits>
 #include <list>
 #include <mutex>
+#include <queue>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -59,7 +60,7 @@ public:
 
     virtual void reset() noexcept =0;
 
-    virtual void erase(const Peer peer) =0;
+    virtual void remove(const Peer peer) =0;
 };
 
 Bookkeeper::Bookkeeper(Impl* impl)
@@ -116,7 +117,7 @@ public:
             elt.second = 0;
     }
 
-    void erase(const Peer peer) override {
+    void remove(const Peer peer) override {
         Guard guard(mutex);
         numRequests.erase(peer);
     }
@@ -138,12 +139,8 @@ Peer PubBookkeeper::getWorstPeer() const {
     return static_cast<Impl*>(pImpl.get())->getWorstPeer();
 }
 
-void PubBookkeeper::reset() const noexcept {
-    static_cast<Impl*>(pImpl.get())->reset();
-}
-
-void PubBookkeeper::erase(const Peer peer) const {
-    static_cast<Impl*>(pImpl.get())->erase(peer);
+void PubBookkeeper::remove(const Peer peer) const {
+    return static_cast<Impl*>(pImpl.get())->remove(peer);
 }
 
 /******************************************************************************/
@@ -153,29 +150,102 @@ void PubBookkeeper::erase(const Peer peer) const {
  */
 class SubBookkeeper::Impl final : public Bookkeeper::Impl
 {
+#if 0
+    class RequestQueue {
+        using PduIdQ = std::list<PduId>;
+        using ProdIndexQ = std::list<ProdIndex>;
+        using DataSegIdQ = std::list<DataSegId>;
+
+        mutable Mutex mutex;
+        PduIdQ        pduIdQ;
+        ProdIndexQ    prodIndexQ;
+        DataSegIdQ    dataSegIdQ;
+
+    public:
+        RequestQueue()
+            : mutex()
+            , pduIdQ()
+            , prodIndexQ()
+            , dataSegIdQ()
+        {}
+
+        void add(const ProdIndex prodIndex) {
+            Guard guard{mutex};
+            pduIdQ.push_back(PduId::PROD_INFO_REQUEST);
+            prodIndexQ.push_back(prodIndex);
+        }
+
+        void add(const DataSegId& dataSegId) {
+            Guard guard{mutex};
+            pduIdQ.push_back(PduId::DATA_SEG_REQUEST);
+            dataSegIdQ.push_back(dataSegId);
+        }
+
+        /**
+         * Blocks while writing requests.
+         *
+         * @return `true`     Success
+         * @return `false`    Connection to remote peer lost
+         */
+        bool beRequestedBy(Peer& peer) {
+            bool success = true;
+            Lock lock{mutex};
+
+            auto prodIndexIter = prodIndexQ.begin();
+            auto dataSegIdIter = dataSegIdQ.begin();
+            auto pduIdEnd = prodIndexQ.end();
+
+            for (auto pduIdIter = pduIdQ.begin(); pduIdIter != pduIdEnd;
+                    ++pduIdIter) {
+                success = (*pduIdIter == PduId::PROD_INFO_REQUEST)
+                        ? peer.request(*prodIndexIter++)
+                        : peer.request(*dataSegIdIter++);
+                if (!success)
+                    break;
+            }
+
+            return success;
+        }
+    };
+#endif
+
     struct Request
     {
-        PduId pduId;
         union {
             ProdIndex prodIndex;
             DataSegId dataSegId;
         };
+        PduId pduId;
 
+        Request()
+            : prodIndex()
+            , pduId(PduId::UNSET)
+        {}
         Request(ProdIndex prodIndex)
-            : pduId(PduId::PROD_INFO_REQUEST)
-            , prodIndex(prodIndex)
+            : prodIndex(prodIndex)
+            , pduId(PduId::PROD_INFO_REQUEST)
         {}
         Request(DataSegId dataSegId)
-            : pduId(PduId::DATA_SEG_REQUEST)
-            , dataSegId(dataSegId)
+            : dataSegId(dataSegId)
+            , pduId(PduId::DATA_SEG_REQUEST)
         {}
         String to_string() const {
             return (pduId == PduId::PROD_INFO_REQUEST)
                     ? prodIndex.to_string()
-                    : dataSegId.to_string();
+                    : (pduId == PduId::DATA_SEG_REQUEST)
+                        ? dataSegId.to_string()
+                        : "<unset>";
         }
-        void beRequestedBy(Peer peer) const {
-            (pduId == PduId::PROD_INFO_REQUEST)
+
+        /**
+         * Blocks while writing request to remote peer.
+         *
+         * @param[in] peer     Local peer to make request of remote peer
+         * @retval    `true`   Success
+         * @retval    `false`  Connection lost
+         */
+        bool beRequestedBy(Peer peer) const {
+            return (pduId == PduId::PROD_INFO_REQUEST)
                 ? peer.request(prodIndex)
                 : peer.request(dataSegId);
         }
@@ -198,20 +268,21 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
         }
     };
 
-    using RequestSet = std::unordered_set<Request, RequestHash>;
+    using RequestQueue = std::queue<Request>;
 
     /// Information on a peer
     struct PeerInfo {
-        /// Outstanding requests that haven't been satisfied yet
-        RequestSet    requests;
-        uint_fast32_t count;  ///< Number of received PDU-s
+        /// Outstanding requests
+        RequestQueue  requests;
+        uint_fast32_t count;  ///< Number of received data PDU-s
 
         PeerInfo()
-            : requests(100)
+            : requests()
             , count{0}
         {}
     };
 
+#if 0
     class PeerQueue {
         std::list<Peer> peers;
 
@@ -241,101 +312,148 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
             return peer;
         }
     };
+#endif
 
-    using PeerInfos = std::unordered_map<Peer, PeerInfo>;
-    using ReqPeers  = std::unordered_map<Request, PeerQueue, RequestHash>;
+    using PeerInfos  = std::unordered_map<Peer, PeerInfo>;
+    using PeerQueue  = std::queue<Peer, std::list<Peer>>;
+    // Map from request to queue of alternative peers
+    using PeerQueues = std::unordered_map<Request, PeerQueue, RequestHash>;
 
     /// Map of peer -> peer information
-    PeerInfos peerInfos;
+    PeerInfos  peerInfos;
     /**
      * Map of request -> peers that can make the request in the order in which
      * their notifications arrived.
      */
-    ReqPeers  reqPeers;
+    PeerQueues  altPeers;
+
+    /*
+     * INVARIANT:
+     *   If a request exists in peerInfos(peer).requests, then altPeers[request]
+     *   exists.
+     */
 
     /**
      * Indicates if a request should be made by a peer. If yes, then the
-     * request is added to the list of requests by the peer; if no, then
-     * the peer is added to a list of potential peers for the request.
+     * request is added to the queue of requests by the peer; if no, then
+     * the peer is added to the queue of alternative peers for the request.
      *
-     * @param[in] peer               Peer
-     * @param[in] request            Request
-     * @return    `true`             Request should be made
-     * @return    `false`            Request shouldn't be made
-     * @throws    logic_error        Peer is not in the set
-     * @threadsafety                 Safe
-     * @cancellationpoint            No
+     * @param[in] peer        Peer
+     * @param[in] request     Request
+     * @return    `true`      Request should be made
+     * @return    `false`     Request shouldn't be made
+     * @throws    LogicError  Peer is unknown
+     * @threadsafety          Safe
+     * @cancellationpoint     No
      */
     bool shouldRequest(
             Peer           peer,
             const Request& request)
     {
         Guard guard(mutex);
-        bool  should = reqPeers.count(request) == 0;
 
-        if (should) {
-            try {
-                auto& peerRequests = peerInfos.at(peer).requests;
+        if (peerInfos.count(peer) == 0)
+            throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
 
-                LOG_ASSERT(peerRequests.count(request) == 0);
+        const bool should = altPeers.count[request] == 0;
 
-                peerRequests.insert(request); // Add request to peer
-
-                should = true;
-            }
-            catch (const std::out_of_range& ex) {
-                std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
-                        " is not in the set"));
-            }
+        if (!should) {
+            altPeers[request].push(peer); // Add alternative peer. Might throw.
         }
-
-        reqPeers[request].append(peer); // Add peer to request. Throws
+        else {
+            peerInfos.at(peer).requests.push(request); // Add request
+            altPeers[request] = PeerQueue{}; // Empty queue
+        }
 
         return should;
     }
 
     /**
      * Process a satisfied request. Nothing happens if the peer didn't make the
-     * request; otherwise, the request is deleted from the peer's list of
+     * request; otherwise, the request is deleted from the peer's queue of
      * outstanding requests and the set of alternative peers that could make the
      * request is cleared.
      *
-     * @param[in] peer               Peer
-     * @param[in] request            Request
-     * @retval    `false`            Peer didn't make request
-     * @retval    `true`             Peer made request
-     * @throws    logic_error        Peer is not in the set
-     * @threadsafety                 Safe
-     * @exceptionsafety              Basic guarantee
-     * @cancellationpoint            No
+     * @param[in] peer        Peer
+     * @param[in] request     Request
+     * @retval    `false`     Peer didn't make request or request is unexpected
+     * @retval    `true`      Success
+     * @throws    LogicError  Peer is not in the set
+     * @threadsafety          Safe
+     * @exceptionsafety       Basic guarantee
+     * @cancellationpoint     No
      */
-    bool received(Peer          peer,
-                  const Request request)
+    bool received(Peer           peer,
+                  const Request& request)
     {
         Guard  guard(mutex);
-        bool   wasRequested;
 
+        if (peerInfos.count(peer) == 0)
+            throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
+
+        bool  success;
+        auto& peerInfo = peerInfos.at(peer);
+        auto& requests = peerInfo.requests;
+
+        if (requests.empty() || requests.front() != request) {
+            // Peer didn't make request or request is unexpected
+            success = false;
+        }
+        else {
+            // Peer made expected request
+            requests.pop();
+            ++peerInfo.count;
+            altPeers.erase(request); // No longer relevant
+            success = true;
+        }
+
+        return success;
+    }
+
+    /**
+     * @pre             Peer is stopped
+     * @param[in] peer  Peer who's requests are to be reassigned
+     */
+    void reassign(Peer peer) noexcept {
         try {
-            auto& peerInfo = peerInfos.at(peer);
+            for (;;) {
+                Request request{};
+                Peer    altPeer{};
+                {
+                    // This part is fast
+                    Guard         guard{mutex};
+                    RequestQueue& requests = peerInfos.at(peer).requests;
 
-            if (peerInfo.requests.erase(request) == 0) {
-                // Peer didn't make request
-                wasRequested = false;
+                    if (requests.empty())
+                        break;
+
+                    const auto request = requests.front();
+                    requests.pop();
+
+                    auto& peers = altPeers.at(request); // Shall exist
+
+                    if (!peers.empty()) {
+                        altPeer = peers.front();
+                        peers.pop();
+
+                        peerInfos.at(altPeer).requests.push(request);
+                    }
+                }
+
+                if (altPeer)
+                    // This part blocks
+                    if (!request.beRequestedBy(altPeer))
+                        LOG_DEBUG("Lost connection with remote peer " +
+                                peer.to_string());
             }
-            else {
-                // Peer made request
-                ++peerInfo.count;
-                wasRequested = true;
-            }
-
-            reqPeers.erase(request); // No longer relevant
         }
-        catch (const std::out_of_range& ex) {
-            std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
-                    " is not in the set"));
+        catch (const std::exception& ex) {
+            LOG_ERROR(ex);
+            LOG_ERROR("Couldn't reassign requests to peer " + peer.to_string());
         }
 
-        return wasRequested;
+        Guard guard{mutex};
+        peerInfos.erase(peer);
     }
 
 public:
@@ -349,7 +467,7 @@ public:
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
         , peerInfos(maxPeers)
-        , reqPeers(8)
+        , altPeers(8)
     {}
 
     /**
@@ -466,43 +584,19 @@ public:
      * Removes a peer. The peer's unsatisfied requests are transferred to
      * alternative peers.
      *
+     * @pre                       Peer is stopped
      * @param[in] peer            The peer to be removed
-     * @throws    logic_error     Peer is not in set
-     * @throws    logic_error     Alternative peer is not in set
+     * @throws    logic_error     Peer is unknown
+     * @throws    logic_error     Alternative peer is unknown
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void erase(const Peer peer) override
+    void remove(const Peer peer) override
     {
-        Guard guard(mutex);
-
-        try {
-            for (const auto& outRequest : peerInfos.at(peer).requests) {
-                auto& peers = reqPeers[outRequest];
-
-                auto  altPeer = peers.pop();
-                LOG_ASSERT(altPeer == peer);
-                altPeer = peers.pop();
-
-                if (altPeer) {
-                    try {
-                        peerInfos.at(altPeer).requests.insert(outRequest);
-                        outRequest.beRequestedBy(altPeer);
-                    }
-                    catch (const std::out_of_range& ex) {
-                        std::throw_with_nested(LOGIC_ERROR("Alternative peer "
-                                + altPeer.to_string() + " is not in the set"));
-                    }
-                }
-            }
-        }
-        catch (const std::out_of_range& ex) {
-            std::throw_with_nested(LOGIC_ERROR("Peer " + peer.to_string() +
-                    " is not in the set"));
-        }
-
-        peerInfos.erase(peer);
+        // Separate thread because requests by alternative peers can block
+        Thread reassignment{&Impl::reassign, this, peer};
+        reassignment.detach();
     }
 };
 
@@ -546,14 +640,6 @@ bool SubBookkeeper::received(
 
 Peer SubBookkeeper::getWorstPeer(const bool pubPath) const {
     return static_cast<Impl*>(pImpl.get())->getWorstPeer(pubPath);
-}
-
-void SubBookkeeper::reset() const noexcept {
-    static_cast<Impl*>(pImpl.get())->reset();
-}
-
-void SubBookkeeper::erase(const Peer peer) const {
-    static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 } // namespace

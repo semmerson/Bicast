@@ -130,7 +130,7 @@ class NoticeQueue
     std::shared_ptr<Impl> pImpl;
 
 public:
-    NoticeQueue(P2pMgr& p2pMgr);
+    NoticeQueue(P2pNode& p2pNode);
 
     /**
      * Returns the index of the next message to be added to the queue.
