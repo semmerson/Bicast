@@ -33,8 +33,32 @@ std::string DataSegId::to_string(const bool withName) const
     String string;
     if (withName)
         string += "DataSegId";
-    return string + "{prodIndex=" + std::to_string(prodIndex) +
+    return string + "{prodIndex=" + prodIndex.to_string() +
             ", offset=" + std::to_string(offset) + "}";
+}
+
+String NoteReq::to_string() const {
+    return (id == Id::PROD_INDEX)
+            ? prodIndex.to_string()
+            : (id == Id::DATA_SEG)
+                ? dataSegId.to_string()
+                : "<unset>";
+}
+
+size_t NoteReq::hash() const noexcept {
+    return (id == Id::PROD_INDEX)
+            ? prodIndex.hash()
+            : (id == Id::DATA_SEG)
+                ? dataSegId.hash()
+                : 0;
+}
+
+bool NoteReq::operator==(const NoteReq& rhs) const noexcept {
+    if (id != rhs.id)    return false;
+    if (id == Id::UNSET) return true;
+    return (id == Id::PROD_INDEX)
+            ? prodIndex == rhs.prodIndex
+            : dataSegId == rhs.dataSegId;
 }
 
 std::string Timestamp::to_string(const bool withName) const

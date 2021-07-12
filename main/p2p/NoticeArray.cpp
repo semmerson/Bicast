@@ -22,7 +22,7 @@
 #include "config.h"
 
 #include "error.h"
-#include "NoticeQueue.h"
+#include "NoticeArray.h"
 
 #include <map>
 
@@ -34,7 +34,7 @@ namespace hycast {
 class PduIdQueue
 {
 private:
-    using Map   = std::map<QueueIndex, PduId>;
+    using Map   = std::map<ArrayIndex, PduId>;
 
     Map           pduIds;
 
@@ -52,7 +52,7 @@ public:
         return pduIds.size();
     }
 
-    inline void put(const QueueIndex& index, const PduId id) {
+    inline void put(const ArrayIndex& index, const PduId id) {
         pduIds[index] = id;
     }
 
@@ -63,7 +63,7 @@ public:
      * @retval    `true`   PDU ID does not exist
      * @retval    `false`  PDU ID does exist
      */
-    inline bool empty(const QueueIndex& index) const {
+    inline bool empty(const ArrayIndex& index) const {
         auto count = pduIds.count(index);
         return count == 0;
     }
@@ -75,7 +75,7 @@ public:
      * @return            Reference to PDU ID
      * @throw OutOfRange  Given position is empty
      */
-    inline const PduId& at(const QueueIndex& index) const {
+    inline const PduId& at(const ArrayIndex& index) const {
         return pduIds.at(index);
     }
 
@@ -85,7 +85,7 @@ public:
      * @param[in] from   Index from which to start erasing
      * @param[in] to     Index of entry at which to stop
      */
-    void erase(QueueIndex from, const QueueIndex& to) {
+    void erase(ArrayIndex from, const ArrayIndex& to) {
         while (from < to)
             pduIds.erase(from++);
     }
@@ -101,7 +101,7 @@ public:
 template<typename PDU>
 class PduQueue
 {
-    using Map   = std::map<QueueIndex, PDU>;
+    using Map   = std::map<ArrayIndex, PDU>;
 
     Map           map;
     P2pNode&      p2pNode;
@@ -120,7 +120,7 @@ public:
      * @param[in] index   Index for entry
      * @throw LogicError  Entry already exists at index
      */
-    void put(const QueueIndex& index,
+    void put(const ArrayIndex& index,
              const PDU&        pdu) {
         if (map.count(index))
             throw LOGIC_ERROR("Entry already exists at index " +
@@ -128,7 +128,7 @@ public:
         map[index] = pdu;
     }
 
-    void erase(QueueIndex from, const QueueIndex& to) {
+    void erase(ArrayIndex from, const ArrayIndex& to) {
         while (from < to)
             map.erase(from++);
     }
@@ -142,7 +142,7 @@ public:
      * @retval    `true`        Success
      * @throws    RuntimeError  Failure
      */
-    bool send(const QueueIndex& index, Peer& peer) const {
+    bool send(const ArrayIndex& index, Peer& peer) const {
         bool success;
 
         try {
@@ -161,7 +161,7 @@ public:
 
 /******************************************************************************/
 
-class NoticeQueue::Impl
+class NoticeArray::Impl
 {
     mutable Mutex       mutex;
     mutable Cond        cond;
@@ -169,8 +169,8 @@ class NoticeQueue::Impl
     PduQueue<PubPath>   pubPaths;
     PduQueue<ProdIndex> prodIndexes;
     PduQueue<DataSegId> dataSegIds;
-    QueueIndex          writeIndex;
-    QueueIndex          oldestIndex;
+    ArrayIndex          writeIndex;
+    ArrayIndex          oldestIndex;
 
     /**
      * Adds a PDU ID at the write index in the PDU ID queue. Increments the
@@ -182,7 +182,7 @@ class NoticeQueue::Impl
      * @throw std::out_of_range  Queue is full
      * @post                     Mutex is locked
      */
-    QueueIndex put(const PduId pduId) {
+    ArrayIndex put(const PduId pduId) {
         LOG_ASSERT(!mutex.try_lock());
 
         if (writeIndex+1 == oldestIndex)
@@ -205,7 +205,7 @@ class NoticeQueue::Impl
      * @return           PDU ID at the given index
      * @post             Mutex is unlocked
      */
-    PduId get(const QueueIndex& index) const {
+    PduId get(const ArrayIndex& index) const {
         Lock lock{mutex};
 
         while (pduIdQueue.empty(index))
@@ -231,7 +231,7 @@ public:
      *
      * @return  Index of the next notice
      */
-    QueueIndex getWriteIndex() const {
+    ArrayIndex getWriteIndex() const {
         Guard guard(mutex);
         return writeIndex;
     }
@@ -241,26 +241,26 @@ public:
      *
      * @return Index of oldest notice
      */
-    QueueIndex getOldestIndex() const {
+    ArrayIndex getOldestIndex() const {
         Guard guard(mutex);
         return oldestIndex;
     }
 
-    QueueIndex put(const PubPath pubPath) {
+    ArrayIndex put(const PubPath pubPath) {
         Guard      guard{mutex};
         const auto index = put(PduId::PUB_PATH_NOTICE);
         pubPaths.put(index, pubPath);
         return index;
     }
 
-    QueueIndex put(const ProdIndex prodIndex) {
+    ArrayIndex put(const ProdIndex prodIndex) {
         Guard      guard{mutex};
         const auto index = put(PduId::PROD_INFO_NOTICE);
         prodIndexes.put(index, prodIndex);
         return index;
     }
 
-    QueueIndex put(const DataSegId& dataSegId) {
+    ArrayIndex put(const DataSegId& dataSegId) {
         Guard      guard{mutex};
         const auto index = put(PduId::DATA_SEG_NOTICE);
         dataSegIds.put(index, dataSegId);
@@ -278,7 +278,7 @@ public:
      * @throws    LogicError    Invalid PDU ID in queue
      * @throws    RuntimeError  Failure
      */
-    bool send(const QueueIndex& index, Peer& peer) const {
+    bool send(const ArrayIndex& index, Peer& peer) const {
         LOG_TRACE;
 
         switch (get(index)) { // Atomic
@@ -294,7 +294,7 @@ public:
     }
 
     // Purge queue of old notices
-    void eraseTo(const QueueIndex& to) {
+    void eraseTo(const ArrayIndex& to) {
         Guard guard{mutex};
         pduIdQueue .erase(oldestIndex, to);
         pubPaths   .erase(oldestIndex, to);
@@ -305,35 +305,35 @@ public:
     }
 };
 
-NoticeQueue::NoticeQueue(P2pNode& p2pNode)
+NoticeArray::NoticeArray(P2pNode& p2pNode)
     : pImpl(std::make_shared<Impl>(p2pNode))
 {}
 
-QueueIndex NoticeQueue::getWriteIndex() const {
+ArrayIndex NoticeArray::getWriteIndex() const {
     return pImpl->getWriteIndex();
 }
 
-QueueIndex NoticeQueue::getOldestIndex() const {
+ArrayIndex NoticeArray::getOldestIndex() const {
     return pImpl->getOldestIndex();
 }
 
-QueueIndex NoticeQueue::putPubPath(const PubPath pubPath) const {
+ArrayIndex NoticeArray::putPubPath(const PubPath pubPath) const {
     return pImpl->put(pubPath);
 }
 
-QueueIndex NoticeQueue::putProdIndex(const ProdIndex prodIndex) const {
+ArrayIndex NoticeArray::putProdIndex(const ProdIndex prodIndex) const {
     return pImpl->put(prodIndex);
 }
 
-QueueIndex NoticeQueue::put(const DataSegId& dataSegId) const {
+ArrayIndex NoticeArray::put(const DataSegId& dataSegId) const {
     return pImpl->put(dataSegId);
 }
 
-void NoticeQueue::eraseTo(const QueueIndex index) const {
+void NoticeArray::eraseTo(const ArrayIndex index) const {
     pImpl->eraseTo(index);
 }
 
-bool NoticeQueue::send(const QueueIndex& index, Peer& peer) const {
+bool NoticeArray::send(const ArrayIndex& index, Peer& peer) const {
     pImpl->send(index, peer);
 }
 

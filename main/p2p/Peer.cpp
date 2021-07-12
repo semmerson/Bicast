@@ -44,8 +44,8 @@ class Peer::Impl
      * writing occur on the same thread, then deadlock will occur if both
      * receive buffers are full and each end is trying to write. To prevent
      * this, three sockets are used and a thread that reads from one socket will
-     * write to another. The pipeline might block for a while, but it won't
-     * deadlock.
+     * write to another. The pipeline might block for a while as messages are
+     * processed, but it won't deadlock.
      */
     TcpSock            noticeSock;
     TcpSock            requestSock;
@@ -66,9 +66,6 @@ class Peer::Impl
     AtomicState        state;
     const bool         clientSide;
     std::exception_ptr exPtr;
-#if 0
-    RequestQueue       requestQ;
-#endif
 
     /**
      * Orders the sockets so that the notice socket has the lowest client-side
@@ -152,17 +149,6 @@ class Peer::Impl
 
             try {
                 dataReader = Thread(&Impl::runReader, this, dataSock, peer);
-
-#if 0
-                try {
-                    requestWriter = Thread(&Impl::runRequester, this);
-                } // `dataReader` created
-                catch (const std::exception& ex) {
-                    ::pthread_cancel(dataReader.native_handle());
-                    dataReader.join();
-                    throw;
-                }
-#endif
             } // `requestReader` created
             catch (const std::exception& ex) {
                 ::pthread_cancel(requestReader.native_handle());
@@ -413,18 +399,6 @@ class Peer::Impl
             setExPtr();
         }
     }
-
-#if 0
-    void runRequester() {
-        try {
-            for (;;)
-                requestQ.request(*this);
-        }
-        catch (const std::exception& ex) {
-            setExPtr();
-        }
-    }
-#endif
 
 public:
     /**
@@ -740,13 +714,17 @@ size_t Peer::hash() const noexcept {
     return std::hash<Impl*>()(pImpl.get());
 }
 
-bool Peer::operator<(const Peer rhs) const noexcept {
+bool Peer::operator<(const Peer& rhs) const noexcept {
     // Must be consistent with `hash()`
     return pImpl.get() < rhs.pImpl.get();
 }
 
 bool Peer::operator==(const Peer& rhs) const noexcept {
     return !(*this < rhs) && !(rhs < *this);
+}
+
+bool Peer::operator!=(const Peer& rhs) const noexcept {
+    return (*this < rhs) || (rhs < *this);
 }
 
 String Peer::to_string(const bool withName) const {

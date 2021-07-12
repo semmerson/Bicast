@@ -24,7 +24,7 @@
 
 #include "HycastProto.h"
 #include "logging.h"
-#include "NoticeQueue.h"
+#include "NoticeArray.h"
 #include "PeerSet.h"
 #include "ThreadException.h"
 
@@ -48,8 +48,8 @@ class PeerSet::Impl
         mutable Mutex    mutex;
         mutable ThreadEx threadEx;
         Peer             peer;
-        NoticeQueue      noticeQueue;
-        QueueIndex       readIndex;
+        NoticeArray      noticeArray;
+        ArrayIndex       readIndex;
         Thread           thread;
 
         void run(const bool pubPath) {
@@ -69,7 +69,7 @@ class PeerSet::Impl
                      * thread must be cancelled in order to stop it and this
                      * must be done before this instance is destroyed.
                      */
-                    if (!noticeQueue.send(readIndex, peer))
+                    if (!noticeArray.send(readIndex, peer))
                         break; // Connection lost
                     /*
                      * To avoid prematurely purging the current notice, the
@@ -87,13 +87,13 @@ class PeerSet::Impl
 
     public:
         PeerEntry(Peer        peer,
-                  NoticeQueue noticeQueue,
+                  NoticeArray noticeArray,
                   const bool  pubPath)
             : mutex()
             , threadEx()
             , peer(peer)
-            , noticeQueue(noticeQueue)
-            , readIndex(noticeQueue.getOldestIndex())
+            , noticeArray(noticeArray)
+            , readIndex(noticeArray.getOldestIndex())
             , thread(&PeerEntry::run, this, pubPath)
         {}
 
@@ -113,7 +113,7 @@ class PeerSet::Impl
             peer.stop();
         }
 
-        QueueIndex getReadIndex() const {
+        ArrayIndex getReadIndex() const {
             Guard guard(mutex);
             threadEx.throwIfSet();
             return readIndex;
@@ -124,14 +124,14 @@ class PeerSet::Impl
 
     mutable Mutex mutex;
     // Placed before peer entries to ensure existence for `PeerEntry.run()`
-    NoticeQueue   noticeQueue;
+    NoticeArray   noticeArray;
     PeerEntries   peerEntries;
 
     /**
      * Purges notice-queue of notices that will not be read.
      */
     void purge() {
-        const auto writeIndex = noticeQueue.getWriteIndex();
+        const auto writeIndex = noticeArray.getWriteIndex();
         // Guaranteed to be equal to or greater than oldest read-index:
         auto       oldestIndex = writeIndex;
 
@@ -148,13 +148,13 @@ class PeerSet::Impl
 
         if (oldestIndex < writeIndex)
             // Purge notice-queue of entries that will not be read
-            noticeQueue.eraseTo(oldestIndex);
+            noticeArray.eraseTo(oldestIndex);
     }
 
 public:
     Impl(P2pNode& node)
         : mutex()
-        , noticeQueue(node)
+        , noticeArray(node)
         , peerEntries()
     {}
 
@@ -179,7 +179,7 @@ public:
             // NB: The following requires that `peer.hash()` works now
             const auto  pair = peerEntries.emplace(std::piecewise_construct,
                     std::forward_as_tuple(peer),
-                    std::forward_as_tuple(peer, noticeQueue, pubPath));
+                    std::forward_as_tuple(peer, noticeArray, pubPath));
 
             LOG_ASSERT(pair.second); // Because `peerEntries.count(peer) != 0`
 
@@ -201,17 +201,17 @@ public:
 
     void notify(const PubPath notice) {
         purge();
-        noticeQueue.putPubPath(notice);
+        noticeArray.putPubPath(notice);
     }
 
     void notify(const ProdIndex notice) {
         purge();
-        noticeQueue.putProdIndex(notice);
+        noticeArray.putProdIndex(notice);
     }
 
     void notify(const DataSegId& notice) {
         purge();
-        noticeQueue.put(notice);
+        noticeArray.put(notice);
     }
 };
 

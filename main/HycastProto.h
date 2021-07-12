@@ -260,6 +260,48 @@ enum class PduId : PduType {
     DATA_SEG
 };
 
+/**
+ * Class for both notices and requests sent to a remote peer. It exists so that
+ * such entities can be handled as a single object for the purpose of argument
+ * passing and container element.
+ */
+struct NoteReq
+{
+private:
+    enum class Id {
+        UNSET,
+        PROD_INDEX,
+        DATA_SEG
+    } id;
+    union {
+        ProdIndex prodIndex;
+        DataSegId dataSegId;
+    };
+
+public:
+    NoteReq()
+        : prodIndex()
+        , id(Id::UNSET)
+    {}
+
+    NoteReq(const ProdIndex prodIndex)
+        : id(Id::PROD_INDEX)
+        , prodIndex(prodIndex)
+    {}
+
+    NoteReq(const DataSegId dataSegId)
+        : id(Id::DATA_SEG)
+        , dataSegId(dataSegId)
+    {}
+
+    String to_string() const;
+
+    // `std::hash<NoteReq>()` is also defined
+    size_t hash() const noexcept;
+
+    bool operator==(const NoteReq& rhs) const noexcept;
+};
+
 /******************************************************************************/
 // Receiver/server interfaces:
 
@@ -310,5 +352,15 @@ public:
 };
 
 } // namespace
+
+namespace std {
+    template<>
+    class hash<hycast::NoteReq> {
+    public:
+        size_t operator()(const hycast::NoteReq& noteReq) const noexcept {
+            return noteReq.hash();
+        }
+    };
+}
 
 #endif /* MAIN_PROTO_HYCASTPROTO_H_ */

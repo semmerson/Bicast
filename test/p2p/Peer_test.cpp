@@ -114,8 +114,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::DataSegId notice, Peer peer)
-            override
+    bool recvNotice(const hycast::DataSegId notice, Peer peer) override
     {
         LOG_TRACE;
         EXPECT_EQ(segId, notice);

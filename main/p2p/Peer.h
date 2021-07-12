@@ -126,9 +126,11 @@ public:
 
     size_t hash() const noexcept;
 
-    bool operator<(const Peer rhs) const noexcept;
+    bool operator<(const Peer& rhs) const noexcept;
 
     bool operator==(const Peer& rhs) const noexcept;
+
+    bool operator!=(const Peer& rhs) const noexcept;
 
     String to_string(bool withName = false) const;
 

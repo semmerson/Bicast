@@ -11,6 +11,8 @@
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `Bookkeeper`
 class BookkeeperTest : public ::testing::Test, public hycast::P2pNode
 {
@@ -42,45 +44,37 @@ public:
     {}
 
     // Subscriber-side
-    void recvNotice(const hycast::ProdIndex notice, hycast::Peer peer)
+    bool recvNotice(const hycast::ProdIndex notice, hycast::Peer peer)
             override
-    {}
+    {
+        return false;
+    }
 
     // Subscriber-side
-    void recvNotice(const hycast::DataSegId& notice, hycast::Peer peer)
-            override
-    {}
+    bool recvNotice(const DataSegId notice, Peer peer) override
+    {
+        return false;
+    }
 
     // Publisher-side
-    void recvRequest(const hycast::ProdIndex request, hycast::Peer peer)
-            override
-    {}
+    ProdInfo recvRequest(const ProdIndex request, hycast::Peer peer) override
+    {
+        return ProdInfo{};
+    }
 
     // Publisher-side
-    void recvRequest(const hycast::DataSegId& request, hycast::Peer peer)
-            override
+    DataSeg recvRequest(const DataSegId request, hycast::Peer peer) override
+    {
+        return DataSeg{};
+    }
+
+    // Subscriber-side
+    void recvData(const ProdInfo data, Peer peer) override
     {}
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo& data, hycast::Peer peer) override
+    void recvData(const DataSeg actualDataSeg, Peer peer) override
     {}
-
-    // Subscriber-side
-    void recvData(const hycast::DataSeg& actualDataSeg, hycast::Peer peer)
-            override
-    {}
-
-    void offline(hycast::Peer peer) {
-        LOG_ERROR("Peer %s is offline", peer.to_string().data());
-    }
-    void reassigned(const hycast::ProdIndex notice,
-                    hycast::Peer            peer) {
-        EXPECT_EQ(peer, peer2);
-    }
-    void reassigned(const hycast::DataSegId& notice,
-                    hycast::Peer             peer) {
-        EXPECT_EQ(peer, peer2);
-    }
 };
 
 // Tests default construction
@@ -105,25 +99,29 @@ TEST_F(BookkeeperTest, ShouldRequest)
     hycast::SubBookkeeper bookkeeper{};
 
     bookkeeper.add(peer1);
+
+    EXPECT_TRUE(bookkeeper.shouldRequest(peer1, prodIndex));
+    EXPECT_TRUE(bookkeeper.shouldRequest(peer1, segId));
+
+    EXPECT_THROW(bookkeeper.shouldRequest(peer2, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper.shouldRequest(peer2, segId), LogicError);
+
     bookkeeper.add(peer2);
+    EXPECT_FALSE(bookkeeper.shouldRequest(peer2, prodIndex));
+    EXPECT_FALSE(bookkeeper.shouldRequest(peer2, segId));
 
-    ASSERT_FALSE(bookkeeper.received(peer1, prodIndex));
+    bookkeeper.received(peer1, prodIndex);
+    bookkeeper.received(peer1, segId);
 
-    ASSERT_TRUE(bookkeeper.shouldRequest(peer1, prodIndex));
-    ASSERT_TRUE(bookkeeper.shouldRequest(peer1, segId));
-    ASSERT_FALSE(bookkeeper.shouldRequest(peer2, prodIndex));
-    ASSERT_FALSE(bookkeeper.shouldRequest(peer2, segId));
-    ASSERT_THROW(bookkeeper.shouldRequest(peer1, prodIndex), std::logic_error);
+    auto worstPeer = bookkeeper.getWorstPeer();
+    EXPECT_NE(peer1, worstPeer);
+    EXPECT_EQ(peer2, worstPeer);
 
-    ASSERT_TRUE(bookkeeper.received(peer1, prodIndex));
-    ASSERT_FALSE(bookkeeper.received(peer2, prodIndex));
+    bookkeeper.remove(peer1);
+    EXPECT_FALSE(bookkeeper.remove(peer1));
 
-    ASSERT_TRUE(bookkeeper.shouldRequest(peer1, prodIndex));
-    bookkeeper.erase(peer1);
-    ASSERT_TRUE(bookkeeper.received(peer2, prodIndex));
-    ASSERT_THROW(bookkeeper.received(peer1, prodIndex), std::logic_error);
-
-    ASSERT_THROW(bookkeeper.erase(peer1), std::logic_error);
+    EXPECT_TRUE(bookkeeper.shouldRequest(peer2, prodIndex));
+    EXPECT_TRUE(bookkeeper.shouldRequest(peer2, segId));
 }
 
 #if 0

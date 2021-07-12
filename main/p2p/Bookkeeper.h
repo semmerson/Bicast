@@ -48,7 +48,7 @@ public:
 
     virtual void add(const Peer peer) const =0;
 
-    virtual void remove(const Peer peer) const =0;
+    virtual bool remove(const Peer peer) const =0;
 };
 
 /**
@@ -74,7 +74,7 @@ public:
 
     Peer getWorstPeer()             const;
 
-    void remove(const Peer peer)    const          override;
+    bool remove(const Peer peer)    const          override;
 };
 
 /**
@@ -151,14 +151,12 @@ public:
      *
      * @param[in] peer               Peer
      * @param[in] prodIndex          Product index
-     * @retval    `false`            Request wasn't made by peer
-     * @retval    `true`             Request was made by peer
      * @throws    std::out_of_range  Peer is unknown
      * @threadsafety                 Safe
      * @exceptionsafety              Basic guarantee
      * @cancellationpoint            No
      */
-    bool received(Peer            peer,
+    void received(Peer            peer,
                   const ProdIndex prodIndex) const;
 
     /**
@@ -169,17 +167,15 @@ public:
      *
      * @param[in] peer               Peer
      * @param[in] dataSegId          Data segment identifier
-     * @retval    `false`            Request wasn't made by peer
-     * @retval    `true`             Request was made by peer
      * @throws    std::out_of_range  Peer is unknown
      * @threadsafety                 Safe
      * @exceptionsafety              Basic guarantee
      * @cancellationpoint            No
      */
-    bool received(Peer             peer,
+    void received(Peer             peer,
                   const DataSegId& datasegId) const;
 
-    Peer getWorstPeer(const bool pubPath)     const;
+    Peer getWorstPeer(const bool pubPath = false)     const;
 
     void add(const Peer peer)                 const          override;
 
@@ -187,9 +183,11 @@ public:
      * Removes a peer. The peer's outstanding requests are reassigned to the
      * best alternative peer.
      *
-     * @param[in] peer  Peer to be removed.
+     * @param[in] peer     Peer to be removed.
+     * @retval    `true`   Success
+     * @retval    `false`  Peer is unknown
      */
-    void remove(const Peer peer)              const          override;
+    bool remove(const Peer peer)              const          override;
 };
 
 } // namespace
