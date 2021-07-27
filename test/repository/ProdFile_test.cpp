@@ -25,7 +25,7 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "hycast.h"
+#include "HycastProto.h"
 
 #include <cassert>
 #include <fcntl.h>
@@ -47,10 +47,9 @@ protected:
     hycast::ProdSize  prodSize;
     hycast::SegSize   segSize;
     hycast::ProdInfo  prodInfo;
-    hycast::SegId     segId;
-    hycast::SegInfo   segInfo;
-    char              memData[1000];
-    hycast::MemSeg    memSeg;
+    hycast::DataSegId segId;
+    char              memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    hycast::DataSeg   memSeg;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -63,11 +62,10 @@ protected:
         , prodIndex{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, prodSize, "product"}
+        , prodInfo{prodIndex, "product", prodSize}
         , segId(prodIndex, 0)
-        , segInfo(segId, prodSize, segSize)
         , memData{}
-        , memSeg{segInfo, memData}
+        , memSeg{segId, prodSize, memData}
     {
         hycast::rmDirTree(rootPath);
         hycast::ensureDir(rootPath, 0777);
@@ -147,7 +145,7 @@ TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
     hycast::ProdSize    prodSize(0);
     hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, 0);
-    hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
+    hycast::ProdInfo    prodInfo(prodIndex, prodName, prodSize);
     EXPECT_TRUE(prodFile.save(rootFd, prodInfo));
     ASSERT_TRUE(prodFile.isComplete());
 }
@@ -156,14 +154,13 @@ TEST_F(ProdFileTest, ZeroRcvProdFile)
 TEST_F(ProdFileTest, RcvProdFile)
 {
     hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
-    hycast::ProdInfo    prodInfo(prodIndex, prodSize, prodName);
+    hycast::ProdInfo    prodInfo(prodIndex, prodName, prodSize);
     hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, segSize);
     ASSERT_TRUE(prodFile.save(rootFd, prodInfo));
     {
         for (int i = 0; i < 2; ++i) {
-            hycast::SegId     segId(prodIndex, i*segSize);
-            hycast::SegInfo   segInfo(segId, prodSize, segSize);
-            hycast::MemSeg    memSeg{segInfo, memData};
+            hycast::DataSegId segId(prodIndex, i*segSize);
+            hycast::DataSeg   memSeg{segId, prodSize, memData};
             ASSERT_TRUE(prodFile.save(memSeg));
         }
     } // Closes file

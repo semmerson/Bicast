@@ -23,8 +23,8 @@
 #ifndef MAIN_REPOSITORY_REPOSITORY_H_
 #define MAIN_REPOSITORY_REPOSITORY_H_
 
+#include "HycastProto.h"
 #include "ProdFile.h"
-#include "hycast.h"
 
 #include <memory>
 #include <string>
@@ -122,9 +122,9 @@ public:
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           No
-     * @see `MemSeg::operator bool()`
+     * @see `DataSeg::operator bool()`
      */
-    virtual MemSeg getMemSeg(const SegId& segId) const =0;
+    virtual DataSeg getDataSeg(const DataSegId& segId) const =0;
 };
 
 /******************************************************************************/
@@ -198,9 +198,9 @@ public:
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           No
-     * @see `MemSeg::operator bool()`
+     * @see `DataSeg::operator bool()`
      */
-    MemSeg getMemSeg(const SegId& segId) const override;
+    DataSeg getDataSeg(const DataSegId& segId) const override;
 };
 
 /******************************************************************************/
@@ -285,9 +285,9 @@ public:
      * @threadsafety                Safe
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           No
-     * @see `MemSeg::operator bool()`
+     * @see `DataSeg::operator bool()`
      */
-    MemSeg getMemSeg(const SegId& segId) const override;
+    DataSeg getDataSeg(const DataSegId& segId) const override;
 
     /**
      * Indicates if product-information exists.
@@ -305,7 +305,7 @@ public:
      * @retval    `false`    Data-segment doesn't exist
      * @retval    `true`     Data-segment does exist
      */
-    bool exists(const SegId& segId) const;
+    bool exists(const DataSegId& segId) const;
 };
 
 } // namespace

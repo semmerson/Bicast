@@ -53,7 +53,7 @@ protected:
     int                     prodInfoCount;
     int                     dataSegCount;
 
-    static const int        NUM_SUBSCRIBERS = 4;
+    static const int        NUM_SUBSCRIBERS = 8;
 
     PeerSetTest()
         : state{INIT}
@@ -169,6 +169,15 @@ public:
         return dataSeg;
     }
 
+    void missed(const NoteReq& request, Peer peer) {
+    }
+
+    void missed(const ProdIndex prodIndex, Peer peer) {
+    }
+
+    void missed(const DataSegId& dataSegId, Peer peer) {
+    }
+
     // Subscriber-side
     void recvData(const hycast::ProdInfo data, Peer peer) override
     {
@@ -184,8 +193,9 @@ public:
             override
     {
         LOG_TRACE;
-        ASSERT_EQ(segSize, actualDataSeg.size());
-        EXPECT_EQ(0, ::memcmp(dataSeg.data(), actualDataSeg.data(), segSize));
+        ASSERT_EQ(segSize, actualDataSeg.getSize());
+        EXPECT_EQ(0, ::memcmp(dataSeg.getData(), actualDataSeg.getData(),
+                segSize));
         std::lock_guard<std::mutex> guard{mutex};
         if (++dataSegCount == NUM_SUBSCRIBERS)
             orState(SEG_RCVD);

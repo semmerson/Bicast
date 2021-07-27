@@ -26,13 +26,14 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "Thread.h"
+#include "Shield.h"
 
 #include <fcntl.h>
 #include <mutex>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace hycast {
 
@@ -113,7 +114,7 @@ protected:
 
         try {
             struct stat statBuf;
-            Canceler    canceler{false}; // Because `fstat()` can be cancellation point
+            Shield      shield; // Because `fstat()` can be cancellation point
             int         status = ::fstat(fd, &statBuf);
 
             if (status)
@@ -270,7 +271,7 @@ public:
      */
     virtual bool exists(const ProdSize offset) const =0;
 
-    const void* getData(const ProdSize offset) const {
+    const char* getData(const ProdSize offset) const {
         if (!exists(offset))
             throw INVALID_ARGUMENT("Segment at offset " + std::to_string(offset)
                     + " doesn't exist");
@@ -313,7 +314,7 @@ SegSize ProdFile::getSegSize(const ProdSize offset) const {
     return pImpl->getSegSize(offset);
 }
 
-const void* ProdFile::getData(const ProdSize offset) const {
+const char* ProdFile::getData(const ProdSize offset) const {
     return pImpl->getData(offset);
 }
 
@@ -393,8 +394,8 @@ class RcvProdFile::Impl final : public ProdFile::Impl
      * size and be zero-filled.
      *
      * @param[in] rootFd        File descriptor open on root directory
-     * @param[in] prodInfo      Product-information
-     * @param[in] segSize       Size of canonical segment in bytes
+     * @param[in] pathname      Pathname of product
+     * @param[in] prodSize      Size of product in bytes
      * @return                  File descriptor on open file
      * @throws    SYSTEM_ERROR  `open()` or `ftruncate()` failure
      */
@@ -425,9 +426,9 @@ class RcvProdFile::Impl final : public ProdFile::Impl
 
     static std::string getIndexPath(const ProdIndex prodIndex)
     {
-        auto  index = prodIndex.getValue();
-        char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
-        char* cp = buf;
+        const auto  index = (ProdIndex::Type)prodIndex;
+        char        buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
+        char*       cp = buf;
 
         for (int nshift = 8*(sizeof(index)-1); nshift >= 0; nshift -= 8) {
             (void)sprintf(cp, "%.2x/", (index >> nshift) & 0xff);
@@ -502,23 +503,23 @@ public:
     bool save(
             const int       rootFd,
             const ProdInfo& prodInfo) {
-        assert(fd >= 0);
+        LOG_ASSERT(fd >= 0);
 
-        bool  wasSaved; // This item was written to the product-file?
+        bool  success; // This item was written to the product-file?
         Guard guard(mutex);
 
-        ProdInfo expected(prodIndex, prodSize, prodInfo.getProdName());
+        ProdInfo expected(prodIndex, prodInfo.getName(), prodSize);
         if (!(prodInfo == expected))
             throw INVALID_ARGUMENT("Actual prodInfo, " + prodInfo.to_string() +
                     ", doesn't match expected, " + expected.to_string());
 
         if (pathIsName) {
-            wasSaved = false;
+            success = false; // Already saved
         }
         else {
             LOG_DEBUG("Saving product-information " + prodInfo.to_string());
 
-            const auto prodName = prodInfo.getProdName();
+            const auto prodName = prodInfo.getName();
 
             ensureDir(rootFd, dirPath(prodName), 0755); // Only owner can write
 
@@ -529,10 +530,10 @@ public:
 
             this->pathname = prodName;
             pathIsName = true;
-            wasSaved = true;
+            success = true;
         }
 
-        return wasSaved;
+        return success;
     }
 
     /**
@@ -546,26 +547,26 @@ public:
      * @throws    InvalidArgument  Segment is invalid
      */
     bool save(DataSeg& seg) {
-        assert(fd >= 0);
+        LOG_ASSERT(fd >= 0);
 
-        const ProdSize offset = seg.getSegOffset();
+        const ProdSize offset = seg.getOffset();
         vet(offset);
 
-        const auto segInfo = seg.getSegInfo();
-        const auto segSize = segInfo.getSegSize();
+        const auto segSize = seg.getSize();
         const auto expectSize = segLen(offset);
-        if (segSize != segLen(offset))
-            throw INVALID_ARGUMENT("Segment " + segInfo.to_string() + " should "
-                    "have " + std::to_string(expectSize) + " data-bytes");
+        if (segSize != expectSize)
+            throw INVALID_ARGUMENT("Segment " + seg.to_string() + " has " +
+                    std::to_string(segSize) + " bytes; not " +
+                            std::to_string(expectSize));
 
         ProdSize iSeg = segIndex(offset);
-        bool     wasSaved; // This item was written to the product-file?
+        bool     success; // This item was written to the product-file?
         {
             Guard guard(mutex);
 
-            wasSaved = !haveSegs[iSeg];
+            success = !haveSegs[iSeg];
 
-            if (!wasSaved) {
+            if (!success) {
                 LOG_WARN("Duplicate data segment: " + seg.to_string());
             }
             else {
@@ -573,26 +574,22 @@ public:
             }
         }
 
-        if (wasSaved) {
+        if (success) {
             // Setting data outside mutex supports concurrent data-setting
-            LOG_DEBUG("Saving data-segment " + seg.getSegId().to_string());
+            LOG_DEBUG("Saving data-segment " + seg.to_string());
 
-            seg.getData(data+offset); // Potentially slow
+            ::memcpy(data+offset, seg.getData(), segSize);
             {
                 Guard guard(mutex);
                 ++segCount;
             }
         }
-        else {
-            char buf[segSize];
-            seg.getData(buf);
-        }
 
-        return wasSaved;
+        return success;
     }
 
     ProdInfo getProdInfo() {
-        return ProdInfo(prodIndex, prodSize, pathname);
+        return ProdInfo(prodIndex, pathname, prodSize);
     }
 };
 

@@ -23,7 +23,7 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "hycast.h"
+#include "HycastProto.h"
 #include "Repository.h"
 
 #include <fcntl.h>
@@ -41,13 +41,12 @@ protected:
     std::string           prodName;
     const std::string     filePath;
     hycast::ProdIndex     prodIndex;
-    char                  memData[1000];
+    char                  memData[hycast::DataSeg::CANON_DATASEG_SIZE];
     const hycast::SegSize segSize;
     hycast::ProdSize      prodSize;
     hycast::ProdInfo      prodInfo;
-    hycast::SegId         segId;
-    hycast::SegInfo       segInfo;
-    hycast::MemSeg        memSeg;
+    hycast::DataSegId     segId;
+    hycast::DataSeg       dataSeg;
 
     RepositoryTest()
         : testDir("/tmp/Repository_test")
@@ -58,10 +57,9 @@ protected:
         , memData{}
         , segSize{sizeof(memData)}
         , prodSize{segSize}
-        , prodInfo{prodIndex, prodSize, prodName}
+        , prodInfo(prodIndex, prodName, prodSize)
         , segId(prodIndex, 0)
-        , segInfo(segId, prodSize, segSize)
-        , memSeg{segInfo, memData}
+        , dataSeg(segId, prodSize, memData)
     {
         hycast::rmDirTree(testDir);
         hycast::ensureDir(hycast::dirPath(filePath));
@@ -87,8 +85,8 @@ public:
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::PubRepo pubRepo(rootDir, segSize);
-    hycast::SubRepo subRepo(rootDir, segSize);
+    hycast::PubRepo pubRepo{rootDir, segSize};
+    hycast::SubRepo subRepo{rootDir, segSize};
 }
 
 // Tests saving just product-information
@@ -108,15 +106,15 @@ TEST_F(RepositoryTest, SaveInfoThenData)
     hycast::SubRepo repo(rootDir, segSize);
 
     ASSERT_TRUE(repo.save(prodInfo));
-    ASSERT_TRUE(repo.save(memSeg));
+    ASSERT_TRUE(repo.save(dataSeg));
 
     auto prodInfo = repo.getNextProd();
     ASSERT_TRUE(prodInfo);
     EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
-    auto actual = repo.getMemSeg(segId);
+    auto actual = repo.getDataSeg(segId);
     ASSERT_TRUE(actual);
-    ASSERT_EQ(memSeg, actual);
+    ASSERT_EQ(dataSeg, actual);
 }
 
 // Tests saving product-data and then product-information
@@ -124,16 +122,16 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
 {
     hycast::SubRepo repo(rootDir, segSize);
 
-    ASSERT_TRUE(repo.save(memSeg));
+    ASSERT_TRUE(repo.save(dataSeg));
     ASSERT_TRUE(repo.save(prodInfo));
 
     auto prodInfo = repo.getNextProd();
     ASSERT_TRUE(prodInfo);
     EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
-    auto actual = repo.getMemSeg(memSeg.getSegId());
+    auto actual = repo.getDataSeg(dataSeg.getId());
     ASSERT_TRUE(actual);
-    ASSERT_EQ(memSeg, actual);
+    ASSERT_EQ(dataSeg, actual);
 }
 
 // Tests creating a product and informing a publisher's repository
@@ -147,14 +145,14 @@ TEST_F(RepositoryTest, CreatProdForSending)
 
     // Create the publisher's repository and tell it about the file
     hycast::PubRepo repo(rootDir, segSize);
-    repo.link(filePath, prodInfo.getProdName());
+    repo.link(filePath, prodInfo.getName());
 
     // Verify repository access
     try {
         auto prodInfo = repo.getNextProd();
         ASSERT_TRUE(RepositoryTest::prodInfo == prodInfo);
-        auto memSeg = repo.getMemSeg(RepositoryTest::segId);
-        ASSERT_EQ(RepositoryTest::memSeg, memSeg);
+        auto memSeg = repo.getDataSeg(RepositoryTest::segId);
+        ASSERT_EQ(RepositoryTest::dataSeg, memSeg);
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex, "Couldn't verify repository access");

@@ -23,7 +23,7 @@
 #ifndef MAIN_REPOSITORY_PRODFILE_H_
 #define MAIN_REPOSITORY_PRODFILE_H_
 
-#include "hycast.h"
+#include "HycastProto.h"
 
 #include <memory>
 
@@ -110,6 +110,7 @@ public:
      * Returns a pointer to a data-segment within the product.
      *
      * @param[in] offset            Segment's offset in bytes
+     * @retval                      Pointer to data
      * @throws    InvalidArgument   Offset isn't multiple of segment-size,
      *                              offset isn't less than product-size, or
      *                              segment doesn't exist
@@ -117,7 +118,7 @@ public:
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           No
      */
-    const void* getData(ProdSize offset) const;
+    const char* getData(ProdSize offset) const;
 };
 
 /******************************************************************************/
@@ -228,7 +229,7 @@ public:
      * @cancellationpoint          Yes
      */
     bool save(
-            const int       rooFd,
+            const int       rootFd,
             const ProdInfo& prodInfo) const;
 
     /**

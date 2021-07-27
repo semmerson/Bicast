@@ -68,6 +68,12 @@ public:
         return DataSeg{};
     }
 
+    void missed(const ProdIndex prodIndex, Peer peer) {
+    }
+
+    void missed(const DataSegId& dataSegId, Peer peer) {
+    }
+
     // Subscriber-side
     void recvData(const ProdInfo data, Peer peer) override
     {}

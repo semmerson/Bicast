@@ -118,6 +118,11 @@ public:
         static std::hash<Type> indexHash;
         return indexHash(index);
     }
+
+    ProdIndex& operator++() {
+        ++index;
+        return *this;
+    }
 };
 using ProdSize  = uint32_t;    ///< Size of product in bytes
 using SegSize   = uint16_t;    ///< Data-segment size in bytes
@@ -142,6 +147,10 @@ struct DataSegId
 
     inline bool operator==(const DataSegId& rhs) const {
         return (prodIndex == rhs.prodIndex) && (offset == rhs.offset);
+    }
+
+    inline bool operator!=(const DataSegId& rhs) const {
+        return !(*this == rhs);
     }
 
     std::string to_string(const bool withName = false) const;
@@ -179,19 +188,13 @@ public:
 
     ProdInfo(const ProdIndex   index,
              const std::string name,
-             const ProdSize    size,
-             const Timestamp   created);
-
-    ProdInfo(const ProdIndex   index,
-             const std::string name,
              const ProdSize    size);
 
     operator bool() const;
 
-    const ProdIndex& getProdIndex() const;
+    const ProdIndex& getIndex() const;
     const String&    getName() const;
-    const ProdSize&  getProdSize() const;
-    const Timestamp& getTimestamp() const;
+    const ProdSize&  getSize() const;
 
     bool operator==(const ProdInfo& rhs) const;
 
@@ -232,14 +235,18 @@ public:
 
     operator bool() const;
 
-    const DataSegId& segId() const noexcept;
+    const DataSegId& getId() const noexcept;
 
-    ProdSize prodSize() const noexcept;
+    ProdSize getProdSize() const noexcept;
 
-    const char* data() const noexcept;
+    const char* getData() const noexcept;
 
-    inline SegSize size() const {
-        return size(prodSize(), segId().offset);
+    inline SegSize getSize() const {
+        return size(getProdSize(), getId().offset);
+    }
+
+    inline ProdSize getOffset() const {
+        return getId().offset;
     }
 
     String to_string(bool withName = false) const;
@@ -251,6 +258,7 @@ public:
 using PduType = unsigned char;
 enum class PduId : PduType {
     UNSET,
+    NODE_TYPE,
     PUB_PATH_NOTICE,
     PROD_INFO_NOTICE,
     DATA_SEG_NOTICE,
@@ -267,7 +275,7 @@ enum class PduId : PduType {
  */
 struct NoteReq
 {
-private:
+public:
     enum class Id {
         UNSET,
         PROD_INDEX,
@@ -278,11 +286,13 @@ private:
         DataSegId dataSegId;
     };
 
-public:
     NoteReq()
         : prodIndex()
         , id(Id::UNSET)
     {}
+
+    NoteReq(const NoteReq& noteReq) =default;
+    NoteReq(NoteReq&& noteReq) =default;
 
     NoteReq(const ProdIndex prodIndex)
         : id(Id::PROD_INDEX)
@@ -293,6 +303,14 @@ public:
         : id(Id::DATA_SEG)
         , dataSegId(dataSegId)
     {}
+
+    NoteReq& operator=(const NoteReq& noteReq) =default;
+
+    NoteReq& operator=(NoteReq&& noteReq) =default;
+
+    operator bool() const {
+        return id != Id::UNSET;
+    }
 
     String to_string() const;
 
@@ -354,6 +372,14 @@ public:
 } // namespace
 
 namespace std {
+    template<>
+    class hash<hycast::ProdIndex> {
+    public:
+        size_t operator()(const hycast::ProdIndex& prodIndex) const noexcept {
+            return prodIndex.hash();
+        }
+    };
+
     template<>
     class hash<hycast::NoteReq> {
     public:

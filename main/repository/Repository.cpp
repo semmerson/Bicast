@@ -26,9 +26,7 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "hycast.h"
 #include "ProdFile.h"
-#include "Thread.h"
 #include "Watcher.h"
 
 #include "LinkedMap.cpp"
@@ -49,11 +47,6 @@
 #include <unordered_map>
 
 namespace hycast {
-
-typedef std::mutex              Mutex;
-typedef std::lock_guard<Mutex>  Guard;
-typedef std::unique_lock<Mutex> Lock;
-typedef std::condition_variable Cond;
 
 /**
  * @tparam PF  Product-file type
@@ -79,8 +72,8 @@ public:
     ProdEntry(
             const ProdInfo&    prodInfo,
             PF&                prodFile)
-        : prodInfo{prodInfo}
-        , prodFile{prodFile}
+        : prodInfo(prodInfo)
+        , prodFile(prodFile)
         , when{time(nullptr)}
         , prev{}
         , next{}
@@ -98,7 +91,7 @@ public:
 
     inline const std::string& getProdName() const
     {
-        return prodInfo.getProdName();
+        return prodInfo.getName();
     }
 
     inline PF& getProdFile()
@@ -130,7 +123,7 @@ public:
             const std::string& prodName,
             const ProdIndex    prodIndex,
             SndProdFile&       prodFile)
-        : ProdEntry(ProdInfo(prodIndex, prodFile.getProdSize(), prodName),
+        : ProdEntry(ProdInfo(prodIndex, prodName, prodFile.getProdSize()),
                 prodFile)
     {}
 
@@ -370,7 +363,7 @@ protected:
 
     static std::string getIndexPath(const ProdIndex prodIndex)
     {
-        auto  index = prodIndex.getValue();
+        auto  index = (ProdIndex::Type)prodIndex;
         char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
         char* cp = buf;
 
@@ -457,7 +450,7 @@ public:
      */
     std::string getPathname(const std::string& name) const
     {
-        assert(name.size());
+        LOG_ASSERT(name.size());
         return rootPathname + "/" + name;
     }
 
@@ -583,7 +576,7 @@ class PubRepo::Impl final : public Repository::Impl
      */
     SndProdFile getProdFile(const ProdIndex prodIndex)
     {
-        assert(!mutex.try_lock());
+        LOG_ASSERT(!mutex.try_lock());
 
         auto prodFile = openFiles.find(prodIndex);
 
@@ -669,7 +662,7 @@ public:
             SndProdFile prodFile(rootFd, prodName, segSize);
             addProdFile(prodIndex, prodFile);
 
-            prodInfo = ProdInfo(prodIndex, prodFile.getProdSize(), prodName);
+            prodInfo = ProdInfo(prodIndex, prodName, prodFile.getProdSize());
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't get product-file "
@@ -696,8 +689,8 @@ public:
             return prodInfo;
         }
 
-        return ProdInfo(prodIndex, prodFile.getProdSize(),
-                prodFile.getPathname());
+        return ProdInfo(prodIndex, prodFile.getPathname(),
+                prodFile.getProdSize());
     }
 
     /**
@@ -707,21 +700,22 @@ public:
      * @param[in] segId  Data-segment identifier
      * @return           Corresponding in-memory data-segment Will test false if
      *                   no such segment exists.
+     * @see `DataSeg::operator bool()`
      */
-    MemSeg getMemSeg(const SegId& segId)
+    DataSeg getDataSeg(const DataSegId& segId)
     {
         Guard      guard{mutex};
-        const auto prodFile = getProdFile(segId.getProdIndex());
+        const auto prodFile = getProdFile(segId.prodIndex);
 
         if (!prodFile) {
-            static const MemSeg memSeg{};
-            return memSeg;
+            static const DataSeg dataSeg{};
+            return dataSeg;
         }
 
-        auto offset = segId.getOffset();
+        const auto offset = segId.offset;
 
-        return MemSeg(SegInfo(segId, prodFile.getProdSize(),
-                prodFile.getSegSize(offset)), prodFile.getData(offset));
+        return DataSeg(segId, prodFile.getProdSize(),
+                prodFile.getData(segId.offset));
     }
 };
 
@@ -749,8 +743,8 @@ ProdInfo PubRepo::getProdInfo(const ProdIndex prodIndex) const {
     return static_cast<Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg PubRepo::getMemSeg(const SegId& segId) const {
-    return static_cast<Impl*>(pImpl.get())->getMemSeg(segId);
+DataSeg PubRepo::getDataSeg(const DataSegId& segId) const {
+    return static_cast<Impl*>(pImpl.get())->getDataSeg(segId);
 }
 
 /******************************************************************************/
@@ -784,7 +778,7 @@ class SubRepo::Impl final : public Repository::Impl
      */
     RcvProdFile getProdFile(const ProdIndex prodIndex)
     {
-        assert(!mutex.try_lock());
+        LOG_ASSERT(!mutex.try_lock());
 
         RcvProdFile prodFile = openFiles.find(prodIndex);
 
@@ -811,7 +805,7 @@ class SubRepo::Impl final : public Repository::Impl
     void addProdFile(
             const ProdIndex prodIndex,
             RcvProdFile&    prodFile) {
-        assert(!mutex.try_lock());
+        LOG_ASSERT(!mutex.try_lock());
 
         prodFiles.add(prodIndex, prodFile);
         openFiles.add(prodIndex, prodFile);
@@ -884,8 +878,8 @@ public:
      */
     bool save(const ProdInfo& prodInfo)
     {
-        auto       prodFile = getProdFile(prodInfo.getProdIndex(),
-                prodInfo.getProdSize());
+        auto       prodFile = getProdFile(prodInfo.getIndex(),
+                prodInfo.getSize());
         const bool wasSaved = prodFile.save(rootFd, prodInfo);
 
         if (wasSaved && prodFile.isComplete())
@@ -906,7 +900,7 @@ public:
      */
     bool save(DataSeg& dataSeg)
     {
-        auto       prodFile = getProdFile(dataSeg.getProdIndex(),
+        auto       prodFile = getProdFile(dataSeg.getId().prodIndex,
                 dataSeg.getProdSize());
         const auto wasSaved = prodFile.save(dataSeg);
 
@@ -957,27 +951,26 @@ public:
     }
 
     /**
-     * Returns the memory data-segment corresponding to a segment identifier if
-     * it exists.
+     * Returns the data-segment corresponding to a segment identifier if it
+     * exists.
      *
      * @param[in] segId  Segment identifier
      * @return           Corresponding memory data-segment. Will test false if
      *                   no such segment exists.
      */
-    MemSeg getMemSeg(const SegId& segId)
+    DataSeg getDataSeg(const DataSegId& segId)
     {
-        auto                offset = segId.getOffset();
+        auto                offset = segId.offset;
         Guard               guard{mutex};
-        RcvProdFile         prodFile = getProdFile(segId.getProdIndex());
+        RcvProdFile         prodFile = getProdFile(segId.prodIndex);
 
         if (!prodFile) {
-            static const MemSeg memSeg{};
-            return memSeg;
+            static const DataSeg dataSeg{};
+            return dataSeg;
         }
 
-        return  MemSeg(SegInfo(segId, prodFile.getProdSize(),
-                        prodFile.getSegSize(offset)),
-                        prodFile.getData(offset));
+        return  DataSeg(segId, prodFile.getProdSize(),
+                prodFile.getData(offset));
     }
 
     /**
@@ -1002,12 +995,12 @@ public:
      * @retval    `true`     Data-segment does exist
      * @retval    `false`    Data-segment does not exist
      */
-    bool exists(const SegId& segId)
+    bool exists(const DataSegId& segId)
     {
         Guard       guard{mutex};
-        RcvProdFile prodFile = getProdFile(segId.getProdIndex());
+        RcvProdFile prodFile = getProdFile(segId.prodIndex);
 
-        return prodFile && prodFile.exists(segId.getOffset());
+        return prodFile && prodFile.exists(segId.offset);
     }
 };
 
@@ -1037,15 +1030,15 @@ ProdInfo SubRepo::getProdInfo(const ProdIndex prodIndex) const {
     return static_cast<Impl*>(pImpl.get())->getProdInfo(prodIndex);
 }
 
-MemSeg SubRepo::getMemSeg(const SegId& segId) const {
-    return static_cast<Impl*>(pImpl.get())->getMemSeg(segId);
+DataSeg SubRepo::getDataSeg(const DataSegId& segId) const {
+    return static_cast<Impl*>(pImpl.get())->getDataSeg(segId);
 }
 
 bool SubRepo::exists(const ProdIndex prodIndex) const {
     return static_cast<Impl*>(pImpl.get())->exists(prodIndex);
 }
 
-bool SubRepo::exists(const SegId& segId) const {
+bool SubRepo::exists(const DataSegId& segId) const {
     return static_cast<Impl*>(pImpl.get())->exists(segId);
 }
 

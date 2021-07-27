@@ -39,6 +39,15 @@ class P2pNode : public RequestRcvr
               , public DataRcvr
 {
 public:
+    /**
+     * Relationship to the data-products:
+     */
+    enum class Type : char {
+        UNSET,
+        PUBLISHER,  // Node is the publisher
+        SUBSCRIBER  // Node is a subscriber
+    };
+
     virtual ~P2pNode() {}
 
     virtual bool isPublisher() const {
@@ -47,6 +56,10 @@ public:
 
     virtual bool isPathToPub() const {
         return false;
+    }
+
+    virtual Type getType() const {
+        return Type::UNSET;
     }
 
     virtual void recvNotice(const PubPath    notice,
@@ -92,6 +105,26 @@ public:
      */
     virtual DataSeg  recvRequest(const DataSegId request,
                                  Peer            peer) =0;
+
+    /**
+     * Handles a request for data-product information not being satisfied by a
+     * remote peer.
+     *
+     * @param[in] prodIndex  Index of the data-product
+     * @param[in] peer       Local peer whose remote counterpart couldn't
+     *                       satisfy request
+     */
+    virtual void missed(const ProdIndex prodIndex, Peer peer) =0;
+
+    /**
+     * Handles a request for a data-segment not being satisfied by a remote
+     * peer.
+     *
+     * @param[in] dataSegId  ID of data-segment
+     * @param[in] peer       Local peer whose remote counterpart couldn't
+     *                       satisfy request
+     */
+    virtual void missed(const DataSegId& dataSegId, Peer peer) =0;
 
     virtual void recvData(const ProdInfo prodInfo,
                           Peer           peer) =0;

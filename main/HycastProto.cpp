@@ -21,6 +21,7 @@
 
 #include "config.h"
 
+#include "error.h"
 #include "HycastProto.h"
 
 #include <cstring>
@@ -90,20 +91,9 @@ class ProdInfo::Impl
     ProdIndex index;   ///< Product index
     String    name;    ///< Name of product
     ProdSize  size;    ///< Size of product in bytes
-    Timestamp created; ///< When product was created
 
 public:
     Impl() =default;
-
-    Impl(    const ProdIndex   index,
-             const std::string name,
-             const ProdSize    size,
-             const Timestamp   created)
-        : index{index}
-        , name(name)
-        , size{size}
-        , created(created)
-    {}
 
     Impl(    const ProdIndex   index,
              const std::string name,
@@ -111,19 +101,12 @@ public:
         : index{index}
         , name(name)
         , size{size}
-        , created{}
-    {
-        struct timespec now;
-        ::clock_gettime(CLOCK_REALTIME, &now);
-        created.sec = now.tv_sec;
-        created.nsec = now.tv_nsec;
-    }
+    {}
 
     bool operator==(const Impl& rhs) const {
         return index == rhs.index &&
                name == rhs.name &&
-               size == rhs.size &&
-               created == rhs.created;
+               size == rhs.size;
     }
 
     String to_string(const bool withName) const
@@ -132,19 +115,11 @@ public:
         if (withName)
             string += "ProdInfo";
         return string + "{index=" + index.to_string() + ", name=\"" + name +
-                "\", size=" + std::to_string(size) + ", created=" +
-                created.to_string() + "}";
+                "\", size=" + std::to_string(size) + "}";
     }
 };
 
 ProdInfo::ProdInfo() =default;
-
-ProdInfo::ProdInfo(const ProdIndex   index,
-                   const std::string name,
-                   const ProdSize    size,
-                   const Timestamp   created)
-    : pImpl{std::make_shared<Impl>(index, name, size, created)}
-{}
 
 ProdInfo::ProdInfo(const ProdIndex   index,
                    const std::string name,
@@ -156,17 +131,14 @@ ProdInfo::operator bool() const {
     return static_cast<bool>(pImpl);
 }
 
-const ProdIndex& ProdInfo::getProdIndex() const {
+const ProdIndex& ProdInfo::getIndex() const {
     return pImpl->index;
 }
 const String&    ProdInfo::getName() const {
     return pImpl->name;
 }
-const ProdSize&  ProdInfo::getProdSize() const {
+const ProdSize&  ProdInfo::getSize() const {
     return pImpl->size;
-}
-const Timestamp& ProdInfo::getTimestamp() const {
-    return pImpl->created;
 }
 
 bool ProdInfo::operator==(const ProdInfo& rhs) const {

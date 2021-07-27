@@ -97,15 +97,15 @@ DataSeg::operator bool() const {
     return static_cast<bool>(pImpl);
 }
 
-const DataSegId& DataSeg::segId() const noexcept {
+const DataSegId& DataSeg::getId() const noexcept {
     return pImpl->segId;
 }
 
-ProdSize DataSeg::prodSize() const noexcept {
+ProdSize DataSeg::getProdSize() const noexcept {
     return pImpl->prodSize;
 }
 
-const char* DataSeg::data() const noexcept {
+const char* DataSeg::getData() const noexcept {
     return pImpl->buf;
 }
 

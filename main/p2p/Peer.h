@@ -34,12 +34,33 @@ namespace hycast {
 /// Handles low-level, asynchronous, bidirectional messaging with a remote peer.
 class Peer final
 {
-private:
+    friend class PeerSrvr;
+
+public:
     class     Impl;
+
+private:
     using     SharedPtr = std::shared_ptr<Impl>;
     SharedPtr pImpl;
 
     Peer(SharedPtr& pImpl);
+
+    /**
+     * Server-side construction.
+     *
+     * @param[in] node  Associated P2P node
+     */
+    explicit Peer(P2pNode& node);
+
+    /**
+     * Sets the next, individual socket. Server-side only.
+     *
+     * @param[in] sock        Relevant socket
+     * @retval    `true`      This instance is complete
+     * @retval    `false`     This instance is not complete
+     * @throw     LogicError  Connection is already complete
+     */
+    bool set(TcpSock& sock);
 
     /**
      * Indicates if instance is complete (i.e., has all individual connections).
@@ -51,19 +72,11 @@ private:
 
 public:
     friend class Impl;
-    friend class PeerSrvr;
 
     /**
      * Default constructs.
      */
     Peer() =default;
-
-    /**
-     * Server-side construction.
-     *
-     * @param[in] node  Associated P2P node
-     */
-    explicit Peer(P2pNode& node);
 
     /**
      * Constructs a client-side instance.
@@ -72,15 +85,6 @@ public:
      * @param[in] srvrAddr  Address of server to which to connect
      */
     Peer(P2pNode& node, const SockAddr& srvrAddr);
-
-    /**
-     * Sets the next, individual socket. Server-side only.
-     *
-     * @param[in] sock        Relevant socket
-     * @return                This instance
-     * @throw     LogicError  Connection is already complete
-     */
-    Peer& set(TcpSock& sock);
 
     /**
      * Starts this instance. Does the following:
@@ -137,30 +141,13 @@ public:
     /**
      * Notifies the remote peer.
      *
-     * @retval    `false`     Remote peer disconnected
+     * @retval    `false`     No connection. Connection was lost or `start()`
+     *                        wasn't called.
      * @retval    `true`      Success
      */
     bool notify(const PubPath notice) const;
     bool notify(const ProdIndex notice) const;
     bool notify(const DataSegId& notice) const;
-
-    /**
-     * Requests data from the remote peer.
-     *
-     * @retval    `false`     Remote peer disconnected
-     * @retval    `true`      Success
-     */
-    bool request(const ProdIndex request) const;
-    bool request(const DataSegId& request) const;
-
-    /**
-     * Sends data to the remote peer.
-     *
-     * @retval    `false`     Remote peer disconnected
-     * @retval    `true`      Success
-     */
-    bool send(const ProdInfo& prodInfo) const;
-    bool send(const DataSeg& dataSeg) const;
 
     bool rmtIsPubPath() const noexcept;
 };

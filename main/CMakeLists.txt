@@ -23,6 +23,7 @@ add_subdirectory(misc)
 add_subdirectory(inet)
 add_subdirectory(p2p)
 add_subdirectory(lib)
+add_subdirectory(repository)
 
 # Check for Doxygen(1)
 find_package(Doxygen)

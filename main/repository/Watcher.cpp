@@ -259,8 +259,6 @@ public:
      *
      * @param[out] watchEvent  The watched-for event
      * @threadsafety           Compatible but unsafe
-     *
-     * @threadsafety Unsafe
      * @throws       SystemError   Couldn't read inotify(7) file-descriptor
      * @throws       RuntimeError  A watched file-system was unmounted
      * @throws       RuntimeError  The inotify(7) event-queue overflowed
