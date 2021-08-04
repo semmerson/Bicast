@@ -35,15 +35,20 @@
 namespace hycast {
 
 /**
- * Implementation of the `Peer` class.
+ * Abstract base implementation of the `Peer` class.
  */
 class Peer::Impl
 {
     friend class PubImpl;
 
+    void assignSocks(TcpSock socks[3]) {
+        noticeSock  = socks[0];
+        requestSock = socks[1];
+        dataSock    = socks[2];
+    }
+
 protected:
     mutable Mutex      sockMutex;
-    mutable Mutex      rmtSockAddrMutex;
     mutable Mutex      exceptMutex;
     P2pNode*           node;
     /*
@@ -68,26 +73,48 @@ protected:
         STARTED,
         STOPPING
     };
-    using AtomicState = std::atomic<State>;
-    AtomicState        state;
-    std::exception_ptr exPtr;
-    std::atomic<bool>  connected;
-    using AtomicNodeType = std::atomic<P2pNode::Type>;
-    AtomicNodeType     rmtNodeType;
+    std::atomic<State>          state;
+    std::exception_ptr          exPtr;
+    std::atomic<bool>           connected;
+    std::atomic<P2pNode::Type>  rmtNodeType;
 
-    Impl() =default;
+    Impl()
+        : sockMutex()
+        , exceptMutex()
+        , node(nullptr)
+    {}
 
-    /**
-     * Orders the sockets so that the notice socket has the lowest client-side
-     * port number, then the request socket, and then the data socket.
-     *
-     * @param[in] notSock  Notice socket
-     * @param[in] reqSock  Request socket
-     * @param[in] datSock  Data socket
-     */
-    virtual void orderSocks(TcpSock& notSock,
-                            TcpSock& reqSock,
-                            TcpSock& datSock) =0;
+    void orderClntSocks(TcpSock socks[3]) const noexcept {
+        if (socks[1].getLclPort() < socks[0].getLclPort())
+            socks[1].swap(socks[0]);
+
+        if (socks[2].getLclPort() < socks[1].getLclPort()) {
+            socks[2].swap(socks[1]);
+            if (socks[1].getLclPort() < socks[0].getLclPort())
+                socks[1].swap(socks[0]);
+        }
+    }
+
+    void orderSrvrSocks(TcpSock socks[3]) const noexcept {
+        if (socks[1].getRmtPort() < socks[0].getRmtPort())
+            socks[1].swap(socks[0]);
+
+        if (socks[2].getRmtPort() < socks[1].getRmtPort()) {
+            socks[2].swap(socks[1]);
+            if (socks[1].getRmtPort() < socks[0].getRmtPort())
+                socks[1].swap(socks[0]);
+        }
+    }
+
+    void assignSrvrSocks(TcpSock socks[3]) {
+        orderSrvrSocks(socks);
+        assignSocks(socks);
+    }
+
+    void assignClntSocks(TcpSock socks[3]) {
+        orderClntSocks(socks);
+        assignSocks(socks);
+    }
 
     static inline bool write(TcpSock& sock, const PduId id) {
         return sock.write(static_cast<PduType>(id));
@@ -211,54 +238,55 @@ protected:
     /**
      * Sends data to the remote peer.
      *
-     * @retval    `false`     No connection. Connection was lost or `start()`
-     *                        wasn't called.
-     * @retval    `true`      Success
+     * @tparam    TYPE     Type of data
+     * @param[in] data     Data
+     * @param[in] pduId    Protocol Data Unit identifier
+     * @retval    `false`  No connection. Connection was lost or `start()`
+     *                     wasn't called.
+     * @retval    `true`   Success
      */
-    bool send(const ProdInfo& data) {
+    template<class TYPE>
+    bool send(const TYPE& data, PduId pduId) {
         if (!connected)
             return false;
 
-        return connected = write(dataSock, PduId::PROD_INFO) &&
-                write(dataSock, data);
+        return connected = write(dataSock, pduId) && write(dataSock, data);
     }
-    bool send(const DataSeg& data) {
-        if (!connected)
-            return false;
-
-        return connected = write(dataSock, PduId::DATA_SEG) &&
-                write(dataSock, data);
+    inline bool send(const ProdInfo& data) {
+        return send<ProdInfo>(data, PduId::PROD_INFO);
+    }
+    inline bool send(const DataSeg& data) {
+        return send<DataSeg>(data, PduId::DATA_SEG);
     }
 
-    virtual bool rcvPubPathNotice(Peer peer) =0;
-    virtual bool rcvProdInfoNotice(Peer peer) =0;
-    virtual bool rcvDataSegNotice(Peer peer) =0;
-
-    bool rcvProdInfoRequest(Peer peer) {
-        bool      success = false;
-        ProdIndex request;
-        LOG_DEBUG("Receiving product information request");
+    /**
+     * Receives a request for data from the remote peer. Sends the data to the
+     * remote peer if it exists.
+     *
+     * @tparam    TYPE     Type of request
+     * @param[in] peer     Associated local peer
+     * @retval    `true`   Data doesn't exist or was successfully sent
+     * @retval    `false`  Connection lost
+     */
+    template<class TYPE, class DATA>
+    bool rcvRequest(Peer peer) {
+        bool success = false;
+        TYPE request;
+        LOG_DEBUG("Receiving request");
         if (read(requestSock, request)) {
-            auto prodInfo = node->recvRequest(request, peer);
-            auto success = !prodInfo || send(prodInfo);
+            auto data = node->recvRequest(request, peer);
+            // Data doesn't exist or was successfully sent
+            success = !data || send(data);
             if (success) LOG_DEBUG("Product information sent");
         }
         return success;
     }
-    bool rcvDataSegRequest(Peer peer) {
-        bool      success;
-        DataSegId request;
-        LOG_DEBUG("Receiving data segment request");
-        if (read(requestSock, request)) {
-            auto dataSeg = node->recvRequest(request, peer);
-            success = !dataSeg || send(dataSeg);
-            if (success) LOG_DEBUG("Data segment sent");
-        }
-        return success;
+    inline bool rcvProdInfoRequest(Peer peer) {
+        return rcvRequest<ProdIndex, ProdInfo>(peer);
     }
-
-    virtual bool rcvProdInfo(Peer peer) =0;
-    virtual bool rcvDataSeg(Peer peer) =0;
+    inline bool rcvDataSegRequest(Peer peer) {
+        return rcvRequest<DataSegId, DataSeg>(peer);
+    }
 
     /**
      * Dispatch function for processing an incoming message from the remote
@@ -266,49 +294,11 @@ protected:
      *
      * @param[in] id            Message type
      * @param[in] peer          Associated local peer
-     * @retval    `false`       End-of-file encountered.
+     * @retval    `false`       Connection lost
      * @retval    `true`        Success
      * @throw std::logic_error  `id` is unknown
      */
-    bool processPdu(const PduId id, Peer peer) {
-        bool success = false; // EOF default
-
-        switch (id) {
-        case PduId::PUB_PATH_NOTICE: {
-            success = rcvPubPathNotice(peer);
-            break;
-        }
-        case PduId::PROD_INFO_NOTICE: {
-            success = rcvProdInfoNotice(peer);
-            break;
-        }
-        case PduId::DATA_SEG_NOTICE: {
-            success = rcvDataSegNotice(peer);
-            break;
-        }
-        case PduId::PROD_INFO_REQUEST: {
-            success = rcvProdInfoRequest(peer);
-            break;
-        }
-        case PduId::DATA_SEG_REQUEST: {
-            success = rcvDataSegRequest(peer);
-            break;
-        }
-        case PduId::PROD_INFO: {
-            success = rcvProdInfo(peer);
-            break;
-        }
-        case PduId::DATA_SEG: {
-            success = rcvDataSeg(peer);
-            break;
-        }
-        default:
-            throw std::logic_error("Invalid PDU type: " +
-                    std::to_string(static_cast<PduType>(id)));
-        }
-
-        return success;
-    }
+    virtual bool processPdu(const PduId id, Peer peer) =0;
 
     /**
      * Reads a socket from the remote peer and processes incoming messages.
@@ -333,10 +323,26 @@ protected:
         }
     }
 
+    /**
+     * Exchanges node-type information with the remote peer.
+     *
+     * @retval `true`   Success
+     * @retval `false`  Connection lost
+     */
     virtual bool exchangeNodeTypes() =0;
 
+    /**
+     * Starts the internal threads needed to service messages from the remote
+     * peer.
+     *
+     * @param[in] peer  Associated local peer
+     */
     virtual void startThreads(Peer peer) =0;
 
+    /**
+     * Stops and joins the threads that are servicing messages from the remote
+     * peer.
+     */
     virtual void stopAndJoinThreads() =0; // Idempotent
 
 public:
@@ -347,7 +353,6 @@ public:
      */
     Impl(P2pNode& node)
         : sockMutex()
-        , rmtSockAddrMutex()
         , exceptMutex()
         , node(&node)
         , noticeSock()
@@ -376,9 +381,6 @@ public:
     }
 
     Impl& operator=(const Impl& rhs) noexcept =delete; // Rule of three
-
-    virtual bool set(TcpSock& sock) =0;
-    virtual bool isComplete() const noexcept =0;
 
     /**
      * Starts this instance. Does the following:
@@ -434,7 +436,6 @@ public:
      * @return Socket address of remote peer
      */
     SockAddr getRmtAddr() const noexcept {
-        Guard guard{rmtSockAddrMutex};
         return rmtSockAddr;
     }
 
@@ -462,270 +463,168 @@ public:
         }
     }
 
-    String to_string(const bool withName) const {
-        Guard guard{rmtSockAddrMutex};
-        return rmtSockAddr.to_string(withName);
+    String to_string() const {
+        return rmtSockAddr.to_string();
     }
 
     /**
      * Notifies the remote peer.
      *
-     * @retval    `false`     No connection. Connection was lost or `start()`
-     *                        wasn't called.
-     * @retval    `true`      Success
+     * @tparam    TYPE     Type of notice
+     * @param[in] notice   Notice
+     * @param[in] pduId    Notice identifier for message
+     * @retval    `false`  No connection. Connection was lost or `start()`
+     *                     wasn't called.
+     * @retval    `true`   Success
      */
-    bool notify(const P2pNode::Type notice) {
+    template<class TYPE>
+    bool notify(const TYPE notice, PduId pduId) {
         throwIf();
         if (!connected)
             return false;
 
-        return connected = write(noticeSock, PduId::NODE_TYPE) &&
+        return connected = write(noticeSock, pduId) &&
                 write(noticeSock, notice);
     }
+    bool notify(const P2pNode::Type notice) {
+        return notify<P2pNode::Type>(notice, PduId::NODE_TYPE);
+    }
     bool notify(const PubPath notice) {
-        throwIf();
-        if (!connected)
-            return false;
-
-        return connected = write(noticeSock, PduId::PUB_PATH_NOTICE) &&
-                noticeSock.write(notice.operator bool());
+        return notify<bool>(static_cast<bool>(notice),
+                PduId::PUB_PATH_NOTICE);
     }
     bool notify(const ProdIndex notice) {
-        throwIf();
-        if (!connected)
-            return false;
-
-        return connected = write(noticeSock, PduId::PROD_INFO_NOTICE) &&
-            write(noticeSock, notice);
+        return notify<ProdIndex>(notice, PduId::PROD_INFO_NOTICE);
     }
     bool notify(const DataSegId& notice) {
-        throwIf();
-        if (!connected)
-            return false;
-
-        return connected = write(noticeSock, PduId::DATA_SEG_NOTICE) &&
-            write(noticeSock, notice);
+        return notify<DataSegId>(notice, PduId::DATA_SEG_NOTICE);
     }
 
     virtual bool rmtIsPubPath() const noexcept =0;
 };
 
-/**
- * Server-side peer implementation. The peer could be a publisher or a
- * subscriber.
- */
-class SrvrImpl : virtual public Peer::Impl
-{
-protected:
-    void orderSocks(TcpSock& notSock,
-                    TcpSock& reqSock,
-                    TcpSock& datSock) override {
-        if (reqSock.getRmtPort() < notSock.getRmtPort())
-            reqSock.swap(notSock);
+Peer::Peer(Impl* impl)
+    : pImpl(impl)
+{}
 
-        if (datSock.getRmtPort() < reqSock.getRmtPort()) {
-            datSock.swap(reqSock);
-            if (reqSock.getRmtPort() < notSock.getRmtPort())
-                reqSock.swap(notSock);
-        }
-    }
+Peer::Peer(SharedPtr& pImpl)
+    : pImpl(pImpl)
+{}
 
-public:
-    SrvrImpl()
-        : Impl()
-    {}
+bool Peer::start() {
+    return pImpl->start(*this);
+}
 
-    virtual ~SrvrImpl() noexcept {
-    }
+SockAddr Peer::getRmtAddr() noexcept {
+    return pImpl->getRmtAddr();
+}
 
-    /**
-     * Sets the next, individual socket.
+void Peer::stop() {
+    pImpl->stop();
+}
+
+Peer::operator bool() const {
+    return static_cast<bool>(pImpl);
+}
+
+size_t Peer::hash() const noexcept {
+    /*
+     * The underlying pointer is used instead of `pImpl->hash()` because
+     * hashing a client-side socket in the implementation won't work until
+     * `connect()` returns -- which could be a while -- and `PeerSet`, at least,
+     * requires a hash before it calls `Peer::start()`.
      *
-     * @param[in] sock        Relevant socket
-     * @retval    `true`      This instance is complete
-     * @retval    `false`     This instance is not complete
-     * @throw     LogicError  Connection is already complete
+     * This means, however, that it's possible to have multiple client-side
+     * peers connected to the same remote host within the same process.
      */
-    bool set(TcpSock& sock) {
-        Guard guard{sockMutex};
+    return std::hash<Impl*>()(pImpl.get());
+}
 
-        // NB: Keep function consonant with `SubImpl(P2pNode, SockAddr)`
+bool Peer::operator<(const Peer& rhs) const noexcept {
+    // Must be consistent with `hash()`
+    return pImpl.get() < rhs.pImpl.get();
+}
 
-        if (!noticeSock) {
-            noticeSock = sock;
-            Guard guard{rmtSockAddrMutex};
-            rmtSockAddr = noticeSock.getRmtAddr();
-        }
-        else if (!requestSock) {
-            requestSock = sock;
-        }
-        else if (!dataSock) {
-            dataSock = sock;
-            orderSocks(noticeSock, requestSock, dataSock);
-        }
-        else {
-            throw LOGIC_ERROR("Server-side P2P connection is already complete");
-        }
+bool Peer::operator==(const Peer& rhs) const noexcept {
+    return !(*this < rhs) && !(rhs < *this);
+}
 
-        return dataSock;
-    }
+bool Peer::operator!=(const Peer& rhs) const noexcept {
+    return (*this < rhs) || (rhs < *this);
+}
 
-    /**
-     * Indicates if instance is complete (i.e., has all individual sockets).
-     *
-     * @retval `false`  Instance is not complete
-     * @retval `true`   Instance is complete
-     */
-    bool isComplete() const noexcept override {
-        Guard guard{sockMutex};
-        return dataSock;
-    }
+String Peer::to_string() const {
+    return pImpl->to_string();
+}
 
-    bool ensureConnected() override {
-        if (!isComplete())
-            throw LOGIC_ERROR("Can't connect a server-side peer");
-        return true;
-    }
+bool Peer::notify(const PubPath notice) const {
+    return pImpl->notify(notice);
+}
 
-    virtual bool rmtIsPubPath() const noexcept =0;
-};
+bool Peer::notify(const ProdIndex notice) const {
+    return pImpl->notify(notice);
+}
+
+bool Peer::notify(const DataSegId& notice) const {
+    return pImpl->notify(notice);
+}
+
+bool Peer::rmtIsPubPath() const noexcept {
+    pImpl->rmtIsPubPath();
+}
+
+/******************************************************************************/
 
 /**
- * Client-side local peer implementation. The local peer will be a subscriber.
+ * Publisher's peer implementation. The peer will be server-side constructed.
  */
-class ClntImpl : virtual public Peer::Impl
-{
-protected:
-    void orderSocks(TcpSock& notSock,
-                    TcpSock& reqSock,
-                    TcpSock& datSock) override {
-        if (reqSock.getLclPort() < notSock.getLclPort())
-            reqSock.swap(notSock);
-
-        if (datSock.getLclPort() < reqSock.getLclPort()) {
-            datSock.swap(reqSock);
-            if (reqSock.getLclPort() < notSock.getLclPort())
-                reqSock.swap(notSock);
-        }
-    }
-
-    bool exchangeNodeTypes() override {
-        bool          success = false; // Failure default
-        P2pNode::Type nodeType;
-
-        // Keep consonant with `PubImpl::exchangeNodeTypes()`
-        if (read(noticeSock, nodeType)) {
-            rmtNodeType = nodeType;
-            // NB: publishers don't care about the type of the remote node
-            success = (nodeType == P2pNode::Type::PUBLISHER) ||
-                    write(noticeSock, P2pNode::Type::SUBSCRIBER);
-        }
-
-        return success;
-    }
-
-    /**
-     * Connects a client-side peer to a remote peer. Blocks while connecting.
-     *
-     * @retval    `false`     Remote peer disconnected
-     * @retval    `true`      Success
-     */
-    bool ensureConnected() override {
-        bool     success = false;
-        SockAddr srvrAddr;
-
-        {
-            Guard guard{rmtSockAddrMutex};
-            srvrAddr = rmtSockAddr;
-        }
-
-        // Connect to Peer server.
-        // Keep consonant with `PeerSrvr::accept()`
-        TcpClntSock notSock{srvrAddr};
-
-        const in_port_t noticePort = notSock.getLclPort();
-
-        if (notSock.write(noticePort)) {
-            TcpClntSock reqSock{srvrAddr};
-
-            if (reqSock.write(noticePort)) {
-                TcpClntSock datSock{srvrAddr};
-
-                if (datSock.write(noticePort)) {
-                    // Use of local RAII sockets => sockets close on error
-                    orderSocks(notSock, reqSock, datSock); // Might throw
-                    noticeSock  = notSock;
-                    requestSock = reqSock;
-                    dataSock    = datSock;
-                    success     = true;
-                }
-            }
-        }
-
-        return success;
-    }
-
-public:
-    /**
-     * Constructs.
-     *
-     * @param[in] srvrAddr  Socket address of peer-server
-     */
-    ClntImpl(const SockAddr srvrAddr)
-    {
-        rmtSockAddr = srvrAddr;
-    }
-
-    virtual ~ClntImpl() noexcept {
-    }
-
-    bool set(TcpSock& sock) {
-        throw LOGIC_ERROR("Can't set a subscriber's socket");
-    }
-    bool isComplete() const noexcept override {
-        return true;
-    }
-
-    virtual bool rmtIsPubPath() const noexcept =0;
-};
-
-/**
- * Publishing peer implementation. It will be server-side constructed.
- */
-class PubImpl final : virtual public Peer::Impl, public SrvrImpl
+class PubImpl : public Peer::Impl
 {
 protected:
     bool exchangeNodeTypes() override {
-        // Keep consonant with `ClntImpl::exchangeNodeTypes()`
+        // Keep consonant with `SubImpl::exchangeNodeTypes()`
         // NB: Publishers don't care about the type of the remote node
         return write(noticeSock, P2pNode::Type::PUBLISHER);
     }
 
-    bool rcvPubPathNotice(Peer peer) override {
-        throw LOGIC_ERROR("Publisher shouldn't receive notices");
-    }
-    bool rcvProdInfoNotice(Peer peer) override {
-        throw LOGIC_ERROR("Publisher shouldn't receive notices");
-    }
-    bool rcvDataSegNotice(Peer peer) override {
-        throw LOGIC_ERROR("Publisher shouldn't receive notices");
-    }
-
-    bool rcvProdInfo(Peer peer) override {
-        throw LOGIC_ERROR("Publisher shouldn't receive data");
-    }
-    bool rcvDataSeg(Peer peer) override {
-        throw LOGIC_ERROR("Publisher shouldn't receive data");
-    }
-
-    void startThreads(Peer peer) {
+    void startThreads(Peer peer) override {
         requestReader = Thread(&PubImpl::runReader, this, requestSock, peer);
+    }
+
+    /**
+     * Dispatch function for processing an incoming message from the remote
+     * peer.
+     *
+     * @param[in] id            Message type
+     * @param[in] peer          Associated local peer
+     * @retval    `false`       Connection lost
+     * @retval    `true`        Success
+     * @throw std::logic_error  `id` is unknown
+     */
+    bool processPdu(const PduId id, Peer peer) override {
+        bool success = false; // EOF default
+
+        switch (id) {
+        case PduId::PROD_INFO_REQUEST: {
+            success = rcvProdInfoRequest(peer);
+            break;
+        }
+        case PduId::DATA_SEG_REQUEST: {
+            success = rcvDataSegRequest(peer);
+            break;
+        }
+        default:
+            throw std::logic_error("Invalid PDU type: " +
+                    std::to_string(static_cast<PduType>(id)));
+        }
+
+        return success;
     }
 
     /**
      * Idempotent.
      */
-    void stopAndJoinThreads() {
+    void stopAndJoinThreads() override {
         state = State::STOPPING;
 
         if (requestSock)
@@ -734,30 +633,41 @@ protected:
             requestReader.join();
     }
 
+    bool ensureConnected() override {
+        return true;
+    }
+
 public:
     /**
-     * Constructs.
+     * Constructs server-side.
      *
-     * @param[in] node      P2P node
+     * @param[in] node   Publisher's P2P node
+     * @param[in] socks  Sockets connected to the remote peer
      */
-    PubImpl(P2pNode& node)
+    PubImpl(PubP2pNode& node, TcpSock socks[3])
         : Impl(node)
-        , SrvrImpl()
-    {}
+    {
+        assignSrvrSocks(socks);
+        rmtSockAddr = noticeSock.getRmtAddr();
+    }
 
     bool rmtIsPubPath() const noexcept override {
-        return true; // Because it's connected to me
+        return true; // Because connected to me
     }
 };
 
+PubPeer::PubPeer(PubP2pNode& node, TcpSock socks[3])
+    : Peer(new PubImpl(node, socks))
+{}
+
+/******************************************************************************/
+
 /**
- * Subscribing peer implementation. May be server-side or client-side
+ * Subscriber's peer implementation. May be server-side or client-side
  * constructed.
  */
-class SubImpl : virtual public Peer::Impl
+class SubImpl : public Peer::Impl
 {
-    friend class Request;
-
     /**
      * Class for requests sent to a remote peer. Implemented as a discriminated
      * union so that it has a known size and, consequently, can be an element in
@@ -809,7 +719,7 @@ class SubImpl : virtual public Peer::Impl
                           : "<unset>";
         }
 
-        void missed(P2pNode& node, Peer peer) const {
+        void missed(SubP2pNode& node, Peer peer) const {
             if (id == Id::PROD_INFO) {
                 node.missed(prodIndex, peer);
             }
@@ -817,16 +727,17 @@ class SubImpl : virtual public Peer::Impl
                 node.missed(dataSegId, peer);
             }
             else {
-                throw LOGIC_ERROR("Invalid ID: " + std::to_string((int)id));
+                throw LOGIC_ERROR("Invalid request ID: " +
+                        std::to_string((int)id));
             }
         }
 
-        bool equals(const ProdIndex prodIndex) const noexcept {
-            return id == Id::PROD_INFO && this->prodIndex == prodIndex;
+        inline bool matches(const ProdInfo& prodInfo) const noexcept {
+            return id == Id::PROD_INFO && prodIndex == prodInfo.getIndex();
         }
 
-        bool equals(const DataSegId& dataSegId) const noexcept {
-            return id == Id::DATA_SEG && this->dataSegId == dataSegId;
+        inline bool matches(const DataSeg& dataSeg) const noexcept {
+            return id == Id::DATA_SEG && dataSegId == dataSeg.getId();
         }
 
         bool write(TcpSock& sock) const {
@@ -834,17 +745,17 @@ class SubImpl : virtual public Peer::Impl
 
             if (id == Id::PROD_INFO) {
                 success = sock.write(
-                            static_cast<PduType>(PduId::PROD_INFO_REQUEST))
-                        && sock.write((ProdIndex::Type)prodIndex);
+                        static_cast<PduType>(PduId::PROD_INFO_REQUEST)) &&
+                        sock.write((ProdIndex::Type)prodIndex);
             }
             else if (id == Id::DATA_SEG) {
                 success = sock.write(
-                            static_cast<PduType>(PduId::DATA_SEG_REQUEST))
-                        && sock.write((ProdIndex::Type)dataSegId.prodIndex)
-                        && sock.write(dataSegId.offset);
+                        static_cast<PduType>(PduId::DATA_SEG_REQUEST)) &&
+                        sock.write((ProdIndex::Type)dataSegId.prodIndex) &&
+                        sock.write(dataSegId.offset);
             }
             else {
-                throw LOGIC_ERROR("Instance is unset");
+                throw LOGIC_ERROR("Request is unset");
             }
 
             return success;
@@ -885,6 +796,12 @@ class SubImpl : virtual public Peer::Impl
             return queue.size();
         }
 
+        /**
+         * Indicates if the queue is empty.
+         *
+         * @retval `true`   Queue is empty
+         * @retval `false`  Queue is not empty
+         */
         bool empty() const {
             Guard guard{mutex};
             return queue.empty();
@@ -893,7 +810,7 @@ class SubImpl : virtual public Peer::Impl
         /**
          * Returns the request at the head of the queue.
          *
-         * @return  Head request
+         * @return  Oldest request
          */
         Request& front() {
             Guard guard{mutex};
@@ -902,9 +819,13 @@ class SubImpl : virtual public Peer::Impl
 
         /**
          * Deletes the request at the head of the queue.
+         *
+         * @throw OutOfRange  Queue is empty
          */
         void pop() {
             Guard guard{mutex};
+            if (queue.empty())
+                throw OUT_OF_RANGE("Queue is empty");
             queue.pop();
         }
 
@@ -936,7 +857,17 @@ class SubImpl : virtual public Peer::Impl
             cond.notify_all();
         }
 
-        void drainTo(P2pNode& node, Peer peer) {
+        /**
+         * Tells a subscriber's P2P node about all requests in the queue in the
+         * order in which they were added. Deletes those requests from the
+         * queue.
+         *
+         * @param[in] node  Subscriber's P2P node
+         * @param[in] peer  Associated local peer
+         * @see SubP2pNode::missed(ProdIndex, Peer)
+         * @see SubP2pNode::missed(DataSegId, Peer)
+         */
+        void drainTo(SubP2pNode& node, Peer peer) {
             Guard guard{mutex};
             while (!queue.empty()) {
                 queue.front().missed(node, peer);
@@ -944,85 +875,64 @@ class SubImpl : virtual public Peer::Impl
             }
         }
     };
-    RequestQ           requests;
-    RequestQ           requested;
 
-protected:
-    std::atomic<bool>  rmtPubPath;
+    SubP2pNode&        node;        // Subscriber's P2P node
+    RequestQ           requests;    // Requests to be sent to remote peer
+    RequestQ           requested;   // Requests sent to remote peer
+    std::atomic<bool>  clientSide;  // Instance was constructed client-side?
 
-    SubImpl()
-        : requests()
-        , requested()
-        , rmtPubPath(false)
-    {}
+    /**
+     * Pushes a request for product information onto the request queue.
+     *
+     * @param[in] prodIndex   Index of product
+     * @retval    `false`     No connection. Connection was lost or `start()`
+     *                        wasn't called.
+     * @retval    `true`      Success
+     */
+    bool request(const ProdIndex prodIndex) {
+        if (!connected)
+            return false;
 
-    bool rcvPubPathNotice(Peer peer) override {
-        bool notice;
-        if (read(noticeSock, notice)) {
-            node->recvNotice(PubPath(notice), peer);
-            rmtPubPath = notice;
-            return true;
-        }
-        return false;
-    }
-    bool rcvProdInfoNotice(Peer peer) override {
-        ProdIndex notice;
-        return read(noticeSock, notice) && node->recvNotice(notice, peer) &&
-            request(notice);
-    }
-    bool rcvDataSegNotice(Peer peer) override {
-        DataSegId notice;
-        return read(noticeSock, notice) && node->recvNotice(notice, peer) &&
-            request(notice);
-    }
-    bool rcvProdInfo(Peer peer) override {
-        bool success = false;
-        ProdInfo       data;
-        if (read(dataSock, data)) {
-            while (!requested.empty()) {
-                const auto& expected = requested.front();
-                if (expected.equals(data.getIndex())) {
-                    node->recvData(data, peer);
-                    requested.pop();
-                    break;
-                }
+        LOG_DEBUG("Pushing product information request");
+        const auto size = requests.push(Request{prodIndex});
+        LOG_DEBUG("Request queue size is " + std::to_string(size));
 
-                expected.missed(*node, peer);
-                requested.pop();
-            }
-            success = true;
-        }
-        return success;
-    }
-    bool rcvDataSeg(Peer peer) override {
-        bool success = false;
-        DataSeg        data;
-        if (read(dataSock, data)) {
-            while (!requested.empty()) {
-                const auto& expected = requested.front();
-                if (expected.equals(data.getId())) {
-                    node->recvData(data, peer);
-                    requested.pop();
-                    break;
-                }
-
-                expected.missed(*node, peer);
-                requested.pop();
-            }
-            success = true;
-        }
-        return success;
+        return true;
     }
 
+    /**
+     * Pushes a request for a data-segment onto the request queue.
+     *
+     * @param[in] segId       ID of data-segment
+     * @retval    `false`     Remote peer disconnected
+     * @retval    `true`      Success
+     */
+    bool request(const DataSegId& segId) {
+        if (!connected)
+            return false;
+
+        LOG_DEBUG("Pushing data segment request");
+        const auto size = requests.push(Request(segId));
+        LOG_DEBUG("Request queue size is " + std::to_string(size));
+
+        return true;
+    }
+
+    /**
+     * Sends requests to the remote peer. Reads from the request queue and
+     * writes to the request socket.
+     *
+     * @param[in] peer  Associated local peer
+     */
     void runRequester(Peer peer) {
         try {
             for (;;) {
-                const auto request = requests.waitGet();
+                auto request = requests.waitGet();
 
                 if (!request) {
                     // `requests.stop()` called
-                    requested.drainTo(*node, peer);
-                    requests.drainTo(*node, peer);
+                    requested.drainTo(node, peer);
+                    requests.drainTo(node, peer);
                     break;
                 }
 
@@ -1041,7 +951,131 @@ protected:
         LOG_DEBUG("Terminating");
     }
 
-    void startThreads(Peer peer) {
+    bool rcvPubPathNotice(Peer peer) {
+        bool notice;
+        if (read(noticeSock, notice)) {
+            node.recvNotice(PubPath(notice), peer);
+            rmtPubPath = notice;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Receives a notice about available data.
+     *
+     * @tparam    TYPE     Type of notice
+     * @param[in] peer     Associated local peer
+     * @retval    `false`  Connection lost
+     * @retval    `true`   Success
+     */
+    template<class TYPE>
+    bool rcvNotice(Peer peer) {
+        TYPE notice;
+        if (!read(noticeSock, notice))
+            return false;
+        if (!node.recvNotice(notice, peer))
+            return true;
+        return request(notice);
+    }
+    inline bool rcvProdInfoNotice(Peer peer) {
+        return rcvNotice<ProdIndex>(peer);
+    }
+    inline bool rcvDataSegNotice(Peer peer) {
+        return rcvNotice<DataSegId>(peer);
+    }
+
+    template<class DATA>
+    bool rcvData(Peer peer) {
+        bool success = false;
+        DATA           data;
+        if (read(dataSock, data)) {
+            while (!requested.empty()) {
+                const auto& expected = requested.front();
+                if (expected.matches(data)) {
+                    node.recvData(data, peer);
+                    requested.pop();
+                    break;
+                }
+
+                /*
+                 *  NB: A missed response means that the remote peer doesn't
+                 *  have the requested item.
+                 */
+                expected.missed(node, peer);
+                requested.pop();
+            }
+            success = true;
+        }
+        return success;
+    }
+    inline bool rcvProdInfo(Peer peer) {
+        return rcvData<ProdInfo>(peer);
+    }
+    inline bool rcvDataSeg(Peer peer) {
+        return rcvData<DataSeg>(peer);
+    }
+
+protected:
+    std::atomic<bool>  rmtPubPath;
+
+    bool ensureConnected() override {
+        if (!clientSide)
+            return true; // Server-side constructed => already connected
+
+        bool        success = false;
+        TcpClntSock socks[3]; // Use of RAII sockets => sockets close on error
+
+        /*
+         * Connect to Peer server. Keep consonant with `PeerSrvr::accept()`.
+         */
+
+        socks[0] = TcpClntSock{rmtSockAddr};
+
+        const in_port_t noticePort = socks[0].getLclPort();
+
+        if (socks[0].write(noticePort)) {
+            socks[1] = TcpClntSock{rmtSockAddr};
+
+            if (socks[1].write(noticePort)) {
+                socks[2] = TcpClntSock{rmtSockAddr};
+
+                if (socks[2].write(noticePort)) {
+                    assignClntSocks(socks); // Might throw
+                    success     = true;
+                }
+            }
+        }
+
+        return success;
+    }
+
+    bool exchangeNodeTypes() override {
+        bool          success = false; // Failure default
+        P2pNode::Type nodeType;
+
+        if (clientSide) {
+            // Keep consonant with `PubImpl::exchangeNodeTypes()`
+            if (read(noticeSock, nodeType)) {
+                rmtNodeType = nodeType;
+                // NB: Publishers don't care about the type of the remote node
+                success = (nodeType == P2pNode::Type::PUBLISHER) ||
+                        write(noticeSock, P2pNode::Type::SUBSCRIBER);
+            }
+        }
+        else {
+            if (write(noticeSock, P2pNode::Type::SUBSCRIBER) &&
+                    read(noticeSock, nodeType)) {
+                // NB: A publisher's local peer is never client-side constructed
+                rmtNodeType = nodeType; // Will be `P2pNode::Type::SUBSCRIBER`
+                success = true;
+            }
+        }
+
+        return success;
+    }
+
+    void startThreads(Peer peer) override {
         noticeReader = Thread(&SubImpl::runReader, this, noticeSock, peer);
 
         try {
@@ -1081,46 +1115,59 @@ protected:
     }
 
     /**
-     * Requests product information from the remote peer. Blocks while writing.
+     * Dispatch function for processing an incoming message from the remote
+     * peer.
      *
-     * @param[in] prodIndex   Index of product
-     * @retval    `false`     No connection. Connection was lost or `start()`
-     *                        wasn't called.
-     * @retval    `true`      Success
+     * @param[in] id            Message type
+     * @param[in] peer          Associated local peer
+     * @retval    `false`       Connection lost
+     * @retval    `true`        Success
+     * @throw std::logic_error  `id` is unknown
      */
-    bool request(const ProdIndex prodIndex) {
-        if (!connected)
-            return false;
+    bool processPdu(const PduId id, Peer peer) override {
+        bool success = false; // EOF default
 
-        LOG_DEBUG("Pushing product information request");
-        const auto size = requests.push(Request(prodIndex));
-        LOG_DEBUG("Request queue size is " + std::to_string(size));
+        switch (id) {
+        case PduId::PUB_PATH_NOTICE: {
+            success = rcvPubPathNotice(peer);
+            break;
+        }
+        case PduId::PROD_INFO_NOTICE: {
+            success = rcvProdInfoNotice(peer);
+            break;
+        }
+        case PduId::DATA_SEG_NOTICE: {
+            success = rcvDataSegNotice(peer);
+            break;
+        }
+        case PduId::PROD_INFO_REQUEST: {
+            success = rcvProdInfoRequest(peer);
+            break;
+        }
+        case PduId::DATA_SEG_REQUEST: {
+            success = rcvDataSegRequest(peer);
+            break;
+        }
+        case PduId::PROD_INFO: {
+            success = rcvProdInfo(peer);
+            break;
+        }
+        case PduId::DATA_SEG: {
+            success = rcvDataSeg(peer);
+            break;
+        }
+        default:
+            throw std::logic_error("Invalid PDU type: " +
+                    std::to_string(static_cast<PduType>(id)));
+        }
 
-        return true;
-    }
-
-    /**
-     * Requests a data-segment from the remote peer. Blocks while writing.
-     *
-     * @param[in] segId       ID of data-segment
-     * @retval    `false`     Remote peer disconnected
-     * @retval    `true`      Success
-     */
-    bool request(const DataSegId& segId) {
-        if (!connected)
-            return false;
-
-        LOG_DEBUG("Pushing data segment request");
-        const auto size = requests.push(Request(segId));
-        LOG_DEBUG("Request queue size is " + std::to_string(size));
-
-        return true;
+        return success;
     }
 
     /**
      * Idempotent.
      */
-    void stopAndJoinThreads() {
+    void stopAndJoinThreads() override {
         state = State::STOPPING;
         requests.stop();
 
@@ -1142,186 +1189,66 @@ protected:
     }
 
 public:
-    virtual ~SubImpl() {
-    }
-
-    //virtual bool rmtIsPubPath() const noexcept =0;
-
-    bool rmtIsPubPath() const noexcept override {
-        return rmtPubPath;
-    }
-};
-
-/**
- * Server-side constructed subscribing peer implementation.
- */
-class SrvrSubImpl final : public SrvrImpl, public SubImpl
-{
-protected:
-    bool exchangeNodeTypes() override {
-        bool          success = false; // Failure default
-        P2pNode::Type nodeType;
-
-        // Keep consonant with `ClntImpl::exchangeNodeTypes()`
-        // NB: The remote node will be a subscriber
-        if (write(noticeSock, P2pNode::Type::SUBSCRIBER) &&
-                read(noticeSock, nodeType)) {
-            rmtNodeType = nodeType;
-            success = true;
-        }
-
-        return success;
-    }
-
-public:
     /**
-     * Constructs.
+     * Client-side construction.
      *
-     * @param[in] node      P2P node
+     * @param[in] node      Subscriber's P2P node
+     * @param[in] srvrAddr  Socket address of remote peer-server
      */
-    SrvrSubImpl(P2pNode& node)
+    SubImpl(SubP2pNode& node, SockAddr srvrAddr)
         : Impl(node)
-        , SrvrImpl()
-    {}
-
-    bool rmtIsPubPath() const noexcept override {
-        return rmtPubPath;
+        , node(node)
+        , requests()
+        , requested()
+        , rmtPubPath(false)
+        , clientSide(true)
+    {
+        rmtSockAddr = srvrAddr;
     }
-};
 
-/**
- * Client-side constructed subscribing peer implementation.
- */
-class ClntSubImpl final : public ClntImpl, public SubImpl
-{
-protected:
-    bool exchangeNodeTypes() override {
-        bool          success = false; // Failure default
-        P2pNode::Type nodeType;
-
-        // Keep consonant with `ClntImpl::exchangeNodeTypes()`
-        // NB: The remote node will be a subscriber
-        if (write(noticeSock, P2pNode::Type::SUBSCRIBER) &&
-                read(noticeSock, nodeType)) {
-            rmtNodeType = nodeType;
-            if (nodeType == P2pNode::Type::PUBLISHER)
-                rmtPubPath = true;
-            success = true;
-        }
-
-        return success;
-    }
-public:
     /**
-     * Constructs.
+     * Server-side construction.
      *
-     * @param[in] node      P2P node
-     * @param[in] srvrAddr  Socket address of peer-server
+     * @param[in] node   Subscriber's P2P node
+     * @param[in] socks  Sockets connected to the remote peer
      */
-    ClntSubImpl(P2pNode& node, const SockAddr srvrAddr)
+    SubImpl(SubP2pNode& node, TcpSock socks[3])
         : Impl(node)
-        , ClntImpl(srvrAddr)
-    {}
+        , node(node)
+        , requests()
+        , requested()
+        , rmtPubPath(false)
+        , clientSide(false)
+    {
+        assignSrvrSocks(socks);
+        rmtSockAddr = noticeSock.getRmtAddr();
+    }
 
     bool rmtIsPubPath() const noexcept override {
         return rmtPubPath;
     }
 };
 
-/******************************************************************************/
-
-Peer::Peer(SharedPtr& pImpl)
-    : pImpl(pImpl)
+SubPeer::SubPeer(SubP2pNode& node, TcpSock socks[3])
+    : Peer(new SubImpl(node, socks))
 {}
 
-Peer::Peer(P2pNode& node)
-    : pImpl(node.isPublisher()
-            ? static_cast<Impl*>(new PubImpl(node))
-            : static_cast<Impl*>(new SrvrSubImpl(node)))
+SubPeer::SubPeer(SubP2pNode& node, const SockAddr& srvrAddr)
+    : Peer(new SubImpl(node, srvrAddr))
 {}
-
-Peer::Peer(P2pNode& node, const SockAddr& srvrAddr)
-    : pImpl(std::make_shared<ClntSubImpl>(node, srvrAddr))
-{}
-
-bool Peer::set(TcpSock& sock) {
-    return pImpl->set(sock);
-}
-
-bool Peer::isComplete() const noexcept {
-    return pImpl->isComplete();
-}
-
-bool Peer::start() {
-    return pImpl->start(*this);
-}
-
-SockAddr Peer::getRmtAddr() noexcept {
-    return pImpl->getRmtAddr();
-}
-
-void Peer::stop() {
-    pImpl->stop();
-}
-
-Peer::operator bool() const {
-    return static_cast<bool>(pImpl);
-}
-
-size_t Peer::hash() const noexcept {
-    /*
-     * The underlying pointer is used instead of `pImpl->hash()` because
-     * hashing a client-side socket in the implementation won't work until
-     * `connect()` returns -- which could be a while -- and `PeerSet`, at least,
-     * requires a hash before it calls `Peer::start()`.
-     *
-     * This means, however, that it's possible to have multiple client-side
-     * peers connected to the same remote host within the same process.
-     */
-    return std::hash<Impl*>()(pImpl.get());
-}
-
-bool Peer::operator<(const Peer& rhs) const noexcept {
-    // Must be consistent with `hash()`
-    return pImpl.get() < rhs.pImpl.get();
-}
-
-bool Peer::operator==(const Peer& rhs) const noexcept {
-    return !(*this < rhs) && !(rhs < *this);
-}
-
-bool Peer::operator!=(const Peer& rhs) const noexcept {
-    return (*this < rhs) || (rhs < *this);
-}
-
-String Peer::to_string(const bool withName) const {
-    return pImpl->to_string(withName);
-}
-
-bool Peer::notify(const PubPath notice) const {
-    return pImpl->notify(notice);
-}
-
-bool Peer::notify(const ProdIndex notice) const {
-    return pImpl->notify(notice);
-}
-
-bool Peer::notify(const DataSegId& notice) const {
-    return pImpl->notify(notice);
-}
-
-bool Peer::rmtIsPubPath() const noexcept {
-    pImpl->rmtIsPubPath();
-}
 
 /******************************************************************************/
 
 /**
  * Peer-server implementation.
+ *
+ * @tparam NODE  Type of P2P node
+ * @tparam PEER  Type of associated peer
  */
-class PeerSrvr::Impl
+template<class NODE, class PEER>
+class PeerSrvr<NODE, PEER>::Impl
 {
-    using PeerQ = std::queue<Peer, std::list<Peer>>;
+    using PeerQ = std::queue<PEER, std::list<PEER>>;
 
     class PeerFactory
     {
@@ -1337,39 +1264,47 @@ class PeerSrvr::Impl
             };
         };
 
-        using Map = std::unordered_map<SockAddr, Peer, Hash, AreEqual>;
+        using Map = std::unordered_map<SockAddr, TcpSock[3], Hash, AreEqual>;
 
-        P2pNode& node;
-        Map      peers;
+        NODE& node;
+        Map   connections;
 
     public:
-        PeerFactory(P2pNode& node)
+        PeerFactory(NODE& node)
             : node(node)
-            , peers()
+            , connections()
         {}
 
         /**
          * Adds an individual socket to a server-side peer. If the addition
          * completes the entry, then it removed from this instance.
          *
-         * @param[in] sock        Individual socket
-         * @param[in] noticePort  Port number of the notification socket
-         * @return                Associated peer
-         * @threadsafety          Unsafe
+         * @param[in]  sock        Individual socket
+         * @param[in]  noticePort  Port number of the notification socket
+         * @param[out] peer        Associated peer. Set iff `true` is returned.
+         * @retval     `false`     Peer is not complete. `peer` is not set.
+         * @retval     `true`      Peer is complete. `peer` is set.
+         * @threadsafety           Unsafe
          */
-        Peer add(TcpSock& sock, in_port_t noticePort) {
+        bool add(TcpSock& sock, in_port_t noticePort, PEER& peer) {
             // TODO: Limit number of outstanding connections
             // TODO: Purge old entries
             auto key = sock.getRmtAddr().clone(noticePort);
-            auto peer = peers[key];
+            auto socks = connections[key];
 
-            if (!peer)
-                peers[key] = peer = Peer(node);
+            for (int i = 0; i < 3; ++i) {
+                if (!socks[i]) {
+                    socks[i] = sock;
+                    break;
+                }
+            }
 
-            if (peer.set(sock))
-                peers.erase(key);
+            if (!socks[2])
+                return false;
 
-            return peer;
+            peer = PEER(node, socks);
+            connections.erase(key);
+            return true;
         }
     };
 
@@ -1378,7 +1313,7 @@ class PeerSrvr::Impl
     PeerFactory       peerFactory;
     const TcpSrvrSock srvrSock;
     PeerQ             acceptQ;
-    PeerQ::size_type  maxAccept;
+    size_t            maxAccept;
 
     /**
      * Executes on separate thread.
@@ -1393,8 +1328,8 @@ class PeerSrvr::Impl
             Guard guard{mutex};
 
             if (acceptQ.size() < maxAccept) {
-                auto peer = peerFactory.add(sock, noticePort);
-                if (peer.isComplete())
+                PEER peer{};
+                if (peerFactory.add(sock, noticePort, peer))
                     acceptQ.push(peer);
                 cond.notify_one();
             }
@@ -1403,13 +1338,13 @@ class PeerSrvr::Impl
 
 public:
     /**
-     * Constructs from the local address of the server.
+     * Constructs from the local address for the server.
      *
      * @param[in] node       P2P node
-     * @param[in] srvrAddr   Local Address of P2P server
+     * @param[in] srvrAddr   Local Address for P2P server
      * @param[in] maxAccept  Maximum number of outstanding P2P connections
      */
-    Impl(   P2pNode&        node,
+    Impl(   NODE&           node,
             const SockAddr& srvrAddr,
             const unsigned  maxAccept)
         : mutex()
@@ -1421,11 +1356,11 @@ public:
     {}
 
     /**
-     * Returns the next, accepted, peer-to-peer connection.
+     * Returns the next, accepted peer.
      *
-     * @return Next P2P connection
+     * @return Next peer
      */
-    Peer accept() {
+    PEER accept() {
         Lock lock{mutex};
 
         while (acceptQ.empty()) {
@@ -1444,13 +1379,27 @@ public:
     }
 };
 
-PeerSrvr::PeerSrvr(P2pNode&        node,
-                   const SockAddr& srvrAddr,
-                   const unsigned  maxAccept)
-    : pImpl(std::make_shared<Impl>(node, srvrAddr, maxAccept))
+template<>
+PeerSrvr<PubP2pNode,PubPeer>::PeerSrvr(PubP2pNode&     node,
+                                       const SockAddr& srvrAddr,
+                                       unsigned        maxAccept)
+    : pImpl(new Impl(node, srvrAddr, maxAccept))
 {}
 
-Peer PeerSrvr::accept() {
+template<>
+PubPeer PeerSrvr<PubP2pNode,PubPeer>::accept() {
+    return pImpl->accept();
+}
+
+template<>
+PeerSrvr<SubP2pNode,SubPeer>::PeerSrvr(SubP2pNode&     node,
+                                       const SockAddr& srvrAddr,
+                                       unsigned        maxAccept)
+    : pImpl(new Impl(node, srvrAddr, maxAccept))
+{}
+
+template<>
+SubPeer PeerSrvr<SubP2pNode,SubPeer>::accept() {
     return pImpl->accept();
 }
 

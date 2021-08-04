@@ -35,8 +35,6 @@ class Peer; // Forward declaration
 
 /// Interface
 class P2pNode : public RequestRcvr
-              , public NoticeRcvr
-              , public DataRcvr
 {
 public:
     /**
@@ -50,17 +48,60 @@ public:
 
     virtual ~P2pNode() {}
 
-    virtual bool isPublisher() const {
-        return false;
+    virtual bool isPathToPub() const =0;
+
+#if 0
+    /**
+     * Receives a request for product information from a remote peer.
+     *
+     * @param[in] request      Which product
+     * @param[in] peer         Associated local peer
+     * @return                 Product information. Will test false if it
+     *                         shouldn't be sent to remote peer.
+     */
+    virtual ProdInfo recvRequest(const ProdIndex  request,
+                                 Peer             peer) =0;
+    /**
+     * Receives a request for a data-segment from a remote peer.
+     *
+     * @param[in] request      Which data-segment
+     * @param[in] peer         Associated local peer
+     * @return                 Product information. Will test false if it
+     *                         shouldn't be sent to remote peer.
+     */
+    virtual DataSeg  recvRequest(const DataSegId request,
+                                 Peer            peer) =0;
+#endif
+};
+
+/// Interface for a publishing P2P node
+class PubP2pNode : public P2pNode
+{
+public:
+    virtual ~PubP2pNode() {}
+
+#if 0
+    bool isPathToPub() const {
+        return true;
     }
 
-    virtual bool isPathToPub() const {
-        return false;
-    }
+    virtual ProdInfo recvRequest(const ProdIndex request,
+                                 Peer            peer) =0;
 
-    virtual Type getType() const {
-        return Type::UNSET;
-    }
+    virtual DataSeg  recvRequest(const DataSegId request,
+                                 Peer            peer) =0;
+#endif
+};
+
+/// Interface for a subscribing P2P node
+class SubP2pNode : public PubP2pNode
+                 , public NoticeRcvr
+                 , public DataRcvr
+{
+public:
+    virtual ~SubP2pNode() {}
+
+    virtual bool isPathToPub() const =0;
 
     virtual void recvNotice(const PubPath    notice,
                             Peer             peer) =0;

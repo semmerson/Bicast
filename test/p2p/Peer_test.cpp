@@ -15,7 +15,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public P2pNode
+class PeerTest : public ::testing::Test, public SubP2pNode
 {
 protected:
     typedef enum {
@@ -116,13 +116,6 @@ public:
     }
 
     // Publisher-side
-    bool isPublisher() const override {
-        LOG_TRACE;
-        static int count{0};
-        return count++ == 0; // Publisher is created first; rest are subscribers
-    }
-
-    // Publisher-side
     bool isPathToPub() const override {
         LOG_TRACE;
         return true;
@@ -215,7 +208,7 @@ public:
 
     void startPubPeer(Peer& pubPeer)
     {
-        PeerSrvr peerSrvr{*this, pubAddr};
+        PubPeerSrvr peerSrvr{*this, pubAddr};
         orState(LISTENING);
 
         pubPeer = peerSrvr.accept();
@@ -259,7 +252,7 @@ TEST_F(PeerTest, PrematureStop)
     try {
         waitForState(LISTENING);
 
-        Peer subPeer(*this, pubAddr);
+        SubPeer subPeer(*this, pubAddr);
         ASSERT_TRUE(subPeer);
         ASSERT_TRUE(subPeer.start());
 
@@ -315,7 +308,7 @@ TEST_F(PeerTest, DataExchange)
         waitForState(LISTENING);
 
         // Create and execute reception by subscribing-peer on separate thread
-        Peer subPeer(*this, pubAddr);
+        SubPeer subPeer(*this, pubAddr);
         ASSERT_TRUE(subPeer);
         /*
          * If this program is executed in a "while" loop, then the following
@@ -369,7 +362,7 @@ TEST_F(PeerTest, BrokenConnection)
 
         {
             // Create and execute reception by subscribing peer on separate thread
-            Peer subPeer{*this, pubAddr};
+            SubPeer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeer);
             LOG_DEBUG("Starting subscribing peer");
             /*
@@ -420,7 +413,7 @@ TEST_F(PeerTest, UnsatisfiedRequests)
 
         {
             // Create and execute reception by subscribing peer on separate thread
-            Peer subPeer{*this, pubAddr};
+            SubPeer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeer);
             LOG_DEBUG("Starting subscribing peer");
             ASSERT_TRUE(subPeer.start());

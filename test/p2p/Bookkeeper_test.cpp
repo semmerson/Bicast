@@ -14,14 +14,14 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Bookkeeper`
-class BookkeeperTest : public ::testing::Test, public hycast::P2pNode
+class BookkeeperTest : public ::testing::Test, public hycast::SubP2pNode
 {
 protected:
     hycast::SockAddr        pubAddr;
     hycast::ProdIndex       prodIndex;
     hycast::DataSegId       segId;
-    hycast::Peer            peer1;
-    hycast::Peer            peer2;
+    hycast::SubPeer         peer1;
+    hycast::SubPeer         peer2;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
@@ -32,9 +32,6 @@ protected:
     {}
 
 public:
-    // Publisher-side
-    bool isPublisher() const override {}
-
     // Publisher-side
     bool isPathToPub() const override {}
 
@@ -94,7 +91,7 @@ TEST_F(BookkeeperTest, DefaultConstruction)
 TEST_F(BookkeeperTest, PeerAddition)
 {
     hycast::SubBookkeeper bookkeeper{};
-    hycast::Peer          peer{*this, pubAddr};
+    hycast::SubPeer       peer{*this, pubAddr};
 
     bookkeeper.add(peer);
 }

@@ -31,66 +31,36 @@
 
 namespace hycast {
 
-/// Handles low-level, asynchronous, bidirectional messaging with a remote peer.
-class Peer final
-{
-    friend class PeerSrvr;
+template<class NODE, class PEER> class PeerSrvr;
 
+/**
+ * Abstract base class for handling low-level, asynchronous, bidirectional
+ * messaging with a remote counterpart.
+ */
+class Peer
+{
 public:
     class     Impl;
 
-private:
+protected:
     using     SharedPtr = std::shared_ptr<Impl>;
     SharedPtr pImpl;
 
+    Peer(Impl* impl);
+
     Peer(SharedPtr& pImpl);
 
-    /**
-     * Server-side construction.
-     *
-     * @param[in] node  Associated P2P node
-     */
-    explicit Peer(P2pNode& node);
-
-    /**
-     * Sets the next, individual socket. Server-side only.
-     *
-     * @param[in] sock        Relevant socket
-     * @retval    `true`      This instance is complete
-     * @retval    `false`     This instance is not complete
-     * @throw     LogicError  Connection is already complete
-     */
-    bool set(TcpSock& sock);
-
-    /**
-     * Indicates if instance is complete (i.e., has all individual connections).
-     *
-     * @retval `false`  Instance is not complete
-     * @retval `true`   Instance is complete
-     */
-    bool isComplete() const noexcept;
-
 public:
-    friend class Impl;
-
     /**
      * Default constructs.
      */
     Peer() =default;
 
-    /**
-     * Constructs a client-side instance.
-     *
-     * @param[in] node      P2P node to call about received PDU-s
-     * @param[in] srvrAddr  Address of server to which to connect
-     */
-    Peer(P2pNode& node, const SockAddr& srvrAddr);
+    virtual ~Peer()
+    {}
 
     /**
-     * Starts this instance. Does the following:
-     *   - If client-side constructed, blocks while connecting to the remote
-     *     peer
-     *   - Creates threads that serve the remote peer
+     * Starts this instance. Creates threads that serve the remote peer.
      * Upon return, this instance *must* be stopped before it can be destroyed.
      *
      * @retval `false`     Remote peer disconnected
@@ -136,7 +106,7 @@ public:
 
     bool operator!=(const Peer& rhs) const noexcept;
 
-    String to_string(bool withName = false) const;
+    String to_string() const;
 
     /**
      * Notifies the remote peer.
@@ -152,33 +122,89 @@ public:
     bool rmtIsPubPath() const noexcept;
 };
 
+/// A publishing peer
+class PubPeer final : public Peer
+{
+    friend class PeerSrvr<PubP2pNode, PubPeer>;
+
+    class     Impl;
+
+    /**
+     * Server-side construction.
+     *
+     * @param[in] node         Subscriber's associated P2P node
+     * @param[in] socks        Sockets in order: notice, request, data
+     * @param[in] requestSock  Socket for requests
+     * @param[in] dataSock     Socket for data
+     */
+    PubPeer(PubP2pNode& node, TcpSock socks[3]);
+
+public:
+    /**
+     * Default constructs.
+     */
+    PubPeer() =default;
+};
+
+/// A subscribing peer
+class SubPeer final : public Peer
+{
+    friend class PeerSrvr<SubP2pNode, SubPeer>;
+
+    class     Impl;
+
+protected:
+    /**
+     * Server-side construction.
+     *
+     * @param[in] node         Subscriber's associated P2P node
+     * @param[in] socks        Sockets in order: notice, request, data
+     * @param[in] dataSock     Socket for data
+     */
+    SubPeer(SubP2pNode& node, TcpSock socks[3]);
+
+public:
+    /**
+     * Default constructs.
+     */
+    SubPeer() =default;
+
+    /**
+     * Client-side construction.
+     *
+     * @param[in] node      P2P node to call about received PDU-s
+     * @param[in] srvrAddr  Address of server to which to connect
+     */
+    SubPeer(SubP2pNode& node, const SockAddr& srvrAddr);
+};
+
 /**
- * Listening peer server.
+ * Peer server. Listens for incoming connections from remote peer clients.
  */
+template<class NODE, class PEER>
 class PeerSrvr
 {
-    class                 Impl;
+    class Impl;
+
     std::shared_ptr<Impl> pImpl;
 
 public:
     /**
-     * Constructs from the local address for the server.
+     * Constructs.
      *
      * @param[in] node       P2P node
      * @param[in] srvrAddr   Local Address for peer server
      * @param[in] maxAccept  Maximum number of outstanding peer connections
      */
-    PeerSrvr(P2pNode&        node,
+    PeerSrvr(NODE&           node,
              const SockAddr& srvrAddr,
              const unsigned  maxAccept = 8);
 
-    /**
-     * Returns the next, accepted peer.
-     *
-     * @return Next peer
-     */
-    Peer accept();
+    PEER accept();
 };
+
+using PubPeerSrvr = PeerSrvr<PubP2pNode, PubPeer>;
+using SubPeerSrvr = PeerSrvr<SubP2pNode, SubPeer>;
 
 } // namespace
 

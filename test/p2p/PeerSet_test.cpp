@@ -14,7 +14,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `PeerSet`
-class PeerSetTest : public ::testing::Test, public hycast::P2pNode
+class PeerSetTest : public ::testing::Test, public hycast::SubP2pNode
 {
 protected:
     typedef enum {
@@ -93,20 +93,19 @@ public:
     }
 
     // Publisher-side
-    bool isPublisher() const override {
+    bool isPublisher() const {
         LOG_TRACE;
         return true;
     }
 
     // Publisher-side
-    bool isPathToPub() const override {
+    bool isPathToPub() const {
         LOG_TRACE;
         return true;
     }
 
     // Both sides
     void recvNotice(const hycast::PubPath notice, Peer peer)
-            override
     {
         LOG_TRACE;
         std::lock_guard<std::mutex> guard{mutex};
@@ -115,7 +114,6 @@ public:
 
     // Subscriber-side
     bool recvNotice(const hycast::ProdIndex notice, Peer peer)
-            override
     {
         LOG_TRACE;
         EXPECT_EQ(notice, prodIndex);
@@ -129,7 +127,6 @@ public:
 
     // Subscriber-side
     bool recvNotice(const hycast::DataSegId notice, Peer peer)
-            override
     {
         LOG_TRACE;
         EXPECT_EQ(segId, notice);
@@ -143,7 +140,6 @@ public:
 
     // Publisher-side
     ProdInfo recvRequest(const hycast::ProdIndex request, Peer peer)
-            override
     {
         LOG_TRACE;
         EXPECT_TRUE(prodIndex == request);
@@ -157,7 +153,6 @@ public:
 
     // Publisher-side
     DataSeg recvRequest(const hycast::DataSegId request, Peer peer)
-            override
     {
         LOG_TRACE;
         EXPECT_EQ(segId, request);
@@ -179,8 +174,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo data, Peer peer) override
-    {
+    void recvData(const hycast::ProdInfo data, Peer peer) {
         LOG_TRACE;
         EXPECT_EQ(prodInfo, data);
         std::lock_guard<std::mutex> guard{mutex};
@@ -189,9 +183,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::DataSeg actualDataSeg, Peer peer)
-            override
-    {
+    void recvData(const hycast::DataSeg actualDataSeg, Peer peer) {
         LOG_TRACE;
         ASSERT_EQ(segSize, actualDataSeg.getSize());
         EXPECT_EQ(0, ::memcmp(dataSeg.getData(), actualDataSeg.getData(),
@@ -204,21 +196,14 @@ public:
     void offline(hycast::Peer peer) {
         LOG_INFO("Peer %s is offline", peer.to_string().data());
     }
-#if 0
-    void reassigned(const hycast::ProdIndex  notice,
-                    const hycast::Peer       peer) override {}
-    void reassigned(const hycast::DataSegId& notice,
-                    const hycast::Peer       peer) override {}
-#endif
 
     void startPublisher(hycast::PeerSet& pubPeerSet)
     {
-        hycast::PeerSrvr peerSrvr{*this, pubAddr};
+        PubPeerSrvr peerSrvr{*this, pubAddr};
         orState(LISTENING);
 
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
             auto             pubPeer = peerSrvr.accept();
-
             auto             rmtAddr = pubPeer.getRmtAddr().getInetAddr();
             hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, rmtAddr);
@@ -250,7 +235,7 @@ TEST_F(PeerSetTest, DataExchange)
         // Create and execute reception by subscribing peers on separate threads
         hycast::PeerSet subPeerSet{*this};
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
-            hycast::Peer subPeer{*this, pubAddr};
+            hycast::SubPeer subPeer(*this, pubAddr);
             ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
             ASSERT_EQ(i+1, subPeerSet.size());
         }
