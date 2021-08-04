@@ -879,7 +879,7 @@ class SubImpl : public Peer::Impl
     SubP2pNode&        node;        // Subscriber's P2P node
     RequestQ           requests;    // Requests to be sent to remote peer
     RequestQ           requested;   // Requests sent to remote peer
-    std::atomic<bool>  clientSide;  // Instance was constructed client-side?
+    std::atomic<bool>  serverSide;  // Instance was constructed server-side?
 
     /**
      * Pushes a request onto the request queue.
@@ -1010,7 +1010,7 @@ protected:
     std::atomic<bool>  rmtPubPath;
 
     bool ensureConnected() override {
-        if (!clientSide)
+        if (serverSide)
             return true; // Server-side constructed => already connected
 
         bool        success = false;
@@ -1044,21 +1044,21 @@ protected:
         bool          success = false; // Failure default
         P2pNode::Type nodeType;
 
-        if (clientSide) {
+        if (serverSide) {
+            if (write(noticeSock, P2pNode::Type::SUBSCRIBER) &&
+                    read(noticeSock, nodeType)) {
+                // NB: A publisher's local peer is never client-side constructed
+                rmtNodeType = nodeType; // Will be `P2pNode::Type::SUBSCRIBER`
+                success = true;
+            }
+        }
+        else {
             // Keep consonant with `PubImpl::exchangeNodeTypes()`
             if (read(noticeSock, nodeType)) {
                 rmtNodeType = nodeType;
                 // NB: Publishers don't care about the type of the remote node
                 success = (nodeType == P2pNode::Type::PUBLISHER) ||
                         write(noticeSock, P2pNode::Type::SUBSCRIBER);
-            }
-        }
-        else {
-            if (write(noticeSock, P2pNode::Type::SUBSCRIBER) &&
-                    read(noticeSock, nodeType)) {
-                // NB: A publisher's local peer is never client-side constructed
-                rmtNodeType = nodeType; // Will be `P2pNode::Type::SUBSCRIBER`
-                success = true;
             }
         }
 
@@ -1191,7 +1191,7 @@ public:
         , requests()
         , requested()
         , rmtPubPath(false)
-        , clientSide(true)
+        , serverSide(false)
     {
         rmtSockAddr = srvrAddr;
     }
@@ -1208,7 +1208,7 @@ public:
         , requests()
         , requested()
         , rmtPubPath(false)
-        , clientSide(false)
+        , serverSide(true)
     {
         assignSrvrSocks(socks);
         rmtSockAddr = noticeSock.getRmtAddr();
