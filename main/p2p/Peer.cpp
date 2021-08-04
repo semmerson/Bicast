@@ -882,40 +882,30 @@ class SubImpl : public Peer::Impl
     std::atomic<bool>  clientSide;  // Instance was constructed client-side?
 
     /**
-     * Pushes a request for product information onto the request queue.
+     * Pushes a request onto the request queue.
      *
-     * @param[in] prodIndex   Index of product
+     * @tparam    ID          Type of `id`
+     * @param[in] id          Identifier of request
      * @retval    `false`     No connection. Connection was lost or `start()`
      *                        wasn't called.
      * @retval    `true`      Success
      */
-    bool request(const ProdIndex prodIndex) {
+    template<class ID>
+    bool request(const ID id) {
         if (!connected)
             return false;
 
-        LOG_DEBUG("Pushing product information request");
-        const auto size = requests.push(Request{prodIndex});
+        LOG_DEBUG("Pushing request");
+        const auto size = requests.push(Request{id});
         LOG_DEBUG("Request queue size is " + std::to_string(size));
 
         return true;
     }
-
-    /**
-     * Pushes a request for a data-segment onto the request queue.
-     *
-     * @param[in] segId       ID of data-segment
-     * @retval    `false`     Remote peer disconnected
-     * @retval    `true`      Success
-     */
-    bool request(const DataSegId& segId) {
-        if (!connected)
-            return false;
-
-        LOG_DEBUG("Pushing data segment request");
-        const auto size = requests.push(Request(segId));
-        LOG_DEBUG("Request queue size is " + std::to_string(size));
-
-        return true;
+    bool request(const ProdIndex prodIndex) {
+        return request<ProdIndex>(prodIndex);
+    }
+    bool request(const DataSegId segId) {
+        return request<DataSegId>(segId);
     }
 
     /**
