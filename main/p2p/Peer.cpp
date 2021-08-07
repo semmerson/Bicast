@@ -39,7 +39,27 @@ namespace hycast {
  */
 class Peer::Impl
 {
-    friend class PubImpl;
+    void orderClntSocks(TcpSock socks[3]) const noexcept {
+        if (socks[1].getLclPort() < socks[0].getLclPort())
+            socks[1].swap(socks[0]);
+
+        if (socks[2].getLclPort() < socks[1].getLclPort()) {
+            socks[2].swap(socks[1]);
+            if (socks[1].getLclPort() < socks[0].getLclPort())
+                socks[1].swap(socks[0]);
+        }
+    }
+
+    void orderSrvrSocks(TcpSock socks[3]) const noexcept {
+        if (socks[1].getRmtPort() < socks[0].getRmtPort())
+            socks[1].swap(socks[0]);
+
+        if (socks[2].getRmtPort() < socks[1].getRmtPort()) {
+            socks[2].swap(socks[1]);
+            if (socks[1].getRmtPort() < socks[0].getRmtPort())
+                socks[1].swap(socks[0]);
+        }
+    }
 
     void assignSocks(TcpSock socks[3]) {
         noticeSock  = socks[0];
@@ -50,7 +70,7 @@ class Peer::Impl
 protected:
     mutable Mutex      sockMutex;
     mutable Mutex      exceptMutex;
-    P2pNode*           node;
+    P2pNode&           node;
     /*
      * If a single socket is used for asynchronous communication and reading and
      * writing occur on the same thread, then deadlock will occur if both
@@ -77,34 +97,6 @@ protected:
     std::exception_ptr          exPtr;
     std::atomic<bool>           connected;
     std::atomic<P2pNode::Type>  rmtNodeType;
-
-    Impl()
-        : sockMutex()
-        , exceptMutex()
-        , node(nullptr)
-    {}
-
-    void orderClntSocks(TcpSock socks[3]) const noexcept {
-        if (socks[1].getLclPort() < socks[0].getLclPort())
-            socks[1].swap(socks[0]);
-
-        if (socks[2].getLclPort() < socks[1].getLclPort()) {
-            socks[2].swap(socks[1]);
-            if (socks[1].getLclPort() < socks[0].getLclPort())
-                socks[1].swap(socks[0]);
-        }
-    }
-
-    void orderSrvrSocks(TcpSock socks[3]) const noexcept {
-        if (socks[1].getRmtPort() < socks[0].getRmtPort())
-            socks[1].swap(socks[0]);
-
-        if (socks[2].getRmtPort() < socks[1].getRmtPort()) {
-            socks[2].swap(socks[1]);
-            if (socks[1].getRmtPort() < socks[0].getRmtPort())
-                socks[1].swap(socks[0]);
-        }
-    }
 
     void assignSrvrSocks(TcpSock socks[3]) {
         orderSrvrSocks(socks);
@@ -274,7 +266,7 @@ protected:
         TYPE request;
         LOG_DEBUG("Receiving request");
         if (read(requestSock, request)) {
-            auto data = node->recvRequest(request, peer);
+            auto data = node.recvRequest(request, peer);
             // Data doesn't exist or was successfully sent
             success = !data || send(data);
             if (success) LOG_DEBUG("Product information sent");
@@ -354,7 +346,7 @@ public:
     Impl(P2pNode& node)
         : sockMutex()
         , exceptMutex()
-        , node(&node)
+        , node(node)
         , noticeSock()
         , requestSock()
         , dataSock()
@@ -570,7 +562,7 @@ bool Peer::notify(const DataSegId& notice) const {
 }
 
 bool Peer::rmtIsPubPath() const noexcept {
-    pImpl->rmtIsPubPath();
+    return pImpl->rmtIsPubPath();
 }
 
 /******************************************************************************/
@@ -578,8 +570,10 @@ bool Peer::rmtIsPubPath() const noexcept {
 /**
  * Publisher's peer implementation. The peer will be server-side constructed.
  */
-class PubImpl : public Peer::Impl
+class PubImpl final : public Peer::Impl
 {
+    PubP2pNode& node;
+
 protected:
     bool exchangeNodeTypes() override {
         // Keep consonant with `SubImpl::exchangeNodeTypes()`
@@ -646,6 +640,7 @@ public:
      */
     PubImpl(PubP2pNode& node, TcpSock socks[3])
         : Impl(node)
+        , node(node)
     {
         assignSrvrSocks(socks);
         rmtSockAddr = noticeSock.getRmtAddr();
@@ -666,7 +661,7 @@ PubPeer::PubPeer(PubP2pNode& node, TcpSock socks[3])
  * Subscriber's peer implementation. May be server-side or client-side
  * constructed.
  */
-class SubImpl : public Peer::Impl
+class SubImpl final : public Peer::Impl
 {
     /**
      * Class for requests sent to a remote peer. Implemented as a discriminated

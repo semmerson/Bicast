@@ -122,7 +122,7 @@ public:
     bool rmtIsPubPath() const noexcept;
 };
 
-/// A publishing peer
+/// A publisher's peer. Such peers are *always* constructed by a peer-server.
 class PubPeer final : public Peer
 {
     friend class PeerSrvr<PubP2pNode, PubPeer>;
@@ -141,19 +141,18 @@ class PubPeer final : public Peer
 
 public:
     /**
-     * Default constructs.
+     * Default constructs. The resulting instance will test false.
      */
     PubPeer() =default;
 };
 
-/// A subscribing peer
+/// A subscriber's peer
 class SubPeer final : public Peer
 {
     friend class PeerSrvr<SubP2pNode, SubPeer>;
 
     class     Impl;
 
-protected:
     /**
      * Server-side construction.
      *
@@ -165,7 +164,7 @@ protected:
 
 public:
     /**
-     * Default constructs.
+     * Default constructs. The resulting instance will test false.
      */
     SubPeer() =default;
 
