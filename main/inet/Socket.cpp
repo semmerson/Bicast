@@ -461,8 +461,8 @@ public:
                 auto nread = ::read(sd, bytes, nleft);
 
                 if (nread == -1)
-                    throw SYSTEM_ERROR("Couldn't read from connection with host "
-                            + getRmtAddr().to_string());
+                    throw SYSTEM_ERROR("Couldn't read from connection with "
+                            "host " + getRmtAddr().to_string());
                 if (nread == 0)
                     return false; // EOF
 
@@ -779,8 +779,8 @@ class UdpSock::Impl final : public InetSock::Impl
 
     uint8_t       uint8s[MAX_PAYLOAD];    ///< Write buffer for 1-byte values
     uint16_t      uint16s[MAX_PAYLOAD/2]; ///< Write buffer for 2-byte values
-    uint32_t      uint32s[MAX_PAYLOAD/4]; ///< Write buffer for 2-byte values
-    uint64_t      uint64s[MAX_PAYLOAD/8]; ///< Write buffer for 2-byte values
+    uint32_t      uint32s[MAX_PAYLOAD/4]; ///< Write buffer for 4-byte values
+    uint64_t      uint64s[MAX_PAYLOAD/8]; ///< Write buffer for 8-byte values
     uint8_t*      nxt8;                   ///< Next 1-byte value to write
     uint16_t*     nxt16;                  ///< Next 2-byte value to write
     uint32_t*     nxt32;                  ///< Next 4-byte value to write

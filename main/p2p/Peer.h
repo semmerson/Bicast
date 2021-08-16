@@ -106,6 +106,12 @@ public:
 
     bool operator!=(const Peer& rhs) const noexcept;
 
+    /**
+     * Returns the string representation of this instance. Currently, it's the
+     * string representation of the socket address of the remote peer.
+     *
+     * @return String representation of this instance
+     */
     String to_string() const;
 
     /**
@@ -114,6 +120,8 @@ public:
      * @retval    `false`     No connection. Connection was lost or `start()`
      *                        wasn't called.
      * @retval    `true`      Success
+     * @throw     LogicError  Instance isn't in started state
+     * @see       `start()`
      */
     bool notify(const PubPath notice) const;
     bool notify(const ProdIndex notice) const;

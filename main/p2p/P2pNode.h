@@ -33,7 +33,7 @@ namespace hycast {
 
 class Peer; // Forward declaration
 
-/// Interface
+/// Interface for a peer-to-peer node
 class P2pNode : public RequestRcvr
 {
 public:
@@ -48,7 +48,21 @@ public:
 
     virtual ~P2pNode() {}
 
+    /**
+     * Indicates if this instance has a path to the publisher.
+     *
+     * @retval `true`   This instance has path to publisher
+     * @retval `false`  This instance doesn't have path to publisher
+     */
     virtual bool isPathToPub() const =0;
+
+    /**
+     * Accepts being notified that a local peer has lost the connection with
+     * its remote peer.
+     *
+     * @param[in] peer  Local peer
+     */
+    virtual void lostConnection(Peer peer) =0;
 
 #if 0
     /**
@@ -167,10 +181,23 @@ public:
      */
     virtual void missed(const DataSegId& dataSegId, Peer peer) =0;
 
+    /**
+     * Accepts product information from a remote peer.
+     *
+     * @param[in] prodInfo  Product information
+     * @param[in] peer      Associated local peer
+     */
     virtual void recvData(const ProdInfo prodInfo,
                           Peer           peer) =0;
-    virtual void recvData(const DataSeg  dataSeg,
-                          Peer           peer) =0;
+
+    /**
+     * Accepts a data segment from a remote peer.
+     *
+     * @param[in] dataSeg  Data segment
+     * @param[in] peer     Associated local peer
+     */
+    virtual void recvData(const DataSeg dataSeg,
+                          Peer          peer) =0;
 };
 
 } // namespace

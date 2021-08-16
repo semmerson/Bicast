@@ -78,6 +78,10 @@ public:
     // Subscriber-side
     void recvData(const DataSeg actualDataSeg, Peer peer) override
     {}
+
+    void lostConnection(Peer peer) override {
+        LOG_INFO("Lost connection with peer %s", peer.to_string().data());
+    }
 };
 
 // Tests default construction

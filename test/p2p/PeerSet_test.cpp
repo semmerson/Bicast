@@ -193,8 +193,8 @@ public:
             orState(SEG_RCVD);
     }
 
-    void offline(hycast::Peer peer) {
-        LOG_INFO("Peer %s is offline", peer.to_string().data());
+    void lostConnection(hycast::Peer peer) override {
+        LOG_INFO("Lost connection with peer ", peer.to_string().data());
     }
 
     void startPublisher(hycast::PeerSet& pubPeerSet)

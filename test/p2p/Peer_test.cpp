@@ -202,8 +202,8 @@ public:
         orState(DATA_SEG_MISSED);
     }
 
-    void offline(Peer peer) {
-        LOG_INFO("Peer %s is offline", peer.to_string().data());
+    void lostConnection(Peer peer) override {
+        LOG_INFO("Lost connection with peer %s ", peer.to_string().data());
     }
 
     void startPubPeer(Peer& pubPeer)
@@ -312,13 +312,13 @@ TEST_F(PeerTest, DataExchange)
         ASSERT_TRUE(subPeer);
         /*
          * If this program is executed in a "while" loop, then the following
-         * will cause the process to hang somewhere around the 7e3-th execution
-         * because the subscribing peer will be unable to establish a 3 socket
-         * connection with the publishing peer because a `::connect()` call
-         * will have failed because it was unable to assign the socket a local
-         * address using the O/S-chosen port number.  Apparently, there's a race
-         * condition for O/S-assigned port numbers in a `::connect()` call for
-         * an unbound socket. Sheesh!
+         * will eventually cause the process to crash due to a segmentation
+         * violation (SIGSEGV) because the subscribing peer will be unable to
+         * establish a 3 socket connection with the publishing peer because a
+         * `::connect()` call will have failed because it was unable to assign
+         * the socket a local address using the O/S-chosen port number.
+         * Apparently, there's a race condition for O/S-assigned port numbers in
+         * a `::connect()` call for an unbound socket. Sheesh!
          */
         ASSERT_TRUE(subPeer.start());
 
@@ -367,14 +367,14 @@ TEST_F(PeerTest, BrokenConnection)
             LOG_DEBUG("Starting subscribing peer");
             /*
              * If this program is executed in a "while" loop, then the following
-             * will cause the process to hang somewhere around the 2e3-th
-             * execution because the subscribing peer will be unable to
-             * establish a 3 socket connection with the publishing peer because
-             * a `::connect()` call will have failed because it was unable to
-             * assign the socket a local address using the O/S-chosen port
-             * number. Apparently, there's a race condition for O/S-assigned
-             * port numbers in a `::connect()` call for an unbound socket.
-             * Sheesh!
+             * will eventually cause the process to crash due to a segmentation
+             * violation (SIGSEGV) because the subscribing peer will be unable
+             * to establish a 3 socket connection with the publishing peer
+             * because a `::connect()` call will have failed because it was
+             * unable to assign the socket a local address using the O/S-chosen
+             * port number. Apparently, there's a race condition for
+             * O/S-assigned port numbers in a `::connect()` call for an unbound
+             * socket. Sheesh!
              */
             ASSERT_TRUE(subPeer.start());
 

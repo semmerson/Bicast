@@ -127,8 +127,7 @@ public:
             const std::string msg,
             const int         errnum = errno);
 
-#define SYSTEM_ERROR(msg, ...) SystemError(__FILE__, __LINE__, __func__, msg, \
-    ##__VA_ARGS__)
+#define SYSTEM_ERROR(msg, ...) SystemError(__FILE__, __LINE__, __func__, msg)
 };
 
 std::string makeWhat(

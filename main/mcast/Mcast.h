@@ -20,12 +20,12 @@
  * limitations under the License.
  */
 
-#ifndef MAIN_PROTOCOL_INPROTO_H_
-#define MAIN_PROTOCOL_INPROTO_H_
+#ifndef MAIN_MCAST_H_
+#define MAIN_MCAST_H_
 
+#include "HycastProto.h"
 #include "SockAddr.h"
 #include "Socket.h"
-#include "hycast.h"
 
 #include <memory>
 
@@ -113,7 +113,7 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for a subscriber of a multicast products.
+ * Interface for a subscriber of multicast products.
  */
 class McastSub
 {
@@ -169,4 +169,4 @@ public:
 
 } // namespace
 
-#endif /* MAIN_PROTOCOL_INPROTO_H_ */
+#endif /* MAIN_MCAST_H_ */

@@ -23,16 +23,12 @@
 #include "config.h"
 
 #include "error.h"
-#include "hycast.h"
-#include "McastProto.h"
-#include "protocol.h"
+#include "Mcast.h"
 
 namespace hycast {
 
-typedef uint16_t MsgIdType;
-
-static MsgIdType prodInfoId = MsgId::PROD_INFO;
-static MsgIdType dataSegId = MsgId::DATA_SEG;
+using ProdInfoId = PduId::PROD_INFO;
+using DataSegId = PduId::DATA_SEG;
 
 class McastSndr::Impl {
     UdpSock sock;
@@ -56,7 +52,7 @@ public:
         LOG_DEBUG("Multicasting product-information " + prodInfo.to_string());
 
         try {
-            sock.addWrite(prodInfoId);
+            sock.addWrite(ProdInfoId);
             const std::string& name = prodInfo.getProdName();
             sock.addWrite(static_cast<SegSize>(name.length()));
             sock.addWrite(prodInfo.getProdIndex().getValue());
@@ -79,7 +75,7 @@ public:
         LOG_DEBUG("Multicasting data-segment " + seg.getSegId().to_string());
 
         try {
-            sock.addWrite(dataSegId);
+            sock.addWrite(DataSegId);
             sock.addWrite(seg.getSegSize());
             sock.addWrite(seg.getProdIndex().getValue());
             sock.addWrite(seg.getProdSize());

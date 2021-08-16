@@ -53,8 +53,7 @@ public:
     }
 
     static SegSize getDefSegSize() {
-        static const SegSize defSegSize = 1444; // Max Ethernet UDP payload
-        return defSegSize;
+        return DataSeg::CANON_DATASEG_SIZE;
     }
 
     static size_t getDefMaxOpenFiles() {
@@ -159,8 +158,8 @@ public:
      * repository. The file or files will be eventually referenced by
      * `getNextProd()`.
      *
-     * @param[in] filePath  Pathname of outside file
-     * @param[in] prodName  Name of product
+     * @param[in] filePath  Pathname of outside file or directory
+     * @param[in] prodName  Name of product or product-prefix
      * @see `getNextProd()`
      */
     void link(
@@ -168,7 +167,7 @@ public:
             const std::string& prodName);
 
     /**
-     * Returns the index of the next product to publish. Blocks until one is
+     * Returns information on the next product to publish. Blocks until one is
      * ready.
      *
      * @return Information on the next product to publish

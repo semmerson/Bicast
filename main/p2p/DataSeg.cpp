@@ -29,12 +29,19 @@
 
 namespace hycast {
 
-class DataSeg::Impl {
+class DataSeg::Impl
+{
 public:
     DataSegId   segId;    ///< Data-segment identifier
     /// Product size in bytes (for when product notice is missed)
     ProdSize    prodSize;
     const char* buf;
+
+    Impl()
+        : segId()
+        , prodSize(0)
+        , buf(nullptr)
+    {}
 
     Impl(const DataSegId& segId,
          const ProdSize   prodSize,
@@ -44,7 +51,7 @@ public:
         , buf(data)
     {}
 
-    virtual ~Impl() {}
+    virtual ~Impl() noexcept {}
 
     const char* data() const noexcept {
         return buf;
@@ -57,21 +64,36 @@ public:
         return string + "{segId=" + segId.to_string() + ", prodSize=" +
                 std::to_string(prodSize) + "}";
     }
+
+    bool write(TcpSock& sock) {
+        return segId.write(sock) && sock.write(prodSize) &&
+            sock.write(buf, DataSeg::size(prodSize, segId.offset));
+    }
 };
 
 class SockSeg final : public DataSeg::Impl
 {
-    char buf[DataSeg::CANON_DATASEG_SIZE];
+    char* buf;
 
 public:
-    SockSeg(const DataSegId& segId,
-                     const ProdSize   prodSize,
-                     TcpSock&         sock)
-        : Impl(segId, prodSize, buf)
+    SockSeg(TcpSock& sock)
+        : Impl()
+        , buf(nullptr)
     {
-        if (!sock.read(buf, DataSeg::size(prodSize, segId.offset)))
+        bool success = false;
+        if (segId.read(sock) && sock.read(prodSize)) {
+            auto nbytes = DataSeg::size(prodSize, segId.offset);
+            buf = new char[nbytes];
+            Impl::buf = buf;
+            success = sock.read(buf, nbytes);
+        }
+        if (!success)
             throw EOF_ERROR("EOF encountered reading data-segment " +
                     segId.to_string());
+    }
+
+    ~SockSeg() noexcept {
+        delete[] buf;
     }
 };
 
@@ -82,15 +104,13 @@ DataSeg::DataSeg()
 {}
 
 DataSeg::DataSeg(const DataSegId& segId,
-        const ProdSize   prodSize,
-        const char*      data)
+                 const ProdSize   prodSize,
+                 const char*      data)
     : pImpl(std::make_shared<Impl>(segId, prodSize, data))
 {}
 
-DataSeg::DataSeg(const DataSegId& segId,
-                 const ProdSize   prodSize,
-                 TcpSock&         sock)
-    : pImpl(std::make_shared<SockSeg>(segId, prodSize, sock))
+DataSeg::DataSeg(TcpSock& sock)
+    : pImpl(std::make_shared<SockSeg>(sock))
 {}
 
 DataSeg::operator bool() const {
@@ -111,6 +131,10 @@ const char* DataSeg::getData() const noexcept {
 
 String DataSeg::to_string(const bool withName) const {
     return pImpl->to_string(withName);
+}
+
+bool DataSeg::write(TcpSock& sock) const {
+    return pImpl->write(sock);
 }
 
 } // namespace
