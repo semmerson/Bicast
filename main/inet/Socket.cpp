@@ -1049,6 +1049,12 @@ public:
         addWrite(nxt64++, sizeof(value));
     }
 
+    void addWrite(const std::string& string)
+    {
+        addWrite(string.size());
+        addWrite(string.data(), string.size());
+    }
+
     void write()
     {
         if (::writev(sd, writeIov, writeIovCnt) == -1)
@@ -1182,37 +1188,42 @@ std::string UdpSock::to_string() const
 
 void UdpSock::addWrite(
         const void* const data,
-        const size_t      nbytes)
+        const size_t      nbytes) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(data, nbytes);
 }
 
-void UdpSock::addWrite(const uint8_t value)
+void UdpSock::addWrite(const uint8_t value) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(value);
 }
 
-void UdpSock::addWrite(const bool value)
+void UdpSock::addWrite(const bool value) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(value);
 }
 
-void UdpSock::addWrite(const uint16_t value)
+void UdpSock::addWrite(const uint16_t value) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(value);
 }
 
-void UdpSock::addWrite(const uint32_t value)
+void UdpSock::addWrite(const uint32_t value) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(value);
 }
 
-void UdpSock::addWrite(const uint64_t value)
+void UdpSock::addWrite(const uint64_t value) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(value);
 }
 
-void UdpSock::write()
+void UdpSock::addWrite(const std::string& string) const
+{
+    static_cast<UdpSock::Impl*>(pImpl.get())->addWrite(string);
+}
+
+void UdpSock::write() const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->write();
 }

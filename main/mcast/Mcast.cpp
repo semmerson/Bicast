@@ -35,11 +35,11 @@ class McastSndr::Impl {
 
 public:
     Impl(UdpSock& sock)
-        : sock{sock}
+        : sock(sock)
     {}
 
     Impl(UdpSock&& sock)
-        : sock{sock}
+        : sock(sock)
     {}
 
     void setMcastIface(const InetAddr& interface)
@@ -52,12 +52,8 @@ public:
         LOG_DEBUG("Multicasting product-information " + prodInfo.to_string());
 
         try {
-            sock.addWrite(ProdInfoId);
-            const std::string& name = prodInfo.getProdName();
-            sock.addWrite(static_cast<SegSize>(name.length()));
-            sock.addWrite(prodInfo.getProdIndex().getValue());
-            sock.addWrite(prodInfo.getProdSize());
-            sock.addWrite(name.data(), name.length());
+            sock.addWrite(static_cast<PduType>(PduId::PROD_INFO));
+            prodInfo.write(sock);
             sock.write();
         }
         catch (const std::exception& ex) {

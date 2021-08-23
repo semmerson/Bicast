@@ -35,11 +35,13 @@ public:
     DataSegId   segId;    ///< Data-segment identifier
     /// Product size in bytes (for when product notice is missed)
     ProdSize    prodSize;
-    const char* buf;
+    SegSize     bufSize;  ///< Size of buffer in bytes
+    char*       buf;      ///< buffer for data
 
     Impl()
         : segId()
         , prodSize(0)
+        , bufSize(0)
         , buf(nullptr)
     {}
 
@@ -48,10 +50,15 @@ public:
          const char*      data)
         : segId(segId)
         , prodSize(prodSize)
-        , buf(data)
-    {}
+        , bufSize(DataSeg::size(prodSize, segId.offset))
+        , buf(new char[bufSize])
+    {
+        (void)::memcpy(buf, data, bufSize);
+    }
 
-    virtual ~Impl() noexcept {}
+    virtual ~Impl() noexcept {
+        delete[] buf;
+    }
 
     const char* data() const noexcept {
         return buf;
@@ -65,9 +72,58 @@ public:
                 std::to_string(prodSize) + "}";
     }
 
+    bool read(TcpSock& sock) {
+        bool success = segId.read(sock) && sock.read(prodSize);
+
+        if (success) {
+            auto segSize = DataSeg::size(prodSize, segId.offset);
+            if (bufSize < segSize) {
+                delete[] buf;
+                buf = new char[segSize];
+                bufSize = segSize;
+            }
+            success = sock.read(buf, segSize);
+        }
+
+        return success;
+    }
+
     bool write(TcpSock& sock) {
         return segId.write(sock) && sock.write(prodSize) &&
             sock.write(buf, DataSeg::size(prodSize, segId.offset));
+    }
+
+    bool read(UdpSock& sock) {
+        /*
+        bool success = segId.read(sock);
+
+        if (success) {
+            sock.addPeek(prodSize);
+            success = sock.peek();
+
+            if (success) {
+                auto segSize = DataSeg::size(prodSize, segId.offset);
+                if (bufSize < segSize) {
+                    delete[] buf;
+                    buf = new char[segSize];
+                    bufSize = segSize;
+                }
+                sock.addPeek(buf, segSize);
+                success = sock.peek();
+            }
+        }
+
+        return success;
+        */
+        return true;
+    }
+
+    bool write(UdpSock& sock) {
+        return true;
+        /*
+        return segId.write(sock) && sock.write(prodSize) &&
+            sock.write(buf, DataSeg::size(prodSize, segId.offset));
+        */
     }
 };
 
@@ -133,7 +189,19 @@ String DataSeg::to_string(const bool withName) const {
     return pImpl->to_string(withName);
 }
 
+bool DataSeg::read(TcpSock& sock) const {
+    return pImpl->read(sock);
+}
+
 bool DataSeg::write(TcpSock& sock) const {
+    return pImpl->write(sock);
+}
+
+bool DataSeg::read(UdpSock& sock) const {
+    return pImpl->read(sock);
+}
+
+bool DataSeg::write(UdpSock& sock) const {
     return pImpl->write(sock);
 }
 

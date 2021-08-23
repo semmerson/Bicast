@@ -443,49 +443,56 @@ public:
      */
     void addWrite(
             const void*  data,
-            const size_t nbytes);
+            const size_t nbytes) const;
 
     /**
      * Adds a byte. Host-to-network translation is performed.
      *
      * @param[in] value  Value to be added.
      */
-    void addWrite(const uint8_t value);
+    void addWrite(const uint8_t value) const;
 
     /**
      * Adds a value. Host-to-network translation is performed.
      *
      * @param[in] value  Value to be added.
      */
-    void addWrite(const bool value);
+    void addWrite(const bool value) const;
 
     /**
      * Adds a value. Host-to-network translation is performed.
      *
      * @param[in] value  Value to be added.
      */
-    void addWrite(const uint16_t value);
+    void addWrite(const uint16_t value) const;
 
     /**
      * Adds a value. Host-to-network translation is performed.
      *
      * @param[in] value  Value to be added.
      */
-    void addWrite(const uint32_t value);
+    void addWrite(const uint32_t value) const;
 
     /**
      * Adds a value. Host-to-network translation is performed.
      *
      * @param[in] value  Value to be added.
      */
-    void addWrite(const uint64_t value);
+    void addWrite(const uint64_t value) const;
+
+    /**
+     * Adds a string. Host-to-network translation is performed.
+     *
+     * @param[in] string  String to be added.
+     */
+    void UdpSock::addWrite(const std::string& string) const;
 
     /**
      * Writes the UDP packet.
      *
      * @cancellationpoint  Yes
      */
-    void write();
+    void write() const;
 
     /**
      * Adds bytes to be peeked by the next call to `peek()` Previously peeked

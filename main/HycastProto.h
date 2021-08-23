@@ -140,6 +140,10 @@ public:
     bool read(TcpSock& sock) {
         return sock.read(index);
     }
+
+    bool write(UdpSock& sock) const {
+        return sock.addWrite(index);
+    }
 };
 using ProdSize  = uint32_t;    ///< Size of product in bytes
 using SegSize   = uint16_t;    ///< Data-segment size in bytes
@@ -236,6 +240,8 @@ public:
     bool write(TcpSock& sock) const;
 
     bool read(TcpSock& sock);
+
+    void write(UdpSock& sock) const;
 };
 
 class Peer;
@@ -266,8 +272,6 @@ public:
             const ProdSize   prodSize,
             const char*      data);
 
-    DataSeg(TcpSock&         sock);
-
     operator bool() const;
 
     const DataSegId& getId() const noexcept;
@@ -286,12 +290,18 @@ public:
 
     String to_string(bool withName = false) const;
 
+    bool read(TcpSock& sock) const;
+
     bool write(TcpSock& sock) const;
+
+    bool read(UdpSock& sock) const;
+
+    bool write(UdpSock& sock) const;
 };
 
 /******************************************************************************/
-// Protocol data units (PDU)
 
+// Protocol data unit (PDU) identifiers
 using PduType = unsigned char;
 enum class PduId : PduType {
     UNSET,

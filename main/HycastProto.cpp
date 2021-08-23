@@ -138,6 +138,12 @@ public:
         return true;
         */
     }
+
+    void write(UdpSock& sock) const {
+        index.write(sock);
+        sock.addWrite(name);
+        sock.addWrite(size);
+    }
 };
 
 ProdInfo::ProdInfo() =default;
@@ -178,6 +184,10 @@ bool ProdInfo::read(TcpSock& sock) {
     if (!pImpl)
         pImpl = std::make_shared<Impl>();
     return pImpl->read(sock);
+}
+
+bool ProdInfo::write(UdpSock& sock) const {
+    return pImpl->write(sock);
 }
 
 } // namespace
