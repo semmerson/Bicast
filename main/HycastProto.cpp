@@ -41,7 +41,7 @@ std::string DataSegId::to_string(const bool withName) const
 String NoteReq::to_string() const {
     return (id == Id::PROD_INDEX)
             ? prodIndex.to_string()
-            : (id == Id::DATA_SEG)
+            : (id == Id::DATA_SEG_ID)
                 ? dataSegId.to_string()
                 : "<unset>";
 }
@@ -49,7 +49,7 @@ String NoteReq::to_string() const {
 size_t NoteReq::hash() const noexcept {
     return (id == Id::PROD_INDEX)
             ? prodIndex.hash()
-            : (id == Id::DATA_SEG)
+            : (id == Id::DATA_SEG_ID)
                 ? dataSegId.hash()
                 : 0;
 }
@@ -118,31 +118,32 @@ public:
                 "\", size=" + std::to_string(size) + "}";
     }
 
-    bool write(TcpSock& sock) const {
-        return index.write(sock) && sock.write(name) && sock.write(size);
+    bool write(Xprt& xprt) const {
+        LOG_NOTE("Writing product information to %s", xprt.to_string().data());
+        auto success = index.write(xprt);
+        if (success) {
+            LOG_NOTE("Writing product name to %s", xprt.to_string().data());
+            success = xprt.write(name);
+            if (success) {
+                LOG_NOTE("Writing product size to %s", xprt.to_string().data());
+                success = xprt.write(size);
+            }
+        }
+        return success;
     }
 
-    bool read(TcpSock& sock) {
-        return index.read(sock) && sock.read(name) && sock.read(size);
-        /*
-        ProdIndex index;
-        String    name;
-        ProdSize  size;
-
-        if (!index.read(sock) ||
-               !sock.read(name) ||
-               !sock.read(size))
-            return false;
-
-        prodInfo = ProdInfo(index, name, size);
-        return true;
-        */
-    }
-
-    void write(UdpSock& sock) const {
-        index.write(sock);
-        sock.addWrite(name);
-        sock.addWrite(size);
+    bool read(Xprt& xprt) {
+        LOG_NOTE("Reading product information from %s", xprt.to_string().data());
+        auto success = index.read(xprt);
+        if (success) {
+            LOG_NOTE("Reading product name from %s", xprt.to_string().data());
+            success = xprt.read(name);
+            if (success) {
+                LOG_NOTE("Reading product size from %s", xprt.to_string().data());
+                success = xprt.read(size);
+            }
+        }
+        return success;
     }
 };
 
@@ -176,18 +177,272 @@ String ProdInfo::to_string(const bool withName) const {
     return pImpl->to_string(withName);
 }
 
-bool ProdInfo::write(TcpSock& sock) const {
-    return pImpl->write(sock);
+bool ProdInfo::write(Xprt& xprt) const {
+    return pImpl->write(xprt);
 }
 
-bool ProdInfo::read(TcpSock& sock) {
+bool ProdInfo::read(Xprt& xprt) {
     if (!pImpl)
         pImpl = std::make_shared<Impl>();
-    return pImpl->read(sock);
+    return pImpl->read(xprt);
 }
 
-bool ProdInfo::write(UdpSock& sock) const {
-    return pImpl->write(sock);
+/******************************************************************************
+ * Transport module
+ ******************************************************************************/
+
+class Xprt::Impl
+{
+protected:
+    Socket      sock;
+
+    inline bool write(PduId pduId) {
+        return sock.write(static_cast<PduType>(pduId));
+    }
+
+    inline bool read(PduId& pduId) {
+        PduType id;
+        if (!sock.read(id))
+            return false;
+        pduId = static_cast<PduId>(id);
+        return true;
+    }
+
+public:
+    Impl(Socket& sock)
+        : sock(sock)
+    {}
+
+    virtual ~Impl() {};
+
+    SockAddr getRmtAddr() const {
+        return sock.getRmtAddr();
+    }
+
+    String to_string() const {
+        return sock.to_string();
+    }
+
+    /**
+     * Sends a boolean as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] value    Boolean to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    virtual bool send(PduId      pduId,
+                      const bool value) =0;
+
+    /**
+     * Sends an object as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] obj      Object to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    virtual bool send(PduId           pduId,
+                      const XprtAble& obj,
+                      Xprt&           xprt) =0;
+
+    /**
+     * Receives the next PDU.
+     *
+     * @param[out] pduId    Identifier of the next PDU
+     * @retval     `true`   Success
+     * @retval     `false`  Connection lost
+     */
+    virtual bool recv(PduId& pduId) =0;
+
+    bool write(const void* value,
+               size_t      nbytes) {
+        return sock.write(value, nbytes);
+    }
+    bool write(const bool value) {
+        return sock.write(value);
+    }
+    bool write(const uint8_t  value) {
+        return sock.write(value);
+    }
+    bool write(const uint16_t value) {
+        return sock.write(value);
+    }
+    bool write(const uint32_t value) {
+        LOG_NOTE("Writing uint32_t");
+        return sock.write(value);
+    }
+    bool write(const uint64_t value) {
+        return sock.write(value);
+    }
+    bool write(const String&  value) {
+        return sock.write(value);
+    }
+
+    bool read(void*  value,
+              size_t nbytes) {
+        return sock.read(value, nbytes);
+    }
+    bool read(bool&     value) {
+        return sock.read(value);
+    }
+    bool read(uint8_t&  value) {
+        return sock.read(value);
+    }
+    bool read(uint16_t& value) {
+        return sock.read(value);
+    }
+    bool read(uint32_t& value) {
+        LOG_NOTE("Reading uint32_t");
+        return sock.read(value);
+    }
+    bool read(uint64_t& value) {
+        return sock.read(value);
+    }
+    bool read(String&   value) {
+        return sock.read(value);
+    }
+
+    void shutdown() {
+        sock.shutdown(SHUT_RD);
+    }
+};
+
+/******************************************************************************/
+
+class TcpXprt final : public Xprt::Impl
+{
+public:
+    TcpXprt(TcpSock& sock)
+        : Xprt::Impl(sock)
+    {}
+
+    bool send(PduId      pduId,
+              const bool value) override {
+        return write(pduId) && sock.write(value);
+    }
+
+    bool send(PduId pduId, const XprtAble& obj, Xprt& xprt) override {
+        return write(pduId) && obj.write(xprt);
+    }
+
+    bool recv(PduId& pduId) override {
+        return read(pduId);
+    }
+};
+
+/******************************************************************************/
+
+class UdpXprt final : public Xprt::Impl
+{
+    bool flush() {
+        return static_cast<UdpSock*>(&sock)->flush();
+    }
+
+    void clear() {
+        return static_cast<UdpSock*>(&sock)->clear();
+    }
+
+public:
+    UdpXprt(UdpSock& sock)
+        : Xprt::Impl(sock)
+    {}
+
+    bool send(PduId      pduId,
+              const bool value) override {
+        return write(pduId) && sock.write(value) && flush();
+    }
+
+    bool send(PduId pduId, const XprtAble& obj, Xprt& xprt) override {
+        return write(pduId) && obj.write(xprt) && flush();
+    }
+
+    bool recv(PduId& pduId) override {
+        clear();
+        return read(pduId);
+    }
+};
+
+/******************************************************************************/
+
+Xprt::Xprt(TcpSock& sock)
+    : pImpl(new TcpXprt(sock))
+{}
+
+Xprt::Xprt(UdpSock& sock)
+    : pImpl(new UdpXprt(sock))
+{}
+
+SockAddr Xprt::getRmtAddr() const {
+    return pImpl->getRmtAddr();
+}
+
+String Xprt::to_string() const {
+    return pImpl ? pImpl->to_string() : "<unset>";
+}
+
+bool Xprt::send(PduId pduId, const bool value) const {
+    return pImpl->send(pduId, value);
+}
+
+bool Xprt::send(PduId pduId, const XprtAble& obj) {
+    return pImpl->send(pduId, obj, *this);
+}
+
+bool Xprt::recv(PduId& pduId) {
+    return pImpl->recv(pduId);
+}
+
+bool Xprt::write(const void* value,
+           size_t      nbytes) {
+    return pImpl->write(value, nbytes);
+}
+bool Xprt::write(const bool value) {
+    return pImpl->write(value);
+}
+bool Xprt::write(const uint8_t  value) {
+    return pImpl->write(value);
+}
+bool Xprt::write(const uint16_t value) {
+    return pImpl->write(value);
+}
+bool Xprt::write(const uint32_t value) {
+    return pImpl->write(value);
+}
+bool Xprt::write(const uint64_t value) {
+    return pImpl->write(value);
+}
+bool Xprt::write(const String&  value) {
+    return pImpl->write(value);
+}
+
+bool Xprt::read(void*  value,
+          size_t nbytes) {
+    return pImpl->read(value, nbytes);
+}
+bool Xprt::read(bool&     value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(uint8_t&  value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(uint16_t& value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(uint32_t& value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(uint64_t& value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(String&   value) {
+    return pImpl->read(value);
+}
+
+void Xprt::shutdown() {
+    return pImpl->shutdown();
 }
 
 } // namespace

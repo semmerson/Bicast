@@ -43,7 +43,7 @@ protected:
 public:
     Socket() =default;
 
-    virtual ~Socket() noexcept =0;
+    virtual ~Socket() noexcept;
 
     /**
      * Indicates if this instance is valid (i.e., not default constructed).
@@ -58,6 +58,8 @@ public:
     bool operator<(const Socket& rhs) const noexcept;
 
     void swap(Socket& socket) noexcept;
+
+    std::string to_string() const;
 
     /**
      * Returns the local socket address.
@@ -88,6 +90,24 @@ public:
      */
     in_port_t getRmtPort() const;
 
+    bool write(const void*  data,
+               const size_t nbytes) const;
+    bool write(const bool value) const;
+    bool write(const uint8_t value) const;
+    bool write(const uint16_t value) const;
+    bool write(const uint32_t value) const;
+    bool write(const uint64_t value) const;
+    bool write(const std::string& string) const;
+
+    bool read(void*        data,
+              const size_t nbytes) const;
+    bool read(bool& value) const;
+    bool read(uint8_t& value) const;
+    bool read(uint16_t& value) const;
+    bool read(uint32_t& value) const;
+    bool read(uint64_t& value) const;
+    bool read(std::string& string) const;
+
     /**
      * Idempotent.
      */
@@ -98,73 +118,7 @@ public:
 
 /******************************************************************************/
 
-class InetSock : public Socket
-{
-public:
-    class Impl;
-
-protected:
-    InetSock(Impl* impl);
-
-public:
-    class Impl;
-
-    InetSock() =default;
-
-    virtual ~InetSock() noexcept =0;
-
-    static inline uint8_t hton(const uint8_t value)
-    {
-        return value;
-    }
-
-    static inline uint16_t hton(const uint16_t value)
-    {
-        return htons(value);
-    }
-
-    static inline uint32_t hton(const uint32_t value)
-    {
-        return htonl(value);
-    }
-
-    static inline int32_t hton(const int32_t value)
-    {
-        return htonl(value);
-    }
-
-    static inline uint64_t hton(uint64_t value)
-    {
-        uint64_t  v64;
-        uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
-
-        v32[0] = hton(static_cast<uint32_t>(value >> 32));
-        v32[1] = hton(static_cast<uint32_t>(value));
-
-        return v64;
-    }
-
-    static inline uint16_t ntoh(const uint16_t value)
-    {
-        return ntohs(value);
-    }
-
-    static inline uint32_t ntoh(const uint32_t value)
-    {
-        return ntohl(value);
-    }
-
-    static inline uint64_t ntoh(uint64_t value)
-    {
-        uint32_t* v32 = reinterpret_cast<uint32_t*>(&value);
-
-        return (static_cast<uint64_t>(ntoh(v32[0])) << 32) | ntoh(v32[1]);
-    }
-};
-
-/******************************************************************************/
-
-class TcpSock : public InetSock
+class TcpSock : public Socket
 {
 public:
     class Impl;
@@ -178,8 +132,6 @@ public:
     TcpSock() =default;
 
     virtual ~TcpSock() noexcept;
-
-    virtual std::string to_string() const;
 
     /**
      * If the following are all true:
@@ -197,163 +149,15 @@ public:
      * @throws    std::system_error  `setsockopt()` failure
      */
     TcpSock& setDelay(bool enable);
-
-    /**
-     * Writes bytes to the socket. No host-to-network translation is performed.
-     *
-     * @param[in] bytes        Data to be written
-     * @param[in] nbytes       Number of bytes
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @throws    SystemError  System error
-     */
-    bool write(const void* bytes,
-               size_t      nbytes) const;
-
-    /**
-     * Writes a string to the socket.
-     *
-     * @param[in] str      String to be written
-     * @retval    `false`  Remote peer disconnected
-     * @retval    `true`   Success
-     */
-    bool write(const std::string str) const;
-
-    /**
-     * Writes a value to the socket. No host-to-network translation is
-     * performed.
-     *
-     * @param[in] value        Value to be written
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @throws    SystemError  System error
-     */
-    bool write(bool value) const;
-
-    /**
-     * Writes a value to the socket. No host-to-network translation is
-     * performed.
-     *
-     * @param[in] value        Value to be written
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @throws    SystemError  System error
-     */
-    bool write(uint8_t value) const;
-
-    /**
-     * Writes a value to the socket. Host-to-network translation is performed.
-     *
-     * @param[in] value        Value to be written
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @throws    SystemError  System error
-     */
-    bool write(uint16_t value) const;
-
-    /**
-     * Writes a value to the socket. Host-to-network translation is performed.
-     *
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @param[in] value        Value to be written
-     * @throws    SystemError  System error
-     */
-    bool write(uint32_t value) const;
-
-    /**
-     * Writes a value to the socket. Host-to-network translation is performed.
-     *
-     * @param[in] value        Value to be written
-     * @retval    `false`      Remote peer disconnected
-     * @retval    `true`       Success
-     * @throws    SystemError  System error
-     */
-    bool write(uint64_t value) const;
-
-    /**
-     * Reads bytes from the socket. No network-to-host translation is performed.
-     *
-     * @param[out] bytes         Buffer into which data will be read
-     * @param[in]  nbytes        Number of bytes to read
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(
-            void*        bytes,
-            const size_t nbytes) const;
-
-    /**
-     * Reads a string from the socket.
-     *
-     * @param[out] str           String to be read
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(std::string& str) const;
-
-    /**
-     * Reads a value from the socket. No network-to-host translation is
-     * performed.
-     *
-     * @param[out] value         Destination for value
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(bool&     value) const;
-
-    /**
-     * Reads a value from the socket. No network-to-host translation is
-     * performed.
-     *
-     * @param[out] value         Destination for value
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(uint8_t&  value) const;
-
-    /**
-     * Reads a value from the socket. Network-to-host translation is performed.
-     *
-     * @param[out] value         Destination for value
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(uint16_t& value) const;
-
-    /**
-     * Reads a value from the socket. Network-to-host translation is performed.
-     *
-     * @param[out] value         Destination for value
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(uint32_t& value) const;
-
-    /**
-     * Reads a value from the socket. Network-to-host translation is performed.
-     *
-     * @param[out] value         Destination for value
-     * @retval     `true`        Success
-     * @retval     `false`       EOF or `shutdown()` called
-     * @throws     SystemError   Read error
-     */
-    bool read(uint64_t& value) const;
 };
 
 /******************************************************************************/
 
 class TcpSrvrSock final : public TcpSock
 {
+public:
     class Impl;
 
-public:
     TcpSrvrSock() =default;
 
     /**
@@ -370,8 +174,6 @@ public:
             const SockAddr& sockaddr,
             const int       queueSize = 0);
 
-    std::string to_string() const;
-
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
@@ -387,9 +189,9 @@ public:
 
 class TcpClntSock final : public TcpSock
 {
+public:
     class Impl;
 
-public:
     TcpClntSock() =default;
 
     /**
@@ -400,12 +202,12 @@ public:
 
 /******************************************************************************/
 
-class UdpSock final : public InetSock
+class UdpSock final : public Socket
 {
+public:
     class Impl;
 
-public:
-    static const int MAX_PAYLOAD = 1472;
+    static constexpr int MAX_PAYLOAD = 65507; ///< Maximum UDP payload in bytes
 
     UdpSock() =default;
 
@@ -432,147 +234,17 @@ public:
      */
     const UdpSock& setMcastIface(const InetAddr& iface) const;
 
-    std::string to_string() const;
-
     /**
-     * Adds bytes to be written. No host-to-network translation is performed.
-     *
-     * @param[in] data    Bytes to be added. <b>Must exist until `send()`
-     *                    returns.</b>
-     * @param[in] nbytes  Number of bytes to be added.
-     */
-    void addWrite(
-            const void*  data,
-            const size_t nbytes) const;
-
-    /**
-     * Adds a byte. Host-to-network translation is performed.
-     *
-     * @param[in] value  Value to be added.
-     */
-    void addWrite(const uint8_t value) const;
-
-    /**
-     * Adds a value. Host-to-network translation is performed.
-     *
-     * @param[in] value  Value to be added.
-     */
-    void addWrite(const bool value) const;
-
-    /**
-     * Adds a value. Host-to-network translation is performed.
-     *
-     * @param[in] value  Value to be added.
-     */
-    void addWrite(const uint16_t value) const;
-
-    /**
-     * Adds a value. Host-to-network translation is performed.
-     *
-     * @param[in] value  Value to be added.
-     */
-    void addWrite(const uint32_t value) const;
-
-    /**
-     * Adds a value. Host-to-network translation is performed.
-     *
-     * @param[in] value  Value to be added.
-     */
-    void addWrite(const uint64_t value) const;
-
-    /**
-     * Adds a string. Host-to-network translation is performed.
-     *
-     * @param[in] string  String to be added.
-     */
-    void UdpSock::addWrite(const std::string& string) const;
-
-    /**
-     * Writes the UDP packet.
+     * Flushes (writes) the UDP packet.
      *
      * @cancellationpoint  Yes
      */
-    void write() const;
+    bool flush() const;
 
     /**
-     * Adds bytes to be peeked by the next call to `peek()` Previously peeked
-     * bytes are skipped. No network-to-host translation is performed.
-     *
-     * @param[out] data             Destination for peeked bytes. <b>Must exist
-     *                              until `peek()` returns.</b>
-     * @param[in]  nbytes           Number of bytes to be peeked
-     * @throws     InvalidArgument  Addition would exceed UDP packet size
-     * @throws     LogicError       Out of vector I/O elements
-     * @cancellationpoint           No
+     * Clears the input buffer.
      */
-    void addPeek(
-            void* const  data,
-            const size_t nbytes);
-
-    /**
-     * Adds a value to be peeked by the next call to `peek()` Previously peeked
-     * bytes are skipped. Network-to-host translation is performed.
-     *
-     * @param[out] value            Destination for peeked value. <b>Must exist
-     *                              until `peek()` returns.</b>
-     * @throws     InvalidArgument  Addition would exceed UDP packet size
-     * @throws     LogicError       Out of vector I/O elements
-     * @cancellationpoint           No
-     */
-    void addPeek(uint8_t& value);
-
-    /**
-     * Adds a value to be peeked by the next call to `peek()` Previously peeked
-     * bytes are skipped. Network-to-host translation is performed.
-     *
-     * @param[out] value            Destination for peeked value. <b>Must exist
-     *                              until `peek()` returns.</b>
-     * @throws     InvalidArgument  Addition would exceed UDP packet size
-     * @throws     LogicError       Out of vector I/O elements
-     * @cancellationpoint           No
-     */
-    void addPeek(uint16_t& value);
-
-    /**
-     * Adds a value to be peeked by the next call to `peek()` Previously peeked
-     * bytes are skipped. Network-to-host translation is performed.
-     *
-     * @param[out] value            Destination for peeked value. <b>Must exist
-     *                              until `peek()` returns.</b>
-     * @throws     InvalidArgument  Addition would exceed UDP packet size
-     * @throws     LogicError       Out of vector I/O elements
-     * @cancellationpoint           No
-     */
-    void addPeek(uint32_t& value);
-
-    /**
-     * Adds a value to be peeked by the next call to `peek()` Previously peeked
-     * bytes are skipped. Network-to-host translation is performed.
-     *
-     * @param[out] value            Destination for peeked value. <b>Must exist
-     *                              until `peek()` returns.</b>
-     * @throws     InvalidArgument  Addition would exceed UDP packet size
-     * @throws     LogicError       Out of vector I/O elements
-     * @cancellationpoint           No
-     */
-    void addPeek(uint64_t& value);
-
-    /**
-     * Peeks at the UDP packet using the I/O vector set by previous calls to
-     * `setPeek()`. Previously peeked bytes are skipped.
-     *
-     * @retval    `false`       EOF or `halt()` called
-     * @retval    `true`        Success
-     * @throws    SystemError   I/O error
-     * @throws    RuntimeError  Packet is too small
-     * @cancellationpoint       Yes
-     */
-    bool peek() const;
-
-    /**
-     * Discards the current packet. Idempotent.
-     */
-    void discard();
+    void clear() const;
 };
 
 } // namespace

@@ -752,7 +752,7 @@ int InetAddr::getFamily() const noexcept
 
 std::string InetAddr::to_string() const
 {
-    return pImpl ? pImpl->to_string() : "(unset)";
+    return pImpl ? pImpl->to_string() : "<unset>";
 }
 
 bool InetAddr::operator<(const InetAddr& rhs) const noexcept

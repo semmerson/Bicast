@@ -60,6 +60,10 @@ public:
         delete[] buf;
     }
 
+    operator bool() const noexcept {
+        return buf != nullptr;
+    }
+
     const char* data() const noexcept {
         return buf;
     }
@@ -72,34 +76,28 @@ public:
                 std::to_string(prodSize) + "}";
     }
 
-    bool read(TcpSock& sock) {
-        bool success = segId.read(sock) && sock.read(prodSize);
-
+    bool write(Xprt& xprt) {
+        LOG_NOTE("Writing data-segment to %s", xprt.to_string().data());
+        auto success = segId.write(xprt);
         if (success) {
-            auto segSize = DataSeg::size(prodSize, segId.offset);
-            if (bufSize < segSize) {
-                delete[] buf;
-                buf = new char[segSize];
-                bufSize = segSize;
+            LOG_NOTE("Writing product-size to %s", xprt.to_string().data());
+            success = xprt.write(prodSize);
+            if (success) {
+                LOG_NOTE("Writing data-segment data to %s",
+                        xprt.to_string().data());
+                success = xprt.write(buf, DataSeg::size(prodSize, segId.offset));
             }
-            success = sock.read(buf, segSize);
         }
-
         return success;
     }
 
-    bool write(TcpSock& sock) {
-        return segId.write(sock) && sock.write(prodSize) &&
-            sock.write(buf, DataSeg::size(prodSize, segId.offset));
-    }
-
-    bool read(UdpSock& sock) {
-        /*
-        bool success = segId.read(sock);
+    bool read(Xprt& xprt) {
+        LOG_NOTE("Reading data-segment from %s", xprt.to_string().data());
+        bool success = segId.read(xprt);
 
         if (success) {
-            sock.addPeek(prodSize);
-            success = sock.peek();
+            LOG_NOTE("Reading product-size from %s", xprt.to_string().data());
+            success = xprt.read(prodSize);
 
             if (success) {
                 auto segSize = DataSeg::size(prodSize, segId.offset);
@@ -108,69 +106,36 @@ public:
                     buf = new char[segSize];
                     bufSize = segSize;
                 }
-                sock.addPeek(buf, segSize);
-                success = sock.peek();
+                LOG_NOTE("Reading data-segment data from %s",
+                        xprt.to_string().data());
+                success = xprt.read(buf, segSize);
+            }
+            if (success) {
+                LOG_NOTE("Read data-segment");
+            }
+            else {
+                LOG_NOTE("Didn't read data-segment");
             }
         }
 
         return success;
-        */
-        return true;
-    }
-
-    bool write(UdpSock& sock) {
-        return true;
-        /*
-        return segId.write(sock) && sock.write(prodSize) &&
-            sock.write(buf, DataSeg::size(prodSize, segId.offset));
-        */
-    }
-};
-
-class SockSeg final : public DataSeg::Impl
-{
-    char* buf;
-
-public:
-    SockSeg(TcpSock& sock)
-        : Impl()
-        , buf(nullptr)
-    {
-        bool success = false;
-        if (segId.read(sock) && sock.read(prodSize)) {
-            auto nbytes = DataSeg::size(prodSize, segId.offset);
-            buf = new char[nbytes];
-            Impl::buf = buf;
-            success = sock.read(buf, nbytes);
-        }
-        if (!success)
-            throw EOF_ERROR("EOF encountered reading data-segment " +
-                    segId.to_string());
-    }
-
-    ~SockSeg() noexcept {
-        delete[] buf;
     }
 };
 
 /******************************************************************************/
 
 DataSeg::DataSeg()
-    : pImpl{}
+    : pImpl(new Impl())
 {}
 
 DataSeg::DataSeg(const DataSegId& segId,
                  const ProdSize   prodSize,
                  const char*      data)
-    : pImpl(std::make_shared<Impl>(segId, prodSize, data))
-{}
-
-DataSeg::DataSeg(TcpSock& sock)
-    : pImpl(std::make_shared<SockSeg>(sock))
+    : pImpl(new Impl(segId, prodSize, data))
 {}
 
 DataSeg::operator bool() const {
-    return static_cast<bool>(pImpl);
+    return pImpl->operator bool();
 }
 
 const DataSegId& DataSeg::getId() const noexcept {
@@ -189,20 +154,12 @@ String DataSeg::to_string(const bool withName) const {
     return pImpl->to_string(withName);
 }
 
-bool DataSeg::read(TcpSock& sock) const {
-    return pImpl->read(sock);
+bool DataSeg::write(Xprt& xprt) const {
+    return pImpl->write(xprt);
 }
 
-bool DataSeg::write(TcpSock& sock) const {
-    return pImpl->write(sock);
-}
-
-bool DataSeg::read(UdpSock& sock) const {
-    return pImpl->read(sock);
-}
-
-bool DataSeg::write(UdpSock& sock) const {
-    return pImpl->write(sock);
+bool DataSeg::read(Xprt& xprt) {
+    return pImpl->read(xprt);
 }
 
 } // namespace

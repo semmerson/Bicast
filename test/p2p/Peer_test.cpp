@@ -476,7 +476,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   log_setName(::basename(argv[0]));
-  //log_setLevel(LogLevel::DEBUG);
+  log_setLevel(LogLevel::DEBUG);
 
   std::set_terminate(&myTerminate);
 

@@ -316,7 +316,7 @@ public:
     enum class Id {
         UNSET,
         PROD_INDEX,
-        DATA_SEG
+        DATA_SEG_ID
     } id;
     union {
         ProdIndex prodIndex;
@@ -337,7 +337,7 @@ public:
     {}
 
     NoteReq(const DataSegId dataSegId)
-        : id(Id::DATA_SEG)
+        : id(Id::DATA_SEG_ID)
         , dataSegId(dataSegId)
     {}
 

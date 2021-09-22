@@ -44,11 +44,124 @@ using Lock   = std::unique_lock<Mutex>;
 using Cond   = std::condition_variable;
 using String = std::string;
 
+// Protocol data unit (PDU) identifiers
+using PduType = unsigned char;
+enum class PduId : PduType {
+    UNSET,
+    NODE_TYPE,
+    PUB_PATH_NOTICE,
+    PROD_INFO_NOTICE,
+    DATA_SEG_NOTICE,
+    PROD_INFO_REQUEST,
+    DATA_SEG_REQUEST,
+    PROD_INFO,
+    DATA_SEG
+};
+
+/******************************************************************************
+ * Transport API
+ ******************************************************************************/
+
+class Xprt;
+
+/// Interface for a transportable object
+class XprtAble
+{
+public:
+    virtual ~XprtAble() {};
+
+    virtual bool write(Xprt& xprt) const =0;
+
+    virtual bool read(Xprt& xprt) =0;
+};
+
+/// Transport
+class Xprt
+{
+public:
+    class Impl; // Implementation
+
+protected:
+    std::shared_ptr<Impl> pImpl;
+
+public:
+    Xprt() =default;
+
+    /**
+     * Constructs.
+     *
+     * @param[in] sock  TCP socket
+     */
+    explicit Xprt(TcpSock& sock);
+
+    /**
+     * Constructs.
+     *
+     * @param[in] sock  UDP socket
+     */
+    explicit Xprt(UdpSock& sock);
+
+    operator bool() {
+        return static_cast<bool>(pImpl);
+    }
+
+    SockAddr getRmtAddr() const;
+
+    String to_string() const;
+
+    /**
+     * Transports a boolean to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] value    Boolean to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(PduId pduId, const bool value) const;
+
+    /**
+     * Transports an object to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] obj      Object to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(PduId pduId, const XprtAble& obj);
+
+    /**
+     * Receives the next, incoming PDU.
+     *
+     * @param[out] pduid    Identifier of the next PDU
+     * @retval     `true`   Success
+     * @retval     `false`  Connection lost
+     */
+    bool recv(PduId& pduId);
+
+    bool write(const void*    value, size_t nbytes);
+    bool write(const bool     value);
+    bool write(const uint8_t  value);
+    bool write(const uint16_t value);
+    bool write(const uint32_t value);
+    bool write(const uint64_t value);
+    bool write(const String&  value);
+
+    bool read(void*     value, size_t nbytes);
+    bool read(bool&     value);
+    bool read(uint8_t&  value);
+    bool read(uint16_t& value);
+    bool read(uint32_t& value);
+    bool read(uint64_t& value);
+    bool read(String&   value);
+
+    void shutdown();
+};
+
 /******************************************************************************/
 // PDU payloads
 
 /// Path-to-publisher notice
-class PubPath
+class PubPath : public XprtAble
 {
     bool pubPath; // Something is a path to the publisher
 
@@ -79,16 +192,16 @@ public:
                 : std::to_string(pubPath);
     }
 
-    bool write(TcpSock& sock) const {
-        return sock.write(pubPath);
+    bool write(Xprt& xprt) const override {
+        return xprt.write(pubPath);
     }
 
-    bool read(TcpSock& sock) {
-        return sock.read(pubPath);
+    bool read(Xprt& xprt) override {
+        return xprt.read(pubPath);
     }
 };
 
-class ProdIndex
+class ProdIndex : public XprtAble
 {
 public:
     using Type = uint32_t;
@@ -133,16 +246,14 @@ public:
         return *this;
     }
 
-    bool write(TcpSock& sock) const {
-        return sock.write(index);
+    bool write(Xprt& xprt) const override {
+        LOG_NOTE("Writing product-index to %s", xprt.to_string().data());
+        return xprt.write(index);
     }
 
-    bool read(TcpSock& sock) {
-        return sock.read(index);
-    }
-
-    bool write(UdpSock& sock) const {
-        return sock.addWrite(index);
+    bool read(Xprt& xprt) override {
+        LOG_NOTE("Reading product-index from %s", xprt.to_string().data());
+        return xprt.read(index);
     }
 };
 using ProdSize  = uint32_t;    ///< Size of product in bytes
@@ -150,7 +261,7 @@ using SegSize   = uint16_t;    ///< Data-segment size in bytes
 using SegOffset = ProdSize;    ///< Offset of data-segment in bytes
 
 /// Data-segment identifier
-struct DataSegId
+struct DataSegId : public XprtAble
 {
     ProdIndex prodIndex; ///< Product index
     SegOffset offset;    ///< Offset of data segment in bytes
@@ -181,17 +292,30 @@ struct DataSegId
         return prodIndex.hash() ^ offHash(offset);
     }
 
-    bool write(TcpSock& sock) const {
-        return prodIndex.write(sock) && sock.write(offset);
+    bool write(Xprt& xprt) const override {
+        LOG_NOTE("Writing data-segment identifier to %s", xprt.to_string().data());
+        auto success = prodIndex.write(xprt);
+        if (success) {
+            LOG_NOTE("Writing offset to %s", xprt.to_string().data());
+            success = xprt.write(offset);
+        }
+        return success;
     }
 
-    bool read(TcpSock& sock) {
-        return prodIndex.read(sock) && sock.read(offset);
+    bool read(Xprt& xprt) override {
+        LOG_NOTE("Reading data-segment identifier from %s",
+                xprt.to_string().data());
+        auto success = prodIndex.read(xprt);
+        if (success)  {
+            LOG_NOTE("Reading offset from %s", xprt.to_string().data());
+            success = xprt.read(offset);
+        }
+        return success;
     }
 };
 
 /// Timestamp
-struct Timestamp
+struct Timestamp : public XprtAble
 {
     uint64_t sec;  ///< Seconds since the epoch
     uint32_t nsec; ///< Nanoseconds
@@ -205,17 +329,17 @@ struct Timestamp
      */
     std::string to_string(bool withName = false) const;
 
-    bool write(TcpSock& sock) const {
-        return sock.write(sec) && sock.write(nsec);
+    bool write(Xprt& xprt) const override {
+        return xprt.write(sec) && xprt.write(nsec);
     }
 
-    bool read(TcpSock& sock) {
-        return sock.read(sec) && sock.read(nsec);
+    bool read(Xprt& xprt) override {
+        return xprt.read(sec) && xprt.read(nsec);
     }
 };
 
 /// Product information
-struct ProdInfo
+struct ProdInfo : public XprtAble
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
@@ -237,17 +361,15 @@ public:
 
     String to_string(bool withName = false) const;
 
-    bool write(TcpSock& sock) const;
+    bool write(Xprt& xprt) const override;
 
-    bool read(TcpSock& sock);
-
-    void write(UdpSock& sock) const;
+    bool read(Xprt& xprt) override;
 };
 
 class Peer;
 
 /// Data segment
-class DataSeg final
+class DataSeg final : public XprtAble
 {
 public:
     class Impl;
@@ -256,8 +378,14 @@ private:
     std::shared_ptr<Impl> pImpl;
 
 public:
-    // Ethernet - IP header - TCP header - PduId - prodIndex - offset - prodSize
-    static constexpr SegSize CANON_DATASEG_SIZE = 1500 - 20 - 20 - 4 - 4 - 4 - 4;
+    static constexpr SegSize CANON_DATASEG_SIZE =
+            1500 - // Ethernet
+            20 -   // IP header
+            20 -   // TCP header
+            4 -    // PduId
+            4 -    // prodIndex
+            4 -    // offset
+            4;     // prodSize
 
     inline static SegSize size(ProdSize prodSize, SegOffset offset) noexcept {
         SegSize nbytes = prodSize - offset;
@@ -290,30 +418,12 @@ public:
 
     String to_string(bool withName = false) const;
 
-    bool read(TcpSock& sock) const;
+    bool write(Xprt& xprt) const override;
 
-    bool write(TcpSock& sock) const;
-
-    bool read(UdpSock& sock) const;
-
-    bool write(UdpSock& sock) const;
+    bool read(Xprt& xprt) override;
 };
 
 /******************************************************************************/
-
-// Protocol data unit (PDU) identifiers
-using PduType = unsigned char;
-enum class PduId : PduType {
-    UNSET,
-    NODE_TYPE,
-    PUB_PATH_NOTICE,
-    PROD_INFO_NOTICE,
-    DATA_SEG_NOTICE,
-    PROD_INFO_REQUEST,
-    DATA_SEG_REQUEST,
-    PROD_INFO,
-    DATA_SEG
-};
 
 /**
  * Class for both notices and requests sent to a remote peer. It exists so that
@@ -326,30 +436,34 @@ public:
     enum class Id {
         UNSET,
         PROD_INDEX,
-        DATA_SEG
+        DATA_SEG_ID
     } id;
     union {
         ProdIndex prodIndex;
         DataSegId dataSegId;
     };
 
-    NoteReq()
+    NoteReq() noexcept
         : prodIndex()
         , id(Id::UNSET)
     {}
 
-    NoteReq(const NoteReq& noteReq) =default;
-    NoteReq(NoteReq&& noteReq) =default;
-
-    NoteReq(const ProdIndex prodIndex)
+    explicit NoteReq(const ProdIndex prodIndex) noexcept
         : id(Id::PROD_INDEX)
         , prodIndex(prodIndex)
     {}
 
-    NoteReq(const DataSegId dataSegId)
-        : id(Id::DATA_SEG)
+    explicit NoteReq(const DataSegId dataSegId) noexcept
+        : id(Id::DATA_SEG_ID)
         , dataSegId(dataSegId)
     {}
+
+    NoteReq(const NoteReq& noteReq) noexcept {
+        ::memcpy(this, &noteReq, sizeof(NoteReq));
+    }
+
+    ~NoteReq() noexcept {
+    }
 
     NoteReq& operator=(const NoteReq& noteReq) =default;
 

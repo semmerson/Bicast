@@ -221,6 +221,16 @@ inline void log_fatal(const std::exception& ex) {
                     __VA_ARGS__); \
     while(false)
 
+#define LOG_SYSERR(...) \
+    do \
+        if (hycast::log_enabled(hycast::LogLevel::ERROR)) { \
+            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
+                    strerror(errno)); \
+            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
+                    __VA_ARGS__); \
+        } \
+    while(false)
+
 #define LOG_FATAL(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::FATAL)) \

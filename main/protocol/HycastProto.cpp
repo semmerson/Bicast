@@ -41,7 +41,7 @@ std::string DataSegId::to_string(const bool withName) const
 String NoteReq::to_string() const {
     return (id == Id::PROD_INDEX)
             ? prodIndex.to_string()
-            : (id == Id::DATA_SEG)
+            : (id == Id::DATA_SEG_ID)
                 ? dataSegId.to_string()
                 : "<unset>";
 }
@@ -49,7 +49,7 @@ String NoteReq::to_string() const {
 size_t NoteReq::hash() const noexcept {
     return (id == Id::PROD_INDEX)
             ? prodIndex.hash()
-            : (id == Id::DATA_SEG)
+            : (id == Id::DATA_SEG_ID)
                 ? dataSegId.hash()
                 : 0;
 }

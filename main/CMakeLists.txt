@@ -23,7 +23,6 @@ include_directories(inet)
 add_subdirectory(misc)
 add_subdirectory(inet)
 add_subdirectory(p2p)
-add_subdirectory(mcast)
 add_subdirectory(lib)
 add_subdirectory(repository)
 
