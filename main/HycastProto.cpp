@@ -1,7 +1,7 @@
 /**
- * This file  
+ * This file implements the types used in the Hycast protocol.
  *
- *  @file:  
+ *  @file:  HycastProto.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
@@ -249,9 +249,9 @@ public:
                       Xprt&           xprt) =0;
 
     /**
-     * Receives the next PDU.
+     * Receives the next PDU identifier.
      *
-     * @param[out] pduId    Identifier of the next PDU
+     * @param[out] pduId    PDU ID
      * @retval     `true`   Success
      * @retval     `false`  Connection lost
      */

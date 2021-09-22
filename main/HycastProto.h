@@ -44,10 +44,13 @@ using Lock   = std::unique_lock<Mutex>;
 using Cond   = std::condition_variable;
 using String = std::string;
 
+constexpr uint8_t PROTOCOL_VERSION = 1;
+
 // Protocol data unit (PDU) identifiers
 using PduType = unsigned char;
 enum class PduId : PduType {
     UNSET,
+    PROTO_VERS,
     NODE_TYPE,
     PUB_PATH_NOTICE,
     PROD_INFO_NOTICE,

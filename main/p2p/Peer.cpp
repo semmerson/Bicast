@@ -153,6 +153,21 @@ protected:
         assignSocks(socks);
     }
 
+    /**
+     * Vets the protocol version used by the remote peer.
+     *
+     * @param[in protoVers  Remote protocol version
+     * @throw LogicError    Remote peer uses unsupported protocol
+     */
+    void vetProtoVers(decltype(PROTOCOL_VERSION) protoVers,
+                      Xprt                       xprt) {
+        if (protoVers != PROTOCOL_VERSION)
+            throw LOGIC_ERROR("Remote peer " +
+                    xprt.getRmtAddr().to_string() + " uses protocol " +
+                    std::to_string(protoVers) + "; not " +
+                    std::to_string(PROTOCOL_VERSION));
+    }
+
     static inline bool read(Xprt& xprt, P2pNode::Type& nodeType) {
         uint8_t type;
         if (xprt.read(type)) {
@@ -328,13 +343,22 @@ protected:
     }
 
     /**
+     * Exchanges protocol version with remote peer.
+     *
+     * @retval `true`     Success
+     * @retval `false`    Connection lost
+     * @throw LogicError  Remote peer uses unsupported protocol
+     */
+    virtual bool xchgProtoVers() =0;
+
+    /**
      * Exchanges node-type information (publisher or subscriber) with the remote
      * peer.
      *
      * @retval `true`   Success
      * @retval `false`  Connection lost
      */
-    virtual bool exchangeNodeTypes() =0;
+    virtual bool xchgNodeType() =0;
 
     /**
      * Starts the internal threads needed to read and service messages from the
@@ -401,6 +425,7 @@ public:
      * @retval    `false`  `stop()` was called
      * @retval    `true`   Success
      * @throw LogicError   Already called
+     * @throw LogicError   Remote peer uses unsupported protocol
      * @throw SystemError  Thread couldn't be created
      * @see   `stop()`
      */
@@ -415,20 +440,18 @@ public:
         else {
             connected = ensureConnected();
 
-            if (connected) {
-                if (exchangeNodeTypes()) {
-                    startThreads(peer); // Depends on `rmtNodeType`
+            if (connected && xchgProtoVers() && xchgNodeType()) {
+                startThreads(peer); // Depends on `rmtNodeType`
 
-                    auto expected = State::STARTING;
-                    if (state.compare_exchange_strong(
-                            expected, State::STARTED)) {
-                        success = true;
-                        // `stop()` is now effective
-                    }
-                    else {
-                        stopAndJoinThreads();
-                    }
-                } // Node types exchanged
+                auto expected = State::STARTING;
+                if (state.compare_exchange_strong(
+                        expected, State::STARTED)) {
+                    success = true;
+                    // `stop()` is now effective
+                }
+                else {
+                    stopAndJoinThreads();
+                }
             } // Instance is connected to remote
         } // Instance is initialized
 
@@ -588,8 +611,19 @@ class PubImpl final : public Peer::Impl
     PubP2pNode& node;
 
 protected:
-    bool exchangeNodeTypes() override {
-        // Keep consonant with `SubImpl::exchangeNodeTypes()`
+    bool xchgProtoVers() override {
+        auto protoVers = PROTOCOL_VERSION;
+        bool success = noticeXprt.write(PROTOCOL_VERSION) &&
+                noticeXprt.read(protoVers);
+
+        if (success)
+            vetProtoVers(protoVers, noticeXprt);
+
+        return success;
+    }
+
+    bool xchgNodeType() override {
+        // Keep consonant with `SubImpl::xchgNodeType()`
         // NB: Publishers don't care about the type of the remote node
         return noticeXprt.write(static_cast<uint8_t>(P2pNode::Type::PUBLISHER));
     }
@@ -1046,26 +1080,36 @@ protected:
         return success;
     }
 
-    bool exchangeNodeTypes() override {
+    bool xchgProtoVers() override {
+        auto protoVers = PROTOCOL_VERSION;
+        bool success = serverSide
+            ? noticeXprt.write(PROTOCOL_VERSION) && noticeXprt.read(protoVers)
+            : noticeXprt.read(protoVers) && noticeXprt.write(PROTOCOL_VERSION);
+
+        if (success)
+            vetProtoVers(protoVers, noticeXprt);
+
+        return success;
+    }
+
+    bool xchgNodeType() override {
         bool          success = false; // Failure default
         P2pNode::Type nodeType;
         uint8_t       type;
 
         if (serverSide) {
             LOG_DEBUG("Sending node type to %s", noticeXprt.to_string().data());
-            if (noticeXprt.send(PduId::NODE_TYPE,
-                    static_cast<int>(P2pNode::Type::SUBSCRIBER)) &&
-                            noticeXprt.read(type)) {
-                // NB: A publisher's local peer is never client-side constructed
-                // Will be `P2pNode::Type::SUBSCRIBER`
-                rmtNodeType = P2pNode::Type(nodeType);
+            if (noticeXprt.write(
+                    static_cast<uint8_t>(P2pNode::Type::SUBSCRIBER))) {
+                // NB: An incoming connection is always from a subscriber
+                rmtNodeType = P2pNode::Type::SUBSCRIBER;
                 success = true;
             }
         }
         else {
-            // Keep consonant with `PubImpl::exchangeNodeTypes()`
+            // Keep consonant with `PubImpl::xchgNodeType()`
             if (noticeXprt.read(type)) {
-                rmtNodeType = P2pNode::Type(nodeType);
+                rmtNodeType = P2pNode::Type(type);
                 // NB: Publishers don't care about the type of the remote node
                 if (nodeType == P2pNode::Type::PUBLISHER) {
                     success = true;
@@ -1073,7 +1117,7 @@ protected:
                 else {
                     LOG_DEBUG("Sending node type to %s",
                             noticeXprt.to_string().data());
-                    success = noticeXprt.send(PduId::NODE_TYPE,
+                    success = noticeXprt.write(
                             static_cast<uint8_t>(P2pNode::Type::SUBSCRIBER));
                 }
             }
@@ -1367,7 +1411,7 @@ class PeerSrvr<NODE, PEER>::Impl
                     acceptQ.push(peer);
                 cond.notify_one();
             }
-        }
+        } // Read notice port number
     }
 
 public:
