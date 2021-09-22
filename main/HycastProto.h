@@ -50,8 +50,6 @@ constexpr uint8_t PROTOCOL_VERSION = 1;
 using PduType = unsigned char;
 enum class PduId : PduType {
     UNSET,
-    PROTO_VERS,
-    NODE_TYPE,
     PUB_PATH_NOTICE,
     PROD_INFO_NOTICE,
     DATA_SEG_NOTICE,

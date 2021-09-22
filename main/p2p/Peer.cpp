@@ -500,11 +500,6 @@ public:
         return noticeXprt.to_string();
     }
 
-    bool notify(const P2pNode::Type notice) {
-        throwIf();
-        return connected = noticeXprt.send(PduId::NODE_TYPE,
-                static_cast<uint8_t>(notice));
-    }
     bool notify(const PubPath notice) {
         throwIf();
         return noticeXprt.send(PduId::PUB_PATH_NOTICE, notice);
