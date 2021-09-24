@@ -670,6 +670,10 @@ public:
     bool rmtIsPubPath() const noexcept override {
         return true; // Because connected to me
     }
+
+    bool send(FeedInfo& feedInfo) {
+        noticeXprt.send(pduId, obj)
+    }
 };
 
 PubPeer::PubPeer(PubP2pNode& node, TcpSock socks[3])

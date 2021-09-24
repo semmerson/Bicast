@@ -30,6 +30,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <time.h>
@@ -62,10 +63,33 @@ enum PduId : PduType {
 /******************************************************************************/
 // PDU payloads
 
+using ProdSize  = uint32_t;    ///< Size of product in bytes
+using SegSize   = uint16_t;    ///< Data-segment size in bytes
+using SegOffset = ProdSize;    ///< Offset of data-segment in bytes
+
+/// Information received by a subscriber upon connecting.
+class FeedInfo
+{
+public:
+    std::set<SockAddr> servers;     ///< Potential peer servers
+    SockAddr           mcastGroup;  ///< Multicast group address
+    InetAddr           mcastSource; ///< Multicast source address
+    SegSize            segSize;     ///< Canonical data-segment size in bytes
+
+    /**
+     * Initializes this instance from a transport.
+     *
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool read(Xprt& xprt);
+};
+
 /// Path-to-publisher notice
 class PubPath : public XprtAble
 {
-    bool pubPath; // Something is a path to the publisher
+    bool pubPath; // Something is or has a path to the publisher
 
 public:
     /**
@@ -158,9 +182,6 @@ public:
         return xprt.read(index);
     }
 };
-using ProdSize  = uint32_t;    ///< Size of product in bytes
-using SegSize   = uint16_t;    ///< Data-segment size in bytes
-using SegOffset = ProdSize;    ///< Offset of data-segment in bytes
 
 /// Data-segment identifier
 struct DataSegId : public XprtAble
