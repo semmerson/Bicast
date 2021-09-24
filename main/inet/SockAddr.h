@@ -31,7 +31,7 @@
 
 namespace hycast {
 
-class SockAddr
+class SockAddr : public XprtAble
 {
     class                       Impl;
     std::shared_ptr<const Impl> pImpl;
@@ -242,6 +242,24 @@ public:
     void join(
             const int       sd,
             const InetAddr& srcAddr) const;
+
+    /**
+     * Writes to a transport.
+     *
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool write(Xprt& xprt) const;
+
+    /**
+     * Reads from a transport.
+     *
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool read(Xprt& xprt);
 };
 
 } // namespace

@@ -196,18 +196,6 @@ class Xprt::Impl
 protected:
     Socket      sock;
 
-    inline bool write(PduId pduId) {
-        return sock.write(static_cast<PduType>(pduId));
-    }
-
-    inline bool read(PduId& pduId) {
-        PduType id;
-        if (!sock.read(id))
-            return false;
-        pduId = static_cast<PduId>(id);
-        return true;
-    }
-
 public:
     Impl(Socket& sock)
         : sock(sock)
@@ -232,7 +220,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    virtual bool send(PduId      pduId,
+    virtual bool send(unsigned   pduId,
                       const bool value) =0;
 
     /**
@@ -244,7 +232,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    virtual bool send(PduId           pduId,
+    virtual bool send(unsigned        pduId,
                       const XprtAble& obj,
                       Xprt&           xprt) =0;
 
@@ -255,7 +243,7 @@ public:
      * @retval     `true`   Success
      * @retval     `false`  Connection lost
      */
-    virtual bool recv(PduId& pduId) =0;
+    virtual bool recv(unsigned& pduId) =0;
 
     bool write(const void* value,
                size_t      nbytes) {
@@ -319,16 +307,16 @@ public:
         : Xprt::Impl(sock)
     {}
 
-    bool send(PduId      pduId,
+    bool send(unsigned   pduId,
               const bool value) override {
         return write(pduId) && sock.write(value);
     }
 
-    bool send(PduId pduId, const XprtAble& obj, Xprt& xprt) override {
+    bool send(unsigned pduId, const XprtAble& obj, Xprt& xprt) override {
         return write(pduId) && obj.write(xprt);
     }
 
-    bool recv(PduId& pduId) override {
+    bool recv(unsigned& pduId) {
         return read(pduId);
     }
 };
@@ -350,16 +338,16 @@ public:
         : Xprt::Impl(sock)
     {}
 
-    bool send(PduId      pduId,
+    bool send(unsigned   pduId,
               const bool value) override {
         return write(pduId) && sock.write(value) && flush();
     }
 
-    bool send(PduId pduId, const XprtAble& obj, Xprt& xprt) override {
+    bool send(unsigned pduId, const XprtAble& obj, Xprt& xprt) override {
         return write(pduId) && obj.write(xprt) && flush();
     }
 
-    bool recv(PduId& pduId) override {
+    bool recv(unsigned& pduId) {
         clear();
         return read(pduId);
     }
@@ -383,15 +371,15 @@ String Xprt::to_string() const {
     return pImpl ? pImpl->to_string() : "<unset>";
 }
 
-bool Xprt::send(PduId pduId, const bool value) const {
+bool Xprt::send(unsigned pduId, const bool value) const {
     return pImpl->send(pduId, value);
 }
 
-bool Xprt::send(PduId pduId, const XprtAble& obj) {
+bool Xprt::send(unsigned pduId, const XprtAble& obj) {
     return pImpl->send(pduId, obj, *this);
 }
 
-bool Xprt::recv(PduId& pduId) {
+bool Xprt::recv(unsigned& pduId) {
     return pImpl->recv(pduId);
 }
 

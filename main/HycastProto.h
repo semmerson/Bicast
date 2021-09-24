@@ -47,8 +47,8 @@ using String = std::string;
 constexpr uint8_t PROTOCOL_VERSION = 1;
 
 // Protocol data unit (PDU) identifiers
-using PduType = unsigned char;
-enum class PduId : PduType {
+using PduType = unsigned;
+enum PduId : PduType {
     UNSET,
     PUB_PATH_NOTICE,
     PROD_INFO_NOTICE,
@@ -57,105 +57,6 @@ enum class PduId : PduType {
     DATA_SEG_REQUEST,
     PROD_INFO,
     DATA_SEG
-};
-
-/******************************************************************************
- * Transport API
- ******************************************************************************/
-
-class Xprt;
-
-/// Interface for a transportable object
-class XprtAble
-{
-public:
-    virtual ~XprtAble() {};
-
-    virtual bool write(Xprt& xprt) const =0;
-
-    virtual bool read(Xprt& xprt) =0;
-};
-
-/// Transport
-class Xprt
-{
-public:
-    class Impl; // Implementation
-
-protected:
-    std::shared_ptr<Impl> pImpl;
-
-public:
-    Xprt() =default;
-
-    /**
-     * Constructs.
-     *
-     * @param[in] sock  TCP socket
-     */
-    explicit Xprt(TcpSock& sock);
-
-    /**
-     * Constructs.
-     *
-     * @param[in] sock  UDP socket
-     */
-    explicit Xprt(UdpSock& sock);
-
-    operator bool() {
-        return static_cast<bool>(pImpl);
-    }
-
-    SockAddr getRmtAddr() const;
-
-    String to_string() const;
-
-    /**
-     * Transports a boolean to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Boolean to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(PduId pduId, const bool value) const;
-
-    /**
-     * Transports an object to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] obj      Object to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(PduId pduId, const XprtAble& obj);
-
-    /**
-     * Receives the next, incoming PDU.
-     *
-     * @param[out] pduid    Identifier of the next PDU
-     * @retval     `true`   Success
-     * @retval     `false`  Connection lost
-     */
-    bool recv(PduId& pduId);
-
-    bool write(const void*    value, size_t nbytes);
-    bool write(const bool     value);
-    bool write(const uint8_t  value);
-    bool write(const uint16_t value);
-    bool write(const uint32_t value);
-    bool write(const uint64_t value);
-    bool write(const String&  value);
-
-    bool read(void*     value, size_t nbytes);
-    bool read(bool&     value);
-    bool read(uint8_t&  value);
-    bool read(uint16_t& value);
-    bool read(uint32_t& value);
-    bool read(uint64_t& value);
-    bool read(String&   value);
-
-    void shutdown();
 };
 
 /******************************************************************************/

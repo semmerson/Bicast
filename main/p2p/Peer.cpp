@@ -230,7 +230,7 @@ protected:
         if (!connected)
             return false;
 
-        return connected = dataXprt.send(pduId, data);
+        return connected = dataXprt.send(static_cast<unsigned>(pduId), data);
     }
     inline bool send(const ProdInfo& data) {
         LOG_DEBUG("Sending product information to %s",
@@ -285,8 +285,8 @@ protected:
      * @throw std::logic_error  Message is unknown or unsupported
      */
     bool processRequest(Peer peer) {
-        PduId pduId;
-        bool success = requestXprt.recv(pduId);
+        unsigned pduId;
+        bool     success = requestXprt.recv(pduId);
 
         if (success) {
             switch (pduId) {
@@ -1163,8 +1163,8 @@ protected:
     }
 
     bool processNotice(Peer peer) override {
-        PduId pduId;
-        bool  success = noticeXprt.recv(pduId);
+        unsigned pduId;
+        bool     success = noticeXprt.recv(pduId);
 
         if (success) {
             bool success = false; // EOF default
@@ -1197,8 +1197,8 @@ protected:
     }
 
     bool processData(Peer peer) override {
-        PduId pduId;
-        bool  success = dataXprt.recv(pduId);
+        unsigned pduId;
+        bool     success = dataXprt.recv(pduId);
 
         if (success) {
             switch (pduId) {

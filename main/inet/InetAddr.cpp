@@ -51,14 +51,13 @@ protected:
     /**
      * Returns an appropriate socket.
      *
-     * @param[in] family             Address family. One of `AF_INET` or
-     *                               `AF_INET6`.
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
+     * @param[in] family       Address family. One of `AF_INET` or `AF_INET6`.
+     * @param[in] type         Type of socket. One of `SOCK_STREAM`,
+     *                         `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
+     * @param[in] protocol     Protocol. E.g., `IPPROTO_TCP` or `0` to obtain
+     *                         the default protocol.
+     * @return                 Appropriate socket
+     * @throws    SystemError  `::socket()` failure
      */
     static int createSocket(
             const int family,
@@ -76,6 +75,12 @@ protected:
     }
 
 public:
+    enum AddrType : unsigned {
+        ADDR_IPV4,
+        ADDR_IPV6,
+        ADDR_NAME
+    } addrType;
+
     virtual ~Impl() noexcept;
 
     virtual int getFamily() const noexcept =0;
@@ -133,6 +138,8 @@ public:
 
     virtual bool isSsm() const =0;
 
+    virtual bool write(Xprt& xprt) const =0;
+
     /**
      * Joins the source-specific multicast group identified by this instance
      * and the address of the sending host.
@@ -177,8 +184,11 @@ class Inet4Addr final : public InetAddr::Impl
 
 public:
     Inet4Addr(const in_addr_t addr) noexcept
-        : addr{addr}
-    {}
+        : Impl()
+        , addr()
+    {
+        this->addr.s_addr = addr;
+    }
 
     int getFamily() const noexcept
     {
@@ -189,7 +199,7 @@ public:
     {
         char buf[INET_ADDRSTRLEN];
 
-        if (inet_ntop(AF_INET, &addr.s_addr, buf, sizeof(buf)) == nullptr)
+        if (inet_ntop(AF_INET, &addr, buf, sizeof(buf)) == nullptr)
             throw SYSTEM_ERROR("inet_ntop() failure");
 
         return std::string(buf);
@@ -277,6 +287,14 @@ public:
     bool isSsm() const override {
         auto ip = ntohl(addr.s_addr);
         return ip >= 0XE8000100 && ip <= 0XE8FFFFFF;
+    }
+
+    bool write(Xprt& xprt) const {
+        return xprt.write(ADDR_IPV4) && xprt.write(addr.s_addr);
+    }
+
+    bool read(Xprt& xprt) {
+        return xprt.read(addr.s_addr);
     }
 };
 
@@ -394,7 +412,8 @@ class Inet6Addr final : public InetAddr::Impl
 
 public:
     Inet6Addr(const struct in6_addr& addr) noexcept
-        : addr(addr)
+        : Impl()
+        , addr(addr)
     {}
 
     int getFamily() const noexcept
@@ -520,6 +539,15 @@ public:
                 (ip[14] << 8) | ip[15];
         return last4 <= 0X40000000 || last4 >= 0X80000000;
     }
+
+    bool write(Xprt& xprt) const {
+        return xprt.write(ADDR_IPV6) &&
+                xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
+    }
+
+    bool read(Xprt& xprt) {
+        return xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
+    }
 };
 
 /******************************************************************************/
@@ -596,7 +624,8 @@ class NameAddr final : public InetAddr::Impl
 
 public:
     NameAddr(const std::string& name)
-        : name{name}
+        : Impl()
+        , name(name)
     {}
 
     int getFamily() const noexcept
@@ -701,6 +730,14 @@ public:
 
     bool isSsm() const override {
         return false;
+    }
+
+    bool write(Xprt& xprt) const {
+        return xprt.write(ADDR_NAME) && xprt.write(name);
+    }
+
+    bool read(Xprt& xprt) {
+        return xprt.read(name);
     }
 };
 
@@ -811,6 +848,44 @@ const InetAddr& InetAddr::setMcastIface(int sd) const
 bool InetAddr::isSsm() const
 {
     return pImpl->isSsm();
+}
+
+bool InetAddr::write(Xprt& xprt) const {
+    return pImpl->write(xprt);
+}
+
+bool InetAddr::read(Xprt& xprt) {
+    unsigned char addrType;
+    bool          connected = xprt.read(addrType);
+    if (connected) {
+        switch (addrType) {
+        case Impl::ADDR_IPV4: {
+            in_addr_t addr;
+            connected = xprt.read(addr);
+            if (connected)
+                pImpl.reset(new Inet4Addr(addr));
+            break;
+        }
+        case Impl::ADDR_IPV6: {
+            in6_addr addr;
+            connected = xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
+            if (connected)
+                pImpl.reset(new Inet6Addr(addr));
+            break;
+        }
+        case Impl::ADDR_NAME: {
+            std::string addr;
+            connected = xprt.read(addr);
+            if (connected)
+                pImpl.reset(new NameAddr(addr));
+            break;
+        }
+        default:
+            throw LOGIC_ERROR("Unsupported address type: " +
+                    std::to_string(addrType));
+        }
+    }
+    return connected;
 }
 
 } // namespace

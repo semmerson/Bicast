@@ -186,6 +186,14 @@ public:
             throw SYSTEM_ERROR("Couldn't join multicast group " +
                     to_string() + " from source " + srcAddr.to_string());
     }
+
+    bool write(Xprt& xprt) const {
+        return inetAddr.write(xprt) && xprt.write(port);
+    }
+
+    bool read(Xprt& xprt) {
+        return inetAddr.read(xprt) && xprt.read(port);
+    }
 };
 
 /******************************************************************************/
@@ -436,6 +444,21 @@ in_port_t SockAddr::getPort() const noexcept
 void SockAddr::get_sockaddr(struct sockaddr_storage& storage) const
 {
     return pImpl->get_sockaddr(storage);
+}
+
+bool SockAddr::write(Xprt& xprt) const {
+    return pImpl->write(xprt);
+}
+
+bool SockAddr::read(Xprt& xprt) {
+    InetAddr  inetAddr;
+    in_port_t port;
+    bool      connected = inetAddr.read(xprt) && xprt.read(port);
+
+    if (connected)
+        pImpl.reset(new Impl(inetAddr, port));
+
+    return connected;
 }
 
 } // namespace
