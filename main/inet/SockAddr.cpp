@@ -24,6 +24,7 @@
 
 #include "error.h"
 #include "SockAddr.h"
+#include "Xprt.h"
 
 #include <arpa/inet.h>
 #include <climits>

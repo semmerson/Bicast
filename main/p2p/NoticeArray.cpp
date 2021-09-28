@@ -281,16 +281,14 @@ public:
     bool send(const ArrayIndex& index, Peer& peer) const {
         LOG_TRACE;
 
-        switch (get(index)) { // Atomic
-        case PduId::PUB_PATH_NOTICE:
+        auto pduId = get(index);
+        if (PduId::PUB_PATH_NOTICE == pduId)
             return pubPaths.send(index, peer);
-        case PduId::PROD_INFO_NOTICE:
+        if (PduId::PROD_INFO_NOTICE == pduId)
             return prodIndexes.send(index, peer);
-        case PduId::DATA_SEG_NOTICE:
+        if (PduId::DATA_SEG_NOTICE == pduId)
             return dataSegIds.send(index, peer);
-        default:
-            throw LOGIC_ERROR("Invalid PDU ID");
-        }
+        throw LOGIC_ERROR("Invalid PDU ID");
     }
 
     // Purge queue of old notices

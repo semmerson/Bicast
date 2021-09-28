@@ -24,6 +24,7 @@
 
 #include "error.h"
 #include "Socket.h"
+#include "Xprt.h"
 
 #include <condition_variable>
 #include <cstdint>
@@ -47,25 +48,70 @@ using String = std::string;
 
 constexpr uint8_t PROTOCOL_VERSION = 1;
 
-// Protocol data unit (PDU) identifiers
-using PduType = unsigned;
-enum PduId : PduType {
-    UNSET,
-    PUB_PATH_NOTICE,
-    PROD_INFO_NOTICE,
-    DATA_SEG_NOTICE,
-    PROD_INFO_REQUEST,
-    DATA_SEG_REQUEST,
-    PROD_INFO,
-    DATA_SEG
-};
-
 /******************************************************************************/
 // PDU payloads
 
 using ProdSize  = uint32_t;    ///< Size of product in bytes
 using SegSize   = uint16_t;    ///< Data-segment size in bytes
 using SegOffset = ProdSize;    ///< Offset of data-segment in bytes
+
+class Xprt;
+
+// Protocol data unit (PDU) identifiers
+class PduId : public XprtAble
+{
+public:
+    using Type = uint32_t;
+
+private:
+    Type value;
+
+public:
+    static const PduId UNSET;
+    static const PduId PUB_PATH_NOTICE;
+    static const PduId PROD_INFO_NOTICE;
+    static const PduId DATA_SEG_NOTICE;
+    static const PduId PROD_INFO_REQUEST;
+    static const PduId DATA_SEG_REQUEST;
+    static const PduId PROD_INFO;
+    static const PduId DATA_SEG;
+
+    PduId()
+        : value(UNSET)
+    {}
+
+    /**
+     * Constructs.
+     *
+     * @param[in] value            PDU ID value
+     * @throws    IllegalArgument  `value` is unsupported
+     */
+    PduId(Type value);
+
+    operator bool() const {
+        return value != UNSET.value;
+    }
+
+    inline String to_string() const {
+        return std::to_string(value);
+    }
+
+    inline operator Type() const {
+        return value;
+    }
+
+    inline bool operator==(const Type value) const {
+        return this->value == value;
+    }
+
+    inline bool write(Xprt& xprt) const {
+        return xprt.write(value);
+    }
+
+    inline bool read(Xprt& xprt) {
+        return xprt.read(value);
+    }
+};
 
 /// Information received by a subscriber upon connecting.
 class FeedInfo

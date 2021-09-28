@@ -188,6 +188,7 @@ protected:
      * @throw SystemError  `::shutdown()` failure
      */
     void shut(const int what) {
+        LOG_DEBUG("Shutting down socket %s", std::to_string(sd).data());
         if (::shutdown(sd, what) && errno != ENOTCONN)
             throw SYSTEM_ERROR("::shutdown failure on socket " +
                     std::to_string(sd));
@@ -297,6 +298,8 @@ public:
         return write(string.size()) && write(string.data(), string.size());
     }
 
+    virtual bool flush() =0;
+
     /**
      * Reads bytes.
      *
@@ -314,6 +317,8 @@ public:
         }
         return false;
     }
+
+    virtual void clear() =0;
 
     /**
      * Performs network-translation and value-alignment.
@@ -448,6 +453,14 @@ bool Socket::write(const uint64_t value) const {
 }
 bool Socket::write(const std::string& string) const {
     return pImpl->write(string);
+}
+
+bool Socket::flush() {
+    return pImpl->flush();
+}
+
+void Socket::clear() {
+    return pImpl->clear();
 }
 
 bool Socket::read(void*        data,
@@ -594,6 +607,7 @@ protected:
             /*
              * poll(2) is used to learn if this end has closed the socket.
              */
+            LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure on socket " + to_string());
             if (pollfd.revents & POLLHUP)
@@ -639,6 +653,13 @@ public:
             throw SYSTEM_ERROR("Couldn't set TCP_NODELAY to " +
                     std::to_string(enable) + " on socket " + to_string());
         }
+    }
+
+    bool flush() {
+        return true;
+    }
+
+    void clear() {
     }
 };
 
@@ -929,16 +950,6 @@ const UdpSock& UdpSock::setMcastIface(const InetAddr& iface) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->setMcastIface(iface);
     return *this;
-}
-
-bool UdpSock::flush() const
-{
-    return static_cast<UdpSock::Impl*>(pImpl.get())->flush();
-}
-
-void UdpSock::clear() const
-{
-    static_cast<UdpSock::Impl*>(pImpl.get())->clear();
 }
 
 } // namespace

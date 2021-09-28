@@ -99,6 +99,19 @@ public:
     bool write(const uint64_t value) const;
     bool write(const std::string& string) const;
 
+    /**
+     * Flushes the output.
+     *
+     * @retval `true`   Success but no guarantee that data was written
+     * @retval `false`  Connection lost
+     */
+    bool flush();
+
+    /**
+     * Prepares the socket for further input.
+     */
+    void clear();
+
     bool read(void*        data,
               const size_t nbytes) const;
     bool read(bool& value) const;

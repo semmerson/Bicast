@@ -29,7 +29,9 @@
 #include <atomic>
 #include <functional>
 #include <list>
+#include <sstream>
 #include <queue>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 
@@ -70,17 +72,6 @@ class Peer::Impl
             if (socks[1].getRmtPort() < socks[0].getRmtPort())
                 socks[1].swap(socks[0]);
         }
-    }
-
-    /**
-     * Assigns sockets to this instance's notice, request, and data transports.
-     *
-     * @param[in] socks  Sockets to be assigned
-     */
-    void assignSocks(TcpSock socks[3]) {
-        noticeXprt  = Xprt{socks[0]};
-        requestXprt = Xprt{socks[1]};
-        dataXprt    = Xprt{socks[2]};
     }
 
 protected:
@@ -130,6 +121,17 @@ protected:
     std::exception_ptr          exPtr;       /// Internal thread exception
     std::atomic<bool>           connected;   /// Connected to remote peer?
     std::atomic<P2pNode::Type>  rmtNodeType; /// Publisher or subscriber?
+
+    /**
+     * Assigns sockets to this instance's notice, request, and data transports.
+     *
+     * @param[in] socks  Sockets to be assigned
+     */
+    void assignSocks(TcpSock socks[3]) {
+        noticeXprt  = Xprt{socks[0]};
+        requestXprt = Xprt{socks[1]};
+        dataXprt    = Xprt{socks[2]};
+    }
 
     /**
      * Assigns server-side-created sockets to this instance's notice, request,
@@ -230,7 +232,7 @@ protected:
         if (!connected)
             return false;
 
-        return connected = dataXprt.send(static_cast<unsigned>(pduId), data);
+        return connected = dataXprt.send(pduId, data);
     }
     inline bool send(const ProdInfo& data) {
         LOG_DEBUG("Sending product information to %s",
@@ -267,72 +269,47 @@ protected:
     }
 
     /**
-     * Dispatch function for processing a notice from the remote peer.
+     * Dispatch function for processing requests from the remote peer.
      *
+     * @param[in] pduId         PDU ID
      * @param[in] peer          Associated local peer
      * @retval    `false`       Connection lost
      * @retval    `true`        Success
-     * @throw std::logic_error  Message is unknown or unsupported
+     * @throw     LogicError    Message is unknown or unsupported
      */
-    virtual bool processNotice(Peer peer) =0;
+    bool processRequest(Xprt::PduId pduId, Peer peer) {
+        bool success = false;
 
-    /**
-     * Dispatch function for processing a request from the remote peer.
-     *
-     * @param[in] peer          Associated local peer
-     * @retval    `false`       Connection lost
-     * @retval    `true`        Success
-     * @throw std::logic_error  Message is unknown or unsupported
-     */
-    bool processRequest(Peer peer) {
-        unsigned pduId;
-        bool     success = requestXprt.recv(pduId);
-
-        if (success) {
-            switch (pduId) {
-            case PduId::PROD_INFO_REQUEST: {
-                LOG_NOTE("Reading product-information request from %s",
-                        requestXprt.to_string().data());
-                success = rcvRequest<ProdIndex, ProdInfo>(requestXprt, peer);
-                break;
-            }
-            case PduId::DATA_SEG_REQUEST: {
-                LOG_NOTE("Reading data-segment request from %s",
-                        requestXprt.to_string().data());
-                success = rcvRequest<DataSegId, DataSeg>(requestXprt, peer);
-                break;
-            }
-            default:
-                throw std::logic_error("Invalid PDU type: " +
-                        std::to_string(static_cast<PduType>(pduId)));
-            }
+        if (PduId::PROD_INFO_REQUEST == pduId) {
+            LOG_NOTE("Reading product-information request from %s",
+                    requestXprt.to_string().data());
+            success = rcvRequest<ProdIndex, ProdInfo>(requestXprt, peer);
+        }
+        else if (PduId::DATA_SEG_REQUEST == pduId) {
+            LOG_NOTE("Reading data-segment request from %s",
+                    requestXprt.to_string().data());
+            success = rcvRequest<DataSegId, DataSeg>(requestXprt, peer);
+        }
+        else {
+            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
         }
 
         return success;
     }
 
     /**
-     * Dispatch function for processing data from the remote peer.
-     *
-     * @param[in] xprt          Transport
-     * @param[in] peer          Associated local peer
-     * @retval    `false`       Connection lost
-     * @retval    `true`        Success
-     * @throw std::logic_error  `id` is unknown or unsupported
-     */
-    virtual bool processData(Peer peer) =0;
-
-    /**
      * Reads and processes a message from the remote peer. Doesn't return until
      * either EOF is encountered or an error occurs.
      *
-     * @param[in] process  Function to process incoming message
-     * @throw LogicError   Message type is unknown or unsupported
+     * @param[in] xprt      Transport
+     * @param[in] dispatch  Processing dispatch function for incoming PDU-s
+     * @throw LogicError    Message type is unknown or unsupported
      */
-    void runReader(std::function<bool()> process) {
+    void runReader(Xprt xprt, Xprt::Dispatch dispatch) {
         try {
-            while (connected)
-                connected = process();
+            while (connected) {
+                connected = xprt.recv(dispatch);
+            }
             LOG_NOTE("Connection closed");
         }
         catch (const std::exception& ex) {
@@ -624,16 +601,15 @@ protected:
     }
 
     void startThreads(Peer peer) override {
-        requestReader = Thread(&PubImpl::runReader, this,
-                [=](){return processRequest(peer);});
-    }
+        requestReader = Thread(&PubImpl::runReader, this, requestXprt,
+                [&](Xprt::PduId pduId, Xprt xprt) {
+                        return processRequest(pduId, peer);});
 
-    bool processNotice(Peer peer) override {
-        throw LOGIC_ERROR("Publisher's don't process notices");
-    }
-
-    bool processData(Peer peer) override {
-        throw LOGIC_ERROR("Publisher's don't process data");
+        if (log_enabled(LogLevel::DEBUG)) {
+            std::ostringstream threadId;
+            threadId << requestReader.get_id();
+            LOG_DEBUG("Request reader thread is %s", threadId.str().data());
+        }
     }
 
     /**
@@ -642,8 +618,10 @@ protected:
     void stopAndJoinThreads() override {
         state = State::STOPPING;
 
-        if (requestXprt)
+        if (requestXprt) {
+            LOG_DEBUG("Shutting down request transport");
             requestXprt.shutdown();
+        }
         if (requestReader.joinable())
             requestReader.join();
     }
@@ -671,9 +649,11 @@ public:
         return true; // Because connected to me
     }
 
+    /*
     bool send(FeedInfo& feedInfo) {
         noticeXprt.send(pduId, obj)
     }
+    */
 };
 
 PubPeer::PubPeer(PubP2pNode& node, TcpSock socks[3])
@@ -1126,17 +1106,20 @@ protected:
     }
 
     void startThreads(Peer peer) override {
-        noticeReader = Thread(&SubImpl::runReader, this,
-                [=](){return processNotice(peer);});
+        noticeReader = Thread(&SubImpl::runReader, this, noticeXprt,
+                [=](Xprt::PduId pduId, Xprt xprt) {
+                        return processNotice(pduId, peer);});
 
         try {
             if (rmtNodeType != P2pNode::Type::PUBLISHER)
-                requestReader = Thread(&SubImpl::runReader, this,
-                        [=](){return processRequest(peer);});
+                requestReader = Thread(&SubImpl::runReader, this, requestXprt,
+                    [=](Xprt::PduId pduId, Xprt xprt) {
+                            return processRequest(pduId, peer);});
 
             try {
-                dataReader = Thread(&SubImpl::runReader, this,
-                        [=](){return processData(peer);});
+                dataReader = Thread(&SubImpl::runReader, this, dataXprt,
+                    [=](Xprt::PduId pduId, Xprt xprt) {
+                            return processData(pduId, peer);});
 
                 try {
                     requestWriter = Thread(&SubImpl::runRequester, this, peer);
@@ -1166,63 +1149,46 @@ protected:
         }
     }
 
-    bool processNotice(Peer peer) override {
-        unsigned pduId;
-        bool     success = noticeXprt.recv(pduId);
+    bool processNotice(Xprt::PduId pduId, Peer peer) {
+        bool success = false; // EOF default
 
-        if (success) {
-            bool success = false; // EOF default
-
-            switch (pduId) {
-            case PduId::PUB_PATH_NOTICE: {
-                success = rcvPubPathNotice(noticeXprt, peer);
-                break;
-            }
-            case PduId::PROD_INFO_NOTICE: {
-                LOG_NOTE("Reading product-information notice from %s",
-                        noticeXprt.to_string().data());
-                success = rcvNotice<ProdIndex>(noticeXprt, peer);
-                break;
-            }
-            case PduId::DATA_SEG_NOTICE: {
-                LOG_NOTE("Reading data-segment notice from %s",
-                        noticeXprt.to_string().data());
-                success = rcvNotice<DataSegId>(noticeXprt, peer);
-                break;
-            }
-            default:
-                LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
-                throw std::logic_error("Invalid PDU type: " +
-                        std::to_string(static_cast<PduType>(pduId)));
-            }
+        if (PduId::PUB_PATH_NOTICE == pduId) {
+            success = rcvPubPathNotice(noticeXprt, peer);
+        }
+        else if (PduId::PROD_INFO_NOTICE == pduId) {
+            LOG_NOTE("Reading product-information notice from %s",
+                    noticeXprt.to_string().data());
+            success = rcvNotice<ProdIndex>(noticeXprt, peer);
+        }
+        else if (PduId::DATA_SEG_NOTICE == pduId) {
+            LOG_NOTE("Reading data-segment notice from %s",
+                    noticeXprt.to_string().data());
+            success = rcvNotice<DataSegId>(noticeXprt, peer);
+        }
+        else {
+            LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
+            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
         }
 
         return success;
     }
 
-    bool processData(Peer peer) override {
-        unsigned pduId;
-        bool     success = dataXprt.recv(pduId);
+    bool processData(Xprt::PduId pduId, Peer peer) {
+        bool success = false;
 
-        if (success) {
-            switch (pduId) {
-            case PduId::PROD_INFO: {
-                LOG_NOTE("Reading product-information from %s",
-                        dataXprt.to_string().data());
-                success = rcvData<ProdInfo>(dataXprt, peer);
-                break;
-            }
-            case PduId::DATA_SEG: {
-                LOG_NOTE("Reading data-segment from %s",
-                        dataXprt.to_string().data());
-                success = rcvData<DataSeg>(dataXprt, peer);
-                break;
-            }
-            default:
-                LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
-                throw std::logic_error("Invalid PDU type: " +
-                        std::to_string(static_cast<PduType>(pduId)));
-            }
+        if (PduId::PROD_INFO == pduId) {
+            LOG_NOTE("Reading product-information from %s",
+                    dataXprt.to_string().data());
+            success = rcvData<ProdInfo>(dataXprt, peer);
+        }
+        else if (PduId::DATA_SEG == pduId) {
+            LOG_NOTE("Reading data-segment from %s",
+                    dataXprt.to_string().data());
+            success = rcvData<DataSeg>(dataXprt, peer);
+        }
+        else {
+            LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
+            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
         }
 
         return success;

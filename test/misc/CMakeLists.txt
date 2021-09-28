@@ -5,9 +5,9 @@ add_executable(noexcept_test noexcept_test.cpp)
 target_link_libraries(noexcept_test gtest pthread)
 add_test(noexcept_test noexcept_test)
 
-add_executable(pImpl_test pImpl_test.cpp)
-target_link_libraries(pImpl_test gtest)
-add_test(pImpl_test pImpl_test)
+add_executable(Pimpl_test Pimpl_test.cpp)
+target_link_libraries(Pimpl_test gtest)
+add_test(Pimpl_test Pimpl_test)
 
 add_executable(pimpl_test pimpl_test.cpp)
 add_test(pimpl_test pimpl_test)

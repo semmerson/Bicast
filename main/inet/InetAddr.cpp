@@ -23,6 +23,7 @@
 #include "error.h"
 #include "InetAddr.h"
 #include "SockAddr.h"
+#include "Xprt.h"
 
 #include <algorithm>
 #include <arpa/inet.h>

@@ -23,11 +23,28 @@
 
 #include "error.h"
 #include "HycastProto.h"
+#include "Xprt.h"
 
 #include <cstring>
 #include <ctime>
 
 namespace hycast {
+
+const PduId PduId::UNSET(0);
+const PduId PduId::PUB_PATH_NOTICE(1);
+const PduId PduId::PROD_INFO_NOTICE(2);
+const PduId PduId::DATA_SEG_NOTICE(3);
+const PduId PduId::PROD_INFO_REQUEST(4);
+const PduId PduId::DATA_SEG_REQUEST(5);
+const PduId PduId::PROD_INFO(6);
+const PduId PduId::DATA_SEG(7);
+
+PduId::PduId(Type value)
+    : value(value)
+{
+    if (value > 7)
+        throw INVALID_ARGUMENT("value=" + to_string());
+}
 
 std::string DataSegId::to_string(const bool withName) const
 {
@@ -185,252 +202,6 @@ bool ProdInfo::read(Xprt& xprt) {
     if (!pImpl)
         pImpl = std::make_shared<Impl>();
     return pImpl->read(xprt);
-}
-
-/******************************************************************************
- * Transport module
- ******************************************************************************/
-
-class Xprt::Impl
-{
-protected:
-    Socket      sock;
-
-public:
-    Impl(Socket& sock)
-        : sock(sock)
-    {}
-
-    virtual ~Impl() {};
-
-    SockAddr getRmtAddr() const {
-        return sock.getRmtAddr();
-    }
-
-    String to_string() const {
-        return sock.to_string();
-    }
-
-    /**
-     * Sends a boolean as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Boolean to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    virtual bool send(unsigned   pduId,
-                      const bool value) =0;
-
-    /**
-     * Sends an object as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] obj      Object to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    virtual bool send(unsigned        pduId,
-                      const XprtAble& obj,
-                      Xprt&           xprt) =0;
-
-    /**
-     * Receives the next PDU identifier.
-     *
-     * @param[out] pduId    PDU ID
-     * @retval     `true`   Success
-     * @retval     `false`  Connection lost
-     */
-    virtual bool recv(unsigned& pduId) =0;
-
-    bool write(const void* value,
-               size_t      nbytes) {
-        return sock.write(value, nbytes);
-    }
-    bool write(const bool value) {
-        return sock.write(value);
-    }
-    bool write(const uint8_t  value) {
-        return sock.write(value);
-    }
-    bool write(const uint16_t value) {
-        return sock.write(value);
-    }
-    bool write(const uint32_t value) {
-        LOG_NOTE("Writing uint32_t");
-        return sock.write(value);
-    }
-    bool write(const uint64_t value) {
-        return sock.write(value);
-    }
-    bool write(const String&  value) {
-        return sock.write(value);
-    }
-
-    bool read(void*  value,
-              size_t nbytes) {
-        return sock.read(value, nbytes);
-    }
-    bool read(bool&     value) {
-        return sock.read(value);
-    }
-    bool read(uint8_t&  value) {
-        return sock.read(value);
-    }
-    bool read(uint16_t& value) {
-        return sock.read(value);
-    }
-    bool read(uint32_t& value) {
-        LOG_NOTE("Reading uint32_t");
-        return sock.read(value);
-    }
-    bool read(uint64_t& value) {
-        return sock.read(value);
-    }
-    bool read(String&   value) {
-        return sock.read(value);
-    }
-
-    void shutdown() {
-        sock.shutdown(SHUT_RD);
-    }
-};
-
-/******************************************************************************/
-
-class TcpXprt final : public Xprt::Impl
-{
-public:
-    TcpXprt(TcpSock& sock)
-        : Xprt::Impl(sock)
-    {}
-
-    bool send(unsigned   pduId,
-              const bool value) override {
-        return write(pduId) && sock.write(value);
-    }
-
-    bool send(unsigned pduId, const XprtAble& obj, Xprt& xprt) override {
-        return write(pduId) && obj.write(xprt);
-    }
-
-    bool recv(unsigned& pduId) {
-        return read(pduId);
-    }
-};
-
-/******************************************************************************/
-
-class UdpXprt final : public Xprt::Impl
-{
-    bool flush() {
-        return static_cast<UdpSock*>(&sock)->flush();
-    }
-
-    void clear() {
-        return static_cast<UdpSock*>(&sock)->clear();
-    }
-
-public:
-    UdpXprt(UdpSock& sock)
-        : Xprt::Impl(sock)
-    {}
-
-    bool send(unsigned   pduId,
-              const bool value) override {
-        return write(pduId) && sock.write(value) && flush();
-    }
-
-    bool send(unsigned pduId, const XprtAble& obj, Xprt& xprt) override {
-        return write(pduId) && obj.write(xprt) && flush();
-    }
-
-    bool recv(unsigned& pduId) {
-        clear();
-        return read(pduId);
-    }
-};
-
-/******************************************************************************/
-
-Xprt::Xprt(TcpSock& sock)
-    : pImpl(new TcpXprt(sock))
-{}
-
-Xprt::Xprt(UdpSock& sock)
-    : pImpl(new UdpXprt(sock))
-{}
-
-SockAddr Xprt::getRmtAddr() const {
-    return pImpl->getRmtAddr();
-}
-
-String Xprt::to_string() const {
-    return pImpl ? pImpl->to_string() : "<unset>";
-}
-
-bool Xprt::send(unsigned pduId, const bool value) const {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(unsigned pduId, const XprtAble& obj) {
-    return pImpl->send(pduId, obj, *this);
-}
-
-bool Xprt::recv(unsigned& pduId) {
-    return pImpl->recv(pduId);
-}
-
-bool Xprt::write(const void* value,
-           size_t      nbytes) {
-    return pImpl->write(value, nbytes);
-}
-bool Xprt::write(const bool value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const uint8_t  value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const uint16_t value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const uint32_t value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const uint64_t value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const String&  value) {
-    return pImpl->write(value);
-}
-
-bool Xprt::read(void*  value,
-          size_t nbytes) {
-    return pImpl->read(value, nbytes);
-}
-bool Xprt::read(bool&     value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(uint8_t&  value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(uint16_t& value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(uint32_t& value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(uint64_t& value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(String&   value) {
-    return pImpl->read(value);
-}
-
-void Xprt::shutdown() {
-    return pImpl->shutdown();
 }
 
 } // namespace

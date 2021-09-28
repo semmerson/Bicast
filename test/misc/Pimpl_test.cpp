@@ -1,29 +1,40 @@
 /**
  * This file tests the pImpl idiom.
  */
-#include "gtest/gtest.h"
-#include <memory>
+#include "Pimpl_test.h"
+
+#include <gtest/gtest.h>
 #include <iostream>
 
 namespace {
 
-class Impl
+class Ref::Impl
 {
+    Ref& ref;
+
 public:
-    ~Impl() {
+    Impl(Ref& ref)
+        : ref(ref)
+    {}
+
+    ~Impl()
+    {
         std::cerr << "~Impl() called" << '\n';
+    }
+
+    void func() {
+        std::cerr << "Impl::func() called" << '\n';
     }
 };
 
-class Ref
-{
-    std::shared_ptr<Impl> pImpl;
+Ref::Ref()
+    : pImpl(new Impl(*this))
+{}
 
-public:
-    Ref()
-        : pImpl{new Impl()}
-    {}
-};
+void Ref::func()
+{
+    pImpl->func();
+}
 
 /// The fixture for testing class `Pimpl`
 class PimplTest : public ::testing::Test
@@ -34,9 +45,9 @@ protected:
     PimplTest()
         : ref()
     {}
-    virtual ~PimplTest() {}
-    virtual void SetUp() {}
-    virtual void TearDown() {}
+    ~PimplTest() {}
+    void SetUp() {}
+    void TearDown() {}
 
 public:
     void assignRef()
@@ -49,6 +60,12 @@ public:
 TEST_F(PimplTest, PimplDestruction)
 {
     ref = Ref();
+}
+
+/// Tests calling pImpl
+TEST_F(PimplTest, CallingPimpl)
+{
+    ref.func();
 }
 
 }  // namespace
