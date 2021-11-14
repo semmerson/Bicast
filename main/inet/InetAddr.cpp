@@ -137,6 +137,8 @@ public:
 
     virtual void setMcastIface(int sd) const =0;
 
+    virtual bool isAny() const =0;
+
     virtual bool isSsm() const =0;
 
     virtual bool write(Xprt& xprt) const =0;
@@ -283,6 +285,10 @@ public:
                 0)
             throw SYSTEM_ERROR("Couldn't set multicast interface for IPv4 UDP "
                     "socket " + std::to_string(sd) + " to " + to_string());
+    }
+
+    bool isAny() const override {
+        return ntohl(addr.s_addr) == INADDR_ANY;
     }
 
     bool isSsm() const override {
@@ -515,6 +521,10 @@ public:
                     std::to_string(ifaceIndex));
     }
 
+    bool isAny() const override {
+        return ::memcmp(in6addr_any.s6_addr, addr.s6_addr, 16) == 0;
+    }
+
     /*
      * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
      * FF3X::FFFF:FFFF (for IPv6).
@@ -729,6 +739,10 @@ public:
         }
     }
 
+    bool isAny() const override {
+        return false;
+    }
+
     bool isSsm() const override {
         return false;
     }
@@ -844,6 +858,11 @@ const InetAddr& InetAddr::setMcastIface(int sd) const
 {
     pImpl->setMcastIface(sd);
     return *this;
+}
+
+bool InetAddr::isAny() const
+{
+    return pImpl->isAny();
 }
 
 bool InetAddr::isSsm() const

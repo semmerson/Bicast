@@ -25,8 +25,11 @@
 
 #include "error.h"
 #include "HycastProto.h"
+#include "PeerSrvrAddrs.h"
+#include "Repository.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace hycast {
@@ -46,7 +49,23 @@ public:
         SUBSCRIBER  // Node is a subscriber
     };
 
-    virtual ~P2pNode() {}
+    /**
+     * Creates a publisher's P2P node.
+     *
+     * @param[in] pubNode       Publisher's Hycast node
+     * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a
+     *                          specific interface. The port number may be 0, in
+     *                          which case the operating system will choose it.
+     * @param[in] maxPeers      Maximum number of subscribing peers
+     * @param[in] segSize       Size, in bytes, of canonical data-segment
+     * @return                  Publisher's P2P node
+     */
+    static std::shared_ptr<P2pNode> create(Node&          pubNode,
+                                           const SockAddr peerSrvrAddr,
+                                           const unsigned maxPeers,
+                                           const SegSize  segSize);
+
+    virtual ~P2pNode() noexcept =default;
 
     /**
      * Indicates if this instance has a path to the publisher.
@@ -57,6 +76,22 @@ public:
     virtual bool isPathToPub() const =0;
 
     /**
+     * Notifies connected remote peers about the availability of product
+     * information.
+     *
+     * @param[in] prodInfo  Product information
+     */
+    virtual void notify(const ProdIndex prodIndex) =0;
+
+    /**
+     * Notifies connected remote peers about the availability of a data
+     * segment.
+     *
+     * @param[in] dataSegId  Data segment ID
+     */
+    virtual void notify(const DataSegId& dataSegId) =0;
+
+    /**
      * Accepts being notified that a local peer has lost the connection with
      * its remote peer.
      *
@@ -64,7 +99,6 @@ public:
      */
     virtual void lostConnection(Peer peer) =0;
 
-#if 0
     /**
      * Receives a request for product information from a remote peer.
      *
@@ -73,8 +107,8 @@ public:
      * @return                 Product information. Will test false if it
      *                         shouldn't be sent to remote peer.
      */
-    virtual ProdInfo recvRequest(const ProdIndex  request,
-                                 Peer             peer) =0;
+    virtual ProdInfo recvRequest(const ProdIndex request,
+                                 Peer            peer) =0;
     /**
      * Receives a request for a data-segment from a remote peer.
      *
@@ -85,40 +119,46 @@ public:
      */
     virtual DataSeg  recvRequest(const DataSegId request,
                                  Peer            peer) =0;
-#endif
-};
-
-/// Interface for a publishing P2P node
-class PubP2pNode : public P2pNode
-{
-public:
-    virtual ~PubP2pNode() {}
-
-#if 0
-    bool isPathToPub() const {
-        return true;
-    }
-
-    virtual ProdInfo recvRequest(const ProdIndex request,
-                                 Peer            peer) =0;
-
-    virtual DataSeg  recvRequest(const DataSegId request,
-                                 Peer            peer) =0;
-#endif
 };
 
 /// Interface for a subscribing P2P node
-class SubP2pNode : public PubP2pNode
+class SubP2pNode : virtual public P2pNode
                  , public NoticeRcvr
                  , public DataRcvr
 {
 public:
-    virtual ~SubP2pNode() {}
+    /**
+     * Creates a subscribing P2P node.
+     *
+     * @param[in] subNode          Subscriber's node
+     * @param[in] pubPeerSrvrAddr  Socket address of publisher's peer-server
+     * @param[in] peerSrvrAddrs    Socket addresses of potential peer-servers
+     * @param[in] subPeerSrvrAddr  Socket address of subscriber's peer-server.
+     *                             IP address *must not* specify all interfaces.
+     *                             If port number is 0, then O/S will choose.
+     * @param[in] maxPeers         Maximum number of peers. May be adjusted.
+     * @param[in] segSize          Size, in bytes, of canonical data-segment
+     * @return                     Subscribing P2P node
+     */
+    static std::shared_ptr<SubP2pNode> create(SubNode&       subNode,
+                                              const SockAddr pubPeerSrvrAddr,
+                                              PeerSrvrAddrs  peerSrvrAddrs,
+                                              const SockAddr subPeerSrvrAddr,
+                                              const unsigned maxPeers,
+                                              const SegSize  segSize);
 
     virtual bool isPathToPub() const =0;
 
-    virtual void recvNotice(const PubPath    notice,
-                            Peer             peer) =0;
+    /**
+     * Accepts notification about whether or not a remote P2P node is a path to
+     * the publisher.
+     *
+     * @param[in] notice  Whether or not remote node is path to publisher
+     * @param[in] peer    Local peer that received the notice
+     */
+    virtual void recvNotice(const PubPath notice,
+                            Peer          peer) =0;
+
     /**
      * Receives a notice of available product information from a remote peer.
      *
@@ -158,8 +198,8 @@ public:
      * @return                 Product information. Will test false if it
      *                         shouldn't be sent to remote peer.
      */
-    virtual DataSeg  recvRequest(const DataSegId request,
-                                 Peer            peer) =0;
+    virtual DataSeg recvRequest(const DataSegId request,
+                                Peer            peer) =0;
 
     /**
      * Handles a request for data-product information not being satisfied by a
@@ -179,7 +219,17 @@ public:
      * @param[in] peer       Local peer whose remote counterpart couldn't
      *                       satisfy request
      */
-    virtual void missed(const DataSegId& dataSegId, Peer peer) =0;
+    virtual void missed(const DataSegId dataSegId,
+                        Peer            peer) =0;
+
+    /**
+     * Accepts a set of addresses of potential peer-servers.
+     *
+     * @param[in] peerSrvrAddrs  Addresses of potential peer-servers
+     * @param[in] peer           Local peer that received the data
+     */
+    virtual void recvData(const PeerSrvrAddrs peerSrvrAddrs,
+                          Peer                peer) =0;
 
     /**
      * Accepts product information from a remote peer.
@@ -198,6 +248,14 @@ public:
      */
     virtual void recvData(const DataSeg dataSeg,
                           Peer          peer) =0;
+
+    /**
+     * Accepts being notified that a local peer has lost the connection with
+     * its remote peer.
+     *
+     * @param[in] peer  Local peer
+     */
+    virtual void lostConnection(Peer peer) =0;
 };
 
 } // namespace

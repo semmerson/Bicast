@@ -170,7 +170,18 @@ public:
     void missed(const ProdIndex prodIndex, Peer peer) {
     }
 
-    void missed(const DataSegId& dataSegId, Peer peer) {
+    void missed(const DataSegId dataSegId, Peer peer) {
+    }
+
+    void notify(const ProdIndex prodInfo) {
+    }
+
+    void notify(const DataSegId& dataSegId) {
+    }
+
+    // Subscriber-side
+    void recvData(const PeerSrvrAddrs peerSrvrAddrs, Peer peer) {
+        // TODO
     }
 
     // Subscriber-side
@@ -235,7 +246,7 @@ TEST_F(PeerSetTest, DataExchange)
         // Create and execute reception by subscribing peers on separate threads
         hycast::PeerSet subPeerSet{*this};
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
-            hycast::SubPeer subPeer(*this, pubAddr);
+            hycast::SubPeer subPeer(*this, pubAddr, true);
             ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
             ASSERT_EQ(i+1, subPeerSet.size());
         }

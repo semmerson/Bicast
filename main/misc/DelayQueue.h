@@ -24,31 +24,52 @@
 #ifndef MISC_DELAYQUEUE_H
 #define MISC_DELAYQUEUE_H
 
+#include "InetAddr.h"
+
 #include <chrono>
+#include <iterator>
 #include <memory>
 
 namespace hycast {
 
 /**
- * @tparam Value     Type of value being stored in the queue. Must support
+ * @tparam VALUE     Type of value being stored in the queue. Must support
  *                   copy assignment and move assignment.
- * @tparam Dur       Duration unit for integer duration arguments to `push()`
+ * @tparam DUR       Duration unit for integer duration arguments to `push()`
  */
-template<typename Value, typename Dur = std::chrono::seconds>
+template<typename VALUE, typename DUR = std::chrono::seconds>
 class DelayQueue final
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
-    typedef Dur Duration;
+    using  Duration = DUR;
+
+    class Iterator : public std::iterator<std::input_iterator_tag, VALUE> {
+    public:
+        Iterator(VALUE* x);
+        Iterator(const Iterator& mit);
+        Iterator& operator++();
+        Iterator operator++(int);
+        bool operator==(const Iterator& rhs) const;
+        bool operator!=(const Iterator& rhs) const;
+        VALUE& operator*();
+    };
 
     /**
      * Default constructs.
      * @throws std::bad_alloc     If necessary memory can't be allocated.
      * @throws std::system_error  If a system error occurs.
      */
-    explicit DelayQueue();
+    DelayQueue();
+
+    /**
+     * Returns the number of elements.
+     *
+     * @return  Number of elements
+     */
+    size_t size() const;
 
     /**
      * Adds a value to the queue.
@@ -61,11 +82,11 @@ public:
      * @threadsafety                 Safe
      */
     void push(
-            const Value& value,
+            const VALUE& value,
             const int    delay = 0) const;
 
     /**
-     * Returns the value whose reveal-time is the earliest and not later than
+     * Returns the value whose reveal-time is the earliest but not earlier than
      * the current time and removes it from the queue. Blocks until such a value
      * is available.
      * @return                       The value with the earliest reveal-time
@@ -75,7 +96,7 @@ public:
      * @threadsafety                 Safe
      * @cancellationpoint
      */
-    Value pop() const;
+    VALUE pop() const;
 
     /**
      * Indicates if `pop()` will immediately return.
@@ -109,6 +130,14 @@ public:
      * Idempotent.
      */
     void close();
+
+    Iterator begin();
+
+    Iterator begin() const;
+
+    Iterator end();
+
+    Iterator end() const;
 };
 
 } // namespace

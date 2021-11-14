@@ -51,6 +51,13 @@ public:
     Xprt(Socket& sock);
 
     /**
+     * Move constructs.
+     *
+     * @param[in] sock      Socket
+     */
+    Xprt(Socket&& sock);
+
+    /**
      * Indicates if this instance is value (i.e., wasn't default constructed).
      *
      * @retval `true`   Valid
@@ -107,6 +114,7 @@ public:
     bool write(const bool         value);
     bool write(const uint8_t      value);
     bool write(const uint16_t     value);
+    bool write(const int32_t      value);
     bool write(const uint32_t     value);
     bool write(const uint64_t     value);
     bool write(const std::string& value);
@@ -115,6 +123,7 @@ public:
     bool read(bool&        value);
     bool read(uint8_t&     value);
     bool read(uint16_t&    value);
+    bool read(int32_t&     value);
     bool read(uint32_t&    value);
     bool read(uint64_t&    value);
     bool read(std::string& value);

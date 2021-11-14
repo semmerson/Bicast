@@ -25,6 +25,7 @@
 
 #include "HycastProto.h"
 #include "P2pNode.h"
+#include "PeerSrvrAddrs.h"
 #include "Socket.h"
 
 #include <memory>
@@ -58,6 +59,14 @@ public:
 
     virtual ~Peer()
     {}
+
+    /**
+     * Indicates if this instance was constructed as a client.
+     *
+     * @retval `true`   Constructed as a client
+     * @retval `false`  Constructed by a server
+     */
+    bool isClient() const noexcept;
 
     /**
      * Starts this instance. Creates threads that serve the remote peer.
@@ -124,6 +133,7 @@ public:
      * @see       `start()`
      */
     bool notify(const PubPath notice) const;
+    bool notify(const PeerSrvrAddrs notice) const;
     bool notify(const ProdIndex notice) const;
     bool notify(const DataSegId& notice) const;
 
@@ -133,10 +143,9 @@ public:
 /// A publisher's peer. Such peers are *always* constructed by a peer-server.
 class PubPeer final : public Peer
 {
-    friend class PeerSrvr<PubP2pNode, PubPeer>;
-
     class     Impl;
 
+public:
     /**
      * Server-side construction.
      *
@@ -145,9 +154,8 @@ class PubPeer final : public Peer
      * @param[in] requestSock  Socket for requests
      * @param[in] dataSock     Socket for data
      */
-    PubPeer(PubP2pNode& node, TcpSock socks[3]);
+    PubPeer(P2pNode& node, TcpSock socks[3]);
 
-public:
     /**
      * Default constructs. The resulting instance will test false.
      */
@@ -179,14 +187,20 @@ public:
     /**
      * Client-side construction.
      *
-     * @param[in] node      P2P node to call about received PDU-s
-     * @param[in] srvrAddr  Address of server to which to connect
+     * @param[in] node         P2P node to connect to
+     * @param[in] srvrAddr     Address of server to which to connect
+     * @param[in] isPublisher  Remote peer-server is publisher's
      */
-    SubPeer(SubP2pNode& node, const SockAddr& srvrAddr);
+    SubPeer(SubP2pNode&      node,
+            const SockAddr&  srvrAddr,
+            const bool       isPublisher);
 };
 
 /**
  * Peer server. Listens for incoming connections from remote peer clients.
+ *
+ * @tparam NODE  Type of P2P node (`P2pNode` or `SubP2pNode`)
+ * @tparam PEER  Type of peer (`PubPeer` or `SubPeer`)
  */
 template<class NODE, class PEER>
 class PeerSrvr
@@ -196,21 +210,36 @@ class PeerSrvr
     std::shared_ptr<Impl> pImpl;
 
 public:
+    PeerSrvr() =default;
+
     /**
      * Constructs.
      *
      * @param[in] node       P2P node
-     * @param[in] srvrAddr   Local Address for peer server
+     * @param[in] srvrAddr   Address of interface for peer server. Must not
+     *                       specify any interface.
      * @param[in] maxAccept  Maximum number of outstanding peer connections
      */
-    PeerSrvr(NODE&           node,
-             const SockAddr& srvrAddr,
-             const unsigned  maxAccept = 8);
+    PeerSrvr(NODE&          node,
+             const SockAddr srvrAddr,
+             const unsigned maxAccept = 8);
 
+    operator bool() {
+        return pImpl->operator bool();
+    }
+
+    SockAddr getSockAddr() const;
+
+    /**
+     * Returns the next peer. Blocks until one is available.
+     *
+     * @return  The next peer
+     * @throws  SystemError  `::accept()` failure
+     */
     PEER accept();
 };
 
-using PubPeerSrvr = PeerSrvr<PubP2pNode, PubPeer>;
+using PubPeerSrvr = PeerSrvr<P2pNode, PubPeer>;
 using SubPeerSrvr = PeerSrvr<SubP2pNode, SubPeer>;
 
 } // namespace

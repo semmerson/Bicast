@@ -175,7 +175,17 @@ public:
     void received(Peer             peer,
                   const DataSegId& datasegId) const;
 
-    Peer getWorstPeer(const bool pubPath = false)     const;
+    /**
+     * Returns the worst performing local peer. By default, the worst performing
+     * peer that was constructed as a client will be returned because that's
+     * what subscriber's will want to know.
+     *
+     * @param[in] isClient  Whether or not the local peer must have been
+     *                      constructed as a client
+     * @return              Worst performing peer with the given attribute. Will
+     *                      test false if no such peer exists.
+     */
+    Peer getWorstPeer(const bool isClient = true)     const;
 
     void add(const Peer peer)                 const          override;
 

@@ -137,11 +137,6 @@ class PubRepo final : public Repository
 
 public:
     /**
-     * Default constructs. The resulting instance will test false.
-     */
-    PubRepo();
-
-    /**
      * Constructs.
      *
      * @param[in] root          Pathname of the root of the repository

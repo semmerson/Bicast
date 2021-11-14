@@ -31,19 +31,32 @@
 namespace hycast {
 
 const PduId PduId::UNSET(0);
-const PduId PduId::PUB_PATH_NOTICE(1);
-const PduId PduId::PROD_INFO_NOTICE(2);
-const PduId PduId::DATA_SEG_NOTICE(3);
-const PduId PduId::PROD_INFO_REQUEST(4);
-const PduId PduId::DATA_SEG_REQUEST(5);
-const PduId PduId::PROD_INFO(6);
-const PduId PduId::DATA_SEG(7);
+const PduId PduId::PEER_SRVR_ADDRS(1);
+const PduId PduId::PUB_PATH_NOTICE(2);
+const PduId PduId::PROD_INFO_NOTICE(3);
+const PduId PduId::DATA_SEG_NOTICE(4);
+const PduId PduId::PROD_INFO_REQUEST(5);
+const PduId PduId::DATA_SEG_REQUEST(6);
+const PduId PduId::PROD_INFO(7);
+const PduId PduId::DATA_SEG(8);
 
 PduId::PduId(Type value)
     : value(value)
 {
-    if (value > 7)
+    if (value > 8)
         throw INVALID_ARGUMENT("value=" + to_string());
+}
+
+bool FeedInfo::write(Xprt& xprt) const {
+    return mcastGroup.write(xprt) &&
+            mcastSource.write(xprt) &&
+            xprt.write(segSize);
+}
+
+bool FeedInfo::read(Xprt& xprt) {
+    return mcastGroup.read(xprt) &&
+            mcastSource.read(xprt) &&
+            xprt.read(segSize);
 }
 
 std::string DataSegId::to_string(const bool withName) const
@@ -203,6 +216,8 @@ bool ProdInfo::read(Xprt& xprt) {
         pImpl = std::make_shared<Impl>();
     return pImpl->read(xprt);
 }
+
+
 
 } // namespace
 

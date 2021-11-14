@@ -210,6 +210,10 @@ public:
      */
     bool operator ==(const SockAddr& rhs) const noexcept;
 
+    bool operator !=(const SockAddr& rhs) const noexcept {
+        return !(*this == rhs);
+    }
+
     /**
      * Binds a socket to a local socket address.
      *

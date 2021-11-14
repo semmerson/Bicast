@@ -113,11 +113,16 @@ public:
     bool write(const uint8_t      value) {
         return sock.write(value);
     }
+    bool write(const int16_t      value) {
+        return sock.write(value);
+    }
     bool write(const uint16_t     value) {
         return sock.write(value);
     }
+    bool write(const int32_t      value) {
+        return sock.write(value);
+    }
     bool write(const uint32_t     value) {
-        LOG_NOTE("Writing uint32_t");
         return sock.write(value);
     }
     bool write(const uint64_t     value) {
@@ -140,8 +145,10 @@ public:
     bool read(uint16_t&    value) {
         return sock.read(value);
     }
+    bool read(int32_t&     value) {
+        return sock.read(value);
+    }
     bool read(uint32_t&    value) {
-        LOG_NOTE("Reading uint32_t");
         return sock.read(value);
     }
     bool read(uint64_t&    value) {
@@ -159,6 +166,10 @@ public:
 /******************************************************************************/
 
 Xprt::Xprt(Socket& sock)
+    : pImpl(new Impl(sock))
+{}
+
+Xprt::Xprt(Socket&& sock)
     : pImpl(new Impl(sock))
 {}
 
@@ -199,6 +210,9 @@ bool Xprt::write(const uint8_t      value) {
 bool Xprt::write(const uint16_t     value) {
     return pImpl->write(value);
 }
+bool Xprt::write(const int32_t      value) {
+    return pImpl->write(value);
+}
 bool Xprt::write(const uint32_t     value) {
     return pImpl->write(value);
 }
@@ -220,6 +234,9 @@ bool Xprt::read(uint8_t&     value) {
     return pImpl->read(value);
 }
 bool Xprt::read(uint16_t&    value) {
+    return pImpl->read(value);
+}
+bool Xprt::read(int32_t&     value) {
     return pImpl->read(value);
 }
 bool Xprt::read(uint32_t&    value) {

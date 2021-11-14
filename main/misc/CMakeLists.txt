@@ -5,7 +5,7 @@ add_library(misc OBJECT
 	logging.cpp	   logging.h
 	error.cpp	   error.h
 	                   Shield.h
-			   DelayQueue.h
+#			   DelayQueue.h
 			   FixedDelayQueue.h
 	FileUtil.cpp       FileUtil.h
 	MapOfLists.cpp	   MapOfLists.h

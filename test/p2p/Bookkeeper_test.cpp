@@ -6,6 +6,7 @@
 
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <list>
 #include <mutex>
 #include <thread>
 
@@ -16,8 +17,17 @@ using namespace hycast;
 /// The fixture for testing class `Bookkeeper`
 class BookkeeperTest : public ::testing::Test, public hycast::SubP2pNode
 {
+    void runPubPeerSrvr() {
+        std::list<Peer> peers;
+        for (;;) {
+            peers.push_back(pubPeerSrvr.accept());
+        }
+    }
+
 protected:
     hycast::SockAddr        pubAddr;
+    hycast::PubPeerSrvr     pubPeerSrvr;
+    std::thread             pubPeerSrvrThrd;
     hycast::ProdIndex       prodIndex;
     hycast::DataSegId       segId;
     hycast::SubPeer         peer1;
@@ -25,11 +35,18 @@ protected:
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
+        , pubPeerSrvr(*this, pubAddr)
+        , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodIndex{1}
         , segId(prodIndex, hycast::DataSeg::CANON_DATASEG_SIZE) // Second data-segment
-        , peer1(*this, pubAddr)
-        , peer2(*this, pubAddr)
+        , peer1(*this, pubAddr, true)
+        , peer2(*this, pubAddr, true)
     {}
+
+    ~BookkeeperTest() {
+        ::pthread_cancel(pubPeerSrvrThrd.native_handle());
+        pubPeerSrvrThrd.join();
+    }
 
 public:
     // Publisher-side
@@ -68,8 +85,18 @@ public:
     void missed(const ProdIndex prodIndex, Peer peer) {
     }
 
-    void missed(const DataSegId& dataSegId, Peer peer) {
+    void missed(const DataSegId dataSegId, Peer peer) {
     }
+
+    void notify(const ProdIndex prodIndex) {
+    }
+
+    void notify(const DataSegId& dataSegId) {
+    }
+
+    // Subscriber-side
+    void recvData(const PeerSrvrAddrs, Peer peer) override
+    {}
 
     // Subscriber-side
     void recvData(const ProdInfo data, Peer peer) override
@@ -91,11 +118,11 @@ TEST_F(BookkeeperTest, DefaultConstruction)
     hycast::SubBookkeeper subBookkeeper{};
 }
 
-// Tests adding a peer
+// Tests adding a peerSubP2pNode
 TEST_F(BookkeeperTest, PeerAddition)
 {
     hycast::SubBookkeeper bookkeeper{};
-    hycast::SubPeer       peer{*this, pubAddr};
+    hycast::SubPeer       peer{*this, pubAddr, true};
 
     bookkeeper.add(peer);
 }
@@ -121,6 +148,7 @@ TEST_F(BookkeeperTest, ShouldRequest)
     bookkeeper.received(peer1, segId);
 
     auto worstPeer = bookkeeper.getWorstPeer();
+    ASSERT_TRUE(worstPeer);
     EXPECT_NE(peer1, worstPeer);
     EXPECT_EQ(peer2, worstPeer);
 

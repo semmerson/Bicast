@@ -180,6 +180,14 @@ public:
     const InetAddr& setMcastIface(int sd) const;
 
     /**
+     * Indicates if this instance specifies any interface (e.g., `INADDR_ANY`).
+     *
+     * @retval `true`   Address does specify any interface
+     * @retval `false`  Address does not specify any interface
+     */
+    bool isAny() const;
+
+    /**
      * Indicates if this instance is a valid, source-specific multicast address
      * that is not reserved for allocation by IANA. I.e., this instance is in
      * the range from 232.0.1.0 through 232.255.255.255 (for IPv4) or

@@ -720,8 +720,6 @@ public:
 };
 
 /******************************************************************************/
-PubRepo::PubRepo() =default;
-
 PubRepo::PubRepo(
         const std::string& rootPathname,
         const SegSize      segSize,

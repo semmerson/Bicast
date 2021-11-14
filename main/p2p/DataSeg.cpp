@@ -128,9 +128,9 @@ DataSeg::DataSeg()
     : pImpl(new Impl())
 {}
 
-DataSeg::DataSeg(const DataSegId& segId,
-                 const ProdSize   prodSize,
-                 const char*      data)
+DataSeg::DataSeg(const DataSegId segId,
+                 const ProdSize  prodSize,
+                 const char*     data)
     : pImpl(new Impl(segId, prodSize, data))
 {}
 
@@ -138,7 +138,7 @@ DataSeg::operator bool() const {
     return pImpl->operator bool();
 }
 
-const DataSegId& DataSeg::getId() const noexcept {
+const DataSegId DataSeg::getId() const noexcept {
     return pImpl->segId;
 }
 

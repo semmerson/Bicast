@@ -89,8 +89,6 @@ public:
      * guarantee that the address will be subsequently returned by `pop()`.
      *
      * @param[in] server              Address of server
-     * @param[in] delay               Delay, in seconds, before the address
-     *                                could possibly be returned by `pop()`
      * @throws    std::domain_error  `close()` was called.
      * @exceptionsafety              Strong guarantee
      * @threadsafety                 Safe

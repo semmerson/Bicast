@@ -296,19 +296,12 @@ public:
     }
 
     /**
-     * Returns a worst performing peer.
-     *
-     * @param[in] pubPath         Attribute that peer must have
-     * @return                    A worst performing peer -- whose
-     *                            `rmtPubPath()` return value equals `pubPath`
-     *                            -- since construction or `reset()` was called.
-     *                            Will test false if the set is empty.
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer getWorstPeer(const bool pubPath) const
+    Peer getWorstPeer(const bool isClient) const
     {
         Peer  peer{};
         Guard guard(mutex);
@@ -317,7 +310,7 @@ public:
             unsigned long minCount{ULONG_MAX};
 
             for (auto elt : ratings) {
-                if (elt.first.rmtIsPubPath() == pubPath) {
+                if (elt.first.isClient() == isClient) {
                     const auto count = elt.second;
 
                     if (count < minCount) {
@@ -401,8 +394,8 @@ void SubBookkeeper::received(
     static_cast<Impl*>(pImpl.get())->received(peer, dataSegId);
 }
 
-Peer SubBookkeeper::getWorstPeer(const bool pubPath) const {
-    return static_cast<Impl*>(pImpl.get())->getWorstPeer(pubPath);
+Peer SubBookkeeper::getWorstPeer(const bool isClient) const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer(isClient);
 }
 
 bool SubBookkeeper::remove(const Peer peer) const {

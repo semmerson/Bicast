@@ -22,6 +22,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "DelayQueue.h"
 #include "Shield.h"
 
 #include <chrono>
@@ -131,6 +132,11 @@ public:
         , isClosed{false}
     {}
 
+    size_t size() const {
+        Guard guard{mutex};
+        return queue.size();
+    }
+
     /**
      * Adds a value to the queue.
      * @param[in] value              The value to be added
@@ -235,10 +241,14 @@ DelayQueue<Value, Dur>::DelayQueue()
 {}
 
 template<typename Value, typename Dur>
+size_t DelayQueue<Value, Dur>::size() const {
+    return pImpl->size();
+}
+
+template<typename Value, typename Dur>
 void DelayQueue<Value, Dur>::push(
         const Value& value,
-        const int    delay) const
-{
+        const int    delay) const {
     auto now = Clock::now();
     auto delta = Dur{delay};
     auto when = now + delta;
@@ -246,32 +256,27 @@ void DelayQueue<Value, Dur>::push(
 }
 
 template<typename Value, typename Dur>
-Value DelayQueue<Value, Dur>::pop() const
-{
+Value DelayQueue<Value, Dur>::pop() const {
     return pImpl->pop();
 }
 
 template<typename Value, typename Dur>
-bool DelayQueue<Value, Dur>::ready() const //noexcept
-{
+bool DelayQueue<Value, Dur>::ready() const {
     return pImpl->ready();
 }
 
 template<typename Value, typename Dur>
-bool DelayQueue<Value, Dur>::empty() const //noexcept
-{
+bool DelayQueue<Value, Dur>::empty() const {
     return pImpl->empty();
 }
 
 template<typename Value, typename Dur>
-void DelayQueue<Value, Dur>::clear() //noexcept
-{
+void DelayQueue<Value, Dur>::clear() {
     return pImpl->clear();
 }
 
 template<typename Value, typename Dur>
-void DelayQueue<Value, Dur>::close()
-{
+void DelayQueue<Value, Dur>::close() {
     pImpl->close();
 }
 

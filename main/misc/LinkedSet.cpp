@@ -1,5 +1,5 @@
 /**
- * Set whose entries are also linked together into a list.
+ * Set whose entries are also linked together into a queue.
  *
  *        File: LinkedMap.cpp
  *  Created on: August 20, 2020
@@ -22,63 +22,66 @@
 
 #include "config.h"
 
+#include "error.h"
 #include "LinkedSet.h"
 
-#include "error.h"
-
+#include <functional>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace hycast {
 
 /**
- * @tparam VALUE  Value type
+ * @tparam T  Value type
  */
-template<class VALUE>
-class LinkedSet<VALUE>::Impl final
+template<class T, class COMP, class HASH = std::hash<T>>
+class LinkedSet<T, COMP, HASH>::Impl
 {
-    using Index = unsigned short;
-
-    /**
-     * Mapped-to entry in the map.
-     */
-    struct Entry final
-    {
-        VALUE value; ///< User's value
-        Index prev;  ///< Index of previous entry (towards the head)
-        Index next;  ///< Index of subsequent entry (towards the tail)
-
-        Entry(VALUE& value, Index& prev)
-            : value(value)
-            , prev(prev)
-            , next(0)
-        {}
+    using Index = long;
+    struct SetElt {
+        T     value;
+        Index index;
+    };
+    struct MapValue {
+        T     value;
+        Index prev;
+        Index next;
     };
 
-    std::unordered_map<Index, Entry> map;  ///< Map from index to entry
-    Index                            head; ///< Index of head of list
-    Index                            tail; ///< Index of tail of list
-    Index                            nextIndex;
+    std::unordered_set<SetElt, HASH>    set;
+    std::unordered_map<Index, MapValue> map;
+    Index                               head; ///< Index of head of queue
+    Index                               tail; ///< Index of tail of queue
+    Index                               nextIndex;
+
+    bool equal_to(const SetElt& lhs, const SetElt& rhs) {
+        return COMP(lhs, rhs) == 0;
+    }
 
 public:
     /**
      * Default constructs.
      */
     Impl()
-        : map()
-        , head(0)
-        , tail(0)
+        : set()
+        , map()
+        , head(-1)
+        , tail(-1)
         , nextIndex(0)
     {}
 
     /**
-     * Constructs with an initial number of buckets for the set.
+     * Constructs.
      *
      * @param[in] initSize  Initial size
+     * @param[in] cmp       Element comparison function. Can be function pointer
+     *                      or function object.
      */
-    Impl(const size_t initSize)
-        : map(initSize)
-        , head(0)
-        , tail(0)
+    Impl(const size_t initSize, )
+        : set()
+        , map(initSize)
+        , head(-1)
+        , tail(-1)
         , nextIndex(0)
     {}
 
@@ -99,7 +102,7 @@ public:
      * @param[in] value  Value to be added
      * @return           Pointer to value in set
      */
-    const VALUE* add(VALUE& value)
+    const T* add(T& value)
     {
         if (!key)
             throw INVALID_ARGUMENT("Key is invalid");
@@ -128,7 +131,7 @@ public:
      * @return               Pointer to value. Valid only while no changes are
      *                       made.
      */
-    VALUE* find(const KEY& key)
+    T* find(const KEY& key)
     {
         auto iter = map.find(key);
         return (iter == map.end())
@@ -143,7 +146,7 @@ public:
      * @return                  Value associated with key
      * @throws InvalidArgument  No such entry
      */
-    VALUE remove(const KEY& key)
+    T remove(const KEY& key)
     {
         auto iter = map.find(key);
 
@@ -190,43 +193,43 @@ public:
     }
 };
 
-template<class KEY, class VALUE>
-LinkedMap<KEY,VALUE>::LinkedMap()
+template<class KEY, class T>
+LinkedMap<KEY,T>::LinkedMap()
     : pImpl() {
 }
 
-template<class KEY, class VALUE>
-LinkedMap<KEY,VALUE>::LinkedMap(const size_t initSize)
+template<class KEY, class T>
+LinkedMap<KEY,T>::LinkedMap(const size_t initSize)
     : pImpl(new Impl(initSize)) {
 }
 
-template<class KEY, class VALUE>
-size_t LinkedMap<KEY,VALUE>::size() const noexcept {
+template<class KEY, class T>
+size_t LinkedMap<KEY,T>::size() const noexcept {
     return pImpl->size();
 }
 
-template<class KEY, class VALUE>
-VALUE* LinkedMap<KEY,VALUE>::add(const KEY& key, VALUE& value) {
+template<class KEY, class T>
+T* LinkedMap<KEY,T>::add(const KEY& key, T& value) {
     return pImpl->add(key, value);
 }
 
-template<class KEY, class VALUE>
-VALUE* LinkedMap<KEY,VALUE>::find(const KEY& key) {
+template<class KEY, class T>
+T* LinkedMap<KEY,T>::find(const KEY& key) {
     return pImpl->find(key);
 }
 
-template<class KEY, class VALUE>
-VALUE LinkedMap<KEY,VALUE>::remove(const KEY& key) {
+template<class KEY, class T>
+T LinkedMap<KEY,T>::remove(const KEY& key) {
     return pImpl->remove(key);
 }
 
-template<class KEY, class VALUE>
-KEY LinkedMap<KEY,VALUE>::getHead() {
+template<class KEY, class T>
+KEY LinkedMap<KEY,T>::getHead() {
     return pImpl->getHead();
 }
 
-template<class KEY, class VALUE>
-KEY LinkedMap<KEY,VALUE>::getTail() {
+template<class KEY, class T>
+KEY LinkedMap<KEY,T>::getTail() {
     return pImpl->getTail();
 }
 

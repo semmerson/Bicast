@@ -29,9 +29,9 @@ include_directories(${CMAKE_SOURCE_DIR}/main/misc)
 target_link_libraries(error_test hycast gtest)
 add_test(error_test error_test)
 
-add_executable(DelayQueue_test DelayQueue_test.cpp)
-target_link_libraries(DelayQueue_test hycast gtest)
-add_test(DelayQueue_test DelayQueue_test)
+#add_executable(DelayQueue_test DelayQueue_test.cpp)
+#target_link_libraries(DelayQueue_test hycast gtest)
+#add_test(DelayQueue_test DelayQueue_test)
 
 add_executable(reuseaddr_test reuseaddr_test.c)
 target_link_libraries(reuseaddr_test hycast pthread)

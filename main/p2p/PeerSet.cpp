@@ -189,6 +189,11 @@ public:
         return added;
     }
 
+    size_t size() {
+        Guard guard{mutex};
+        return peerEntries.size();
+    }
+
     bool erase(Peer peer) {
         Guard guard(mutex);
         return peerEntries.erase(peer);

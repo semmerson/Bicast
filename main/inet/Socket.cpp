@@ -127,6 +127,11 @@ protected:
         return ntohs(value);
     }
 
+    static inline int32_t ntoh(const int32_t value)
+    {
+        return ntohl(value);
+    }
+
     static inline uint32_t ntoh(const uint32_t value)
     {
         return ntohl(value);
@@ -288,6 +293,9 @@ public:
     bool write(const uint16_t value) {
         return write<uint16_t>(value);
     }
+    bool write(const int32_t value) {
+        return write<int32_t>(value);
+    }
     bool write(const uint32_t value) {
         return write<uint32_t>(value);
     }
@@ -339,6 +347,9 @@ public:
     }
     bool read(uint16_t& value) {
         return read<uint16_t>(value);
+    }
+    bool read(int32_t& value) {
+        return read<int32_t>(value);
     }
     bool read(uint32_t& value) {
         return read<uint32_t>(value);
@@ -445,6 +456,9 @@ bool Socket::write(const uint8_t value) const {
 bool Socket::write(const uint16_t value) const {
     return pImpl->write(value);
 }
+bool Socket::write(const int32_t  value) const {
+    return pImpl->write(value);
+}
 bool Socket::write(const uint32_t value) const {
     return pImpl->write(value);
 }
@@ -474,6 +488,9 @@ bool Socket::read(uint8_t& value) const {
     return pImpl->read(value);
 }
 bool Socket::read(uint16_t& value) const {
+    return pImpl->read(value);
+}
+bool Socket::read(int32_t&  value) const {
     return pImpl->read(value);
 }
 bool Socket::read(uint32_t& value) const {
@@ -527,7 +544,6 @@ protected:
      */
     bool writeBytes(const void* data,
                     size_t      nbytes) override {
-        LOG_TRACE;
         //LOG_DEBUG("Writing %zu bytes", nbytes);
 
         const char*   bytes = static_cast<const char*>(data);
@@ -541,13 +557,10 @@ protected:
              * poll(2) is used because SIGPIPE was always delivered by the
              * development system even if it was explicitly ignored.
              */
-            LOG_TRACE;
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure for socket " + to_string());
-            LOG_TRACE;
             if (pollfd.revents & POLLHUP)
                 return false;
-            LOG_TRACE;
             if (pollfd.revents & (POLLOUT | POLLERR)) {
                 // Cancellation point
                 LOG_DEBUG("sd=%d, bytes=%p, nbytes=%zu", sd, bytes, nbytes);
@@ -556,20 +569,16 @@ protected:
 
                 if (nwritten == -1) {
                     if (errno == ECONNRESET || errno == EPIPE) {
-                        LOG_TRACE;
                         return false;
                     }
-                    LOG_TRACE;
                     throw SYSTEM_ERROR("write() failure to socket " +
                             to_string());
                 }
 
-                LOG_TRACE;
                 nbytes -= nwritten;
                 bytes += nwritten;
             }
             else {
-                LOG_TRACE;
                 throw RUNTIME_ERROR("poll() failure on socket " + to_string());
             }
         }
@@ -722,10 +731,10 @@ public:
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
-     * @retval  `nullptr`          Socket was closed
-     * @return                     The accepted socket
-     * @throws  std::system_error  `::accept()` failure
-     * @cancellationpoint          Yes
+     * @retval  `nullptr`    Socket was closed
+     * @return               The accepted socket
+     * @throws  SystemError  `::accept()` failure
+     * @cancellationpoint    Yes
      */
     TcpSock::Impl* accept()
     {

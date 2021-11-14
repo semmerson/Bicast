@@ -26,3 +26,6 @@ add_test(Socket_test Socket_test)
 add_executable(Connect_test Connect_test.cpp)
 target_link_libraries(Connect_test hycast pthread)
 add_test(Connect_test Connect_test)
+
+add_executable(SsmRecvTest SsmRecvTest.c)
+add_executable(SsmSendTest SsmSendTest.c)

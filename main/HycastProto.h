@@ -67,7 +67,9 @@ private:
     Type value;
 
 public:
+    // Keep consonant with initializations in `HycastProto.cpp`
     static const PduId UNSET;
+    static const PduId PEER_SRVR_ADDRS;
     static const PduId PUB_PATH_NOTICE;
     static const PduId PROD_INFO_NOTICE;
     static const PduId DATA_SEG_NOTICE;
@@ -113,14 +115,21 @@ public:
     }
 };
 
-/// Information received by a subscriber upon connecting.
-class FeedInfo
+/// Information on a data feed
+struct FeedInfo : public XprtAble
 {
-public:
-    std::set<SockAddr> servers;     ///< Potential peer servers
-    SockAddr           mcastGroup;  ///< Multicast group address
-    InetAddr           mcastSource; ///< Multicast source address
-    SegSize            segSize;     ///< Canonical data-segment size in bytes
+    SockAddr mcastGroup;  ///< Multicast group address
+    InetAddr mcastSource; ///< Multicast source address
+    SegSize  segSize;     ///< Canonical data-segment size in bytes
+
+    /**
+     * Copies this instance to a transport.
+     *
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool write(Xprt& xprt) const override;
 
     /**
      * Initializes this instance from a transport.
@@ -129,7 +138,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool read(Xprt& xprt);
+    bool read(Xprt& xprt) override;
 };
 
 /// Path-to-publisher notice
@@ -246,11 +255,11 @@ struct DataSegId : public XprtAble
         , offset{offset}
     {}
 
-    inline bool operator==(const DataSegId& rhs) const {
+    inline bool operator==(const DataSegId rhs) const {
         return (prodIndex == rhs.prodIndex) && (offset == rhs.offset);
     }
 
-    inline bool operator!=(const DataSegId& rhs) const {
+    inline bool operator!=(const DataSegId rhs) const {
         return !(*this == rhs);
     }
 
@@ -365,13 +374,13 @@ public:
 
     DataSeg();
 
-    DataSeg(const DataSegId& segId,
-            const ProdSize   prodSize,
-            const char*      data);
+    DataSeg(const DataSegId segId,
+            const ProdSize  prodSize,
+            const char*     data);
 
     operator bool() const;
 
-    const DataSegId& getId() const noexcept;
+    const DataSegId getId() const noexcept;
 
     ProdSize getProdSize() const noexcept;
 
@@ -390,6 +399,33 @@ public:
     bool write(Xprt& xprt) const override;
 
     bool read(Xprt& xprt) override;
+};
+
+/******************************************************************************/
+
+/**
+ * Interface for data-products.
+ */
+class Product
+{
+public:
+    /**
+     * Returns a data-product that resides in memory.
+     *
+     * @param[in] prodInfo  Product information
+     * @param[in] data      Product data. Amount must be consonant with product-
+     *                      information. Must exist until destructor is called.
+     * @return              Memory-resident data-product
+     */
+    static std::shared_ptr<Product> create(const ProdInfo prodInfo,
+                                           const char*    data);
+
+    virtual ~Product() noexcept =default;
+
+    virtual ProdInfo getProdInfo() const =0;
+
+    virtual char* getData(const ProdSize offset,
+                          const SegSize  nbytes);
 };
 
 /******************************************************************************/
@@ -497,6 +533,45 @@ public:
                           Peer           peer) =0;
     virtual void recvData(const DataSeg  dataSeg,
                           Peer           peer) =0;
+};
+
+/**
+ * Interface for a Hycast node. Implementations manage incoming P2P requests for
+ * data and outgoing P2P transmissions. This interface is implemented by a
+ * publishing node.
+ */
+class Node
+{
+public:
+    virtual ~Node() noexcept =default;
+
+    /**
+     * Receives a request for product information.
+     *
+     * @param[in] request      Which product
+     * @return                 Product information. Will test false if it
+     *                         doesn't exist.
+     */
+    ProdInfo recvRequest(const ProdIndex request);
+
+    /**
+     * Receives a request for a data-segment.
+     *
+     * @param[in] request      Which data-segment
+     * @return                 Product information. Will test false if it
+     *                         doesn't exist.
+     */
+    DataSeg recvRequest(const DataSegId request);
+};
+
+/**
+ * Interface for a subscriber's Hycast node. Implementations manage incoming
+ * multicast transmissions and incoming and outgoing P2P transmissions.
+ */
+class SubNode : public Node
+{
+public:
+    virtual ~SubNode() noexcept =default;
 };
 
 } // namespace

@@ -31,6 +31,91 @@
 
 namespace hycast {
 
+    FeedInfo    feedInfo;   ///< Information on data-product feed
+    TcpSrvrSock srvrSock;   ///< Subscriber-server's socket
+    Thread      subThread;  ///< Thread that executes subscriber-server
+
+    /**
+     * Runs the publisher's subscriber-server. Accepts connections from
+     * subscribers and provides them with information on the data-feed and the
+     * latest subscriber nodes.
+     */
+    void acceptSubs() {
+        try {
+            PeerSrvrAddrs peerSrvrAddrs;
+
+            for (;;) {
+                // Keep consonant with `SubP2pNodeImpl::SubP2pNodeImpl()`
+                Xprt xprt{srvrSock.accept()};
+                auto protoVers = PROTOCOL_VERSION;
+                const auto subId = xprt.getRmtAddr().getInetAddr().to_string();
+
+                if (!xprt.write(PROTOCOL_VERSION) || !xprt.read(protoVers)) {
+                    LOG_NOTE("Lost connection with subscriber %s",
+                            subId.data());
+                    if (protoVers != PROTOCOL_VERSION) {
+                        LOG_NOTE("Subscriber %s uses protocol %d", subId.data(),
+                                protoVers);
+                    }
+                    else {
+                        SockAddr rmtPeerSrvrAddr;
+                        if (!rmtPeerSrvrAddr.read(xprt)
+                                || !feedInfo.write(xprt)
+                                || !peerSrvrAddrs.write(xprt)) {
+                            LOG_NOTE("Lost connection with subscriber %s",
+                                    subId.data());
+                        }
+                        else {
+                            peerSrvrAddrs.push(rmtPeerSrvrAddr);
+                        }
+                    }
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            threadEx.set(ex);
+        }
+    }
+
+    void cancelAndJoin(Thread& thread) {
+        if (thread.joinable()) {
+            auto status = pthread_cancel(thread.native_handle());
+            if (status) {
+                LOG_SYSERR("pthread_cancel() failure");
+            }
+            else {
+                try {
+                    thread.join();
+                }
+                catch (const std::exception& ex) {
+                    LOG_ERROR(ex, "pthread_join() failure");
+                }
+            }
+        }
+    }
+
+    // Publishing node ctor:
+            subThread = Thread(&PubP2pNodeImpl::acceptSubs, this);
+
+    // Subscribing node ctor:
+        // Keep consonant with `PubP2pNodeImpl::acceptSubs()`
+        Xprt       xprt{TcpClntSock(pubSrvrAddr)};
+        FeedInfo   feedInfo;
+        auto       protoVers = PROTOCOL_VERSION;
+        const auto pubId = pubSrvrAddr.getInetAddr().to_string();
+
+        if (!xprt.write(PROTOCOL_VERSION) || !xprt.read(protoVers))
+                throw RUNTIME_ERROR("Lost connection with publisher " + pubId);
+
+        if (protoVers != PROTOCOL_VERSION)
+            throw RUNTIME_ERROR("Publisher " + pubId + " uses protocol " +
+                    std::to_string(protoVers));
+
+        if (!peerSrvrAddr.write(xprt)
+                || !feedInfo.read(xprt)
+                || !peerSrvrAddrs.read(xprt))
+            throw RUNTIME_ERROR("Lost connection with publisher " + pubId);
+
 /**
  * Base class for node implementations.
  */

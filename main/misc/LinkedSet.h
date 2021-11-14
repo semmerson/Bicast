@@ -1,5 +1,5 @@
 /**
- * Set whose entries are also linked together into a list.
+ * Set whose entries are also linked together into a queue.
  *
  *        File: LinkedSet.h
  *  Created on: August 20, 2020
@@ -28,9 +28,9 @@
 namespace hycast {
 
 /**
- * @tparam VALUE  Value type
+ * @tparam T  Value type
  */
-template<class VALUE>
+template<class T, class COMP, class HASH = std::hash<T>>
 class LinkedSet
 {
     class Impl;
@@ -64,7 +64,7 @@ public:
      * @param[in] value  Value to be added
      * @return           Pointer to value in map
      */
-    VALUE* add(VALUE& value);
+    T* add(T& value);
 
     /**
      * Returns a pointer to a value
@@ -73,7 +73,7 @@ public:
      * @retval    `nullptr`  Value doesn't exist
      * @retval    `false`    Pointer to existing value
      */
-    VALUE* find(const VALUE& value);
+    T* find(const T& value);
 
     /**
      * Removes a value.
@@ -81,7 +81,7 @@ public:
      * @param[in] value         Value to be removed
      * @throws InvalidArgument  No such entry
      */
-    VALUE remove(const VALUE& value);
+    T remove(const T& value);
 
     /**
      * Returns a pointer to the value at the head of the list.
@@ -89,7 +89,7 @@ public:
      * @retval `nullptr`  Set is empty
      * @return            Pointer to value at head of list.
      */
-    VALUE* getHead();
+    T* getHead();
 };
 
 } // namespace
