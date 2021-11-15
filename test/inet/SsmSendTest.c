@@ -32,8 +32,21 @@ static struct sockaddr_in ssmSockAddr;     ///< SSM group socket address
 static uint8_t            ttl = DEF_TTL;   ///< Time-to-live
 static bool               verbose = false; ///< Verbose mode?
 
+static void
+usage(const char* const progname)
+{
+    (void)fprintf(stderr,
+"Usage:\n"
+"    %s [-i <iface>] [-t <ttl>] [-v]\n"
+"where:\n"
+"    -i <iface>   IPv4 address of interface to use. Default is \"%s\".\n"
+"    -t <ttl>     Time-to-live for outgoing packets. Default is %u.\n"
+"    -v           Verbose output\n",
+    progname, DEF_IFACE_IP_ADDR, DEF_TTL);
+}
+
 static int
-getRunPar(int                   argc,
+setRunPar(int                   argc,
           char** const restrict argv)
 {
     bool success = true;
@@ -48,6 +61,7 @@ getRunPar(int                   argc,
             if (inet_pton(SSM_FAMILY, ifaceIpAddr, &ifIpAddr) != 1) {
                 (void)fprintf(stderr, "Couldn't parse interface IP address "
                         "\"%s\": %s\n", ifaceIpAddr, strerror(errno));
+                usage(basename(argv[0]));
                 success = false;
             }
         }
@@ -57,6 +71,7 @@ getRunPar(int                   argc,
                 (void)fprintf(stderr,
                         "Couldn't decode time-to-live option argument \"%s\"\n",
                         optarg);
+                usage(basename(argv[0]));
                 success = false;
             }
             break;
@@ -66,6 +81,7 @@ getRunPar(int                   argc,
             break;
         }
         default:
+            usage(basename(argv[0]));
             success = false;
             break;
         }
@@ -76,6 +92,7 @@ getRunPar(int                   argc,
 
         if (optind < argc) {
             (void)fprintf(stderr, "Too many operands\n");
+            usage(basename(argv[0]));
         }
         else {
             // Set SSM group socket address
@@ -96,26 +113,11 @@ getRunPar(int                   argc,
     return success;
 }
 
-static void
-usage(const char* const progname)
-{
-    (void)fprintf(stderr,
-"Usage:\n"
-"    %s [-i <iface>] [-t <ttl>] [-v]\n"
-"where:\n"
-"    -i <iface>   IPv4 address of interface to use. Default is \"%s\".\n"
-"    -t <ttl>     Time-to-live for outgoing packets. Default is %u.\n"
-"    -v           Verbose output\n",
-    progname, DEF_IFACE_IP_ADDR, DEF_TTL);
-}
-
 int
 main(int argc, char *argv[])
 {
-    if (!getRunPar(argc, argv)) {
-        usage(basename(argv[0]));
+    if (!setRunPar(argc, argv))
         exit(1);
-    }
 
     // Create a UDP socket
     int sd = socket(AF_INET, SOCK_DGRAM, 0);

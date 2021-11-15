@@ -62,6 +62,19 @@ getIpv4Addr(const char* const     name,
     return success;
 }
 
+static void
+usage(const char* const progname)
+{
+    (void)fprintf(stderr,
+"Usage:\n"
+"    %s [-v] <srcAddr> <iface>\n"
+"where:\n"
+"    <srcAddr> Hostname or IPv4 address of source host\n"
+"    <iface>   IPv4 address of interface to receive multicast on\n"
+"    -v        Verbose output\n",
+    progname);
+}
+
 /**
  * Sets the runtime parameters.
  *
@@ -85,6 +98,7 @@ setRunPar(
             break;
         }
         default:
+            usage(basename(argv[0]));
             success = false;
             break;
         }
@@ -95,6 +109,7 @@ setRunPar(
 
         if (optind >= argc) {
             (void)fprintf(stderr, "Too few operands\n");
+            usage(basename(argv[0]));
         }
         else {
             sourceId = argv[optind++];
@@ -102,15 +117,18 @@ setRunPar(
                     !getIpv4Addr(sourceId, &srcIpAddr)) {
                 (void)fprintf(stderr, "Couldn't convert source ID \"%s\" into an "
                         "IPv4 address\n", sourceId);
+                usage(basename(argv[0]));
             }
             else if (optind >= argc) {
                 (void)fprintf(stderr, "Too few operands\n");
+                usage(basename(argv[0]));
             }
             else {
                 ifaceIpAddr = argv[optind++];
                 if (inet_pton(SSM_FAMILY, ifaceIpAddr, &ifIpAddr) != 1) {
                     (void)fprintf(stderr, "Couldn't parse interface IP address "
                             "\"%s\": %s\n", ifaceIpAddr, strerror(errno));
+                    usage(basename(argv[0]));
                 }
                 else {
                     // Set SSM group socket address
@@ -124,6 +142,7 @@ setRunPar(
                     }
                     else if (optind < argc) {
                         (void)fprintf(stderr, "Too many operands\n");
+                        usage(basename(argv[0]));
                     }
                     else {
                         success = true;
@@ -134,19 +153,6 @@ setRunPar(
     }
 
     return success;
-}
-
-static void
-usage(const char* const progname)
-{
-    (void)fprintf(stderr,
-"Usage:\n"
-"    %s [-v] <srcAddr> <iface>\n"
-"where:\n"
-"    <srcAddr> Hostname or IPv4 address of source host\n"
-"    <iface>   IPv4 address of interface to receive multicast on\n"
-"    -v        Verbose output\n",
-    progname);
 }
 
 /**
@@ -257,10 +263,7 @@ main(int argc, char *argv[])
 {
     bool success = false;
 
-    if (!setRunPar(argc, argv)) {
-        usage(basename(argv[0]));
-    }
-    else {
+    if (setRunPar(argc, argv)) {
         int sd = socket(SSM_FAMILY, SOCK_DGRAM, 0);
 
         if (sd < 0) {
