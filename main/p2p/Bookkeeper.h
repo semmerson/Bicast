@@ -32,7 +32,7 @@
 namespace hycast {
 
 /**
- * Interface for performance monitoring of peers.
+ * Interface for monitoring of peers.
  */
 class Bookkeeper
 {
@@ -46,7 +46,7 @@ protected:
 public:
     virtual ~Bookkeeper() noexcept =default;
 
-    virtual void add(const Peer peer) const =0;
+    virtual bool add(const Peer peer) const =0;
 
     virtual bool remove(const Peer peer) const =0;
 };
@@ -70,7 +70,7 @@ public:
 
     void requested(const Peer peer) const;
 
-    void add(const Peer peer)       const          override;
+    bool add(const Peer peer)       const          override;
 
     Peer getWorstPeer()             const;
 
@@ -95,14 +95,28 @@ public:
     SubBookkeeper(int maxPeers = 8);
 
     /**
-     * Returns the number of remote peers that are a path to the source of
-     * data-products and the number that aren't.
+     * Indicates if a remote peer should be notified about available information
+     * on a product. Returns false iff the remote peer has indicated that it has
+     * the datum.
      *
-     * @param[out] numPath    Number of remote peers that are path to source
-     * @param[out] numNoPath  Number of remote peers that aren't path to source
+     * @param[in] peer       Peer
+     * @param[in] prodIndex  Index of the product
+     * @retval    `true`     Peer should be notified
+     * @retval    `false`    Peer should not be notified
      */
-    void getPubPathCounts(unsigned& numPath,
-                          unsigned& numNoPath) const;
+    bool shouldNotify(Peer peer, const ProdIndex prodIndex) const;
+
+    /**
+     * Indicates if a remote peer should be notified about an available data
+     * segment. Returns false iff the remote peer has indicated that it has the
+     * datum.
+     *
+     * @param[in] peer       Peer
+     * @param[in] dataSegId  ID of the data segment
+     * @retval    `true`     Peer should be notified
+     * @retval    `false`    Peer should not be notified
+     */
+    bool shouldNotify(Peer peer, const DataSegId dataSegId) const;
 
     /**
      * Indicates if information on a product should be requested by a peer. If
@@ -140,8 +154,8 @@ public:
      * @threadsafety                 Safe
      * @cancellationpoint            No
      */
-    bool shouldRequest(Peer             peer,
-                       const DataSegId& dataSegId) const;
+    bool shouldRequest(Peer            peer,
+                       const DataSegId dataSegId) const;
 
     /**
      * Process a peer having received product information. Nothing happens if it
@@ -149,31 +163,47 @@ public:
      * removed from the peer's outstanding requests and the set of alternative
      * peers for that request is cleared.
      *
-     * @param[in] peer               Peer
-     * @param[in] prodIndex          Product index
-     * @throws    std::out_of_range  Peer is unknown
-     * @threadsafety                 Safe
-     * @exceptionsafety              Basic guarantee
-     * @cancellationpoint            No
+     * @param[in] peer        Peer
+     * @param[in] prodIndex   Product index
+     * @retval    `true`      Success
+     * @retval    `false`     Product information wasn't requested
+     * @throws    LogicError  Peer is unknown
+     * @threadsafety          Safe
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     No
      */
-    void received(Peer            peer,
+    bool received(Peer            peer,
                   const ProdIndex prodIndex) const;
 
     /**
      * Process a peer having received a data segment. Nothing happens if it
      * wasn't requested by the peer; otherwise, the corresponding request is
-     * removed from the peer's outstanding requests and the set of alternative
-     * peers for that request is cleared.
+     * removed from the peer's outstanding requests.
      *
-     * @param[in] peer               Peer
-     * @param[in] dataSegId          Data segment identifier
-     * @throws    std::out_of_range  Peer is unknown
-     * @threadsafety                 Safe
-     * @exceptionsafety              Basic guarantee
-     * @cancellationpoint            No
+     * @param[in] peer        Peer
+     * @param[in] dataSegId   Data segment identifier
+     * @retval    `true`      Success
+     * @retval    `false`     Data segment wasn't requested
+     * @threadsafety          Safe
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     No
      */
-    void received(Peer             peer,
-                  const DataSegId& datasegId) const;
+    bool received(Peer            peer,
+                  const DataSegId datasegId) const;
+
+    /**
+     * Deletes the set of peers that have information on the given product.
+     *
+     * @param[in] prodIndex  Index of the product
+     */
+    void erase(const ProdIndex prodIndex) const;
+
+    /**
+     * Deletes the set of peers that have the given data segment.
+     *
+     * @param[in] dataSegId  ID of the data segment
+     */
+    void erase(const DataSegId dataSegId) const;
 
     /**
      * Returns the worst performing local peer. By default, the worst performing
@@ -185,9 +215,20 @@ public:
      * @return              Worst performing peer with the given attribute. Will
      *                      test false if no such peer exists.
      */
-    Peer getWorstPeer(const bool isClient = true)     const;
+    Peer getWorstPeer(const bool isClient = true) const;
 
-    void add(const Peer peer)                 const          override;
+    /**
+     * Adds a peer.
+     *
+     * @param peer                Peer to be added
+     * @retval `true`             Success
+     * @retval `false`            Not added because already exists
+     * @throws std::system_error  Out of memory
+     * @threadsafety              Safe
+     * @exceptionsafety           Basic guarantee
+     * @cancellationpoint         No
+     */
+    bool add(const Peer peer) const override;
 
     /**
      * Removes a peer. The peer's outstanding requests are reassigned to the
@@ -197,7 +238,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Peer is unknown
      */
-    bool remove(const Peer peer)              const          override;
+    bool remove(const Peer peer) const override;
 };
 
 } // namespace

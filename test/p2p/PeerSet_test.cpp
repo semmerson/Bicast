@@ -1,11 +1,11 @@
 #include "config.h"
 
-#include "P2pNode.h"
 #include "PeerSet.h"
 #include "logging.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <P2pMgr.h>
 #include <mutex>
 #include <thread>
 
@@ -14,7 +14,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `PeerSet`
-class PeerSetTest : public ::testing::Test, public hycast::SubP2pNode
+class PeerSetTest : public ::testing::Test, public hycast::SubP2pMgr
 {
 protected:
     typedef enum {
@@ -53,7 +53,7 @@ protected:
     int                     prodInfoCount;
     int                     dataSegCount;
 
-    static const int        NUM_SUBSCRIBERS = 8;
+    static const int        NUM_SUBSCRIBERS = 1;
 
     PeerSetTest()
         : state{INIT}
@@ -98,23 +98,33 @@ public:
         return true;
     }
 
+    // Both sides
+    void waitForSrvrPeer() override {}
+
     // Publisher-side
     bool isPathToPub() const {
         LOG_TRACE;
         return true;
     }
 
-    // Both sides
-    void recvNotice(const hycast::PubPath notice, Peer peer)
-    {
-        LOG_TRACE;
-        std::lock_guard<std::mutex> guard{mutex};
-        ++pubPathNoticeCount;
+    SockAddr getPeerSrvrAddr() const override {
+        return SockAddr();
+    }
+
+    bool shouldNotify(
+            Peer      peer,
+            ProdIndex prodIndex) override {
+        return true;
+    }
+
+    bool shouldNotify(
+            Peer      peer,
+            DataSegId segId) override {
+        return true;
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::ProdIndex notice, Peer peer)
-    {
+    bool recvNotice(const hycast::ProdIndex notice, Peer peer) override {
         LOG_TRACE;
         EXPECT_EQ(notice, prodIndex);
         {
@@ -126,8 +136,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::DataSegId notice, Peer peer)
-    {
+    bool recvNotice(const hycast::DataSegId notice, Peer peer) override {
         LOG_TRACE;
         EXPECT_EQ(segId, notice);
         {
@@ -139,8 +148,7 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const hycast::ProdIndex request, Peer peer)
-    {
+    ProdInfo recvRequest(const hycast::ProdIndex request, Peer peer) override {
         LOG_TRACE;
         EXPECT_TRUE(prodIndex == request);
         {
@@ -152,8 +160,7 @@ public:
     }
 
     // Publisher-side
-    DataSeg recvRequest(const hycast::DataSegId request, Peer peer)
-    {
+    DataSeg recvRequest(const hycast::DataSegId request, Peer peer) override {
         LOG_TRACE;
         EXPECT_EQ(segId, request);
         {
@@ -164,28 +171,25 @@ public:
         return dataSeg;
     }
 
-    void missed(const NoteReq& request, Peer peer) {
+    void missed(const ProdIndex prodIndex, Peer peer) override {
     }
 
-    void missed(const ProdIndex prodIndex, Peer peer) {
+    void missed(const DataSegId dataSegId, Peer peer) override {
     }
 
-    void missed(const DataSegId dataSegId, Peer peer) {
+    void notify(const ProdIndex prodInfo) override {
     }
 
-    void notify(const ProdIndex prodInfo) {
-    }
-
-    void notify(const DataSegId& dataSegId) {
+    void notify(const DataSegId dataSegId) override {
     }
 
     // Subscriber-side
-    void recvData(const PeerSrvrAddrs peerSrvrAddrs, Peer peer) {
+    void recvData(const Tracker tracker, Peer peer) override {
         // TODO
     }
 
     // Subscriber-side
-    void recvData(const hycast::ProdInfo data, Peer peer) {
+    void recvData(const hycast::ProdInfo data, Peer peer) override {
         LOG_TRACE;
         EXPECT_EQ(prodInfo, data);
         std::lock_guard<std::mutex> guard{mutex};
@@ -194,7 +198,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const hycast::DataSeg actualDataSeg, Peer peer) {
+    void recvData(const hycast::DataSeg actualDataSeg, Peer peer) override {
         LOG_TRACE;
         ASSERT_EQ(segSize, actualDataSeg.getSize());
         EXPECT_EQ(0, ::memcmp(dataSeg.getData(), actualDataSeg.getData(),
@@ -208,7 +212,7 @@ public:
         LOG_INFO("Lost connection with peer ", peer.to_string().data());
     }
 
-    void startPublisher(hycast::PeerSet& pubPeerSet)
+    void startPublisher(hycast::PeerSet pubPeerSet)
     {
         PubPeerSrvr peerSrvr{*this, pubAddr};
         orState(LISTENING);
@@ -219,8 +223,8 @@ public:
             hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, rmtAddr);
 
-            // Starts receiving and becomes ready to notify
-            pubPeerSet.insert(pubPeer, true);
+            ASSERT_TRUE(pubPeer.start()); // Starts reading
+            pubPeerSet.insert(pubPeer);   // Ready to notify
             ASSERT_EQ(i+1, pubPeerSet.size());
         }
     }
@@ -229,7 +233,7 @@ public:
 // Tests default construction
 TEST_F(PeerSetTest, DefaultConstruction)
 {
-    hycast::PeerSet peerSet{*this};
+    hycast::PeerSet peerSet{};
 }
 
 // Tests data exchange
@@ -237,29 +241,40 @@ TEST_F(PeerSetTest, DataExchange)
 {
     try {
         // Create and execute publisher
-        hycast::PeerSet pubPeerSet{*this};
+        hycast::PeerSet pubPeerSet{};
         std::thread     srvrThread{&PeerSetTest::startPublisher, this,
-                std::ref(pubPeerSet)};
+                pubPeerSet};
 
-        waitForState(LISTENING);
+        try {
+            waitForState(LISTENING);
 
-        // Create and execute reception by subscribing peers on separate threads
-        hycast::PeerSet subPeerSet{*this};
-        for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
-            hycast::SubPeer subPeer(*this, pubAddr, true);
-            ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
-            ASSERT_EQ(i+1, subPeerSet.size());
+            /*
+             * Create and execute reception by subscribing peers on separate
+             * threads
+             */
+            hycast::PeerSet subPeerSet{};
+            for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
+                hycast::SubPeer subPeer(*this, pubAddr);
+                ASSERT_TRUE(subPeer.start()); // Starts reading
+                subPeerSet.insert(subPeer);
+                ASSERT_EQ(i+1, subPeerSet.size());
+            }
+
+            ASSERT_TRUE(srvrThread.joinable());
+            srvrThread.join();
+
+            // Start an exchange
+            pubPeerSet.notify(prodIndex);
+            pubPeerSet.notify(segId);
+
+            // Wait for the exchange to complete
+            waitForState(DONE);
         }
-
-        ASSERT_TRUE(srvrThread.joinable());
-        srvrThread.join();
-
-        // Start an exchange
-        pubPeerSet.notify(prodIndex);
-        pubPeerSet.notify(segId);
-
-        // Wait for the exchange to complete
-        waitForState(DONE);
+        catch (const std::exception& ex) {
+            if (srvrThread.joinable())
+                srvrThread.join();
+            throw;
+        }
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex);

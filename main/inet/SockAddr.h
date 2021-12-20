@@ -226,9 +226,10 @@ public:
     /**
      * Connects a socket to a remote socket address.
      *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::connect()` failure
-     * @threadsafety                 Safe
+     * @param[in] sd            Socket descriptor
+     * @throws    SystemError   Bad failure
+     * @throws    RuntimeError  Failure. Might be temporary.
+     * @threadsafety            Safe
      */
     void connect(const int sd) const;
 
@@ -269,6 +270,8 @@ public:
 } // namespace
 
 namespace std {
+    std::string to_string(const hycast::SockAddr& sockAddr);
+
     template<>
     struct less<hycast::SockAddr> {
         inline bool operator()(

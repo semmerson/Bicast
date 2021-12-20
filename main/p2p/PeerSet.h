@@ -1,5 +1,7 @@
 /**
- * This file declares a set of peers.
+ * This file declares a set of active peers that are notified as a group.
+ * Consequently, a peer whose remote counterpart belongs to the publisher should
+ * not be added.
  *
  *  @file: PeerSet.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -39,30 +41,44 @@ protected:
 public:
     using size_type = size_t;
 
-    PeerSet(P2pNode& node);
+    PeerSet(P2pMgr& p2pMgr);
 
     /**
-     * Adds a peer. If the peer is already in the set, then nothing is done;
-     * otherwise, the peer is added and starts receiving from its associated
-     * remote peer and becomes ready to notify its remote peer.
+     * Adds a started peer.
      *
-     * @param[in] peer     Peer to try adding
-     * @param[in] pubPath  Is the local peer a path to the publisher?
-     * @retval    `false`  Peer was already in the set. Nothing was done.
-     * @retval    `true`   Peer was not in the set. Peer was added and started.
-     * @see Peer::start()
+     * NB: A peer whose remote counterpart belongs to the publisher should not
+     * be added.
+     *
+     * @param[in] peer           Peer to be added
+     * @throw LogicError         Peer was previously added
+     * @throw LogicError         Remote peer belongs to the publisher
+     * @throw std::system_error  Couldn't create new thread
      */
-    bool insert(Peer peer, const bool pubPath = false) const;
+    void insert(Peer peer) const;
+
+    void waitForPeer() const;
 
     bool erase(Peer peer) const;
 
     size_type size() const;
 
-    void notify(const PubPath notice) const;
+    /**
+     * Notifies all peers about an available product.
+     *
+     * @param[in] prodIndex  Index of the product
+     * @retval    `true`     Success
+     * @retval    `false`    Peer set is empty
+     */
+    bool notify(const ProdIndex prodIndex) const;
 
-    void notify(const ProdIndex notice) const;
-
-    void notify(const DataSegId& notice) const;
+    /**
+     * Notifies all peers about an available data-segment.
+     *
+     * @param[in] segId    ID of the data-segment
+     * @retval    `true`   Success
+     * @retval    `false`  Peer set is empty
+     */
+    bool notify(const DataSegId segId) const;
 };
 
 } // namespace

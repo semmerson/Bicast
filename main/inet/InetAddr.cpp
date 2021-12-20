@@ -479,9 +479,8 @@ public:
     }
 
     size_t hash() const noexcept {
-        return myHash(((static_cast<uint64_t>(addr.s6_addr32[0]) ^
-                addr.s6_addr32[1]) << 32) |
-                (addr.s6_addr32[2] ^ addr.s6_addr32[3]));
+        return myHash(*reinterpret_cast<const uint64_t*>(addr.s6_addr) ^
+                      *reinterpret_cast<const uint64_t*>(addr.s6_addr+8));
     }
 
     int socket(

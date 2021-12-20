@@ -124,7 +124,9 @@ public:
     }
 
     /**
-     * Binds a socket to a local socket address.
+     * Binds a socket to a local socket address. Address is server's
+     * listening address/outgoing IP source field or incoming multicast
+     * destination address.
      *
      * @param[in] sd                 Socket descriptor
      * @throws    std::system_error  `::bind()` failure
@@ -142,18 +144,19 @@ public:
     /**
      * Connects a socket to a remote socket address.
      *
-     * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::connect()` failure
-     * @threadsafety                 Safe
+     * @param[in] sd            Socket descriptor
+     * @throws    SystemError   Failure
+     * @threadsafety            Safe
      */
     void connect(const int sd) const
     {
         LOG_DEBUG("Connecting to " + to_string());
+
         struct sockaddr_storage storage;
 
         if (::connect(sd, inetAddr.get_sockaddr(storage, port),
                 sizeof(storage)))
-            throw SYSTEM_ERROR("Couldn't connect() socket " +
+            throw SYSTEM_ERROR("Couldn't connect socket " +
                     std::to_string(sd) + " to " + to_string());
     }
 
@@ -398,7 +401,7 @@ bool SockAddr::operator<(const SockAddr& rhs) const noexcept
 
 bool SockAddr::operator==(const SockAddr& rhs) const noexcept
 {
-    return *pImpl.get() == *rhs.pImpl.get();
+    return *pImpl == *rhs.pImpl;
 }
 
 size_t SockAddr::hash() const noexcept
@@ -422,7 +425,7 @@ void SockAddr::bind(const int sd) const
 
 void SockAddr::connect(const int sd) const
 {
-    pImpl->connect(sd);
+    return pImpl->connect(sd);
 }
 
 void SockAddr::join(
@@ -463,3 +466,9 @@ bool SockAddr::read(Xprt& xprt) {
 }
 
 } // namespace
+
+namespace std {
+    string to_string(const hycast::SockAddr& sockAddr) {
+        return sockAddr.to_string();
+    }
+}

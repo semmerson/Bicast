@@ -12,8 +12,8 @@
 #include "config.h"
 
 #include "NoticeQueue.h"
-#include "P2pNode.h"
 
+#include <P2pMgr.h>
 #include "gtest/gtest.h"
 
 namespace {
@@ -21,7 +21,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `NoticeQueue`
-class NoticeQueueTest : public ::testing::Test, public hycast::P2pNode
+class NoticeQueueTest : public ::testing::Test, public hycast::P2pMgr
 {
 protected:
     // You can remove any or all of the following functions if its body

@@ -50,6 +50,10 @@ public:
         return sock.getRmtAddr();
     }
 
+    SockAddr getLclAddr() const {
+        return sock.getLclAddr();
+    }
+
     std::string to_string() const {
         return sock.to_string();
     }
@@ -91,9 +95,9 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool send(PduId           pduId,
-              const XprtAble& obj,
-              Xprt&           xprt) {
+    bool send(PduId            pduId,
+              const WriteAble& obj,
+              Xprt&            xprt) {
         return xprt.write(pduId) && obj.write(xprt) && sock.flush();
     }
 
@@ -177,6 +181,10 @@ SockAddr Xprt::getRmtAddr() const {
     return pImpl->getRmtAddr();
 }
 
+SockAddr Xprt::getLclAddr() const {
+    return pImpl->getLclAddr();
+}
+
 std::string Xprt::to_string() const {
     return pImpl ? pImpl->to_string() : "<unset>";
 }
@@ -189,7 +197,7 @@ bool Xprt::send(const PduId pduId, const bool value) {
     return pImpl->send(pduId, value, *this);
 }
 
-bool Xprt::send(const PduId pduId, const XprtAble& obj) {
+bool Xprt::send(const PduId pduId, const WriteAble& obj) {
     return pImpl->send(pduId, obj, *this);
 }
 

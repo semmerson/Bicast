@@ -37,15 +37,29 @@ class TcpSock;
 class UdpSock;
 class Xprt;
 
+/// Interface for a writable object
+class WriteAble
+{
+public:
+    virtual ~WriteAble() {};
+
+    virtual bool write(Xprt& xprt) const =0;
+};
+
+/// Interface for a readable object
+class ReadAble
+{
+public:
+    virtual ~ReadAble() {};
+
+    virtual bool read(Xprt& xprt) =0;
+};
+
 /// Interface for a transportable object
-class XprtAble
+class XprtAble : public WriteAble, public ReadAble
 {
 public:
     virtual ~XprtAble() {};
-
-    virtual bool write(Xprt& xprt) const =0;
-
-    virtual bool read(Xprt& xprt) =0;
 };
 
 /******************************************************************************

@@ -103,15 +103,15 @@ class PduQueue
 {
     using Map   = std::map<ArrayIndex, PDU>;
 
-    Map           map;
-    P2pNode&      p2pNode;
-    const String  desc;
+    Map          map;
+    const String desc;
+    P2pMgr&      p2pMgr; ///< Associated P2P manager
 
 public:
-    PduQueue(P2pNode& p2pNode, const String& desc)
+    PduQueue(const String& desc, P2pMgr& p2pMgr)
         : map()
-        , p2pNode(p2pNode)
         , desc(desc)
+        , p2pMgr(p2pMgr)
     {}
 
     /**
@@ -144,15 +144,21 @@ public:
      */
     bool send(const ArrayIndex& index, Peer& peer) const {
         bool success;
+        auto notice = map.at(index);
 
         try {
-            auto notice = map.at(index);
-            success = peer.notify(notice);
+            /*
+             * The P2P manager is queried at the last possible moment to
+             * maximize the remote peer's opportunity to notify us and,
+             * consequently, suppress notification.
+             */
+            success = !p2pMgr.shouldNotify(peer, notice) ||
+                    peer.notify(notice);
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't send " + desc +
-                    " notice #" + std::to_string(index) + " to peer "+
-                    peer.to_string()));
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't notify peer " +
+                    peer.to_string() + " about " + desc + " " +
+                    notice.to_string()));
         }
 
         return success;
@@ -166,7 +172,6 @@ class NoticeArray::Impl
     mutable Mutex       mutex;
     mutable Cond        cond;
     PduIdQueue          pduIdQueue;
-    PduQueue<PubPath>   pubPaths;
     PduQueue<ProdIndex> prodIndexes;
     PduQueue<DataSegId> dataSegIds;
     ArrayIndex          writeIndex;
@@ -215,13 +220,12 @@ class NoticeArray::Impl
     }
 
 public:
-    Impl(P2pNode& p2pNode)
+    Impl(P2pMgr& p2pMgr)
         : mutex()
         , cond()
         , pduIdQueue()
-        , pubPaths(p2pNode, "path-to-publisher")
-        , prodIndexes(p2pNode, "product-index")
-        , dataSegIds(p2pNode, "data-segment ID")
+        , prodIndexes("product-index", p2pMgr)
+        , dataSegIds("data-segment ID", p2pMgr)
         , writeIndex(0)
         , oldestIndex(0)
     {}
@@ -244,13 +248,6 @@ public:
     ArrayIndex getOldestIndex() const {
         Guard guard(mutex);
         return oldestIndex;
-    }
-
-    ArrayIndex put(const PubPath pubPath) {
-        Guard      guard{mutex};
-        const auto index = put(PduId::PUB_PATH_NOTICE);
-        pubPaths.put(index, pubPath);
-        return index;
     }
 
     ArrayIndex put(const ProdIndex prodIndex) {
@@ -279,23 +276,24 @@ public:
      * @throws    RuntimeError  Failure
      */
     bool send(const ArrayIndex& index, Peer& peer) const {
-        LOG_TRACE;
-
+        bool success;
         auto pduId = get(index);
-        if (PduId::PUB_PATH_NOTICE == pduId)
-            return pubPaths.send(index, peer);
-        if (PduId::PROD_INFO_NOTICE == pduId)
-            return prodIndexes.send(index, peer);
-        if (PduId::DATA_SEG_NOTICE == pduId)
-            return dataSegIds.send(index, peer);
-        throw LOGIC_ERROR("Invalid PDU ID");
+        if (PduId::PROD_INFO_NOTICE == pduId) {
+            success = prodIndexes.send(index, peer);
+        }
+        else if (PduId::DATA_SEG_NOTICE == pduId) {
+            success = dataSegIds.send(index, peer);
+        }
+        else {
+            throw LOGIC_ERROR("Invalid PDU ID");
+        }
+        return success;
     }
 
     // Purge queue of old notices
     void eraseTo(const ArrayIndex& to) {
         Guard guard{mutex};
         pduIdQueue .erase(oldestIndex, to);
-        pubPaths   .erase(oldestIndex, to);
         prodIndexes.erase(oldestIndex, to);
         dataSegIds .erase(oldestIndex, to);
         oldestIndex = to;
@@ -303,8 +301,8 @@ public:
     }
 };
 
-NoticeArray::NoticeArray(P2pNode& p2pNode)
-    : pImpl(std::make_shared<Impl>(p2pNode))
+NoticeArray::NoticeArray(P2pMgr& p2pMgr)
+    : pImpl(new Impl(p2pMgr))
 {}
 
 ArrayIndex NoticeArray::getWriteIndex() const {
@@ -313,10 +311,6 @@ ArrayIndex NoticeArray::getWriteIndex() const {
 
 ArrayIndex NoticeArray::getOldestIndex() const {
     return pImpl->getOldestIndex();
-}
-
-ArrayIndex NoticeArray::putPubPath(const PubPath pubPath) const {
-    return pImpl->put(pubPath);
 }
 
 ArrayIndex NoticeArray::putProdIndex(const ProdIndex prodIndex) const {
@@ -332,7 +326,7 @@ void NoticeArray::eraseTo(const ArrayIndex index) const {
 }
 
 bool NoticeArray::send(const ArrayIndex& index, Peer& peer) const {
-    pImpl->send(index, peer);
+    return pImpl->send(index, peer);
 }
 
 } // namespace

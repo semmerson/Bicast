@@ -24,15 +24,15 @@
 #define MAIN_PROTO_PEER_H_
 
 #include "HycastProto.h"
-#include "P2pNode.h"
-#include "PeerSrvrAddrs.h"
+#include "P2pMgr.h"
 #include "Socket.h"
+#include "Tracker.h"
 
 #include <memory>
 
 namespace hycast {
 
-template<class NODE, class PEER> class PeerSrvr;
+template<class MGR, class PEER> class PeerSrvr;
 
 /**
  * Abstract base class for handling low-level, asynchronous, bidirectional
@@ -44,12 +44,10 @@ public:
     class     Impl;
 
 protected:
-    using     SharedPtr = std::shared_ptr<Impl>;
-    SharedPtr pImpl;
+    using Pimpl = std::shared_ptr<Impl>;
+    Pimpl pImpl;
 
     Peer(Impl* impl);
-
-    Peer(SharedPtr& pImpl);
 
 public:
     /**
@@ -69,12 +67,22 @@ public:
     bool isClient() const noexcept;
 
     /**
-     * Starts this instance. Creates threads that serve the remote peer.
-     * Upon return, this instance *must* be stopped before it can be destroyed.
+     * Indicates if the remote peer belongs to the publisher.
      *
-     * @retval `false`     Remote peer disconnected
-     * @retval `true`      Success
-     * @throw LogicError   Already started
+     * @retval `true`   Remote peer belongs to publisher
+     * @retval `false`  Remote peer does not belong to publisher
+     */
+    bool isRmtPub() const noexcept;
+
+    /**
+     * Starts this instance. Creates threads on which
+     *   - The sockets are read; and
+     *   - The P2P manager is called.
+     *
+     * @retval    `false`  `stop()` was called
+     * @retval    `true`   Success
+     * @throw LogicError   Already called
+     * @throw LogicError   Remote peer uses unsupported protocol
      * @throw SystemError  Thread couldn't be created
      * @see   `stop()`
      */
@@ -105,7 +113,7 @@ public:
      * @retval `false`  Instance is invalid
      * @retval `true`   Instance is valid
      */
-    operator bool() const;
+    operator bool() const noexcept;
 
     size_t hash() const noexcept;
 
@@ -129,18 +137,20 @@ public:
      * @retval    `false`     No connection. Connection was lost or `start()`
      *                        wasn't called.
      * @retval    `true`      Success
+     * @throw     LogicError  Remote peer is publisher's
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    bool notify(const PubPath notice) const;
-    bool notify(const PeerSrvrAddrs notice) const;
     bool notify(const ProdIndex notice) const;
-    bool notify(const DataSegId& notice) const;
+    bool notify(const DataSegId notice) const;
 
     bool rmtIsPubPath() const noexcept;
 };
 
-/// A publisher's peer. Such peers are *always* constructed by a peer-server.
+/**
+ * A publisher's peer. Such peers are *always* server-side constructed by a
+ * peer-server.
+ */
 class PubPeer final : public Peer
 {
     class     Impl;
@@ -154,18 +164,24 @@ public:
      * @param[in] requestSock  Socket for requests
      * @param[in] dataSock     Socket for data
      */
-    PubPeer(P2pNode& node, TcpSock socks[3]);
+    PubPeer(P2pMgr& node, TcpSock socks[3]);
 
     /**
      * Default constructs. The resulting instance will test false.
      */
     PubPeer() =default;
+
+    bool notify(const Tracker notice) const;
 };
 
-/// A subscriber's peer
+/**
+ * A subscriber's peer. Such peers can be server-side constructed by a
+ * peer-server or client-side constructed by initiating a connection to a
+ * peer-server.
+ */
 class SubPeer final : public Peer
 {
-    friend class PeerSrvr<SubP2pNode, SubPeer>;
+    friend class PeerSrvr<SubP2pMgr, SubPeer>;
 
     class     Impl;
 
@@ -176,7 +192,7 @@ class SubPeer final : public Peer
      * @param[in] socks        Sockets in order: notice, request, data
      * @param[in] dataSock     Socket for data
      */
-    SubPeer(SubP2pNode& node, TcpSock socks[3]);
+    SubPeer(SubP2pMgr& node, TcpSock socks[3]);
 
 public:
     /**
@@ -185,24 +201,27 @@ public:
     SubPeer() =default;
 
     /**
-     * Client-side construction.
+     * Client-side construction. The resulting peer is fully connected and ready
+     * for `start()` to be called.
      *
-     * @param[in] node         P2P node to connect to
-     * @param[in] srvrAddr     Address of server to which to connect
-     * @param[in] isPublisher  Remote peer-server is publisher's
+     * @param[in] p2pMgr        Subscriber's P2P manager
+     * @param[in] srvrAddr      Address of remote peer-server
+     * @throw     LogicError    Destination port number is zero
+     * @throw     SystemError   Couldn't connect. Bad failure.
+     * @throw     RuntimeError  Couldn't connect. Might be temporary.
+     * @see       `start()`
      */
-    SubPeer(SubP2pNode&      node,
-            const SockAddr&  srvrAddr,
-            const bool       isPublisher);
+    SubPeer(SubP2pMgr&      p2pMgr,
+            const SockAddr& srvrAddr);
 };
 
 /**
  * Peer server. Listens for incoming connections from remote peer clients.
  *
- * @tparam NODE  Type of P2P node (`P2pNode` or `SubP2pNode`)
+ * @tparam MGR   Type of P2P manager (`P2pNode` or `SubP2pNode`)
  * @tparam PEER  Type of peer (`PubPeer` or `SubPeer`)
  */
-template<class NODE, class PEER>
+template<class MGR, class PEER>
 class PeerSrvr
 {
     class Impl;
@@ -215,12 +234,13 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] node       P2P node
-     * @param[in] srvrAddr   Address of interface for peer server. Must not
-     *                       specify any interface.
-     * @param[in] maxAccept  Maximum number of outstanding peer connections
+     * @param[in] mgr          P2P manager
+     * @param[in] srvrAddr     Address of interface for peer server. Must not
+     *                         be the wildcard (i.e., specify any interface).
+     * @param[in] maxAccept    Maximum number of outstanding peer connections
+     * @throw InvalidArgument  Peer-server's address is the wildcard
      */
-    PeerSrvr(NODE&          node,
+    PeerSrvr(MGR&           mgr,
              const SockAddr srvrAddr,
              const unsigned maxAccept = 8);
 
@@ -239,8 +259,8 @@ public:
     PEER accept();
 };
 
-using PubPeerSrvr = PeerSrvr<P2pNode, PubPeer>;
-using SubPeerSrvr = PeerSrvr<SubP2pNode, SubPeer>;
+using PubPeerSrvr = PeerSrvr<P2pMgr, PubPeer>;
+using SubPeerSrvr = PeerSrvr<SubP2pMgr, SubPeer>;
 
 } // namespace
 

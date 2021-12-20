@@ -23,6 +23,7 @@
 
 #include "error.h"
 #include "InetAddr.h"
+#include "Shield.h"
 #include "Socket.h"
 
 #include <atomic>
@@ -43,6 +44,31 @@ namespace hycast {
 
 class Socket::Impl
 {
+    Impl()
+        : mutex()
+        , rmtSockAddr()
+        , sd{-1}
+        , shutdownCalled{false}
+        , bytesWritten{0}
+        , bytesRead{0}
+    {}
+
+    /**
+     * @param[in] sd  Socket descriptor
+     */
+    void init(const int sd)
+    {
+        LOG_DEBUG("Initializing socket descriptor %d", sd);
+        this->sd = sd;
+
+        struct sockaddr_storage storage = {};
+        socklen_t               socklen = sizeof(storage);
+
+        if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
+                &socklen) == 0)
+            rmtSockAddr = SockAddr(storage);
+    }
+
 protected:
     using Mutex   = std::mutex;
     using Guard   = std::lock_guard<Mutex>;
@@ -56,24 +82,33 @@ protected:
     static const uint64_t writePad;       ///< Write alignment buffer
     static uint64_t       readPad;        ///< Read alignment buffer
 
-    explicit Impl(const int sd) noexcept
-        : mutex()
-        , rmtSockAddr()
-        , sd{sd}
-        , shutdownCalled{false}
-        , bytesWritten{0}
-        , bytesRead{0}
+    /**
+     * Constructs a server-side socket. Accepts responsibility for closing the
+     * socket descriptor on destruction.
+     *
+     * @param[in] sd  Socket descriptor
+     */
+    Impl(const int sd)
+        : Impl()
     {
-        if (sd < 0)
-            throw INVALID_ARGUMENT("Socket descriptor is " +
-                    std::to_string(sd));
+        Shield shield{};
+        init(sd);
+    }
 
-        struct sockaddr_storage storage = {};
-        socklen_t               socklen = sizeof(storage);
-
-        if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                &socklen) == 0)
-            rmtSockAddr = SockAddr(storage);
+    /**
+     * Constructs a client-side socket.
+     *
+     * @param[in] sockAddr  Socket address
+     * @param[in] type      Type of socket (e.g., SOCK_STREAM)
+     * @param[in] protocol  Socket protocol (e.g., IPPROTO_TCP)
+     */
+    Impl(   const SockAddr& sockAddr,
+            const int       type,
+            const int       protocol) noexcept
+        : Impl()
+    {
+        Shield shield{};
+        init(sockAddr.socket(type, protocol));
     }
 
     static inline bool hton(const bool value)
@@ -202,6 +237,7 @@ protected:
 
 public:
     virtual ~Impl() noexcept {
+        LOG_DEBUG("Closing socket descriptor %d", sd);
         ::close(sd);
     }
 
@@ -522,15 +558,19 @@ protected:
 
     Impl();
 
+    explicit Impl(const int sd)
+        : Socket::Impl(sd)
+    {}
+
     /**
      * Constructs.
      *
-     * @param[in] sd       Socket descriptor
-     * @exceptionsafety    Strong guarantee
+     * @param[in] sockAddr  Socket address
+     * @exceptionsafety     Strong guarantee
      * @cancellationpoint
      */
-    Impl(const int sd)
-        : Socket::Impl{sd}
+    Impl(   const SockAddr& sockAddr)
+        : Socket::Impl{sockAddr, SOCK_STREAM, IPPROTO_TCP}
     {}
 
     /**
@@ -563,9 +603,9 @@ protected:
                 return false;
             if (pollfd.revents & (POLLOUT | POLLERR)) {
                 // Cancellation point
-                LOG_DEBUG("sd=%d, bytes=%p, nbytes=%zu", sd, bytes, nbytes);
+                //LOG_DEBUG("sd=%d, bytes=%p, nbytes=%zu", sd, bytes, nbytes);
                 auto nwritten = ::write(sd, bytes, nbytes);
-                LOG_DEBUG("nwritten=%zd", nwritten);
+                //LOG_DEBUG("nwritten=%zd", nwritten);
 
                 if (nwritten == -1) {
                     if (errno == ECONNRESET || errno == EPIPE) {
@@ -616,7 +656,7 @@ protected:
             /*
              * poll(2) is used to learn if this end has closed the socket.
              */
-            LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
+            //LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure on socket " + to_string());
             if (pollfd.revents & POLLHUP)
@@ -694,6 +734,7 @@ public:
      *
      * @param[in] sockAddr           Server's local socket address
      * @param[in] queueSize          Size of listening queue
+     * @throws    std::system_error  `::socket()` failure
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
@@ -701,11 +742,10 @@ public:
      */
     Impl(   const SockAddr& sockAddr,
             const int       queueSize)
-        : TcpSock::Impl{sockAddr.socket(SOCK_STREAM)}
+        : TcpSock::Impl{sockAddr}
     {
-        const int enable = 1;
-
         //LOG_DEBUG("Setting SO_REUSEADDR");
+        const int enable = 1;
         if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
             throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " +
                     to_string());
@@ -739,6 +779,7 @@ public:
     TcpSock::Impl* accept()
     {
         const int fd = ::accept(sd, nullptr, nullptr);
+        Shield    shield{};
 
         if (fd == -1) {
             {
@@ -772,14 +813,16 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] sockAddr    Address of remote endpoint
-     * @throw     SystemError Couldn't connect to `sockAddr`
-     * @throw     LogicError  Destination port number is zero
-     * @exceptionsafety       Strong guarantee
-     * @cancellationpoint     Yes
+     * @param[in] sockAddr      Address of remote endpoint
+     * @throw     LogicError    Destination port number is zero
+     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
+     * @throw     RuntimeError  Couldn't connect to `sockAddr`. Might be
+     *                          temporary.
+     * @exceptionsafety         Strong guarantee
+     * @cancellationpoint       Yes
      */
     Impl(const SockAddr& sockAddr)
-        : TcpSock::Impl(sockAddr.socket(SOCK_STREAM, IPPROTO_TCP))
+        : TcpSock::Impl(sockAddr)
     {
         if (sockAddr.getPort() == 0)
             throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is "
@@ -861,25 +904,16 @@ protected:
         return true;
     }
 
-    /**
-     * Constructs.
-     *
-     * @cancellationpoint
-     */
-    explicit Impl(const int sd)
-        : Socket::Impl(sd)
-        , buf()
-        , bufLen(0)
-    {}
-
 public:
     /**
      * Constructs a sending UDP socket.
      *
      * @cancellationpoint
      */
-    Impl(const SockAddr& grpAddr)
-        : Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
+    explicit Impl(const SockAddr& grpAddr)
+        : Socket::Impl(grpAddr, SOCK_DGRAM, IPPROTO_UDP)
+        , buf()
+        , bufLen(0)
     {
         unsigned char  ttl = 250; // Source-specific multicast => large value OK
 
@@ -906,7 +940,7 @@ public:
      */
     Impl(   const SockAddr& grpAddr,
             const InetAddr& rmtAddr)
-        : Impl(grpAddr.socket(SOCK_DGRAM, IPPROTO_UDP))
+        : Impl(grpAddr)
     {
         pollfd.fd = sd;
         pollfd.events = POLLIN;

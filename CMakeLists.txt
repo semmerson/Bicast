@@ -22,12 +22,10 @@ PROJECT(Hycast VERSION 1.0
 # Specify the C standard
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Debug)
 
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Debug)
 
 # Specify the Eclipse IDE version
 set(CMAKE_ECLIPSE_VERSION 4.17)
@@ -40,6 +38,7 @@ endif()
 # Configure a configuration header file
 configure_file(config-cmake.h config.h)
 include_directories(${CMAKE_BINARY_DIR}) # necessary
+include_directories(AFTER SYSTEM /usr/include/c++/4.8.5) # necessary
 
 # Add the main subdirectory
 add_subdirectory(main)

@@ -48,6 +48,9 @@ using String = std::string;
 
 constexpr uint8_t PROTOCOL_VERSION = 1;
 
+class P2pMgr;
+class SubP2pMgr;
+
 /******************************************************************************/
 // PDU payloads
 
@@ -228,12 +231,10 @@ public:
     }
 
     bool write(Xprt& xprt) const override {
-        LOG_NOTE("Writing product-index to %s", xprt.to_string().data());
         return xprt.write(index);
     }
 
     bool read(Xprt& xprt) override {
-        LOG_NOTE("Reading product-index from %s", xprt.to_string().data());
         return xprt.read(index);
     }
 };
@@ -271,21 +272,16 @@ struct DataSegId : public XprtAble
     }
 
     bool write(Xprt& xprt) const override {
-        LOG_NOTE("Writing data-segment identifier to %s", xprt.to_string().data());
         auto success = prodIndex.write(xprt);
         if (success) {
-            LOG_NOTE("Writing offset to %s", xprt.to_string().data());
             success = xprt.write(offset);
         }
         return success;
     }
 
     bool read(Xprt& xprt) override {
-        LOG_NOTE("Reading data-segment identifier from %s",
-                xprt.to_string().data());
         auto success = prodIndex.read(xprt);
         if (success)  {
-            LOG_NOTE("Reading offset from %s", xprt.to_string().data());
             success = xprt.read(offset);
         }
         return success;
@@ -380,7 +376,7 @@ public:
 
     operator bool() const;
 
-    const DataSegId getId() const noexcept;
+    const DataSegId& getId() const noexcept;
 
     ProdSize getProdSize() const noexcept;
 
@@ -393,6 +389,8 @@ public:
     inline ProdSize getOffset() const {
         return getId().offset;
     }
+
+    bool operator==(const DataSeg& rhs) const;
 
     String to_string(bool withName = false) const;
 
@@ -435,7 +433,7 @@ public:
  * such entities can be handled as a single object for the purpose of argument
  * passing and container element.
  */
-struct NoteReq
+struct DatumId
 {
 public:
     enum class Id {
@@ -448,31 +446,32 @@ public:
         DataSegId dataSegId;
     };
 
-    NoteReq() noexcept
+    DatumId() noexcept
         : prodIndex()
         , id(Id::UNSET)
     {}
 
-    explicit NoteReq(const ProdIndex prodIndex) noexcept
+    explicit DatumId(const ProdIndex prodIndex) noexcept
         : id(Id::PROD_INDEX)
         , prodIndex(prodIndex)
     {}
 
-    explicit NoteReq(const DataSegId dataSegId) noexcept
+    explicit DatumId(const DataSegId dataSegId) noexcept
         : id(Id::DATA_SEG_ID)
         , dataSegId(dataSegId)
     {}
 
-    NoteReq(const NoteReq& noteReq) noexcept {
-        ::memcpy(this, &noteReq, sizeof(NoteReq));
+    DatumId(const DatumId& datumId) noexcept {
+        ::memcpy(this, &datumId, sizeof(DatumId));
     }
 
-    ~NoteReq() noexcept {
+    ~DatumId() noexcept {
     }
 
-    NoteReq& operator=(const NoteReq& noteReq) =default;
-
-    NoteReq& operator=(NoteReq&& noteReq) =default;
+    DatumId& operator=(const DatumId& rhs) noexcept {
+        ::memcpy(this, &rhs, sizeof(DatumId));
+        return *this;
+    }
 
     operator bool() const {
         return id != Id::UNSET;
@@ -480,10 +479,10 @@ public:
 
     String to_string() const;
 
-    // `std::hash<NoteReq>()` is also defined
+    // `std::hash<DatumId>()` is also defined
     size_t hash() const noexcept;
 
-    bool operator==(const NoteReq& rhs) const noexcept;
+    bool operator==(const DatumId& rhs) const noexcept;
 };
 
 /******************************************************************************/
@@ -505,8 +504,6 @@ class NoticeRcvr
 {
 public:
     virtual ~NoticeRcvr() {}
-    virtual void recvNotice(const PubPath   notice,
-                            Peer            peer) =0;
     virtual bool recvNotice(const ProdIndex notice,
                             Peer            peer) =0;
     virtual bool recvNotice(const DataSegId notice,
@@ -520,8 +517,8 @@ public:
     virtual ~RequestRcvr() {}
     virtual ProdInfo recvRequest(const ProdIndex request,
                                  Peer            peer) =0;
-    virtual DataSeg recvRequest(const DataSegId  request,
-                                Peer             peer) =0;
+    virtual DataSeg recvRequest(const DataSegId request,
+                                Peer            peer) =0;
 };
 
 /// Data receiver/server
@@ -537,8 +534,8 @@ public:
 
 /**
  * Interface for a Hycast node. Implementations manage incoming P2P requests for
- * data and outgoing P2P transmissions. This interface is implemented by a
- * publishing node.
+ * data and outgoing P2P transmissions. This interface is implemented by both a
+ * publishing node and a subscribing node.
  */
 class Node
 {
@@ -552,7 +549,9 @@ public:
      * @return                 Product information. Will test false if it
      *                         doesn't exist.
      */
-    ProdInfo recvRequest(const ProdIndex request);
+    virtual ProdInfo recvRequest(
+            const ProdIndex request,
+            P2pMgr&         p2pMgr) =0;
 
     /**
      * Receives a request for a data-segment.
@@ -561,7 +560,9 @@ public:
      * @return                 Product information. Will test false if it
      *                         doesn't exist.
      */
-    DataSeg recvRequest(const DataSegId request);
+    virtual DataSeg recvRequest(
+            const DataSegId request,
+            P2pMgr&         p2pMgr) =0;
 };
 
 /**
@@ -572,24 +573,53 @@ class SubNode : public Node
 {
 public:
     virtual ~SubNode() noexcept =default;
+
+    /**
+     * Receives notice about the availability of a product from the P2P network.
+     *
+     * @param[in] index    Index of available product
+     * @retval    `true`   Product information should be requested
+     * @retval    `false`  Product information should not be requested
+     */
+    virtual bool recvNotice(
+            const ProdIndex index,
+            SubP2pMgr&      p2pMgr) =0;
+
+    /**
+     * Receives notice about the availability of a data-segment from the P2P
+     * network.
+     *
+     * @param[in] segId    Identifier of available data-segment
+     * @retval    `true`   Data-segment information should be requested
+     * @retval    `false`  Data-segment information should not be requested
+     */
+    virtual bool recvNotice(
+            const DataSegId segId,
+            SubP2pMgr&      p2pMgr) =0;
+
+    virtual void recvData(
+            const ProdInfo prodInfo,
+            SubP2pMgr&      p2pMgr) =0;
+
+    virtual void recvData(
+            const DataSeg dataSeg,
+            SubP2pMgr&      p2pMgr) =0;
 };
 
 } // namespace
 
 namespace std {
     template<>
-    class hash<hycast::ProdIndex> {
-    public:
+    struct hash<hycast::ProdIndex> {
         size_t operator()(const hycast::ProdIndex& prodIndex) const noexcept {
             return prodIndex.hash();
         }
     };
 
     template<>
-    class hash<hycast::NoteReq> {
-    public:
-        size_t operator()(const hycast::NoteReq& noteReq) const noexcept {
-            return noteReq.hash();
+    struct hash<hycast::DatumId> {
+        size_t operator()(const hycast::DatumId& datumId) const noexcept {
+            return datumId.hash();
         }
     };
 }

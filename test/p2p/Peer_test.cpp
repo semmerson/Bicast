@@ -15,7 +15,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public SubP2pNode
+class PeerTest : public ::testing::Test, public SubP2pMgr
 {
 protected:
     typedef enum {
@@ -116,16 +116,23 @@ public:
             cond.wait(lock);
     }
 
-    // Publisher-side
-    bool isPathToPub() const override {
-        LOG_TRACE;
+    // Both sides
+    void waitForSrvrPeer() override {}
+
+    SockAddr getPeerSrvrAddr() const override {
+        return SockAddr();
+    }
+
+    bool shouldNotify(
+            Peer      peer,
+            ProdIndex prodIndex) override {
         return true;
     }
 
-    // Both sides
-    void recvNotice(const PubPath notice, Peer peer) override
-    {
-        LOG_TRACE;
+    bool shouldNotify(
+            Peer      peer,
+            DataSegId segId) override {
+        return true;
     }
 
     // Subscriber-side
@@ -175,7 +182,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const PeerSrvrAddrs, Peer peer) override
+    void recvData(const Tracker tracker, Peer peer) override
     {
         LOG_TRACE;
         orState(PEER_SRVR_ADDRS_RCVD);
@@ -213,7 +220,7 @@ public:
     void notify(const ProdIndex prodInfo) {
     }
 
-    void notify(const DataSegId& dataSegId) {
+    void notify(const DataSegId dataSegId) {
     }
 
     void lostConnection(Peer peer) override {
@@ -266,7 +273,7 @@ TEST_F(PeerTest, PrematureStop)
     try {
         waitForState(LISTENING);
 
-        SubPeer subPeer(*this, pubAddr, true);
+        SubPeer subPeer(*this, pubAddr);
         ASSERT_TRUE(subPeer);
         ASSERT_TRUE(subPeer.start());
 
@@ -322,7 +329,7 @@ TEST_F(PeerTest, DataExchange)
         waitForState(LISTENING);
 
         // Create and execute reception by subscribing-peer on separate thread
-        SubPeer subPeer(*this, pubAddr, true);
+        SubPeer subPeer(*this, pubAddr);
         ASSERT_TRUE(subPeer);
         /*
          * If this program is executed in a "while" loop, then the following
@@ -376,7 +383,7 @@ TEST_F(PeerTest, BrokenConnection)
 
         {
             // Create and execute reception by subscribing peer on separate thread
-            SubPeer subPeer{*this, pubAddr, true};
+            SubPeer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeer);
             LOG_DEBUG("Starting subscribing peer");
             /*
@@ -427,7 +434,7 @@ TEST_F(PeerTest, UnsatisfiedRequests)
 
         {
             // Create and execute reception by subscribing peer on separate thread
-            SubPeer subPeer{*this, pubAddr, true};
+            SubPeer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeer);
             LOG_DEBUG("Starting subscribing peer");
             ASSERT_TRUE(subPeer.start());

@@ -69,6 +69,8 @@ public:
 
     SockAddr getRmtAddr() const;
 
+    SockAddr getLclAddr() const;
+
     std::string to_string() const;
 
     /**
@@ -98,7 +100,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool send(const PduId pduId, const XprtAble& obj);
+    bool send(const PduId pduId, const WriteAble& obj);
 
     /**
      * Receives and processes the next, incoming PDU. Calls the dispatch

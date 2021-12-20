@@ -41,8 +41,8 @@ namespace hycast {
 class PeerSet::Impl
 {
     /**
-     * A thread-safe class responsible for sending notifications in a
-     * notice-queue to a single peer.
+     * A thread-safe class that sends notifications in a notice-queue to a
+     * single peer.
      */
     class PeerEntry {
         mutable Mutex    mutex;
@@ -52,22 +52,14 @@ class PeerSet::Impl
         ArrayIndex       readIndex;
         Thread           thread;
 
-        void run(const bool pubPath) {
-            LOG_TRACE;
+        void runNotifier() {
             try {
-                /*
-                 * Starting the peer here, on a separate thread, means that it
-                 * won't block other peers if it was client-side constructed and
-                 * has yet to connect to the remote peer.
-                 */
-                peer.start(); // Starts reading messages from the remote peer
-                peer.notify(PubPath(pubPath));
-
-                for(;;) {
+                for (;;) {
                     /*
                      * Because the following blocks indefinitely, the current
                      * thread must be cancelled in order to stop it and this
                      * must be done before this instance is destroyed.
+                     *
                      */
                     if (!noticeArray.send(readIndex, peer))
                         break; // Connection lost
@@ -87,14 +79,13 @@ class PeerSet::Impl
 
     public:
         PeerEntry(Peer        peer,
-                  NoticeArray noticeArray,
-                  const bool  pubPath)
+                  NoticeArray noticeArray)
             : mutex()
             , threadEx()
             , peer(peer)
             , noticeArray(noticeArray)
             , readIndex(noticeArray.getOldestIndex())
-            , thread(&PeerEntry::run, this, pubPath)
+            , thread(&PeerEntry::runNotifier, this)
         {}
 
         PeerEntry(const PeerEntry& peerEntry) =delete;
@@ -103,12 +94,14 @@ class PeerSet::Impl
         PeerEntry(PeerEntry&& peerEntry) =default;
 
         ~PeerEntry() {
-            /*
-             * Canceling the thread should be safe because it's only sending
-             * notifications to the remote peer.
-             */
-            ::pthread_cancel(thread.native_handle());
-            thread.join();
+            if (thread.joinable()) {
+                /*
+                 * Canceling the thread should be safe because it's only sending
+                 * notifications to the remote peer.
+                 */
+                ::pthread_cancel(thread.native_handle());
+                thread.join();
+            }
 
             peer.stop();
         }
@@ -123,12 +116,13 @@ class PeerSet::Impl
     using PeerEntries = std::map<Peer, PeerEntry>;
 
     mutable Mutex mutex;
+    mutable Cond  cond;
     // Placed before peer entries to ensure existence for `PeerEntry.run()`
     NoticeArray   noticeArray;
     PeerEntries   peerEntries;
 
     /**
-     * Purges notice-queue of notices that will not be read.
+     * Purges notice-queue of notices that have been read by all peers.
      */
     void purge() {
         const auto writeIndex = noticeArray.getWriteIndex();
@@ -147,46 +141,44 @@ class PeerSet::Impl
         }
 
         if (oldestIndex < writeIndex)
-            // Purge notice-queue of entries that will not be read
+            // Purge notice-queue of entries that have been read by all peers
             noticeArray.eraseTo(oldestIndex);
     }
 
 public:
-    Impl(P2pNode& node)
+    Impl(P2pMgr& p2pMgr)
         : mutex()
-        , noticeArray(node)
+        , noticeArray(p2pMgr)
         , peerEntries()
     {}
 
     /**
-     * Adds a peer to this instance and starts it iff the peer is not already in
-     * the set.
+     * Adds a started peer.
      *
      * @param[in] peer           Peer to be added
-     * @param[in] pubPath        Is local peer path to publisher?
-     * @retval    `false`        Peer was not added because it already exists
-     * @retval    `true`         Peer was added
+     * @throw LogicError         Peer was previously added
+     * @throw LogicError         Remote peer belongs to the publisher
      * @throw std::system_error  Couldn't create new thread
      */
-    bool insert(Peer peer, const bool pubPath) {
+    void insert(Peer peer) {
         Guard guard(mutex);
-        bool  added;
 
-        if (peerEntries.count(peer)) {
-            added = false;
-        }
-        else {
-            // NB: The following requires that `peer.hash()` works now
-            const auto  pair = peerEntries.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(peer),
-                    std::forward_as_tuple(peer, noticeArray, pubPath));
+        if (peerEntries.count(peer))
+            throw LOGIC_ERROR("Peer " + peer.to_string() + " was previously "
+                    "added");
 
-            LOG_ASSERT(pair.second); // Because `peerEntries.count(peer) != 0`
+        // NB: The following requires that `peer.hash()` works now
+        const auto  pair = peerEntries.emplace(std::piecewise_construct,
+                std::forward_as_tuple(peer),
+                std::forward_as_tuple(peer, noticeArray));
+        LOG_ASSERT(pair.second); // Because `peerEntries.count(peer) != 0`
 
-            added = true;
-        }
+        cond.notify_all();
+    }
 
-        return added;
+    void waitForPeer() {
+        Lock lock{mutex};
+        cond.wait(lock, [&]{return !peerEntries.empty();});
     }
 
     size_t size() {
@@ -204,30 +196,39 @@ public:
         return peerEntries.size();
     }
 
-    void notify(const PubPath notice) {
-        purge();
-        noticeArray.putPubPath(notice);
+    bool notify(const ProdIndex notice) {
+        bool success = false;
+        if (!peerEntries.empty()) {
+            purge();
+            noticeArray.putProdIndex(notice);
+            success = true;
+        }
+        return success;
     }
 
-    void notify(const ProdIndex notice) {
-        purge();
-        noticeArray.putProdIndex(notice);
-    }
-
-    void notify(const DataSegId& notice) {
-        purge();
-        noticeArray.put(notice);
+    bool notify(const DataSegId notice) {
+        bool success = false;
+        if (!peerEntries.empty()) {
+            purge();
+            noticeArray.put(notice);
+            success = true;
+        }
+        return success;
     }
 };
 
 /******************************************************************************/
 
-PeerSet::PeerSet(P2pNode& node)
-    : pImpl{std::make_shared<Impl>(node)}
+PeerSet::PeerSet(P2pMgr& p2pMgr)
+    : pImpl{new Impl(p2pMgr)}
 {}
 
-bool PeerSet::insert(Peer peer, const bool pubPath) const {
-    return pImpl->insert(peer, pubPath);
+void PeerSet::insert(Peer peer) const {
+    pImpl->insert(peer);
+}
+
+void PeerSet::waitForPeer() const {
+    pImpl->waitForPeer();
 }
 
 bool PeerSet::erase(Peer peer) const {
@@ -238,16 +239,12 @@ PeerSet::size_type PeerSet::size() const {
     return pImpl->size();
 }
 
-void PeerSet::notify(const PubPath notice) const {
-    pImpl->notify(notice);
+bool PeerSet::notify(const ProdIndex notice) const {
+    return pImpl->notify(notice);
 }
 
-void PeerSet::notify(const ProdIndex notice) const {
-    pImpl->notify(notice);
-}
-
-void PeerSet::notify(const DataSegId& notice) const {
-    pImpl->notify(notice);
+bool PeerSet::notify(const DataSegId notice) const {
+    return pImpl->notify(notice);
 }
 
 } // namespace

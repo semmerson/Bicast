@@ -209,6 +209,10 @@ public:
     TcpClntSock() =default;
 
     /**
+     * @throw     LogicError    Destination port number is zero
+     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
+     * @throw     RuntimeError  Couldn't connect to `sockAddr`. Might be
+     *                          temporary.
      * @cancellationpoint
      */
     explicit TcpClntSock(const SockAddr& sockAddr);

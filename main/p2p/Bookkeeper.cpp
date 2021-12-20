@@ -56,7 +56,7 @@ protected:
 public:
     virtual ~Impl() noexcept =default;
 
-    virtual void add(const Peer peer) =0;
+    virtual bool add(const Peer peer) =0;
 
     virtual void reset() noexcept =0;
 
@@ -83,9 +83,9 @@ public:
         , numRequests()
     {}
 
-    void add(const Peer peer) override {
+    bool add(const Peer peer) override {
         Guard guard(mutex);
-        numRequests[peer] = 0;
+        return numRequests.insert({peer, 0}).second;
     }
 
     void requested(const Peer peer) {
@@ -127,8 +127,8 @@ PubBookkeeper::PubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
-void PubBookkeeper::add(const Peer peer) const {
-    static_cast<Impl*>(pImpl.get())->add(peer);
+bool PubBookkeeper::add(const Peer peer) const {
+    return static_cast<Impl*>(pImpl.get())->add(peer);
 }
 
 void PubBookkeeper::requested(const Peer peer) const {
@@ -150,24 +150,72 @@ bool PubBookkeeper::remove(const Peer peer) const {
  */
 class SubBookkeeper::Impl final : public Bookkeeper::Impl
 {
-    using Ratings    = std::unordered_map<Peer, uint_fast32_t>;
-    using PeerQueue  = std::queue<Peer, std::list<Peer>>;
-    using PeerQueues = std::unordered_map<NoteReq, PeerQueue>;
+    using Ratings   = std::unordered_map<Peer, uint_fast32_t>;
+    using PeerList  = std::list<Peer>;
+    using PeerLists = std::unordered_map<DatumId, PeerList>;
 
     /// Map of peer -> peer rating
     Ratings    ratings;
     /**
-     * Map of request -> alternative peers that could make the request in the
-     * order in which their notifications arrived.
+     * Map of datum ID to list of peers that have the datum in the order in
+     * which their notifications arrived.
      */
-    PeerQueues altPeers;
+    PeerLists havePeers;
 
     /**
-     * Indicates if a request should be made by a peer. if not, then the peer is
-     * added to the queue of alternative peers for the request.
+     * Vets a peer.
+     *
+     * @pre                   `mutex` is locked
+     * @param[in] peer        Peer to be vetted
+     * @throw     LogicError  Peer is unknown
+     */
+    inline void vetPeer(Peer peer) {
+        if (ratings.count(peer) == 0)
+            throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
+    }
+
+    /**
+     * Indicates if a given peer should be notified about an available datum.
      *
      * @param[in] peer        Peer
-     * @param[in] request     Request
+     * @param[in] datumId     ID of available datum
+     * @return    `true`      Notice should be sent
+     * @return    `false`     Notice shouldn't be sent
+     * @throws    LogicError  Peer is unknown
+     * @threadsafety          Safe
+     * @cancellationpoint     No
+     */
+    bool shouldNotify(
+            Peer           peer,
+            const DatumId& datumId)
+    {
+        Guard guard(mutex);
+
+        vetPeer(peer);
+
+        bool should = true;
+        if (havePeers.count(datumId) != 0) {
+            // At least one remote peer has the datum
+            auto& list = havePeers[datumId];
+            for (auto iter = list.begin(), end = list.end(); iter != end;
+                    ++iter) {
+                if (*iter == peer) {
+                    // Remote peer has the datum => don't notify
+                    should = false;
+                    break;
+                }
+            }
+        }
+
+        return should;
+    }
+
+    /**
+     * Indicates if a request should be made by a peer. The peer is
+     * added to the list of peers that have the datum.
+     *
+     * @param[in] peer        Peer
+     * @param[in] datumId     Request identifier
      * @return    `true`      Request should be made
      * @return    `false`     Request shouldn't be made
      * @throws    LogicError  Peer is unknown
@@ -176,50 +224,49 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
      */
     bool shouldRequest(
             Peer           peer,
-            const NoteReq& request)
+            const DatumId& datumId)
     {
         Guard guard(mutex);
+        vetPeer(peer);
 
-        if (ratings.count(peer) == 0)
-            throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
-
-        const bool should = altPeers.count(request) == 0;
-
-        if (should) {
-            altPeers[request] = PeerQueue{}; // NB: `peer` not in empty queue
-        }
-        else {
-            altPeers[request].push(peer); // Add alternative peer. Might throw.
-        }
-
-        return should;
+        //LOG_DEBUG("Peer %s has datum %s", peer.to_string().data(),
+                //datumId.to_string().data());
+        auto& peerList = havePeers[datumId];
+        peerList.push_back(peer); // Add peer. Might throw.
+        return peerList.size() == 1;
     }
 
     /**
      * Process a satisfied request. The rating of the associated peer is
-     * increased and the set of alternative peers that could make the request is
-     * cleared.
+     * increased.
      *
      * @param[in] peer        Peer
-     * @param[in] request     Request
+     * @param[in] datumId     Request identifier
+     * @retval    `true`      Success
+     * @retval    `false`     Request is unknown
      * @throws    LogicError  Peer is unknown
-     * @throws    LogicError  Request is unknown
      * @threadsafety          Safe
-     * @exceptionsafety       Basic guarantee
+     * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
-    void received(Peer           peer,
-                  const NoteReq& request)
+    bool received(Peer           peer,
+                  const DatumId& datumId)
     {
+        bool   success = false;
         Guard  guard(mutex);
 
-        if (ratings.count(peer) == 0)
-            throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
-        if (altPeers.count(request) == 0)
-            throw LOGIC_ERROR("Request " + request.to_string() + " is unknown");
+        vetPeer(peer);
 
-        ++ratings.at(peer);
-        altPeers.erase(request); // No longer relevant
+        if (havePeers.count(datumId)) {
+            //LOG_DEBUG("Datum %s has a peer-list", datumId.to_string().data());
+            if (havePeers[datumId].front() == peer) {
+                //LOG_DEBUG("First peer in list is %s", peer.to_string().data());
+                ++ratings.at(peer);
+                success = true;
+            }
+        }
+
+        return success;
     }
 
 public:
@@ -233,66 +280,58 @@ public:
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
         , ratings(maxPeers)
-        , altPeers(8)
+        , havePeers()
     {}
 
     /**
      * Adds a peer.
      *
      * @param[in] peer            Peer
+     * @retval `true`             Success
+     * @retval `false`            Not added because already exists
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    void add(Peer peer) override
+    bool add(Peer peer) override
     {
         Guard guard(mutex);
-        ratings.insert({peer, 0});
+        return ratings.insert({peer, 0}).second;
+    }
+
+    bool shouldNotify(Peer peer, const ProdIndex prodIndex) {
+        return shouldNotify(peer, DatumId(prodIndex));
+    }
+
+    bool shouldNotify(Peer peer, const DataSegId dataSegId) {
+        return shouldNotify(peer, DatumId(dataSegId));
     }
 
     bool shouldRequest(Peer peer, const ProdIndex prodIndex) {
-        return shouldRequest(peer, NoteReq(prodIndex));
+        return shouldRequest(peer, DatumId(prodIndex));
     }
 
-    bool shouldRequest(Peer peer, const DataSegId& dataSegId) {
-        return shouldRequest(peer, NoteReq(dataSegId));
+    bool shouldRequest(Peer peer, const DataSegId dataSegId) {
+        return shouldRequest(peer, DatumId(dataSegId));
     }
 
-    void received(Peer            peer,
+    bool received(Peer            peer,
                   const ProdIndex prodIndex) {
-        received(peer, NoteReq{prodIndex});
+        return received(peer, DatumId{prodIndex});
     }
 
-    void received(Peer             peer,
-                  const DataSegId& dataSegId) {
-        received(peer, NoteReq{dataSegId});
+    bool received(Peer            peer,
+                  const DataSegId dataSegId) {
+        return received(peer, DatumId{dataSegId});
     }
 
-    /**
-     * Returns the number of remote peers that are a path to the publisher and
-     * the number that aren't.
-     *
-     * @param[out] numPath    Number of remote peers that are path to publisher
-     * @param[out] numNoPath  Number of remote peers that aren't path to
-     *                        publisher
-     */
-    void getPubPathCounts(
-            unsigned& numPath,
-            unsigned& numNoPath) const
-    {
-        Guard guard(mutex);
+    void erase(const ProdIndex prodIndex) {
+        havePeers.erase(DatumId(prodIndex)); // No longer relevant
+    }
 
-        numPath = numNoPath = 0;
-
-        for (auto& pair : ratings) {
-            if (pair.first.rmtIsPubPath()) {
-                ++numPath;
-            }
-            else {
-                ++numNoPath;
-            }
-        }
+    void erase(const DataSegId dataSegId) {
+        havePeers.erase(DatumId(dataSegId)); // No longer relevant
     }
 
     /**
@@ -360,14 +399,20 @@ SubBookkeeper::SubBookkeeper(const int maxPeers)
     : Bookkeeper(new Impl(maxPeers)) {
 }
 
-void SubBookkeeper::add(const Peer peer) const {
-    static_cast<Impl*>(pImpl.get())->add(peer);
+bool SubBookkeeper::add(const Peer peer) const {
+    return static_cast<Impl*>(pImpl.get())->add(peer);
 }
 
-void SubBookkeeper::getPubPathCounts(
-        unsigned& numPath,
-        unsigned& numNoPath) const {
-    static_cast<Impl*>(pImpl.get())->getPubPathCounts(numPath, numNoPath);
+bool SubBookkeeper::shouldNotify(
+        Peer            peer,
+        const ProdIndex prodIndex) const {
+    return static_cast<Impl*>(pImpl.get())->shouldNotify(peer, prodIndex);
+}
+
+bool SubBookkeeper::shouldNotify(
+        Peer            peer,
+        const DataSegId dataSegId) const {
+    return static_cast<Impl*>(pImpl.get())->shouldNotify(peer, dataSegId);
 }
 
 bool SubBookkeeper::shouldRequest(
@@ -377,21 +422,29 @@ bool SubBookkeeper::shouldRequest(
 }
 
 bool SubBookkeeper::shouldRequest(
-        Peer             peer,
-        const DataSegId& dataSegId) const {
+        Peer            peer,
+        const DataSegId dataSegId) const {
     return static_cast<Impl*>(pImpl.get())->shouldRequest(peer, dataSegId);
 }
 
-void SubBookkeeper::received(
+bool SubBookkeeper::received(
         Peer            peer,
         const ProdIndex prodIndex) const {
-    static_cast<Impl*>(pImpl.get())->received(peer, prodIndex);
+    return static_cast<Impl*>(pImpl.get())->received(peer, prodIndex);
 }
 
-void SubBookkeeper::received(
-        Peer             peer,
-        const DataSegId& dataSegId) const {
-    static_cast<Impl*>(pImpl.get())->received(peer, dataSegId);
+bool SubBookkeeper::received(
+        Peer            peer,
+        const DataSegId dataSegId) const {
+    return static_cast<Impl*>(pImpl.get())->received(peer, dataSegId);
+}
+
+void SubBookkeeper::erase(const ProdIndex prodIndex) const {
+    static_cast<Impl*>(pImpl.get())->erase(prodIndex);
+}
+
+void SubBookkeeper::erase(const DataSegId dataSegId) const {
+    static_cast<Impl*>(pImpl.get())->erase(dataSegId);
 }
 
 Peer SubBookkeeper::getWorstPeer(const bool isClient) const {

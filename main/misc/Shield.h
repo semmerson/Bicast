@@ -40,7 +40,7 @@ public:
      * Sets thread cancellation state.
      */
     Shield()
-        : previous(0)
+        : previous()
     {
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous);
     }
@@ -52,8 +52,7 @@ public:
      */
     ~Shield()
     {
-        ::pthread_setcancelstate(previous ? PTHREAD_CANCEL_ENABLE :
-                PTHREAD_CANCEL_DISABLE, &previous);
+        ::pthread_setcancelstate(previous, &previous);
     }
 
     Shield& operator=(const Shield& rhs) =delete;

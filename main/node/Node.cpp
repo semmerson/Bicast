@@ -23,7 +23,6 @@
 #include "config.h"
 
 #include "Node.h"
-
 #include "error.h"
 
 #include <semaphore.h>
@@ -42,7 +41,7 @@ namespace hycast {
      */
     void acceptSubs() {
         try {
-            PeerSrvrAddrs peerSrvrAddrs;
+            Tracker peerSrvrAddrs;
 
             for (;;) {
                 // Keep consonant with `SubP2pNodeImpl::SubP2pNodeImpl()`

@@ -21,7 +21,7 @@
  */
 #include "config.h"
 
-#include <Watcher.h>
+#include "Watcher.h"
 
 #include "error.h"
 #include "FileUtil.h"
@@ -91,7 +91,7 @@ public:
 
         watcher->getEvent(watchEvent);
         ASSERT_EQ(*pathname, watchEvent.pathname);
-        LOG_NOTE("Event: \"%s\"", pathname->data());
+        LOG_DEBUG("Event: \"%s\"", pathname->data());
     }
 };
 

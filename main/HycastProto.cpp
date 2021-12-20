@@ -32,13 +32,12 @@ namespace hycast {
 
 const PduId PduId::UNSET(0);
 const PduId PduId::PEER_SRVR_ADDRS(1);
-const PduId PduId::PUB_PATH_NOTICE(2);
-const PduId PduId::PROD_INFO_NOTICE(3);
-const PduId PduId::DATA_SEG_NOTICE(4);
-const PduId PduId::PROD_INFO_REQUEST(5);
-const PduId PduId::DATA_SEG_REQUEST(6);
-const PduId PduId::PROD_INFO(7);
-const PduId PduId::DATA_SEG(8);
+const PduId PduId::PROD_INFO_NOTICE(2);
+const PduId PduId::DATA_SEG_NOTICE(3);
+const PduId PduId::PROD_INFO_REQUEST(4);
+const PduId PduId::DATA_SEG_REQUEST(5);
+const PduId PduId::PROD_INFO(6);
+const PduId PduId::DATA_SEG(7);
 
 PduId::PduId(Type value)
     : value(value)
@@ -68,7 +67,7 @@ std::string DataSegId::to_string(const bool withName) const
             ", offset=" + std::to_string(offset) + "}";
 }
 
-String NoteReq::to_string() const {
+String DatumId::to_string() const {
     return (id == Id::PROD_INDEX)
             ? prodIndex.to_string()
             : (id == Id::DATA_SEG_ID)
@@ -76,7 +75,7 @@ String NoteReq::to_string() const {
                 : "<unset>";
 }
 
-size_t NoteReq::hash() const noexcept {
+size_t DatumId::hash() const noexcept {
     return (id == Id::PROD_INDEX)
             ? prodIndex.hash()
             : (id == Id::DATA_SEG_ID)
@@ -84,7 +83,7 @@ size_t NoteReq::hash() const noexcept {
                 : 0;
 }
 
-bool NoteReq::operator==(const NoteReq& rhs) const noexcept {
+bool DatumId::operator==(const DatumId& rhs) const noexcept {
     if (id != rhs.id)    return false;
     if (id == Id::UNSET) return true;
     return (id == Id::PROD_INDEX)
@@ -149,13 +148,13 @@ public:
     }
 
     bool write(Xprt& xprt) const {
-        LOG_NOTE("Writing product information to %s", xprt.to_string().data());
+        //LOG_DEBUG("Writing product information to %s", xprt.to_string().data());
         auto success = index.write(xprt);
         if (success) {
-            LOG_NOTE("Writing product name to %s", xprt.to_string().data());
+            //LOG_DEBUG("Writing product name to %s", xprt.to_string().data());
             success = xprt.write(name);
             if (success) {
-                LOG_NOTE("Writing product size to %s", xprt.to_string().data());
+                //LOG_DEBUG("Writing product size to %s", xprt.to_string().data());
                 success = xprt.write(size);
             }
         }
@@ -163,13 +162,13 @@ public:
     }
 
     bool read(Xprt& xprt) {
-        LOG_NOTE("Reading product information from %s", xprt.to_string().data());
+        //LOG_DEBUG("Reading product information from %s", xprt.to_string().data());
         auto success = index.read(xprt);
         if (success) {
-            LOG_NOTE("Reading product name from %s", xprt.to_string().data());
+            //LOG_DEBUG("Reading product name from %s", xprt.to_string().data());
             success = xprt.read(name);
             if (success) {
-                LOG_NOTE("Reading product size from %s", xprt.to_string().data());
+                //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
                 success = xprt.read(size);
             }
         }

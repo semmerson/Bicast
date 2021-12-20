@@ -1,11 +1,12 @@
 #include "config.h"
 
 #include "Bookkeeper.h"
-#include "P2pNode.h"
 #include "logging.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
+#include <P2pMgr.h>
+
 #include <list>
 #include <mutex>
 #include <thread>
@@ -15,7 +16,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Bookkeeper`
-class BookkeeperTest : public ::testing::Test, public hycast::SubP2pNode
+class BookkeeperTest : public ::testing::Test, public hycast::SubP2pMgr
 {
     void runPubPeerSrvr() {
         std::list<Peer> peers;
@@ -39,8 +40,8 @@ protected:
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodIndex{1}
         , segId(prodIndex, hycast::DataSeg::CANON_DATASEG_SIZE) // Second data-segment
-        , peer1(*this, pubAddr, true)
-        , peer2(*this, pubAddr, true)
+        , peer1(*this, pubAddr)
+        , peer2(*this, pubAddr)
     {}
 
     ~BookkeeperTest() {
@@ -49,13 +50,24 @@ protected:
     }
 
 public:
-    // Publisher-side
-    bool isPathToPub() const override {}
-
     // Both sides
-    void recvNotice(const hycast::PubPath notice, hycast::Peer peer)
-            override
-    {}
+    void waitForSrvrPeer() override {}
+
+    SockAddr getPeerSrvrAddr() const override {
+        return SockAddr();
+    }
+
+    bool shouldNotify(
+            Peer      peer,
+            ProdIndex prodIndex) override {
+        return true;
+    }
+
+    bool shouldNotify(
+            Peer      peer,
+            DataSegId segId) override {
+        return true;
+    }
 
     // Subscriber-side
     bool recvNotice(const hycast::ProdIndex notice, hycast::Peer peer)
@@ -91,11 +103,11 @@ public:
     void notify(const ProdIndex prodIndex) {
     }
 
-    void notify(const DataSegId& dataSegId) {
+    void notify(const DataSegId dataSegId) {
     }
 
     // Subscriber-side
-    void recvData(const PeerSrvrAddrs, Peer peer) override
+    void recvData(const Tracker tracker, Peer peer) override
     {}
 
     // Subscriber-side
@@ -122,7 +134,7 @@ TEST_F(BookkeeperTest, DefaultConstruction)
 TEST_F(BookkeeperTest, PeerAddition)
 {
     hycast::SubBookkeeper bookkeeper{};
-    hycast::SubPeer       peer{*this, pubAddr, true};
+    hycast::SubPeer       peer{*this, pubAddr};
 
     bookkeeper.add(peer);
 }

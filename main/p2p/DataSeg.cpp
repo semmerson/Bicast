@@ -68,6 +68,17 @@ public:
         return buf;
     }
 
+    bool operator==(const Impl& rhs) {
+        if (buf == nullptr && rhs.buf == nullptr)
+            return true;
+        if (buf == nullptr || rhs.buf == nullptr)
+            return false;
+        return (prodSize == rhs.prodSize) &&
+                (segId == rhs.segId) &&
+                (::memcmp(buf, rhs.buf, DataSeg::size(prodSize, segId.offset))
+                        == 0);
+    }
+
     String to_string(const bool withName) const {
         String string;
         if (withName)
@@ -77,14 +88,14 @@ public:
     }
 
     bool write(Xprt& xprt) {
-        LOG_NOTE("Writing data-segment to %s", xprt.to_string().data());
+        //LOG_DEBUG("Writing data-segment to %s", xprt.to_string().data());
         auto success = segId.write(xprt);
         if (success) {
-            LOG_NOTE("Writing product-size to %s", xprt.to_string().data());
+            //LOG_DEBUG("Writing product-size to %s", xprt.to_string().data());
             success = xprt.write(prodSize);
             if (success) {
-                LOG_NOTE("Writing data-segment data to %s",
-                        xprt.to_string().data());
+                //LOG_DEBUG("Writing data-segment data to %s",
+                        //xprt.to_string().data());
                 success = xprt.write(buf, DataSeg::size(prodSize, segId.offset));
             }
         }
@@ -92,11 +103,11 @@ public:
     }
 
     bool read(Xprt& xprt) {
-        LOG_NOTE("Reading data-segment from %s", xprt.to_string().data());
+        //LOG_DEBUG("Reading data-segment from %s", xprt.to_string().data());
         bool success = segId.read(xprt);
 
         if (success) {
-            LOG_NOTE("Reading product-size from %s", xprt.to_string().data());
+            //LOG_DEBUG("Reading product-size from %s", xprt.to_string().data());
             success = xprt.read(prodSize);
 
             if (success) {
@@ -106,15 +117,15 @@ public:
                     buf = new char[segSize];
                     bufSize = segSize;
                 }
-                LOG_NOTE("Reading data-segment data from %s",
-                        xprt.to_string().data());
+                //LOG_DEBUG("Reading data-segment data from %s",
+                        //xprt.to_string().data());
                 success = xprt.read(buf, segSize);
             }
             if (success) {
-                LOG_NOTE("Read data-segment");
+                //LOG_DEBUG("Read data-segment");
             }
             else {
-                LOG_NOTE("Didn't read data-segment");
+                //LOG_DEBUG("Didn't read data-segment");
             }
         }
 
@@ -135,10 +146,10 @@ DataSeg::DataSeg(const DataSegId segId,
 {}
 
 DataSeg::operator bool() const {
-    return pImpl->operator bool();
+    return pImpl ? pImpl->operator bool() : false;
 }
 
-const DataSegId DataSeg::getId() const noexcept {
+const DataSegId& DataSeg::getId() const noexcept {
     return pImpl->segId;
 }
 
@@ -148,6 +159,14 @@ ProdSize DataSeg::getProdSize() const noexcept {
 
 const char* DataSeg::getData() const noexcept {
     return pImpl->buf;
+}
+
+bool DataSeg::operator==(const DataSeg& rhs) const {
+    return !pImpl
+            ? !rhs
+            : rhs
+                  ? *pImpl == *rhs.pImpl
+                  : false;
 }
 
 String DataSeg::to_string(const bool withName) const {
