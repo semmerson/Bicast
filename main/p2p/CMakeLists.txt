@@ -2,7 +2,7 @@
 add_library(p2p OBJECT
         DataSeg.cpp
         Peer.cpp          Peer.h
-        NoticeArray.cpp   NoticeArray.h
+#       NoticeArray.cpp   NoticeArray.h
         PeerSet.cpp       PeerSet.h
         Bookkeeper.cpp    Bookkeeper.h
         Tracker.cpp       Tracker.h

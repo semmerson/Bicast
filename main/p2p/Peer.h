@@ -79,14 +79,12 @@ public:
      *   - The sockets are read; and
      *   - The P2P manager is called.
      *
-     * @retval    `false`  `stop()` was called
-     * @retval    `true`   Success
      * @throw LogicError   Already called
      * @throw LogicError   Remote peer uses unsupported protocol
      * @throw SystemError  Thread couldn't be created
-     * @see   `stop()`
+     * @see `stop()`
      */
-    bool start();
+    void start();
 
     /**
      * Returns the socket address of the remote peer.
@@ -134,9 +132,8 @@ public:
     /**
      * Notifies the remote peer.
      *
-     * @retval    `false`     No connection. Connection was lost or `start()`
-     *                        wasn't called.
      * @retval    `true`      Success
+     * @retval    `false`     Failure
      * @throw     LogicError  Remote peer is publisher's
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`

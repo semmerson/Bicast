@@ -43,6 +43,7 @@ class Bookkeeper::Impl
 protected:
     mutable Mutex mutex;
 
+public:
     /**
      * Constructs.
      *
@@ -53,14 +54,13 @@ protected:
         : mutex()
     {}
 
-public:
     virtual ~Impl() noexcept =default;
 
     virtual bool add(const Peer peer) =0;
 
     virtual void reset() noexcept =0;
 
-    virtual bool remove(const Peer peer) =0;
+    virtual bool erase(const Peer peer) =0;
 };
 
 Bookkeeper::Bookkeeper(Impl* impl)
@@ -74,13 +74,15 @@ Bookkeeper::Bookkeeper(Impl* impl)
  */
 class PubBookkeeper::Impl final : public Bookkeeper::Impl
 {
+    using RequestCount = int_fast32_t;
+
     /// Map of peer -> number of requests by remote peer
-    std::unordered_map<Peer, uint_fast32_t> numRequests;
+    std::unordered_map<Peer, RequestCount> numRequests;
 
 public:
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
-        , numRequests()
+        , numRequests(maxPeers)
     {}
 
     bool add(const Peer peer) override {
@@ -95,14 +97,14 @@ public:
 
     Peer getWorstPeer() const {
         Peer          peer{};
-        unsigned long minCount{ULONG_MAX};
+        RequestCount  maxCount = -1;
         Guard         guard(mutex);
 
         for (auto& elt : numRequests) {
-            auto count = elt.second;
+            const auto count = elt.second;
 
-            if (count < minCount) {
-                minCount = count;
+            if (count > maxCount) {
+                maxCount = count;
                 peer = elt.first;
             }
         }
@@ -117,7 +119,7 @@ public:
             elt.second = 0;
     }
 
-    bool remove(const Peer peer) override {
+    bool erase(const Peer peer) override {
         Guard guard(mutex);
         return numRequests.erase(peer) == 1;
     }
@@ -139,8 +141,8 @@ Peer PubBookkeeper::getWorstPeer() const {
     return static_cast<Impl*>(pImpl.get())->getWorstPeer();
 }
 
-bool PubBookkeeper::remove(const Peer peer) const {
-    return static_cast<Impl*>(pImpl.get())->remove(peer);
+bool PubBookkeeper::erase(const Peer peer) const {
+    return static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 /******************************************************************************/
@@ -150,17 +152,38 @@ bool PubBookkeeper::remove(const Peer peer) const {
  */
 class SubBookkeeper::Impl final : public Bookkeeper::Impl
 {
-    using Ratings   = std::unordered_map<Peer, uint_fast32_t>;
-    using PeerList  = std::list<Peer>;
-    using PeerLists = std::unordered_map<DatumId, PeerList>;
+    using Rating     = uint_fast32_t;
+    using DatumIdSet = std::set<DatumId>;
 
-    /// Map of peer -> peer rating
-    Ratings    ratings;
+    struct PeerInfo {
+        Rating     rating;   ///< Peer rating
+        DatumIdSet datumIds; ///< Data available from remote peer
+        PeerInfo()
+            : rating(0)
+            , datumIds()
+        {}
+    };
+
     /**
-     * Map of datum ID to list of peers that have the datum in the order in
-     * which their notifications arrived.
+     * The following supports
+     *   - Removal of associated data when the worst peer is removed;
+     *   - Removal of associated peers when a datum is received; and
+     *   - A peer with a given datum to be in the datum's list of peers at most
+     *     once.
      */
-    PeerLists havePeers;
+    using PeerInfoMap = std::unordered_map<Peer, PeerInfo>;
+    struct DatumPeers {
+        std::unordered_set<Peer> set;
+        std::list<Peer>          list;
+    };
+    using DatumPeersMap = std::unordered_map<DatumId, DatumPeers>;
+
+    /// Map of peer -> peer entry
+    PeerInfoMap peerInfoMap;
+    /**
+     * Map of datum ID to peers that have the datum.
+     */
+    DatumPeersMap datumPeersMap;
 
     /**
      * Vets a peer.
@@ -170,7 +193,7 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
      * @throw     LogicError  Peer is unknown
      */
     inline void vetPeer(Peer peer) {
-        if (ratings.count(peer) == 0)
+        if (peerInfoMap.count(peer) == 0)
             throw LOGIC_ERROR("Peer " + peer.to_string() + " is unknown");
     }
 
@@ -193,26 +216,17 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
 
         vetPeer(peer);
 
-        bool should = true;
-        if (havePeers.count(datumId) != 0) {
-            // At least one remote peer has the datum
-            auto& list = havePeers[datumId];
-            for (auto iter = list.begin(), end = list.end(); iter != end;
-                    ++iter) {
-                if (*iter == peer) {
-                    // Remote peer has the datum => don't notify
-                    should = false;
-                    break;
-                }
-            }
-        }
-
-        return should;
+        /*
+         * The peer should be notified if no remote peer has announced that it
+         * has the given datum or the given peer hasn't announced that it has.
+         */
+        return datumPeersMap.count(datumId) == 0 ||
+                datumPeersMap[datumId].set.count(peer) == 0;
     }
 
     /**
-     * Indicates if a request should be made by a peer. The peer is
-     * added to the list of peers that have the datum.
+     * Indicates if a request should be made by a peer. The peer is added to the
+     * list of peers that have the datum.
      *
      * @param[in] peer        Peer
      * @param[in] datumId     Request identifier
@@ -227,23 +241,37 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
             const DatumId& datumId)
     {
         Guard guard(mutex);
+
         vetPeer(peer);
 
         //LOG_DEBUG("Peer %s has datum %s", peer.to_string().data(),
                 //datumId.to_string().data());
-        auto& peerList = havePeers[datumId];
-        peerList.push_back(peer); // Add peer. Might throw.
-        return peerList.size() == 1;
+
+        /*
+         * A request for the given datum should be made if no remote peer has
+         * announced that it has the given datum.
+         */
+        bool  should = datumPeersMap.count(datumId) == 0;
+        /*
+         * In any case, the given peer should be included in the peers that have
+         * the given datum.
+         */
+        auto& datumPeers = datumPeersMap[datumId];
+        if (datumPeers.set.insert(peer).second)
+            datumPeers.list.push_back(peer);
+
+        return should;
     }
 
     /**
-     * Process a satisfied request. The rating of the associated peer is
+     * Process reception of a datum. The rating of the associated peer is
      * increased.
      *
-     * @param[in] peer        Peer
-     * @param[in] datumId     Request identifier
+     * @param[in] peer        Peer that received the datum
+     * @param[in] datumId     Datum identifier
      * @retval    `true`      Success
-     * @retval    `false`     Request is unknown
+     * @retval    `false`     Datum is unknown or remote peer didn't announce
+     *                        that it had the datum
      * @throws    LogicError  Peer is unknown
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
@@ -257,16 +285,22 @@ class SubBookkeeper::Impl final : public Bookkeeper::Impl
 
         vetPeer(peer);
 
-        if (havePeers.count(datumId)) {
-            //LOG_DEBUG("Datum %s has a peer-list", datumId.to_string().data());
-            if (havePeers[datumId].front() == peer) {
-                //LOG_DEBUG("First peer in list is %s", peer.to_string().data());
-                ++ratings.at(peer);
-                success = true;
-            }
+        if (datumPeersMap.count(datumId) &&
+                datumPeersMap[datumId].set.count(peer)) {
+            ++(peerInfoMap.at(peer).rating);
+            success = true;
         }
 
         return success;
+    }
+
+    void erase(const DatumId& datumId) {
+        Guard  guard(mutex);
+        if (datumPeersMap.count(datumId)) {
+            for (auto peer : datumPeersMap[datumId].list)
+                peerInfoMap.at(peer).datumIds.erase(datumId);
+            datumPeersMap.erase(datumId);
+        }
     }
 
 public:
@@ -279,8 +313,8 @@ public:
      */
     Impl(const int maxPeers)
         : Bookkeeper::Impl()
-        , ratings(maxPeers)
-        , havePeers()
+        , peerInfoMap(maxPeers)
+        , datumPeersMap()
     {}
 
     /**
@@ -297,7 +331,7 @@ public:
     bool add(Peer peer) override
     {
         Guard guard(mutex);
-        return ratings.insert({peer, 0}).second;
+        return peerInfoMap.insert({peer, PeerInfo{}}).second;
     }
 
     bool shouldNotify(Peer peer, const ProdIndex prodIndex) {
@@ -327,11 +361,11 @@ public:
     }
 
     void erase(const ProdIndex prodIndex) {
-        havePeers.erase(DatumId(prodIndex)); // No longer relevant
+        erase(DatumId(prodIndex));
     }
 
     void erase(const DataSegId dataSegId) {
-        havePeers.erase(DatumId(dataSegId)); // No longer relevant
+        erase(DatumId(dataSegId));
     }
 
     /**
@@ -340,22 +374,20 @@ public:
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer getWorstPeer(const bool isClient) const
+    Peer getWorstPeer() const
     {
         Peer  peer{};
         Guard guard(mutex);
 
-        if (ratings.size() > 1) {
-            unsigned long minCount{ULONG_MAX};
+        if (peerInfoMap.size() > 1) {
+            Rating minRating = ~(Rating)0;
 
-            for (auto elt : ratings) {
-                if (elt.first.isClient() == isClient) {
-                    const auto count = elt.second;
+            for (auto elt : peerInfoMap) {
+                const auto rating = elt.second.rating;
 
-                    if (count < minCount) {
-                        minCount = count;
-                        peer = elt.first;
-                    }
+                if (rating < minRating) {
+                    minRating = rating;
+                    peer = elt.first;
                 }
             }
         }
@@ -364,7 +396,7 @@ public:
     }
 
     /**
-     * Resets the count of satisfied requests for every peer.
+     * Resets the rating of every peer.
      *
      * @threadsafety       Safe
      * @exceptionsafety    No throw
@@ -374,8 +406,8 @@ public:
     {
         Guard guard(mutex);
 
-        for (auto& elt : ratings)
-            elt.second = 0;
+        for (auto& elt : peerInfoMap)
+            elt.second.rating = 0;
     }
 
     /**
@@ -388,10 +420,27 @@ public:
      * @exceptionsafety       Basic guarantee
      * @cancellationpoint     No
      */
-    bool remove(const Peer peer) override
+    bool erase(const Peer peer) override
     {
+        bool  existed = false;
         Guard guard{mutex};
-        return ratings.erase(peer) == 1;
+        if (peerInfoMap.count(peer)) {
+            for (const auto datumId : peerInfoMap[peer].datumIds) {
+                auto& datumPeers = datumPeersMap.at(datumId);
+                auto& peerList = datumPeers.list;
+                for (auto iter = peerList.begin(), end = peerList.end();
+                        iter != end; ++iter) {
+                    if (*iter == peer) {
+                        peerList.erase(iter);
+                        break;
+                    }
+                }
+                datumPeers.set.erase(peer);
+            }
+            peerInfoMap.erase(peer);
+            existed = true;
+        }
+        return existed;
     }
 };
 
@@ -447,12 +496,12 @@ void SubBookkeeper::erase(const DataSegId dataSegId) const {
     static_cast<Impl*>(pImpl.get())->erase(dataSegId);
 }
 
-Peer SubBookkeeper::getWorstPeer(const bool isClient) const {
-    return static_cast<Impl*>(pImpl.get())->getWorstPeer(isClient);
+Peer SubBookkeeper::getWorstPeer() const {
+    return static_cast<Impl*>(pImpl.get())->getWorstPeer();
 }
 
-bool SubBookkeeper::remove(const Peer peer) const {
-    return static_cast<Impl*>(pImpl.get())->remove(peer);
+bool SubBookkeeper::erase(const Peer peer) const {
+    return static_cast<Impl*>(pImpl.get())->erase(peer);
 }
 
 } // namespace

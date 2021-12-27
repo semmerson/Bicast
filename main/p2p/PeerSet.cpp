@@ -40,116 +40,18 @@ namespace hycast {
  */
 class PeerSet::Impl
 {
-    /**
-     * A thread-safe class that sends notifications in a notice-queue to a
-     * single peer.
-     */
-    class PeerEntry {
-        mutable Mutex    mutex;
-        mutable ThreadEx threadEx;
-        Peer             peer;
-        NoticeArray      noticeArray;
-        ArrayIndex       readIndex;
-        Thread           thread;
 
-        void runNotifier() {
-            try {
-                for (;;) {
-                    /*
-                     * Because the following blocks indefinitely, the current
-                     * thread must be cancelled in order to stop it and this
-                     * must be done before this instance is destroyed.
-                     *
-                     */
-                    if (!noticeArray.send(readIndex, peer))
-                        break; // Connection lost
-                    /*
-                     * To avoid prematurely purging the current notice, the
-                     * read-index must be incremented *after* the notice has
-                     * been sent.
-                     */
-                    ++readIndex;
-                }
-            }
-            catch (const std::exception& ex) {
-                LOG_ERROR(ex);
-                threadEx.set(ex);
-            }
-        }
+    using Peers = std::set<Peer>;
 
-    public:
-        PeerEntry(Peer        peer,
-                  NoticeArray noticeArray)
-            : mutex()
-            , threadEx()
-            , peer(peer)
-            , noticeArray(noticeArray)
-            , readIndex(noticeArray.getOldestIndex())
-            , thread(&PeerEntry::runNotifier, this)
-        {}
-
-        PeerEntry(const PeerEntry& peerEntry) =delete;
-        PeerEntry& operator=(const PeerEntry& entry) =delete;
-
-        PeerEntry(PeerEntry&& peerEntry) =default;
-
-        ~PeerEntry() {
-            if (thread.joinable()) {
-                /*
-                 * Canceling the thread should be safe because it's only sending
-                 * notifications to the remote peer.
-                 */
-                ::pthread_cancel(thread.native_handle());
-                thread.join();
-            }
-
-            peer.stop();
-        }
-
-        ArrayIndex getReadIndex() const {
-            Guard guard(mutex);
-            threadEx.throwIfSet();
-            return readIndex;
-        }
-    };
-
-    using PeerEntries = std::map<Peer, PeerEntry>;
-
-    mutable Mutex mutex;
-    mutable Cond  cond;
-    // Placed before peer entries to ensure existence for `PeerEntry.run()`
-    NoticeArray   noticeArray;
-    PeerEntries   peerEntries;
-
-    /**
-     * Purges notice-queue of notices that have been read by all peers.
-     */
-    void purge() {
-        const auto writeIndex = noticeArray.getWriteIndex();
-        // Guaranteed to be equal to or greater than oldest read-index:
-        auto       oldestIndex = writeIndex;
-
-        // Find oldest read-index
-        {
-            Guard guard(mutex); // No changes allowed to peer-set
-            for (const auto& peerEntry : peerEntries) {
-                const auto readIndex = peerEntry.second.getReadIndex();
-
-                if (readIndex < oldestIndex)
-                    oldestIndex = readIndex;
-            }
-        }
-
-        if (oldestIndex < writeIndex)
-            // Purge notice-queue of entries that have been read by all peers
-            noticeArray.eraseTo(oldestIndex);
-    }
+    mutable Mutex mutex; ///< For accessing peers
+    mutable Cond  cond;  ///< For accessing peers
+    Peers         peers; ///< Set of peers
 
 public:
-    Impl(P2pMgr& p2pMgr)
+    Impl()
         : mutex()
-        , noticeArray(p2pMgr)
-        , peerEntries()
+        , cond()
+        , peers()
     {}
 
     /**
@@ -163,64 +65,52 @@ public:
     void insert(Peer peer) {
         Guard guard(mutex);
 
-        if (peerEntries.count(peer))
+        if (!peers.insert(peer).second)
             throw LOGIC_ERROR("Peer " + peer.to_string() + " was previously "
                     "added");
-
-        // NB: The following requires that `peer.hash()` works now
-        const auto  pair = peerEntries.emplace(std::piecewise_construct,
-                std::forward_as_tuple(peer),
-                std::forward_as_tuple(peer, noticeArray));
-        LOG_ASSERT(pair.second); // Because `peerEntries.count(peer) != 0`
 
         cond.notify_all();
     }
 
     void waitForPeer() {
         Lock lock{mutex};
-        cond.wait(lock, [&]{return !peerEntries.empty();});
+        cond.wait(lock, [&]{return !peers.empty();});
     }
 
     size_t size() {
         Guard guard{mutex};
-        return peerEntries.size();
+        return peers.size();
     }
 
     bool erase(Peer peer) {
         Guard guard(mutex);
-        return peerEntries.erase(peer);
+        return peers.erase(peer);
     }
 
-    PeerEntries::size_type size() const {
+    Peers::size_type size() const {
         Guard guard(mutex);
-        return peerEntries.size();
+        return peers.size();
     }
 
     bool notify(const ProdIndex notice) {
-        bool success = false;
-        if (!peerEntries.empty()) {
-            purge();
-            noticeArray.putProdIndex(notice);
-            success = true;
-        }
-        return success;
+        Guard guard{mutex};
+        for (auto& peer : peers)
+            peer.notify(notice);
+        return peers.size();
     }
 
     bool notify(const DataSegId notice) {
-        bool success = false;
-        if (!peerEntries.empty()) {
-            purge();
-            noticeArray.put(notice);
-            success = true;
-        }
-        return success;
+        Guard guard{mutex};
+        for (auto& peer : peers)
+            peer.notify(notice);
+        return peers.size();
     }
 };
 
 /******************************************************************************/
 
-PeerSet::PeerSet(P2pMgr& p2pMgr)
-    : pImpl{new Impl(p2pMgr)}
+PeerSet::PeerSet()
+    : pImpl{new Impl()}
 {}
 
 void PeerSet::insert(Peer peer) const {

@@ -21,8 +21,8 @@
  */
 #include "config.h"
 
+#include "error.h"
 #include "HycastProto.h"
-#include "logging.h"
 #include "Peer.h"
 #include "ThreadException.h"
 
@@ -44,6 +44,19 @@ namespace hycast {
  */
 class Peer::Impl
 {
+    using NoticeQ = std::queue<DatumId>;
+
+    mutable Mutex      exceptMutex;   ///< For accessing thread exception
+    mutable Mutex      noticeMutex;   ///< For accessing notice queue
+    mutable Cond       noticeCond;    ///< For accessing notice queue
+    Thread             noticeWriter;  ///< For sending notices
+    Thread             requestReader; ///< For receiving requests
+    P2pMgr&            p2pMgr;        ///< Associated P2P manager
+    const bool         clientSide;    ///< This instance initiated contact?
+    NoticeQ            noticeQ;       ///< Notice queue
+    std::exception_ptr exPtr;         ///< Internal thread exception
+    const bool         iAmPub;        ///< This instance is publisher's
+
     /**
      * Puts sockets in increasing order according to the local port number.
      *
@@ -156,11 +169,99 @@ class Peer::Impl
         return success;
     }
 
+    void runNoticeWriter(Peer peer) {
+        try {
+            while (connected) {
+                DatumId datumId;
+                {
+                    Lock lock{noticeMutex};
+                    noticeCond.wait(lock, [&]{return !noticeQ.empty();});
+
+                    datumId = noticeQ.front();
+                    noticeQ.pop();
+                }
+
+                if (datumId.id == DatumId::Id::PROD_INDEX &&
+                        p2pMgr.shouldNotify(peer, datumId.prodIndex)) {
+                    LOG_DEBUG("Peer %s is notifying about product %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = noticeXprt.send(PduId::PROD_INFO_NOTICE,
+                            datumId.prodIndex);
+                }
+                else if (datumId.id == DatumId::Id::DATA_SEG_ID &&
+                        p2pMgr.shouldNotify(peer, datumId.dataSegId)) {
+                    LOG_DEBUG("Peer %s is notifying about data-segment %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = noticeXprt.send(PduId::DATA_SEG_NOTICE,
+                            datumId.dataSegId);
+                }
+                else {
+                    throw LOGIC_ERROR("Datum ID is unset");
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+            setExPtr();
+        }
+        connected = false;
+        LOG_DEBUG("Terminating");
+    }
+
+    /**
+     * Receives a request for data from the remote peer. Sends the data to the
+     * remote peer if it exists.
+     *
+     * @tparam    ID       Identifier of requested data
+     * @tparam    DATA     Type of requested data
+     * @param[in] xprt     Transport
+     * @param[in] peer     Associated local peer
+     * @param[in] desc     Description of datum
+     * @retval    `true`   Data doesn't exist or was successfully sent
+     * @retval    `false`  Connection lost
+     */
+    template<class ID, class DATA>
+    bool recvRequest(Xprt& xprt, Peer peer, const char* const desc) {
+        bool success = false;
+        ID   id;
+        if (id.read(xprt)) {
+            LOG_DEBUG("Peer %s received request for %s %s",
+                    to_string().data(), desc, id.to_string().data());
+            auto data = p2pMgr.recvRequest(id, peer);
+            success = !data || send(data); // Data doesn't exist or was sent
+        }
+        return success;
+    }
+
+    /**
+     * Dispatch function for processing requests from the remote peer.
+     *
+     * @param[in] pduId         PDU ID
+     * @param[in] peer          Associated local peer
+     * @retval    `false`       Connection lost
+     * @retval    `true`        Success
+     * @throw     LogicError    Message is unknown or unsupported
+     */
+    bool processRequest(Xprt::PduId pduId, Peer peer) {
+        bool success = false;
+
+        if (PduId::PROD_INFO_REQUEST == pduId) {
+            success = recvRequest<ProdIndex, ProdInfo>(requestXprt, peer,
+                    "information on product");
+        }
+        else if (PduId::DATA_SEG_REQUEST == pduId) {
+            success = recvRequest<DataSegId, DataSeg>(requestXprt, peer,
+                    "data-segment");
+        }
+        else {
+            throw LOGIC_ERROR("Peer " + to_string() +
+                    " received invalid PDU type: " + std::to_string(pduId));
+        }
+
+        return success;
+    }
+
 protected:
-    mutable Mutex      sockMutex;
-    mutable Mutex      exceptMutex;
-    P2pMgr&            p2pMgr;
-    const bool         clientSide;  ///< This instance initiated contact?
     /*
      * If a single socket is used for asynchronous communication and reading and
      * writing occur on the same thread, then deadlock will occur if both
@@ -169,27 +270,15 @@ protected:
      * write to another. The pipeline might block for a while as messages are
      * processed, but it won't deadlock.
      */
-    Xprt               noticeXprt;
-    Xprt               requestXprt;
-    Xprt               dataXprt;
-    Thread             noticeReader;
-    Thread             requestReader;
-    Thread             dataReader;
-    Thread             requestWriter;
-    SockAddr           rmtSockAddr;   ///< Remote socket address
-    SockAddr           lclSockAddr;   ///< Local (notice) socket address
-    // States of this instance:
-    enum class State {
-        INITED,
-        STARTING,
-        STARTED,
-        STOPPING
-    };
-    std::atomic<State> state;       ///< State of this instance
-    std::exception_ptr exPtr;       ///< Internal thread exception
+    Xprt               noticeXprt;  ///< Notice transport
+    Xprt               requestXprt; ///< Request transport
+    Xprt               dataXprt;    ///< Data transport
+    SockAddr           rmtSockAddr; ///< Remote socket address
+    SockAddr           lclSockAddr; ///< Local (notice) socket address
     std::atomic<bool>  connected;   ///< Connected to remote peer?
     bool               rmtIsPub;    ///< Remote peer is publisher's
-    const bool         iAmPub;      ///< This peer is publisher's
+    Mutex              startMutex;  ///< Protects `started`
+    bool               started;     ///< This instance has been started?
 
     /**
      * Assigns sockets to this instance's notice, request, and data transports.
@@ -250,14 +339,18 @@ protected:
     }
 
     /**
-     * Throws an exception if the state of this instance isn't appropriate or an
-     * exception has been thrown by one of this instance's internal threads.
+     * Throws an exception if this instance hasn't been started or an exception
+     * was thrown by one of this instance's internal threads.
      *
-     * @throw LogicError  Instance isn't in appropriate state
+     * @throw LogicError  Instance hasn't been started
+     * @see   `start()`
      */
     void throwIf() {
-        if (state != State::STARTED)
-            throw LOGIC_ERROR("Instance isn't in state STARTED");
+        {
+            Guard guard{startMutex};
+            if (!started)
+                throw LOGIC_ERROR("Instance hasn't been started");
+        }
 
         bool throwEx = false;
         {
@@ -295,56 +388,6 @@ protected:
     }
 
     /**
-     * Receives a request for data from the remote peer. Sends the data to the
-     * remote peer if it exists.
-     *
-     * @tparam    ID       Identifier of requested data
-     * @tparam    DATA     Type of requested data
-     * @param[in] xprt     Transport
-     * @param[in] peer     Associated local peer
-     * @retval    `true`   Data doesn't exist or was successfully sent
-     * @retval    `false`  Connection lost
-     */
-    template<class ID, class DATA>
-    bool recvRequest(Xprt& xprt, Peer peer) {
-        bool success = false;
-        ID   id;
-        if (id.read(xprt)) {
-            LOG_DEBUG("Peer %s received request for datum %s",
-                    to_string().data(), id.to_string().data());
-            auto data = p2pMgr.recvRequest(id, peer);
-            success = !data || send(data); // Data doesn't exist or was sent
-        }
-        return success;
-    }
-
-    /**
-     * Dispatch function for processing requests from the remote peer.
-     *
-     * @param[in] pduId         PDU ID
-     * @param[in] peer          Associated local peer
-     * @retval    `false`       Connection lost
-     * @retval    `true`        Success
-     * @throw     LogicError    Message is unknown or unsupported
-     */
-    bool processRequest(Xprt::PduId pduId, Peer peer) {
-        bool success = false;
-
-        if (PduId::PROD_INFO_REQUEST == pduId) {
-            success = recvRequest<ProdIndex, ProdInfo>(requestXprt, peer);
-        }
-        else if (PduId::DATA_SEG_REQUEST == pduId) {
-            success = recvRequest<DataSegId, DataSeg>(requestXprt, peer);
-        }
-        else {
-            throw LOGIC_ERROR("Peer " + to_string() +
-                    " received invalid PDU type: " + std::to_string(pduId));
-        }
-
-        return success;
-    }
-
-    /**
      * Reads and processes messages from the remote peer. Doesn't return until
      * either EOF is encountered or an error occurs.
      *
@@ -366,6 +409,35 @@ protected:
         }
     }
 
+    void startRequestReader(Peer peer) {
+        requestReader = Thread(&Impl::runReader, this, requestXprt,
+                [=](Xprt::PduId pduId, Xprt xprt) { // "&" capture => SIGSEGV
+                        return processRequest(pduId, peer);});
+        if (log_enabled(LogLevel::DEBUG)) {
+            std::ostringstream threadId;
+            threadId << requestReader.get_id();
+            LOG_DEBUG("Request reader thread is %s", threadId.str().data());
+        }
+    }
+    void stopRequestReader() {
+        if (requestXprt) {
+            LOG_DEBUG("Shutting down request transport");
+            requestXprt.shutdown();
+        }
+        if (requestReader.joinable())
+            requestReader.join();
+    }
+
+    void startNoticeWriter(Peer peer) {
+        noticeWriter = Thread(&Impl::runNoticeWriter, this, peer);
+    }
+    void stopNoticeWriter() {
+        if (noticeWriter.joinable()) {
+            ::pthread_cancel(noticeWriter.native_handle());
+            noticeWriter.join();
+        }
+    }
+
     /**
      * Starts the internal threads needed to read and service messages from the
      * remote peer.
@@ -378,7 +450,7 @@ protected:
      * Stops and joins the threads that are reading and servicing messages from
      * the remote peer.
      */
-    virtual void stopAndJoinThreads() =0; // Idempotent
+    virtual void stopThreads() =0; // Idempotent
 
 public:
     /**
@@ -393,24 +465,25 @@ public:
     Impl(
             P2pMgr&        p2pMgr,
             const SockAddr srvrAddr)
-        : sockMutex()
-        , exceptMutex()
+        : exceptMutex()
+        , noticeMutex()
+        , noticeCond()
+        , noticeWriter()
+        , requestReader()
         , p2pMgr(p2pMgr)
         , clientSide(true)
+        , noticeQ()
+        , exPtr()
+        , iAmPub(false)  // Can't be publisher's if client-side constructed
         , noticeXprt()
         , requestXprt()
         , dataXprt()
-        , noticeReader()
-        , requestReader()
-        , dataReader()
-        , requestWriter()
         , rmtSockAddr(srvrAddr)
         , lclSockAddr()
-        , state(State::INITED)
-        , exPtr()
         , connected{false}
         , rmtIsPub(true) // Fewer threads created && lying is counterproductive
-        , iAmPub(false)  // Can't be publisher's if client-side constructed
+        , startMutex()
+        , started(false)
     {
         connect();
         lclSockAddr = noticeXprt.getLclAddr();
@@ -431,24 +504,25 @@ public:
             P2pMgr&    p2pMgr,
             TcpSock    socks[3],
             const bool iAmPub)
-        : sockMutex()
-        , exceptMutex()
+        : exceptMutex()
+        , noticeMutex()
+        , noticeCond()
+        , noticeWriter()
+        , requestReader()
         , p2pMgr(p2pMgr)
         , clientSide(false)
+        , noticeQ()
+        , exPtr()
+        , iAmPub(iAmPub)
         , noticeXprt()
         , requestXprt()
         , dataXprt()
-        , noticeReader()
-        , requestReader()
-        , dataReader()
-        , requestWriter()
         , rmtSockAddr()
         , lclSockAddr()
-        , state(State::INITED)
-        , exPtr()
         , connected{false}
-        , rmtIsPub(false) // Incoming client can't be publisher
-        , iAmPub(iAmPub)
+        , rmtIsPub(false)
+        , startMutex()
+        , started(false)
     {
         assignSrvrSocks(socks);
         rmtSockAddr = noticeXprt.getRmtAddr();
@@ -460,14 +534,8 @@ public:
 
     Impl(const Impl& impl) =delete; // Rule of three
 
-    virtual ~Impl() noexcept {
-        try {
-            stop(); // Idempotent
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-    }
+    virtual ~Impl() noexcept
+    {}
 
     Impl& operator=(const Impl& rhs) noexcept =delete; // Rule of three
 
@@ -485,36 +553,19 @@ public:
      *   - The P2P manager is called.
      *
      * @param[in] peer     Associated local peer
-     * @retval    `false`  `stop()` was called
-     * @retval    `true`   Success
      * @throw LogicError   Already called
      * @throw LogicError   Remote peer uses unsupported protocol
      * @throw SystemError  Thread couldn't be created
-     * @see   `stop()`
+     * @see `stop()`
      */
     bool start(Peer peer) {
-        bool  success = false;  // Failure default
+        Guard guard{startMutex};
 
-        State expected{State::INITED};
-        if (!state.compare_exchange_strong(expected, State::STARTING)) {
-            if (expected == State::STARTING || expected == State::STARTED)
-                throw LOGIC_ERROR("start() already called");
-        }
-        else {
-            startThreads(peer); // Depends on `rmtIsPub`
+        if (started)
+            throw LOGIC_ERROR("start() already called");
 
-            auto expected = State::STARTING;
-            if (state.compare_exchange_strong(
-                    expected, State::STARTED)) {
-                success = true;
-                // `stop()` is now effective
-            }
-            else {
-                stopAndJoinThreads();
-            }
-        } // Instance is initialized
-
-        return success;
+        startThreads(peer);
+        started = true; // `stop()` is now effective
     }
 
     /**
@@ -536,18 +587,7 @@ public:
      * @see   `start()`
      */
     void stop() {
-        auto expected = State::INITED;
-        if (!state.compare_exchange_strong(expected, State::STOPPING)) {
-
-            expected = State::STARTING;
-            if (!state.compare_exchange_strong(expected, State::STOPPING)) {
-
-                expected = State::STARTED;
-                if (state.compare_exchange_strong(expected, State::STOPPING)) {
-                    stopAndJoinThreads();
-                }
-            }
-        }
+        stopThreads();
     }
 
     size_t hash() {
@@ -570,32 +610,30 @@ public:
      * @return  String representation of this instance
      */
     String to_string() const {
-        return "{lcl=}" + noticeXprt.getLclAddr().to_string() + ", rmt=" +
+        return "{lcl=" + noticeXprt.getLclAddr().to_string() + ", rmt=" +
                 noticeXprt.getRmtAddr().to_string() + "}";
     }
 
-    bool notify(
-            const ProdIndex notice,
-            Peer            peer) {
+    bool notify(const ProdIndex notice) {
         throwIf();
 
-        if (!rmtIsPub) {
-            LOG_DEBUG("Peer %s is notifying about product-information %s",
-                    to_string().data(), notice.to_string().data());
-            connected = noticeXprt.send(PduId::PROD_INFO_NOTICE, notice);
+        if (connected && !rmtIsPub) {
+            Guard guard{noticeMutex};
+            noticeQ.push(DatumId{notice});
+            noticeCond.notify_all();
         }
+
         return connected;
     }
-    bool notify(
-            const DataSegId notice,
-            Peer            peer) {
+    bool notify(const DataSegId notice) {
         throwIf();
 
-        if (!rmtIsPub) {
-            LOG_DEBUG("Peer %s is notifying about data-segment %s",
-                    to_string().data(), noticeXprt.to_string().data());
-            connected = noticeXprt.send(PduId::DATA_SEG_NOTICE, notice);
+        if (connected && !rmtIsPub) {
+            Guard guard{noticeMutex};
+            noticeQ.push(DatumId{notice});
+            noticeCond.notify_all();
         }
+
         return connected;
     }
 };
@@ -612,8 +650,8 @@ bool Peer::isRmtPub() const noexcept {
     return pImpl->isRmtPub();
 }
 
-bool Peer::start() {
-    return pImpl->start(*this);
+void Peer::start() {
+    pImpl->start(*this);
 }
 
 SockAddr Peer::getRmtAddr() noexcept {
@@ -651,11 +689,11 @@ String Peer::to_string() const {
 }
 
 bool Peer::notify(const ProdIndex notice) const {
-    return pImpl->notify(notice, *this);
+    return pImpl->notify(notice);
 }
 
 bool Peer::notify(const DataSegId notice) const {
-    return pImpl->notify(notice, *this);
+    return pImpl->notify(notice);
 }
 
 /******************************************************************************/
@@ -667,29 +705,22 @@ class PubPeerImpl final : public Peer::Impl
 {
 protected:
     void startThreads(Peer peer) override {
-        requestReader = Thread(&PubPeerImpl::runReader, this, requestXprt,
-                [=](Xprt::PduId pduId, Xprt xprt) { // "&" capture => SIGSEGV
-                        return processRequest(pduId, peer);});
-
-        if (log_enabled(LogLevel::DEBUG)) {
-            std::ostringstream threadId;
-            threadId << requestReader.get_id();
-            LOG_DEBUG("Request reader thread is %s", threadId.str().data());
+        try {
+            startRequestReader(peer);
+            startNoticeWriter(peer);
+        }
+        catch (const std::exception& ex) {
+            stopThreads();
+            throw;
         }
     }
 
     /**
      * Idempotent.
      */
-    void stopAndJoinThreads() override {
-        state = State::STOPPING;
-
-        if (requestXprt) {
-            LOG_DEBUG("Shutting down request transport");
-            requestXprt.shutdown();
-        }
-        if (requestReader.joinable())
-            requestReader.join();
+    void stopThreads() override {
+        stopNoticeWriter();
+        stopRequestReader();
     }
 
 public:
@@ -703,6 +734,10 @@ public:
     PubPeerImpl(P2pMgr& p2pMgr, TcpSock socks[3])
         : Impl(p2pMgr, socks, true)
     {}
+
+    ~PubPeerImpl() noexcept {
+        stopThreads();
+    }
 };
 
 PubPeer::PubPeer(P2pMgr& node, TcpSock socks[3])
@@ -718,130 +753,52 @@ PubPeer::PubPeer(P2pMgr& node, TcpSock socks[3])
 class SubPeerImpl final : public Peer::Impl
 {
     /**
-     * Class for requests sent to a remote peer. Implemented as a discriminated
-     * union so that it has a known size and, consequently, supports being in
-     * a container.
-     */
-    class Request : public DatumId {
-    public:
-        /**
-         * Default constructs. The instance will test false.
-         *
-         * @see `operator bool()`
-         */
-        Request()
-            : DatumId()
-        {}
-
-        /**
-         * Constructs a request for product-information.
-         *
-         * @param[in] prodIndex  Index of product
-         */
-        Request(const ProdIndex prodIndex)
-            : DatumId(prodIndex)
-        {}
-
-        /**
-         * Constructs a request for a data-segment.
-         *
-         * @param[in] dataSegId  Identifier of the data-segment
-         */
-        Request(const DataSegId dataSegId)
-            : DatumId(dataSegId)
-        {}
-
-        ~Request() noexcept {
-        }
-
-        /**
-         * Tells the P2P node about a request that wasn't satisfied by the
-         * remote peer.
-         *
-         * @param[in] node  P2P node
-         * @param[in] peer  Associated local peer
-         * @see `SubP2pNode::missed()`
-         */
-        void missed(SubP2pMgr& node, Peer peer) const {
-            if (id == Id::PROD_INDEX) {
-                node.missed(prodIndex, peer);
-            }
-            else if (id == Id::DATA_SEG_ID) {
-                node.missed(dataSegId, peer);
-            }
-            else {
-                throw LOGIC_ERROR("Invalid request ID: " +
-                        std::to_string((int)id));
-            }
-        }
-
-        /**
-         * Indicates if this instance requested a given product information.
-         *
-         * @param[in] prodInfo  Product information
-         * @retval    `true`    This instance requested it
-         * @retval    `false`   This instance did not request it
-         */
-        inline bool requested(const ProdInfo& prodInfo) const noexcept {
-            return id == Id::PROD_INDEX && prodIndex == prodInfo.getIndex();
-        }
-
-        /**
-         * Indicates if a data-segment matches this instance.
-         *
-         * @param[in] dataSeg   Data-segment
-         * @retval    `true`    This instance requested it
-         * @retval    `false`   This instance did not request it
-         */
-        inline bool requested(const DataSeg& dataSeg) const noexcept {
-            return id == Id::DATA_SEG_ID && dataSegId == dataSeg.getId();
-        }
-    };
-
-    /**
-     * A FIFO queue of requests.
+     * A thread-safe, linked-map of datum requests.
      */
     class RequestQ {
         struct hashRequest
         {
-            size_t operator()(const Request& request) const noexcept {
+            size_t operator()(const DatumId& request) const noexcept {
                 return request.hash();
             }
         };
 
         /// The value component references the next entry in a linked list
-        using Requests = std::unordered_map<Request, Request, hashRequest>;
+        using Requests = std::unordered_map<DatumId, DatumId, hashRequest>;
 
         mutable Mutex mutex;
         mutable Cond  cond;
         Requests      requests;
-        Request       head;
-        Request       tail;
+        DatumId       head;
+        DatumId       tail;
         bool          stopped;
 
         /**
          * Deletes the request at the head of the queue.
          *
-         * @pre  Mutex is locked
-         * @pre  Queue is not empty
-         * @post Mutex is locked
+         * @pre    Mutex is locked
+         * @pre    Queue is not empty
+         * @return The former head of the queue
+         * @post   Mutex is locked
          */
-        void deleteHead() {
+        DatumId deleteHead() {
+            auto oldHead = head;
             auto newHead = requests[head];
             requests.erase(head);
             head = newHead;
             if (!head)
                 tail = head; // Queue is empty
+            return oldHead;
         }
 
     public:
-        class Iter : public std::iterator<std::input_iterator_tag, Request>
+        class Iter : public std::iterator<std::input_iterator_tag, DatumId>
         {
             RequestQ& queue;
-            Request   request;
+            DatumId   request;
 
         public:
-            Iter(RequestQ& queue, const Request& request)
+            Iter(RequestQ& queue, const DatumId& request)
                 : queue(queue)
                 , request(request) {}
             Iter(const Iter& iter)
@@ -850,8 +807,7 @@ class SubPeerImpl final : public Peer::Impl
             bool operator!=(const Iter& rhs) const {
                 return request ? (request != rhs.request) : false;
             }
-            Request& operator*()  {return request;}
-            Request& operator->() {return request;}
+            DatumId& operator*()  {return request;}
             Iter& operator++() {
                 Guard guard{queue.mutex};
                 request = queue.requests[request];
@@ -881,9 +837,9 @@ class SubPeerImpl final : public Peer::Impl
          * @param[in] request  Request to be added
          * @return             Number of requests in the queue
          */
-        size_t push(const Request& request) {
+        size_t push(const DatumId& request) {
             Guard guard{mutex};
-            requests.insert({request, Request{}});
+            requests.insert({request, DatumId{}});
             if (tail)
                 requests[tail] = request;
             if (!head)
@@ -893,7 +849,8 @@ class SubPeerImpl final : public Peer::Impl
             return requests.size();
         }
 
-        size_t count(const Request& request) {
+        size_t count(const DatumId& request) {
+            Guard guard{mutex};
             return requests.count(request);
         }
 
@@ -927,14 +884,12 @@ class SubPeerImpl final : public Peer::Impl
          * @return  Head request or false one if `stop()` was called
          * @see     `stop()`
          */
-        Request waitGet() {
+        DatumId waitGet() {
             Lock lock{mutex};
             cond.wait(lock, [&]{return !requests.empty() || stopped;});
             if (stopped)
-                return Request{};
-            auto oldHead = head;
-            deleteHead();
-            return oldHead;
+                return DatumId{};
+            return deleteHead();
         }
 
         /**
@@ -958,7 +913,12 @@ class SubPeerImpl final : public Peer::Impl
         void drainTo(SubP2pMgr& p2pMgr, Peer peer) {
             Guard guard{mutex};
             while (head) {
-                head.missed(p2pMgr, peer);
+                if (head.id == DatumId::Id::PROD_INDEX) {
+                    p2pMgr.missed(head.prodIndex, peer);
+                }
+                else if (head.id == DatumId::Id::DATA_SEG_ID) {
+                    p2pMgr.missed(head.dataSegId, peer);
+                }
                 head = requests[head];
             }
             requests.clear();
@@ -966,123 +926,71 @@ class SubPeerImpl final : public Peer::Impl
         }
 
         Iter begin() {
+            Guard guard{mutex};
             return Iter(*this, head);
         }
 
         Iter end() {
-            return Iter{*this, Request{}};
+            Guard guard{mutex};
+            return Iter{*this, DatumId{}};
         }
     };
 
-    using RcvdProdInfos = std::unordered_set<ProdIndex>;
-    using RcvdDataSegs  = std::unordered_set<DataSegId>;
-
+    Thread        noticeReader;
+    Thread        dataReader;
     SubP2pMgr&    subP2pMgr;     ///< Subscriber's P2P manager
-    RequestQ      requests;      ///< Requests to be sent to remote peer
     RequestQ      requested;     ///< Requests sent to remote peer
 
-    /**
-     * Pushes a request onto the request queue.
-     *
-     * @tparam    ID          Type of `id`
-     * @param[in] id          Identifier of request
-     * @retval    `false`     No connection. Connection was lost or `start()`
-     *                        wasn't called.
-     * @retval    `true`      Success
-     * @see       `start()`
-     */
-    template<class ID>
-    bool request(const ID id) {
-        if (!connected)
-            return false;
-
-        //LOG_DEBUG("Pushing request");
-        const auto size = requests.push(Request{id});
-        //LOG_DEBUG("Request queue size is " + std::to_string(size));
-
-        return true;
-    }
-    bool request(const ProdIndex prodIndex) {
-        return request<ProdIndex>(prodIndex);
-    }
-    bool request(const DataSegId segId) {
-        return request<DataSegId>(segId);
-    }
-
-    /**
-     * Reads from the request queue and writes requests to the request socket.
-     * Doesn't return until the request queue returns a false request, the
-     * connection to the remote peer is lost, or an exception is thrown.
-     *
-     * Exception are not propagated.
-     *
-     * @param[in] peer      Associated local peer
-     * @see       `RequestQ::stop()`
-     */
-    void runRequester(Peer peer) noexcept {
-        try {
-            while (connected) {
-                auto request = requests.waitGet();
-
-                if (!request)
-                    break;
-
-                requested.push(request);
-
-                if (request.id == Request::Id::PROD_INDEX) {
-                    LOG_DEBUG("Peer %s is requesting information on product %s",
-                            to_string().data(),
-                            request.prodIndex.to_string().data());
-                    connected = requestXprt.send(PduId::PROD_INFO_REQUEST,
-                            request.prodIndex);
-                }
-                else if (request.id == Request::Id::DATA_SEG_ID) {
-                    LOG_DEBUG("Peer %s is requesting data-segment %s ",
-                            to_string().data(),
-                            request.dataSegId.to_string().data());
-                    connected = requestXprt.send(PduId::DATA_SEG_REQUEST,
-                            request.dataSegId);
-                }
+    template<class TYPE>
+    void processNotice(Xprt::PduId pduId, Peer peer, const char* const desc) {
+        TYPE typeId;
+        connected = typeId.read(noticeXprt);
+        if (connected) {
+            LOG_DEBUG("Peer %s received notice about %s %s",
+                    to_string().data(), desc, typeId.to_string().data());
+            if (subP2pMgr.recvNotice(typeId, peer)) {
+                // Subscriber wants the datum
+                requested.push(DatumId{typeId});
+                connected = requestXprt.send(pduId, typeId);
             }
-            LOG_NOTE("Connection %s closed", requestXprt.to_string().data());
         }
-        catch (const std::exception& ex) {
-            log_error(ex);
-            setExPtr();
-        }
-        connected = false;
-
-        requested.drainTo(subP2pMgr, peer);
-        requests.drainTo(subP2pMgr, peer);
-
-        LOG_DEBUG("Terminating");
     }
-
     /**
-     * Receives a notice about available data. Notifies the subscriber's P2P
-     * node. Adds a request for the data to the request-queue if indicated by
-     * the P2P node.
+     * Receives a notice about an available datum. Notifies the subscriber's P2P
+     * manager. Requests the datum if indicated by the P2P manager.
      *
-     * @tparam    TYPE      Type of notice: `ProdIndex` or `DataSegId`
-     * @param[in] xprt      Transport
-     * @param[in] peer      Associated local peer
-     * @param[in] typeName  Name of type
+     * @param[in] pduId     PDU identifier: `PROD_INFO_NOTICE`, `DATA_SEG_NOTICE`
+     * @param[in] peer      Associated peer
      * @retval    `false`   Connection lost
      * @retval    `true`    Success
      */
-    template<class TYPE>
-    bool rcvNotice(
-            Xprt&             xprt,
-            Peer              peer,
-            const char* const typeName) {
-        TYPE notice;
-        if (!notice.read(xprt))
-            return false;
-        LOG_DEBUG("Peer %s received %s notice %s", to_string().data(), typeName,
-                notice.to_string().data());
-        if (!subP2pMgr.recvNotice(notice, peer))
-            return true;
-        return request(notice);
+    bool processNotice(Xprt::PduId pduId, Peer peer) {
+        if (PduId::DATA_SEG_NOTICE == pduId) {
+            processNotice<DataSegId>(PduId::DATA_SEG_REQUEST, peer,
+                    "data-segment");
+        }
+        else if (PduId::PROD_INFO_NOTICE == pduId) {
+            processNotice<ProdIndex>(PduId::PROD_INFO_REQUEST, peer,
+                    "information on product");
+        }
+        else {
+            LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
+            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
+        }
+
+        return connected;
+    }
+
+    void startNoticeReader(Peer peer) {
+        noticeReader = Thread(&SubPeerImpl::runReader, this, noticeXprt,
+                [=](Xprt::PduId pduId, Xprt xprt) { // "&" capture => SIGSEGV
+                        return processNotice(pduId, peer);});
+    }
+    void stopNoticeReader() {
+        if (noticeReader.joinable()) {
+            ::pthread_cancel(noticeReader.native_handle());
+            noticeReader.join();
+        }
     }
 
     /**
@@ -1093,21 +1001,24 @@ class SubPeerImpl final : public Peer::Impl
      * that it cannot be satisfied by the remote peer (NB: the requested queue
      * is emptied).
      *
-     * @tparam    DATA        Type of data (`ProdInfo`, `DataSeg`)
-     * @param[in] data        Data
+     * @tparam    DATUM       Type of datum (`ProdInfo`, `DataSeg`)
+     * @param[in] datum       Datum
+     * @param[in] desc        Description of datum
      * @param[in] peer        Associated peer
      * @throw     LogicError  Datum wasn't requested
      * @see `Request::missed()`
      */
-    template<class DATA, class ID>
-    void processData(DATA& data, ID id, Peer peer) {
-        if (requested.count(Request(id)) == 0)
+    template<class DATUM>
+    void processData(DATUM& datum, const char* const desc, Peer peer) {
+        const auto& id = datum.getId();
+        if (requested.count(DatumId{id}) == 0)
             throw LOGIC_ERROR("Peer " + peer.to_string() + " received "
-                    "unrequested datum " + data.to_string());
+                    "unrequested " + desc + " " + datum.to_string());
 
-        for (auto request : requested) {
-            if (request.requested(data)) {
-                subP2pMgr.recvData(data, peer);
+        for (auto iter =  requested.begin(), end = requested.end();
+                iter != end; ) {
+            if ((*iter).equals(id)) {
+                subP2pMgr.recvData(datum, peer);
                 requested.pop();
                 break;
             }
@@ -1115,75 +1026,17 @@ class SubPeerImpl final : public Peer::Impl
              *  NB: A missed response from the remote peer means that it doesn't
              *  have the requested data.
              */
-            request.missed(subP2pMgr, peer);
+            if ((*iter).id == DatumId::Id::PROD_INDEX) {
+                subP2pMgr.missed((*iter).prodIndex, peer);
+            }
+            else if ((*iter).id == DatumId::Id::DATA_SEG_ID) {
+                subP2pMgr.missed((*iter).dataSegId, peer);
+            }
+
+            ++iter; // Must occur before `requested.pop()`
             requested.pop();
         }
     }
-
-protected:
-    void startThreads(Peer peer) override {
-        noticeReader = Thread(&SubPeerImpl::runReader, this, noticeXprt,
-                [=](Xprt::PduId pduId, Xprt xprt) { // "&" capture => SIGSEGV
-                        return processNotice(pduId, peer);});
-
-        try {
-            // Publisher's don't make requests
-            if (!rmtIsPub)
-                requestReader = Thread(&SubPeerImpl::runReader, this, requestXprt,
-                    [=](Xprt::PduId pduId, Xprt xprt) {
-                            return processRequest(pduId, peer);});
-
-            try {
-                dataReader = Thread(&SubPeerImpl::runReader, this, dataXprt,
-                    [=](Xprt::PduId pduId, Xprt xprt) {
-                            return processData(pduId, peer);});
-
-                try {
-                    requestWriter = Thread(&SubPeerImpl::runRequester, this, peer);
-                }
-                catch (const std::exception& ex) {
-                    if (dataReader.joinable()) {
-                        ::pthread_cancel(dataReader.native_handle());
-                        dataReader.join();
-                    }
-                    throw;
-                } // `dataReader` created
-            }
-            catch (const std::exception& ex) {
-                if (requestReader.joinable()) {
-                    ::pthread_cancel(requestReader.native_handle());
-                    requestReader.join();
-                }
-                throw;
-            }
-        } // `noticeReader` created
-        catch (const std::exception& ex) {
-            if (noticeReader.joinable()) {
-                ::pthread_cancel(noticeReader.native_handle());
-                noticeReader.join();
-            }
-            throw;
-        }
-    }
-
-    bool processNotice(Xprt::PduId pduId, Peer peer) {
-        bool success = false; // EOF default
-
-        if (PduId::DATA_SEG_NOTICE == pduId) {
-            success = rcvNotice<DataSegId>(noticeXprt, peer, "data-segment");
-        }
-        else if (PduId::PROD_INFO_NOTICE == pduId) {
-            success = rcvNotice<ProdIndex>(noticeXprt, peer,
-                    "product-information");
-        }
-        else {
-            LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
-            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
-        }
-
-        return success;
-    }
-
     /**
      * Processes incoming data from remote peer.
      *
@@ -1201,7 +1054,7 @@ protected:
             if (success) {
                 LOG_DEBUG("Peer %s received data segment %s",
                         to_string().data(), dataSeg.to_string().data());
-                processData<DataSeg, DataSegId>(dataSeg, dataSeg.getId(), peer);
+                processData<DataSeg>(dataSeg, "information on product", peer);
             }
         }
         else if (PduId::PROD_INFO == pduId) {
@@ -1210,8 +1063,7 @@ protected:
             if (success) {
                 LOG_DEBUG("Peer %s received product information %s",
                         to_string().data(), prodInfo.to_string().data());
-                processData<ProdInfo, ProdIndex>(prodInfo, prodInfo.getIndex(),
-                        peer);
+                processData<ProdInfo>(prodInfo, "data-segment", peer);
             }
         }
         else if (PduId::PEER_SRVR_ADDRS == pduId) {
@@ -1231,13 +1083,37 @@ protected:
         return success;
     }
 
+    void startDataReader(Peer peer) {
+        dataReader = Thread(&SubPeerImpl::runReader, this, dataXprt,
+            [=](Xprt::PduId pduId, Xprt xprt) {
+                    return processData(pduId, peer);});
+    }
+    void stopDataReader() {
+        if (dataReader.joinable()) {
+            ::pthread_cancel(dataReader.native_handle());
+            dataReader.join();
+        }
+    }
+
+protected:
+    void startThreads(Peer peer) override {
+        try {
+            startDataReader(peer);
+            if (!rmtIsPub) // Publisher's don't make requests
+                startRequestReader(peer);
+            startNoticeReader(peer);
+            startNoticeWriter(peer);
+        }
+        catch (const std::exception& ex) {
+            stopThreads();
+            throw;
+        }
+    }
+
     /**
      * Idempotent.
      */
-    void stopAndJoinThreads() override {
-        state = State::STOPPING;
-        requests.stop();
-
+    void stopThreads() override {
         if (dataXprt)
             dataXprt.shutdown();
         if (requestXprt)
@@ -1245,14 +1121,11 @@ protected:
         if (noticeXprt)
             noticeXprt.shutdown();
 
-        if (requestWriter.joinable())
-            requestWriter.join();
-        if (dataReader.joinable())
-            dataReader.join();
-        if (requestReader.joinable())
-            requestReader.join();
-        if (noticeReader.joinable())
-            noticeReader.join();
+        stopNoticeWriter();
+        stopNoticeReader();
+        if (!rmtIsPub) // Publisher's don't make requests
+            stopRequestReader();
+        stopDataReader();
     }
 
 public:
@@ -1270,7 +1143,6 @@ public:
             const SockAddr srvrAddr)
         : Impl(p2pMgr, srvrAddr)
         , subP2pMgr(p2pMgr)
-        , requests()
         , requested()
     {}
 
@@ -1283,9 +1155,12 @@ public:
     SubPeerImpl(SubP2pMgr& p2pMgr, TcpSock socks[3])
         : Impl(p2pMgr, socks, false)
         , subP2pMgr(p2pMgr)
-        , requests()
         , requested()
     {}
+
+    ~SubPeerImpl() noexcept {
+        stopThreads();
+    }
 };
 
 SubPeer::SubPeer(SubP2pMgr& node, TcpSock socks[3])
@@ -1301,37 +1176,25 @@ SubPeer::SubPeer(SubP2pMgr&     node,
 
 /**
  * Peer-server implementation. Listens for connections from remote, subscribing,
- * client-side peers and creates an associated local, server-side peer.
+ * client-side peers and creates a corresponding server-side peer.
  *
  * @tparam MGR   Type of P2P manager: `P2pMgr` or `SubP2pNode`
- * @tparam PEER  Type of associated peer: `PubPeer` or `SubPeer`
+ * @tparam PEER  Type of peer: `PubPeer` or `SubPeer`
  */
 template<class MGR, class PEER>
 class PeerSrvr<MGR, PEER>::Impl
 {
     /**
-     * Queue of connected local peers.
+     * Queue of accepted peers.
      */
     using PeerQ = std::queue<PEER, std::list<PEER>>;
 
     /**
-     * Factory for creating associated connected local peers.
+     * Factory for creating peers by accepting connections.
      */
     class PeerFactory
     {
-        struct Hash {
-            size_t operator()(const SockAddr& sockAddr) const {
-                return sockAddr.hash();
-            };
-        };
-
-        struct AreEqual {
-            bool operator()(const SockAddr& lhs, const SockAddr& rhs) const {
-                return lhs == rhs;
-            };
-        };
-
-        using Map = std::unordered_map<SockAddr, TcpSock[3], Hash, AreEqual>;
+        using Map = std::unordered_map<SockAddr, TcpSock[3]>;
 
         MGR&  mgr;
         Map   connections;
@@ -1381,19 +1244,19 @@ class PeerSrvr<MGR, PEER>::Impl
         }
     };
 
-    mutable Mutex     mutex;
-    mutable Cond      cond;
-    PeerFactory       peerFactory;
-    TcpSrvrSock       srvrSock;     /// Socket on which this instance listens
-    PeerQ             acceptQ;      /// Queue of associated local peers
-    size_t            maxAccept;    /// Maximum size of the peer queue
+    mutable Mutex mutex;
+    mutable Cond  cond;
+    PeerFactory   peerFactory;
+    TcpSrvrSock   srvrSock;         ///< Socket on which this instance listens
+    PeerQ         acceptQ;          ///< Queue of accepted peers
+    size_t        maxAccept;        ///< Maximum size of the peer queue
 
     /**
      * Executes on a separate thread.
      *
      * @param[in] sock  Newly-accepted socket
      */
-    void acceptSock(TcpSock sock) {
+    void processSock(TcpSock sock) {
         in_port_t noticePort;
 
         if (sock.read(noticePort)) { // Might take a while
@@ -1430,6 +1293,9 @@ public:
         , maxAccept(maxAccept)
     {}
 
+    ~Impl() noexcept {
+    }
+
     SockAddr getSockAddr() const {
         return srvrSock.getLclAddr();
     }
@@ -1447,8 +1313,10 @@ public:
             // TODO: Limit number of threads
             // TODO: Lower priority of thread to favor data transmission
             auto sock = srvrSock.accept();
-            if (sock)
-                Thread(&Impl::acceptSock, this, sock).detach();
+            if (!sock)
+                throw SYSTEM_ERROR("accept() failure");
+
+            Thread(&Impl::processSock, this, sock).detach();
             cond.wait(lock);
         }
 

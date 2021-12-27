@@ -614,6 +614,8 @@ protected:
                     throw SYSTEM_ERROR("write() failure to socket " +
                             to_string());
                 }
+                if (nwritten == 0)
+                    return false;
 
                 nbytes -= nwritten;
                 bytes += nwritten;

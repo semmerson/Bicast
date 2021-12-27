@@ -152,23 +152,24 @@ TEST_F(BookkeeperTest, ShouldRequest)
     EXPECT_THROW(bookkeeper.shouldRequest(peer2, prodIndex), LogicError);
     EXPECT_THROW(bookkeeper.shouldRequest(peer2, segId), LogicError);
 
-    bookkeeper.add(peer2);
+    ASSERT_TRUE(bookkeeper.add(peer2));
     EXPECT_FALSE(bookkeeper.shouldRequest(peer2, prodIndex));
     EXPECT_FALSE(bookkeeper.shouldRequest(peer2, segId));
+    ASSERT_FALSE(bookkeeper.add(peer2));
 
-    bookkeeper.received(peer1, prodIndex);
-    bookkeeper.received(peer1, segId);
+    ASSERT_TRUE(bookkeeper.received(peer1, prodIndex));
+    ASSERT_TRUE(bookkeeper.received(peer1, segId));
 
     auto worstPeer = bookkeeper.getWorstPeer();
     ASSERT_TRUE(worstPeer);
     EXPECT_NE(peer1, worstPeer);
     EXPECT_EQ(peer2, worstPeer);
 
-    bookkeeper.remove(peer1);
-    EXPECT_FALSE(bookkeeper.remove(peer1));
+    EXPECT_TRUE(bookkeeper.erase(peer1));
+    EXPECT_FALSE(bookkeeper.erase(peer1));
 
-    EXPECT_TRUE(bookkeeper.shouldRequest(peer2, prodIndex));
-    EXPECT_TRUE(bookkeeper.shouldRequest(peer2, segId));
+    EXPECT_THROW(bookkeeper.shouldRequest(peer1, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper.shouldRequest(peer1, segId), LogicError);
 }
 
 #if 0

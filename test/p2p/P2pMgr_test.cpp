@@ -52,13 +52,12 @@ protected:
     Cond             cond;
     unsigned         state;
     static constexpr SegSize SEG_SIZE = DataSeg::CANON_DATASEG_SIZE;
-
-    SockAddr     pubPeerSrvrAddr;
-    SockAddr     localSrvrAddr;
-    ProdIndex    prodIndex;
-    char         data[1000];
-    ProdInfo     prodInfo;
-    SubP2pMgrPtr testP2pMgrPtr;
+    SockAddr         pubPeerSrvrAddr;
+    SockAddr         localSrvrAddr;
+    ProdIndex        prodIndex;
+    char             data[1000];
+    ProdInfo         prodInfo;
+    SubP2pMgrPtr     testP2pMgrPtr;
 
     P2pMgrTest()
         : mutex()
@@ -192,20 +191,24 @@ TEST_F(P2pMgrTest, PubP2pMgrCtor)
     auto pubP2pMgr = hycast::P2pMgr::create(*this, pubPeerSrvrAddr, 8,
             SEG_SIZE);
 }
+#endif
 
+#if 0
 // Tests a single subscriber
 TEST_F(P2pMgrTest, SingleSubscriber)
 {
-    auto       pubP2pMgr = P2pMgr::create(*this, pubPeerSrvrAddr, 8, SEG_SIZE);
+    auto       pubP2pMgrPtr = P2pMgr::create(*this, pubPeerSrvrAddr, 8, SEG_SIZE);
     Tracker    tracker{};
     tracker.insert(pubPeerSrvrAddr);
-    auto       subP2pMgr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 8,
+    testP2pMgrPtr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 8,
             SEG_SIZE);
-    testP2pMgrPtr = subP2pMgr;
 
-    pubP2pMgr->waitForSrvrPeer();
-    notify(pubP2pMgr);
-    waitForState(DONE);
+    pubP2pMgrPtr->waitForSrvrPeer();
+    notify(pubP2pMgrPtr);
+    waitForState(PROD_NOTICE_RCVD  |
+               SEG_NOTICE_RCVD   |
+               PROD_INFO_RCVD    |
+               DATA_RCVD);
 }
 #endif
 
@@ -213,25 +216,28 @@ TEST_F(P2pMgrTest, SingleSubscriber)
 // Tests two, daisy-chained subscribers
 TEST_F(P2pMgrTest, TwoDaisyChained)
 {
-    auto       pubP2pMgr = P2pMgr::create(*this, pubPeerSrvrAddr, 1, SEG_SIZE);
+    auto       pubP2pMgrPtr = P2pMgr::create(*this, pubPeerSrvrAddr, 1,
+            SEG_SIZE);
 
     Tracker    tracker1{};
     tracker1.insert(pubPeerSrvrAddr);
-    auto       subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr,
+    auto       subP2pMgrPtr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr,
             2, SEG_SIZE);
 
-    pubP2pMgr->waitForSrvrPeer();
+    pubP2pMgrPtr->waitForSrvrPeer();
 
     Tracker    tracker2{};
-    tracker2.insert(subP2pMgr1->getPeerSrvrAddr());
-    auto       subP2pMgr2 = SubP2pMgr::create(*this, tracker2, localSrvrAddr,
+    tracker2.insert(subP2pMgrPtr1->getPeerSrvrAddr());
+    testP2pMgrPtr = SubP2pMgr::create(*this, tracker2, localSrvrAddr,
             1, SEG_SIZE);
-    testP2pMgrPtr = subP2pMgr2;
 
-    subP2pMgr1->waitForSrvrPeer();
+    subP2pMgrPtr1->waitForSrvrPeer();
 
-    notify(pubP2pMgr);
-    waitForState(DONE);
+    notify(pubP2pMgrPtr);
+    waitForState(PROD_NOTICE_RCVD  |
+               SEG_NOTICE_RCVD   |
+               PROD_INFO_RCVD    |
+               DATA_RCVD);
 }
 #endif
 

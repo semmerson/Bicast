@@ -208,12 +208,16 @@ public:
     }
 
     void missed(const ProdIndex prodIndex, Peer peer) override {
-        ASSERT_EQ(prodIndexes[0], prodIndex);
+        static int i = 0;
+        LOG_DEBUG("i=%d, prodIndex=%s", i, prodIndex.to_string().data());
+        ASSERT_EQ(prodIndexes[i++], prodIndex);
         orState(PROD_INFO_MISSED);
     }
 
     void missed(const DataSegId dataSegId, Peer peer) override {
-        ASSERT_EQ(segIds[0], dataSegId);
+        static int i = 0;
+        LOG_DEBUG("i=%d, dataSegId=%s", i, dataSegId.to_string().data());
+        ASSERT_EQ(segIds[i++], dataSegId);
         orState(DATA_SEG_MISSED);
     }
 
@@ -240,18 +244,17 @@ public:
         EXPECT_EQ(localhost, rmtAddr);
 
         LOG_DEBUG("Starting publishing peer");
-        ASSERT_TRUE(pubPeer.start());
+        pubPeer.start();
     }
 
     bool notify(Peer& pubPeer) {
         // Start an exchange
-        return pubPeer.notify(prodIndex) &&
-                pubPeer.notify(segId);
+        return pubPeer.notify(prodIndex) && pubPeer.notify(segId);
     }
 
     bool loopNotify(Peer pubPeer) {
         while (notify(pubPeer))
-            ::pthread_yield();
+            ::usleep(1000);
         return false;
     }
 };
@@ -275,7 +278,7 @@ TEST_F(PeerTest, PrematureStop)
 
         SubPeer subPeer(*this, pubAddr);
         ASSERT_TRUE(subPeer);
-        ASSERT_TRUE(subPeer.start());
+        subPeer.start();
 
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
@@ -341,7 +344,7 @@ TEST_F(PeerTest, DataExchange)
          * Apparently, there's a race condition for O/S-assigned port numbers in
          * a `::connect()` call for an unbound socket. Sheesh!
          */
-        ASSERT_TRUE(subPeer.start());
+        subPeer.start();
 
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
@@ -397,7 +400,7 @@ TEST_F(PeerTest, BrokenConnection)
              * O/S-assigned port numbers in a `::connect()` call for an unbound
              * socket. Sheesh!
              */
-            ASSERT_TRUE(subPeer.start());
+            subPeer.start();
 
             ASSERT_TRUE(srvrThread.joinable());
             srvrThread.join();
@@ -437,7 +440,7 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             SubPeer subPeer{*this, pubAddr};
             ASSERT_TRUE(subPeer);
             LOG_DEBUG("Starting subscribing peer");
-            ASSERT_TRUE(subPeer.start());
+            subPeer.start();
 
             ASSERT_TRUE(srvrThread.joinable());
             srvrThread.join();

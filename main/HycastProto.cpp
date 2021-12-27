@@ -184,7 +184,7 @@ ProdInfo::ProdInfo(const ProdIndex   index,
     : pImpl{std::make_shared<Impl>(index, name, size)}
 {}
 
-ProdInfo::operator bool() const {
+ProdInfo::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 

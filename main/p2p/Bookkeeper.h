@@ -48,7 +48,7 @@ public:
 
     virtual bool add(const Peer peer) const =0;
 
-    virtual bool remove(const Peer peer) const =0;
+    virtual bool erase(const Peer peer) const =0;
 };
 
 /**
@@ -74,7 +74,7 @@ public:
 
     Peer getWorstPeer()             const;
 
-    bool remove(const Peer peer)    const          override;
+    bool erase(const Peer peer)    const          override;
 };
 
 /**
@@ -210,12 +210,9 @@ public:
      * peer that was constructed as a client will be returned because that's
      * what subscriber's will want to know.
      *
-     * @param[in] isClient  Whether or not the local peer must have been
-     *                      constructed as a client
-     * @return              Worst performing peer with the given attribute. Will
-     *                      test false if no such peer exists.
+     * @return Worst performing peer. Will test false if no such peer exists.
      */
-    Peer getWorstPeer(const bool isClient = true) const;
+    Peer getWorstPeer() const;
 
     /**
      * Adds a peer.
@@ -238,7 +235,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Peer is unknown
      */
-    bool remove(const Peer peer) const override;
+    bool erase(const Peer peer) const override;
 };
 
 } // namespace

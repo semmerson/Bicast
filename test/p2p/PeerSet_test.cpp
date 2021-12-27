@@ -223,7 +223,7 @@ public:
             hycast::InetAddr localhost("127.0.0.1");
             EXPECT_EQ(localhost, rmtAddr);
 
-            ASSERT_TRUE(pubPeer.start()); // Starts reading
+            pubPeer.start();              // Starts reading
             pubPeerSet.insert(pubPeer);   // Ready to notify
             ASSERT_EQ(i+1, pubPeerSet.size());
         }
@@ -255,7 +255,7 @@ TEST_F(PeerSetTest, DataExchange)
             hycast::PeerSet subPeerSet{};
             for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {
                 hycast::SubPeer subPeer(*this, pubAddr);
-                ASSERT_TRUE(subPeer.start()); // Starts reading
+                subPeer.start(); // Starts reading
                 subPeerSet.insert(subPeer);
                 ASSERT_EQ(i+1, subPeerSet.size());
             }

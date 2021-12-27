@@ -41,7 +41,7 @@ protected:
 public:
     using size_type = size_t;
 
-    PeerSet(P2pMgr& p2pMgr);
+    PeerSet();
 
     /**
      * Adds a started peer.

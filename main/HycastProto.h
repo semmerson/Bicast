@@ -325,9 +325,12 @@ public:
              const std::string name,
              const ProdSize    size);
 
-    operator bool() const;
+    operator bool() const noexcept;
 
     const ProdIndex& getIndex() const;
+    const ProdIndex& getId() const {
+        return getIndex();
+    }
     const String&    getName() const;
     const ProdSize&  getSize() const;
 
@@ -466,6 +469,18 @@ public:
     }
 
     ~DatumId() noexcept {
+    }
+
+    Id getType() const noexcept {
+        return id;
+    }
+
+    bool equals(const ProdIndex prodIndex) {
+        return id == Id::PROD_INDEX && this->prodIndex == prodIndex;
+    }
+
+    bool equals(const DataSegId dataSegId) {
+        return id == Id::DATA_SEG_ID && this->dataSegId == dataSegId;
     }
 
     DatumId& operator=(const DatumId& rhs) noexcept {
