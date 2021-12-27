@@ -4,6 +4,7 @@ add_library(p2p OBJECT
         Peer.cpp          Peer.h
 #       NoticeArray.cpp   NoticeArray.h
         PeerSet.cpp       PeerSet.h
+        Indicator.cpp     Indicator.h
         Bookkeeper.cpp    Bookkeeper.h
         Tracker.cpp       Tracker.h
         P2pMgr.cpp        P2pMgr.h
