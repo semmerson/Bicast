@@ -1,13 +1,19 @@
-LogLevel: NOTE
-Peer2Peer:           # Local P2P server
-  InetAddr: 0.0.0.0  # All interfaces
-  Port: 38800
-  MaxPeers: 8        # Maximum number of connected subscriber-peers
-  ListenSize: 8      # Size of listen(2) queue
-Multicast:           # Multicast group
-  InetAddr: 232.128.117.1
-  Port: 38800
-Repository:
-  Pathname: repo
-  MaxOpenFiles: 10
-SegmentSize: 1444    # Maximum size of canonical data-segment in bytes
+LogLevel: NOTE           # Logging level
+Peer2Peer:               # Local P2P server
+  IpAddr: 127.0.0.1      # IP address
+  Port: 38800            # Port number
+  MaxPeers: 8            # Maximum number of connected subscriber-peers
+  ListenSize: 8          # Size of listen(2) queue
+  MaxPotentialPeers: 100 # Maximum size of potential peer list
+  ReplacementIndicator:  # When worst peer should be replaced
+    Type: time           # Type of indicator
+    Duration: 60000      # Evaluation duration in ms
+#   Type: data           # Type of indicator
+#   Threshold: 1000000   # Threshold amount in bytes
+Multicast:               # Multicast group
+  IpAddr: 232.128.117.1  # IP address of multicast group
+  Port: 38800            # Port number of multicast group
+Repository:              # Data product repository
+  Pathname: repo         # Filename of repository
+  MaxOpenFiles: 10       # Maximum number of open files
+SegmentSize: 1444        # Maximum size of canonical data-segment in bytes
