@@ -1,6 +1,9 @@
 #add_executable(AutoReference AutoReference.cpp)
 #add_test(AutoReference AutoReference)
 
+add_executable(PimplIface PimplIface.cpp)
+add_test(PimplIface PimplIface)
+
 add_executable(noexcept_test noexcept_test.cpp)
 target_link_libraries(noexcept_test gtest pthread)
 add_test(noexcept_test noexcept_test)

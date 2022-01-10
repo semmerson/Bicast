@@ -12,4 +12,5 @@ add_library(misc OBJECT
         Thread.cpp         Thread.h
 			   LinkedHashMap.h
 	LinkedMap.cpp	   LinkedMap.h
+	Preferences.cpp    Preferences.h
 )

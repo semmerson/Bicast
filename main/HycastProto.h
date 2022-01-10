@@ -614,11 +614,11 @@ public:
 
     virtual void recvData(
             const ProdInfo prodInfo,
-            SubP2pMgr&      p2pMgr) =0;
+            SubP2pMgr&     p2pMgr) =0;
 
     virtual void recvData(
             const DataSeg dataSeg,
-            SubP2pMgr&      p2pMgr) =0;
+            SubP2pMgr&    p2pMgr) =0;
 };
 
 } // namespace

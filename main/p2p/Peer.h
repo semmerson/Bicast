@@ -221,8 +221,10 @@ public:
 template<class MGR, class PEER>
 class PeerSrvr
 {
+public:
     class Impl;
 
+private:
     std::shared_ptr<Impl> pImpl;
 
 public:

@@ -181,15 +181,13 @@ class Peer::Impl
                     noticeQ.pop();
                 }
 
-                if (datumId.id == DatumId::Id::PROD_INDEX &&
-                        p2pMgr.shouldNotify(peer, datumId.prodIndex)) {
+                if (datumId.id == DatumId::Id::PROD_INDEX) {
                     LOG_DEBUG("Peer %s is notifying about product %s",
                             to_string().data(), datumId.to_string().data());
                     connected = noticeXprt.send(PduId::PROD_INFO_NOTICE,
                             datumId.prodIndex);
                 }
-                else if (datumId.id == DatumId::Id::DATA_SEG_ID &&
-                        p2pMgr.shouldNotify(peer, datumId.dataSegId)) {
+                else if (datumId.id == DatumId::Id::DATA_SEG_ID) {
                     LOG_DEBUG("Peer %s is notifying about data-segment %s",
                             to_string().data(), datumId.to_string().data());
                     connected = noticeXprt.send(PduId::DATA_SEG_NOTICE,

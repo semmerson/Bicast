@@ -14,9 +14,9 @@ add_test(Peer_test Peer_test)
 #target_link_libraries(NoticeQueue_test hycast gtest)
 #add_test(NoticeQueue_test NoticeQueue_test)
 
-add_executable(PeerSet_test PeerSet_test.cpp)
-target_link_libraries(PeerSet_test hycast gtest)
-add_test(PeerSet_test PeerSet_test)
+#add_executable(PeerSet_test PeerSet_test.cpp)
+#target_link_libraries(PeerSet_test hycast gtest)
+#add_test(PeerSet_test PeerSet_test)
 
 add_executable(Bookkeeper_test Bookkeeper_test.cpp)
 target_link_libraries(Bookkeeper_test hycast gtest)

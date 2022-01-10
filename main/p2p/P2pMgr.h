@@ -43,6 +43,8 @@ class Peer; // Forward declaration
 class P2pMgr : public RequestRcvr
 {
 public:
+    using Pimpl = std::shared_ptr<P2pMgr>;
+
     /**
      * Relationship to the data-products:
      */
@@ -63,10 +65,11 @@ public:
      * @param[in] segSize       Size, in bytes, of canonical data-segment
      * @return                  Publisher's P2P manager
      */
-    static std::shared_ptr<P2pMgr> create(Node&          pubNode,
-                                          const SockAddr peerSrvrAddr,
-                                          const unsigned maxPeers,
-                                          const SegSize  segSize);
+    static Pimpl create(
+            Node&          pubNode,
+            const SockAddr peerSrvrAddr,
+            unsigned       maxPeers,
+            const SegSize  segSize);
 
     virtual ~P2pMgr() noexcept =default;
 
@@ -99,34 +102,6 @@ public:
      * @param[in] dataSegId  Data segment ID
      */
     virtual void notify(const DataSegId dataSegId) =0;
-
-    /**
-     * Indicates if a remote peer should be notified about available information
-     * on a product. Returns false iff the remote peer has indicated that it has
-     * the datum.
-     *
-     * @param[in] peer       Peer
-     * @param[in] prodIndex  Index of the product
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
-     */
-    virtual bool shouldNotify(
-            Peer      peer,
-            ProdIndex prodIndex) =0;
-
-    /**
-     * Indicates if a remote peer should be notified about an available data
-     * segment. Returns false iff the remote peer has indicated that it has the
-     * datum.
-     *
-     * @param[in] peer       Peer
-     * @param[in] dataSegId  ID of the data segment
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
-     */
-    virtual bool shouldNotify(
-            Peer      peer,
-            DataSegId dataSegId) =0;
 
     /**
      * Accepts being notified that a local peer has lost the connection with
@@ -164,6 +139,8 @@ class SubP2pMgr : virtual public P2pMgr
                 , public DataRcvr
 {
 public:
+    using Pimpl = std::shared_ptr<SubP2pMgr>;
+
     /**
      * Creates a subscribing P2P manager.
      *
@@ -178,11 +155,12 @@ public:
      * @return                     Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
-    static std::shared_ptr<SubP2pMgr> create(SubNode&       subNode,
-                                             Tracker        tracker,
-                                             const SockAddr subPeerSrvrAddr,
-                                             const unsigned maxPeers,
-                                             const SegSize  segSize);
+    static Pimpl create(
+            SubNode&       subNode,
+            Tracker        tracker,
+            const SockAddr subPeerSrvrAddr,
+            const unsigned maxPeers,
+            const SegSize  segSize);
 
     /**
      * Returns the socket address of the subscribing P2P manager's peer-server.
@@ -262,17 +240,7 @@ public:
      */
     virtual void recvData(const DataSeg dataSeg,
                           Peer          peer) =0;
-
-    /**
-     * Accepts being notified that a local peer has lost the connection with
-     * its remote peer.
-     *
-     * @param[in] peer  Local peer
-     */
-    virtual void lostConnection(Peer peer) =0;
 };
-
-using SubP2pMgrPtr = std::shared_ptr<SubP2pMgr>;
 
 } // namespace
 

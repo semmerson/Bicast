@@ -123,18 +123,6 @@ public:
         return SockAddr();
     }
 
-    bool shouldNotify(
-            Peer      peer,
-            ProdIndex prodIndex) override {
-        return true;
-    }
-
-    bool shouldNotify(
-            Peer      peer,
-            DataSegId segId) override {
-        return true;
-    }
-
     // Subscriber-side
     bool recvNotice(const ProdIndex notice, Peer peer) override
     {
