@@ -87,7 +87,7 @@ public:
                 std::to_string(prodSize) + "}";
     }
 
-    bool write(Xprt& xprt) {
+    bool write(Xprt xprt) {
         //LOG_DEBUG("Writing data-segment to %s", xprt.to_string().data());
         auto success = segId.write(xprt);
         if (success) {
@@ -102,7 +102,7 @@ public:
         return success;
     }
 
-    bool read(Xprt& xprt) {
+    bool read(Xprt xprt) {
         //LOG_DEBUG("Reading data-segment from %s", xprt.to_string().data());
         bool success = segId.read(xprt);
 
@@ -173,11 +173,11 @@ String DataSeg::to_string(const bool withName) const {
     return pImpl->to_string(withName);
 }
 
-bool DataSeg::write(Xprt& xprt) const {
+bool DataSeg::write(Xprt xprt) const {
     return pImpl->write(xprt);
 }
 
-bool DataSeg::read(Xprt& xprt) {
+bool DataSeg::read(Xprt xprt) {
     return pImpl->read(xprt);
 }
 

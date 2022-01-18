@@ -138,8 +138,9 @@ public:
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    bool notify(const ProdIndex notice) const;
-    bool notify(const DataSegId notice) const;
+    bool notify(const Tracker   tracker) const;
+    bool notify(const ProdIndex prodIndex) const;
+    bool notify(const DataSegId dataSegId) const;
 
     bool rmtIsPubPath() const noexcept;
 };

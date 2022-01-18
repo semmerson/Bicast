@@ -18,15 +18,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+#define _XOPEN_SOURCE 700
 #include "config.h"
 
 #include "error.h"
 #include "HycastProto.h"
 #include "Xprt.h"
 
+#include <climits>
 #include <cstring>
 #include <ctime>
+
+#ifndef _XOPEN_PATH_MAX
+    // Not in gcc 4.8.5 for some reason
+    #define _XOPEN_PATH_MAX 1024
+#endif
 
 namespace hycast {
 
@@ -46,13 +52,13 @@ PduId::PduId(Type value)
         throw INVALID_ARGUMENT("value=" + to_string());
 }
 
-bool FeedInfo::write(Xprt& xprt) const {
+bool FeedInfo::write(Xprt xprt) const {
     return mcastGroup.write(xprt) &&
             mcastSource.write(xprt) &&
             xprt.write(segSize);
 }
 
-bool FeedInfo::read(Xprt& xprt) {
+bool FeedInfo::read(Xprt xprt) {
     return mcastGroup.read(xprt) &&
             mcastSource.read(xprt) &&
             xprt.read(segSize);
@@ -68,11 +74,16 @@ std::string DataSegId::to_string(const bool withName) const
 }
 
 String DatumId::to_string() const {
-    return (id == Id::PROD_INDEX)
-            ? prodIndex.to_string()
-            : (id == Id::DATA_SEG_ID)
-                ? dataSegId.to_string()
-                : "<unset>";
+    switch (id) {
+    case Id::TRACKER:
+        return tracker.to_string();
+    case Id::PROD_INDEX:
+        return prodIndex.to_string();
+    case Id::DATA_SEG_ID:
+        return dataSegId.to_string();
+    default:
+        return "<unset>";
+    }
 }
 
 size_t DatumId::hash() const noexcept {
@@ -117,6 +128,8 @@ class ProdInfo::Impl
 {
     friend class ProdInfo;
 
+    using SizeType = uint16_t; ///< Type to hold length of product-name
+
     ProdIndex index;   ///< Product index
     String    name;    ///< Name of product
     ProdSize  size;    ///< Size of product in bytes
@@ -130,7 +143,11 @@ public:
         : index{index}
         , name(name)
         , size{size}
-    {}
+    {
+        if (name.size() > _XOPEN_PATH_MAX-1)
+            throw INVALID_ARGUMENT("Name is longer than " +
+                    std::to_string(_XOPEN_PATH_MAX-1) + " bytes");
+    }
 
     bool operator==(const Impl& rhs) const {
         return index == rhs.index &&
@@ -147,12 +164,13 @@ public:
                 "\", size=" + std::to_string(size) + "}";
     }
 
-    bool write(Xprt& xprt) const {
+    bool write(Xprt xprt) const {
         //LOG_DEBUG("Writing product information to %s", xprt.to_string().data());
         auto success = index.write(xprt);
         if (success) {
             //LOG_DEBUG("Writing product name to %s", xprt.to_string().data());
-            success = xprt.write(name);
+            success = xprt.write(static_cast<SizeType>(name.size())) &&
+                    xprt.write(name.data(), name.size());
             if (success) {
                 //LOG_DEBUG("Writing product size to %s", xprt.to_string().data());
                 success = xprt.write(size);
@@ -161,15 +179,24 @@ public:
         return success;
     }
 
-    bool read(Xprt& xprt) {
+    bool read(Xprt xprt) {
         //LOG_DEBUG("Reading product information from %s", xprt.to_string().data());
         auto success = index.read(xprt);
         if (success) {
             //LOG_DEBUG("Reading product name from %s", xprt.to_string().data());
-            success = xprt.read(name);
+            SizeType nbytes;
+            success = xprt.read(nbytes);
             if (success) {
-                //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
-                success = xprt.read(size);
+                if (nbytes > _XOPEN_PATH_MAX-1)
+                    throw RUNTIME_ERROR("Name is longer than " +
+                            std::to_string(_XOPEN_PATH_MAX-1) + " bytes");
+                char bytes[nbytes];
+                success = xprt.read(bytes, nbytes);
+                if (success) {
+                    name.assign(bytes, nbytes);
+                    //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
+                    success = xprt.read(nbytes);
+                }
             }
         }
         return success;
@@ -206,11 +233,11 @@ String ProdInfo::to_string(const bool withName) const {
     return pImpl->to_string(withName);
 }
 
-bool ProdInfo::write(Xprt& xprt) const {
+bool ProdInfo::write(Xprt xprt) const {
     return pImpl->write(xprt);
 }
 
-bool ProdInfo::read(Xprt& xprt) {
+bool ProdInfo::read(Xprt xprt) {
     if (!pImpl)
         pImpl = std::make_shared<Impl>();
     return pImpl->read(xprt);

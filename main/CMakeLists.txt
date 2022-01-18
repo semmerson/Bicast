@@ -19,6 +19,7 @@ add_library(main OBJECT
 )
 include_directories(misc)
 include_directories(inet)
+include_directories(p2p)
 
 add_subdirectory(misc)
 add_subdirectory(inet)

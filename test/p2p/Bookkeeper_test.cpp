@@ -16,7 +16,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Bookkeeper`
-class BookkeeperTest : public ::testing::Test, public hycast::SubP2pMgr
+class BookkeeperTest : public ::testing::Test, public SubP2pMgr
 {
     void runPubPeerSrvr() {
         std::list<Peer> peers;
@@ -26,20 +26,20 @@ class BookkeeperTest : public ::testing::Test, public hycast::SubP2pMgr
     }
 
 protected:
-    hycast::SockAddr        pubAddr;
-    hycast::PubPeerSrvr     pubPeerSrvr;
+    SockAddr        pubAddr;
+    PubPeerSrvr     pubPeerSrvr;
     std::thread             pubPeerSrvrThrd;
-    hycast::ProdIndex       prodIndex;
-    hycast::DataSegId       segId;
-    hycast::SubPeer         peer1;
-    hycast::SubPeer         peer2;
+    ProdIndex       prodIndex;
+    DataSegId       segId;
+    SubPeer         peer1;
+    SubPeer         peer2;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
         , pubPeerSrvr(*this, pubAddr)
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodIndex{1}
-        , segId(prodIndex, hycast::DataSeg::CANON_DATASEG_SIZE) // Second data-segment
+        , segId(prodIndex, DataSeg::CANON_DATASEG_SIZE) // Second data-segment
         , peer1(*this, pubAddr)
         , peer2(*this, pubAddr)
     {}
@@ -58,8 +58,13 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::ProdIndex notice, hycast::Peer peer)
-            override
+    bool recvNotice(const Tracker notice, Peer peer) override
+    {
+        return false;
+    }
+
+    // Subscriber-side
+    bool recvNotice(const ProdIndex notice, Peer peer) override
     {
         return false;
     }
@@ -71,13 +76,13 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const ProdIndex request, hycast::Peer peer) override
+    ProdInfo recvRequest(const ProdIndex request, Peer peer) override
     {
         return ProdInfo{};
     }
 
     // Publisher-side
-    DataSeg recvRequest(const DataSegId request, hycast::Peer peer) override
+    DataSeg recvRequest(const DataSegId request, Peer peer) override
     {
         return DataSeg{};
     }
@@ -95,10 +100,6 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const Tracker tracker, Peer peer) override
-    {}
-
-    // Subscriber-side
     void recvData(const ProdInfo data, Peer peer) override
     {}
 
@@ -114,15 +115,15 @@ public:
 // Tests default construction
 TEST_F(BookkeeperTest, DefaultConstruction)
 {
-    hycast::Bookkeeper::createPub();
-    hycast::Bookkeeper::createSub();
+    Bookkeeper::createPub();
+    Bookkeeper::createSub();
 }
 
 // Tests adding a peerSubP2pNode
 TEST_F(BookkeeperTest, PeerAddition)
 {
     auto bookkeeper = Bookkeeper::createSub();
-    hycast::SubPeer    peer{*this, pubAddr};
+    SubPeer    peer{*this, pubAddr};
 
     bookkeeper->add(peer);
 }
@@ -130,7 +131,7 @@ TEST_F(BookkeeperTest, PeerAddition)
 // Tests making a request
 TEST_F(BookkeeperTest, ShouldRequest)
 {
-    auto bookkeeper = hycast::Bookkeeper::createSub();
+    auto bookkeeper = Bookkeeper::createSub();
 
     bookkeeper->add(peer1);
 
@@ -170,9 +171,9 @@ TEST_F(BookkeeperTest, DataExchange)
     waitForState(LISTENING);
 
     // Create and execute reception by subscribing peers on separate threads
-    hycast::PeerSet subPeerSet{};
+    PeerSet subPeerSet{};
     for (int i = 0; i < NUM_PEERS; ++i) {
-        hycast::Peer subPeer = hycast::Peer(pubAddr, *this);
+        Peer subPeer = Peer(pubAddr, *this);
         ASSERT_TRUE(subPeerSet.insert(subPeer)); // Starts reading
         ASSERT_EQ(i+1, subPeerSet.size());
     }
@@ -212,8 +213,8 @@ static void myTerminate()
 }
 
 int main(int argc, char **argv) {
-  hycast::log_setName(::basename(argv[0]));
-  //hycast::log_setLevel(hycast::LogLevel::TRACE);
+  log_setName(::basename(argv[0]));
+  //log_setLevel(LogLevel::TRACE);
 
   std::set_terminate(&myTerminate);
   ::testing::InitGoogleTest(&argc, argv);

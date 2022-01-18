@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <inttypes.h>
 #include <limits.h>
 #include <mutex>
 #include <netinet/in.h>
@@ -111,33 +112,23 @@ protected:
         init(sockAddr.socket(type, protocol));
     }
 
-    static inline bool hton(const bool value)
-    {
+    static inline bool hton(const bool value) {
         return value;
     }
 
-    static inline uint8_t hton(const uint8_t value)
-    {
+    static inline uint8_t hton(const uint8_t value) {
         return value;
     }
 
-    static inline uint16_t hton(const uint16_t value)
-    {
+    static inline uint16_t hton(const uint16_t value) {
         return htons(value);
     }
 
-    static inline uint32_t hton(const uint32_t value)
-    {
+    static inline uint32_t hton(const uint32_t value) {
         return htonl(value);
     }
 
-    static inline int32_t hton(const int32_t value)
-    {
-        return htonl(value);
-    }
-
-    static inline uint64_t hton(uint64_t value)
-    {
+    static inline uint64_t hton(uint64_t value) {
         uint64_t  v64;
         uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
 
@@ -162,11 +153,6 @@ protected:
         return ntohs(value);
     }
 
-    static inline int32_t ntoh(const int32_t value)
-    {
-        return ntohl(value);
-    }
-
     static inline uint32_t ntoh(const uint32_t value)
     {
         return ntohl(value);
@@ -179,19 +165,36 @@ protected:
         return (static_cast<uint64_t>(ntoh(v32[0])) << 32) | ntoh(v32[1]);
     }
 
-    inline size_t padLen(const unsigned nbytes,
-                         const size_t   align) {
-        return (align - nbytes) % align;
+    static inline size_t padLen(
+            const unsigned nbytes,
+            const size_t   align) {
+        return (align - (nbytes % align)) % align;
+        /*
+         * Alternative?
+         * See <https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding>.
+         *
+         * padding = (align - (nbytes & (align - 1))) & (align - 1)
+         *         = (-nbytes & (align - 1)) // Works for unsigned `nbytes`
+         */
     }
 
-    inline bool alignWriteTo(size_t nbytes)
+    inline bool alignWriteTo(size_t align)
     {
-        return write(&writePad, padLen(bytesWritten, nbytes));
+        LOG_DEBUG("bytesWritten=%s, align=%s",
+                std::to_string(bytesWritten).data(),
+                std::to_string(align).data());
+        const auto padding = padLen(bytesWritten, align);
+        return padding
+                ? write(&writePad, padLen(bytesWritten, align))
+                : true;
     }
 
     inline bool alignReadTo(size_t nbytes)
     {
-        return read(&readPad, padLen(bytesRead, nbytes));
+        const auto padding = padLen(bytesWritten, nbytes);
+        return padding
+                ? read(&readPad, padLen(bytesRead, nbytes))
+                : true;
     }
 
     /**
@@ -200,8 +203,8 @@ protected:
      *
      * @param[in] data      Bytes to write.
      * @param[in] nbytes    Number of bytes to write.
-     * @retval     `true`   Success
-     * @retval     `false`  Lost connection
+     * @retval    `true`    Success
+     * @retval    `false`   Lost connection
      */
     virtual bool writeBytes(const void* data,
                             size_t      nbytes) =0;
@@ -305,6 +308,7 @@ public:
      */
     bool write(const void*  data,
                const size_t nbytes) {
+        LOG_DEBUG("Writing %zu bytes to %s", nbytes, to_string().data());
         if (writeBytes(data, nbytes)) {
             bytesWritten += nbytes;
             return true;
@@ -321,24 +325,28 @@ public:
         return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
     }
     bool write(const bool value) {
+        LOG_DEBUG("Writing boolean %" PRIu8" to %s", (uint8_t)value,
+                to_string().data());
         return write<bool>(value);
     }
     bool write(const uint8_t value) {
+        LOG_DEBUG("Writing 1-byte %" PRIu8 " to %s", value, to_string().data());
         return write<uint8_t>(value);
     }
     bool write(const uint16_t value) {
+        LOG_DEBUG("Writing 2-byte %" PRIu16 " to %s", value, to_string().data());
         return write<uint16_t>(value);
     }
-    bool write(const int32_t value) {
-        return write<int32_t>(value);
-    }
     bool write(const uint32_t value) {
+        LOG_DEBUG("Writing 4-byte %" PRIu32 " to %s", value, to_string().data());
         return write<uint32_t>(value);
     }
     bool write(const uint64_t value) {
+        LOG_DEBUG("Writing 8-byte %" PRIu64 " to %s", value, to_string().data());
         return write<uint64_t>(value);
     }
     bool write(const std::string& string) {
+        LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
         return write(string.size()) && write(string.data(), string.size());
     }
 
@@ -357,6 +365,7 @@ public:
               const size_t nbytes) {
         if (readBytes(data, nbytes)) {
             bytesRead += nbytes;
+            LOG_DEBUG("Read %zu bytes from %s", nbytes, to_string().data());
             return true;
         }
         return false;
@@ -376,22 +385,30 @@ public:
         return false;
     }
     bool read(bool& value) {
-        return read<bool>(value);
+        const auto success = read<bool>(value);
+        LOG_DEBUG("Read boolean %" PRIu8 " from %s", (uint8_t)value,
+                to_string().data());
+        return success;
     }
     bool read(uint8_t& value) {
-        return read<uint8_t>(value);
+        const auto success = read<uint8_t>(value);
+        LOG_DEBUG("Read 1-byte %" PRIu8 " from %s", value, to_string().data());
+        return success;
     }
     bool read(uint16_t& value) {
-        return read<uint16_t>(value);
-    }
-    bool read(int32_t& value) {
-        return read<int32_t>(value);
+        const auto success = read<uint16_t>(value);
+        LOG_DEBUG("Read 2-byte %" PRIu16 " from %s", value, to_string().data());
+        return success;
     }
     bool read(uint32_t& value) {
-        return read<uint32_t>(value);
+        const auto success = read<uint32_t>(value);
+        LOG_DEBUG("Read 4-byte %" PRIu32 " from %s", value, to_string().data());
+        return success;
     }
     bool read(uint64_t& value) {
-        return read<uint64_t>(value);
+        const auto success = read<uint64_t>(value);
+        LOG_DEBUG("Read 8-byte %" PRIu64 " from %s", value, to_string().data());
+        return success;
     }
     bool read(std::string& string) {
         std::string::size_type size;
@@ -399,6 +416,8 @@ public:
             char bytes[size];
             if (read(bytes, sizeof(bytes))) {
                 string.assign(bytes, size);
+                LOG_DEBUG("Read \"%s\" from %s", string.data(),
+                        to_string().data());
                 return true;
             }
         }
@@ -492,9 +511,6 @@ bool Socket::write(const uint8_t value) const {
 bool Socket::write(const uint16_t value) const {
     return pImpl->write(value);
 }
-bool Socket::write(const int32_t  value) const {
-    return pImpl->write(value);
-}
 bool Socket::write(const uint32_t value) const {
     return pImpl->write(value);
 }
@@ -524,9 +540,6 @@ bool Socket::read(uint8_t& value) const {
     return pImpl->read(value);
 }
 bool Socket::read(uint16_t& value) const {
-    return pImpl->read(value);
-}
-bool Socket::read(int32_t&  value) const {
     return pImpl->read(value);
 }
 bool Socket::read(uint32_t& value) const {

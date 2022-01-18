@@ -23,7 +23,7 @@
 #ifndef MAIN_INET_XPRT_H_
 #define MAIN_INET_XPRT_H_
 
-#include <Socket.h>
+#include "Socket.h"
 
 #include <memory>
 
@@ -93,6 +93,46 @@ public:
     bool send(const PduId pduId, const bool value);
 
     /**
+     * Sends a value as a PDU to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] value    Value to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId pduId, const uint8_t value);
+
+    /**
+     * Sends a value as a PDU to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] value    Value to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId pduId, const uint16_t value);
+
+    /**
+     * Sends a value as a PDU to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] value    Value to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId pduId, const uint32_t value);
+
+    /**
+     * Sends a value as a PDU to the remote host.
+     *
+     * @param[in] pduId    PDU identifier
+     * @param[in] value    Value to be transported
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId pduId, const uint64_t value);
+
+    /**
      * Sends an object as a PDU to the remote host.
      *
      * @param[in] pduId    PDU identifier
@@ -110,25 +150,21 @@ public:
      * @retval `true`           Success
      * @retval `false`          Connection lost
      */
-    bool recv(Dispatch& dispatch);
+    bool recv(Dispatch dispatch);
 
     bool write(const void*        value, size_t nbytes);
     bool write(const bool         value);
     bool write(const uint8_t      value);
     bool write(const uint16_t     value);
-    bool write(const int32_t      value);
     bool write(const uint32_t     value);
     bool write(const uint64_t     value);
-    bool write(const std::string& value);
 
     bool read(void*        value, size_t nbytes);
     bool read(bool&        value);
     bool read(uint8_t&     value);
     bool read(uint16_t&    value);
-    bool read(int32_t&     value);
     bool read(uint32_t&    value);
     bool read(uint64_t&    value);
-    bool read(std::string& value);
 
     void shutdown();
 };

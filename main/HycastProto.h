@@ -24,6 +24,7 @@
 
 #include "error.h"
 #include "Socket.h"
+#include "Tracker.h"
 #include "Xprt.h"
 
 #include <condition_variable>
@@ -109,11 +110,11 @@ public:
         return this->value == value;
     }
 
-    inline bool write(Xprt& xprt) const {
+    inline bool write(Xprt xprt) const {
         return xprt.write(value);
     }
 
-    inline bool read(Xprt& xprt) {
+    inline bool read(Xprt xprt) {
         return xprt.read(value);
     }
 };
@@ -132,7 +133,7 @@ struct FeedInfo : public XprtAble
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool write(Xprt& xprt) const override;
+    bool write(Xprt xprt) const override;
 
     /**
      * Initializes this instance from a transport.
@@ -141,7 +142,7 @@ struct FeedInfo : public XprtAble
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool read(Xprt& xprt) override;
+    bool read(Xprt xprt) override;
 };
 
 /// Path-to-publisher notice
@@ -176,11 +177,11 @@ public:
                 : std::to_string(pubPath);
     }
 
-    bool write(Xprt& xprt) const override {
+    bool write(Xprt xprt) const override {
         return xprt.write(pubPath);
     }
 
-    bool read(Xprt& xprt) override {
+    bool read(Xprt xprt) override {
         return xprt.read(pubPath);
     }
 };
@@ -230,11 +231,11 @@ public:
         return *this;
     }
 
-    bool write(Xprt& xprt) const override {
+    bool write(Xprt xprt) const override {
         return xprt.write(index);
     }
 
-    bool read(Xprt& xprt) override {
+    bool read(Xprt xprt) override {
         return xprt.read(index);
     }
 };
@@ -271,7 +272,7 @@ struct DataSegId : public XprtAble
         return prodIndex.hash() ^ offHash(offset);
     }
 
-    bool write(Xprt& xprt) const override {
+    bool write(Xprt xprt) const override {
         auto success = prodIndex.write(xprt);
         if (success) {
             success = xprt.write(offset);
@@ -279,7 +280,7 @@ struct DataSegId : public XprtAble
         return success;
     }
 
-    bool read(Xprt& xprt) override {
+    bool read(Xprt xprt) override {
         auto success = prodIndex.read(xprt);
         if (success)  {
             success = xprt.read(offset);
@@ -303,11 +304,11 @@ struct Timestamp : public XprtAble
      */
     std::string to_string(bool withName = false) const;
 
-    bool write(Xprt& xprt) const override {
+    bool write(Xprt xprt) const override {
         return xprt.write(sec) && xprt.write(nsec);
     }
 
-    bool read(Xprt& xprt) override {
+    bool read(Xprt xprt) override {
         return xprt.read(sec) && xprt.read(nsec);
     }
 };
@@ -338,9 +339,9 @@ public:
 
     String to_string(bool withName = false) const;
 
-    bool write(Xprt& xprt) const override;
+    bool write(Xprt xprt) const override;
 
-    bool read(Xprt& xprt) override;
+    bool read(Xprt xprt) override;
 };
 
 class Peer;
@@ -397,9 +398,9 @@ public:
 
     String to_string(bool withName = false) const;
 
-    bool write(Xprt& xprt) const override;
+    bool write(Xprt xprt) const override;
 
-    bool read(Xprt& xprt) override;
+    bool read(Xprt xprt) override;
 };
 
 /******************************************************************************/
@@ -441,10 +442,12 @@ struct DatumId
 public:
     enum class Id {
         UNSET,
+        TRACKER,
         PROD_INDEX,
         DATA_SEG_ID
     } id;
     union {
+        Tracker   tracker;
         ProdIndex prodIndex;
         DataSegId dataSegId;
     };
@@ -452,6 +455,11 @@ public:
     DatumId() noexcept
         : prodIndex()
         , id(Id::UNSET)
+    {}
+
+    explicit DatumId(const Tracker tracker) noexcept
+        : id(Id::TRACKER)
+        , tracker(tracker)
     {}
 
     explicit DatumId(const ProdIndex prodIndex) noexcept
@@ -519,6 +527,8 @@ class NoticeRcvr
 {
 public:
     virtual ~NoticeRcvr() {}
+    virtual bool recvNotice(const Tracker   notice,
+                            Peer            peer) =0;
     virtual bool recvNotice(const ProdIndex notice,
                             Peer            peer) =0;
     virtual bool recvNotice(const DataSegId notice,

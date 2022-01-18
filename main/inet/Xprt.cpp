@@ -21,6 +21,7 @@
  */
 
 #include <error.h>
+#include <inttypes.h>
 #include <Socket.h>
 #include <Xprt.h>
 
@@ -66,9 +67,9 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool send(const PduId pduId,
-              Xprt&       xprt) {
-        return xprt.write(pduId) && sock.flush();
+    bool send(const PduId pduId) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.flush();
     }
 
     /**
@@ -81,9 +82,69 @@ public:
      * @retval    `false`  Connection lost
      */
     bool send(const PduId pduId,
-              const bool  value,
-              Xprt&       xprt) {
-        return xprt.write(pduId) && sock.write(value) && sock.flush();
+              const bool  value) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.write(value) && sock.flush();
+    }
+
+    /**
+     * Sends a value as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] value    Value to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId   pduId,
+              const uint8_t value) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.write(value) && sock.flush();
+    }
+
+    /**
+     * Sends a value as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] value    Value to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId    pduId,
+              const uint16_t value) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.write(value) && sock.flush();
+    }
+
+    /**
+     * Sends a value as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] value    Value to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId    pduId,
+              const uint32_t value) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.write(value) && sock.flush();
+    }
+
+    /**
+     * Sends a value as a PDU to the remote counterpart.
+     *
+     * @param[in] pduId    PDU ID
+     * @param[in] value    Value to be sent
+     * @param[in] xprt     Transport
+     * @retval    `true`   Success
+     * @retval    `false`  Connection lost
+     */
+    bool send(const PduId    pduId,
+              const uint64_t value) {
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && sock.write(value) && sock.flush();
     }
 
     /**
@@ -98,13 +159,20 @@ public:
     bool send(PduId            pduId,
               const WriteAble& obj,
               Xprt&            xprt) {
-        return xprt.write(pduId) && obj.write(xprt) && sock.flush();
+        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
+        return write(pduId) && obj.write(xprt) && sock.flush();
     }
 
     bool recv(Xprt xprt, Dispatch& dispatch) {
-        PduId id;
+        PduId pduId;
         sock.clear();
-        return read(id) && dispatch(id, xprt);
+        if (read(pduId)) {
+            const auto success = dispatch(pduId, xprt);
+            LOG_DEBUG("Received PDU %u from %s", (unsigned)pduId,
+                    to_string().data());
+            return success;
+        }
+        return false;
     }
 
     bool write(const void*        value,
@@ -117,22 +185,13 @@ public:
     bool write(const uint8_t      value) {
         return sock.write(value);
     }
-    bool write(const int16_t      value) {
-        return sock.write(value);
-    }
     bool write(const uint16_t     value) {
-        return sock.write(value);
-    }
-    bool write(const int32_t      value) {
         return sock.write(value);
     }
     bool write(const uint32_t     value) {
         return sock.write(value);
     }
     bool write(const uint64_t     value) {
-        return sock.write(value);
-    }
-    bool write(const std::string& value) {
         return sock.write(value);
     }
 
@@ -149,16 +208,10 @@ public:
     bool read(uint16_t&    value) {
         return sock.read(value);
     }
-    bool read(int32_t&     value) {
-        return sock.read(value);
-    }
     bool read(uint32_t&    value) {
         return sock.read(value);
     }
     bool read(uint64_t&    value) {
-        return sock.read(value);
-    }
-    bool read(std::string& value) {
         return sock.read(value);
     }
 
@@ -190,18 +243,34 @@ std::string Xprt::to_string() const {
 }
 
 bool Xprt::send(const PduId pduId) {
-    return pImpl->send(pduId, *this);
+    return pImpl->send(pduId);
 }
 
 bool Xprt::send(const PduId pduId, const bool value) {
-    return pImpl->send(pduId, value, *this);
+    return pImpl->send(pduId, value);
+}
+
+bool Xprt::send(const PduId pduId, const uint8_t value) {
+    return pImpl->send(pduId, value);
+}
+
+bool Xprt::send(const PduId pduId, const uint16_t value) {
+    return pImpl->send(pduId, value);
+}
+
+bool Xprt::send(const PduId pduId, const uint32_t value) {
+    return pImpl->send(pduId, value);
+}
+
+bool Xprt::send(const PduId pduId, const uint64_t value) {
+    return pImpl->send(pduId, value);
 }
 
 bool Xprt::send(const PduId pduId, const WriteAble& obj) {
     return pImpl->send(pduId, obj, *this);
 }
 
-bool Xprt::recv(Dispatch& dispatch) {
+bool Xprt::recv(Dispatch dispatch) {
     return pImpl->recv(*this, dispatch);
 }
 
@@ -218,16 +287,10 @@ bool Xprt::write(const uint8_t      value) {
 bool Xprt::write(const uint16_t     value) {
     return pImpl->write(value);
 }
-bool Xprt::write(const int32_t      value) {
-    return pImpl->write(value);
-}
 bool Xprt::write(const uint32_t     value) {
     return pImpl->write(value);
 }
 bool Xprt::write(const uint64_t     value) {
-    return pImpl->write(value);
-}
-bool Xprt::write(const std::string& value) {
     return pImpl->write(value);
 }
 
@@ -244,16 +307,10 @@ bool Xprt::read(uint8_t&     value) {
 bool Xprt::read(uint16_t&    value) {
     return pImpl->read(value);
 }
-bool Xprt::read(int32_t&     value) {
-    return pImpl->read(value);
-}
 bool Xprt::read(uint32_t&    value) {
     return pImpl->read(value);
 }
 bool Xprt::read(uint64_t&    value) {
-    return pImpl->read(value);
-}
-bool Xprt::read(std::string& value) {
     return pImpl->read(value);
 }
 

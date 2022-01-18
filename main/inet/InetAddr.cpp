@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <arpa/inet.h>
+#include <climits>
 #include <cstring>
 #include <functional>
 #include <net/if.h>
@@ -38,6 +39,10 @@
 #if defined(__linux__)
     #include <sys/types.h>
     #include <ifaddrs.h>
+#endif
+
+#ifndef _POSIX_HOST_NAME_MAX
+#define _POSIX_HOST_NAME_MAX 255
 #endif
 
 namespace hycast {
@@ -76,11 +81,20 @@ protected:
     }
 
 public:
-    enum AddrType : unsigned {
+    enum AddrType : uint32_t {
         ADDR_IPV4,
         ADDR_IPV6,
         ADDR_NAME
     } addrType;
+
+    template<typename TYPE>
+    static TYPE* create(Xprt xprt) {
+        auto impl = new TYPE();
+        if (impl->read(xprt))
+            return impl;
+        delete impl;
+        return nullptr;
+    }
 
     virtual ~Impl() noexcept;
 
@@ -141,7 +155,7 @@ public:
 
     virtual bool isSsm() const =0;
 
-    virtual bool write(Xprt& xprt) const =0;
+    virtual bool write(Xprt xprt) const =0;
 
     /**
      * Joins the source-specific multicast group identified by this instance
@@ -192,6 +206,10 @@ public:
     {
         this->addr.s_addr = addr;
     }
+
+    Inet4Addr()
+        : Inet4Addr(INADDR_ANY)
+    {}
 
     int getFamily() const noexcept
     {
@@ -296,11 +314,11 @@ public:
         return ip >= 0XE8000100 && ip <= 0XE8FFFFFF;
     }
 
-    bool write(Xprt& xprt) const {
+    bool write(Xprt xprt) const {
         return xprt.write(ADDR_IPV4) && xprt.write(addr.s_addr);
     }
 
-    bool read(Xprt& xprt) {
+    bool read(Xprt xprt) {
         return xprt.read(addr.s_addr);
     }
 };
@@ -421,6 +439,10 @@ public:
     Inet6Addr(const struct in6_addr& addr) noexcept
         : Impl()
         , addr(addr)
+    {}
+
+    Inet6Addr()
+        : Inet6Addr(in6addr_any)
     {}
 
     int getFamily() const noexcept
@@ -550,12 +572,12 @@ public:
         return last4 <= 0X40000000 || last4 >= 0X80000000;
     }
 
-    bool write(Xprt& xprt) const {
+    bool write(Xprt xprt) const {
         return xprt.write(ADDR_IPV6) &&
                 xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
     }
 
-    bool read(Xprt& xprt) {
+    bool read(Xprt xprt) {
         return xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
     }
 };
@@ -564,6 +586,8 @@ public:
 
 class NameAddr final : public InetAddr::Impl
 {
+    using SizeType = uint8_t; ///< Type for holding length of hostname
+
     std::string            name;
     std::hash<std::string> myHash;
 
@@ -636,6 +660,14 @@ public:
     NameAddr(const std::string& name)
         : Impl()
         , name(name)
+    {
+        if (name.size() > _POSIX_HOST_NAME_MAX)
+            throw INVALID_ARGUMENT("Name is longer than " +
+                    std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
+    }
+
+    NameAddr()
+        : NameAddr("")
     {}
 
     int getFamily() const noexcept
@@ -746,12 +778,24 @@ public:
         return false;
     }
 
-    bool write(Xprt& xprt) const {
-        return xprt.write(ADDR_NAME) && xprt.write(name);
+    bool write(Xprt xprt) const {
+        return xprt.write(static_cast<SizeType>(name.size())) &&
+                xprt.write(name.data(), name.size());
     }
 
-    bool read(Xprt& xprt) {
-        return xprt.read(name);
+    bool read(Xprt xprt) {
+        SizeType nbytes;
+        auto success = xprt.read(nbytes);
+        if (success) {
+            if (nbytes > _POSIX_HOST_NAME_MAX)
+                throw RUNTIME_ERROR("Name is longer than " +
+                        std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
+            char bytes[nbytes];
+            success = xprt.read(bytes, nbytes);
+            if (success)
+                name.assign(bytes, nbytes);
+        }
+        return success;
     }
 };
 
@@ -869,42 +913,36 @@ bool InetAddr::isSsm() const
     return pImpl->isSsm();
 }
 
-bool InetAddr::write(Xprt& xprt) const {
+bool InetAddr::write(Xprt xprt) const {
     return pImpl->write(xprt);
 }
 
-bool InetAddr::read(Xprt& xprt) {
-    unsigned char addrType;
-    bool          connected = xprt.read(addrType);
-    if (connected) {
-        switch (addrType) {
-        case Impl::ADDR_IPV4: {
-            in_addr_t addr;
-            connected = xprt.read(addr);
-            if (connected)
-                pImpl.reset(new Inet4Addr(addr));
-            break;
-        }
-        case Impl::ADDR_IPV6: {
-            in6_addr addr;
-            connected = xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
-            if (connected)
-                pImpl.reset(new Inet6Addr(addr));
-            break;
-        }
-        case Impl::ADDR_NAME: {
-            std::string addr;
-            connected = xprt.read(addr);
-            if (connected)
-                pImpl.reset(new NameAddr(addr));
-            break;
-        }
-        default:
-            throw LOGIC_ERROR("Unsupported address type: " +
-                    std::to_string(addrType));
-        }
+bool InetAddr::read(Xprt xprt) {
+    uint8_t addrType;
+    Impl*   impl;
+
+    if (!xprt.read(addrType))
+        return nullptr;
+
+    if (addrType == Impl::ADDR_IPV4) {
+        impl = Impl::create<Inet4Addr>(xprt);
     }
-    return connected;
+    else if (addrType == Impl::ADDR_IPV6) {
+        impl = Impl::create<Inet6Addr>(xprt);
+    }
+    else if (addrType == Impl::ADDR_NAME) {
+        impl = Impl::create<NameAddr>(xprt);
+    }
+    else {
+        throw RUNTIME_ERROR("Unsupported address type: " +
+                std::to_string(addrType));
+    }
+
+    if (impl == nullptr)
+        return false;
+
+    pImpl.reset(impl);
+    return true;
 }
 
 } // namespace

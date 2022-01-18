@@ -37,13 +37,13 @@ class TcpSock;
 class UdpSock;
 class Xprt;
 
-/// Interface for a writable object
+/// Interface for an object that can be written to a transport.
 class WriteAble
 {
 public:
     virtual ~WriteAble() {};
 
-    virtual bool write(Xprt& xprt) const =0;
+    virtual bool write(Xprt xprt) const =0;
 };
 
 /// Interface for a readable object
@@ -52,7 +52,7 @@ class ReadAble
 public:
     virtual ~ReadAble() {};
 
-    virtual bool read(Xprt& xprt) =0;
+    virtual bool read(Xprt xprt) =0;
 };
 
 /// Interface for a transportable object
@@ -220,7 +220,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool write(Xprt& xprt) const;
+    bool write(Xprt xprt) const;
 
     /**
      * Reads from a transport.
@@ -229,7 +229,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool read(Xprt& xprt);
+    bool read(Xprt xprt);
 };
 
 } // namespace

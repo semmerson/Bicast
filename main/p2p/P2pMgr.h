@@ -172,6 +172,15 @@ public:
     virtual SockAddr getPeerSrvrAddr() const =0;
 
     /**
+     * Receives a notice of potential peer servers from a remote peer.
+     *
+     * @param[in] notice       Potential peer servers
+     * @param[in] peer         Associated local peer
+     * @retval    `false`      Always
+     */
+    virtual bool recvNotice(const Tracker   notice,
+                            Peer            peer) =0;
+    /**
      * Receives a notice of available product information from a remote peer.
      *
      * @param[in] notice       Which product
@@ -212,16 +221,6 @@ public:
      */
     virtual void missed(const DataSegId dataSegId,
                         Peer            peer) =0;
-
-    /**
-     * Receives set of socket addresses of potential peer-servers.
-     *
-     * @param[in] tracker  Set of socket addresses of peer-servers
-     * @param[in] peer     Local peer that received the addresses
-     */
-    virtual void recvData(
-            const Tracker tracker,
-            Peer          peer) =0;
 
     /**
      * Accepts product information from a remote peer.

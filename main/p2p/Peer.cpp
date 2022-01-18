@@ -181,17 +181,23 @@ class Peer::Impl
                     noticeQ.pop();
                 }
 
-                if (datumId.id == DatumId::Id::PROD_INDEX) {
+                if (datumId.id == DatumId::Id::DATA_SEG_ID) {
+                    LOG_DEBUG("Peer %s is notifying about data-segment %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = noticeXprt.send(PduId::DATA_SEG_NOTICE,
+                            datumId.dataSegId);
+                }
+                else if (datumId.id == DatumId::Id::PROD_INDEX) {
                     LOG_DEBUG("Peer %s is notifying about product %s",
                             to_string().data(), datumId.to_string().data());
                     connected = noticeXprt.send(PduId::PROD_INFO_NOTICE,
                             datumId.prodIndex);
                 }
-                else if (datumId.id == DatumId::Id::DATA_SEG_ID) {
-                    LOG_DEBUG("Peer %s is notifying about data-segment %s",
+                else if (datumId.id == DatumId::Id::TRACKER) {
+                    LOG_DEBUG("Peer %s is notifying about tracker %s",
                             to_string().data(), datumId.to_string().data());
-                    connected = noticeXprt.send(PduId::DATA_SEG_NOTICE,
-                            datumId.dataSegId);
+                    connected = noticeXprt.send(PduId::PEER_SRVR_ADDRS,
+                            datumId.tracker);
                 }
                 else {
                     throw LOGIC_ERROR("Datum ID is unset");
@@ -612,6 +618,17 @@ public:
                 noticeXprt.getRmtAddr().to_string() + "}";
     }
 
+    bool notify(const Tracker tracker) {
+        throwIf();
+
+        if (connected && !rmtIsPub) {
+            Guard guard{noticeMutex};
+            noticeQ.push(DatumId{tracker});
+            noticeCond.notify_all();
+        }
+
+        return connected;
+    }
     bool notify(const ProdIndex notice) {
         throwIf();
 
@@ -684,6 +701,10 @@ bool Peer::operator!=(const Peer& rhs) const noexcept {
 
 String Peer::to_string() const {
     return pImpl ? pImpl->to_string() : "<unset>";
+}
+
+bool Peer::notify(const Tracker tracker) const {
+    return pImpl->notify(tracker);
 }
 
 bool Peer::notify(const ProdIndex notice) const {
@@ -941,21 +962,21 @@ class SubPeerImpl final : public Peer::Impl
 
     template<class TYPE>
     void processNotice(Xprt::PduId pduId, Peer peer, const char* const desc) {
-        TYPE typeId;
-        connected = typeId.read(noticeXprt);
+        TYPE notice;
+        connected = notice.read(noticeXprt);
         if (connected) {
             LOG_DEBUG("Peer %s received notice about %s %s",
-                    to_string().data(), desc, typeId.to_string().data());
-            if (subP2pMgr.recvNotice(typeId, peer)) {
+                    to_string().data(), desc, notice.to_string().data());
+            if (subP2pMgr.recvNotice(notice, peer)) {
                 // Subscriber wants the datum
-                requested.push(DatumId{typeId});
-                connected = requestXprt.send(pduId, typeId);
+                requested.push(DatumId{notice});
+                connected = requestXprt.send(pduId, notice);
             }
         }
     }
     /**
      * Receives a notice about an available datum. Notifies the subscriber's P2P
-     * manager. Requests the datum if indicated by the P2P manager.
+     * manager. Requests the datum if told to do so by the P2P manager.
      *
      * @param[in] pduId     PDU identifier: `PROD_INFO_NOTICE`, `DATA_SEG_NOTICE`
      * @param[in] peer      Associated peer
@@ -964,16 +985,16 @@ class SubPeerImpl final : public Peer::Impl
      */
     bool processNotice(Xprt::PduId pduId, Peer peer) {
         if (PduId::DATA_SEG_NOTICE == pduId) {
-            processNotice<DataSegId>(PduId::DATA_SEG_REQUEST, peer,
-                    "data-segment");
+            processNotice<DataSegId>(pduId, peer, "data-segment");
         }
         else if (PduId::PROD_INFO_NOTICE == pduId) {
-            processNotice<ProdIndex>(PduId::PROD_INFO_REQUEST, peer,
-                    "information on product");
+            processNotice<ProdIndex>(pduId, peer, "information on product");
+        }
+        else if (PduId::PEER_SRVR_ADDRS == pduId) {
+            processNotice<Tracker>(pduId, peer, "potential peer-servers");
         }
         else {
-            LOG_DEBUG("Unknown PDU ID: %d", (int)pduId);
-            throw LOGIC_ERROR("Invalid PDU type: " + std::to_string(pduId));
+            throw RUNTIME_ERROR("Invalid PDU type: " + std::to_string(pduId));
         }
 
         return connected;
@@ -1062,15 +1083,6 @@ class SubPeerImpl final : public Peer::Impl
                 LOG_DEBUG("Peer %s received product information %s",
                         to_string().data(), prodInfo.to_string().data());
                 processData<ProdInfo>(prodInfo, "data-segment", peer);
-            }
-        }
-        else if (PduId::PEER_SRVR_ADDRS == pduId) {
-            Tracker tracker{};
-            success = tracker.read(dataXprt);
-            if (success) {
-                LOG_DEBUG("Peer %s received peer-server addresses %s",
-                        to_string().data(), tracker.to_string().data());
-                subP2pMgr.recvData(tracker, peer);
             }
         }
         else {

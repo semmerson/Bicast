@@ -95,7 +95,6 @@ public:
     bool write(const bool value) const;
     bool write(const uint8_t value) const;
     bool write(const uint16_t value) const;
-    bool write(const int32_t  value) const;
     bool write(const uint32_t value) const;
     bool write(const uint64_t value) const;
     bool write(const std::string& string) const;
@@ -118,7 +117,6 @@ public:
     bool read(bool& value) const;
     bool read(uint8_t& value) const;
     bool read(uint16_t& value) const;
-    bool read(int32_t&  value) const;
     bool read(uint32_t& value) const;
     bool read(uint64_t& value) const;
     bool read(std::string& string) const;

@@ -124,6 +124,15 @@ public:
     }
 
     // Subscriber-side
+    bool recvNotice(const Tracker notice, Peer peer) override
+    {
+        LOG_TRACE;
+        EXPECT_EQ(1, notice.size());
+        orState(PEER_SRVR_ADDRS_RCVD);
+        return false;
+    }
+
+    // Subscriber-side
     bool recvNotice(const ProdIndex notice, Peer peer) override
     {
         LOG_TRACE;
@@ -167,13 +176,6 @@ public:
                 : dataSegs[segRequestCount];
         ++segRequestCount;
         return dataSeg;
-    }
-
-    // Subscriber-side
-    void recvData(const Tracker tracker, Peer peer) override
-    {
-        LOG_TRACE;
-        orState(PEER_SRVR_ADDRS_RCVD);
     }
 
     // Subscriber-side
@@ -337,6 +339,10 @@ TEST_F(PeerTest, DataExchange)
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
         // `pubPeer` is running
+
+        Tracker tracker{};
+        tracker.insert(pubAddr);
+        ASSERT_TRUE(pubPeer.notify(tracker));
 
         // Start an exchange
         ASSERT_TRUE(notify(pubPeer));

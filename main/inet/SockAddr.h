@@ -255,7 +255,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool write(Xprt& xprt) const;
+    bool write(Xprt xprt) const;
 
     /**
      * Reads from a transport.
@@ -264,7 +264,7 @@ public:
      * @retval    `true`   Success
      * @retval    `false`  Connection lost
      */
-    bool read(Xprt& xprt);
+    bool read(Xprt xprt);
 };
 
 } // namespace
