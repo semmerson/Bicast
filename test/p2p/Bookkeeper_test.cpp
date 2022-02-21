@@ -21,27 +21,27 @@ class BookkeeperTest : public ::testing::Test, public SubP2pMgr
     void runPubPeerSrvr() {
         std::list<Peer> peers;
         for (;;) {
-            peers.push_back(pubPeerSrvr.accept());
+            peers.push_back(pubPeerSrvr->accept(*this));
         }
     }
 
 protected:
-    SockAddr        pubAddr;
-    PubPeerSrvr     pubPeerSrvr;
-    std::thread             pubPeerSrvrThrd;
-    ProdIndex       prodIndex;
-    DataSegId       segId;
-    SubPeer         peer1;
-    SubPeer         peer2;
+    SockAddr           pubAddr;
+    PubPeerSrvr::Pimpl pubPeerSrvr;
+    std::thread        pubPeerSrvrThrd;
+    ProdIndex          prodIndex;
+    DataSegId          segId;
+    SubPeer            peer1;
+    SubPeer            peer2;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
-        , pubPeerSrvr(*this, pubAddr)
+        , pubPeerSrvr(PubPeerSrvr::create(pubAddr))
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodIndex{1}
         , segId(prodIndex, DataSeg::CANON_DATASEG_SIZE) // Second data-segment
-        , peer1(*this, pubAddr)
-        , peer2(*this, pubAddr)
+        , peer1(*this, SubRpc::create(pubAddr))
+        , peer2(*this, SubRpc::create(pubAddr))
     {}
 
     ~BookkeeperTest() {
@@ -53,44 +53,50 @@ public:
     // Both sides
     void waitForSrvrPeer() override {}
 
-    SockAddr getPeerSrvrAddr() const override {
+    SockAddr getSrvrAddr() const override {
         return SockAddr();
     }
 
     // Subscriber-side
-    bool recvNotice(const Tracker notice, Peer peer) override
+    bool recvNotice(
+            const ProdIndex notice,
+            const SockAddr  rmtAddr) override
     {
         return false;
     }
 
     // Subscriber-side
-    bool recvNotice(const ProdIndex notice, Peer peer) override
-    {
-        return false;
-    }
-
-    // Subscriber-side
-    bool recvNotice(const DataSegId notice, Peer peer) override
+    bool recvNotice(
+            const DataSegId notice,
+            const SockAddr  rmtAddr) override
     {
         return false;
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const ProdIndex request, Peer peer) override
+    ProdInfo recvRequest(
+            const ProdIndex request,
+            const SockAddr  rmtAddr) override
     {
         return ProdInfo{};
     }
 
     // Publisher-side
-    DataSeg recvRequest(const DataSegId request, Peer peer) override
+    DataSeg recvRequest(
+            const DataSegId request,
+            const SockAddr  rmtAddr) override
     {
         return DataSeg{};
     }
 
-    void missed(const ProdIndex prodIndex, Peer peer) {
+    void missed(
+            const ProdIndex prodIndex,
+            const SockAddr  rmtAddr) {
     }
 
-    void missed(const DataSegId dataSegId, Peer peer) {
+    void missed(
+            const DataSegId dataSegId,
+            const SockAddr  rmtAddr) {
     }
 
     void notify(const ProdIndex prodIndex) {
@@ -100,11 +106,27 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const ProdInfo data, Peer peer) override
+    void recvData(
+            const Tracker  tracker,
+            const SockAddr rmtAddr) override
     {}
 
     // Subscriber-side
-    void recvData(const DataSeg actualDataSeg, Peer peer) override
+    void recvData(
+            const SockAddr srvrAddr,
+            const SockAddr rmtAddr) override
+    {}
+
+    // Subscriber-side
+    void recvData(
+            const ProdInfo data,
+            const SockAddr rmtAddr) override
+    {}
+
+    // Subscriber-side
+    void recvData(
+            const DataSeg  actualDataSeg,
+            const SockAddr rmtAddr) override
     {}
 
     void lostConnection(Peer peer) override {

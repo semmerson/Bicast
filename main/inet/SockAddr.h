@@ -33,8 +33,8 @@ namespace hycast {
 
 class SockAddr : public XprtAble
 {
-    class                       Impl;
-    std::shared_ptr<const Impl> pImpl;
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
 
 public:
     /**

@@ -34,7 +34,9 @@
 
 namespace hycast {
 
-class Peer; // Forward declaration
+class Peer;    // Forward declaration
+class PubPeer; // Forward declaration
+class SubPeer; // Forward declaration
 
 /**
  * Interface for a peer-to-peer manager. A publisher's P2P manager will only
@@ -43,7 +45,8 @@ class Peer; // Forward declaration
 class P2pMgr : public RequestRcvr
 {
 public:
-    using Pimpl = std::shared_ptr<P2pMgr>;
+    using PeerType = PubPeer;
+    using Pimpl    = std::shared_ptr<P2pMgr>;
 
     /**
      * Relationship to the data-products:
@@ -79,7 +82,7 @@ public:
      *
      * @return  Address of the peer-server
      */
-    virtual SockAddr getPeerSrvrAddr() const =0;
+    virtual SockAddr getSrvrAddr() const =0;
 
     /**
      * Blocks until at least one remote peer has established a connection via
@@ -115,31 +118,34 @@ public:
      * Receives a request for product information from a remote peer.
      *
      * @param[in] request      Which product
-     * @param[in] peer         Associated local peer
+     * @param[in] rmtAddr      Socket address of remote peer
      * @return                 Product information. Will test false if it
      *                         shouldn't be sent to remote peer.
      */
-    virtual ProdInfo recvRequest(const ProdIndex request,
-                                 Peer            peer) =0;
+    virtual ProdInfo recvRequest(
+            const ProdIndex request,
+            const SockAddr  rmtAddr) =0;
     /**
      * Receives a request for a data-segment from a remote peer.
      *
      * @param[in] request      Which data-segment
-     * @param[in] peer         Associated local peer
+     * @param[in] rmtAddr      Socket address of remote peer
      * @return                 Product information. Will test false if it
      *                         shouldn't be sent to remote peer.
      */
-    virtual DataSeg  recvRequest(const DataSegId request,
-                                 Peer            peer) =0;
+    virtual DataSeg  recvRequest(
+            const DataSegId request,
+            const SockAddr  rmtAddr) =0;
 };
 
 /// Interface for a subscriber's P2P manager
-class SubP2pMgr : virtual public P2pMgr
+class SubP2pMgr : public P2pMgr
                 , public NoticeRcvr
                 , public DataRcvr
 {
 public:
-    using Pimpl = std::shared_ptr<SubP2pMgr>;
+    using PeerType  = SubPeer;
+    using Pimpl     = std::shared_ptr<SubP2pMgr>;
 
     /**
      * Creates a subscribing P2P manager.
@@ -169,76 +175,82 @@ public:
      * @return Socket address of peer-server
      * @see `create()`
      */
-    virtual SockAddr getPeerSrvrAddr() const =0;
+    virtual SockAddr getSrvrAddr() const =0;
 
-    /**
-     * Receives a notice of potential peer servers from a remote peer.
-     *
-     * @param[in] notice       Potential peer servers
-     * @param[in] peer         Associated local peer
-     * @retval    `false`      Always
-     */
-    virtual bool recvNotice(const Tracker   notice,
-                            Peer            peer) =0;
     /**
      * Receives a notice of available product information from a remote peer.
      *
      * @param[in] notice       Which product
-     * @param[in] peer         Associated local peer
+     * @param[in] rmtAddr      Socket address of remote peer
      * @retval    `false`      Local peer shouldn't request from remote peer
      * @retval    `true`       Local peer should request from remote peer
      */
     virtual bool recvNotice(const ProdIndex  notice,
-                            Peer             peer) =0;
+                            const SockAddr   rmtAddr) =0;
     /**
      * Receives a notice of an available data-segment from a remote peer.
      *
      * @param[in] notice       Which data-segment
-     * @param[in] peer         Associated local peer
+     * @param[in] rmtAddr      Socket address of remote peer
      * @retval    `false`      Local peer shouldn't request from remote peer
      * @retval    `true`       Local peer should request from remote peer
      */
     virtual bool recvNotice(const DataSegId notice,
-                            Peer            peer) =0;
+                            const SockAddr  rmtAddr) =0;
 
     /**
      * Handles a request for data-product information not being satisfied by a
      * remote peer.
      *
      * @param[in] prodIndex  Index of the data-product
-     * @param[in] peer       Local peer whose remote counterpart couldn't
-     *                       satisfy request
+     * @param[in] rmtAddr    Socket address of remote peer
      */
-    virtual void missed(const ProdIndex prodIndex, Peer peer) =0;
+    virtual void missed(
+            const ProdIndex prodIndex,
+            SockAddr        rmtAddr) =0;
 
     /**
      * Handles a request for a data-segment not being satisfied by a remote
      * peer.
      *
      * @param[in] dataSegId  ID of data-segment
-     * @param[in] peer       Local peer whose remote counterpart couldn't
-     *                       satisfy request
+     * @param[in] rmtAddr    Socket address of remote peer
      */
     virtual void missed(const DataSegId dataSegId,
-                        Peer            peer) =0;
+                        SockAddr        rmtAddr) =0;
 
     /**
-     * Accepts product information from a remote peer.
+     * Receives a set of potential peer servers from a remote peer.
+     *
+     * @param[in] tracker      Set of potential peer-servers
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvData(const Tracker   tracker,
+                          const SockAddr  rmtAddr) =0;
+    /**
+     * Receives the address of a potential peer-server from a remote peer.
+     *
+     * @param[in] srvrAddr     Socket address of potential peer-server
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvData(const SockAddr srvrAddr,
+                          const SockAddr rmtAddr) =0;
+    /**
+     * Receives product information from a remote peer.
      *
      * @param[in] prodInfo  Product information
-     * @param[in] peer      Associated local peer
+     * @param[in] rmtAddr   Socket address of remote peer
      */
     virtual void recvData(const ProdInfo prodInfo,
-                          Peer           peer) =0;
-
+                          SockAddr       rmtAddr) =0;
     /**
-     * Accepts a data segment from a remote peer.
+     * Receives a data segment from a remote peer.
      *
      * @param[in] dataSeg  Data segment
-     * @param[in] peer     Associated local peer
+     * @param[in] rmtAddr  Socket address of remote peer
      */
     virtual void recvData(const DataSeg dataSeg,
-                          Peer          peer) =0;
+                          SockAddr      rmtAddr) =0;
 };
 
 } // namespace

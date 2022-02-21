@@ -455,14 +455,8 @@ bool SockAddr::write(Xprt xprt) const {
 }
 
 bool SockAddr::read(Xprt xprt) {
-    InetAddr  inetAddr;
-    in_port_t port;
-    bool      connected = inetAddr.read(xprt) && xprt.read(port);
-
-    if (connected)
-        pImpl.reset(new Impl(inetAddr, port));
-
-    return connected;
+    pImpl.reset(new Impl());
+    return pImpl->read(xprt);
 }
 
 } // namespace

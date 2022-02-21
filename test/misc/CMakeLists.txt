@@ -1,3 +1,5 @@
+add_library(dummy OBJECT MultiInher.cpp TemplateMultiInher.cpp)
+
 #add_executable(AutoReference AutoReference.cpp)
 #add_test(AutoReference AutoReference)
 

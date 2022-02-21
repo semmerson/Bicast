@@ -33,7 +33,6 @@ class Xprt
 {
 public:
     using PduId    = uint32_t;
-    using Dispatch = std::function<bool(PduId, Xprt)>;
 
     class Impl; // Implementation
 
@@ -48,17 +47,30 @@ public:
      *
      * @param[in] sock      Socket
      */
-    Xprt(Socket& sock);
+    Xprt(Socket sock);
 
     /**
-     * Move constructs.
+     * Copy constructs.
      *
-     * @param[in] sock      Socket
+     * @param[in] xprt  Other instance
+    Xprt(const Xprt& xprt);
      */
-    Xprt(Socket&& sock);
 
     /**
-     * Indicates if this instance is value (i.e., wasn't default constructed).
+     * Destroys.
+    ~Xprt() noexcept;
+     */
+
+    /**
+     * Copy Assigns.
+     *
+     * @param[in] rhs  Other instance
+     * @return         Reference to this instance
+    Xprt& operator=(const Xprt& rhs);
+     */
+
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
      * @retval `true`   Valid
      * @retval `false`  Invalid
@@ -67,104 +79,55 @@ public:
         return static_cast<bool>(pImpl);
     }
 
-    SockAddr getRmtAddr() const;
+    SockAddr getRmtAddr() const noexcept;
 
     SockAddr getLclAddr() const;
 
     std::string to_string() const;
 
     /**
-     * Sends a PDU ID as a PDU to the remote host.
+     * Returns a hash value. The value is symmetric: both endpoints will have
+     * the same hash value.
      *
-     * @param[in] pduId    PDU identifier
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @return Hash value
      */
-    bool send(const PduId pduId);
+    size_t hash() const;
+
+    void swap(Xprt& xprt) noexcept; // Missing "&" closes socket
+
+    bool write(const void*        value, size_t nbytes) const;
+    bool write(const bool         value) const;
+    bool write(const uint8_t      value) const;
+    bool write(const uint16_t     value) const;
+    bool write(const uint32_t     value) const;
+    bool write(const uint64_t     value) const;
+    /**
+     * @tparam UINT  Type of serialized, unsigned integer to hold string length
+     */
+    template<typename UINT = uint32_t> // Default size type
+    bool write(const std::string& string) const;
+
+    /// Flushes the output if possible.
+    bool flush() const;
+
+    bool read(void*        value, size_t nbytes) const;
+    bool read(bool&        value) const;
+    bool read(uint8_t&     value) const;
+    bool read(uint16_t&    value) const;
+    bool read(uint32_t&    value) const;
+    bool read(uint64_t&    value) const;
+    /**
+     * @tparam UINT  Type of serialized, unsigned integer that holds string
+     *               length
+     */
+    template<typename UINT = uint32_t>
+    bool read(std::string& string) const;
 
     /**
-     * Sends a boolean as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Boolean to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * Prepares the transport for further input in case the underlying socket
+     * is record based (e.g., SCTP).
      */
-    bool send(const PduId pduId, const bool value);
-
-    /**
-     * Sends a value as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Value to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId, const uint8_t value);
-
-    /**
-     * Sends a value as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Value to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId, const uint16_t value);
-
-    /**
-     * Sends a value as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Value to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId, const uint32_t value);
-
-    /**
-     * Sends a value as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] value    Value to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId, const uint64_t value);
-
-    /**
-     * Sends an object as a PDU to the remote host.
-     *
-     * @param[in] pduId    PDU identifier
-     * @param[in] obj      Object to be transported
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId, const WriteAble& obj);
-
-    /**
-     * Receives and processes the next, incoming PDU. Calls the dispatch
-     * function given to the constructor.
-     *
-     * @param[in] dispatch      Dispatch function for incoming PDU-s
-     * @retval `true`           Success
-     * @retval `false`          Connection lost
-     */
-    bool recv(Dispatch dispatch);
-
-    bool write(const void*        value, size_t nbytes);
-    bool write(const bool         value);
-    bool write(const uint8_t      value);
-    bool write(const uint16_t     value);
-    bool write(const uint32_t     value);
-    bool write(const uint64_t     value);
-
-    bool read(void*        value, size_t nbytes);
-    bool read(bool&        value);
-    bool read(uint8_t&     value);
-    bool read(uint16_t&    value);
-    bool read(uint32_t&    value);
-    bool read(uint64_t&    value);
+    void clear() const;
 
     void shutdown();
 };

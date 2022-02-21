@@ -29,25 +29,83 @@ namespace hycast {
 
 class Xprt::Impl
 {
-    using PduId = Xprt::PduId;
+    Socket sock;
+    bool   convert = false; ///< Should byte order be converted?
 
-    Socket   sock;
-    Dispatch dispatch;
+    inline bool hton(const bool value) {
+        return value;
+    }
+
+    inline uint8_t hton(const uint8_t value) {
+        return value;
+    }
+
+    inline uint16_t hton(const uint16_t value) {
+        return convert ? htons(value) : value;
+    }
+
+    inline uint32_t hton(const uint32_t value) {
+        return convert ? htonl(value) : value;
+    }
+
+    inline uint64_t hton(uint64_t value) {
+        if (!convert)
+            return value;
+
+        uint64_t  v64;
+        uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
+
+        v32[0] = htonl(static_cast<uint32_t>(value >> 32));
+        v32[1] = htonl(static_cast<uint32_t>(value));
+
+        return v64;
+    }
+
+    inline bool ntoh(const bool value)
+    {
+        return value;
+    }
+
+    inline uint8_t ntoh(const uint8_t value)
+    {
+        return value;
+    }
+
+    inline uint16_t ntoh(const uint16_t value)
+    {
+        return convert ? ntohs(value) : value;
+    }
+
+    inline uint32_t ntoh(const uint32_t value)
+    {
+        return convert ? ntohl(value) : value;
+    }
+
+    inline uint64_t ntoh(uint64_t value)
+    {
+        if (!convert)
+            return value;
+
+        uint32_t* v32 = reinterpret_cast<uint32_t*>(&value);
+        return (static_cast<uint64_t>(ntohl(v32[0])) << 32) | ntohl(v32[1]);
+    }
 
 public:
-    Impl(Socket& sock)
+    Impl(Socket sock)
         : sock(sock)
-        , dispatch()
-    {}
-
-    Impl(Socket& sock, Dispatch& dispatch)
-        : sock(sock)
-        , dispatch(dispatch)
-    {}
+    {
+        const static uint16_t byteOrder = 1;
+        if (sock.write(byteOrder)) {
+            sock.flush();
+            uint16_t order;
+            if (sock.read(order))
+                convert = byteOrder != order;
+        }
+    }
 
     virtual ~Impl() {};
 
-    SockAddr getRmtAddr() const {
+    SockAddr getRmtAddr() const noexcept {
         return sock.getRmtAddr();
     }
 
@@ -59,160 +117,123 @@ public:
         return sock.to_string();
     }
 
-    /**
-     * Sends a PDU ID as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId pduId) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.flush();
+    size_t hash() const {
+        return sock.hash();
     }
 
     /**
-     * Sends a boolean as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Boolean to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * Write functions:
      */
-    bool send(const PduId pduId,
-              const bool  value) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.write(value) && sock.flush();
-    }
 
-    /**
-     * Sends a value as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Value to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId   pduId,
-              const uint8_t value) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.write(value) && sock.flush();
-    }
-
-    /**
-     * Sends a value as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Value to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId    pduId,
-              const uint16_t value) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.write(value) && sock.flush();
-    }
-
-    /**
-     * Sends a value as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Value to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId    pduId,
-              const uint32_t value) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.write(value) && sock.flush();
-    }
-
-    /**
-     * Sends a value as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] value    Value to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(const PduId    pduId,
-              const uint64_t value) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && sock.write(value) && sock.flush();
-    }
-
-    /**
-     * Sends an object as a PDU to the remote counterpart.
-     *
-     * @param[in] pduId    PDU ID
-     * @param[in] obj      Object to be sent
-     * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
-     */
-    bool send(PduId            pduId,
-              const WriteAble& obj,
-              Xprt&            xprt) {
-        LOG_DEBUG("Sending PDU %u to %s", (unsigned)pduId, to_string().data());
-        return write(pduId) && obj.write(xprt) && sock.flush();
-    }
-
-    bool recv(Xprt xprt, Dispatch& dispatch) {
-        PduId pduId;
-        sock.clear();
-        if (read(pduId)) {
-            const auto success = dispatch(pduId, xprt);
-            LOG_DEBUG("Received PDU %u from %s", (unsigned)pduId,
-                    to_string().data());
-            return success;
-        }
-        return false;
-    }
-
-    bool write(const void*        value,
-               size_t             nbytes) {
-        return sock.write(value, nbytes);
-    }
     bool write(const bool         value) {
+        LOG_DEBUG("Writing boolean value to %s", to_string().data());
         return sock.write(value);
     }
     bool write(const uint8_t      value) {
+        LOG_DEBUG("Writing 1-byte value to %s", to_string().data());
         return sock.write(value);
     }
-    bool write(const uint16_t     value) {
+    bool write(
+            const void*  bytes,
+            const size_t nbytes) {
+        return sock.write(bytes, nbytes);
+    }
+    /**
+     * Performs byte-order translation.
+     *
+     * @tparam  Type of primitive value to be written
+     */
+    template<class TYPE>
+    bool write(TYPE value) {
+        LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value),
+                to_string().data());
+        value = hton(value);
         return sock.write(value);
     }
-    bool write(const uint32_t     value) {
-        return sock.write(value);
-    }
-    bool write(const uint64_t     value) {
-        return sock.write(value);
+    /**
+     * @tparam    UINT     Type of serialized, unsigned integer to hold string
+     *                     length
+     * @param[in] string   String to be written
+     * @retval    `true`   Success
+     * @retval    `false`  Lost connection
+     */
+    template<typename UINT>
+    bool write(const std::string& string) {
+        static const UINT max = ~static_cast<UINT>(0);
+        LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
+        if (string.size() > max)
+            throw INVALID_ARGUMENT("String is longer than " +
+                    std::to_string(max) + " bytes");
+        const UINT size = static_cast<UINT>(string.size());
+        return sock.write(hton(size)) && sock.write(string.data(), size);
     }
 
+    bool flush() {
+        sock.flush();
+    }
+
+    /**
+     * Read functions:
+     */
+
+    bool read(bool&        value) {
+        if (sock.read(value)) {
+            LOG_DEBUG("Read boolean value from %s", to_string().data());
+            return true;
+        }
+        return false;
+    }
+    bool read(uint8_t&     value) {
+        if (sock.read(value)) {
+            LOG_DEBUG("Read 1-byte value from %s", to_string().data());
+            return true;
+        }
+        return false;
+    }
     bool read(void*        value,
               size_t       nbytes) {
         return sock.read(value, nbytes);
     }
-    bool read(bool&        value) {
-        return sock.read(value);
+    /**
+     * Performs byte-order translation
+     *
+     * @tparam  Type of primitive value to be read
+     */
+    template<class TYPE>
+    bool read(TYPE& value) {
+        if (sock.read(value)) {
+            value = ntoh(value);
+            LOG_DEBUG("Read %zu-byte value from %s", sizeof(value),
+                    to_string().data());
+            return true;
+        }
+        return false;
     }
-    bool read(uint8_t&     value) {
-        return sock.read(value);
+    /**
+     * @tparam    UINT     Type of serialized, unsigned integer that holds
+     *                     string length
+     * @param[in] string   String to be read
+     * @retval    `true`   Success
+     * @retval    `false`  Lost connection
+     */
+    template<typename UINT>
+    bool read(std::string& string) {
+        UINT size;
+        if (sock.read(size)) {
+            size = ntoh(size);
+            char bytes[size];
+            if (sock.read(bytes, sizeof(bytes))) {
+                string.assign(bytes, size);
+                LOG_DEBUG("Read \"%s\" from %s", string.data(),
+                        to_string().data());
+                return true;
+            }
+        }
+        return false;
     }
-    bool read(uint16_t&    value) {
-        return sock.read(value);
-    }
-    bool read(uint32_t&    value) {
-        return sock.read(value);
-    }
-    bool read(uint64_t&    value) {
-        return sock.read(value);
+
+    void clear() {
+        sock.clear();
     }
 
     void shutdown() {
@@ -222,15 +243,19 @@ public:
 
 /******************************************************************************/
 
-Xprt::Xprt(Socket& sock)
+Xprt::Xprt(Socket sock)
     : pImpl(new Impl(sock))
 {}
 
-Xprt::Xprt(Socket&& sock)
-    : pImpl(new Impl(sock))
-{}
+/*
+Xprt::Xprt(const Xprt& xprt);
 
-SockAddr Xprt::getRmtAddr() const {
+Xprt::Xprt& operator=(const Xprt& rhs);
+
+Xprt::~Xprt() noexcept;
+*/
+
+SockAddr Xprt::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }
 
@@ -242,76 +267,81 @@ std::string Xprt::to_string() const {
     return pImpl ? pImpl->to_string() : "<unset>";
 }
 
-bool Xprt::send(const PduId pduId) {
-    return pImpl->send(pduId);
+size_t Xprt::hash() const {
+    return pImpl ? pImpl->hash() : 0;
 }
 
-bool Xprt::send(const PduId pduId, const bool value) {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(const PduId pduId, const uint8_t value) {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(const PduId pduId, const uint16_t value) {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(const PduId pduId, const uint32_t value) {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(const PduId pduId, const uint64_t value) {
-    return pImpl->send(pduId, value);
-}
-
-bool Xprt::send(const PduId pduId, const WriteAble& obj) {
-    return pImpl->send(pduId, obj, *this);
-}
-
-bool Xprt::recv(Dispatch dispatch) {
-    return pImpl->recv(*this, dispatch);
+void Xprt::swap(Xprt& xprt) noexcept {
+    /*
+    auto tmp = xprt.pImpl;
+    xprt.pImpl = pImpl;
+    pImpl = tmp;
+    */
+    pImpl.swap(xprt.pImpl);
 }
 
 bool Xprt::write(const void*        value,
-           size_t                   nbytes) {
+           size_t                   nbytes) const {
     return pImpl->write(value, nbytes);
 }
-bool Xprt::write(const bool         value) {
+bool Xprt::write(const bool         value) const {
     return pImpl->write(value);
 }
-bool Xprt::write(const uint8_t      value) {
+bool Xprt::write(const uint8_t      value) const {
     return pImpl->write(value);
 }
-bool Xprt::write(const uint16_t     value) {
-    return pImpl->write(value);
+bool Xprt::write(const uint16_t     value) const {
+    return pImpl->write<uint16_t>(value);
 }
-bool Xprt::write(const uint32_t     value) {
-    return pImpl->write(value);
+bool Xprt::write(const uint32_t     value) const {
+    return pImpl->write<uint32_t>(value);
 }
-bool Xprt::write(const uint64_t     value) {
-    return pImpl->write(value);
+bool Xprt::write(const uint64_t     value) const {
+    return pImpl->write<uint64_t>(value);
+}
+template<typename UINT>
+bool Xprt::write(const std::string& string) const {
+    return pImpl->write<UINT>(string);
+}
+template bool Xprt::write<uint8_t >(const std::string& string) const;
+template bool Xprt::write<uint16_t>(const std::string& string) const;
+template bool Xprt::write<uint32_t>(const std::string& string) const;
+template bool Xprt::write<uint64_t>(const std::string& string) const;
+
+bool Xprt::flush() const {
+    return pImpl->flush();
 }
 
 bool Xprt::read(void*        value,
-                size_t       nbytes) {
+                size_t       nbytes) const {
     return pImpl->read(value, nbytes);
 }
-bool Xprt::read(bool&        value) {
+bool Xprt::read(bool&        value) const {
     return pImpl->read(value);
 }
-bool Xprt::read(uint8_t&     value) {
+bool Xprt::read(uint8_t&     value) const {
     return pImpl->read(value);
 }
-bool Xprt::read(uint16_t&    value) {
-    return pImpl->read(value);
+bool Xprt::read(uint16_t&    value) const {
+    return pImpl->read<uint16_t>(value);
 }
-bool Xprt::read(uint32_t&    value) {
-    return pImpl->read(value);
+bool Xprt::read(uint32_t&    value) const {
+    return pImpl->read<uint32_t>(value);
 }
-bool Xprt::read(uint64_t&    value) {
-    return pImpl->read(value);
+bool Xprt::read(uint64_t&    value) const {
+    return pImpl->read<uint64_t>(value);
+}
+template<typename UINT>
+bool Xprt::read(std::string& string) const {
+    return pImpl->read<UINT>(string);
+}
+template bool Xprt::read<uint8_t>(std::string& string) const;
+template bool Xprt::read<uint16_t>(std::string& string) const;
+template bool Xprt::read<uint32_t>(std::string& string) const;
+template bool Xprt::read<uint64_t>(std::string& string) const;
+
+void Xprt::clear() const {
+    return pImpl->clear();
 }
 
 void Xprt::shutdown() {

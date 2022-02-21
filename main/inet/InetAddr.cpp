@@ -81,7 +81,7 @@ protected:
     }
 
 public:
-    enum AddrType : uint32_t {
+    enum AddrType : uint8_t {
         ADDR_IPV4,
         ADDR_IPV6,
         ADDR_NAME
@@ -96,9 +96,17 @@ public:
         return nullptr;
     }
 
+    Impl(AddrType addrType)
+        : addrType(addrType)
+    {}
+
     virtual ~Impl() noexcept;
 
     virtual int getFamily() const noexcept =0;
+
+    AddrType getAddrType() const noexcept {
+        return addrType;
+    }
 
     virtual std::string to_string() const =0;
 
@@ -201,7 +209,7 @@ class Inet4Addr final : public InetAddr::Impl
 
 public:
     Inet4Addr(const in_addr_t addr) noexcept
-        : Impl()
+        : Impl(ADDR_IPV4)
         , addr()
     {
         this->addr.s_addr = addr;
@@ -210,6 +218,13 @@ public:
     Inet4Addr()
         : Inet4Addr(INADDR_ANY)
     {}
+
+    Inet4Addr(Xprt xprt)
+        : Inet4Addr()
+    {
+        if (!read(xprt))
+            throw RUNTIME_ERROR("Constructor failure");
+    }
 
     int getFamily() const noexcept
     {
@@ -315,7 +330,7 @@ public:
     }
 
     bool write(Xprt xprt) const {
-        return xprt.write(ADDR_IPV4) && xprt.write(addr.s_addr);
+        return xprt.write(addr.s_addr);
     }
 
     bool read(Xprt xprt) {
@@ -437,13 +452,20 @@ class Inet6Addr final : public InetAddr::Impl
 
 public:
     Inet6Addr(const struct in6_addr& addr) noexcept
-        : Impl()
+        : Impl(ADDR_IPV6)
         , addr(addr)
     {}
 
     Inet6Addr()
         : Inet6Addr(in6addr_any)
     {}
+
+    Inet6Addr(Xprt xprt)
+        : Inet6Addr()
+    {
+        if (!read(xprt))
+            throw RUNTIME_ERROR("Constructor failure");
+    }
 
     int getFamily() const noexcept
     {
@@ -573,8 +595,7 @@ public:
     }
 
     bool write(Xprt xprt) const {
-        return xprt.write(ADDR_IPV6) &&
-                xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
+        return xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
     }
 
     bool read(Xprt xprt) {
@@ -658,7 +679,7 @@ class NameAddr final : public InetAddr::Impl
 
 public:
     NameAddr(const std::string& name)
-        : Impl()
+        : Impl(ADDR_NAME)
         , name(name)
     {
         if (name.size() > _POSIX_HOST_NAME_MAX)
@@ -669,6 +690,13 @@ public:
     NameAddr()
         : NameAddr("")
     {}
+
+    NameAddr(Xprt xprt)
+        : NameAddr()
+    {
+        if (!read(xprt))
+            throw RUNTIME_ERROR("NameAddr(Xprt) failure");
+    }
 
     int getFamily() const noexcept
     {
@@ -779,22 +807,14 @@ public:
     }
 
     bool write(Xprt xprt) const {
-        return xprt.write(static_cast<SizeType>(name.size())) &&
-                xprt.write(name.data(), name.size());
+        return xprt.write<SizeType>(name);
     }
 
     bool read(Xprt xprt) {
-        SizeType nbytes;
-        auto success = xprt.read(nbytes);
-        if (success) {
-            if (nbytes > _POSIX_HOST_NAME_MAX)
-                throw RUNTIME_ERROR("Name is longer than " +
-                        std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
-            char bytes[nbytes];
-            success = xprt.read(bytes, nbytes);
-            if (success)
-                name.assign(bytes, nbytes);
-        }
+        auto success = xprt.read<SizeType>(name);
+        if (success && name.size() > _POSIX_HOST_NAME_MAX)
+            throw RUNTIME_ERROR("Hostname is longer than " +
+                    std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
         return success;
     }
 };
@@ -914,7 +934,8 @@ bool InetAddr::isSsm() const
 }
 
 bool InetAddr::write(Xprt xprt) const {
-    return pImpl->write(xprt);
+    uint8_t addrType = pImpl->getAddrType();
+    return xprt.write(addrType) && pImpl->write(xprt);
 }
 
 bool InetAddr::read(Xprt xprt) {
@@ -922,24 +943,24 @@ bool InetAddr::read(Xprt xprt) {
     Impl*   impl;
 
     if (!xprt.read(addrType))
-        return nullptr;
+        return false;
 
     if (addrType == Impl::ADDR_IPV4) {
-        impl = Impl::create<Inet4Addr>(xprt);
+        impl = new Inet4Addr(xprt);
+        //impl = Impl::create<Inet4Addr>(xprt);
     }
     else if (addrType == Impl::ADDR_IPV6) {
-        impl = Impl::create<Inet6Addr>(xprt);
+        impl = new Inet6Addr(xprt);
+        //impl = Impl::create<Inet6Addr>(xprt);
     }
     else if (addrType == Impl::ADDR_NAME) {
-        impl = Impl::create<NameAddr>(xprt);
+        impl = new NameAddr(xprt);
+        //impl = Impl::create<NameAddr>(xprt);
     }
     else {
         throw RUNTIME_ERROR("Unsupported address type: " +
                 std::to_string(addrType));
     }
-
-    if (impl == nullptr)
-        return false;
 
     pImpl.reset(impl);
     return true;

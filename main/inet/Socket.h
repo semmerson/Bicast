@@ -81,7 +81,7 @@ public:
      *
      * @return Remote socket address
      */
-    SockAddr getRmtAddr() const;
+    SockAddr getRmtAddr() const noexcept;
 
     /**
      * Returns the remote port number in host byte-order.
@@ -97,7 +97,6 @@ public:
     bool write(const uint16_t value) const;
     bool write(const uint32_t value) const;
     bool write(const uint64_t value) const;
-    bool write(const std::string& string) const;
 
     /**
      * Flushes the output.
@@ -114,11 +113,12 @@ public:
 
     bool read(void*        data,
               const size_t nbytes) const;
-    bool read(bool& value) const;
-    bool read(uint8_t& value) const;
+    bool read(bool&     value) const;
+    bool read(uint8_t&  value) const;
     bool read(uint16_t& value) const;
     bool read(uint32_t& value) const;
     bool read(uint64_t& value) const;
+    template<typename UINT>
     bool read(std::string& string) const;
 
     /**

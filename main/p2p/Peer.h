@@ -25,6 +25,7 @@
 
 #include "HycastProto.h"
 #include "P2pMgr.h"
+#include "Rpc.h"
 #include "Socket.h"
 #include "Tracker.h"
 
@@ -32,7 +33,9 @@
 
 namespace hycast {
 
+#if 0
 template<class MGR, class PEER> class PeerSrvr;
+#endif
 
 /**
  * Abstract base class for handling low-level, asynchronous, bidirectional
@@ -75,23 +78,13 @@ public:
     bool isRmtPub() const noexcept;
 
     /**
-     * Starts this instance. Creates threads on which
-     *   - The sockets are read; and
-     *   - The P2P manager is called.
-     *
-     * @throw LogicError   Already called
-     * @throw LogicError   Remote peer uses unsupported protocol
-     * @throw SystemError  Thread couldn't be created
-     * @see `stop()`
-     */
-    void start();
-
-    /**
      * Returns the socket address of the remote peer.
      *
      * @return Socket address of remote peer
      */
     SockAddr getRmtAddr() noexcept;
+
+    virtual void start() const;
 
     /**
      * Stops this instance from serving its remote counterpart. Does the
@@ -103,7 +96,7 @@ public:
      * @throw LogicError  Peer hasn't been started
      * @see   `start()`
      */
-    void stop();
+    void stop() const;
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -139,8 +132,12 @@ public:
      * @see       `start()`
      */
     bool notify(const Tracker   tracker) const;
+    bool notify(const SockAddr  srvrAddr) const;
     bool notify(const ProdIndex prodIndex) const;
     bool notify(const DataSegId dataSegId) const;
+
+    void recvRequest(const ProdIndex prodIndex) const;
+    void recvRequest(const DataSegId dataSegId) const;
 
     bool rmtIsPubPath() const noexcept;
 };
@@ -151,52 +148,70 @@ public:
  */
 class PubPeer final : public Peer
 {
-    class     Impl;
+    class Impl;
 
 public:
+    using RpcType     = PubRpc;
+    using RpcSrvrType = PubRpcSrvr;
+
     /**
      * Server-side construction.
      *
-     * @param[in] node         Subscriber's associated P2P node
-     * @param[in] socks        Sockets in order: notice, request, data
-     * @param[in] requestSock  Socket for requests
-     * @param[in] dataSock     Socket for data
+     * @param[in] p2pMgr  Publisher's P2P manager
+     * @param[in] rpc     RPC instance
      */
-    PubPeer(P2pMgr& node, TcpSock socks[3]);
+    PubPeer(P2pMgr& p2pMgr, PubRpc::Pimpl rpc);
 
     /**
      * Default constructs. The resulting instance will test false.
      */
     PubPeer() =default;
 
+    /**
+     * Starts this instance. Creates threads on which
+     *   - The sockets are read; and
+     *   - The P2P manager is called.
+     *
+     * @throw LogicError   Already called
+     * @throw LogicError   Remote peer uses unsupported protocol
+     * @throw SystemError  Thread couldn't be created
+     * @see `stop()`
+     */
+    void start() const override;
+
     bool notify(const Tracker notice) const;
 };
 
 /**
  * A subscriber's peer. Such peers can be server-side constructed by a
- * peer-server or client-side constructed by initiating a connection to a
- * peer-server.
+ * peer-server or client-side constructed by initiating a connection to an
+ * RPC-server.
  */
 class SubPeer final : public Peer
 {
+#if 0
     friend class PeerSrvr<SubP2pMgr, SubPeer>;
+#endif
 
-    class     Impl;
-
-    /**
-     * Server-side construction.
-     *
-     * @param[in] node         Subscriber's associated P2P node
-     * @param[in] socks        Sockets in order: notice, request, data
-     * @param[in] dataSock     Socket for data
-     */
-    SubPeer(SubP2pMgr& node, TcpSock socks[3]);
+    class Impl;
 
 public:
+    using RpcType     = SubRpc;
+    using RpcSrvrType = SubRpcSrvr;
+
     /**
      * Default constructs. The resulting instance will test false.
      */
     SubPeer() =default;
+
+    /**
+     * Server-side construction.
+     *
+     * @param[in] p2pMgr       Subscriber's associated P2P manager
+     * @param[in] rpc          RPC instance
+     * @param[in] dataSock     Socket for data
+     */
+    SubPeer(SubP2pMgr& p2pMgr, SubRpc::Pimpl rpc);
 
     /**
      * Client-side construction. The resulting peer is fully connected and ready
@@ -211,58 +226,62 @@ public:
      */
     SubPeer(SubP2pMgr&      p2pMgr,
             const SockAddr& srvrAddr);
+
+    /**
+     * Starts this instance. Creates threads on which
+     *   - The sockets are read; and
+     *   - The P2P manager is called.
+     *
+     * @throw LogicError   Already called
+     * @throw LogicError   Remote peer uses unsupported protocol
+     * @throw SystemError  Thread couldn't be created
+     * @see `stop()`
+     */
+    void start() const override;
+
+    void recvNotice(const ProdIndex prodIndex) const;
+
+    void recvNotice(const DataSegId dataSegId) const;
+
+    void recvData(const Tracker tracker) const;
+
+    void recvData(const SockAddr srvrAddr) const;
+
+    void recvData(const ProdInfo prodInfo) const;
+
+    void recvData(const DataSeg dataSeg) const;
 };
 
+/******************************************************************************/
+
 /**
- * Peer server. Listens for incoming connections from remote peer clients.
+ * Interface for a peer-server.
  *
- * @tparam MGR   Type of P2P manager (`P2pNode` or `SubP2pNode`)
- * @tparam PEER  Type of peer (`PubPeer` or `SubPeer`)
+ * @tparam P2P_MGR  Type of P2P manager: `PubP2pMgr` or `SubP2pMgr`
  */
-template<class MGR, class PEER>
+template<typename P2P_MGR>
 class PeerSrvr
 {
 public:
-    class Impl;
+    using Pimpl = std::shared_ptr<PeerSrvr<P2P_MGR>>;
 
-private:
-    std::shared_ptr<Impl> pImpl;
+    static Pimpl create(
+            const SockAddr          srvrAddr,
+            const unsigned          backlog = 8);
 
-public:
-    PeerSrvr() =default;
+    virtual ~PeerSrvr() {};
 
-    /**
-     * Constructs.
-     *
-     * @param[in] mgr          P2P manager
-     * @param[in] srvrAddr     Address of interface for peer server. Must not
-     *                         be the wildcard (i.e., specify any interface).
-     * @param[in] maxAccept    Maximum number of outstanding peer connections
-     * @throw InvalidArgument  Peer-server's address is the wildcard
-     */
-    PeerSrvr(MGR&           mgr,
-             const SockAddr srvrAddr,
-             const unsigned maxAccept = 8);
+    virtual SockAddr getSrvrAddr() const =0;
 
-    operator bool() {
-        return pImpl->operator bool();
-    }
-
-    SockAddr getSockAddr() const;
-
-    /**
-     * Returns the next peer. Blocks until one is available.
-     *
-     * @return  The next peer
-     * @throws  SystemError  `::accept()` failure
-     */
-    PEER accept();
+    virtual typename P2P_MGR::PeerType accept(P2P_MGR& p2pMgr) const =0;
 };
 
-using PubPeerSrvr = PeerSrvr<P2pMgr, PubPeer>;
-using SubPeerSrvr = PeerSrvr<SubP2pMgr, SubPeer>;
+using PubPeerSrvr = PeerSrvr<P2pMgr>;
+using SubPeerSrvr = PeerSrvr<SubP2pMgr>;
 
 } // namespace
+
+/******************************************************************************/
 
 namespace std {
     template<>

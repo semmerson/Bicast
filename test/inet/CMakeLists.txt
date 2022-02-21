@@ -23,6 +23,10 @@ add_executable(Socket_test Socket_test.cpp)
 target_link_libraries(Socket_test hycast gtest pthread)
 add_test(Socket_test Socket_test)
 
+add_executable(Xprt_test Xprt_test.cpp)
+target_link_libraries(Xprt_test hycast gtest pthread)
+add_test(Xprt_test Xprt_test)
+
 add_executable(Connect_test Connect_test.cpp)
 target_link_libraries(Connect_test hycast pthread)
 add_test(Connect_test Connect_test)

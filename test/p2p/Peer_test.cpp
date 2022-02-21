@@ -119,21 +119,12 @@ public:
     // Both sides
     void waitForSrvrPeer() override {}
 
-    SockAddr getPeerSrvrAddr() const override {
+    SockAddr getSrvrAddr() const override {
         return SockAddr();
     }
 
     // Subscriber-side
-    bool recvNotice(const Tracker notice, Peer peer) override
-    {
-        LOG_TRACE;
-        EXPECT_EQ(1, notice.size());
-        orState(PEER_SRVR_ADDRS_RCVD);
-        return false;
-    }
-
-    // Subscriber-side
-    bool recvNotice(const ProdIndex notice, Peer peer) override
+    bool recvNotice(const ProdIndex notice, SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodIndexes[prodNoticeCount++], notice);
@@ -142,7 +133,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const DataSegId notice, Peer peer) override
+    bool recvNotice(const DataSegId notice, SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(segIds[segNoticeCount++], notice);
@@ -152,7 +143,7 @@ public:
 
     // Publisher-side
     ProdInfo recvRequest(const ProdIndex request,
-                         Peer            peer) override
+                         SockAddr        rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodIndexes[prodRequestCount], request);
@@ -166,7 +157,7 @@ public:
 
     // Publisher-side
     DataSeg recvRequest(const DataSegId request,
-                        Peer            peer) override
+                        SockAddr        rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(segIds[segRequestCount], request);
@@ -179,7 +170,19 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const ProdInfo data, Peer peer) override
+    void recvData(const Tracker tracker, SockAddr rmtAddr) override
+    {
+        LOG_TRACE;
+        EXPECT_EQ(1, tracker.size());
+        orState(PEER_SRVR_ADDRS_RCVD);
+    }
+
+    // Subscriber-side
+    void recvData(const SockAddr srvrAddr, SockAddr rmtAddr) override
+    {}
+
+    // Subscriber-side
+    void recvData(const ProdInfo data, SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ((skipping) ? prodInfos[1] : prodInfos[prodDataCount++], data);
@@ -187,7 +190,7 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const DataSeg actualDataSeg, Peer peer)
+    void recvData(const DataSeg actualDataSeg, SockAddr rmtAddr)
             override
     {
         LOG_TRACE;
@@ -197,14 +200,14 @@ public:
         orState(DATA_SEG_RCVD);
     }
 
-    void missed(const ProdIndex prodIndex, Peer peer) override {
+    void missed(const ProdIndex prodIndex, SockAddr rmtAddr) override {
         static int i = 0;
         LOG_DEBUG("i=%d, prodIndex=%s", i, prodIndex.to_string().data());
         ASSERT_EQ(prodIndexes[i++], prodIndex);
         orState(PROD_INFO_MISSED);
     }
 
-    void missed(const DataSegId dataSegId, Peer peer) override {
+    void missed(const DataSegId dataSegId, SockAddr rmtAddr) override {
         static int i = 0;
         LOG_DEBUG("i=%d, dataSegId=%s", i, dataSegId.to_string().data());
         ASSERT_EQ(segIds[i++], dataSegId);
@@ -223,10 +226,10 @@ public:
 
     void startPubPeer(Peer& pubPeer)
     {
-        PubPeerSrvr peerSrvr{*this, pubAddr};
+        auto rpcSrvr = PubRpcSrvr::create(pubAddr);
         orState(LISTENING);
 
-        pubPeer = peerSrvr.accept();
+        pubPeer = PubPeer{*this, rpcSrvr->accept()};
         ASSERT_TRUE(pubPeer);
 
         auto rmtAddr = pubPeer.getRmtAddr().getInetAddr();
@@ -259,7 +262,7 @@ TEST_F(PeerTest, DefaultConstruction)
 // Tests premature stopping
 TEST_F(PeerTest, PrematureStop)
 {
-    // Create and execute reception by publishing-peer on separate thread
+    // Create and execute publishing-peer on separate thread
     Peer pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
@@ -350,6 +353,7 @@ TEST_F(PeerTest, DataExchange)
         // Wait for the exchange to complete
         auto done = static_cast<State>(
                LISTENING |
+               PEER_SRVR_ADDRS_RCVD |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |

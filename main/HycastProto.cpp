@@ -36,22 +36,6 @@
 
 namespace hycast {
 
-const PduId PduId::UNSET(0);
-const PduId PduId::PEER_SRVR_ADDRS(1);
-const PduId PduId::PROD_INFO_NOTICE(2);
-const PduId PduId::DATA_SEG_NOTICE(3);
-const PduId PduId::PROD_INFO_REQUEST(4);
-const PduId PduId::DATA_SEG_REQUEST(5);
-const PduId PduId::PROD_INFO(6);
-const PduId PduId::DATA_SEG(7);
-
-PduId::PduId(Type value)
-    : value(value)
-{
-    if (value > 8)
-        throw INVALID_ARGUMENT("value=" + to_string());
-}
-
 bool FeedInfo::write(Xprt xprt) const {
     return mcastGroup.write(xprt) &&
             mcastSource.write(xprt) &&
@@ -75,6 +59,8 @@ std::string DataSegId::to_string(const bool withName) const
 
 String DatumId::to_string() const {
     switch (id) {
+    case Id::PEER_SRVR_ADDR:
+        return srvrAddr.to_string();
     case Id::TRACKER:
         return tracker.to_string();
     case Id::PROD_INDEX:
@@ -128,7 +114,7 @@ class ProdInfo::Impl
 {
     friend class ProdInfo;
 
-    using SizeType = uint16_t; ///< Type to hold length of product-name
+    using NameLenType = uint16_t; ///< Type to hold length of product-name
 
     ProdIndex index;   ///< Product index
     String    name;    ///< Name of product
@@ -169,7 +155,7 @@ public:
         auto success = index.write(xprt);
         if (success) {
             //LOG_DEBUG("Writing product name to %s", xprt.to_string().data());
-            success = xprt.write(static_cast<SizeType>(name.size())) &&
+            success = xprt.write(static_cast<NameLenType>(name.size())) &&
                     xprt.write(name.data(), name.size());
             if (success) {
                 //LOG_DEBUG("Writing product size to %s", xprt.to_string().data());
@@ -184,7 +170,7 @@ public:
         auto success = index.read(xprt);
         if (success) {
             //LOG_DEBUG("Reading product name from %s", xprt.to_string().data());
-            SizeType nbytes;
+            NameLenType nbytes;
             success = xprt.read(nbytes);
             if (success) {
                 if (nbytes > _XOPEN_PATH_MAX-1)
@@ -195,7 +181,7 @@ public:
                 if (success) {
                     name.assign(bytes, nbytes);
                     //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
-                    success = xprt.read(nbytes);
+                    success = xprt.read(size);
                 }
             }
         }

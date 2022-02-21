@@ -6,6 +6,8 @@ include_directories(
         ${CMAKE_SOURCE_DIR}/main/repository
 )
 
+add_executable(shared_ptr_test shared_ptr_test.cpp)
+
 add_executable(Peer_test Peer_test.cpp)
 target_link_libraries(Peer_test hycast gtest)
 add_test(Peer_test Peer_test)

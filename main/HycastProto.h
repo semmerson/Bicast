@@ -61,64 +61,6 @@ using SegOffset = ProdSize;    ///< Offset of data-segment in bytes
 
 class Xprt;
 
-// Protocol data unit (PDU) identifiers
-class PduId : public XprtAble
-{
-public:
-    using Type = uint32_t;
-
-private:
-    Type value;
-
-public:
-    // Keep consonant with initializations in `HycastProto.cpp`
-    static const PduId UNSET;
-    static const PduId PEER_SRVR_ADDRS;
-    static const PduId PUB_PATH_NOTICE;
-    static const PduId PROD_INFO_NOTICE;
-    static const PduId DATA_SEG_NOTICE;
-    static const PduId PROD_INFO_REQUEST;
-    static const PduId DATA_SEG_REQUEST;
-    static const PduId PROD_INFO;
-    static const PduId DATA_SEG;
-
-    PduId()
-        : value(UNSET)
-    {}
-
-    /**
-     * Constructs.
-     *
-     * @param[in] value            PDU ID value
-     * @throws    IllegalArgument  `value` is unsupported
-     */
-    PduId(Type value);
-
-    operator bool() const {
-        return value != UNSET.value;
-    }
-
-    inline String to_string() const {
-        return std::to_string(value);
-    }
-
-    inline operator Type() const {
-        return value;
-    }
-
-    inline bool operator==(const Type value) const {
-        return this->value == value;
-    }
-
-    inline bool write(Xprt xprt) const {
-        return xprt.write(value);
-    }
-
-    inline bool read(Xprt xprt) {
-        return xprt.read(value);
-    }
-};
-
 /// Information on a data feed
 struct FeedInfo : public XprtAble
 {
@@ -442,11 +384,13 @@ struct DatumId
 public:
     enum class Id {
         UNSET,
+        PEER_SRVR_ADDR,
         TRACKER,
         PROD_INDEX,
         DATA_SEG_ID
     } id;
     union {
+        SockAddr  srvrAddr;
         Tracker   tracker;
         ProdIndex prodIndex;
         DataSegId dataSegId;
@@ -455,6 +399,11 @@ public:
     DatumId() noexcept
         : prodIndex()
         , id(Id::UNSET)
+    {}
+
+    explicit DatumId(const SockAddr srvrAddr) noexcept
+        : id(Id::PEER_SRVR_ADDR)
+        , srvrAddr(srvrAddr)
     {}
 
     explicit DatumId(const Tracker tracker) noexcept
@@ -522,39 +471,65 @@ public:
 
 class Peer;
 
-/// Notice receiver/server
+/// Notice receiver/server interface
 class NoticeRcvr
 {
 public:
     virtual ~NoticeRcvr() {}
-    virtual bool recvNotice(const Tracker   notice,
-                            Peer            peer) =0;
     virtual bool recvNotice(const ProdIndex notice,
-                            Peer            peer) =0;
+                            SockAddr        rmtAddr) =0;
     virtual bool recvNotice(const DataSegId notice,
-                            Peer            peer) =0;
+                            SockAddr        rmtAddr) =0;
 };
 
-/// Request receiver/server
+/// Request receiver/server interface
 class RequestRcvr
 {
 public:
     virtual ~RequestRcvr() {}
     virtual ProdInfo recvRequest(const ProdIndex request,
-                                 Peer            peer) =0;
+                                 const SockAddr  rmtAddr) =0;
     virtual DataSeg recvRequest(const DataSegId request,
-                                Peer            peer) =0;
+                                const SockAddr  rmtAddr) =0;
 };
 
-/// Data receiver/server
+/// Data receiver/server interface
 class DataRcvr
 {
 public:
     virtual ~DataRcvr() {}
+    virtual void recvData(
+            const Tracker  tracker,
+            const SockAddr rmtAddr) =0;
+    virtual void recvData(
+            const SockAddr srvrAddr,
+            const SockAddr rmtAddr) =0;
     virtual void recvData(const ProdInfo prodInfo,
-                          Peer           peer) =0;
+                          const SockAddr rmtAddr) =0;
     virtual void recvData(const DataSeg  dataSeg,
-                          Peer           peer) =0;
+                          const SockAddr rmtAddr) =0;
+};
+
+/// Publishing peer's receiver interface
+class PubRcvr
+{
+public:
+    virtual ~PubRcvr() {};
+    virtual ProdInfo recvRequest(const ProdIndex request) =0;
+    virtual DataSeg recvRequest(const DataSegId request) =0;
+};
+
+/// Subscribing peer's receiver interface
+class SubRcvr : public PubRcvr
+{
+public:
+    virtual ~SubRcvr() {};
+    virtual bool recvNotice(const ProdIndex notice) =0;
+    virtual bool recvNotice(const DataSegId notice) =0;
+    virtual bool recvData(const Tracker  tracker) =0;
+    virtual bool recvData(const SockAddr srvrAddr) =0;
+    virtual void recvData(const ProdInfo prodInfo) =0;
+    virtual void recvData(const DataSeg  dataSeg) =0;
 };
 
 /**

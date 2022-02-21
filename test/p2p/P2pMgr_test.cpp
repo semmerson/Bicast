@@ -121,7 +121,7 @@ public:
             const ProdIndex index,
             SubP2pMgr&      p2pMgr) override {
         EXPECT_TRUE(index == this->prodIndex);
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr())
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
             orState(PROD_NOTICE_RCVD);
         return true;
     }
@@ -132,7 +132,7 @@ public:
         static    ProdSize offset = 0;
         DataSegId expect(prodIndex, offset);
         EXPECT_EQ(expect, segId);
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr()) {
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr()) {
             offset += SEG_SIZE;
             if (offset >= sizeof(data))
                 orState(SEG_NOTICE_RCVD);
@@ -146,7 +146,7 @@ public:
         //ASSERT_EQ(prodIndex, request);     // Doesn't compile
         //ASSERT_TRUE(prodIndex == request); // Doesn't compile
         EXPECT_TRUE(prodIndex == request);
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr())
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
             orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
@@ -156,7 +156,7 @@ public:
             P2pMgr&         p2pMgr) override {
         EXPECT_EQ(0, segId.offset%SEG_SIZE);
         EXPECT_LE(segId.offset, sizeof(data));
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr())
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
             orState(SEG_REQUEST_RCVD);
         return DataSeg(segId, sizeof(data), data+segId.offset);
     }
@@ -165,7 +165,7 @@ public:
             const ProdInfo prodInfo,
             SubP2pMgr&     p2pMgr) {
         EXPECT_EQ(this->prodInfo, prodInfo);
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr())
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
             orState(PROD_INFO_RCVD);
     }
 
@@ -176,7 +176,7 @@ public:
         DataSegId segId(prodIndex, offset);
         DataSeg   expect(segId, sizeof(data), data+segId.offset);
         EXPECT_EQ(expect, dataSeg);
-        if (p2pMgr.getPeerSrvrAddr() == testP2pMgrPimpl->getPeerSrvrAddr()) {
+        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr()) {
             offset += SEG_SIZE;
             if (offset >= sizeof(data))
                 orState(DATA_RCVD);
@@ -227,7 +227,7 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     pubP2pMgrPtr->waitForSrvrPeer();
 
     Tracker    tracker2{};
-    tracker2.insert(subP2pMgrPtr1->getPeerSrvrAddr());
+    tracker2.insert(subP2pMgrPtr1->getSrvrAddr());
     testP2pMgrPimpl = SubP2pMgr::create(*this, tracker2, localSrvrAddr,
             1, SEG_SIZE);
 

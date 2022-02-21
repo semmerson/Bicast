@@ -50,8 +50,6 @@ class Socket::Impl
         , rmtSockAddr()
         , sd{-1}
         , shutdownCalled{false}
-        , bytesWritten{0}
-        , bytesRead{0}
     {}
 
     /**
@@ -78,14 +76,14 @@ protected:
     SockAddr              rmtSockAddr;
     int                   sd;             ///< Socket descriptor
     bool                  shutdownCalled; ///< `shutdown()` has been called?
-    mutable unsigned      bytesWritten;
-    mutable unsigned      bytesRead;
+    mutable unsigned      bytesWritten =0;
+    mutable unsigned      bytesRead =0;
     static const uint64_t writePad;       ///< Write alignment buffer
     static uint64_t       readPad;        ///< Read alignment buffer
 
     /**
-     * Constructs a server-side socket. Accepts responsibility for closing the
-     * socket descriptor on destruction.
+     * Constructs a server-side socket. Closes the socket descriptor on
+     * destruction.
      *
      * @param[in] sd  Socket descriptor
      */
@@ -112,59 +110,6 @@ protected:
         init(sockAddr.socket(type, protocol));
     }
 
-    static inline bool hton(const bool value) {
-        return value;
-    }
-
-    static inline uint8_t hton(const uint8_t value) {
-        return value;
-    }
-
-    static inline uint16_t hton(const uint16_t value) {
-        return htons(value);
-    }
-
-    static inline uint32_t hton(const uint32_t value) {
-        return htonl(value);
-    }
-
-    static inline uint64_t hton(uint64_t value) {
-        uint64_t  v64;
-        uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
-
-        v32[0] = hton(static_cast<uint32_t>(value >> 32));
-        v32[1] = hton(static_cast<uint32_t>(value));
-
-        return v64;
-    }
-
-    static inline bool ntoh(const bool value)
-    {
-        return value;
-    }
-
-    static inline uint8_t ntoh(const uint8_t value)
-    {
-        return value;
-    }
-
-    static inline uint16_t ntoh(const uint16_t value)
-    {
-        return ntohs(value);
-    }
-
-    static inline uint32_t ntoh(const uint32_t value)
-    {
-        return ntohl(value);
-    }
-
-    static inline uint64_t ntoh(uint64_t value)
-    {
-        uint32_t* v32 = reinterpret_cast<uint32_t*>(&value);
-
-        return (static_cast<uint64_t>(ntoh(v32[0])) << 32) | ntoh(v32[1]);
-    }
-
     static inline size_t padLen(
             const unsigned nbytes,
             const size_t   align) {
@@ -173,8 +118,11 @@ protected:
          * Alternative?
          * See <https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding>.
          *
+         * Works for unsigned and two's-complement `nbytes` but not one's-
+         * complement nor sign-magnitude
+         *
          * padding = (align - (nbytes & (align - 1))) & (align - 1)
-         *         = (-nbytes & (align - 1)) // Works for unsigned `nbytes`
+         *         = -nbytes & (align - 1)
          */
     }
 
@@ -183,17 +131,17 @@ protected:
         LOG_DEBUG("bytesWritten=%s, align=%s",
                 std::to_string(bytesWritten).data(),
                 std::to_string(align).data());
-        const auto padding = padLen(bytesWritten, align);
-        return padding
-                ? write(&writePad, padLen(bytesWritten, align))
+        const auto nbytes = padLen(bytesWritten, align);
+        return nbytes
+                ? write(&writePad, nbytes)
                 : true;
     }
 
-    inline bool alignReadTo(size_t nbytes)
+    inline bool alignReadTo(size_t align)
     {
-        const auto padding = padLen(bytesWritten, nbytes);
-        return padding
-                ? read(&readPad, padLen(bytesRead, nbytes))
+        const auto nbytes = padLen(bytesRead, align);
+        return nbytes
+                ? read(&readPad, nbytes)
                 : true;
     }
 
@@ -317,37 +265,11 @@ public:
     }
 
     /**
-     * Performs network-translation and value-alignment.
+     * Performs value-alignment.
      */
     template<class TYPE>
     bool write(TYPE value) {
-        value = hton(value);
         return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
-    }
-    bool write(const bool value) {
-        LOG_DEBUG("Writing boolean %" PRIu8" to %s", (uint8_t)value,
-                to_string().data());
-        return write<bool>(value);
-    }
-    bool write(const uint8_t value) {
-        LOG_DEBUG("Writing 1-byte %" PRIu8 " to %s", value, to_string().data());
-        return write<uint8_t>(value);
-    }
-    bool write(const uint16_t value) {
-        LOG_DEBUG("Writing 2-byte %" PRIu16 " to %s", value, to_string().data());
-        return write<uint16_t>(value);
-    }
-    bool write(const uint32_t value) {
-        LOG_DEBUG("Writing 4-byte %" PRIu32 " to %s", value, to_string().data());
-        return write<uint32_t>(value);
-    }
-    bool write(const uint64_t value) {
-        LOG_DEBUG("Writing 8-byte %" PRIu64 " to %s", value, to_string().data());
-        return write<uint64_t>(value);
-    }
-    bool write(const std::string& string) {
-        LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
-        return write(string.size()) && write(string.data(), string.size());
     }
 
     virtual bool flush() =0;
@@ -374,50 +296,20 @@ public:
     virtual void clear() =0;
 
     /**
-     * Performs network-translation and value-alignment.
+     * Performs value-alignment.
      */
     template<class TYPE>
     bool read(TYPE& value) {
-        if (alignReadTo(sizeof(value)) && read(&value, sizeof(value))) {
-            value = ntoh(value);
-            return true;
-        }
-        return false;
+        return alignReadTo(sizeof(value)) && read(&value, sizeof(value));
     }
-    bool read(bool& value) {
-        const auto success = read<bool>(value);
-        LOG_DEBUG("Read boolean %" PRIu8 " from %s", (uint8_t)value,
-                to_string().data());
-        return success;
-    }
-    bool read(uint8_t& value) {
-        const auto success = read<uint8_t>(value);
-        LOG_DEBUG("Read 1-byte %" PRIu8 " from %s", value, to_string().data());
-        return success;
-    }
-    bool read(uint16_t& value) {
-        const auto success = read<uint16_t>(value);
-        LOG_DEBUG("Read 2-byte %" PRIu16 " from %s", value, to_string().data());
-        return success;
-    }
-    bool read(uint32_t& value) {
-        const auto success = read<uint32_t>(value);
-        LOG_DEBUG("Read 4-byte %" PRIu32 " from %s", value, to_string().data());
-        return success;
-    }
-    bool read(uint64_t& value) {
-        const auto success = read<uint64_t>(value);
-        LOG_DEBUG("Read 8-byte %" PRIu64 " from %s", value, to_string().data());
-        return success;
-    }
+
+    template<typename UINT>
     bool read(std::string& string) {
-        std::string::size_type size;
-        if (read(size)) {
+        UINT size;
+        if (read<UINT>(size)) {
             char bytes[size];
-            if (read(bytes, sizeof(bytes))) {
+            if (read(bytes, size)) {
                 string.assign(bytes, size);
-                LOG_DEBUG("Read \"%s\" from %s", string.data(),
-                        to_string().data());
                 return true;
             }
         }
@@ -490,7 +382,7 @@ in_port_t Socket::getLclPort() const {
     return pImpl->getLclPort();
 }
 
-SockAddr Socket::getRmtAddr() const {
+SockAddr Socket::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }
 
@@ -503,22 +395,19 @@ bool Socket::write(const void*  data,
     return pImpl->write(data, nbytes);
 }
 bool Socket::write(const bool value) const {
-    return pImpl->write(value);
+    return pImpl->write<bool>(value);
 }
 bool Socket::write(const uint8_t value) const {
-    return pImpl->write(value);
+    return pImpl->write<uint8_t>(value);
 }
 bool Socket::write(const uint16_t value) const {
-    return pImpl->write(value);
+    return pImpl->write<uint16_t>(value);
 }
 bool Socket::write(const uint32_t value) const {
-    return pImpl->write(value);
+    return pImpl->write<uint32_t>(value);
 }
 bool Socket::write(const uint64_t value) const {
-    return pImpl->write(value);
-}
-bool Socket::write(const std::string& string) const {
-    return pImpl->write(string);
+    return pImpl->write<uint64_t>(value);
 }
 
 bool Socket::flush() {
@@ -534,22 +423,23 @@ bool Socket::read(void*        data,
     return pImpl->read(data, nbytes);
 }
 bool Socket::read(bool& value) const {
-    return pImpl->read(value);
+    return pImpl->read<bool>(value);
 }
 bool Socket::read(uint8_t& value) const {
-    return pImpl->read(value);
+    return pImpl->read<uint8_t>(value);
 }
 bool Socket::read(uint16_t& value) const {
-    return pImpl->read(value);
+    return pImpl->read<uint16_t>(value);
 }
 bool Socket::read(uint32_t& value) const {
-    return pImpl->read(value);
+    return pImpl->read<uint32_t>(value);
 }
 bool Socket::read(uint64_t& value) const {
-    return pImpl->read(value);
+    return pImpl->read<uint64_t>(value);
 }
+template<typename UINT>
 bool Socket::read(std::string& string) const {
-    return pImpl->read(string);
+    return pImpl->read<UINT>(string);
 }
 
 void Socket::shutdown(const int what) const
@@ -699,8 +589,8 @@ protected:
 public:
     virtual std::string to_string() const override
     {
-        return "{lcl=" + getLclAddr().to_string() + ", proto=TCP, rmt=" +
-                getRmtAddr().to_string() + "}";
+        return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string()
+                + ", proto=TCP, rmt=" + getRmtAddr().to_string() + "}";
     }
 
     /**
@@ -780,7 +670,7 @@ public:
 
     std::string to_string() const override
     {
-        return "{lcl=" + getLclAddr().to_string() + ", proto=TCP}";
+        return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string() + ", proto=TCP}";
     }
 
     /**
@@ -972,8 +862,8 @@ public:
     }
 
     std::string to_string() const override {
-        return "{lcl=" + getLclAddr().to_string() + "proto=UDP, rmt=" +
-                getRmtAddr().to_string() + "}";
+        return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string()
+                + "proto=UDP, rmt=" + getRmtAddr().to_string() + "}";
     }
 
     bool flush() {
