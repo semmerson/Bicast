@@ -145,7 +145,7 @@ protected:
     void startServer() {
         // Normally, this `try` would be in the caller
         try {
-            lstnSock = srvrAddr.socket(SOCK_STREAM);
+            lstnSock = srvrAddr.getInetAddr().socket(SOCK_STREAM);
 
             try {
                 const int enable = 1;
@@ -175,7 +175,7 @@ protected:
     }
 
     void runClient() {
-        clntSock = srvrAddr.socket(SOCK_STREAM);
+        clntSock = srvrAddr.getInetAddr().socket(SOCK_STREAM);
 
         try {
             srvrAddr.connect(clntSock);

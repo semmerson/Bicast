@@ -12,7 +12,9 @@
 #include "config.h"
 
 #include "logging.h"
+#include "Node.h"
 #include "P2pMgr.h"
+#include "ThreadException.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
@@ -30,7 +32,7 @@ bool operator==(const SubP2pMgr& lhs, const SubP2pMgr::Pimpl rhs) {
 }
 
 /// The fixture for testing class `P2pMgr`
-class P2pMgrTest : public ::testing::Test, public SubNode
+class P2pMgrTest : public ::testing::Test, public PubNode, public SubNode
 {
 protected:
     using State = enum {
@@ -40,37 +42,50 @@ protected:
         PROD_REQUEST_RCVD = 0x04,
         SEG_REQUEST_RCVD  = 0x08,
         PROD_INFO_RCVD    = 0x10,
-        DATA_RCVD         = 0x20,
+        SEG_RCVD          = 0x20,
         DONE = PROD_NOTICE_RCVD  |
                SEG_NOTICE_RCVD   |
                PROD_REQUEST_RCVD |
                SEG_REQUEST_RCVD  |
                PROD_INFO_RCVD    |
-               DATA_RCVD
+               SEG_RCVD
     };
     Mutex            mutex;
     Cond             cond;
     unsigned         state;
-    static constexpr SegSize SEG_SIZE = DataSeg::CANON_DATASEG_SIZE;
-    SockAddr         pubPeerSrvrAddr;
+    static constexpr SegSize SEG_SIZE = 1200;
+    static constexpr ProdSize PROD_SIZE = 1000;
+    SockAddr         pubP2pSrvrAddr;
     SockAddr         localSrvrAddr;
     ProdIndex        prodIndex;
-    char             data[1000];
+    char             prodData[PROD_SIZE];
     ProdInfo         prodInfo;
-    SubP2pMgr::Pimpl testP2pMgrPimpl;
+    std::atomic<int> subscriberCount;
+    std::atomic<int> numProdInfos;
+    std::atomic<int> numDataSegs;
+    ThreadEx         threadEx;
 
     P2pMgrTest()
         : mutex()
         , cond()
         , state(INIT)
-        , pubPeerSrvrAddr("127.0.0.1:38800")
+        , pubP2pSrvrAddr("127.0.0.1:38800")
         , localSrvrAddr("127.0.0.1:0")
         , prodIndex(1)
-        , data()
-        , prodInfo(prodIndex, "product", sizeof(data))
-        , testP2pMgrPimpl()
+        , prodData()
+        , prodInfo(prodIndex, "product", PROD_SIZE)
+        , subscriberCount(0)
+        , numProdInfos(0)
+        , numDataSegs(0)
+        , threadEx()
     {
-        ::memset(data, 0xbd, sizeof(data));
+        DataSeg::setMaxSegSize(SEG_SIZE);
+        int i = 0;
+        for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
+            auto str = std::to_string(i++);
+            int c = str[str.length()-1];
+            ::memset(prodData+offset, c, DataSeg::size(PROD_SIZE, offset));
+        }
     }
 
     virtual ~P2pMgrTest()
@@ -95,9 +110,9 @@ protected:
 
     // Objects declared here can be used by all tests in the test case for Error.
 
-    void notify(std::shared_ptr<P2pMgr> p2pMgr) {
+    void notify(P2pMgr::Pimpl p2pMgr) {
         p2pMgr->notify(prodIndex);
-        for (ProdSize offset = 0; offset < sizeof(data); offset += SEG_SIZE) {
+        for (ProdSize offset = 0; offset < sizeof(prodData); offset += SEG_SIZE) {
             DataSegId dataSegId(prodIndex, offset);
             p2pMgr->notify(dataSegId);
         }
@@ -105,6 +120,7 @@ protected:
 
     void orState(const State state)
     {
+        Guard guard{mutex};
         this->state |= state;
         cond.notify_all();
     }
@@ -112,103 +128,147 @@ protected:
     void waitForState(const unsigned nextState)
     {
         std::unique_lock<decltype(mutex)> lock{mutex};
-        while (state != nextState)
-            cond.wait(lock);
+        cond.wait(lock, [&]{return state == nextState || threadEx;});
     }
 
 public:
-    bool recvNotice(
-            const ProdIndex index,
-            SubP2pMgr&      p2pMgr) override {
-        EXPECT_TRUE(index == this->prodIndex);
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
-            orState(PROD_NOTICE_RCVD);
-        return true;
-    }
+    void start() {}
+    void stop() {}
+    void run() {}
+    void halt() {}
 
-    bool recvNotice(
-            const DataSegId segId,
-            SubP2pMgr&      p2pMgr) override {
-        static    ProdSize offset = 0;
-        DataSegId expect(prodIndex, offset);
-        EXPECT_EQ(expect, segId);
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr()) {
-            offset += SEG_SIZE;
-            if (offset >= sizeof(data))
-                orState(SEG_NOTICE_RCVD);
+    void runP2pMgr(P2pMgr::Pimpl p2pMgr) {
+        try {
+            p2pMgr->run();
         }
+        catch (const std::exception& ex) {
+            threadEx.set(ex);
+        }
+    }
+
+    SockAddr getP2pSrvrAddr() const override {
+        return SockAddr{};
+    }
+
+    void waitForPeer() {}
+
+    bool shouldRequest(const ProdIndex index) override {
+        EXPECT_TRUE(index == this->prodIndex);
+        orState(PROD_NOTICE_RCVD);
         return true;
     }
 
-    ProdInfo recvRequest(
-            const ProdIndex request,
-            P2pMgr&         p2pMgr) override {
+    bool shouldRequest(const DataSegId segId) override {
+        DataSegId expect(prodIndex, segId.offset);
+        EXPECT_EQ(expect, segId);
+        if (segId.offset+SEG_SIZE >= prodInfo.getSize())
+            orState(SEG_NOTICE_RCVD);
+        return true;
+    }
+
+    ProdInfo recvRequest(const ProdIndex request) override {
         //ASSERT_EQ(prodIndex, request);     // Doesn't compile
         //ASSERT_TRUE(prodIndex == request); // Doesn't compile
         EXPECT_TRUE(prodIndex == request);
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
-            orState(PROD_REQUEST_RCVD);
+        orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }
 
-    DataSeg recvRequest(
-            const DataSegId segId,
-            P2pMgr&         p2pMgr) override {
+    DataSeg recvRequest(const DataSegId segId) override {
         EXPECT_EQ(0, segId.offset%SEG_SIZE);
-        EXPECT_LE(segId.offset, sizeof(data));
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
-            orState(SEG_REQUEST_RCVD);
-        return DataSeg(segId, sizeof(data), data+segId.offset);
+        EXPECT_LE(segId.offset, sizeof(prodData));
+        orState(SEG_REQUEST_RCVD);
+        return DataSeg(segId, sizeof(prodData), prodData+segId.offset);
     }
 
-    void recvData(
-            const ProdInfo prodInfo,
-            SubP2pMgr&     p2pMgr) {
+    void recvP2pData(const ProdInfo prodInfo) {
         EXPECT_EQ(this->prodInfo, prodInfo);
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr())
+        //LOG_DEBUG("numProdInfos=%d, subscriberCount=%d", (int)numProdInfos, (int)subscriberCount);
+        if (++numProdInfos == subscriberCount) {
+            //LOG_DEBUG("Setting product information received");
             orState(PROD_INFO_RCVD);
+        }
     }
 
-    void recvData(
-            const DataSeg dataSeg,
-            SubP2pMgr&    p2pMgr) {
-        static    ProdSize offset = 0;
-        DataSegId segId(prodIndex, offset);
-        DataSeg   expect(segId, sizeof(data), data+segId.offset);
+    void recvMcastData(const ProdInfo prodInfo) {
+    }
+
+    void recvP2pData(const DataSeg dataSeg) {
+        const auto offset = dataSeg.getId().offset;
+        DataSeg expect(dataSeg.getId(), prodInfo.getSize(), prodData+offset);
         EXPECT_EQ(expect, dataSeg);
-        if (p2pMgr.getSrvrAddr() == testP2pMgrPimpl->getSrvrAddr()) {
-            offset += SEG_SIZE;
-            if (offset >= sizeof(data))
-                orState(DATA_RCVD);
+        //LOG_DEBUG("numDataSegs=%d, subscriberCount=%d", (int)numDataSegs, (int)subscriberCount);
+        if (offset+SEG_SIZE >= prodInfo.getSize() && ++numDataSegs == subscriberCount) {
+            //LOG_DEBUG("Setting data segment received");
+            orState(SEG_RCVD);
         }
+    }
+
+    void recvMcastData(const DataSeg dataSeg) {
+    }
+
+    void link(
+            const std::string& pathname,
+            const std::string& prodName) override {
+    }
+
+    ProdInfo getNextProd() override {
+    }
+
+    DataSeg getDataSeg(const DataSegId segId) override {
     }
 };
 
-#if 0
+#if 1
 // Tests construction of publisher's P2P manager
 TEST_F(P2pMgrTest, PubP2pMgrCtor)
 {
-    auto pubP2pMgr = hycast::P2pMgr::create(*this, pubPeerSrvrAddr, 8,
-            SEG_SIZE);
+    auto pubP2pMgr = hycast::P2pMgr::create(*this, pubP2pSrvrAddr, 8, SEG_SIZE);
 }
 #endif
 
-#if 0
+#if 1
 // Tests a single subscriber
 TEST_F(P2pMgrTest, SingleSubscriber)
 {
-    auto       pubP2pMgrPtr = P2pMgr::create(*this, pubPeerSrvrAddr, 8, SEG_SIZE);
-    Tracker    tracker{};
-    tracker.insert(pubPeerSrvrAddr);
-    testP2pMgrPimpl = SubP2pMgr::create(*this, tracker, localSrvrAddr, 8,
-            SEG_SIZE);
+    subscriberCount = 1;
 
-    pubP2pMgrPtr->waitForSrvrPeer();
-    notify(pubP2pMgrPtr);
+    LOG_NOTE("Creating publishing P2P manager");
+    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 8, SEG_SIZE);
+    Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
+
+    Tracker    tracker{};
+    LOG_NOTE("Getting socket address of publishing P2P manager");
+    const auto addr = pubP2pMgr->getSrvrAddr();
+    LOG_NOTE("Adding socket address of publishing P2P manager to tracker");
+    tracker.insert(addr);
+
+    LOG_NOTE("Creating subscribing P2P manager");
+    auto       subP2pMgr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 8, SEG_SIZE);
+    LOG_NOTE("Starting subscribing P2P manager");
+    Thread     subThread(&P2pMgrTest::runP2pMgr, this, subP2pMgr);
+
+    LOG_NOTE("Waiting for subscriber to connect");
+    pubP2pMgr->waitForSrvrPeer();
+
+    LOG_NOTE("Notifying subscriber");
+    notify(pubP2pMgr);
+
+    LOG_NOTE("Waiting for termination");
     waitForState(PROD_NOTICE_RCVD  |
                SEG_NOTICE_RCVD   |
+               PROD_REQUEST_RCVD |
+               SEG_REQUEST_RCVD  |
                PROD_INFO_RCVD    |
-               DATA_RCVD);
+               SEG_RCVD);
+
+    EXPECT_FALSE(threadEx);
+
+    subP2pMgr->halt();
+    pubP2pMgr->halt();
+
+    subThread.join();
+    pubThread.join();
 }
 #endif
 
@@ -216,28 +276,51 @@ TEST_F(P2pMgrTest, SingleSubscriber)
 // Tests two, daisy-chained subscribers
 TEST_F(P2pMgrTest, TwoDaisyChained)
 {
-    auto       pubP2pMgrPtr = P2pMgr::create(*this, pubPeerSrvrAddr, 1,
-            SEG_SIZE);
+    subscriberCount = 2;
+
+    //LOG_DEBUG("Creating publishing P2P manager");
+    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 1, SEG_SIZE);
+    Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
     Tracker    tracker1{};
-    tracker1.insert(pubPeerSrvrAddr);
-    auto       subP2pMgrPtr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr,
-            2, SEG_SIZE);
+    //LOG_DEBUG("Inserting address of publishing P2P server");
+    tracker1.insert(pubP2pSrvrAddr);
+    //LOG_DEBUG("Creating first subscribing P2P manager");
+    auto       subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr, 2, SEG_SIZE);
+    Thread     subThread1(&P2pMgrTest::runP2pMgr, this, subP2pMgr1);
 
-    pubP2pMgrPtr->waitForSrvrPeer();
+    //LOG_DEBUG("Waiting for first subscriber to connect");
+    pubP2pMgr->waitForSrvrPeer();
 
-    Tracker    tracker2{};
-    tracker2.insert(subP2pMgrPtr1->getSrvrAddr());
-    testP2pMgrPimpl = SubP2pMgr::create(*this, tracker2, localSrvrAddr,
-            1, SEG_SIZE);
+    Tracker tracker2{};
+    //LOG_DEBUG("Inserting address of subscribing P2P server");
+    tracker2.insert(subP2pMgr1->getSrvrAddr());
+    //LOG_DEBUG("Creating second subscribing P2P manager");
+    auto    subP2pMgr2 = SubP2pMgr::create(*this, tracker2, localSrvrAddr, 1, SEG_SIZE);
+    Thread     subThread2(&P2pMgrTest::runP2pMgr, this, subP2pMgr2);
 
-    subP2pMgrPtr1->waitForSrvrPeer();
+    //LOG_DEBUG("Waiting for second subscriber to connect");
+    subP2pMgr1->waitForSrvrPeer();
 
-    notify(pubP2pMgrPtr);
+    //LOG_DEBUG("Notifying publishing P2P manager");
+    notify(pubP2pMgr);
+    //LOG_DEBUG("Waiting for termination");
     waitForState(PROD_NOTICE_RCVD  |
                SEG_NOTICE_RCVD   |
+               PROD_REQUEST_RCVD |
+               SEG_REQUEST_RCVD  |
                PROD_INFO_RCVD    |
-               DATA_RCVD);
+               SEG_RCVD);
+
+    EXPECT_FALSE(threadEx);
+
+    subP2pMgr2->halt();
+    subP2pMgr1->halt();
+    pubP2pMgr->halt();
+
+    subThread2.join();
+    subThread1.join();
+    pubThread.join();
 }
 #endif
 

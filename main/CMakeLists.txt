@@ -20,16 +20,20 @@ add_library(main OBJECT
 include_directories(misc)
 include_directories(inet)
 include_directories(p2p)
+include_directories(mcast)
+include_directories(repository)
 
 add_subdirectory(misc)
 add_subdirectory(inet)
 add_subdirectory(p2p)
 add_subdirectory(lib)
+add_subdirectory(mcast)
 add_subdirectory(repository)
+add_subdirectory(node)
+add_subdirectory(publisher)
 
 # Check for Doxygen(1)
 find_package(Doxygen)
 if(NOT DOXYGEN_FOUND)
-    message(FATAL_ERROR "Doxygen wasn't found. Documentation won't be created "
-            "if it doesn't already exist")
+    message(FATAL_ERROR "doxygen(1) wasn't found. Documentation can't be created.")
 endif()

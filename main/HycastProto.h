@@ -39,6 +39,9 @@
 
 namespace hycast {
 
+class PubRepo;
+class SubRepo;
+
 // Convenience types
 using Thread = std::thread;
 using Mutex  = std::mutex;
@@ -51,6 +54,74 @@ constexpr uint8_t PROTOCOL_VERSION = 1;
 
 class P2pMgr;
 class SubP2pMgr;
+
+// Protocol data unit (PDU) identifiers
+class PduId : public XprtAble
+{
+    uint16_t value;
+
+public:
+    using Type = decltype(value);
+
+    static constexpr Type UNSET             = 0;
+    static constexpr Type PROTOCOL_VERSION  = 1;
+    static constexpr Type IS_PUBLISHER      = 2;
+    static constexpr Type PEER_SRVR_ADDRS   = 3;
+    static constexpr Type PUB_PATH_NOTICE   = 4;
+    static constexpr Type PROD_INFO_NOTICE  = 5;
+    static constexpr Type DATA_SEG_NOTICE   = 6;
+    static constexpr Type PROD_INFO_REQUEST = 7;
+    static constexpr Type DATA_SEG_REQUEST  = 8;
+    static constexpr Type PEER_SRVR_ADDR    = 9;
+    static constexpr Type PROD_INFO         = 10;
+    static constexpr Type DATA_SEG          = 11;
+    static constexpr Type MAX_PDU_ID        = DATA_SEG;
+
+    /**
+     * Constructs.
+     *
+     * @param[in] value            PDU ID value
+     * @throws    IllegalArgument  `value` is unsupported
+     */
+    PduId(Type value)
+        : value(value)
+    {
+        if (value > MAX_PDU_ID)
+            throw INVALID_ARGUMENT("value=" + to_string());
+    }
+
+    PduId()
+        : value(UNSET)
+    {}
+
+    operator bool() const noexcept {
+        return value != UNSET;
+    }
+
+    inline String to_string() const {
+        return std::to_string(value);
+    }
+
+    inline operator Type() const noexcept {
+        return value;
+    }
+
+    inline bool operator==(const PduId rhs) const noexcept {
+        return value == rhs.value;
+    }
+
+    inline bool operator==(const Type rhs) const noexcept {
+        return value == rhs;
+    }
+
+    inline bool write(Xprt xprt) const {
+        return xprt.write(value);
+    }
+
+    inline bool read(Xprt xprt) {
+        return xprt.read(value);
+    }
+};
 
 /******************************************************************************/
 // PDU payloads
@@ -255,13 +326,15 @@ struct Timestamp : public XprtAble
     }
 };
 
-/// Product information
+/// Handle class for roduct information
 struct ProdInfo : public XprtAble
 {
     class                 Impl;
     std::shared_ptr<Impl> pImpl;
 
 public:
+    static constexpr PduId::Type pduId = PduId::PROD_INFO;
+
     ProdInfo();
 
     ProdInfo(const ProdIndex   index,
@@ -277,7 +350,7 @@ public:
     const String&    getName() const;
     const ProdSize&  getSize() const;
 
-    bool operator==(const ProdInfo& rhs) const;
+    bool operator==(const ProdInfo rhs) const;
 
     String to_string(bool withName = false) const;
 
@@ -298,24 +371,52 @@ private:
     std::shared_ptr<Impl> pImpl;
 
 public:
-    static constexpr SegSize CANON_DATASEG_SIZE =
-            1500 - // Ethernet
-            20 -   // IP header
-            20 -   // TCP header
-            4 -    // PduId
-            4 -    // prodIndex
-            4 -    // offset
-            4;     // prodSize
+    /**
+     * Sets the maximum size of a data-segment.
+     *
+     * @param[in] maxSegSize       Maximum data-segment size in bytes
+     * @return                     Previous value
+     * @throw     InvalidArgument  Argument is not positive
+     */
+    static SegSize setMaxSegSize(const SegSize maxSegSize) noexcept;
 
-    inline static SegSize size(ProdSize prodSize, SegOffset offset) noexcept {
-        SegSize nbytes = prodSize - offset;
-        return (nbytes > CANON_DATASEG_SIZE)
-                ? CANON_DATASEG_SIZE
-                : nbytes;
-    }
+    /**
+     * Gets the maximum size of a data-segment.
+     *
+     * @return  Maximum size of a data-segment in bytes
+     */
+    static SegSize getMaxSegSize() noexcept;
+
+    /**
+     * Returns the size of a given data-segment.
+     *
+     * @param[in] prodSize  Size of the data-product in bytes
+     * @param[in] offset    Offset to the data-segment in bytes
+     * @return              Size of the data-segment in bytes
+     */
+    static SegSize size(
+            const ProdSize  prodSize,
+            const SegOffset offset) noexcept;
+
+    /**
+     * Returns the number of data-segments in a product.
+     *
+     * @param[in] prodSize  Size of the product in bytes
+     * @return              Number of data-segments in the product
+     */
+    static ProdSize numSegs(const ProdSize prodSize) noexcept;
+
+    static constexpr PduId::Type pduId = PduId::DATA_SEG;
 
     DataSeg();
 
+    /**
+     * Constructs.
+     *
+     * @param[in] segId     Segment identifier
+     * @param[in] prodSize  Product size in bytes
+     * @param[in] data      Segment data. Caller may free.
+     */
     DataSeg(const DataSegId segId,
             const ProdSize  prodSize,
             const char*     data);
@@ -530,80 +631,6 @@ public:
     virtual bool recvData(const SockAddr srvrAddr) =0;
     virtual void recvData(const ProdInfo prodInfo) =0;
     virtual void recvData(const DataSeg  dataSeg) =0;
-};
-
-/**
- * Interface for a Hycast node. Implementations manage incoming P2P requests for
- * data and outgoing P2P transmissions. This interface is implemented by both a
- * publishing node and a subscribing node.
- */
-class Node
-{
-public:
-    virtual ~Node() noexcept =default;
-
-    /**
-     * Receives a request for product information.
-     *
-     * @param[in] request      Which product
-     * @return                 Product information. Will test false if it
-     *                         doesn't exist.
-     */
-    virtual ProdInfo recvRequest(
-            const ProdIndex request,
-            P2pMgr&         p2pMgr) =0;
-
-    /**
-     * Receives a request for a data-segment.
-     *
-     * @param[in] request      Which data-segment
-     * @return                 Product information. Will test false if it
-     *                         doesn't exist.
-     */
-    virtual DataSeg recvRequest(
-            const DataSegId request,
-            P2pMgr&         p2pMgr) =0;
-};
-
-/**
- * Interface for a subscriber's Hycast node. Implementations manage incoming
- * multicast transmissions and incoming and outgoing P2P transmissions.
- */
-class SubNode : public Node
-{
-public:
-    virtual ~SubNode() noexcept =default;
-
-    /**
-     * Receives notice about the availability of a product from the P2P network.
-     *
-     * @param[in] index    Index of available product
-     * @retval    `true`   Product information should be requested
-     * @retval    `false`  Product information should not be requested
-     */
-    virtual bool recvNotice(
-            const ProdIndex index,
-            SubP2pMgr&      p2pMgr) =0;
-
-    /**
-     * Receives notice about the availability of a data-segment from the P2P
-     * network.
-     *
-     * @param[in] segId    Identifier of available data-segment
-     * @retval    `true`   Data-segment information should be requested
-     * @retval    `false`  Data-segment information should not be requested
-     */
-    virtual bool recvNotice(
-            const DataSegId segId,
-            SubP2pMgr&      p2pMgr) =0;
-
-    virtual void recvData(
-            const ProdInfo prodInfo,
-            SubP2pMgr&     p2pMgr) =0;
-
-    virtual void recvData(
-            const DataSeg dataSeg,
-            SubP2pMgr&    p2pMgr) =0;
 };
 
 } // namespace

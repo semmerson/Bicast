@@ -48,7 +48,7 @@ protected:
     hycast::SegSize   segSize;
     hycast::ProdInfo  prodInfo;
     hycast::DataSegId segId;
-    char              memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    char              memData[800];
     hycast::DataSeg   memSeg;
 
     // You can remove any or all of the following functions if its body
@@ -67,6 +67,7 @@ protected:
         , memData{}
         , memSeg{segId, prodSize, memData}
     {
+        hycast::DataSeg::setMaxSegSize(sizeof(memData));
         hycast::rmDirTree(rootPath);
         hycast::ensureDir(rootPath, 0777);
         rootFd = ::open(rootPath.data(), O_RDONLY);

@@ -25,6 +25,7 @@
 
 #include "InetAddr.h"
 
+#include <iostream>
 #include <memory>
 #include <netinet/in.h>
 #include <string>
@@ -77,7 +78,6 @@ public:
      * @param[in] sockaddr  IPv4 socket address
      */
     SockAddr(const struct sockaddr_in& sockaddr);
-
     /**
      * Constructs from an IPv6 socket address. `0` obtains a system-chosen port
      * number.
@@ -116,7 +116,7 @@ public:
      *
      * @param[in] name  Hostname
      * @param[in] port  Port number in host byte-order. `0` obtains a system-
-     *                  chosen port number.
+     *                  chosen port number, eventually.
      */
     SockAddr(const std::string& name,
              const in_port_t    port);
@@ -179,20 +179,6 @@ public:
     void get_sockaddr(struct sockaddr_storage& storage) const;
 
     /**
-     * Returns a socket appropriate for this instance's address family.
-     *
-     * @param[in] type               Type of socket. One of `SOCK_STREAM`,
-     *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
-     *                               obtain the default protocol.
-     * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
-     */
-    int socket(
-            const int type,
-            const int protocol = 0) const;
-
-    /**
      * Indicates if this instance is considered less than another.
      *
      * @param[in] rhs      The other instance
@@ -239,14 +225,16 @@ public:
      *
      * @param[in] sd       Socket identifier
      * @param[in] srcAddr  Address of the sending host
+     * @param[in] iface    Name of interface to use
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
      *                     called if either address is based on a name)
      */
     void join(
-            const int       sd,
-            const InetAddr& srcAddr) const;
+            const int          sd,
+            const InetAddr&    srcAddr,
+            const std::string& iface) const;
 
     /**
      * Writes to a transport.
@@ -266,6 +254,8 @@ public:
      */
     bool read(Xprt xprt);
 };
+
+std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr);
 
 } // namespace
 

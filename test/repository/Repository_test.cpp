@@ -41,7 +41,7 @@ protected:
     std::string           prodName;
     const std::string     filePath;
     hycast::ProdIndex     prodIndex;
-    char                  memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    char                  memData[1450];
     const hycast::SegSize segSize;
     hycast::ProdSize      prodSize;
     hycast::ProdInfo      prodInfo;
@@ -53,17 +53,17 @@ protected:
         , rootDir(testDir + "/repo")
         , prodName{"foo/bar/product.dat"}
         , filePath(testDir + "/" + prodName)
-        , prodIndex{1}
-        , memData{}
+        , prodIndex{1} // Index of first product in empty repository is 1
+        , memData{'A', 'B', 'C'}
         , segSize{sizeof(memData)}
         , prodSize{segSize}
         , prodInfo(prodIndex, prodName, prodSize)
         , segId(prodIndex, 0)
         , dataSeg(segId, prodSize, memData)
     {
+        hycast::DataSeg::setMaxSegSize(sizeof(memData));
         hycast::rmDirTree(testDir);
         hycast::ensureDir(hycast::dirPath(filePath));
-        ::memset(memData, 0xbd, segSize);
     }
 
     ~RepositoryTest() {
@@ -71,12 +71,12 @@ protected:
     }
 
 public:
-    void newProd(const hycast::ProdInfo& actualProdInfo)
+    void newProd(const hycast::ProdInfo actualProdInfo)
     {
         EXPECT_EQ(prodInfo, actualProdInfo);
     }
 
-    void completed(const hycast::ProdInfo& actualProdInfo)
+    void completed(const hycast::ProdInfo actualProdInfo)
     {
         EXPECT_EQ(prodInfo, actualProdInfo);
     }
@@ -140,7 +140,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
     // Create file
     int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
     ASSERT_NE(-1, fd);
-    ASSERT_EQ(segSize, ::write(fd, memData, segSize));
+    ASSERT_EQ(segSize, ::write(fd, RepositoryTest::memData, segSize));
     ASSERT_EQ(0, ::close(fd));
 
     // Create the publisher's repository and tell it about the file
@@ -149,10 +149,11 @@ TEST_F(RepositoryTest, CreatProdForSending)
 
     // Verify repository access
     try {
-        auto prodInfo = repo.getNextProd();
-        ASSERT_TRUE(RepositoryTest::prodInfo == prodInfo);
-        auto memSeg = repo.getDataSeg(RepositoryTest::segId);
-        ASSERT_EQ(RepositoryTest::dataSeg, memSeg);
+        auto repoProdInfo = repo.getNextProd();
+        ASSERT_TRUE(prodInfo == repoProdInfo);
+        auto repoDataSeg = repo.getDataSeg(segId);
+        ASSERT_TRUE(repoDataSeg);
+        ASSERT_TRUE(dataSeg == repoDataSeg);
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex, "Couldn't verify repository access");

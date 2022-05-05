@@ -54,6 +54,8 @@ class NameAddr;
 class InetAddr::Impl
 {
 protected:
+    virtual const void* getAddr(socklen_t* size) const =0;
+
     /**
      * Returns an appropriate socket.
      *
@@ -157,44 +159,84 @@ public:
             struct sockaddr_storage& storage,
             const in_port_t          port) const =0;
 
-    virtual void setMcastIface(int sd) const =0;
+    /**
+     * Makes the given socket use the interface associated with this instance.
+     *
+     * @param[in] sd          UDP socket descriptor
+     * @return                This instance
+     * @throws    LogicError  This instance is based on a hostname and not an IP address
+     * @threadsafety          Safe
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     Unknown due to non-standard function usage
+     */
+    virtual void makeIface(int sd) const =0;
+
+    virtual bool isMemberOf(const struct sockaddr* ifa_netmask) const =0;
+
+    /**
+     * Returns the index of the interface that has this address.
+     *
+     * @throw LogicError  No interface has this address
+     * @return            Interface index associated with this address
+     */
+    unsigned getIfaceIndex() const
+    {
+        unsigned index = 0; // 0 => No corresponding interface
+
+        if (!isAny()) {
+            struct ifaddrs* ifaddrs;
+            if (::getifaddrs(&ifaddrs))
+                throw SYSTEM_ERROR("Couldn't get information on interfaces");
+
+            try {
+                const struct ifaddrs* entry;
+                socklen_t             size;
+                const void*           targetAddr = getAddr(&size);
+                const int             targetFamily = getFamily();
+
+                for (entry = ifaddrs; entry; entry = entry->ifa_next) {
+                    const struct sockaddr* ifaceAddr = entry->ifa_addr;
+
+                    if (ifaceAddr && ifaceAddr->sa_family == targetFamily) {
+                        if (targetFamily == AF_INET6 && ::memcmp(targetAddr,
+                                &reinterpret_cast<const struct sockaddr_in6*>(ifaceAddr)->sin6_addr,
+                                size) == 0) {
+                            break;
+                        }
+                        else if (::memcmp(targetAddr,
+                                &reinterpret_cast<const struct sockaddr_in*>(ifaceAddr)->sin_addr,
+                                size) == 0) {
+                            break;
+                        }
+                    }
+                }
+
+                if (!entry) {
+                    char buf[INET6_ADDRSTRLEN] = {};
+                    throw LOGIC_ERROR("No interface has address " +
+                            std::string(::inet_ntop(targetFamily, targetAddr, buf, sizeof(buf))));
+                }
+                else {
+                    index = ::if_nametoindex(entry->ifa_name);
+                }
+
+                ::freeifaddrs(ifaddrs);
+            } // `ifaddrs` allocated
+            catch (...) {
+                ::freeifaddrs(ifaddrs);
+            }
+        }
+
+        return index;
+    }
 
     virtual bool isAny() const =0;
+
+    virtual bool isMulticast() const =0;
 
     virtual bool isSsm() const =0;
 
     virtual bool write(Xprt xprt) const =0;
-
-    /**
-     * Joins the source-specific multicast group identified by this instance
-     * and the address of the sending host.
-     *
-     * @param[in] sd       Socket identifier
-     * @param[in] srcAddr  Address of the sending host
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
-     *                     called if either address is based on a name)
-     */
-    void join(
-            const int       sd,
-            const InetAddr& srcAddr) const
-    {
-        LOG_DEBUG("Joining multicast group %s from source %s",
-                to_string().data(), srcAddr.to_string().data());
-
-        // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
-        struct group_source_req mreq = {};
-
-        mreq.gsr_interface = 0; // => O/S chooses interface
-        getSockAddr(0).get_sockaddr(mreq.gsr_group);
-        srcAddr.getSockAddr(0).get_sockaddr(mreq.gsr_source);
-
-        if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq,
-                sizeof(mreq)))
-            throw SYSTEM_ERROR("Couldn't join multicast group " +
-                    to_string() + " from source " + srcAddr.to_string());
-    }
 };
 
 InetAddr::Impl::~Impl() noexcept
@@ -229,6 +271,11 @@ public:
     int getFamily() const noexcept
     {
         return AF_INET;
+    }
+
+    const void* getAddr(socklen_t* size) const override {
+        *size = sizeof(addr);
+        return &addr;
     }
 
     std::string to_string() const
@@ -302,15 +349,14 @@ public:
             const in_port_t          port) const
     {
         ::memset(&storage, 0, sizeof(storage));
-        struct sockaddr_in* const sockaddr =
-                reinterpret_cast<struct sockaddr_in*>(&storage);
+        struct sockaddr_in* const sockaddr = reinterpret_cast<struct sockaddr_in*>(&storage);
         sockaddr->sin_family = AF_INET;
         sockaddr->sin_addr = addr;
         sockaddr->sin_port = htons(port);
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
-    void setMcastIface(int sd) const override
+    void makeIface(int sd) const override
     {
         LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s",
                 sd, to_string().data());
@@ -320,8 +366,19 @@ public:
                     "socket " + std::to_string(sd) + " to " + to_string());
     }
 
+    bool isMemberOf(const struct sockaddr* netmask) const override {
+        const struct sockaddr_in* maskAddr = reinterpret_cast<const struct sockaddr_in*>(netmask);
+        return maskAddr->sin_family == AF_INET &&
+                (addr.s_addr & maskAddr->sin_addr.s_addr) == maskAddr->sin_addr.s_addr;
+    }
+
     bool isAny() const override {
-        return ntohl(addr.s_addr) == INADDR_ANY;
+        return addr.s_addr == htonl(INADDR_ANY);
+    }
+
+    bool isMulticast() const override {
+        auto ip = ntohl(addr.s_addr);
+        return ip >= 0XE0000000 && ip <= 0XEFFFFFFF;
     }
 
     bool isSsm() const override {
@@ -379,39 +436,10 @@ class Inet6Addr final : public InetAddr::Impl
     }
 #endif
 
+#if 0
     unsigned getIfaceIndex() const
     {
         unsigned index = 0; // 0 => no interface index found
-
-#if defined(__linux__)
-        struct ifaddrs* ifaddrs;
-
-        if (::getifaddrs(&ifaddrs))
-            throw SYSTEM_ERROR("Couldn't get information on interfaces");
-
-        try {
-            const struct ifaddrs* entry;
-
-            for (entry = ifaddrs; entry; entry = entry->ifa_next) {
-                const struct sockaddr* sockAddr = entry->ifa_addr;
-
-                if (sockAddr->sa_family == AF_INET6) {
-                    const struct in6_addr* in6Addr = &reinterpret_cast
-                            <const struct sockaddr_in6*>(sockAddr)->sin6_addr;
-                    if (::memcmp(&addr, in6Addr, sizeof(addr)) == 0)
-                        break;
-                }
-            }
-
-            if (entry)
-                index = ::if_nametoindex(entry->ifa_name);
-
-            ::freeifaddrs(ifaddrs);
-        } // `ifaddrs` allocated
-        catch (...) {
-            ::freeifaddrs(ifaddrs);
-        }
-#else
         int      sock = ::socket(AF_INET, SOCK_DGRAM, 0);
 
         if (sock == -1)
@@ -445,10 +473,9 @@ class Inet6Addr final : public InetAddr::Impl
         catch (...) {
             ::close(sock);
         }
-#endif
 
         return index;
-    }
+#endif
 
 public:
     Inet6Addr(const struct in6_addr& addr) noexcept
@@ -470,6 +497,11 @@ public:
     int getFamily() const noexcept
     {
         return AF_INET6;
+    }
+
+    const void* getAddr(socklen_t* size) const override {
+        *size = sizeof(addr);
+        return &addr;
     }
 
     std::string to_string() const
@@ -552,7 +584,7 @@ public:
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
-    void setMcastIface(int sd) const
+    void makeIface(int sd) const override
     {
         unsigned ifaceIndex = getIfaceIndex();
         LOG_DEBUG("Setting multicast interface for IPv6 UDP socket %d to %u",
@@ -564,8 +596,22 @@ public:
                     std::to_string(ifaceIndex));
     }
 
+    bool isMemberOf(const struct sockaddr* netmask) const override {
+        const struct sockaddr_in6* maskAddr = reinterpret_cast<const struct sockaddr_in6*>(netmask);
+        if (maskAddr->sin6_family != AF_INET6)
+            return false;
+        for (int i = 0; i < sizeof(addr.s6_addr); ++i)
+            if (addr.s6_addr[i] & maskAddr->sin6_addr.s6_addr[i] != maskAddr->sin6_addr.s6_addr[i])
+                return false;
+        return true;
+    }
+
     bool isAny() const override {
         return ::memcmp(in6addr_any.s6_addr, addr.s6_addr, 16) == 0;
+    }
+
+    bool isMulticast() const override {
+        return IN6_IS_ADDR_MULTICAST(&addr);
     }
 
     /*
@@ -703,6 +749,11 @@ public:
         return AF_UNSPEC;
     }
 
+    const void* getAddr(socklen_t* size) const override {
+        *size = name.size();
+        return name.data();
+    }
+
     std::string to_string() const
     {
         return std::string(name);
@@ -777,7 +828,7 @@ public:
         return reinterpret_cast<struct sockaddr*>(&storage);
     }
 
-    void setMcastIface(int sd) const
+    void makeIface(int sd) const override
     {
         struct sockaddr_storage storage;
         get_sockaddr(storage, 0);
@@ -785,12 +836,12 @@ public:
         if (storage.ss_family == AF_INET) {
             const auto* sockaddr =
                     reinterpret_cast<struct sockaddr_in*>(&storage);
-            Inet4Addr(sockaddr->sin_addr.s_addr).setMcastIface(sd);
+            Inet4Addr(sockaddr->sin_addr.s_addr).makeIface(sd);
         }
         else if (storage.ss_family == AF_INET6) {
             const auto* sockaddr =
                     reinterpret_cast<struct sockaddr_in6*>(&storage);
-            Inet6Addr(sockaddr->sin6_addr).setMcastIface(sd);
+            Inet6Addr(sockaddr->sin6_addr).makeIface(sd);
         }
         else {
             throw LOGIC_ERROR("Unsupported address family: " +
@@ -798,7 +849,15 @@ public:
         }
     }
 
+    bool isMemberOf(const struct sockaddr* netmask) const override {
+        return false;
+    }
+
     bool isAny() const override {
+        return false;
+    }
+
+    bool isMulticast() const override {
         return false;
     }
 
@@ -903,13 +962,6 @@ int InetAddr::socket(
     return pImpl->socket(type, protocol);
 }
 
-void InetAddr::join(
-        const int       sd,
-        const InetAddr& srcAddr) const
-{
-    return pImpl->join(sd, srcAddr);
-}
-
 struct sockaddr* InetAddr::get_sockaddr(
         struct sockaddr_storage& storage,
         const in_port_t          port) const
@@ -917,15 +969,25 @@ struct sockaddr* InetAddr::get_sockaddr(
     return pImpl->get_sockaddr(storage, port);
 }
 
-const InetAddr& InetAddr::setMcastIface(int sd) const
+const InetAddr& InetAddr::makeIface(int sd) const
 {
-    pImpl->setMcastIface(sd);
+    pImpl->makeIface(sd);
     return *this;
+}
+
+unsigned InetAddr::getIfaceIndex() const
+{
+    return pImpl->getIfaceIndex();
 }
 
 bool InetAddr::isAny() const
 {
     return pImpl->isAny();
+}
+
+bool InetAddr::isMulticast() const
+{
+    return pImpl->isMulticast();
 }
 
 bool InetAddr::isSsm() const
@@ -966,4 +1028,11 @@ bool InetAddr::read(Xprt xprt) {
     return true;
 }
 
+std::ostream& operator<<(std::ostream& ostream, const hycast::InetAddr& addr) {
+    return ostream << addr.to_string();
+}
+
 } // namespace
+
+namespace std {
+}

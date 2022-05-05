@@ -337,4 +337,8 @@ void log(
     log(level, file, line, func, "%s", msg.data());
 }
 
+std::ostream& operator<<(std::ostream& ostream, const LogLevel& level) {
+    return ostream << level.to_string();
+}
+
 } // namespace

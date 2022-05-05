@@ -1,20 +1,23 @@
-LogLevel: NOTE           # Logging level
-Peer2Peer:               # Peer-to-peer (P2P)
-  Server:                  # P2P server
-    IpAddr: 127.0.0.1        # IP address
-    Port: 38800              # Port number
+Name: TEST                   # Name of feed
+LogLevel: DEBUG              # Logging level
+Server:                      # Publisher's server (not the P2P server)
+  SockAddr: localhost:38800  # Socket address
+  ListenSize: 256            # Size of `::listen()` queue
+MaxSegSize: 1444             # Maximum size of a data-segment in bytes
+Multicast:                   # Multicast component
+  GroupAddr: 232.1.1.1:38800 # Socket address of multicast group
+  Source: localhost          # Internet address of source (i.e., which interface)
+Peer2Peer:                   # Peer-to-peer component
+  Server:                    # Local P2P server
+    InetAddr: localhost      # Internet address
     ListenSize: 8            # Size of listen(2) queue
-  MaxPeers: 8              # Maximum number of connected subscriber-peers
-  MaxPotentialPeers: 100   # Maximum size of potential peer list
-  ReplaceTrigger:          # When worst peer of full set should be replaced
+  MaxPeers: 8                # Maximum number of connected subscriber-peers
+  TrackerSize: 100           # Maximum size of list of P2P servers
+  ReplaceTrigger:            # When worst peer of full set should be replaced
     Type: time               # Type of indicator
     Duration: 60000          # Evaluation duration in ms
-#   Type: data               # Type of indicator
-#   Threshold: 1000000       # Threshold amount in bytes
-Multicast:               # Multicast group
-  IpAddr: 232.128.117.1    # IP address of multicast group
-  Port: 38800              # Port number of multicast group
-Repository:              # Data product repository
-  Pathname: repo           # Filename of repository
-  MaxOpenFiles: 10         # Maximum number of open files
-SegmentSize: 1444        # Maximum size of canonical data-segment in bytes
+    #Type: data               # Type of indicator
+    #Threshold: 1000000       # Threshold amount in bytes
+Repository:                  # Data product repository
+  Pathname: repo             # Pathname of repository
+  MaxOpenFiles: 10           # Maximum number of open files

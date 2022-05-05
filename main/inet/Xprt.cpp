@@ -19,6 +19,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "config.h"
 
 #include <error.h>
 #include <inttypes.h>
@@ -30,7 +31,6 @@ namespace hycast {
 class Xprt::Impl
 {
     Socket sock;
-    bool   convert = false; ///< Should byte order be converted?
 
     inline bool hton(const bool value) {
         return value;
@@ -41,17 +41,14 @@ class Xprt::Impl
     }
 
     inline uint16_t hton(const uint16_t value) {
-        return convert ? htons(value) : value;
+        return htons(value);
     }
 
     inline uint32_t hton(const uint32_t value) {
-        return convert ? htonl(value) : value;
+        return htonl(value);
     }
 
     inline uint64_t hton(uint64_t value) {
-        if (!convert)
-            return value;
-
         uint64_t  v64;
         uint32_t* v32 = reinterpret_cast<uint32_t*>(&v64);
 
@@ -73,19 +70,16 @@ class Xprt::Impl
 
     inline uint16_t ntoh(const uint16_t value)
     {
-        return convert ? ntohs(value) : value;
+        return ntohs(value);
     }
 
     inline uint32_t ntoh(const uint32_t value)
     {
-        return convert ? ntohl(value) : value;
+        return ntohl(value);
     }
 
     inline uint64_t ntoh(uint64_t value)
     {
-        if (!convert)
-            return value;
-
         uint32_t* v32 = reinterpret_cast<uint32_t*>(&value);
         return (static_cast<uint64_t>(ntohl(v32[0])) << 32) | ntohl(v32[1]);
     }
@@ -93,17 +87,13 @@ class Xprt::Impl
 public:
     Impl(Socket sock)
         : sock(sock)
-    {
-        const static uint16_t byteOrder = 1;
-        if (sock.write(byteOrder)) {
-            sock.flush();
-            uint16_t order;
-            if (sock.read(order))
-                convert = byteOrder != order;
-        }
-    }
+    {}
 
     virtual ~Impl() {};
+
+    Socket getSocket() const noexcept {
+        return sock;
+    }
 
     SockAddr getRmtAddr() const noexcept {
         return sock.getRmtAddr();
@@ -126,11 +116,11 @@ public:
      */
 
     bool write(const bool         value) {
-        LOG_DEBUG("Writing boolean value to %s", to_string().data());
+        //LOG_DEBUG("Writing boolean value to %s", to_string().data());
         return sock.write(value);
     }
     bool write(const uint8_t      value) {
-        LOG_DEBUG("Writing 1-byte value to %s", to_string().data());
+        //LOG_DEBUG("Writing 1-byte value to %s", to_string().data());
         return sock.write(value);
     }
     bool write(
@@ -145,8 +135,8 @@ public:
      */
     template<class TYPE>
     bool write(TYPE value) {
-        LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value),
-                to_string().data());
+        //LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value),
+                //to_string().data());
         value = hton(value);
         return sock.write(value);
     }
@@ -160,7 +150,7 @@ public:
     template<typename UINT>
     bool write(const std::string& string) {
         static const UINT max = ~static_cast<UINT>(0);
-        LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
+        //LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
         if (string.size() > max)
             throw INVALID_ARGUMENT("String is longer than " +
                     std::to_string(max) + " bytes");
@@ -178,14 +168,14 @@ public:
 
     bool read(bool&        value) {
         if (sock.read(value)) {
-            LOG_DEBUG("Read boolean value from %s", to_string().data());
+            //LOG_DEBUG("Read boolean value from %s", to_string().data());
             return true;
         }
         return false;
     }
     bool read(uint8_t&     value) {
         if (sock.read(value)) {
-            LOG_DEBUG("Read 1-byte value from %s", to_string().data());
+            //LOG_DEBUG("Read 1-byte value from %s", to_string().data());
             return true;
         }
         return false;
@@ -203,8 +193,8 @@ public:
     bool read(TYPE& value) {
         if (sock.read(value)) {
             value = ntoh(value);
-            LOG_DEBUG("Read %zu-byte value from %s", sizeof(value),
-                    to_string().data());
+            //LOG_DEBUG("Read %zu-byte value from %s", sizeof(value),
+                    //to_string().data());
             return true;
         }
         return false;
@@ -224,8 +214,8 @@ public:
             char bytes[size];
             if (sock.read(bytes, sizeof(bytes))) {
                 string.assign(bytes, size);
-                LOG_DEBUG("Read \"%s\" from %s", string.data(),
-                        to_string().data());
+                //LOG_DEBUG("Read \"%s\" from %s", string.data(),
+                        //to_string().data());
                 return true;
             }
         }

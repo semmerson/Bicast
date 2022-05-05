@@ -25,18 +25,46 @@
 #include "HycastProto.h"
 #include "Socket.h"
 
+#include <atomic>
 #include <memory>
 
 namespace hycast {
 
 class DataSeg::Impl
 {
+    static std::atomic<SegSize> maxSegSize; ///< Maximum data-segment size in bytes
+
 public:
     DataSegId   segId;    ///< Data-segment identifier
     /// Product size in bytes (for when product notice is missed)
     ProdSize    prodSize;
     SegSize     bufSize;  ///< Size of buffer in bytes
     char*       buf;      ///< buffer for data
+
+    static SegSize setMaxSegSize(const SegSize maxSegSize) {
+        if (maxSegSize <= 0)
+            throw INVALID_ARGUMENT("Argument is not positive: " + std::to_string(maxSegSize));
+        SegSize prev = Impl::maxSegSize;
+        Impl::maxSegSize = maxSegSize;
+        return prev;
+    }
+
+    static SegSize getMaxSegSize() {
+        return maxSegSize;
+    }
+
+    static SegSize size(
+            const ProdSize  prodSize,
+            const SegOffset offset) noexcept {
+        SegSize nbytes = prodSize - offset;
+        return (nbytes <= maxSegSize)
+                ? nbytes
+                : static_cast<SegSize>(maxSegSize);
+    }
+
+    static ProdSize numSegs(const ProdSize prodSize) noexcept {
+        return (prodSize + (maxSegSize - 1)) / maxSegSize;
+    }
 
     Impl()
         : segId()
@@ -133,7 +161,27 @@ public:
     }
 };
 
+std::atomic<SegSize> DataSeg::Impl::maxSegSize; ///< Maximum data-segment size in bytes
+
 /******************************************************************************/
+
+SegSize DataSeg::setMaxSegSize(const SegSize maxSegSize) noexcept {
+    return Impl::setMaxSegSize(maxSegSize);
+}
+
+SegSize DataSeg::getMaxSegSize() noexcept {
+    return Impl::getMaxSegSize();
+}
+
+SegSize DataSeg::size(
+        const ProdSize  prodSize,
+        const SegOffset offset) noexcept {
+    return Impl::size(prodSize, offset);
+}
+
+ProdSize DataSeg::numSegs(const ProdSize prodSize) noexcept {
+    return Impl::numSegs(prodSize);
+}
 
 DataSeg::DataSeg()
     : pImpl(new Impl())

@@ -43,7 +43,7 @@ protected:
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
     hycast::DataSegId       segId;
-    char                    memData[hycast::DataSeg::CANON_DATASEG_SIZE];
+    char                    memData[900];
     hycast::DataSeg         dataSeg;
     int                     pubPathNoticeCount;
     int                     prodInfoNoticeCount;
@@ -75,6 +75,7 @@ protected:
         , prodInfoCount(0)
         , dataSegCount(0)
     {
+        DataSeg::setMaxSegSize(sizeof(memData));
         ::memset(memData, 0xbd, segSize);
     }
 

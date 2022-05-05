@@ -20,12 +20,11 @@
  * limitations under the License.
  */
 
-#ifndef MAIN_PROTO_P2PNODE_H_
-#define MAIN_PROTO_P2PNODE_H_
+#ifndef MAIN_P2P_P2PMGR_H_
+#define MAIN_P2P_P2PMGR_H_
 
 #include "error.h"
 #include "HycastProto.h"
-#include "Repository.h"
 #include "Tracker.h"
 
 #include <cstdint>
@@ -38,11 +37,14 @@ class Peer;    // Forward declaration
 class PubPeer; // Forward declaration
 class SubPeer; // Forward declaration
 
+class PubNode;
+class SubNode;
+
 /**
- * Interface for a peer-to-peer manager. A publisher's P2P manager will only
- * implement this interface.
+ * Interface for a peer-to-peer manager. A publisher's P2P manager will only implement this
+ * interface.
  */
-class P2pMgr : public RequestRcvr
+class P2pMgr
 {
 public:
     using PeerType = PubPeer;
@@ -57,24 +59,93 @@ public:
         SUBSCRIBER  // Subscriber's P2P manager
     };
 
+    ///< Peer-to-peer runtime parameters
+    struct RunPar {
+        struct Srvr {
+            SockAddr  addr;       ///< Socket address
+            unsigned  listenSize; ///< Size of `::listen()` queue
+            Srvr(const InetAddr addr)
+                : addr(addr.getSockAddr(0))
+                , listenSize(8)
+            {}
+        }         srvr;           ///< P2P server
+        unsigned  maxPeers;       ///< Maximum number of connected peers
+        unsigned  trackerSize;    ///< Maximum size of list of P2P server's
+        unsigned  evalTime;       ///< Time interval over which to evaluate performance of peers in ms
+        RunPar(const InetAddr addr)
+            : srvr(addr)
+            , maxPeers(8)
+            , trackerSize(100)
+            , evalTime(60000)
+        {}
+    };
+
     /**
-     * Creates a publisher's P2P manager.
+     * Creates a publishing P2P manager.
      *
-     * @param[in] pubNode       Publisher's Hycast node
-     * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a
-     *                          specific interface. The port number may be 0, in
-     *                          which case the operating system will choose it.
+     * @param[in] pubNode       Hycast publishing node
+     * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a specific interface
+     *                          and not the wildcard. The port number may be 0, in which case the
+     *                          operating system will choose the port.
      * @param[in] maxPeers      Maximum number of subscribing peers
      * @param[in] segSize       Size, in bytes, of canonical data-segment
+     * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
+     * @throw InvalidArgument   `listenSize` is zero
      * @return                  Publisher's P2P manager
+     * @see `run()`
      */
     static Pimpl create(
-            Node&          pubNode,
+            PubNode&       pubNode,
             const SockAddr peerSrvrAddr,
             unsigned       maxPeers,
-            const SegSize  segSize);
+            const SegSize  segSize,
+            const unsigned listenSize = 8);
 
-    virtual ~P2pMgr() noexcept =default;
+    /**
+     * Destroys.
+     */
+    virtual ~P2pMgr() noexcept {};
+
+    /**
+     * Starts this instance. Starts internal threads that create, accept, and execute peers. Doesn't
+     * block. Must be paired with `stop()` only.
+     *
+     * @throw LogicError  Instance can't be re-executed
+     * @see `stop()`
+     */
+    virtual void start() =0;
+
+    /**
+     * Stops execution. Does nothing if this instance hasn't been started. Blocks until execution
+     * terminates. Rethrows the first unrecoverable exception thrown by an internal thread if one
+     * exists. Must be paired with `start()` only.
+     *
+     * @throw SystemError   System failure
+     * @throw RuntimeError  P2p server failure
+     * @see `start()`
+     */
+    virtual void stop() =0;
+
+    /**
+     * Executes this instance. Starts internal threads that create, accept, and execute peers.
+     * Doesn't return until `halt()` is called or an internal thread throws an unrecoverable
+     * exception. Rethrows the first unrecoverable exception thrown by an internal thread if one
+     * exists. Must be paired with `halt()` only.
+     *
+     * @throw LogicError    Instance can't be re-executed
+     * @throw SystemError   System failure
+     * @throw RuntimeError  P2p server failure
+     * @see `halt()`
+     */
+    virtual void run() =0;
+
+    /**
+     * Halts execution. Does nothing if this instance isn't executing. Causes `run()` to return.
+     * Doesn't block. Must be paired with `run()` only.
+     *
+     * @see `run()`
+     */
+    virtual void halt() =0;
 
     /**
      * Returns the address of this instance's peer-server. This function exists
@@ -86,7 +157,7 @@ public:
 
     /**
      * Blocks until at least one remote peer has established a connection via
-     * the local peer-server.
+     * the local peer-server. Useful for unit-testing.
      */
     virtual void waitForSrvrPeer() =0;
 
@@ -105,14 +176,6 @@ public:
      * @param[in] dataSegId  Data segment ID
      */
     virtual void notify(const DataSegId dataSegId) =0;
-
-    /**
-     * Accepts being notified that a local peer has lost the connection with
-     * its remote peer.
-     *
-     * @param[in] peer  Local peer
-     */
-    virtual void lostConnection(Peer peer) =0;
 
     /**
      * Receives a request for product information from a remote peer.
@@ -138,10 +201,12 @@ public:
             const SockAddr  rmtAddr) =0;
 };
 
-/// Interface for a subscriber's P2P manager
+using PubP2pMgr = P2pMgr;
+
+/**************************************************************************************************/
+
+/// Interface for a subscriber's P2P manager.
 class SubP2pMgr : public P2pMgr
-                , public NoticeRcvr
-                , public DataRcvr
 {
 public:
     using PeerType  = SubPeer;
@@ -150,32 +215,26 @@ public:
     /**
      * Creates a subscribing P2P manager.
      *
-     * @param[in] subNode          Subscriber's node
-     * @param[in] tracker          Socket addresses of potential peer-servers
-     * @param[in] subPeerSrvrAddr  Socket address of subscriber's peer-server.
-     *                             IP address *must not* specify all interfaces.
-     *                             If port number is 0, then O/S will choose.
-     * @param[in] maxPeers         Maximum number of peers. Might be adjusted
-     *                             upwards.
-     * @param[in] segSize          Size, in bytes, of canonical data-segment
-     * @return                     Subscribing P2P manager
+     * @param[in] subNode   Subscriber's node
+     * @param[in] tracker   Socket addresses of potential peer-servers
+     * @param[in] p2pAddr   Socket address of subscriber's P2P server. IP address *must not* specify
+     *                      all interfaces. If port number is 0, then O/S will choose.
+     * @param[in] maxPeers  Maximum number of peers. Might be adjusted upwards.
+     * @param[in] segSize   Size, in bytes, of canonical data-segment
+     * @return              Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static Pimpl create(
             SubNode&       subNode,
             Tracker        tracker,
-            const SockAddr subPeerSrvrAddr,
+            const SockAddr p2pAddr,
             const unsigned maxPeers,
             const SegSize  segSize);
 
     /**
-     * Returns the socket address of the subscribing P2P manager's peer-server.
-     * This can be useful when the operating system chooses the port number.
-     *
-     * @return Socket address of peer-server
-     * @see `create()`
+     * Destroys.
      */
-    virtual SockAddr getSrvrAddr() const =0;
+    virtual ~SubP2pMgr() noexcept =default;
 
     /**
      * Receives a notice of available product information from a remote peer.
@@ -255,4 +314,4 @@ public:
 
 } // namespace
 
-#endif /* MAIN_PROTO_P2PNODE_H_ */
+#endif /* MAIN_P2P_P2PMGR_H_ */

@@ -229,8 +229,8 @@ public:
      * @cancellationpoint          Yes
      */
     bool save(
-            const int       rootFd,
-            const ProdInfo& prodInfo) const;
+            const int      rootFd,
+            const ProdInfo prodInfo) const;
 
     /**
      * Saves a data-segment.
@@ -244,7 +244,7 @@ public:
      * @exceptionsafety             Strong guarantee
      * @cancellationpoint           Yes
      */
-    bool save(DataSeg& dataSeg) const;
+    bool save(const DataSeg& dataSeg) const;
 
     /**
      * Gets the product information.

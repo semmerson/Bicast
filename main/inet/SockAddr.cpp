@@ -29,6 +29,7 @@
 #include <arpa/inet.h>
 #include <climits>
 #include <functional>
+#include <net/if.h>
 #include <netdb.h>
 #include <regex>
 #include <stdio.h>
@@ -136,9 +137,9 @@ public:
     {
         struct sockaddr_storage storage;
 
+        LOG_DEBUG("Binding socket " + std::to_string(sd) + " to " + to_string());
         if (::bind(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage)))
-            throw SYSTEM_ERROR("Couldn't bind() socket " + std::to_string(sd) +
-                    " to " + to_string());
+            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
     }
 
     /**
@@ -150,14 +151,15 @@ public:
      */
     void connect(const int sd) const
     {
-        LOG_DEBUG("Connecting to " + to_string());
+        LOG_DEBUG("Connecting socket %d to %s", sd, to_string().data());
 
         struct sockaddr_storage storage;
 
-        if (::connect(sd, inetAddr.get_sockaddr(storage, port),
-                sizeof(storage)))
-            throw SYSTEM_ERROR("Couldn't connect socket " +
-                    std::to_string(sd) + " to " + to_string());
+        if (::connect(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage))) {
+            //LOG_SYSERR("::connect() failure");
+            throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) + " to " +
+                    to_string());
+        }
     }
 
     /**
@@ -166,22 +168,24 @@ public:
      *
      * @param[in] sd       Socket identifier
      * @param[in] srcAddr  Address of the sending host
+     * @param[in] ifAddr   Interface to use
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
      *                     called if either address is based on a name)
      */
     void join(
-            const int       sd,
-            const InetAddr& srcAddr) const
+            const int          sd,
+            const InetAddr&    srcAddr,
+            const std::string& iface) const
     {
-        LOG_DEBUG("Joining multicast group %s from source %s",
-                to_string().data(), srcAddr.to_string().data());
+        LOG_DEBUG("Joining multicast group %s from source %s on interface %s",
+                to_string().data(), srcAddr.to_string().data(), iface.data());
 
         // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
         struct group_source_req mreq = {};
 
-        mreq.gsr_interface = 0; // 0 => O/S chooses interface
+        mreq.gsr_interface = ::if_nametoindex(iface.data());
         inetAddr.get_sockaddr(mreq.gsr_group, port);
         srcAddr.get_sockaddr(mreq.gsr_source, 0);
 
@@ -381,13 +385,6 @@ SockAddr::operator bool() const noexcept
     return static_cast<bool>(pImpl);
 }
 
-int SockAddr::socket(
-            const int type,
-            const int protocol) const
-{
-    return pImpl->socket(type, protocol);
-}
-
 bool SockAddr::operator<(const SockAddr& rhs) const noexcept
 {
     auto impl1 = pImpl.get();
@@ -429,10 +426,11 @@ void SockAddr::connect(const int sd) const
 }
 
 void SockAddr::join(
-        const int       sd,
-        const InetAddr& srcAddr) const
+        const int          sd,
+        const InetAddr&    srcAddr,
+        const std::string& iface) const
 {
-    pImpl->join(sd, srcAddr);
+    pImpl->join(sd, srcAddr, iface);
 }
 
 const InetAddr& SockAddr::getInetAddr() const noexcept
@@ -457,6 +455,10 @@ bool SockAddr::write(Xprt xprt) const {
 bool SockAddr::read(Xprt xprt) {
     pImpl.reset(new Impl());
     return pImpl->read(xprt);
+}
+
+std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr) {
+    return ostream << addr.to_string();
 }
 
 } // namespace

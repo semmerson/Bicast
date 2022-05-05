@@ -209,12 +209,9 @@ configSock(const int sock)
          * Bind the local endpoint of the socket to the address and port
          * number of the multicast group.
          */
-        if (bind(sock, (struct sockaddr*)&ssmSockAddr, sizeof(ssmSockAddr)) !=
-                0) {
-            (void)fprintf(stderr,
-                    "Couldn't bind socket %d to SSM group address "
-                    "\"%s:%d\": %s\n", sock, SSM_IP_ADDR, SSM_PORT,
-                    strerror(errno));
+        if (bind(sock, (struct sockaddr*)&ssmSockAddr, sizeof(ssmSockAddr)) != 0) {
+            (void)fprintf(stderr, "Couldn't bind socket %d to SSM group address \"%s:%d\": %s\n",
+                    sock, SSM_IP_ADDR, SSM_PORT, strerror(errno));
         }
         else {
             if (verbose)

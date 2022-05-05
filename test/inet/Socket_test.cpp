@@ -79,7 +79,7 @@ protected:
 
     // Objects declared here can be used by all tests in the test case for Socket.
 
-    void runServer(hycast::TcpSrvrSock lstnSock,
+    void runServer(hycast::TcpSrvrSock& lstnSock,
                    hycast::TcpSock&    srvrSock)
     {
         try {
@@ -88,12 +88,12 @@ protected:
 
             if (srvrSock) {
                 for (;;) {
-                    unsigned char byte;
+                    bool value;
 
-                    if (!srvrSock.read(&byte, sizeof(byte)))
+                    if (!srvrSock.read(value))
                         break;
                     setState(READ_SOMETHING);
-                    if (!srvrSock.write(&byte, sizeof(byte)))
+                    if (!srvrSock.write(value))
                         break;
                 }
             }
@@ -108,8 +108,7 @@ protected:
     {
         lstnSock = hycast::TcpSrvrSock(srvrAddr);
         setState(LISTENING);
-        srvrThread = std::thread(&SocketTest::runServer, this, lstnSock,
-                std::ref(srvrSock));
+        srvrThread = std::thread(&SocketTest::runServer, this, std::ref(lstnSock), std::ref(srvrSock));
     }
 };
 
@@ -138,8 +137,8 @@ TEST_F(SocketTest, ServerConstruction)
     EXPECT_TRUE(!(srvrAddr < sockAddr) && !(sockAddr < srvrAddr));
 }
 
-// Tests canceling the server thread while accept() is executing
-TEST_F(SocketTest, CancelServerAccepting)
+// Tests canceling the server thread after `::listen()` has been called
+TEST_F(SocketTest, CancelListening)
 {
     hycast::TcpSrvrSock lstnSock;
     hycast::TcpSock     srvrSock;
@@ -167,13 +166,19 @@ TEST_F(SocketTest, CancelServerReading)
     hycast::TcpSrvrSock lstnSock{};
     hycast::TcpSock     srvrSock{};
 
+    //LOG_DEBUG("Starting server");
     startServer(lstnSock, srvrSock);
 
+    //LOG_DEBUG("Constructing client socket");
     hycast::TcpClntSock clntSock(srvrAddr);
-    clntSock.write(true);
+    //LOG_DEBUG("Writing to client socket");
+    auto success = clntSock.write(true);
+    EXPECT_TRUE(success);
 
-    waitForState(READ_SOMETHING);
+    //waitForState(READ_SOMETHING);
+    //LOG_DEBUG("Canceling server thread");
     ::pthread_cancel(srvrThread.native_handle());
+    //LOG_DEBUG("Joining server thread");
     srvrThread.join();
 }
 
@@ -266,6 +271,26 @@ TEST_F(SocketTest, VectorExchange)
 
 }  // namespace
 
+static void myTerminate()
+{
+    if (!std::current_exception()) {
+        LOG_FATAL("terminate() called without an active exception");
+    }
+    else {
+        LOG_FATAL("terminate() called with an active exception");
+        try {
+            std::rethrow_exception(std::current_exception());
+        }
+        catch (const std::exception& ex) {
+            LOG_FATAL(ex);
+        }
+        catch (...) {
+            LOG_FATAL("Exception is unknown");
+        }
+    }
+    abort();
+}
+
 int main(int argc, char **argv) {
   /*
    * Ignore SIGPIPE so that writing to a shut down socket doesn't terminate the
@@ -278,7 +303,10 @@ int main(int argc, char **argv) {
   (void)sigaction(SIGPIPE, &sigact, NULL);
 
   hycast::log_setName(::basename(argv[0]));
+  hycast::log_setLevel(hycast::LogLevel::DEBUG);
   //LOG_ERROR
+
+  std::set_terminate(&myTerminate);
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

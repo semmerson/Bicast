@@ -23,6 +23,7 @@
 #ifndef MAIN_NET_IO_INADDR_H_
 #define MAIN_NET_IO_INADDR_H_
 
+#include <iostream>
 #include <memory>
 #include <netinet/in.h>
 
@@ -151,22 +152,7 @@ public:
      */
     int socket(
             const int type,
-            const int protocol) const;
-
-    /**
-     * Joins the source-specific multicast group identified by this instance
-     * and the address of the sending host.
-     *
-     * @param[in] sd       Socket identifier
-     * @param[in] srcAddr  Address of the sending host
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
-     *                     called if either address is based on a name)
-     */
-    void join(
-            const int       sd,
-            const InetAddr& srcAddr) const;
+            const int protocol = 0) const;
 
     /**
      * Sets a socket address structure and returns a pointer to it.
@@ -181,17 +167,23 @@ public:
             const in_port_t          port) const;
 
     /**
-     * Set a UDP socket to use the interface associated with this instance.
+     * Makes the given socket use the interface associated with this instance.
      *
      * @param[in] sd          UDP socket descriptor
      * @return                This instance
-     * @throws    LogicError  This instance is based on a hostname and not an
-     *                        IP address
+     * @throws    LogicError  This instance is based on a hostname and not an IP address
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     Unknown due to non-standard function usage
      */
-    const InetAddr& setMcastIface(int sd) const;
+    const InetAddr& makeIface(int sd) const;
+
+    /**
+     * Returns the index of the interface associated with this IP address.
+     *
+     * @return Interface index associated with this IP address
+     */
+    unsigned getIfaceIndex() const;
 
     /**
      * Indicates if this instance specifies any interface (e.g., `INADDR_ANY`).
@@ -200,6 +192,14 @@ public:
      * @retval `false`  Address does not specify any interface
      */
     bool isAny() const;
+
+    /**
+     * Indicates if this instance is a multicast address.
+     *
+     * @retval `true`   Address is a multicast address
+     * @retval `false`  Address is not a multicast address
+     */
+    bool isMulticast() const;
 
     /**
      * Indicates if this instance is a valid, source-specific multicast address
@@ -231,6 +231,8 @@ public:
      */
     bool read(Xprt xprt);
 };
+
+std::ostream& operator<<(std::ostream& ostream, const InetAddr& addr);
 
 } // namespace
 

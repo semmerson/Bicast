@@ -23,8 +23,9 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "hycast.h"
+#include "HycastProto.h"
 #include "Node.h"
+#include "ThreadException.h"
 
 #include <condition_variable>
 #include <fcntl.h>
@@ -36,81 +37,69 @@
 
 namespace {
 
+using namespace hycast;
+
 /// The fixture for testing class `Node`
 class NodeTest : public ::testing::Test
 {
 protected:
-    std::mutex                mutex;
-    std::condition_variable   cond;
-    char                      memData[1000];
-    const hycast::SegSize     segSize;
-    const std::string         prodName;
-    const std::string         testRoot;
-    const std::string         pubRepoRoot;
-    const std::string         subRepoRoot;
-    hycast::PubRepo           pubRepo;
-    hycast::SubRepo           subRepo;
-    const std::string         filePath;
-    const hycast::ProdIndex   prodIndex;
-    const hycast::ProdSize    prodSize;
-    const hycast::ProdInfo    prodInfo;
-    const hycast::SegId       segId;
-    const hycast::SegInfo     segInfo;
-    hycast::MemSeg            memSeg;
-    const hycast::SockAddr    grpSockAddr;
-    const hycast::InetAddr    pubInetAddr;
-    const hycast::InetAddr    subInetAddr;
-    const hycast::SockAddr    pubSockAddr;
-    const hycast::SockAddr    subSockAddr;
-    const int                 listenSize;
-    const int                 maxPeers;
-    hycast::P2pInfo           pubP2pInfo;
-    hycast::P2pInfo           subP2pInfo;
-    hycast::SrcMcastAddrs     srcMcastInfo;
-    hycast::ServerPool        p2pSrvrPool;
-    int                       numPeers;
+    static constexpr SegSize  SEG_SIZE = 2048;
+    static constexpr ProdSize PROD_SIZE = 4095;
+    Mutex           mutex;
+    Cond            cond;
+    char            prodData[PROD_SIZE];
+    const ProdIndex prodIndex;
+    const String    prodName;
+    const String    testRoot;
+    const String    pubRepoRoot;
+    const String    subRepoRoot;
+    const long      maxOpenFiles;
+    const String    filePath;
+    const ProdInfo  prodInfo;
+    const DataSegId segId;
+    const SockAddr  mcastAddr;
+    const InetAddr  loAddr;
+    const SockAddr  pubP2pAddr;
+    const SockAddr  subP2pAddr;
+    const int       listenSize;
+    const unsigned  maxPeers;
+    int             numPeers;
+    ThreadEx        threadEx;
 
     NodeTest()
         : mutex()
         , cond()
-        , memData{}
-        , segSize{sizeof(memData)}
+        , prodData{}
         , prodIndex{1}
-        , prodSize{5000}
         , prodName{"foo/bar/product.dat"}
         , testRoot("/tmp/Node_test")
         , pubRepoRoot(testRoot + "/pub")
         , subRepoRoot(testRoot + "/sub")
-        , pubRepo() // Can't initialize because `rmDirTree(testRoot)`
-        , subRepo() // Can't initialize because `rmDirTree(testRoot)`
+        , maxOpenFiles(25)
         , filePath(testRoot + "/" + prodName)
-        , prodInfo{prodIndex, prodSize, prodName}
+        , prodInfo(prodIndex, prodName, PROD_SIZE)
         , segId(prodIndex, 0)
-        , segInfo(segId, prodSize, segSize)
-        , memSeg{segInfo, memData}
-        , grpSockAddr("232.1.1.1:3880")
-        , pubInetAddr{"192.168.174.141"}
-        , pubSockAddr{pubInetAddr, 3880}
-        , subInetAddr{"192.168.174.141"}
-        , subSockAddr{subInetAddr, 3881} // NB: Not a Linux dynamic port number
+        , mcastAddr("232.1.1.1:3880")
+        , loAddr{"127.0.0.1"}
+        , pubP2pAddr{loAddr, 0}
+        , subP2pAddr{loAddr, 0}
         , listenSize{0}
         , maxPeers{3}
-        , pubP2pInfo{.sockAddr=pubSockAddr, .listenSize=listenSize,
-            .maxPeers=maxPeers}
-        , subP2pInfo{.sockAddr=subSockAddr, .listenSize=listenSize,
-            .maxPeers=maxPeers}
-        , srcMcastInfo{.grpAddr=grpSockAddr, .srcAddr=pubInetAddr}
-        , p2pSrvrPool{std::set<hycast::SockAddr>{pubSockAddr}}
         , numPeers{0}
+        , threadEx()
     {
-        hycast::rmDirTree(testRoot);
-        ::memset(memData, 0xbd, segSize);
-        pubRepo = hycast::PubRepo(pubRepoRoot, segSize);
-        subRepo = hycast::SubRepo(subRepoRoot, segSize);
+        DataSeg::setMaxSegSize(SEG_SIZE);
+        rmDirTree(testRoot);
+        int i = 0;
+        for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
+            auto str = std::to_string(i++);
+            int c = str[str.length()-1];
+            ::memset(prodData+offset, c, DataSeg::size(PROD_SIZE, offset));
+        }
     }
 
     virtual ~NodeTest() {
-        hycast::rmDirTree(testRoot);
+        //rmDirTree(testRoot);
     }
 
     // If the constructor and destructor are not enough for setting up
@@ -123,78 +112,91 @@ protected:
     }
 
 public:
-    static void runNode(hycast::Node& node) {
+    void runNode(Node::Pimpl node) {
         try {
-            node();
+            node->run();
         }
         catch (const std::exception& ex) {
-            LOG_DEBUG("Exception thrown: %s", ex.what());
-            LOG_ERROR(ex);
-        }
-        catch (...) {
-            LOG_DEBUG("Thread cancelled");
-            throw;
+            threadEx.set(ex);
         }
     }
 };
 
-// Tests publisher construction
-TEST_F(NodeTest, PublisherConstruction)
+// Tests construction
+TEST_F(NodeTest, Construction)
 {
-    hycast::Publisher(pubP2pInfo, grpSockAddr, pubRepo);
+    LOG_NOTE("Creating publishing node");
+    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, mcastAddr, loAddr, 1, pubRepoRoot,
+            SEG_SIZE, maxOpenFiles);
+
+    const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
+    const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
+    EXPECT_EQ(loAddr, pubInetAddr);
+    const auto pubPort = pubP2pSrvrAddr.getPort();
+    EXPECT_NE(0, pubPort);
+
+    Tracker tracker;
+    tracker.insert(pubP2pSrvrAddr);
+
+    LOG_NOTE("Creating subscribing node");
+    auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, maxPeers, tracker,
+            subRepoRoot, SEG_SIZE, maxOpenFiles);
+
+    const auto subP2pSrvrAddr = subNode->getP2pSrvrAddr();
+    const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
+    EXPECT_EQ(loAddr, subInetAddr);
+    const auto subPort = subP2pSrvrAddr.getPort();
+    EXPECT_NE(0, subPort);
 }
 
-// Tests subscriber construction
-TEST_F(NodeTest, SubscriberConstruction)
-{
-    hycast::Subscriber(srcMcastInfo, subP2pInfo, p2pSrvrPool, subRepo);
-}
-
+#if 1
 // Tests sending
 TEST_F(NodeTest, Sending)
 {
     try {
         // Create product-file
-        hycast::ensureParent(filePath, 0700);
-        int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
+        ensureParent(filePath, 0700);
+        const int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
         EXPECT_NE(-1, fd);
-        for (hycast::ProdSize offset = 0; offset < prodSize; offset += segSize) {
-            const hycast::SegSize size = (offset + segSize > prodSize)
-                    ? prodSize - offset
-                    : segSize;
-            EXPECT_EQ(size, ::write(fd, memData, size));
+        for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
+            const auto size = DataSeg::size(PROD_SIZE, offset);
+            EXPECT_EQ(size, ::write(fd, prodData+offset, size));
         }
         EXPECT_EQ(0, ::close(fd));
 
         // Create publisher
-        hycast::Publisher publisher(pubP2pInfo, grpSockAddr, pubRepo);
-        std::thread       pubThread(&NodeTest::runNode, std::ref(publisher));
+        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, mcastAddr, loAddr, 1,
+                pubRepoRoot, SEG_SIZE, maxOpenFiles);
+        const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
+        Thread     pubThread(&NodeTest::runNode, this, pubNode);
+
+        Tracker tracker;
+        tracker.insert(pubP2pSrvrAddr);
 
         // Create subscriber
-        hycast::Subscriber subscriber(srcMcastInfo, subP2pInfo, p2pSrvrPool,
-                subRepo);
-        std::thread        subThread(&NodeTest::runNode, std::ref(subscriber));
+        auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, maxPeers, tracker,
+            subRepoRoot, SEG_SIZE, maxOpenFiles);
+        Thread     subThread(&NodeTest::runNode, this, subNode);
 
-        // Give connection a chance
-        sleep(3);
+        // Wait for subscriber to connect to publisher
+        pubNode->waitForPeer();
 
         // Publish
-        pubRepo.link(filePath, prodName);
+        pubNode->link(filePath, prodName);
 
         // Verify reception
         try {
-            auto prodInfo = subRepo.getNextProd();
+            auto prodInfo = subNode->getNextProd();
+
+            EXPECT_FALSE(threadEx);
             ASSERT_TRUE(NodeTest::prodInfo == prodInfo);
-            for (hycast::ProdSize offset = 0; offset < prodSize;
-                    offset += segSize) {
-                hycast::SegId segId{prodIndex, offset};
-                auto memSeg = subRepo.getMemSeg(segId);
-                const auto size = (offset + segSize > prodSize)
-                        ? prodSize - offset
-                        : segSize;
-                ASSERT_EQ(size, memSeg.getSegSize());
-                ASSERT_EQ(0, ::memcmp(NodeTest::memSeg.data(), memSeg.data(),
-                        size));
+
+            for (SegOffset offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
+                DataSegId  segId(prodIndex, offset);
+                const auto dataSeg = subNode->getDataSeg(segId);
+                const auto size = DataSeg::size(PROD_SIZE, offset);
+                ASSERT_EQ(size, dataSeg.getSize());
+                ASSERT_EQ(0, ::memcmp(prodData+offset, dataSeg.getData(), size));
             }
         }
         catch (const std::exception& ex) {
@@ -202,8 +204,9 @@ TEST_F(NodeTest, Sending)
             GTEST_FAIL();
         }
 
-        subscriber.halt();
-        publisher.halt(); // Closes connection with subscriber's peer
+        subNode->halt();
+        pubNode->halt();
+
         subThread.join();
         pubThread.join();
     }
@@ -212,6 +215,7 @@ TEST_F(NodeTest, Sending)
         throw;
     }
 }
+#endif
 
 }  // namespace
 
@@ -238,8 +242,8 @@ static void myTerminate()
 }
 
 int main(int argc, char **argv) {
-  hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LogLevel::DEBUG);
+  log_setName(::basename(argv[0]));
+  log_setLevel(LogLevel::DEBUG);
 
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the

@@ -133,8 +133,8 @@ public:
 
     // Receiver-side
     bool hereIs(
-            const hycast::SockAddr& rmtAddr,
-            const hycast::ProdInfo& actual)
+            const hycast::SockAddr rmtAddr,
+            const hycast::ProdInfo actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);

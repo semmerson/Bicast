@@ -71,7 +71,7 @@ public:
             memData[i] = static_cast<unsigned char>(i);
     }
 
-    bool hereIsMcast(const hycast::ProdInfo& actual)
+    bool hereIsMcast(const hycast::ProdInfo actual)
     {
         LOG_DEBUG("prodInfo: %s", prodInfo.to_string().data());
         LOG_DEBUG("actual: %s", actual.to_string().data());

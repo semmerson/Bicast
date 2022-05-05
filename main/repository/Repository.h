@@ -33,7 +33,7 @@
 namespace hycast {
 
 /**
- * Abstract base class of a repository for temporary data-products.
+ * Handle class for the base class of a repository for temporary data-products.
  */
 class Repository
 {
@@ -53,11 +53,11 @@ public:
     }
 
     static SegSize getDefSegSize() {
-        return DataSeg::CANON_DATASEG_SIZE;
+        return DataSeg::getMaxSegSize();
     }
 
     static size_t getDefMaxOpenFiles() {
-        static const SegSize defMaxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2;
+        static const size_t defMaxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2;
         return defMaxOpenFiles;
     }
 
@@ -89,16 +89,6 @@ public:
     const std::string& getRootDir() const noexcept;
 
     /**
-     * Returns information on the next product to process. Blocks until one is
-     * ready.
-     *
-     * @return              Information on the next product to process
-     * @throws SystemError  System failure
-     * @threadsafety        Compatible but unsafe
-     */
-    virtual ProdInfo getNextProd() const =0;
-
-    /**
      * Returns information on a product.
      *
      * @param[in] prodIndex  Index of product
@@ -109,7 +99,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    virtual ProdInfo getProdInfo(ProdIndex prodIndex) const =0;
+    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
 
     /**
      * Returns a data-segment
@@ -123,30 +113,52 @@ public:
      * @cancellationpoint           No
      * @see `DataSeg::operator bool()`
      */
-    virtual DataSeg getDataSeg(const DataSegId& segId) const =0;
+    DataSeg getDataSeg(const DataSegId segId) const;
 };
 
 /******************************************************************************/
 
 /**
- * Publisher's repository.
+ * Handle class for a publisher's repository.
  */
 class PubRepo final : public Repository
 {
     class Impl;
 
 public:
+    /// Runtime parameters
+    struct RunPar {
+        String    rootDir;        ///< Pathname of root of publisher's repository
+        long      maxOpenFiles;   ///< Maximum number of open repository files
+        RunPar()
+            : rootDir("repo")
+            , maxOpenFiles(sysconf(_SC_OPEN_MAX)/2)
+        {}
+    };
+
+    /**
+     * Default constructs. The returned instance will test false.
+     */
+    PubRepo();
+
     /**
      * Constructs.
      *
      * @param[in] root          Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
-     * @param[in] maxOpenFiles  Maximum number of files to have open
-     *                          simultaneously
+     * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
      */
-    PubRepo(const std::string& root = getDefRootPathname(),
-            SegSize            segSize = getDefSegSize(),
-            size_t             maxOpenFiles = getDefMaxOpenFiles());
+    PubRepo(const std::string& root,
+            const SegSize      segSize,
+            const long         maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     *
+     * @retval `true`   This instance is valid
+     * @retval `false`  This instance is not valid
+     */
+    operator bool() const noexcept;
 
     /**
      * Links to a file (which could be a directory) that's outside the
@@ -168,39 +180,12 @@ public:
      * @return Information on the next product to publish
      */
     ProdInfo getNextProd() const;
-
-    /**
-     * Returns information on a product.
-     *
-     * @param[in] prodIndex  Index of product
-     * @return               Information on product. Will test false if no such
-     *                       information exists.
-     * @threadsafety         Safe
-     * @exceptionsafety      Strong guarantee
-     * @cancellationpoint    No
-     * @see `ProdInfo::operator bool()`
-     */
-    ProdInfo getProdInfo(ProdIndex prodIndex) const override;
-
-    /**
-     * Returns a data-segment
-     *
-     * @param[in] segId             Segment identifier
-     * @return                      Data-segment. Will test false if no such
-     *                              segment exists.
-     * @throws    InvalidArgument   Segment identifier is invalid
-     * @threadsafety                Safe
-     * @exceptionsafety             Strong guarantee
-     * @cancellationpoint           No
-     * @see `DataSeg::operator bool()`
-     */
-    DataSeg getDataSeg(const DataSegId& segId) const override;
 };
 
 /******************************************************************************/
 
 /**
- * Subscriber's repository.
+ * Handle class for a subscriber's repository.
  */
 class SubRepo final : public Repository
 {
@@ -208,7 +193,7 @@ class SubRepo final : public Repository
 
 public:
     /**
-     * Default constructs. The resulting instance will test false.
+     * Default constructs. The returned instance will test false.
      */
     SubRepo();
 
@@ -217,12 +202,19 @@ public:
      *
      * @param[in] rootPathname  Pathname of the root of the repository
      * @param[in] segSize       Size of canonical data-segment in bytes
-     * @param[in] maxOpenFiles  Maximum number of files to have open
-     *                          simultaneously
+     * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
      */
-    SubRepo(const std::string& rootPathname = getDefRootPathname(),
-            SegSize            segSize = getDefSegSize(),
-            size_t             maxOpenFiles = getDefMaxOpenFiles());
+    SubRepo(const std::string& rootPathname,
+            const SegSize      segSize,
+            const size_t       maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     *
+     * @retval `true`   This instance is valid
+     * @retval `false`  This instance is not valid
+     */
+    operator bool() const noexcept;
 
     /**
      * Saves product-information in the corresponding product-file.
@@ -234,7 +226,7 @@ public:
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   No
      */
-    bool save(const ProdInfo& prodInfo) const;
+    bool save(const ProdInfo prodInfo) const;
 
     /**
      * Saves a data-segment in the corresponding product-file.
@@ -246,42 +238,14 @@ public:
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
      */
-    bool save(DataSeg& dataSeg) const;
+    bool save(DataSeg dataSeg) const;
 
     /**
-     * Returns information on the next completed data-product. Blocks until one
-     * is available.
+     * Returns information on the next data-product to process. Blocks until one is available.
      *
      * @return Information on the next completed data-product
      */
     ProdInfo getNextProd() const;
-
-    /**
-     * Returns information on a product.
-     *
-     * @param[in] prodIndex  Index of product
-     * @return               Information on product. Will test false if no such
-     *                       information exists.
-     * @threadsafety         Safe
-     * @exceptionsafety      Strong guarantee
-     * @cancellationpoint    No
-     * @see `ProdInfo::operator bool()`
-     */
-    ProdInfo getProdInfo(const ProdIndex prodIndex) const override;
-
-    /**
-     * Returns a data-segment
-     *
-     * @param[in] segId             Segment identifier
-     * @return                      Data-segment. Will test false if no such
-     *                              segment exists.
-     * @throws    InvalidArgument   Segment identifier is invalid
-     * @threadsafety                Safe
-     * @exceptionsafety             Strong guarantee
-     * @cancellationpoint           No
-     * @see `DataSeg::operator bool()`
-     */
-    DataSeg getDataSeg(const DataSegId& segId) const override;
 
     /**
      * Indicates if product-information exists.
@@ -299,7 +263,7 @@ public:
      * @retval    `false`    Data-segment doesn't exist
      * @retval    `true`     Data-segment does exist
      */
-    bool exists(const DataSegId& segId) const;
+    bool exists(const DataSegId segId) const;
 };
 
 } // namespace

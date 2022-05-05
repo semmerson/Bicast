@@ -32,6 +32,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <mutex>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -49,6 +50,7 @@ class Socket::Impl
         : mutex()
         , rmtSockAddr()
         , sd{-1}
+        , domain{AF_UNSPEC}
         , shutdownCalled{false}
     {}
 
@@ -57,14 +59,13 @@ class Socket::Impl
      */
     void init(const int sd)
     {
-        LOG_DEBUG("Initializing socket descriptor %d", sd);
+        //LOG_DEBUG("Initializing socket descriptor %d", sd);
         this->sd = sd;
 
         struct sockaddr_storage storage = {};
         socklen_t               socklen = sizeof(storage);
 
-        if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                &socklen) == 0)
+        if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage), &socklen) == 0)
             rmtSockAddr = SockAddr(storage);
     }
 
@@ -75,6 +76,7 @@ protected:
     mutable Mutex         mutex;
     SockAddr              rmtSockAddr;
     int                   sd;             ///< Socket descriptor
+    int                   domain;         ///< IP domain: AF_INET, AF_INET6
     bool                  shutdownCalled; ///< `shutdown()` has been called?
     mutable unsigned      bytesWritten =0;
     mutable unsigned      bytesRead =0;
@@ -95,19 +97,20 @@ protected:
     }
 
     /**
-     * Constructs a client-side socket.
+     * Constructs.
      *
-     * @param[in] sockAddr  Socket address
+     * @param[in] inetAddr  IP address. May be wildcard.
      * @param[in] type      Type of socket (e.g., SOCK_STREAM)
-     * @param[in] protocol  Socket protocol (e.g., IPPROTO_TCP)
+     * @param[in] protocol  Socket protocol (e.g., IPPROTO_TCP; 0 obtains default for type)
      */
-    Impl(   const SockAddr& sockAddr,
+    Impl(   const InetAddr& inetAddr,
             const int       type,
             const int       protocol) noexcept
         : Impl()
     {
         Shield shield{};
-        init(sockAddr.socket(type, protocol));
+        init(inetAddr.socket(type, protocol));
+        domain = inetAddr.getFamily();
     }
 
     static inline size_t padLen(
@@ -128,9 +131,9 @@ protected:
 
     inline bool alignWriteTo(size_t align)
     {
-        LOG_DEBUG("bytesWritten=%s, align=%s",
-                std::to_string(bytesWritten).data(),
-                std::to_string(align).data());
+        //LOG_DEBUG("bytesWritten=%s, align=%s",
+                //std::to_string(bytesWritten).data(),
+                //std::to_string(align).data());
         const auto nbytes = padLen(bytesWritten, align);
         return nbytes
                 ? write(&writePad, nbytes)
@@ -179,7 +182,7 @@ protected:
      * @throw SystemError  `::shutdown()` failure
      */
     void shut(const int what) {
-        LOG_DEBUG("Shutting down socket %s", std::to_string(sd).data());
+        //LOG_DEBUG("Shutting down socket %s", std::to_string(sd).data());
         if (::shutdown(sd, what) && errno != ENOTCONN)
             throw SYSTEM_ERROR("::shutdown failure on socket " +
                     std::to_string(sd));
@@ -188,7 +191,7 @@ protected:
 
 public:
     virtual ~Impl() noexcept {
-        LOG_DEBUG("Closing socket descriptor %d", sd);
+        //LOG_DEBUG("Closing socket descriptor %d", sd);
         ::close(sd);
     }
 
@@ -256,7 +259,7 @@ public:
      */
     bool write(const void*  data,
                const size_t nbytes) {
-        LOG_DEBUG("Writing %zu bytes to %s", nbytes, to_string().data());
+        //LOG_DEBUG("Writing %zu bytes to %s", nbytes, to_string().data());
         if (writeBytes(data, nbytes)) {
             bytesWritten += nbytes;
             return true;
@@ -287,7 +290,7 @@ public:
               const size_t nbytes) {
         if (readBytes(data, nbytes)) {
             bytesRead += nbytes;
-            LOG_DEBUG("Read %zu bytes from %s", nbytes, to_string().data());
+            //LOG_DEBUG("Read %zu bytes from %s", nbytes, to_string().data());
             return true;
         }
         return false;
@@ -468,12 +471,12 @@ protected:
     /**
      * Constructs.
      *
-     * @param[in] sockAddr  Socket address
+     * @param[in] inetAddr  IP address. May be wildcard.
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint
      */
-    Impl(   const SockAddr& sockAddr)
-        : Socket::Impl{sockAddr, SOCK_STREAM, IPPROTO_TCP}
+    explicit Impl(const InetAddr& inetAddr)
+        : Socket::Impl{inetAddr, SOCK_STREAM, IPPROTO_TCP}
     {}
 
     /**
@@ -637,7 +640,10 @@ public:
     /**
      * Constructs. Calls `::listen()`.
      *
-     * @param[in] sockAddr           Server's local socket address
+     * @param[in] sockAddr           Server's local socket address. The IP address may be the
+     *                               wildcard, in which case the server will listen on all
+     *                               interfaces. The port number may be zero, in which case it will
+     *                               be chosen by the operating system.
      * @param[in] queueSize          Size of listening queue
      * @throws    std::system_error  `::socket()` failure
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
@@ -647,25 +653,23 @@ public:
      */
     Impl(   const SockAddr& sockAddr,
             const int       queueSize)
-        : TcpSock::Impl{sockAddr}
+        : TcpSock::Impl{sockAddr.getInetAddr()}
     {
         //LOG_DEBUG("Setting SO_REUSEADDR");
         const int enable = 1;
         if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
-            throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " +
-                    to_string());
+            throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " + to_string());
 
         //LOG_DEBUG("Binding socket");
         sockAddr.bind(sd);
 
         //LOG_DEBUG("Setting SO_KEEPALIVE");
         if (::setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)))
-            throw SYSTEM_ERROR("Couldn't set SO_KEEPALIVE on socket " +
-                    to_string());
+            throw SYSTEM_ERROR("Couldn't set SO_KEEPALIVE on socket " + to_string());
 
         if (::listen(sd, queueSize))
-            throw SYSTEM_ERROR("listen() failure on socket " + to_string() +
-                    ", queueSize=" + std::to_string(queueSize));
+            throw SYSTEM_ERROR("listen() failure on socket " + to_string() + ", queueSize=" +
+                    std::to_string(queueSize));
     }
 
     std::string to_string() const override
@@ -727,13 +731,16 @@ public:
      * @cancellationpoint       Yes
      */
     Impl(const SockAddr& sockAddr)
-        : TcpSock::Impl(sockAddr)
+        : TcpSock::Impl(sockAddr.getInetAddr())
     {
+        //LOG_DEBUG("Checking port number");
         if (sockAddr.getPort() == 0)
             throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is "
                     "zero");
 
+        //LOG_DEBUG("Connecting socket");
         sockAddr.connect(sd);
+        //LOG_DEBUG("Setting remote socket address");
         rmtSockAddr = sockAddr;
     }
 };
@@ -749,6 +756,39 @@ class UdpSock::Impl final : public Socket::Impl
     char          buf[MAX_PAYLOAD]; ///< UDP payload buffer
     size_t        bufLen;           ///< Number of read bytes in buffer
     struct pollfd pollfd;           ///< poll(2) structure
+
+    /**
+     * Joins a UDP socket to a source-specific multicast group.
+     *
+     * @param[in] sd       UDP socket identifier
+     * @param[in] ssmAddr  Socket address of source-specific multicast group
+     * @param[in] srcAddr  IP address of source host
+     * @param[in] ifAddr   IP address of interface to use. If wildcard, then O/S chooses.
+     * @threadsafety       Safe
+     * @exceptionsafety    Strong guarantee
+     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
+     *                     called if either address is based on a name)
+     */
+    static void join(
+            const int          sd,
+            const SockAddr&    ssmAddr,
+            const InetAddr&    srcAddr,
+            const InetAddr&    ifAddr)
+    {
+        // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
+
+        struct group_source_req mreq = {};
+        mreq.gsr_interface = ifAddr.getIfaceIndex();
+        ssmAddr.getInetAddr().get_sockaddr(mreq.gsr_group, ssmAddr.getPort());
+        srcAddr.get_sockaddr(mreq.gsr_source, 0);
+
+        LOG_DEBUG("Joining socket %d to multicast group %s from source %s on interface %u", sd,
+                ssmAddr.to_string().data(), srcAddr.to_string().data(), mreq.gsr_interface);
+        if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq, sizeof(mreq)))
+            throw SYSTEM_ERROR("Couldn't join socket " + std::to_string(sd) + " to multicast group "
+                    + ssmAddr.to_string() + " from source " + srcAddr.to_string() + "on interface "
+                    + ifAddr.to_string());
+    }
 
     /**
      * Reads the next UDP packet from the socket into the buffer.
@@ -811,46 +851,99 @@ protected:
 
 public:
     /**
-     * Constructs a sending UDP socket.
+     * Constructs a sending UDP socket. The operating system will choose which interface to use. If
+     * the destination IP address of the socket is a multicast group, then the time-to-live is set
+     * and loopback of datagrams is enabled.
      *
+     * @param[in] destAddr   Destination socket address
      * @cancellationpoint
      */
-    explicit Impl(const SockAddr& grpAddr)
-        : Socket::Impl(grpAddr, SOCK_DGRAM, IPPROTO_UDP)
+    Impl(const SockAddr& destAddr)
+        : Socket::Impl(destAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
         , buf()
         , bufLen(0)
     {
-        unsigned char  ttl = 250; // Source-specific multicast => large value OK
+        if (destAddr.getInetAddr().isMulticast()) {
+            unsigned char  ttl = 250;
 
-        if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)))
-            throw SYSTEM_ERROR(
-                    "Couldn't set time-to-live for multicast packets");
+            if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)))
+                throw SYSTEM_ERROR("Couldn't set time-to-live for multicast packets");
 
-        // Enable loopback of multicast datagrams
-        {
-            unsigned char enable = 1;
-            if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable,
-                    sizeof(enable)))
-                throw SYSTEM_ERROR(
-                        "Couldn't enable loopback of multicast datagrams");
+            // Enable loopback of multicast datagrams
+            {
+                unsigned char enable = 1;
+                if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable, sizeof(enable)))
+                    throw SYSTEM_ERROR("Couldn't enable loopback of multicast datagrams");
+            }
         }
 
-        grpAddr.connect(sd);
+        destAddr.connect(sd);
+        rmtSockAddr = destAddr;
     }
 
     /**
-     * Constructs a source-specific receiving UDP socket.
+     * Constructs a sending UDP socket. If the destination IP address of the socket is a multicast
+     * group, then the time-to-live is set and loopback of datagrams is enabled.
      *
-     * @cancellationpoint  Yes
+     * @param[in] destAddr   Destination socket address
+     * @param[in] ifaceAddr  IP address of interface to use. If wildcard, then O/S will choose.
+     * @cancellationpoint
      */
-    Impl(   const SockAddr& grpAddr,
-            const InetAddr& rmtAddr)
-        : Impl(grpAddr)
+    Impl(   const SockAddr& destAddr,
+            const InetAddr& ifaceAddr)
+        : Socket::Impl(destAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
+        , buf()
+        , bufLen(0)
     {
+        setMcastIface(ifaceAddr);
+
+        if (destAddr.getInetAddr().isMulticast()) {
+            unsigned char  ttl = 250;
+
+            if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)))
+                throw SYSTEM_ERROR("Couldn't set time-to-live for multicast packets");
+
+            // Enable loopback of multicast datagrams
+            {
+                unsigned char enable = 1;
+                if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable, sizeof(enable)))
+                    throw SYSTEM_ERROR("Couldn't enable loopback of multicast datagrams");
+            }
+        }
+
+        destAddr.connect(sd);
+        rmtSockAddr = destAddr;
+    }
+
+    /**
+     * Constructs a receiving, source-specific multicast, UDP socket.
+     *
+     * @param[in] ssmAddr   Socket address of source-specific multicast group
+     * @param[in] srcAddr   IP address of source host
+     * @param[in] iface     IP address of interface to use. If wildcard, then O/S chooses.
+     * @cancellationpoint   Yes
+     */
+    Impl(   const SockAddr& ssmAddr,
+            const InetAddr& srcAddr,
+            const InetAddr& iface)
+        : Socket::Impl(ssmAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
+        , buf()
+        , bufLen(0)
+    {
+        auto& ipAddr = ssmAddr.getInetAddr();
+        if (!ipAddr.isSsm())
+            throw INVALID_ARGUMENT("Multicast group IP address, " + ipAddr.to_string() +
+                    ", isn't source-specific");
+
         pollfd.fd = sd;
         pollfd.events = POLLIN;
-        grpAddr.bind(sd);
-        grpAddr.join(sd, rmtAddr);
+
+        // Allow multiple sockets to receive the same source-specific multicast
+        const int yes = 1;
+        if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) != 0)
+            throw SYSTEM_ERROR("Couldn't reuse the same source-specific multicast address");
+        ssmAddr.bind(sd);
+        join(sd, ssmAddr, srcAddr, iface);
     }
 
     /**
@@ -858,12 +951,12 @@ public:
      * default is system dependent.
      */
     void setMcastIface(const InetAddr& iface) const {
-        iface.setMcastIface(sd);
+        iface.makeIface(sd);
     }
 
     std::string to_string() const override {
         return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string()
-                + "proto=UDP, rmt=" + getRmtAddr().to_string() + "}";
+                + ", proto=UDP, rmt=" + getRmtAddr().to_string() + "}";
     }
 
     bool flush() {
@@ -884,14 +977,21 @@ public:
     }
 };
 
-UdpSock::UdpSock(const SockAddr& grpAddr)
-    : Socket(new Impl(grpAddr))
+UdpSock::UdpSock(const SockAddr& destAddr)
+    : Socket(new Impl{destAddr})
 {}
 
 UdpSock::UdpSock(
-        const SockAddr& grpAddr,
-        const InetAddr& rmtAddr)
-    : Socket(new Impl(grpAddr, rmtAddr))
+        const SockAddr& destAddr,
+        const InetAddr& ifaceAddr)
+    : Socket(new Impl{destAddr, ifaceAddr})
+{}
+
+UdpSock::UdpSock(
+        const SockAddr& ssmAddr,
+        const InetAddr& srcAddr,
+        const InetAddr& iface)
+    : Socket(new Impl{ssmAddr, srcAddr, iface})
 {}
 
 const UdpSock& UdpSock::setMcastIface(const InetAddr& iface) const

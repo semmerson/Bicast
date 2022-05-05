@@ -228,19 +228,36 @@ public:
     UdpSock() =default;
 
     /**
-     * Constructs a sending UDP socket.
+     * Constructs a sending UDP socket. The operating system will choose the interface.
      *
+     * @param[in] destAddr   Destination socket address
      * @cancellationpoint
      */
-    explicit UdpSock(const SockAddr& grpAddr);
+    UdpSock(const SockAddr& destAddr);
 
     /**
-     * Constructs a source-specific receiving socket.
+     * Constructs a sending UDP socket.
      *
+     * @param[in] destAddr   Destination socket address
+     * @param[in] ifaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
      * @cancellationpoint
      */
-    UdpSock(const SockAddr& grpAddr,
-            const InetAddr& rmtAddr);
+    UdpSock(
+            const SockAddr& destAddr,
+            const InetAddr& ifaceAddr);
+
+    /**
+     * Constructs a source-specific multicast, receiving socket.
+     *
+     * @param[in] mcastAddr    IP address of multicast group
+     * @param[in] srcAddr      IP address of source
+     * @param[in] iface        IP address of interface to use
+     * @throw InvalidArgument  Multicast group IP address isn't source-specific
+     * @cancellationpoint
+     */
+    UdpSock(const SockAddr& ssmAddr,
+            const InetAddr& srcAddr,
+            const InetAddr& iface);
 
     /**
      * Sets the interface to be used for multicasting.

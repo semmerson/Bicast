@@ -50,10 +50,17 @@ public:
             exPtr = std::make_exception_ptr(ex);
     }
 
+    operator bool() {
+        return exPtr.operator bool();
+    }
+
     void throwIfSet() {
         Guard guard(mutex);
-        if (exPtr)
-            std::rethrow_exception(exPtr);
+        if (exPtr) {
+            ExPtr tmp{};
+            tmp.swap(exPtr);
+            std::rethrow_exception(tmp);
+        }
     }
 };
 

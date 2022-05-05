@@ -19,7 +19,7 @@ using namespace hycast;
 class BookkeeperTest : public ::testing::Test, public SubP2pMgr
 {
     void runPubPeerSrvr() {
-        std::list<Peer> peers;
+        std::list<Peer::Pimpl> peers;
         for (;;) {
             peers.push_back(pubPeerSrvr->accept(*this));
         }
@@ -31,18 +31,21 @@ protected:
     std::thread        pubPeerSrvrThrd;
     ProdIndex          prodIndex;
     DataSegId          segId;
-    SubPeer            peer1;
-    SubPeer            peer2;
+    Peer::Pimpl        subPeer1;
+    Peer::Pimpl        subPeer2;
+    const SegSize      maxSegSize = 1400;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
         , pubPeerSrvr(PubPeerSrvr::create(pubAddr))
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodIndex{1}
-        , segId(prodIndex, DataSeg::CANON_DATASEG_SIZE) // Second data-segment
-        , peer1(*this, SubRpc::create(pubAddr))
-        , peer2(*this, SubRpc::create(pubAddr))
-    {}
+        , segId(prodIndex, maxSegSize) // Second data-segment
+        , subPeer1(Peer::create(*this, pubAddr))
+        , subPeer2(Peer::create(*this, pubAddr))
+    {
+        DataSeg::setMaxSegSize(maxSegSize);
+    }
 
     ~BookkeeperTest() {
         ::pthread_cancel(pubPeerSrvrThrd.native_handle());
@@ -50,6 +53,11 @@ protected:
     }
 
 public:
+    void start() {};
+    void stop() {};
+    void run() {};
+    void halt() {};
+
     // Both sides
     void waitForSrvrPeer() override {}
 
@@ -128,10 +136,6 @@ public:
             const DataSeg  actualDataSeg,
             const SockAddr rmtAddr) override
     {}
-
-    void lostConnection(Peer peer) override {
-        LOG_INFO("Lost connection with peer %s", peer.to_string().data());
-    }
 };
 
 // Tests default construction
@@ -145,9 +149,9 @@ TEST_F(BookkeeperTest, DefaultConstruction)
 TEST_F(BookkeeperTest, PeerAddition)
 {
     auto bookkeeper = Bookkeeper::createSub();
-    SubPeer    peer{*this, pubAddr};
+    auto subPeer = Peer::create(*this, pubAddr);
 
-    bookkeeper->add(peer);
+    bookkeeper->add(subPeer);
 }
 
 // Tests making a request
@@ -155,32 +159,31 @@ TEST_F(BookkeeperTest, ShouldRequest)
 {
     auto bookkeeper = Bookkeeper::createSub();
 
-    bookkeeper->add(peer1);
+    bookkeeper->add(subPeer1);
 
-    EXPECT_TRUE(bookkeeper->shouldRequest(peer1, prodIndex));
-    EXPECT_TRUE(bookkeeper->shouldRequest(peer1, segId));
+    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, prodIndex));
+    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, segId));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(peer2, prodIndex), LogicError);
-    EXPECT_THROW(bookkeeper->shouldRequest(peer2, segId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, segId), LogicError);
 
-    ASSERT_TRUE(bookkeeper->add(peer2));
-    EXPECT_FALSE(bookkeeper->shouldRequest(peer2, prodIndex));
-    EXPECT_FALSE(bookkeeper->shouldRequest(peer2, segId));
-    ASSERT_FALSE(bookkeeper->add(peer2));
+    ASSERT_TRUE(bookkeeper->add(subPeer2));
+    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, prodIndex));
+    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, segId));
+    ASSERT_FALSE(bookkeeper->add(subPeer2));
 
-    ASSERT_TRUE(bookkeeper->received(peer1, prodIndex));
-    ASSERT_TRUE(bookkeeper->received(peer1, segId));
+    ASSERT_TRUE(bookkeeper->received(subPeer1, prodIndex));
+    ASSERT_TRUE(bookkeeper->received(subPeer1, segId));
 
     auto worstPeer = bookkeeper->getWorstPeer();
-    ASSERT_TRUE(worstPeer);
-    EXPECT_NE(peer1, worstPeer);
-    EXPECT_EQ(peer2, worstPeer);
+    EXPECT_NE(subPeer1, worstPeer);
+    EXPECT_EQ(subPeer2, worstPeer);
 
-    EXPECT_TRUE(bookkeeper->erase(peer1));
-    EXPECT_FALSE(bookkeeper->erase(peer1));
+    EXPECT_TRUE(bookkeeper->erase(subPeer1));
+    EXPECT_FALSE(bookkeeper->erase(subPeer1));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(peer1, prodIndex), LogicError);
-    EXPECT_THROW(bookkeeper->shouldRequest(peer1, segId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, segId), LogicError);
 }
 
 #if 0

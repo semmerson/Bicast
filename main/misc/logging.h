@@ -23,6 +23,7 @@
 #define MAIN_LOGGING_H_
 
 #include <atomic>
+#include <errno.h>
 #include <exception>
 #include <iostream>
 #include <signal.h>
@@ -71,6 +72,8 @@ public:
         return strings[level];
     }
 };
+
+std::ostream& operator<<(std::ostream& ostream, const LogLevel& level);
 
 typedef std::atomic<LogLevel> LogThreshold;
 extern LogThreshold           logThreshold;
@@ -207,7 +210,7 @@ inline void log_fatal(const std::exception& ex) {
                     __VA_ARGS__); \
     while(false)
 
-#define LOG_WARN(...) \
+#define LOG_WARNING(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::WARN)) \
             hycast::log(hycast::LogLevel::WARN, __FILE__, __LINE__, __func__, \

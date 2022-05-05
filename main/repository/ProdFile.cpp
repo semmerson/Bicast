@@ -385,8 +385,8 @@ bool SndProdFile::exists(ProdSize offset) const {
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
     ProdIndex         prodIndex;  ///< Product index
-    std::vector<bool> haveSegs;   ///< Bitmap of set data-segments
-    ProdSize          segCount;   ///< Number of set data-segments
+    std::vector<bool> haveSegs;   ///< Bitmap of received data-segments
+    ProdSize          segCount;   ///< Number of received data-segments
     bool              pathIsName; ///< File pathname is product name?
 
     /**
@@ -501,8 +501,8 @@ public:
      * @throws    SystemError  Couldn't save product information
      */
     bool save(
-            const int       rootFd,
-            const ProdInfo& prodInfo) {
+            const int      rootFd,
+            const ProdInfo prodInfo) {
         LOG_ASSERT(fd >= 0);
 
         bool  success; // This item was written to the product-file?
@@ -517,7 +517,7 @@ public:
             success = false; // Already saved
         }
         else {
-            LOG_DEBUG("Saving product-information " + prodInfo.to_string());
+            //LOG_DEBUG("Saving product-information " + prodInfo.to_string());
 
             const auto prodName = prodInfo.getName();
 
@@ -542,11 +542,10 @@ public:
      * @pre                        Instance is open
      * @param[in] seg              Data-segment to be saved
      * @retval    `true`           This item was written to the product-file
-     * @retval    `false`          This item is already in the product-file and
-     *                             was not written
+     * @retval    `false`          This item is already in the product-file and was not written
      * @throws    InvalidArgument  Segment is invalid
      */
-    bool save(DataSeg& seg) {
+    bool save(const DataSeg& seg) {
         LOG_ASSERT(fd >= 0);
 
         const ProdSize offset = seg.getOffset();
@@ -555,40 +554,31 @@ public:
         const auto segSize = seg.getSize();
         const auto expectSize = segLen(offset);
         if (segSize != expectSize)
-            throw INVALID_ARGUMENT("Segment " + seg.to_string() + " has " +
-                    std::to_string(segSize) + " bytes; not " +
-                            std::to_string(expectSize));
+            throw INVALID_ARGUMENT("Segment " + seg.getId().to_string() + " has " +
+                    std::to_string(segSize) + " bytes; not " + std::to_string(expectSize));
 
         ProdSize iSeg = segIndex(offset);
-        bool     success; // This item was written to the product-file?
+        bool     needed; // This item was written to the product-file?
         {
             Guard guard(mutex);
+            needed = !haveSegs[iSeg];
 
-            success = !haveSegs[iSeg];
-
-            if (!success) {
-                LOG_WARN("Duplicate data segment: " + seg.to_string());
+            if (!needed) {
+                LOG_DEBUG("Duplicate data segment: " + seg.getId().to_string());
             }
             else {
+                //LOG_DEBUG("Saving data-segment " + seg.getId().to_string());
                 haveSegs[iSeg] = true;
-            }
-        }
-
-        if (success) {
-            // Setting data outside mutex supports concurrent data-setting
-            LOG_DEBUG("Saving data-segment " + seg.to_string());
-
-            ::memcpy(data+offset, seg.getData(), segSize);
-            {
-                Guard guard(mutex);
+                ::memcpy(data+offset, seg.getData(), segSize);
                 ++segCount;
             }
         }
 
-        return success;
+        return needed;
     }
 
     ProdInfo getProdInfo() {
+        Guard guard{mutex};
         return ProdInfo(prodIndex, pathname, prodSize);
     }
 };
@@ -620,13 +610,13 @@ bool RcvProdFile::isComplete() const {
 
 bool
 RcvProdFile::save(
-        const int       rootFd,
-        const ProdInfo& prodInfo) const {
+        const int      rootFd,
+        const ProdInfo prodInfo) const {
     return static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
 }
 
 bool
-RcvProdFile::save(DataSeg& dataSeg) const {
+RcvProdFile::save(const DataSeg& dataSeg) const {
     return static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
 

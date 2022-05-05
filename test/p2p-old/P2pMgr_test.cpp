@@ -160,7 +160,7 @@ public:
     }
 
     // Receiver-side
-    bool hereIsP2p(const hycast::ProdInfo& actual)
+    bool hereIsP2p(const hycast::ProdInfo actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);

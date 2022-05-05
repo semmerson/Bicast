@@ -194,7 +194,7 @@ ProdInfo::ProdInfo() =default;
 ProdInfo::ProdInfo(const ProdIndex   index,
                    const std::string name,
                    const ProdSize    size)
-    : pImpl{std::make_shared<Impl>(index, name, size)}
+    : pImpl{new Impl(index, name, size)}
 {}
 
 ProdInfo::operator bool() const noexcept {
@@ -211,7 +211,7 @@ const ProdSize&  ProdInfo::getSize() const {
     return pImpl->size;
 }
 
-bool ProdInfo::operator==(const ProdInfo& rhs) const {
+bool ProdInfo::operator==(const ProdInfo rhs) const {
     return pImpl->operator==(*rhs.pImpl);
 }
 
@@ -234,7 +234,7 @@ bool ProdInfo::read(Xprt xprt) {
 } // namespace
 
 namespace std {
-    string to_string(const hycast::ProdInfo& prodInfo) {
+    string to_string(const hycast::ProdInfo prodInfo) {
         return prodInfo.to_string();
     }
 }

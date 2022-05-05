@@ -33,126 +33,14 @@
 
 namespace hycast {
 
-#if 0
-template<class MGR, class PEER> class PeerSrvr;
-#endif
-
 /**
- * Abstract base class for handling low-level, asynchronous, bidirectional
- * messaging with a remote counterpart.
+ * Interface for handling low-level, asynchronous, bidirectional messaging with
+ * a remote counterpart.
  */
 class Peer
 {
 public:
-    class     Impl;
-
-protected:
-    using Pimpl = std::shared_ptr<Impl>;
-    Pimpl pImpl;
-
-    Peer(Impl* impl);
-
-public:
-    /**
-     * Default constructs.
-     */
-    Peer() =default;
-
-    virtual ~Peer()
-    {}
-
-    /**
-     * Indicates if this instance was constructed as a client.
-     *
-     * @retval `true`   Constructed as a client
-     * @retval `false`  Constructed by a server
-     */
-    bool isClient() const noexcept;
-
-    /**
-     * Indicates if the remote peer belongs to the publisher.
-     *
-     * @retval `true`   Remote peer belongs to publisher
-     * @retval `false`  Remote peer does not belong to publisher
-     */
-    bool isRmtPub() const noexcept;
-
-    /**
-     * Returns the socket address of the remote peer.
-     *
-     * @return Socket address of remote peer
-     */
-    SockAddr getRmtAddr() noexcept;
-
-    virtual void start() const;
-
-    /**
-     * Stops this instance from serving its remote counterpart. Does the
-     * following:
-     *   - Stops the threads that are serving the remote peer
-     *   - Joins those threads
-     * *Must* be called in order for this instance to be destroyed
-     *
-     * @throw LogicError  Peer hasn't been started
-     * @see   `start()`
-     */
-    void stop() const;
-
-    /**
-     * Indicates if this instance is valid (i.e., wasn't default constructed).
-     *
-     * @retval `false`  Instance is invalid
-     * @retval `true`   Instance is valid
-     */
-    operator bool() const noexcept;
-
-    size_t hash() const noexcept;
-
-    bool operator<(const Peer& rhs) const noexcept;
-
-    bool operator==(const Peer& rhs) const noexcept;
-
-    bool operator!=(const Peer& rhs) const noexcept;
-
-    /**
-     * Returns the string representation of this instance. Currently, it's the
-     * string representation of the socket address of the remote peer.
-     *
-     * @return String representation of this instance
-     */
-    String to_string() const;
-
-    /**
-     * Notifies the remote peer.
-     *
-     * @retval    `true`      Success
-     * @retval    `false`     Failure
-     * @throw     LogicError  Remote peer is publisher's
-     * @throw     LogicError  Instance isn't in started state
-     * @see       `start()`
-     */
-    bool notify(const Tracker   tracker) const;
-    bool notify(const SockAddr  srvrAddr) const;
-    bool notify(const ProdIndex prodIndex) const;
-    bool notify(const DataSegId dataSegId) const;
-
-    void recvRequest(const ProdIndex prodIndex) const;
-    void recvRequest(const DataSegId dataSegId) const;
-
-    bool rmtIsPubPath() const noexcept;
-};
-
-/**
- * A publisher's peer. Such peers are *always* server-side constructed by a
- * peer-server.
- */
-class PubPeer final : public Peer
-{
-    class Impl;
-
-public:
-    using RpcType     = PubRpc;
-    using RpcSrvrType = PubRpcSrvr;
+    using Pimpl = std::shared_ptr<Peer>;
 
     /**
      * Server-side construction.
@@ -160,58 +48,20 @@ public:
      * @param[in] p2pMgr  Publisher's P2P manager
      * @param[in] rpc     RPC instance
      */
-    PubPeer(P2pMgr& p2pMgr, PubRpc::Pimpl rpc);
-
-    /**
-     * Default constructs. The resulting instance will test false.
-     */
-    PubPeer() =default;
-
-    /**
-     * Starts this instance. Creates threads on which
-     *   - The sockets are read; and
-     *   - The P2P manager is called.
-     *
-     * @throw LogicError   Already called
-     * @throw LogicError   Remote peer uses unsupported protocol
-     * @throw SystemError  Thread couldn't be created
-     * @see `stop()`
-     */
-    void start() const override;
-
-    bool notify(const Tracker notice) const;
-};
-
-/**
- * A subscriber's peer. Such peers can be server-side constructed by a
- * peer-server or client-side constructed by initiating a connection to an
- * RPC-server.
- */
-class SubPeer final : public Peer
-{
-#if 0
-    friend class PeerSrvr<SubP2pMgr, SubPeer>;
-#endif
-
-    class Impl;
-
-public:
-    using RpcType     = SubRpc;
-    using RpcSrvrType = SubRpcSrvr;
-
-    /**
-     * Default constructs. The resulting instance will test false.
-     */
-    SubPeer() =default;
+    static Pimpl create(
+            PubP2pMgr& p2pMgr,
+            Rpc::Pimpl rpc);
 
     /**
      * Server-side construction.
      *
-     * @param[in] p2pMgr       Subscriber's associated P2P manager
+     * @param[in] p2pMgr       Subscriber's P2P manager
      * @param[in] rpc          RPC instance
      * @param[in] dataSock     Socket for data
      */
-    SubPeer(SubP2pMgr& p2pMgr, SubRpc::Pimpl rpc);
+    static Pimpl create(
+            SubP2pMgr& p2pMgr,
+            Rpc::Pimpl rpc);
 
     /**
      * Client-side construction. The resulting peer is fully connected and ready
@@ -224,32 +74,108 @@ public:
      * @throw     RuntimeError  Couldn't connect. Might be temporary.
      * @see       `start()`
      */
-    SubPeer(SubP2pMgr&      p2pMgr,
-            const SockAddr& srvrAddr);
+    static Pimpl create(
+            SubP2pMgr&     p2pMgr,
+            const SockAddr srvrAddr);
+
+    virtual ~Peer()
+    {}
 
     /**
-     * Starts this instance. Creates threads on which
-     *   - The sockets are read; and
-     *   - The P2P manager is called.
+     * Indicates if this instance was constructed as a client.
      *
-     * @throw LogicError   Already called
-     * @throw LogicError   Remote peer uses unsupported protocol
-     * @throw SystemError  Thread couldn't be created
-     * @see `stop()`
+     * @retval `true`   Constructed as a client
+     * @retval `false`  Constructed by a server
      */
-    void start() const override;
+    virtual bool isClient() const noexcept =0;
 
-    void recvNotice(const ProdIndex prodIndex) const;
+    /**
+     * Indicates if this instance is the publisher.
+     *
+     * @retval `true`   Instance is publisher
+     * @retval `false`  Instance is not publisher
+     */
+    virtual bool isPub() const noexcept =0;
 
-    void recvNotice(const DataSegId dataSegId) const;
+    /**
+     * Indicates if the remote peer is the publisher.
+     *
+     * @retval `true`   Remote peer is publisher
+     * @retval `false`  Remote peer is not publisher
+     */
+    virtual bool isRmtPub() const noexcept =0;
 
-    void recvData(const Tracker tracker) const;
+    /**
+     * Returns the socket address of the local peer.
+     *
+     * @return Socket address of local peer
+     */
+    virtual SockAddr getLclAddr() const noexcept =0;
 
-    void recvData(const SockAddr srvrAddr) const;
+    /**
+     * Returns the socket address of the remote peer.
+     *
+     * @return Socket address of remote peer
+     */
+    virtual SockAddr getRmtAddr() const noexcept =0;
 
-    void recvData(const ProdInfo prodInfo) const;
+    virtual size_t hash() const noexcept =0;
 
-    void recvData(const DataSeg dataSeg) const;
+    virtual bool operator<(const Peer& rhs) const noexcept =0;
+
+    virtual bool operator==(const Peer& rhs) const noexcept =0;
+
+    virtual bool operator!=(const Peer& rhs) const noexcept =0;
+
+    /**
+     * Returns the string representation of this instance. Currently, it's the
+     * string representation of the socket address of the remote peer.
+     *
+     * @return String representation of this instance
+     */
+    virtual String to_string() const =0;
+
+    /**
+     * Starts serving the remote peer.
+     */
+    virtual void start() =0;
+
+    /**
+     * Stops this instance from serving its remote counterpart. Does the
+     * following:
+     *   - Stops the threads that are serving the remote peer
+     *   - Joins those threads
+     * *Must* be called in order for this instance to be destroyed
+     *
+     * @throw LogicError  Peer hasn't been started
+     * @see   `start()`
+     */
+    virtual void stop() =0;
+
+    /**
+     * Notifies the remote peer.
+     *
+     * @retval    `true`      Success
+     * @retval    `false`     Connection lost
+     * @throw     LogicError  Remote peer is publisher
+     * @throw     LogicError  `start()` not yet called
+     * @see       `start()`
+     */
+    virtual bool notify(const Tracker   tracker) =0;
+    virtual bool notify(const SockAddr  srvrAddr) =0;
+    virtual bool notify(const ProdIndex prodIndex) =0;
+    virtual bool notify(const DataSegId dataSegId) =0;
+
+    virtual bool recvNotice(const ProdIndex prodIndex) =0;
+    virtual bool recvNotice(const DataSegId dataSegId) =0;
+
+    virtual bool recvRequest(const ProdIndex prodIndex) =0;
+    virtual bool recvRequest(const DataSegId dataSegId) =0;
+
+    virtual void recvData(const Tracker tracker) =0;
+    virtual void recvData(const SockAddr srvrAddr) =0;
+    virtual void recvData(const ProdInfo prodInfo) =0;
+    virtual void recvData(const DataSeg dataSeg) =0;
 };
 
 /******************************************************************************/
@@ -265,18 +191,21 @@ class PeerSrvr
 public:
     using Pimpl = std::shared_ptr<PeerSrvr<P2P_MGR>>;
 
+    /**
+     * @throw InvalidArgument  Backlog argument is zero
+     */
     static Pimpl create(
-            const SockAddr          srvrAddr,
-            const unsigned          backlog = 8);
+            const SockAddr srvrAddr,
+            const unsigned backlog = 8);
 
     virtual ~PeerSrvr() {};
 
     virtual SockAddr getSrvrAddr() const =0;
 
-    virtual typename P2P_MGR::PeerType accept(P2P_MGR& p2pMgr) const =0;
+    virtual Peer::Pimpl accept(P2P_MGR& p2pMgr) =0;
 };
 
-using PubPeerSrvr = PeerSrvr<P2pMgr>;
+using PubPeerSrvr = PeerSrvr<PubP2pMgr>;
 using SubPeerSrvr = PeerSrvr<SubP2pMgr>;
 
 } // namespace
@@ -285,9 +214,18 @@ using SubPeerSrvr = PeerSrvr<SubP2pMgr>;
 
 namespace std {
     template<>
-    struct hash<hycast::Peer> {
-        size_t operator()(const hycast::Peer& peer) const noexcept {
-            return peer.hash();
+    struct hash<hycast::Peer::Pimpl> {
+        size_t operator()(const hycast::Peer::Pimpl peer) const noexcept {
+            return peer->hash();
+        }
+    };
+
+    template<>
+    struct less<hycast::Peer::Pimpl> {
+        bool operator()(
+                const hycast::Peer::Pimpl peer1,
+                const hycast::Peer::Pimpl peer2) const noexcept {
+            return *peer1 < *peer2;
         }
     };
 }

@@ -148,7 +148,7 @@ public:
         orState(SEG_REQUEST_RCVD);
     }
 
-    void hereIs(const hycast::ProdInfo& actual)
+    void hereIs(const hycast::ProdInfo actual)
     {
         EXPECT_EQ(prodInfo, actual);
         orState(PROD_INFO_RCVD);
