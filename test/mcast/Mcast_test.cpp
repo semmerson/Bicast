@@ -161,18 +161,6 @@ protected:
         if (dataSeg == actual)
             orState(DATA_SEG_RCVD);
     }
-
-    void recvP2pData(const ProdInfo actual) {
-    }
-
-    void recvP2pData(const DataSeg actual) {
-    }
-
-    ProdInfo getNextProd() override {
-    }
-
-    DataSeg getDataSeg(const DataSegId segId) override {
-    }
 };
 
 // Tests construction

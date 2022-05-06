@@ -145,8 +145,7 @@ public:
                     buf = new char[segSize];
                     bufSize = segSize;
                 }
-                //LOG_DEBUG("Reading data-segment data from %s",
-                        //xprt.to_string().data());
+                //LOG_DEBUG("Reading data-segment data from %s", xprt.to_string().data());
                 success = xprt.read(buf, segSize);
             }
             if (success) {

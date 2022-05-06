@@ -145,7 +145,7 @@ public:
      *
      * @return Internet address of this socket address
      */
-    const InetAddr& getInetAddr() const noexcept;
+    const InetAddr getInetAddr() const noexcept;
 
     /**
      * Returns the port number given to the constructor in host byte-order.

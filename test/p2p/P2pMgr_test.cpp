@@ -190,9 +190,6 @@ public:
         }
     }
 
-    void recvMcastData(const ProdInfo prodInfo) {
-    }
-
     void recvP2pData(const DataSeg dataSeg) {
         const auto offset = dataSeg.getId().offset;
         DataSeg expect(dataSeg.getId(), prodInfo.getSize(), prodData+offset);
@@ -202,20 +199,6 @@ public:
             //LOG_DEBUG("Setting data segment received");
             orState(SEG_RCVD);
         }
-    }
-
-    void recvMcastData(const DataSeg dataSeg) {
-    }
-
-    void link(
-            const std::string& pathname,
-            const std::string& prodName) override {
-    }
-
-    ProdInfo getNextProd() override {
-    }
-
-    DataSeg getDataSeg(const DataSegId segId) override {
     }
 };
 

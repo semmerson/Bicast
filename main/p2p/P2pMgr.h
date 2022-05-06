@@ -62,21 +62,26 @@ public:
     ///< Peer-to-peer runtime parameters
     struct RunPar {
         struct Srvr {
-            SockAddr  addr;       ///< Socket address
-            unsigned  listenSize; ///< Size of `::listen()` queue
-            Srvr(const InetAddr addr)
-                : addr(addr.getSockAddr(0))
-                , listenSize(8)
+            SockAddr addr;       ///< Socket address
+            int      listenSize; ///< Size of `::listen()` queue
+            Srvr(   const SockAddr addr,
+                    const int      listenSize)
+                : addr(addr)
+                , listenSize(listenSize)
             {}
         }         srvr;           ///< P2P server
-        unsigned  maxPeers;       ///< Maximum number of connected peers
-        unsigned  trackerSize;    ///< Maximum size of list of P2P server's
-        unsigned  evalTime;       ///< Time interval over which to evaluate performance of peers in ms
-        RunPar(const InetAddr addr)
-            : srvr(addr)
-            , maxPeers(8)
-            , trackerSize(100)
-            , evalTime(60000)
+        int       maxPeers;       ///< Maximum number of connected peers
+        int       trackerSize;    ///< Maximum size of list of P2P server's
+        int       evalTime;       ///< Time interval over which to evaluate performance of peers in ms
+        RunPar( const SockAddr addr,
+                const int      listenSize,
+                const int      maxPeers,
+                const int      trackerSize,
+                const int      evalTime)
+            : srvr(addr, listenSize)
+            , maxPeers(maxPeers)
+            , trackerSize(trackerSize)
+            , evalTime(evalTime)
         {}
     };
 
@@ -88,7 +93,6 @@ public:
      *                          and not the wildcard. The port number may be 0, in which case the
      *                          operating system will choose the port.
      * @param[in] maxPeers      Maximum number of subscribing peers
-     * @param[in] segSize       Size, in bytes, of canonical data-segment
      * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
      * @throw InvalidArgument   `listenSize` is zero
      * @return                  Publisher's P2P manager
@@ -98,7 +102,6 @@ public:
             PubNode&       pubNode,
             const SockAddr peerSrvrAddr,
             unsigned       maxPeers,
-            const SegSize  segSize,
             const unsigned listenSize = 8);
 
     /**

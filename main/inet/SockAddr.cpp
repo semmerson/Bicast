@@ -60,7 +60,7 @@ public:
                     std::to_string(port));
     }
 
-    const InetAddr& getInetAddr() const noexcept
+    const InetAddr getInetAddr() const noexcept
     {
         return inetAddr;
     }
@@ -433,7 +433,7 @@ void SockAddr::join(
     pImpl->join(sd, srcAddr, iface);
 }
 
-const InetAddr& SockAddr::getInetAddr() const noexcept
+const InetAddr SockAddr::getInetAddr() const noexcept
 {
     return pImpl->getInetAddr();
 }

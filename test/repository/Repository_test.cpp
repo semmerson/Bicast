@@ -85,14 +85,14 @@ public:
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::PubRepo pubRepo{rootDir, segSize};
-    hycast::SubRepo subRepo{rootDir, segSize};
+    hycast::PubRepo pubRepo{rootDir, segSize, 5};
+    hycast::SubRepo subRepo{rootDir, segSize, 5};
 }
 
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    hycast::SubRepo repo(rootDir, segSize);
+    hycast::SubRepo repo(rootDir, segSize, 5);
     ASSERT_FALSE(repo.getProdInfo(prodIndex));
     ASSERT_TRUE(repo.save(prodInfo));
     auto actual = repo.getProdInfo(prodIndex);
@@ -103,7 +103,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    hycast::SubRepo repo(rootDir, segSize);
+    hycast::SubRepo repo(rootDir, segSize, 5);
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
@@ -120,7 +120,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    hycast::SubRepo repo(rootDir, segSize);
+    hycast::SubRepo repo(rootDir, segSize, 5);
 
     ASSERT_TRUE(repo.save(dataSeg));
     ASSERT_TRUE(repo.save(prodInfo));
@@ -144,7 +144,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
     ASSERT_EQ(0, ::close(fd));
 
     // Create the publisher's repository and tell it about the file
-    hycast::PubRepo repo(rootDir, segSize);
+    hycast::PubRepo repo(rootDir, segSize, 5);
     repo.link(filePath, prodInfo.getName());
 
     // Verify repository access

@@ -318,7 +318,7 @@ class PubNodeImpl final : public PubNode, public NodeImpl
 {
     McastPub::Pimpl    mcastPub;
     PubRepo            repo;
-    SegSize            segSize;
+    SegSize            maxSegSize;
 
     /**
      * Sends information on a product.
@@ -377,7 +377,7 @@ protected:
                  */
                 auto prodIndex = prodInfo.getIndex();
                 auto prodSize = prodInfo.getSize();
-                for (ProdSize offset = 0; offset < prodSize; offset += segSize)
+                for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
                     // TODO: Test for valid segment
                     send(repo.getDataSeg(DataSegId(prodIndex, offset)));
             }
@@ -421,10 +421,10 @@ public:
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
-        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, maxSegSize, listenSize))
+        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, listenSize))
         , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
         , repo(PubRepo(repoRoot, maxSegSize, maxOpenFiles))
-        , segSize{repo.getSegSize()}
+        , maxSegSize{maxSegSize}
     {}
 
     ~PubNodeImpl() noexcept {

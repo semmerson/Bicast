@@ -40,9 +40,10 @@ public:
     struct RunPar {
         SockAddr  dstAddr;        ///< Socket address of multicast group
         InetAddr  srcAddr;        ///< Internet address of multicast source (i.e., which interface)
-        RunPar()
-            : dstAddr("232.1.1.1:38800")
-            , srcAddr(UdpSock(dstAddr).getLclAddr().getInetAddr())
+        RunPar( const SockAddr dstAddr,
+                const InetAddr srcAddr)
+            : dstAddr(dstAddr)
+            , srcAddr(srcAddr)
         {}
     };
 

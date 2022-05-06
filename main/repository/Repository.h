@@ -47,19 +47,19 @@ protected:
     Repository(Impl* impl) noexcept;
 
 public:
-    static const std::string& getDefRootPathname() {
-        static const std::string defRootPathname("repo");
-        return defRootPathname;
-    }
-
-    static SegSize getDefSegSize() {
-        return DataSeg::getMaxSegSize();
-    }
-
-    static size_t getDefMaxOpenFiles() {
-        static const size_t defMaxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2;
-        return defMaxOpenFiles;
-    }
+    /// Runtime parameters
+    struct RunPar {
+        String    rootDir;        ///< Pathname of root directory of repository
+        int32_t   maxSegSize;     ///< Maximum size of a data-segment in bytes
+        long      maxOpenFiles;   ///< Maximum number of open repository files
+        RunPar( const String& rootDir,
+                const int32_t maxSegSize,
+                const long    maxOpenFiles)
+            : rootDir(rootDir)
+            , maxSegSize(maxSegSize)
+            , maxOpenFiles(maxOpenFiles)
+        {}
+    };
 
     virtual ~Repository() =default;
 
@@ -72,11 +72,11 @@ public:
     operator bool() const noexcept;
 
     /**
-     * Returns the size of a canonical data-segment in bytes.
+     * Returns the maximum size of a data-segment in bytes.
      *
      * @return Size of canonical data-segment in bytes
      */
-    SegSize getSegSize() const noexcept;
+    SegSize getMaxSegSize() const noexcept;
 
     /**
      * Returns the pathname of the root-directory for this instance.
@@ -126,16 +126,6 @@ class PubRepo final : public Repository
     class Impl;
 
 public:
-    /// Runtime parameters
-    struct RunPar {
-        String    rootDir;        ///< Pathname of root of publisher's repository
-        long      maxOpenFiles;   ///< Maximum number of open repository files
-        RunPar()
-            : rootDir("repo")
-            , maxOpenFiles(sysconf(_SC_OPEN_MAX)/2)
-        {}
-    };
-
     /**
      * Default constructs. The returned instance will test false.
      */
@@ -150,7 +140,7 @@ public:
      */
     PubRepo(const std::string& root,
             const SegSize      segSize,
-            const long         maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+            const long         maxOpenFiles);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -206,7 +196,7 @@ public:
      */
     SubRepo(const std::string& rootPathname,
             const SegSize      segSize,
-            const size_t       maxOpenFiles = ::sysconf(_SC_OPEN_MAX)/2);
+            const size_t       maxOpenFiles);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).

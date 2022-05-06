@@ -25,7 +25,6 @@
 #include "error.h"
 #include "HycastProto.h"
 #include "Node.h"
-#include "P2pMgr.h"
 #include "SockAddr.h"
 
 #include <cstring>
@@ -45,13 +44,14 @@ using String = std::string;
 struct RunPar {
     String    feedName;                   ///< Name of data-product stream
     LogLevel  logLevel;                   ///< Logging level
-    SegSize   segSize{1444};              ///< Byte-size of canonical data-segment
+    int32_t   maxSegSize;                 ///< Maximum size of a data-segment in bytes
     struct Srvr {
         SockAddr  addr;                   ///< Socket address
-        unsigned  listenSize;             ///< Size of `::listen()` queue
-        Srvr()
-            : addr("0.0.0.0:38800")
-            , listenSize(256)
+        int       listenSize;             ///< Size of `::listen()` queue
+        Srvr(   const SockAddr addr,
+                const int      listenSize)
+            : addr(addr)
+            , listenSize{listenSize}
         {}
     }         srvr;                       ///< Publisher's server
     McastPub::RunPar  mcast;              ///< Multicast component
@@ -60,10 +60,15 @@ struct RunPar {
     RunPar()
         : feedName("Hycast")
         , logLevel(LogLevel::NOTE)
-        , srvr()
-        , mcast()
-        , p2p(mcast.srcAddr)
-    {}
+        , maxSegSize(1444)
+        , srvr(SockAddr("0.0.0.0:38800"), 256)
+        , mcast(SockAddr("232.1.1.1:38800"), InetAddr())
+        , p2p(SockAddr(), 8, 8, 100, 60000)
+        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2)
+    {
+        mcast.srcAddr = UdpSock(mcast.dstAddr).getLclAddr().getInetAddr();
+        p2p.srvr.addr = mcast.srcAddr.getSockAddr(0);
+    }
 };
 
 static RunPar       runPar;    ///< Runtime parameters:
@@ -105,7 +110,7 @@ static void usage()
 "    " << log_getName() << "[-c <configFile>] [-e <evalTime>] [-f <name>] [-i <pubAddr>]\n"
 "        [-L <trackerSize>] [-l <level>] [-M <mcastAddr>] [-m <maxPeers>]\n"
 "        [-o <maxOpenFiles>] [-p <p2pAddr>] [-Q <listenSize>] [-q <listenSize>]\n"
-"        [-r <repoRoot>] [-S <srcAddr>] [-s <segSize>]\n"
+"        [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>]\n"
 "where:\n"
 "    -h                Print this help message on standard error, then exit.\n"
 "\n"
@@ -138,9 +143,43 @@ static void usage()
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
 "    -S <srcAddr>      Internet address of multicast source (i.e., multicast\n"
 "                      interface). Default is \"" << defRunPar.mcast.srcAddr << "\".\n"
-"    -s <segSize>      Size of a canonical data-segment in bytes. Default is\n"
-"                      " << defRunPar.segSize << ".\n"
+"    -s <maxSegSize>   Maximum size of a data-segment in bytes. Default is " <<
+                       defRunPar.maxSegSize << ".\n"
 "SIGUSR2 rotates the logging level.\n";
+}
+
+static void vetRunPar()
+{
+    if (runPar.p2p.evalTime <= 0)
+        throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
+
+    if (runPar.p2p.trackerSize <= 0)
+        throw INVALID_ARGUMENT("Tracker size is not positive");
+
+    if (runPar.p2p.maxPeers <= 0)
+        throw INVALID_ARGUMENT("Maximum number of peers is not positive");
+
+    if (runPar.repo.maxOpenFiles <= 0)
+        throw INVALID_ARGUMENT("Maximum number of open repository files is not positive");
+    if (runPar.repo.maxOpenFiles > sysconf(_SC_OPEN_MAX))
+        throw INVALID_ARGUMENT("Maximum number of open repository files is "
+                "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
+
+    if (runPar.srvr.listenSize <= 0)
+        throw INVALID_ARGUMENT("Size of publisher's listen() queue is not positive");
+
+    if (runPar.p2p.srvr.listenSize <= 0)
+        throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
+
+    if (runPar.repo.rootDir.empty())
+        throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
+
+    if (runPar.maxSegSize <= 0)
+        throw INVALID_ARGUMENT("Maximum size of a data-segment is not positive");
+    if (runPar.maxSegSize > UdpSock::MAX_PAYLOAD)
+        throw INVALID_ARGUMENT("Maximum size of a data-segment (" +
+                std::to_string(runPar.maxSegSize) + ") is greater than UDP maximum (" +
+                std::to_string(UdpSock::MAX_PAYLOAD) + ")");
 }
 
 /**
@@ -191,7 +230,7 @@ static void setFromConfig(const String& pathname)
             log_setLevel(node1.as<String>());
 
         tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
-        tryDecode<decltype(runPar.segSize)>(node0, "MaxSegSize", runPar.segSize);
+        tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
 
         node1 = node0["Server"];
         if (node1) {
@@ -228,8 +267,7 @@ static void setFromConfig(const String& pathname)
                             runPar.p2p.srvr.listenSize);
                 }
 
-                tryDecode<decltype(runPar.p2p.maxPeers)>(node2, "MaxPeers",
-                        runPar.p2p.maxPeers);
+                tryDecode<decltype(runPar.p2p.maxPeers)>(node2, "MaxPeers", runPar.p2p.maxPeers);
                 tryDecode<decltype(runPar.p2p.trackerSize)>(node2, "TrackerSize",
                         runPar.p2p.trackerSize);
             }
@@ -292,11 +330,13 @@ static void getRunPars(
             break;
         }
         case 'e': {
-            if (::sscanf(optarg, "%u", &runPar.p2p.evalTime) != 1)
+            int evalTime;
+            if (::sscanf(optarg, "%d", &evalTime) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.evalTime <= 0)
+            if (evalTime <= 0)
                 throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
+            runPar.p2p.evalTime = evalTime;
             break;
         }
         case 'f': {
@@ -310,11 +350,13 @@ static void getRunPars(
             break;
         }
         case 'L': {
-            if (::sscanf(optarg, "%u", &runPar.p2p.trackerSize) != 1)
+            int trackerSize;
+            if (::sscanf(optarg, "%d", &trackerSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.trackerSize <= 0)
+            if (trackerSize <= 0)
                 throw INVALID_ARGUMENT("Tracker size is not positive");
+            runPar.p2p.trackerSize = trackerSize;
             break;
         }
         case 'l': {
@@ -327,11 +369,13 @@ static void getRunPars(
             break;
         }
         case 'm': {
-            if (::sscanf(optarg, "%u", &runPar.p2p.maxPeers) != 1)
+            int maxPeers;
+            if (::sscanf(optarg, "%d", &maxPeers) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.maxPeers <= 0)
+            if (maxPeers <= 0)
                 throw INVALID_ARGUMENT("Maximum number of peers is not positive");
+            runPar.p2p.maxPeers = maxPeers;
             break;
         }
         case 'o': {
@@ -350,15 +394,19 @@ static void getRunPars(
             break;
         }
         case 'Q': {
-            if (::sscanf(optarg, "%u", &runPar.srvr.listenSize) != 1)
+            if (::sscanf(optarg, "%d", &runPar.srvr.listenSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
+            if (runPar.srvr.listenSize <= 0)
+                throw INVALID_ARGUMENT("Size of publisher's listen() queue is not positive");
             break;
         }
         case 'q': {
-            if (::sscanf(optarg, "%u", &runPar.p2p.srvr.listenSize) != 1)
+            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.listenSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
+            if (runPar.p2p.srvr.listenSize <= 0)
+                throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
             break;
         }
         case 'r': {
@@ -372,9 +420,13 @@ static void getRunPars(
             break;
         }
         case 's': {
-            if (::sscanf(optarg, "%hu", &runPar.segSize) != 1)
+            int maxSegSize;
+            if (::sscanf(optarg, "%d", &maxSegSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
+            if (maxSegSize <= 0)
+                throw INVALID_ARGUMENT("Maximum size of a data-segment is not positive");
+            runPar.maxSegSize = maxSegSize;
             break;
         }
         case ':': { // Missing option argument. Due to leading ":" in opt-string
@@ -390,7 +442,13 @@ static void getRunPars(
     if (optind != argc)
         throw LOGIC_ERROR("Too many operands specified");
 
-    DataSeg::setMaxSegSize(runPar.segSize);
+    vetRunPar();
+    DataSeg::setMaxSegSize(runPar.maxSegSize);
+}
+
+static void serve()
+{
+
 }
 
 static void execute()
@@ -415,18 +473,13 @@ int main(const int    argc,
     try {
         getRunPars(argc, argv);
 
-        pubNode = PubNode::create(runPar.segSize, runPar.mcast, runPar.p2p, runPar.repo);
+        pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
 
         setSigHandling(); // Catches termination signals
 
         execute();
     }
     catch (const std::invalid_argument& ex) {
-        LOG_FATAL(ex);
-        usage();
-        return 1;
-    }
-    catch (const std::logic_error& ex) {
         LOG_FATAL(ex);
         usage();
         return 1;

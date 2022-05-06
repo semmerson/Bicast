@@ -502,7 +502,7 @@ Repository::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-SegSize Repository::getSegSize() const noexcept {
+SegSize Repository::getMaxSegSize() const noexcept {
     return pImpl->getSegSize();
 }
 

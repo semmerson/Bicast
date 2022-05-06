@@ -111,10 +111,19 @@ public:
     using Pimpl = std::shared_ptr<PubNode>;
 
     struct RunPar {
-        SegSize           segSize{1444};      ///< Byte-size of canonical data-segment
-        McastPub::RunPar  mcast;              ///< Multicast component
-        PubP2pMgr::RunPar p2p{mcast.srcAddr}; ///< Peer-to-peer component
-        PubRepo::RunPar   repo;               ///< Data-product repository
+        SegSize           maxSegSize; ///< Maximum size of a data-segment
+        McastPub::RunPar  mcast;      ///< Multicast component
+        PubP2pMgr::RunPar p2p;        ///< Peer-to-peer component
+        PubRepo::RunPar   repo;       ///< Data-product repository
+        RunPar( const SegSize            maxSegSize,
+                const McastPub::RunPar&  mcast,
+                const PubP2pMgr::RunPar& p2p,
+                const PubRepo::RunPar&   repo)
+            : maxSegSize(maxSegSize)
+            , mcast(mcast)
+            , p2p(p2p)
+            , repo(repo)
+        {}
     };
 
     /**
@@ -169,7 +178,8 @@ public:
      */
     virtual void link(
             const std::string& pathname,
-            const std::string& prodName) =0;
+            const std::string& prodName) {
+    }
 };
 
 /**
@@ -237,32 +247,38 @@ public:
      *
      * @param[in] prodInfo  Product information
      */
-    virtual void recvMcastData(const ProdInfo prodInfo) =0;
+    virtual void recvMcastData(const ProdInfo prodInfo) {
+    }
 
     /**
      * Receives a data-segment from the multicast.
      *
      * @param[in] dataSeg  Data-segment
      */
-    virtual void recvMcastData(const DataSeg dataSeg) =0;
+    virtual void recvMcastData(const DataSeg dataSeg) {
+    }
 
     /**
      * Receives information about a data-product from the P2P network.
      *
      * @param[in] prodInfo  Product information
      */
-    virtual void recvP2pData(const ProdInfo prodInfo) =0;
+    virtual void recvP2pData(const ProdInfo prodInfo) {
+    }
 
     /**
      * Receives a data-segment from the P2P network.
      *
      * @param[in] dataSeg  Data-segment
      */
-    virtual void recvP2pData(const DataSeg dataSeg) =0;
+    virtual void recvP2pData(const DataSeg dataSeg) {
+    }
 
-    virtual ProdInfo getNextProd() =0;
+    virtual ProdInfo getNextProd() {
+    }
 
-    virtual DataSeg getDataSeg(const DataSegId segId) =0;
+    virtual DataSeg getDataSeg(const DataSegId segId) {
+    }
 };
 
 } // namespace
