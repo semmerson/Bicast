@@ -26,13 +26,16 @@
 #include "HycastProto.h"
 #include "Node.h"
 #include "SockAddr.h"
+#include "ThreadException.h"
 
+#include <atomic>
 #include <cstring>
 #include <cstdio>
 #include <exception>
 #include <inttypes.h>
 #include <iostream>
 #include <limits.h>
+#include <semaphore.h>
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
@@ -40,7 +43,7 @@ using namespace hycast;
 
 using String = std::string;
 
-/// Structure for runtime parameters
+/// Runtime parameters of this program
 struct RunPar {
     String    feedName;                   ///< Name of data-product stream
     LogLevel  logLevel;                   ///< Logging level
@@ -64,43 +67,57 @@ struct RunPar {
         , srvr(SockAddr("0.0.0.0:38800"), 256)
         , mcast(SockAddr("232.1.1.1:38800"), InetAddr())
         , p2p(SockAddr(), 8, 8, 100, 60000)
-        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2)
+        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
     {
         mcast.srcAddr = UdpSock(mcast.dstAddr).getLclAddr().getInetAddr();
         p2p.srvr.addr = mcast.srcAddr.getSockAddr(0);
     }
 };
 
-static RunPar       runPar;    ///< Runtime parameters:
-const static RunPar defRunPar; ///< Default runtime parameters
+// Subscription information transmitted to each subscriber
+struct SubInfo : public XprtAble {
+    uint16_t  version;    ///< Protocol version
+    String    feedName;   ///< Name of data-product stream
+    SegSize   maxSegSize; ///< Maximum size of a data-segment in bytes
+    struct Mcast {
+        SockAddr dstAddr; ///< Multicast destination address
+        InetAddr srcAddr; ///< Multicast source address
+    }         mcast;
+    struct P2p {
+        SockAddr addr;    ///< Address of publisher's P2P server
+        Tracker  tracker; ///< Addresses of subscriber's P2P servers
+    }         p2p;
+    uint32_t  keepTime;   ///< Duration to keep data-products in seconds
+    bool write(Xprt xprt) const {
+        return xprt.write(version) &&
+                xprt.write<uint8_t>(feedName) &&
+                xprt.write(maxSegSize) &&
+                mcast.dstAddr.write(xprt) &&
+                mcast.srcAddr.write(xprt) &&
+                p2p.addr.write(xprt) &&
+                p2p.tracker.write(xprt) &&
+                xprt.write(keepTime);
+    }
+    bool read(Xprt xprt) {
+        return xprt.read(version) &&
+                xprt.read<uint8_t>(feedName) &&
+                xprt.read(maxSegSize) &&
+                mcast.dstAddr.read(xprt) &&
+                mcast.srcAddr.read(xprt) &&
+                p2p.addr.read(xprt) &&
+                p2p.tracker.read(xprt) &&
+                xprt.read(keepTime);
+    }
+};
 
-/// Data-product publishing node
-static PubNode::Pimpl pubNode{};
-
-/**
- * Halts the publishing node.
- *
- * @param[in] sig  Signal number. Ignored.
- */
-static void sigHandler(const int sig)
-{
-    pubNode->halt(); // Gracefully terminate
-}
-
-/**
- * Sets signal handling.
- */
-static void setSigHandling()
-{
-    log_setLevelSignal(SIGUSR2);
-
-    struct sigaction sigact;
-    (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = 0; // Don't restart system calls
-    sigact.sa_handler = &sigHandler;
-    (void)sigaction(SIGINT, &sigact, NULL);
-    (void)sigaction(SIGTERM, &sigact, NULL);
-}
+static sem_t             sem;       ///< Semaphore for state changes
+static std::atomic<bool> stop;      ///< Should the program stop?
+static ThreadEx          threadEx;  ///< Exception thrown by a thread
+static RunPar            runPar;    ///< Runtime parameters:
+const static RunPar      defRunPar; ///< Default runtime parameters
+static PubNode::Pimpl    pubNode{}; ///< Data-product publishing node
+static SubInfo           subInfo;   ///< Subscription information passed to subscribers
+static Tracker           tracker;   ///< Addresses of subscriber's P2P servers
 
 static void usage()
 {
@@ -108,9 +125,9 @@ static void usage()
 "Usage:\n"
 "    " << log_getName() << " -h\n"
 "    " << log_getName() << "[-c <configFile>] [-e <evalTime>] [-f <name>] [-i <pubAddr>]\n"
-"        [-L <trackerSize>] [-l <level>] [-M <mcastAddr>] [-m <maxPeers>]\n"
-"        [-o <maxOpenFiles>] [-p <p2pAddr>] [-Q <listenSize>] [-q <listenSize>]\n"
-"        [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>]\n"
+"        [-k <keepTime>] [-L <trackerSize>] [-l <level>] [-M <mcastAddr>]\n"
+"        [-m <maxPeers>] [-o <maxOpenFiles>] [-p <p2pAddr>] [-Q <listenSize>]\n"
+"        [-q <listenSize>] [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>]\n"
 "where:\n"
 "    -h                Print this help message on standard error, then exit.\n"
 "\n"
@@ -121,6 +138,8 @@ static void usage()
 "    -f <name>         Name of data-product feed. Default is \"" << defRunPar.feedName << "\".\n"
 "    -i <pubAddr>      Socket address of the publisher (not the P2P server).\n"
 "                      Default is \"" << defRunPar.srvr.addr << "\".\n"
+"    -k <keepTime>     How long to keep data-products in seconds. Default is\n" <<
+"                      " << defRunPar.repo.keepTime << " s.\n"
 "    -L <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
 "                      " << defRunPar.p2p.trackerSize << ".\n"
 "    -l <level>        Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
@@ -164,6 +183,8 @@ static void vetRunPar()
     if (runPar.repo.maxOpenFiles > sysconf(_SC_OPEN_MAX))
         throw INVALID_ARGUMENT("Maximum number of open repository files is "
                 "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
+    if (runPar.repo.keepTime <= 0)
+        throw INVALID_ARGUMENT("How long to keep repository files is not positive");
 
     if (runPar.srvr.listenSize <= 0)
         throw INVALID_ARGUMENT("Size of publisher's listen() queue is not positive");
@@ -282,10 +303,10 @@ static void setFromConfig(const String& pathname)
 
             node2 = node1["Repository"];
             if (node2) {
-                tryDecode<decltype(runPar.repo.rootDir)>(node2, "Pathname",
-                        runPar.repo.rootDir);
+                tryDecode<decltype(runPar.repo.rootDir)>(node2, "Pathname", runPar.repo.rootDir);
                 tryDecode<decltype(runPar.repo.maxOpenFiles)>(node2, "MaxOpenFiles",
                         runPar.repo.maxOpenFiles);
+                tryDecode<decltype(runPar.repo.keepTime)>(node2, "KeepTime", runPar.repo.keepTime);
             }
         }
     } // YAML file loaded
@@ -347,6 +368,16 @@ static void getRunPars(
         }
         case 'i': {
             runPar.srvr.addr = SockAddr(optarg);
+            break;
+        }
+        case 'k': {
+            int keepTime;
+            if (::sscanf(optarg, "%" SCNd32, &keepTime) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            if (keepTime <= 0)
+                throw INVALID_ARGUMENT("How long to keep data-products is not positive");
+            runPar.repo.keepTime = keepTime;
             break;
         }
         case 'L': {
@@ -446,14 +477,85 @@ static void getRunPars(
     DataSeg::setMaxSegSize(runPar.maxSegSize);
 }
 
-static void serve()
+static void init()
 {
+    if (sem_init(&sem, 0, 0) == -1)
+            throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
+    tracker = Tracker(runPar.p2p.trackerSize);
+
+    subInfo.version = 1;
+    subInfo.feedName = runPar.feedName;
+    subInfo.maxSegSize = runPar.maxSegSize;
+    subInfo.mcast.dstAddr = runPar.mcast.dstAddr;
+    subInfo.mcast.srcAddr = runPar.mcast.srcAddr;
+    subInfo.p2p.addr = runPar.p2p.srvr.addr;
+    subInfo.p2p.tracker = tracker;
+    subInfo.keepTime = runPar.repo.keepTime;
 }
 
-static void execute()
+/**
+ * Signals the program to halt.
+ */
+static void halt()
 {
+    sem_post(&sem);
+}
 
+/**
+ * Handles a termination signal.
+ *
+ * @param[in] sig  Signal number. Ignored.
+ */
+static void sigHandler(const int sig)
+{
+    halt();
+}
+
+/**
+ * Sets signal handling.
+ */
+static void setSigHandling()
+{
+    log_setLevelSignal(SIGUSR2);
+
+    struct sigaction sigact;
+    (void) sigemptyset(&sigact.sa_mask);
+    sigact.sa_flags = SA_RESTART; // Restart system calls if interrupted by a termination signal
+    sigact.sa_handler = &sigHandler;
+    (void)sigaction(SIGINT, &sigact, NULL);
+    (void)sigaction(SIGTERM, &sigact, NULL);
+}
+
+static void setException(const std::exception& ex)
+{
+    threadEx.set(ex);
+    halt();
+}
+
+static void runNode()
+{
+    try {
+        pubNode->run();
+    }
+    catch (const std::exception& ex) {
+        setException(ex);
+    }
+}
+
+static void serve()
+{
+    try {
+        auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
+        for (;;) {
+            auto xprt = Xprt(srvrSock.accept());
+            SockAddr p2pSrvrAddr;
+            if (p2pSrvrAddr.read(xprt) && subInfo.write(xprt))
+                tracker.insert(p2pSrvrAddr);
+        }
+    } catch (const std::exception& ex) {
+        setException(ex);
+    }
 }
 
 /**
@@ -468,26 +570,42 @@ static void execute()
 int main(const int    argc,
          char* const* argv)
 {
+    int status;
+
     std::set_terminate(&terminate); // NB: Hycast version
 
     try {
         getRunPars(argc, argv);
+        init(); // Initializes non-command-line variables
 
         pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
-
         setSigHandling(); // Catches termination signals
 
-        execute();
+        auto nodeThread = Thread(&runNode);
+        auto serverThread = Thread(&serve);
+
+        sem_wait(&sem); // Returns if thread failure or termination signal
+        sem_destroy(&sem);
+        threadEx.throwIfSet(); // Throws if thread failure
+
+        ::pthread_cancel(serverThread.native_handle());
+        pubNode->halt(); // Gracefully terminates
+
+        serverThread.join();
+        nodeThread.join();
+
+        status = 0;
     }
     catch (const std::invalid_argument& ex) {
         LOG_FATAL(ex);
         usage();
-        return 1;
+        status = 1;
     }
     catch (const std::exception& ex) {
         LOG_FATAL(ex);
-        return 2;
+        status = 2;
     }
+    LOG_NOTE("Exiting with status %d", status);
 
-    return 0;
+    return status;
 }
