@@ -1,5 +1,5 @@
 Name: TEST                   # Name of feed
-SegmentSize: 1444            # Maximum size of canonical data-segment in bytes
+MaxSegSize: 1444             # Maximum size of canonical data-segment in bytes
 Multicast:
   GroupAddr: 232.1.1.1:38800 # Socket address of multicast group
   Source: localhost          # Internet address of source
