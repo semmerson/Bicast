@@ -21,3 +21,4 @@ Peer2Peer:                   # Peer-to-peer component
 Repository:                  # Data product repository
   Pathname: repo             # Pathname of repository
   MaxOpenFiles: 10           # Maximum number of open files
+  KeepTime: 3600             # How long to keep data-products in seconds
