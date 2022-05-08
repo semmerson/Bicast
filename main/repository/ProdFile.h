@@ -182,7 +182,7 @@ public:
      */
     RcvProdFile(
             const int       rootFd,
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const ProdSize  prodSize,
             const SegSize   segSize);
 

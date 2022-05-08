@@ -46,7 +46,7 @@ protected:
     SockAddr   ssmAddr;
     InetAddr   srcAddr;
     InetAddr   subIface;
-    ProdIndex  prodIndex;
+    ProdId  prodIndex;
     String     prodName;
     ProdSize   prodSize;
     ProdInfo   prodInfo;
@@ -130,7 +130,7 @@ protected:
         return SockAddr{};
     }
 
-    bool shouldRequest(const ProdIndex index) {
+    bool shouldRequest(const ProdId index) {
         return true;
     }
 
@@ -138,7 +138,7 @@ protected:
         return true;
     }
 
-    ProdInfo recvRequest(const ProdIndex request) {
+    ProdInfo recvRequest(const ProdId request) {
         static ProdInfo prodInfo{};
 
         return prodInfo;

@@ -92,7 +92,7 @@ public:
         return peers.size();
     }
 
-    bool notify(const ProdIndex notice) {
+    bool notify(const ProdId notice) {
         Guard guard{mutex};
         for (auto& peer : peers)
             peer.notify(notice);
@@ -129,7 +129,7 @@ PeerSet::size_type PeerSet::size() const {
     return pImpl->size();
 }
 
-bool PeerSet::notify(const ProdIndex notice) const {
+bool PeerSet::notify(const ProdId notice) const {
     return pImpl->notify(notice);
 }
 

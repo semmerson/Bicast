@@ -64,7 +64,7 @@ String DatumId::to_string() const {
     case Id::TRACKER:
         return tracker.to_string();
     case Id::PROD_INDEX:
-        return prodIndex.to_string();
+        return prodId.to_string();
     case Id::DATA_SEG_ID:
         return dataSegId.to_string();
     default:
@@ -74,7 +74,7 @@ String DatumId::to_string() const {
 
 size_t DatumId::hash() const noexcept {
     return (id == Id::PROD_INDEX)
-            ? prodIndex.hash()
+            ? prodId.hash()
             : (id == Id::DATA_SEG_ID)
                 ? dataSegId.hash()
                 : 0;
@@ -84,7 +84,7 @@ bool DatumId::operator==(const DatumId& rhs) const noexcept {
     if (id != rhs.id)    return false;
     if (id == Id::UNSET) return true;
     return (id == Id::PROD_INDEX)
-            ? prodIndex == rhs.prodIndex
+            ? prodId == rhs.prodId
             : dataSegId == rhs.dataSegId;
 }
 
@@ -116,14 +116,14 @@ class ProdInfo::Impl
 
     using NameLenType = uint16_t; ///< Type to hold length of product-name
 
-    ProdIndex index;   ///< Product index
+    ProdId index;   ///< Product index
     String    name;    ///< Name of product
     ProdSize  size;    ///< Size of product in bytes
 
 public:
     Impl() =default;
 
-    Impl(    const ProdIndex   index,
+    Impl(    const ProdId   index,
              const std::string name,
              const ProdSize    size)
         : index{index}
@@ -191,7 +191,7 @@ public:
 
 ProdInfo::ProdInfo() =default;
 
-ProdInfo::ProdInfo(const ProdIndex   index,
+ProdInfo::ProdInfo(const ProdId   index,
                    const std::string name,
                    const ProdSize    size)
     : pImpl{new Impl(index, name, size)}
@@ -201,7 +201,7 @@ ProdInfo::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-const ProdIndex& ProdInfo::getIndex() const {
+const ProdId& ProdInfo::getId() const {
     return pImpl->index;
 }
 const String&    ProdInfo::getName() const {

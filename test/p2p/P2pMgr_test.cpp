@@ -57,7 +57,7 @@ protected:
     static constexpr ProdSize PROD_SIZE = 1000;
     SockAddr         pubP2pSrvrAddr;
     SockAddr         localSrvrAddr;
-    ProdIndex        prodIndex;
+    ProdId        prodIndex;
     char             prodData[PROD_SIZE];
     ProdInfo         prodInfo;
     std::atomic<int> subscriberCount;
@@ -152,7 +152,7 @@ public:
 
     void waitForPeer() {}
 
-    bool shouldRequest(const ProdIndex index) override {
+    bool shouldRequest(const ProdId index) override {
         EXPECT_TRUE(index == this->prodIndex);
         orState(PROD_NOTICE_RCVD);
         return true;
@@ -166,7 +166,7 @@ public:
         return true;
     }
 
-    ProdInfo recvRequest(const ProdIndex request) override {
+    ProdInfo recvRequest(const ProdId request) override {
         //ASSERT_EQ(prodIndex, request);     // Doesn't compile
         //ASSERT_TRUE(prodIndex == request); // Doesn't compile
         EXPECT_TRUE(prodIndex == request);

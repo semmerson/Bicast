@@ -40,7 +40,7 @@ protected:
     const std::string     rootDir;
     std::string           prodName;
     const std::string     filePath;
-    hycast::ProdIndex     prodIndex;
+    hycast::ProdId        prodId;
     char                  memData[1450];
     const hycast::SegSize segSize;
     hycast::ProdSize      prodSize;
@@ -53,12 +53,12 @@ protected:
         , rootDir(testDir + "/repo")
         , prodName{"foo/bar/product.dat"}
         , filePath(testDir + "/" + prodName)
-        , prodIndex{1} // Index of first product in empty repository is 1
+        , prodId{1} // Index of first product in empty repository is 1
         , memData{'A', 'B', 'C'}
         , segSize{sizeof(memData)}
         , prodSize{segSize}
-        , prodInfo(prodIndex, prodName, prodSize)
-        , segId(prodIndex, 0)
+        , prodInfo(prodId, prodName, prodSize)
+        , segId(prodId, 0)
         , dataSeg(segId, prodSize, memData)
     {
         hycast::DataSeg::setMaxSegSize(sizeof(memData));
@@ -93,9 +93,9 @@ TEST_F(RepositoryTest, Construction)
 TEST_F(RepositoryTest, SaveProdInfo)
 {
     hycast::SubRepo repo(rootDir, segSize, 5);
-    ASSERT_FALSE(repo.getProdInfo(prodIndex));
+    ASSERT_FALSE(repo.getProdInfo(prodId));
     ASSERT_TRUE(repo.save(prodInfo));
-    auto actual = repo.getProdInfo(prodIndex);
+    auto actual = repo.getProdInfo(prodId);
     ASSERT_TRUE(actual);
     EXPECT_EQ(prodInfo, actual);
 }

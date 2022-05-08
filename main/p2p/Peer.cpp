@@ -77,7 +77,7 @@ protected:
                 else if (datumId.id == DatumId::Id::PROD_INDEX) {
                     LOG_DEBUG("Peer %s is notifying about product %s",
                             to_string().data(), datumId.to_string().data());
-                    connected = rpc->notify(datumId.prodIndex);
+                    connected = rpc->notify(datumId.prodId);
                 }
                 else if (datumId.id == DatumId::Id::TRACKER) {
                     LOG_DEBUG("Peer %s is notifying about tracker %s",
@@ -276,7 +276,7 @@ public:
 
         return connected;
     }
-    bool notify(const ProdIndex notice) override {
+    bool notify(const ProdId notice) override {
         throwIf();
 
         if (connected && !rmtIsPub) {
@@ -306,15 +306,15 @@ public:
     /**
      * Processes a request for product information.
      *
-     * @param[in] prodIndex     Index of the product
+     * @param[in] prodId     Index of the product
      */
-    bool recvRequest(const ProdIndex prodIndex) override {
+    bool recvRequest(const ProdId prodId) override {
         LOG_DEBUG("Peer %s received request for information on product %s",
-                    to_string().data(), prodIndex.to_string().data());
-        auto prodInfo = p2pMgr.recvRequest(prodIndex, rmtSockAddr);
+                    to_string().data(), prodId.to_string().data());
+        auto prodInfo = p2pMgr.recvRequest(prodId, rmtSockAddr);
         if (prodInfo) {
             LOG_DEBUG("Peer %s is sending information on product %s",
-                        to_string().data(), prodIndex.to_string().data());
+                        to_string().data(), prodId.to_string().data());
             connected = rpc->send(prodInfo);
         }
         return connected;
@@ -377,7 +377,7 @@ public:
         return false;
     }
 
-    bool recvNotice(const ProdIndex prodIndex) {
+    bool recvNotice(const ProdId prodId) {
         throw LOGIC_ERROR("Shouldn't have been called");
         return false;
     }
@@ -577,7 +577,7 @@ class SubPeerImpl final : public PeerImpl
             Guard guard{mutex};
             while (head) {
                 if (head.id == DatumId::Id::PROD_INDEX) {
-                    p2pMgr.missed(head.prodIndex, rmtSockAddr);
+                    p2pMgr.missed(head.prodId, rmtSockAddr);
                 }
                 else if (head.id == DatumId::Id::DATA_SEG_ID) {
                     p2pMgr.missed(head.dataSegId, rmtSockAddr);
@@ -637,7 +637,7 @@ class SubPeerImpl final : public PeerImpl
                 subP2pMgr.missed(iter->dataSegId, rmtSockAddr);
             }
             else if (iter->getType() == DatumId::Id::PROD_INDEX) {
-                subP2pMgr.missed(iter->prodIndex, rmtSockAddr);
+                subP2pMgr.missed(iter->prodId, rmtSockAddr);
             }
 
             ++iter; // Must occur before `requested.pop()`
@@ -704,19 +704,19 @@ public:
      * subscriber's P2P manager. Requests the datum if told to do so by the P2P
      * manager.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] prodId     Product index
      * @retval    `false`    Connection lost
      * @retval    `true`     Success
      */
-    bool recvNotice(const ProdIndex prodIndex) {
+    bool recvNotice(const ProdId prodId) {
         LOG_DEBUG("Peer %s received notice about information on product %s",
-                to_string().data(), prodIndex.to_string().data());
-        if (subP2pMgr.recvNotice(prodIndex, rmtSockAddr)) {
+                to_string().data(), prodId.to_string().data());
+        if (subP2pMgr.recvNotice(prodId, rmtSockAddr)) {
             // Subscriber wants the product information
-            requested.push(DatumId{prodIndex});
+            requested.push(DatumId{prodId});
             LOG_DEBUG("Peer %s is requesting information on product %s",
-                    to_string().data(), prodIndex.to_string().data());
-            connected = rpc->request(prodIndex);
+                    to_string().data(), prodId.to_string().data());
+            connected = rpc->request(prodId);
         }
         return connected;
     }

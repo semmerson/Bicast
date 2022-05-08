@@ -65,11 +65,11 @@ public:
     /**
      * Notifies all peers about an available product.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] prodId     Index of the product
      * @retval    `true`     Success
      * @retval    `false`    Peer set is empty
      */
-    bool notify(const ProdIndex prodIndex) const;
+    bool notify(const ProdId prodId) const;
 
     /**
      * Notifies all peers about an available data-segment.

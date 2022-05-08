@@ -172,7 +172,7 @@ class NoticeArray::Impl
     mutable Mutex       mutex;
     mutable Cond        cond;
     PduIdQueue          pduIdQueue;
-    PduQueue<ProdIndex> prodIndexes;
+    PduQueue<ProdId> prodIndexes;
     PduQueue<DataSegId> dataSegIds;
     ArrayIndex          writeIndex;
     ArrayIndex          oldestIndex;
@@ -250,10 +250,10 @@ public:
         return oldestIndex;
     }
 
-    ArrayIndex put(const ProdIndex prodIndex) {
+    ArrayIndex put(const ProdId prodId) {
         Guard      guard{mutex};
         const auto index = put(PduId::PROD_INFO_NOTICE);
-        prodIndexes.put(index, prodIndex);
+        prodIndexes.put(index, prodId);
         return index;
     }
 
@@ -313,8 +313,8 @@ ArrayIndex NoticeArray::getOldestIndex() const {
     return pImpl->getOldestIndex();
 }
 
-ArrayIndex NoticeArray::putProdIndex(const ProdIndex prodIndex) const {
-    return pImpl->put(prodIndex);
+ArrayIndex NoticeArray::putProdIndex(const ProdId prodId) const {
+    return pImpl->put(prodId);
 }
 
 ArrayIndex NoticeArray::put(const DataSegId& dataSegId) const {

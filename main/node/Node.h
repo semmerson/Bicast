@@ -90,7 +90,7 @@ public:
      * @param[in] request      Which product
      * @return                 Requested product information. Will test false if it doesn't exist.
      */
-    virtual ProdInfo recvRequest(const ProdIndex request) =0;
+    virtual ProdInfo recvRequest(const ProdId request) =0;
 
     /**
      * Receives a request for a data-segment.
@@ -231,7 +231,7 @@ public:
      * @retval    `true`   Product information should be requested
      * @retval    `false`  Product information should not be requested
      */
-    virtual bool shouldRequest(const ProdIndex index) =0;
+    virtual bool shouldRequest(const ProdId index) =0;
 
     /**
      * Receives a notice about the availability of a data-segment.

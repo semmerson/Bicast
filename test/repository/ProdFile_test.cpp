@@ -43,7 +43,7 @@ protected:
     int               rootFd;
     const std::string prodName;
     const std::string pathname;
-    hycast::ProdIndex prodIndex;
+    hycast::ProdId    prodId;
     hycast::ProdSize  prodSize;
     hycast::SegSize   segSize;
     hycast::ProdInfo  prodInfo;
@@ -59,11 +59,11 @@ protected:
         , rootFd(-1)
         , prodName("prod.dat")
         , pathname(rootPath + "/" + prodName)
-        , prodIndex{1}
+        , prodId{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, "product", prodSize}
-        , segId(prodIndex, 0)
+        , prodInfo{prodId, "product", prodSize}
+        , segId(prodId, 0)
         , memData{}
         , memSeg{segId, prodSize, memData}
     {
@@ -132,7 +132,7 @@ TEST_F(ProdFileTest, BadSndProdFile)
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
     try {
-        hycast::RcvProdFile(rootFd, prodIndex, 1, 0);
+        hycast::RcvProdFile(rootFd, prodId, 1, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -145,8 +145,8 @@ TEST_F(ProdFileTest, BadRcvProdFile)
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
     hycast::ProdSize    prodSize(0);
-    hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, 0);
-    hycast::ProdInfo    prodInfo(prodIndex, prodName, prodSize);
+    hycast::RcvProdFile prodFile(rootFd, prodId, prodSize, 0);
+    hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
     EXPECT_TRUE(prodFile.save(rootFd, prodInfo));
     ASSERT_TRUE(prodFile.isComplete());
 }
@@ -155,12 +155,12 @@ TEST_F(ProdFileTest, ZeroRcvProdFile)
 TEST_F(ProdFileTest, RcvProdFile)
 {
     hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
-    hycast::ProdInfo    prodInfo(prodIndex, prodName, prodSize);
-    hycast::RcvProdFile prodFile(rootFd, prodIndex, prodSize, segSize);
+    hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
+    hycast::RcvProdFile prodFile(rootFd, prodId, prodSize, segSize);
     ASSERT_TRUE(prodFile.save(rootFd, prodInfo));
     {
         for (int i = 0; i < 2; ++i) {
-            hycast::DataSegId segId(prodIndex, i*segSize);
+            hycast::DataSegId segId(prodId, i*segSize);
             hycast::DataSeg   memSeg{segId, prodSize, memData};
             ASSERT_TRUE(prodFile.save(memSeg));
         }

@@ -96,8 +96,8 @@ public:
     }
 
     bool shouldNotify(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) const override {
+            Peer::Pimpl  peer,
+            const ProdId prodId) const override {
         return false;
     }
 
@@ -109,7 +109,7 @@ public:
 
     bool shouldRequest(
             Peer::Pimpl     peer,
-            const ProdIndex prodindex) override {
+            const ProdId prodindex) override {
         return false;
     }
 
@@ -120,8 +120,8 @@ public:
     }
 
     bool received(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) override {
+            Peer::Pimpl  peer,
+            const ProdId prodId) override {
         return false;
     }
 
@@ -131,7 +131,7 @@ public:
         return false;
     }
 
-    void erase(const ProdIndex prodIndex) override {
+    void erase(const ProdId prodId) override {
     }
 
     void erase(const DataSegId dataSegId) override {
@@ -139,7 +139,7 @@ public:
 
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const ProdIndex   prodIndex) override {
+            const ProdId      prodId) override {
         return Peer::Pimpl{};
     }
 
@@ -439,9 +439,9 @@ public:
     }
 
     bool shouldNotify(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) const override {
-        return shouldNotify(peer, DatumId(prodIndex));
+            Peer::Pimpl  peer,
+            const ProdId prodId) const override {
+        return shouldNotify(peer, DatumId(prodId));
     }
 
     bool shouldNotify(
@@ -451,9 +451,9 @@ public:
     }
 
     bool shouldRequest(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) override {
-        return shouldRequest(peer, DatumId(prodIndex));
+            Peer::Pimpl  peer,
+            const ProdId prodId) override {
+        return shouldRequest(peer, DatumId(prodId));
     }
 
     bool shouldRequest(
@@ -462,9 +462,9 @@ public:
         return shouldRequest(peer, DatumId(dataSegId));
     }
 
-    bool received(Peer::Pimpl     peer,
-                  const ProdIndex prodIndex) override {
-        return received(peer, DatumId{prodIndex});
+    bool received(Peer::Pimpl  peer,
+                  const ProdId prodId) override {
+        return received(peer, DatumId{prodId});
     }
 
     bool received(Peer::Pimpl     peer,
@@ -472,8 +472,8 @@ public:
         return received(peer, DatumId{dataSegId});
     }
 
-    void erase(const ProdIndex prodIndex) override {
-        erase(DatumId(prodIndex));
+    void erase(const ProdId prodId) override {
+        erase(DatumId(prodId));
     }
 
     void erase(const DataSegId dataSegId) override {
@@ -482,8 +482,8 @@ public:
 
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const ProdIndex   prodIndex) override {
-        return getAltPeer(peer, DatumId{prodIndex});
+            const ProdId      prodId) override {
+        return getAltPeer(peer, DatumId{prodId});
     }
 
     Peer::Pimpl getAltPeer(

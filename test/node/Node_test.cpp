@@ -48,7 +48,7 @@ protected:
     Mutex           mutex;
     Cond            cond;
     char            prodData[PROD_SIZE];
-    const ProdIndex prodIndex;
+    const ProdId prodIndex;
     const String    prodName;
     const String    testRoot;
     const String    pubRepoRoot;

@@ -384,7 +384,7 @@ bool SndProdFile::exists(ProdSize offset) const {
  */
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
-    ProdIndex         prodIndex;  ///< Product index
+    ProdId         prodIndex;  ///< Product index
     std::vector<bool> haveSegs;   ///< Bitmap of received data-segments
     ProdSize          segCount;   ///< Number of received data-segments
     bool              pathIsName; ///< File pathname is product name?
@@ -424,9 +424,9 @@ class RcvProdFile::Impl final : public ProdFile::Impl
         }
     }
 
-    static std::string getIndexPath(const ProdIndex prodIndex)
+    static std::string getIndexPath(const ProdId prodIndex)
     {
-        const auto  index = (ProdIndex::Type)prodIndex;
+        const auto  index = (ProdId::Type)prodIndex;
         char        buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
         char*       cp = buf;
 
@@ -452,7 +452,7 @@ public:
      * @throws    SystemError      `open()` or `ftruncate()` failure
      */
     Impl(   const int       rootFd,
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const ProdSize  prodSize,
             const SegSize   segSize)
         : ProdFile::Impl{prodIndex.to_string(), prodSize, segSize}
@@ -589,7 +589,7 @@ RcvProdFile::RcvProdFile() noexcept =default;
 
 RcvProdFile::RcvProdFile(
         const int       rootFd,
-        const ProdIndex prodIndex,
+        const ProdId prodIndex,
         const ProdSize  prodSize,
         const SegSize   segSize)
     : ProdFile(std::make_shared<Impl>(rootFd, prodIndex, prodSize, segSize)) {

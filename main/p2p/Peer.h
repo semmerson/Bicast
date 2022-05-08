@@ -163,13 +163,13 @@ public:
      */
     virtual bool notify(const Tracker   tracker) =0;
     virtual bool notify(const SockAddr  srvrAddr) =0;
-    virtual bool notify(const ProdIndex prodIndex) =0;
+    virtual bool notify(const ProdId    prodId) =0;
     virtual bool notify(const DataSegId dataSegId) =0;
 
-    virtual bool recvNotice(const ProdIndex prodIndex) =0;
+    virtual bool recvNotice(const ProdId    prodId) =0;
     virtual bool recvNotice(const DataSegId dataSegId) =0;
 
-    virtual bool recvRequest(const ProdIndex prodIndex) =0;
+    virtual bool recvRequest(const ProdId    prodId) =0;
     virtual bool recvRequest(const DataSegId dataSegId) =0;
 
     virtual void recvData(const Tracker tracker) =0;

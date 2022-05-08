@@ -29,7 +29,7 @@ protected:
     SockAddr           pubAddr;
     PubPeerSrvr::Pimpl pubPeerSrvr;
     std::thread        pubPeerSrvrThrd;
-    ProdIndex          prodIndex;
+    ProdId          prodIndex;
     DataSegId          segId;
     Peer::Pimpl        subPeer1;
     Peer::Pimpl        subPeer2;
@@ -67,7 +67,7 @@ public:
 
     // Subscriber-side
     bool recvNotice(
-            const ProdIndex notice,
+            const ProdId notice,
             const SockAddr  rmtAddr) override
     {
         return false;
@@ -83,7 +83,7 @@ public:
 
     // Publisher-side
     ProdInfo recvRequest(
-            const ProdIndex request,
+            const ProdId request,
             const SockAddr  rmtAddr) override
     {
         return ProdInfo{};
@@ -98,7 +98,7 @@ public:
     }
 
     void missed(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const SockAddr  rmtAddr) {
     }
 
@@ -107,7 +107,7 @@ public:
             const SockAddr  rmtAddr) {
     }
 
-    void notify(const ProdIndex prodIndex) {
+    void notify(const ProdId prodIndex) {
     }
 
     void notify(const DataSegId dataSegId) {

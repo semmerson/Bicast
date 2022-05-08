@@ -56,8 +56,8 @@ public:
     ProdInfo  prodInfo;  ///< Product information
     PF        prodFile;  ///< Product file
     time_t    when;      ///< Creation-time of entry
-    ProdIndex prev;      ///< Previous entry in queue
-    ProdIndex next;      ///< Next entry in queue
+    ProdId prev;      ///< Previous entry in queue
+    ProdId next;      ///< Next entry in queue
 
     ProdEntry()
         : prodFile{}
@@ -119,7 +119,7 @@ public:
 
     SndProdEntry(
             const std::string& prodName,
-            const ProdIndex    prodIndex,
+            const ProdId    prodIndex,
             SndProdFile        prodFile)
         : ProdEntry(ProdInfo(prodIndex, prodName, prodFile.getProdSize()),
                 prodFile)
@@ -159,8 +159,8 @@ protected:
         struct Entry final
         {
             PF          prodFile; ///< Receiving product-file
-            ProdIndex   prev;     ///< Previous entry (towards the head)
-            ProdIndex   next;     ///< Subsequent entry (towards the tail)
+            ProdId   prev;     ///< Previous entry (towards the head)
+            ProdId   next;     ///< Subsequent entry (towards the tail)
 
             Entry()
                 : prodFile()
@@ -168,16 +168,16 @@ protected:
                 , next()
             {}
 
-            Entry(PF& prodFile, const ProdIndex prev)
+            Entry(PF& prodFile, const ProdId prev)
                 : prodFile(prodFile)
                 , prev(prev)
                 , next()
             {}
         };
 
-        std::unordered_map<ProdIndex, Entry> map;
-        ProdIndex                            head; ///< Head of list
-        ProdIndex                            tail; ///< Tail of list
+        std::unordered_map<ProdId, Entry> map;
+        ProdId                            head; ///< Head of list
+        ProdId                            tail; ///< Tail of list
 
     public:
         /**
@@ -217,7 +217,7 @@ protected:
          * @throws    LogicError  An entry already exists for the product-index
          */
         void pushBack(
-                const ProdIndex prodIndex,
+                const ProdId prodIndex,
                 PF              prodFile)
         {
             const bool wasEmpty = map.empty();
@@ -242,7 +242,7 @@ protected:
          * @return                  Product-file associated with product-index
          * @throws InvalidArgument  No such entry
          */
-        PF erase(const ProdIndex prodIndex)
+        PF erase(const ProdId prodIndex)
         {
             auto iter = map.find(prodIndex);
 
@@ -278,7 +278,7 @@ protected:
          * @param[in] prodIndex  Product index
          * @return               Associated product-file. Will test false if it doesn't exist.
          */
-        PF find(const ProdIndex prodIndex)
+        PF find(const ProdId prodIndex)
         {
             auto iter = map.find(prodIndex);
 
@@ -358,9 +358,9 @@ protected:
             map.popHead().close();
     }
 
-    static std::string getIndexPath(const ProdIndex prodIndex)
+    static std::string getIndexPath(const ProdId prodIndex)
     {
-        auto  index = (ProdIndex::Type)prodIndex;
+        auto  index = (ProdId::Type)prodIndex;
         char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
         char* cp = buf;
 
@@ -436,7 +436,7 @@ public:
         return rootPathname;
     }
 
-    virtual ProdInfo getProdInfo(const ProdIndex prodIndex) =0;
+    virtual ProdInfo getProdInfo(const ProdId prodIndex) =0;
 
     virtual DataSeg getDataSeg(const DataSegId segId) =0;
 
@@ -475,7 +475,7 @@ public:
     {
         Guard guard{mutex};
 
-        ProdIndex next;
+        ProdId next;
         for (auto prodIndex = headIndex; prodIndex; prodIndex = next) {
             auto iter = prodFiles.find(prodIndex);
             if (iter == prodFiles.end())
@@ -510,7 +510,7 @@ const std::string& Repository::getRootDir() const noexcept {
     return pImpl->getRootDir();
 }
 
-ProdInfo Repository::getProdInfo(const ProdIndex prodIndex) const {
+ProdInfo Repository::getProdInfo(const ProdId prodIndex) const {
     return pImpl->getProdInfo(prodIndex);
 }
 
@@ -529,10 +529,10 @@ class PubRepo::Impl final : public Repository::Impl
     Repository::Impl::LinkedProdMap<SndProdFile> prodFiles; ///< All existing product-files
     Repository::Impl::LinkedProdMap<SndProdFile> openFiles; ///< All open product-files
     Watcher                                      watcher;   ///< Watches filename hierarchy
-    std::queue<ProdIndex>                        prodQueue; ///< Queue of products to be sent
-    ProdIndex                                    prodIndex; ///< Next product-index
+    std::queue<ProdId>                        prodQueue; ///< Queue of products to be sent
+    ProdId                                    prodIndex; ///< Next product-index
 
-    ProdIndex getNextIndex()
+    ProdId getNextIndex()
     {
         // TODO: Make persistent between sessions
         return ++prodIndex;
@@ -559,7 +559,7 @@ class PubRepo::Impl final : public Repository::Impl
      * @param[in] prodFile   Product-file
      */
     void addProdFile(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             SndProdFile     prodFile) {
         Guard guard(mutex);
 
@@ -579,7 +579,7 @@ class PubRepo::Impl final : public Repository::Impl
      * @return               Corresponding product-file. Will test false if it
      *                       doesn't exist.
      */
-    SndProdFile getProdFile(const ProdIndex prodIndex)
+    SndProdFile getProdFile(const ProdId prodIndex)
     {
         LOG_ASSERT(!mutex.try_lock());
 
@@ -685,7 +685,7 @@ public:
      * @return               Corresponding product-information. Will test false if no such
      *                       information exists.
      */
-    ProdInfo getProdInfo(const ProdIndex prodIndex)
+    ProdInfo getProdInfo(const ProdId prodIndex)
     {
         Guard      guard{mutex};
         const auto prodFile = getProdFile(prodIndex);
@@ -775,7 +775,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @return               Product-file corresponding to product-index. Will test false if it
      *                       doesn't exist.
      */
-    RcvProdFile getProdFile(const ProdIndex prodIndex)
+    RcvProdFile getProdFile(const ProdId prodIndex)
     {
         LOG_ASSERT(!mutex.try_lock());
 
@@ -802,7 +802,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @param[in] prodFile   Product-file
      */
     void addProdFile(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             RcvProdFile     prodFile) {
         LOG_ASSERT(!mutex.try_lock());
 
@@ -822,7 +822,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @return               Product-file corresponding to product-index
      */
     RcvProdFile getProdFile(
-            const ProdIndex prodIndex,
+            const ProdId prodIndex,
             const ProdSize  prodSize) {
         Guard guard{mutex};
         auto  prodFile = getProdFile(prodIndex);
@@ -875,7 +875,7 @@ public:
      */
     bool save(const ProdInfo prodInfo)
     {
-        auto       prodFile = getProdFile(prodInfo.getIndex(), prodInfo.getSize());
+        auto       prodFile = getProdFile(prodInfo.getId(), prodInfo.getSize());
         const bool wasSaved = prodFile.save(rootFd, prodInfo);
 
         if (wasSaved && prodFile.isComplete())
@@ -928,7 +928,7 @@ public:
      * @return           Product information. Will test false if no such product
      *                   exists.
      */
-    ProdInfo getProdInfo(const ProdIndex prodIndex)
+    ProdInfo getProdInfo(const ProdId prodIndex)
     {
         Guard guard{mutex};
         auto  prodFile = getProdFile(prodIndex);
@@ -970,7 +970,7 @@ public:
      * @retval    `true`     Product information does exist
      * @retval    `false`    Product information does not exist
      */
-    bool exists(const ProdIndex prodIndex)
+    bool exists(const ProdId prodIndex)
     {
         Guard       guard{mutex};
         RcvProdFile prodFile = getProdFile(prodIndex);
@@ -1019,7 +1019,7 @@ ProdInfo SubRepo::getNextProd() const {
     return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
-bool SubRepo::exists(const ProdIndex prodIndex) const {
+bool SubRepo::exists(const ProdId prodIndex) const {
     return static_cast<Impl*>(pImpl.get())->exists(prodIndex);
 }
 

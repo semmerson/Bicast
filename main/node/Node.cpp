@@ -330,7 +330,7 @@ class PubNodeImpl final : public PubNode, public NodeImpl
     {
         try {
             mcastPub->multicast(prodInfo);
-            p2pMgr->notify(prodInfo.getIndex());
+            p2pMgr->notify(prodInfo.getId());
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Exception thrown: %s", ex.what());
@@ -375,11 +375,11 @@ protected:
                  * Data-segment multicasting is interleaved with peer notification order to reduce
                  * the chance of losing a multicast data-segment by reducing the multicast rate.
                  */
-                auto prodIndex = prodInfo.getIndex();
+                auto prodId = prodInfo.getId();
                 auto prodSize = prodInfo.getSize();
                 for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
                     // TODO: Test for valid segment
-                    send(repo.getDataSeg(DataSegId(prodIndex, offset)));
+                    send(repo.getDataSeg(DataSegId(prodId, offset)));
             }
         }
         catch (const std::exception& ex) {
@@ -476,7 +476,7 @@ public:
      * @param[in] request      Which product
      * @return                 Requested product information. Will test false if it doesn't exist.
      */
-    ProdInfo recvRequest(const ProdIndex request) override {
+    ProdInfo recvRequest(const ProdId request) override {
         return repo.getProdInfo(request);
     }
 
@@ -604,14 +604,14 @@ public:
      * Indicates if information on a product should be requested from the P2P
      * network. Called by the peer-to-peer component.
      *
-     * @param[in] prodIndex  Identifier of product
+     * @param[in] prodId     Identifier of product
      * @retval    `false`    Information shouldn't be requested
      * @retval    `true`     Information should be requested
      */
-    bool shouldRequest(const ProdIndex prodIndex) override {
+    bool shouldRequest(const ProdId prodId) override {
         //LOG_DEBUG("Determining if information on product %s should be requested",
-                //prodIndex.to_string().data());
-        return !repo.exists(prodIndex);
+                //prodId.to_string().data());
+        return !repo.exists(prodId);
     }
 
     /**
@@ -633,7 +633,7 @@ public:
      * @param[in] request      Which product
      * @return                 Requested product information. Will test false if it doesn't exist.
      */
-    ProdInfo recvRequest(const ProdIndex request) override {
+    ProdInfo recvRequest(const ProdId request) override {
         return repo.getProdInfo(request);
     }
 
@@ -656,7 +656,7 @@ public:
         LOG_DEBUG("Saving product-information " + prodInfo.to_string());
         if (repo.save(prodInfo)) {
             ++numMcastOrig;
-            p2pMgr->notify(prodInfo.getIndex());
+            p2pMgr->notify(prodInfo.getId());
         }
         else {
             ++numMcastDup;

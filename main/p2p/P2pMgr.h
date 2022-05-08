@@ -170,7 +170,7 @@ public:
      *
      * @param[in] prodInfo  Product information
      */
-    virtual void notify(const ProdIndex prodIndex) =0;
+    virtual void notify(const ProdId prodId) =0;
 
     /**
      * Notifies connected remote peers about the availability of a data
@@ -189,7 +189,7 @@ public:
      *                         shouldn't be sent to remote peer.
      */
     virtual ProdInfo recvRequest(
-            const ProdIndex request,
+            const ProdId request,
             const SockAddr  rmtAddr) =0;
     /**
      * Receives a request for a data-segment from a remote peer.
@@ -247,7 +247,7 @@ public:
      * @retval    `false`      Local peer shouldn't request from remote peer
      * @retval    `true`       Local peer should request from remote peer
      */
-    virtual bool recvNotice(const ProdIndex  notice,
+    virtual bool recvNotice(const ProdId  notice,
                             const SockAddr   rmtAddr) =0;
     /**
      * Receives a notice of an available data-segment from a remote peer.
@@ -264,12 +264,12 @@ public:
      * Handles a request for data-product information not being satisfied by a
      * remote peer.
      *
-     * @param[in] prodIndex  Index of the data-product
+     * @param[in] prodId     Index of the data-product
      * @param[in] rmtAddr    Socket address of remote peer
      */
     virtual void missed(
-            const ProdIndex prodIndex,
-            SockAddr        rmtAddr) =0;
+            const ProdId prodId,
+            SockAddr     rmtAddr) =0;
 
     /**
      * Handles a request for a data-segment not being satisfied by a remote

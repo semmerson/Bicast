@@ -199,64 +199,64 @@ public:
     }
 };
 
-class ProdIndex : public XprtAble
+class ProdId : public XprtAble
 {
 public:
     using Type = uint32_t;
 
 private:
-    Type index;    ///< Index of data-product
+    Type id;    ///< Index of data-product
 
 public:
     /**
      * NB: Implicit construction.
      * @param[in] index  Index of data-product
      */
-    ProdIndex(const Type index)
-        : index(index)
+    ProdId(const Type index)
+        : id(index)
     {}
 
-    ProdIndex()
-        : ProdIndex(0)
+    ProdId()
+        : ProdId(0)
     {}
 
-    ProdIndex(const ProdIndex& prodIndex) =default;
-    ~ProdIndex() =default;
-    ProdIndex& operator=(const ProdIndex& rhs) =default;
+    ProdId(const ProdId& prodId) =default;
+    ~ProdId() =default;
+    ProdId& operator=(const ProdId& rhs) =default;
 
     operator Type() const {
-        return index;
+        return id;
     }
 
     std::string to_string(const bool withName = false) const {
         return withName
-                ? "ProdIndex{" + std::to_string(index) + "}"
-                : std::to_string(index);
+                ? "ProdId{" + std::to_string(id) + "}"
+                : std::to_string(id);
     }
 
     size_t hash() const noexcept {
         static std::hash<Type> indexHash;
-        return indexHash(index);
+        return indexHash(id);
     }
 
-    ProdIndex& operator++() {
-        ++index;
+    ProdId& operator++() {
+        ++id;
         return *this;
     }
 
     bool write(Xprt xprt) const override {
-        return xprt.write(index);
+        return xprt.write(id);
     }
 
     bool read(Xprt xprt) override {
-        return xprt.read(index);
+        return xprt.read(id);
     }
 };
 
 /// Data-segment identifier
 struct DataSegId : public XprtAble
 {
-    ProdIndex prodIndex; ///< Product index
+    ProdId prodIndex; ///< Product index
     SegOffset offset;    ///< Offset of data segment in bytes
 
     DataSegId()
@@ -264,7 +264,7 @@ struct DataSegId : public XprtAble
         , offset{0}
     {}
 
-    DataSegId(const ProdIndex prodIndex,
+    DataSegId(const ProdId prodIndex,
               const SegOffset offset)
         : prodIndex{prodIndex}
         , offset{offset}
@@ -337,16 +337,13 @@ public:
 
     ProdInfo();
 
-    ProdInfo(const ProdIndex   index,
+    ProdInfo(const ProdId   index,
              const std::string name,
              const ProdSize    size);
 
     operator bool() const noexcept;
 
-    const ProdIndex& getIndex() const;
-    const ProdIndex& getId() const {
-        return getIndex();
-    }
+    const ProdId&    getId() const;
     const String&    getName() const;
     const ProdSize&  getSize() const;
 
@@ -493,12 +490,12 @@ public:
     union {
         SockAddr  srvrAddr;
         Tracker   tracker;
-        ProdIndex prodIndex;
+        ProdId prodId;
         DataSegId dataSegId;
     };
 
     DatumId() noexcept
-        : prodIndex()
+        : prodId()
         , id(Id::UNSET)
     {}
 
@@ -512,9 +509,9 @@ public:
         , tracker(tracker)
     {}
 
-    explicit DatumId(const ProdIndex prodIndex) noexcept
+    explicit DatumId(const ProdId prodIndex) noexcept
         : id(Id::PROD_INDEX)
-        , prodIndex(prodIndex)
+        , prodId(prodIndex)
     {}
 
     explicit DatumId(const DataSegId dataSegId) noexcept
@@ -533,8 +530,8 @@ public:
         return id;
     }
 
-    bool equals(const ProdIndex prodIndex) {
-        return id == Id::PROD_INDEX && this->prodIndex == prodIndex;
+    bool equals(const ProdId prodIndex) {
+        return id == Id::PROD_INDEX && this->prodId == prodIndex;
     }
 
     bool equals(const DataSegId dataSegId) {
@@ -577,7 +574,7 @@ class NoticeRcvr
 {
 public:
     virtual ~NoticeRcvr() {}
-    virtual bool recvNotice(const ProdIndex notice,
+    virtual bool recvNotice(const ProdId notice,
                             SockAddr        rmtAddr) =0;
     virtual bool recvNotice(const DataSegId notice,
                             SockAddr        rmtAddr) =0;
@@ -588,7 +585,7 @@ class RequestRcvr
 {
 public:
     virtual ~RequestRcvr() {}
-    virtual ProdInfo recvRequest(const ProdIndex request,
+    virtual ProdInfo recvRequest(const ProdId request,
                                  const SockAddr  rmtAddr) =0;
     virtual DataSeg recvRequest(const DataSegId request,
                                 const SockAddr  rmtAddr) =0;
@@ -616,7 +613,7 @@ class PubRcvr
 {
 public:
     virtual ~PubRcvr() {};
-    virtual ProdInfo recvRequest(const ProdIndex request) =0;
+    virtual ProdInfo recvRequest(const ProdId request) =0;
     virtual DataSeg recvRequest(const DataSegId request) =0;
 };
 
@@ -625,7 +622,7 @@ class SubRcvr : public PubRcvr
 {
 public:
     virtual ~SubRcvr() {};
-    virtual bool recvNotice(const ProdIndex notice) =0;
+    virtual bool recvNotice(const ProdId notice) =0;
     virtual bool recvNotice(const DataSegId notice) =0;
     virtual bool recvData(const Tracker  tracker) =0;
     virtual bool recvData(const SockAddr srvrAddr) =0;
@@ -637,8 +634,8 @@ public:
 
 namespace std {
     template<>
-    struct hash<hycast::ProdIndex> {
-        size_t operator()(const hycast::ProdIndex& prodIndex) const noexcept {
+    struct hash<hycast::ProdId> {
+        size_t operator()(const hycast::ProdId& prodIndex) const noexcept {
             return prodIndex.hash();
         }
     };

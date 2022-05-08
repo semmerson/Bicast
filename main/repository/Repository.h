@@ -102,7 +102,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    ProdInfo getProdInfo(const ProdIndex prodIndex) const;
+    ProdInfo getProdInfo(const ProdId prodIndex) const;
 
     /**
      * Returns a data-segment
@@ -247,7 +247,7 @@ public:
      * @retval    `false`    Product-information doesn't exist
      * @retval    `true`     Product-information does exist
      */
-    bool exists(const ProdIndex prodIndex) const;
+    bool exists(const ProdId prodIndex) const;
 
     /**
      * Indicates if a data-segment exists.

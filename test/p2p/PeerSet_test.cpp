@@ -38,7 +38,7 @@ protected:
     hycast::SockAddr        pubAddr;
     std::mutex              mutex;
     std::condition_variable cond;
-    hycast::ProdIndex       prodIndex;
+    hycast::ProdId       prodIndex;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -114,7 +114,7 @@ public:
 
     bool shouldNotify(
             Peer      peer,
-            ProdIndex prodIndex) override {
+            ProdId prodIndex) override {
         return true;
     }
 
@@ -125,7 +125,7 @@ public:
     }
 
     // Subscriber-side
-    bool recvNotice(const hycast::ProdIndex notice, Peer peer) override {
+    bool recvNotice(const hycast::ProdId notice, Peer peer) override {
         LOG_TRACE;
         EXPECT_EQ(notice, prodIndex);
         {
@@ -149,7 +149,7 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const hycast::ProdIndex request, Peer peer) override {
+    ProdInfo recvRequest(const hycast::ProdId request, Peer peer) override {
         LOG_TRACE;
         EXPECT_TRUE(prodIndex == request);
         {
@@ -172,13 +172,13 @@ public:
         return dataSeg;
     }
 
-    void missed(const ProdIndex prodIndex, Peer peer) override {
+    void missed(const ProdId prodIndex, Peer peer) override {
     }
 
     void missed(const DataSegId dataSegId, Peer peer) override {
     }
 
-    void notify(const ProdIndex prodInfo) override {
+    void notify(const ProdId prodInfo) override {
     }
 
     void notify(const DataSegId dataSegId) override {

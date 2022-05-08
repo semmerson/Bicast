@@ -55,7 +55,7 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
     void offline(Peer peer) override {
     }
-    void reassigned(const hycast::ProdIndex  notice,
+    void reassigned(const hycast::ProdId  notice,
                     const SockAddr           rmtAddr) override {
     }
     void reassigned(const hycast::DataSegId& notice,

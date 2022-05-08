@@ -35,8 +35,8 @@ protected:
     SockAddr          pubAddr;
     std::mutex        mutex;
     Cond              cond;
-    ProdIndex         prodIndexes[2];
-    ProdIndex         prodIndex;
+    ProdId         prodIndexes[2];
+    ProdId         prodIndex;
     ProdSize          prodSize;
     SegSize           segSize;
     ProdInfo          prodInfos[2];
@@ -84,7 +84,7 @@ protected:
         ::memset(memData, 0xbd, segSize);
 
         for (int i = 0; i < 2; ++i) {
-            prodIndexes[i] = ProdIndex(i);
+            prodIndexes[i] = ProdId(i);
             prodInfos[i] = ProdInfo(prodIndexes[i], prodNames[i], prodSize);
             segIds[i] = DataSegId(prodIndexes[0], i*sizeof(memData));
             dataSegs[i] = DataSeg(segIds[i], prodSize, memData);
@@ -130,7 +130,7 @@ public:
     void halt() {};
 
     // Subscriber-side
-    bool recvNotice(const ProdIndex notice, SockAddr rmtAddr) override
+    bool recvNotice(const ProdId notice, SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodIndexes[prodNoticeCount++], notice);
@@ -148,7 +148,7 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const ProdIndex request,
+    ProdInfo recvRequest(const ProdId request,
                          SockAddr        rmtAddr) override
     {
         LOG_TRACE;
@@ -206,7 +206,7 @@ public:
         orState(DATA_SEG_RCVD);
     }
 
-    void missed(const ProdIndex prodIndex, SockAddr rmtAddr) override {
+    void missed(const ProdId prodIndex, SockAddr rmtAddr) override {
         static int i = 0;
         LOG_DEBUG("i=%d, prodIndex=%s", i, prodIndex.to_string().data());
         ASSERT_EQ(prodIndexes[i++], prodIndex);
@@ -220,7 +220,7 @@ public:
         orState(DATA_SEG_MISSED);
     }
 
-    void notify(const ProdIndex prodInfo) {
+    void notify(const ProdId prodInfo) {
     }
 
     void notify(const DataSegId dataSegId) {

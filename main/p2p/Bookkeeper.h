@@ -57,13 +57,13 @@ public:
      * the datum.
      *
      * @param[in] peer       Peer
-     * @param[in] prodIndex  Index of the product
+     * @param[in] prodId     Identifier of the product
      * @retval    `true`     Peer should be notified
      * @retval    `false`    Peer should not be notified
      */
     virtual bool shouldNotify(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) const =0;
+            Peer::Pimpl  peer,
+            const ProdId prodId) const =0;
 
     /**
      * Indicates if a remote peer should be notified about an available data
@@ -86,7 +86,7 @@ public:
      * for the request.
      *
      * @param[in] peer               Peer
-     * @param[in] prodIndex          Product index
+     * @param[in] prodId             Product identifier
      * @return    `true`             Request should be made
      * @return    `false`            Request shouldn't be made
      * @throws    std::out_of_range  Peer is unknown
@@ -97,8 +97,8 @@ public:
      * @cancellationpoint            No
      */
     virtual bool shouldRequest(
-            Peer::Pimpl     peer,
-            const ProdIndex prodindex) =0;
+            Peer::Pimpl  peer,
+            const ProdId prodId) =0;
 
     /**
      * Indicates if a data segment should be requested by a peer. If yes, then
@@ -127,7 +127,7 @@ public:
      * peers for that request is cleared.
      *
      * @param[in] peer        Peer
-     * @param[in] prodIndex   Product index
+     * @param[in] prodId      Product identifier
      * @retval    `true`      Success
      * @retval    `false`     Product information wasn't requested
      * @throws    LogicError  Peer is unknown
@@ -136,8 +136,8 @@ public:
      * @cancellationpoint     No
      */
     virtual bool received(
-            Peer::Pimpl     peer,
-            const ProdIndex prodIndex) =0;
+            Peer::Pimpl  peer,
+            const ProdId prodId) =0;
 
     /**
      * Process a peer having received a data segment. Nothing happens if it
@@ -159,9 +159,9 @@ public:
     /**
      * Deletes the set of peers that have information on the given product.
      *
-     * @param[in] prodIndex  Index of the product
+     * @param[in] prodId  Index of the product
      */
-    virtual void erase(const ProdIndex prodIndex) =0;
+    virtual void erase(const ProdId prodId) =0;
 
     /**
      * Deletes the set of peers that have the given data segment.
@@ -179,7 +179,7 @@ public:
 
     virtual Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const ProdIndex   prodIndex) =0;
+            const ProdId      prodId) =0;
 
     virtual Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
