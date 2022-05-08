@@ -210,10 +210,10 @@ private:
 public:
     /**
      * NB: Implicit construction.
-     * @param[in] index  Index of data-product
+     * @param[in] id  Data-product identifier
      */
-    ProdId(const Type index)
-        : id(index)
+    ProdId(const Type id)
+        : id(id)
     {}
 
     ProdId()
