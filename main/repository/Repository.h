@@ -52,12 +52,15 @@ public:
         String    rootDir;        ///< Pathname of root directory of repository
         int32_t   maxSegSize;     ///< Maximum size of a data-segment in bytes
         long      maxOpenFiles;   ///< Maximum number of open repository files
+        int32_t   keepTime;       ///< Length of time to keep data-products in seconds
         RunPar( const String& rootDir,
                 const int32_t maxSegSize,
-                const long    maxOpenFiles)
+                const long    maxOpenFiles,
+                const int32_t keepTime)
             : rootDir(rootDir)
             , maxSegSize(maxSegSize)
             , maxOpenFiles(maxOpenFiles)
+            , keepTime(keepTime)
         {}
     };
 
