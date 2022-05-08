@@ -174,7 +174,7 @@ public:
      * Constructs from product information. The instance is open.
      *
      * @param[in] rootFd           File descriptor open on root directory
-     * @param[in] prodIndex        Product index
+     * @param[in] prodId           Product identifier
      * @param[in] prodSize         Product size in bytes
      * @param[in] segSize          Size of canonical data-segment in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
@@ -182,7 +182,7 @@ public:
      */
     RcvProdFile(
             const int       rootFd,
-            const ProdId prodIndex,
+            const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize);
 

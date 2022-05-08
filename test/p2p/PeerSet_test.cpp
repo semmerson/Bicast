@@ -38,7 +38,7 @@ protected:
     hycast::SockAddr        pubAddr;
     std::mutex              mutex;
     std::condition_variable cond;
-    hycast::ProdId       prodIndex;
+    hycast::ProdId          prodId;
     hycast::ProdSize        prodSize;
     hycast::SegSize         segSize;
     hycast::ProdInfo        prodInfo;
@@ -60,11 +60,11 @@ protected:
         , pubAddr{"localhost:38800"}
         , mutex{}
         , cond{}
-        , prodIndex{1}
+        , prodId{1}
         , prodSize{1000000}
         , segSize{sizeof(memData)}
-        , prodInfo{prodIndex, "product", prodSize}
-        , segId(prodIndex, sizeof(memData)) // Second data-segment
+        , prodInfo{prodId, "product", prodSize}
+        , segId(prodId, sizeof(memData)) // Second data-segment
         , memData{}
         , dataSeg{segId, prodSize, memData}
         , pubPathNoticeCount(0)
@@ -113,8 +113,8 @@ public:
     }
 
     bool shouldNotify(
-            Peer      peer,
-            ProdId prodIndex) override {
+            Peer   peer,
+            ProdId prodId) override {
         return true;
     }
 
@@ -127,7 +127,7 @@ public:
     // Subscriber-side
     bool recvNotice(const hycast::ProdId notice, Peer peer) override {
         LOG_TRACE;
-        EXPECT_EQ(notice, prodIndex);
+        EXPECT_EQ(notice, prodId);
         {
             std::lock_guard<std::mutex> guard{mutex};
             if (++prodInfoNoticeCount == NUM_SUBSCRIBERS)
@@ -151,7 +151,7 @@ public:
     // Publisher-side
     ProdInfo recvRequest(const hycast::ProdId request, Peer peer) override {
         LOG_TRACE;
-        EXPECT_TRUE(prodIndex == request);
+        EXPECT_TRUE(prodId == request);
         {
             std::lock_guard<std::mutex> guard{mutex};
             if (++prodInfoRequestCount == NUM_SUBSCRIBERS)
@@ -172,7 +172,7 @@ public:
         return dataSeg;
     }
 
-    void missed(const ProdId prodIndex, Peer peer) override {
+    void missed(const ProdId prodId, Peer peer) override {
     }
 
     void missed(const DataSegId dataSegId, Peer peer) override {
@@ -265,7 +265,7 @@ TEST_F(PeerSetTest, DataExchange)
             srvrThread.join();
 
             // Start an exchange
-            pubPeerSet.notify(prodIndex);
+            pubPeerSet.notify(prodId);
             pubPeerSet.notify(segId);
 
             // Wait for the exchange to complete

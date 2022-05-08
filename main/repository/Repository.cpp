@@ -119,9 +119,9 @@ public:
 
     SndProdEntry(
             const std::string& prodName,
-            const ProdId    prodIndex,
+            const ProdId       prodId,
             SndProdFile        prodFile)
-        : ProdEntry(ProdInfo(prodIndex, prodName, prodFile.getProdSize()),
+        : ProdEntry(ProdInfo(prodId, prodName, prodFile.getProdSize()),
                 prodFile)
     {}
 
@@ -212,54 +212,54 @@ protected:
         /**
          * Adds an entry. The entry will be at the tail-end of the list.
          *
-         * @param[in] prodIndex   Product index
+         * @param[in] prodId      Product identifier
          * @param[in] prodFile    Associated product-file
          * @throws    LogicError  An entry already exists for the product-index
          */
         void pushBack(
-                const ProdId prodIndex,
-                PF              prodFile)
+                const ProdId prodId,
+                PF           prodFile)
         {
             const bool wasEmpty = map.empty();
-            auto       pair = map.insert({prodIndex, Entry(prodFile, tail)});
+            auto       pair = map.insert({prodId, Entry(prodFile, tail)});
 
             if (!pair.second)
                 throw LOGIC_ERROR("Entry already exists");
 
             if (wasEmpty) {
-                head = prodIndex;
+                head = prodId;
             }
             else {
-                map[tail].next = prodIndex;
+                map[tail].next = prodId;
             }
-            tail = prodIndex;
+            tail = prodId;
         }
 
         /**
          * Removes an entry.
          *
-         * @param[in] prodIndex     Product index of entry to be removed
+         * @param[in] prodId        Product identifier of entry to be removed
          * @return                  Product-file associated with product-index
          * @throws InvalidArgument  No such entry
          */
-        PF erase(const ProdId prodIndex)
+        PF erase(const ProdId prodId)
         {
-            auto iter = map.find(prodIndex);
+            auto iter = map.find(prodId);
 
             if (iter == map.end())
-                throw INVALID_ARGUMENT("An entry for product " + prodIndex.to_string() +
+                throw INVALID_ARGUMENT("An entry for product " + prodId.to_string() +
                         " doesn't exist");
 
             Entry& entry = iter->second;
 
-            if (head == prodIndex) {
+            if (head == prodId) {
                 head = entry.next;
             }
             else {
                 map[entry.prev].next = entry.next;
             }
 
-            if (tail == prodIndex) {
+            if (tail == prodId) {
                 tail = entry.prev;
             }
             else {
@@ -275,20 +275,20 @@ protected:
          * Returns the product-file associated with a product-index if it exists. The file will be
          * moved to the end of the list.
          *
-         * @param[in] prodIndex  Product index
+         * @param[in] prodId     Product identifier
          * @return               Associated product-file. Will test false if it doesn't exist.
          */
-        PF find(const ProdId prodIndex)
+        PF find(const ProdId prodId)
         {
-            auto iter = map.find(prodIndex);
+            auto iter = map.find(prodId);
 
             if (iter == map.end()) {
                 static const PF prodFile{};
                 return prodFile;
             }
 
-            auto prodFile = erase(prodIndex);
-            pushBack(prodIndex, prodFile);
+            auto prodFile = erase(prodId);
+            pushBack(prodId, prodFile);
             return prodFile;
         }
 
@@ -358,9 +358,9 @@ protected:
             map.popHead().close();
     }
 
-    static std::string getIndexPath(const ProdId prodIndex)
+    static std::string getIndexPath(const ProdId prodId)
     {
-        auto  index = (ProdId::Type)prodIndex;
+        auto  index = (ProdId::Type)prodId;
         char  buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
         char* cp = buf;
 
@@ -436,7 +436,7 @@ public:
         return rootPathname;
     }
 
-    virtual ProdInfo getProdInfo(const ProdId prodIndex) =0;
+    virtual ProdInfo getProdInfo(const ProdId prodId) =0;
 
     virtual DataSeg getDataSeg(const DataSegId segId) =0;
 
@@ -476,8 +476,8 @@ public:
         Guard guard{mutex};
 
         ProdId next;
-        for (auto prodIndex = headIndex; prodIndex; prodIndex = next) {
-            auto iter = prodFiles.find(prodIndex);
+        for (auto prodId = headIndex; prodId; prodId = next) {
+            auto iter = prodFiles.find(prodId);
             if (iter == prodFiles.end())
                 break;
             Entry& prodEntry = iter.second;
@@ -510,8 +510,8 @@ const std::string& Repository::getRootDir() const noexcept {
     return pImpl->getRootDir();
 }
 
-ProdInfo Repository::getProdInfo(const ProdId prodIndex) const {
-    return pImpl->getProdInfo(prodIndex);
+ProdInfo Repository::getProdInfo(const ProdId prodId) const {
+    return pImpl->getProdInfo(prodId);
 }
 
 DataSeg Repository::getDataSeg(const DataSegId segId) const {
@@ -529,13 +529,13 @@ class PubRepo::Impl final : public Repository::Impl
     Repository::Impl::LinkedProdMap<SndProdFile> prodFiles; ///< All existing product-files
     Repository::Impl::LinkedProdMap<SndProdFile> openFiles; ///< All open product-files
     Watcher                                      watcher;   ///< Watches filename hierarchy
-    std::queue<ProdId>                        prodQueue; ///< Queue of products to be sent
-    ProdId                                    prodIndex; ///< Next product-index
+    std::queue<ProdId>                           prodQueue; ///< Queue of products to be sent
+    ProdId                                       prodId;    ///< Next product-identifier
 
-    ProdId getNextIndex()
+    ProdId getNextId()
     {
         // TODO: Make persistent between sessions
-        return ++prodIndex;
+        return ++prodId;
     }
 
     /**
@@ -544,9 +544,9 @@ class PubRepo::Impl final : public Repository::Impl
      * @pre State is locked
     void ensureRoom() {
         while (openFiles.size() >= maxOpenFiles) {
-            const auto prodIndex = openFiles.getHead();
-            openFiles.find(prodIndex).close();
-            openFiles.remove(prodIndex);
+            const auto prodId = openFiles.getHead();
+            openFiles.find(prodId).close();
+            openFiles.remove(prodId);
         }
     }
      */
@@ -555,18 +555,18 @@ class PubRepo::Impl final : public Repository::Impl
      * Adds a new product-file.
      *
      * @pre                  State is unlocked
-     * @param[in] prodIndex  Product-index
+     * @param[in] prodId     Product-identifier
      * @param[in] prodFile   Product-file
      */
     void addProdFile(
-            const ProdId prodIndex,
-            SndProdFile     prodFile) {
+            const ProdId prodId,
+            SndProdFile  prodFile) {
         Guard guard(mutex);
 
-        prodFiles.pushBack(prodIndex, prodFile);
+        prodFiles.pushBack(prodId, prodFile);
         ensureRoom<SndProdFile>(openFiles, maxOpenFiles);
-        openFiles.pushBack(prodIndex, prodFile);
-        prodQueue.push(prodIndex);
+        openFiles.pushBack(prodId, prodFile);
+        prodQueue.push(prodId);
         cond.notify_all();
     }
 
@@ -575,23 +575,23 @@ class PubRepo::Impl final : public Repository::Impl
      * the tail-end of the open-files list.
      *
      * @pre                  State is locked
-     * @param[in] prodIndex  Product-index of product-entry
+     * @param[in] prodId     Product identifier of product-entry
      * @return               Corresponding product-file. Will test false if it
      *                       doesn't exist.
      */
-    SndProdFile getProdFile(const ProdId prodIndex)
+    SndProdFile getProdFile(const ProdId prodId)
     {
         LOG_ASSERT(!mutex.try_lock());
 
-        auto prodFile = openFiles.find(prodIndex);
+        auto prodFile = openFiles.find(prodId);
 
         if (!prodFile) {
-            prodFile = prodFiles.find(prodIndex);
+            prodFile = prodFiles.find(prodId);
 
             if (prodFile) {
                 prodFile.open(rootFd);
                 ensureRoom<SndProdFile>(openFiles, maxOpenFiles);
-                openFiles.pushBack(prodIndex, prodFile);
+                openFiles.pushBack(prodId, prodFile);
             }
         }
 
@@ -606,7 +606,7 @@ public:
         , prodFiles()
         , watcher(this->rootPathname) // Is absolute pathname
         , prodQueue()
-        , prodIndex()
+        , prodId()
     {
         if (maxOpenFiles <= 0)
             throw INVALID_ARGUMENT("maxOpenFiles=" + std::to_string(maxOpenFiles));
@@ -657,7 +657,7 @@ public:
     ProdInfo getNextProd()
     {
         ProdInfo   prodInfo{};
-        const auto prodIndex = getNextIndex();
+        const auto prodId = getNextId();
 
         try {
             Watcher::WatchEvent event;
@@ -666,13 +666,13 @@ public:
             const auto prodName = event.pathname.substr(rootPrefixLen);
 
             SndProdFile prodFile(rootFd, prodName, segSize);
-            addProdFile(prodIndex, prodFile);
+            addProdFile(prodId, prodFile);
 
-            prodInfo = ProdInfo(prodIndex, prodName, prodFile.getProdSize());
+            prodInfo = ProdInfo(prodId, prodName, prodFile.getProdSize());
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't get product-file corresponding to "
-                    "product-index " + prodIndex.to_string()));
+                    "product ID " + prodId.to_string()));
         }
 
         return prodInfo;
@@ -681,21 +681,21 @@ public:
     /**
      * Returns the product-information corresponding to a product-index.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] prodId     Product identifier
      * @return               Corresponding product-information. Will test false if no such
      *                       information exists.
      */
-    ProdInfo getProdInfo(const ProdId prodIndex)
+    ProdInfo getProdInfo(const ProdId prodId)
     {
         Guard      guard{mutex};
-        const auto prodFile = getProdFile(prodIndex);
+        const auto prodFile = getProdFile(prodId);
 
         if (!prodFile) {
             static const ProdInfo prodInfo{};
             return prodInfo;
         }
 
-        return ProdInfo(prodIndex, prodFile.getPathname(),
+        return ProdInfo(prodId, prodFile.getPathname(),
                 prodFile.getProdSize());
     }
 
@@ -710,7 +710,7 @@ public:
     DataSeg getDataSeg(const DataSegId segId)
     {
         Guard      guard{mutex};
-        const auto prodFile = getProdFile(segId.prodIndex);
+        const auto prodFile = getProdFile(segId.prodId);
 
         if (!prodFile) {
             static const DataSeg dataSeg{};
@@ -771,23 +771,23 @@ class SubRepo::Impl final : public Repository::Impl
      *   - At the tail-end of the open-files list
      *
      * @pre                  State is locked
-     * @param[in] prodIndex  Product-index
+     * @param[in] prodId     Product identifier
      * @return               Product-file corresponding to product-index. Will test false if it
      *                       doesn't exist.
      */
-    RcvProdFile getProdFile(const ProdId prodIndex)
+    RcvProdFile getProdFile(const ProdId prodId)
     {
         LOG_ASSERT(!mutex.try_lock());
 
-        RcvProdFile prodFile = openFiles.find(prodIndex);
+        RcvProdFile prodFile = openFiles.find(prodId);
 
         if (!prodFile) {
-            prodFile = prodFiles.find(prodIndex);
+            prodFile = prodFiles.find(prodId);
 
             if (prodFile) {
                 ensureRoom<RcvProdFile>(openFiles, maxOpenFiles);
                 prodFile.open(rootFd);
-                openFiles.pushBack(prodIndex, prodFile);
+                openFiles.pushBack(prodId, prodFile);
             }
         }
 
@@ -798,16 +798,16 @@ class SubRepo::Impl final : public Repository::Impl
      * Adds a new product-file.
      *
      * @pre                  State is locked
-     * @param[in] prodIndex  Product-index
+     * @param[in] prodId     Product identifier
      * @param[in] prodFile   Product-file
      */
     void addProdFile(
-            const ProdId prodIndex,
-            RcvProdFile     prodFile) {
+            const ProdId prodId,
+            RcvProdFile  prodFile) {
         LOG_ASSERT(!mutex.try_lock());
 
-        prodFiles.pushBack(prodIndex, prodFile);
-        openFiles.pushBack(prodIndex, prodFile);
+        prodFiles.pushBack(prodId, prodFile);
+        openFiles.pushBack(prodId, prodFile);
     }
 
     /**
@@ -817,21 +817,21 @@ class SubRepo::Impl final : public Repository::Impl
      *   - At the tail-end of the open-files list
      *
      * @pre                  State is unlocked
-     * @param[in] prodIndex  Product-index
+     * @param[in] prodId     Product identifier
      * @param[in] prodSize   Size of product in bytes
      * @return               Product-file corresponding to product-index
      */
     RcvProdFile getProdFile(
-            const ProdId prodIndex,
-            const ProdSize  prodSize) {
+            const ProdId   prodId,
+            const ProdSize prodSize) {
         Guard guard{mutex};
-        auto  prodFile = getProdFile(prodIndex);
+        auto  prodFile = getProdFile(prodId);
 
         if (!prodFile) {
-            LOG_DEBUG("Creating product " + prodIndex.to_string());
+            LOG_DEBUG("Creating product " + prodId.to_string());
 
-            prodFile = RcvProdFile(rootFd, prodIndex, prodSize, segSize);
-            addProdFile(prodIndex, prodFile);
+            prodFile = RcvProdFile(rootFd, prodId, prodSize, segSize);
+            addProdFile(prodId, prodFile);
         }
 
         return prodFile;
@@ -895,7 +895,7 @@ public:
      */
     bool save(const DataSeg dataSeg)
     {
-        auto       prodFile = getProdFile(dataSeg.getId().prodIndex, dataSeg.getProdSize());
+        auto       prodFile = getProdFile(dataSeg.getId().prodId, dataSeg.getProdSize());
         const auto wasSaved = prodFile.save(dataSeg);
 
         if (wasSaved && prodFile.isComplete())
@@ -922,16 +922,16 @@ public:
     }
 
     /**
-     * Returns information on a product, if it exists, given the product's index.
+     * Returns information on a product, if it exists, given the product's ID.
      *
-     * @param prodIndex  Product's index
+     * @param prodId     Product identifier
      * @return           Product information. Will test false if no such product
      *                   exists.
      */
-    ProdInfo getProdInfo(const ProdId prodIndex)
+    ProdInfo getProdInfo(const ProdId prodId)
     {
         Guard guard{mutex};
-        auto  prodFile = getProdFile(prodIndex);
+        auto  prodFile = getProdFile(prodId);
 
         if (!prodFile) {
             static const ProdInfo prodInfo{};
@@ -952,7 +952,7 @@ public:
     {
         auto        offset = segId.offset;
         Guard       guard{mutex};
-        RcvProdFile prodFile = getProdFile(segId.prodIndex);
+        RcvProdFile prodFile = getProdFile(segId.prodId);
 
         if (!prodFile) {
             static const DataSeg dataSeg{};
@@ -966,14 +966,14 @@ public:
     /**
      * Indicates if information on a data-product exists.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] prodId     Product identifier
      * @retval    `true`     Product information does exist
      * @retval    `false`    Product information does not exist
      */
-    bool exists(const ProdId prodIndex)
+    bool exists(const ProdId prodId)
     {
         Guard       guard{mutex};
-        RcvProdFile prodFile = getProdFile(prodIndex);
+        RcvProdFile prodFile = getProdFile(prodId);
 
         return prodFile && prodFile.getProdInfo();
     }
@@ -981,14 +981,14 @@ public:
     /**
      * Indicates if a data-segment exists.
      *
-     * @param[in] prodIndex  Product index
+     * @param[in] segId      Data-segment identifier
      * @retval    `true`     Data-segment does exist
      * @retval    `false`    Data-segment does not exist
      */
     bool exists(const DataSegId segId)
     {
         Guard       guard{mutex};
-        RcvProdFile prodFile = getProdFile(segId.prodIndex);
+        RcvProdFile prodFile = getProdFile(segId.prodId);
 
         return prodFile && prodFile.exists(segId.offset);
     }
@@ -1019,8 +1019,8 @@ ProdInfo SubRepo::getNextProd() const {
     return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
-bool SubRepo::exists(const ProdId prodIndex) const {
-    return static_cast<Impl*>(pImpl.get())->exists(prodIndex);
+bool SubRepo::exists(const ProdId prodId) const {
+    return static_cast<Impl*>(pImpl.get())->exists(prodId);
 }
 
 bool SubRepo::exists(const DataSegId segId) const {

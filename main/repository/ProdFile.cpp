@@ -384,7 +384,7 @@ bool SndProdFile::exists(ProdSize offset) const {
  */
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
-    ProdId         prodIndex;  ///< Product index
+    ProdId            prodId;     ///< Product indentifier
     std::vector<bool> haveSegs;   ///< Bitmap of received data-segments
     ProdSize          segCount;   ///< Number of received data-segments
     bool              pathIsName; ///< File pathname is product name?
@@ -424,9 +424,9 @@ class RcvProdFile::Impl final : public ProdFile::Impl
         }
     }
 
-    static std::string getIndexPath(const ProdId prodIndex)
+    static std::string getIndexPath(const ProdId prodId)
     {
-        const auto  index = (ProdId::Type)prodIndex;
+        const auto  index = (ProdId::Type)prodId;
         char        buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
         char*       cp = buf;
 
@@ -445,18 +445,18 @@ public:
      *
      * @param[in] rootFd           File descriptor open on root directory of
      *                             repository
-     * @param[in] prodIndex        Product index
+     * @param[in] prodId           Product identifier
      * @param[in] prodSize         Product size in bytes
      * @param[in] segSize          Canonical segment size in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
      * @throws    SystemError      `open()` or `ftruncate()` failure
      */
     Impl(   const int       rootFd,
-            const ProdId prodIndex,
+            const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize)
-        : ProdFile::Impl{prodIndex.to_string(), prodSize, segSize}
-        , prodIndex(prodIndex)
+        : ProdFile::Impl{prodId.to_string(), prodSize, segSize}
+        , prodId(prodId)
         , haveSegs(numSegs, false)
         , segCount{0}
         , pathIsName(false)
@@ -508,7 +508,7 @@ public:
         bool  success; // This item was written to the product-file?
         Guard guard(mutex);
 
-        ProdInfo expected(prodIndex, prodInfo.getName(), prodSize);
+        ProdInfo expected(prodId, prodInfo.getName(), prodSize);
         if (!(prodInfo == expected))
             throw INVALID_ARGUMENT("Actual prodInfo, " + prodInfo.to_string() +
                     ", doesn't match expected, " + expected.to_string());
@@ -579,7 +579,7 @@ public:
 
     ProdInfo getProdInfo() {
         Guard guard{mutex};
-        return ProdInfo(prodIndex, pathname, prodSize);
+        return ProdInfo(prodId, pathname, prodSize);
     }
 };
 
@@ -589,10 +589,10 @@ RcvProdFile::RcvProdFile() noexcept =default;
 
 RcvProdFile::RcvProdFile(
         const int       rootFd,
-        const ProdId prodIndex,
+        const ProdId    prodId,
         const ProdSize  prodSize,
         const SegSize   segSize)
-    : ProdFile(std::make_shared<Impl>(rootFd, prodIndex, prodSize, segSize)) {
+    : ProdFile(std::make_shared<Impl>(rootFd, prodId, prodSize, segSize)) {
 }
 
 void RcvProdFile::open(const int rootFd) const {

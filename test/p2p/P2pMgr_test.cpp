@@ -57,7 +57,7 @@ protected:
     static constexpr ProdSize PROD_SIZE = 1000;
     SockAddr         pubP2pSrvrAddr;
     SockAddr         localSrvrAddr;
-    ProdId        prodIndex;
+    ProdId           prodId;
     char             prodData[PROD_SIZE];
     ProdInfo         prodInfo;
     std::atomic<int> subscriberCount;
@@ -71,9 +71,9 @@ protected:
         , state(INIT)
         , pubP2pSrvrAddr("127.0.0.1:38800")
         , localSrvrAddr("127.0.0.1:0")
-        , prodIndex(1)
+        , prodId(1)
         , prodData()
-        , prodInfo(prodIndex, "product", PROD_SIZE)
+        , prodInfo(prodId, "product", PROD_SIZE)
         , subscriberCount(0)
         , numProdInfos(0)
         , numDataSegs(0)
@@ -111,9 +111,9 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
 
     void notify(P2pMgr::Pimpl p2pMgr) {
-        p2pMgr->notify(prodIndex);
+        p2pMgr->notify(prodId);
         for (ProdSize offset = 0; offset < sizeof(prodData); offset += SEG_SIZE) {
-            DataSegId dataSegId(prodIndex, offset);
+            DataSegId dataSegId(prodId, offset);
             p2pMgr->notify(dataSegId);
         }
     }
@@ -153,13 +153,13 @@ public:
     void waitForPeer() {}
 
     bool shouldRequest(const ProdId index) override {
-        EXPECT_TRUE(index == this->prodIndex);
+        EXPECT_TRUE(index == this->prodId);
         orState(PROD_NOTICE_RCVD);
         return true;
     }
 
     bool shouldRequest(const DataSegId segId) override {
-        DataSegId expect(prodIndex, segId.offset);
+        DataSegId expect(prodId, segId.offset);
         EXPECT_EQ(expect, segId);
         if (segId.offset+SEG_SIZE >= prodInfo.getSize())
             orState(SEG_NOTICE_RCVD);
@@ -167,9 +167,9 @@ public:
     }
 
     ProdInfo recvRequest(const ProdId request) override {
-        //ASSERT_EQ(prodIndex, request);     // Doesn't compile
-        //ASSERT_TRUE(prodIndex == request); // Doesn't compile
-        EXPECT_TRUE(prodIndex == request);
+        //ASSERT_EQ(prodId, request);     // Doesn't compile
+        //ASSERT_TRUE(prodId == request); // Doesn't compile
+        EXPECT_TRUE(prodId == request);
         orState(PROD_REQUEST_RCVD);
         return prodInfo;
     }

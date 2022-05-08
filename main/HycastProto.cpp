@@ -53,7 +53,7 @@ std::string DataSegId::to_string(const bool withName) const
     String string;
     if (withName)
         string += "DataSegId";
-    return string + "{prodIndex=" + prodIndex.to_string() +
+    return string + "{prodId=" + prodId.to_string() +
             ", offset=" + std::to_string(offset) + "}";
 }
 

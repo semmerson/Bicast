@@ -39,7 +39,7 @@ class TypedefTest : public ::testing::Test {
 protected:
     // Objects declared here can be used by all tests in the test case for Typedef.
     void func(
-            const ProdIndex  prodIndex,
+            const ProdIndex  prodId,
             const ChunkIndex chunkIndex)
     {}
 };

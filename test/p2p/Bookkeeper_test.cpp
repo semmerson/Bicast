@@ -29,7 +29,7 @@ protected:
     SockAddr           pubAddr;
     PubPeerSrvr::Pimpl pubPeerSrvr;
     std::thread        pubPeerSrvrThrd;
-    ProdId          prodIndex;
+    ProdId             prodId;
     DataSegId          segId;
     Peer::Pimpl        subPeer1;
     Peer::Pimpl        subPeer2;
@@ -39,8 +39,8 @@ protected:
         : pubAddr{"localhost:38800"}
         , pubPeerSrvr(PubPeerSrvr::create(pubAddr))
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
-        , prodIndex{1}
-        , segId(prodIndex, maxSegSize) // Second data-segment
+        , prodId{1}
+        , segId(prodId, maxSegSize) // Second data-segment
         , subPeer1(Peer::create(*this, pubAddr))
         , subPeer2(Peer::create(*this, pubAddr))
     {
@@ -98,8 +98,8 @@ public:
     }
 
     void missed(
-            const ProdId prodIndex,
-            const SockAddr  rmtAddr) {
+            const ProdId   prodId,
+            const SockAddr rmtAddr) {
     }
 
     void missed(
@@ -107,7 +107,7 @@ public:
             const SockAddr  rmtAddr) {
     }
 
-    void notify(const ProdId prodIndex) {
+    void notify(const ProdId prodId) {
     }
 
     void notify(const DataSegId dataSegId) {
@@ -161,18 +161,18 @@ TEST_F(BookkeeperTest, ShouldRequest)
 
     bookkeeper->add(subPeer1);
 
-    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, prodIndex));
+    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, prodId));
     EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, segId));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, prodId), LogicError);
     EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, segId), LogicError);
 
     ASSERT_TRUE(bookkeeper->add(subPeer2));
-    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, prodIndex));
+    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, prodId));
     EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, segId));
     ASSERT_FALSE(bookkeeper->add(subPeer2));
 
-    ASSERT_TRUE(bookkeeper->received(subPeer1, prodIndex));
+    ASSERT_TRUE(bookkeeper->received(subPeer1, prodId));
     ASSERT_TRUE(bookkeeper->received(subPeer1, segId));
 
     auto worstPeer = bookkeeper->getWorstPeer();
@@ -182,7 +182,7 @@ TEST_F(BookkeeperTest, ShouldRequest)
     EXPECT_TRUE(bookkeeper->erase(subPeer1));
     EXPECT_FALSE(bookkeeper->erase(subPeer1));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, prodIndex), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, prodId), LogicError);
     EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, segId), LogicError);
 }
 
@@ -207,7 +207,7 @@ TEST_F(BookkeeperTest, DataExchange)
     srvrThread.join();
 
     // Start an exchange
-    pubPeerSet.notify(prodIndex);
+    pubPeerSet.notify(prodId);
     pubPeerSet.notify(segId);
 
     // Wait for the exchange to complete

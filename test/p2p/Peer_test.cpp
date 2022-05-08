@@ -35,8 +35,8 @@ protected:
     SockAddr          pubAddr;
     std::mutex        mutex;
     Cond              cond;
-    ProdId         prodIndexes[2];
-    ProdId         prodIndex;
+    ProdId            prodIds[2];
+    ProdId            prodId;
     ProdSize          prodSize;
     SegSize           segSize;
     ProdInfo          prodInfos[2];
@@ -59,8 +59,8 @@ protected:
         , pubAddr("localhost:38800")
         , mutex()
         , cond()
-        , prodIndexes()
-        , prodIndex()
+        , prodIds()
+        , prodId()
         , prodSize(1000000)
         , segSize(sizeof(memData))
         , prodInfos()
@@ -84,13 +84,13 @@ protected:
         ::memset(memData, 0xbd, segSize);
 
         for (int i = 0; i < 2; ++i) {
-            prodIndexes[i] = ProdId(i);
-            prodInfos[i] = ProdInfo(prodIndexes[i], prodNames[i], prodSize);
-            segIds[i] = DataSegId(prodIndexes[0], i*sizeof(memData));
+            prodIds[i] = ProdId(i);
+            prodInfos[i] = ProdInfo(prodIds[i], prodNames[i], prodSize);
+            segIds[i] = DataSegId(prodIds[0], i*sizeof(memData));
             dataSegs[i] = DataSeg(segIds[i], prodSize, memData);
         }
 
-        prodIndex = prodIndexes[0];
+        prodId = prodIds[0];
         prodInfo = prodInfos[0];
         segId = segIds[0];
         dataSeg = dataSegs[0];
@@ -133,7 +133,7 @@ public:
     bool recvNotice(const ProdId notice, SockAddr rmtAddr) override
     {
         LOG_TRACE;
-        EXPECT_EQ(prodIndexes[prodNoticeCount++], notice);
+        EXPECT_EQ(prodIds[prodNoticeCount++], notice);
         orState(PROD_NOTICE_RCVD);
         return true;
     }
@@ -152,7 +152,7 @@ public:
                          SockAddr        rmtAddr) override
     {
         LOG_TRACE;
-        EXPECT_EQ(prodIndexes[prodRequestCount], request);
+        EXPECT_EQ(prodIds[prodRequestCount], request);
         orState(PROD_REQUEST_RCVD);
         auto prodInfo = (skipping && prodRequestCount == 0)
                 ? ProdInfo{}
@@ -206,10 +206,10 @@ public:
         orState(DATA_SEG_RCVD);
     }
 
-    void missed(const ProdId prodIndex, SockAddr rmtAddr) override {
+    void missed(const ProdId prodId, SockAddr rmtAddr) override {
         static int i = 0;
-        LOG_DEBUG("i=%d, prodIndex=%s", i, prodIndex.to_string().data());
-        ASSERT_EQ(prodIndexes[i++], prodIndex);
+        LOG_DEBUG("i=%d, prodId=%s", i, prodId.to_string().data());
+        ASSERT_EQ(prodIds[i++], prodId);
         orState(PROD_INFO_MISSED);
     }
 
@@ -243,7 +243,7 @@ public:
 
     bool notify(Peer::Pimpl pubPeer) {
         // Start an exchange
-        return pubPeer->notify(prodIndex) && pubPeer->notify(segId);
+        return pubPeer->notify(prodId) && pubPeer->notify(segId);
     }
 
     bool loopNotify(Peer::Pimpl pubPeer) {
@@ -441,10 +441,10 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             // `pubPeer` is running
 
             // Start an exchange
-            ASSERT_TRUE(pubPeer->notify(prodIndexes[0]));
+            ASSERT_TRUE(pubPeer->notify(prodIds[0]));
             ASSERT_TRUE(pubPeer->notify(segIds[0]));
             ASSERT_TRUE(pubPeer->notify(segIds[1]));
-            ASSERT_TRUE(pubPeer->notify(prodIndexes[1]));
+            ASSERT_TRUE(pubPeer->notify(prodIds[1]));
 
             // Wait for the exchange to complete
             const auto done = static_cast<State>(

@@ -256,22 +256,22 @@ public:
 /// Data-segment identifier
 struct DataSegId : public XprtAble
 {
-    ProdId prodIndex; ///< Product index
-    SegOffset offset;    ///< Offset of data segment in bytes
+    ProdId    prodId; ///< Product index
+    SegOffset offset; ///< Offset of data segment in bytes
 
     DataSegId()
-        : prodIndex{0}
+        : prodId{0}
         , offset{0}
     {}
 
-    DataSegId(const ProdId prodIndex,
+    DataSegId(const ProdId    prodId,
               const SegOffset offset)
-        : prodIndex{prodIndex}
+        : prodId{prodId}
         , offset{offset}
     {}
 
     inline bool operator==(const DataSegId rhs) const {
-        return (prodIndex == rhs.prodIndex) && (offset == rhs.offset);
+        return (prodId == rhs.prodId) && (offset == rhs.offset);
     }
 
     inline bool operator!=(const DataSegId rhs) const {
@@ -282,11 +282,11 @@ struct DataSegId : public XprtAble
 
     size_t hash() const noexcept {
         static std::hash<SegOffset> offHash;
-        return prodIndex.hash() ^ offHash(offset);
+        return prodId.hash() ^ offHash(offset);
     }
 
     bool write(Xprt xprt) const override {
-        auto success = prodIndex.write(xprt);
+        auto success = prodId.write(xprt);
         if (success) {
             success = xprt.write(offset);
         }
@@ -294,7 +294,7 @@ struct DataSegId : public XprtAble
     }
 
     bool read(Xprt xprt) override {
-        auto success = prodIndex.read(xprt);
+        auto success = prodId.read(xprt);
         if (success)  {
             success = xprt.read(offset);
         }
@@ -509,9 +509,9 @@ public:
         , tracker(tracker)
     {}
 
-    explicit DatumId(const ProdId prodIndex) noexcept
+    explicit DatumId(const ProdId prodId) noexcept
         : id(Id::PROD_INDEX)
-        , prodId(prodIndex)
+        , prodId(prodId)
     {}
 
     explicit DatumId(const DataSegId dataSegId) noexcept
@@ -530,8 +530,8 @@ public:
         return id;
     }
 
-    bool equals(const ProdId prodIndex) {
-        return id == Id::PROD_INDEX && this->prodId == prodIndex;
+    bool equals(const ProdId prodId) {
+        return id == Id::PROD_INDEX && this->prodId == prodId;
     }
 
     bool equals(const DataSegId dataSegId) {
@@ -635,8 +635,8 @@ public:
 namespace std {
     template<>
     struct hash<hycast::ProdId> {
-        size_t operator()(const hycast::ProdId& prodIndex) const noexcept {
-            return prodIndex.hash();
+        size_t operator()(const hycast::ProdId& prodId) const noexcept {
+            return prodId.hash();
         }
     };
 

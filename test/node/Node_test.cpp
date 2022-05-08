@@ -48,7 +48,7 @@ protected:
     Mutex           mutex;
     Cond            cond;
     char            prodData[PROD_SIZE];
-    const ProdId prodIndex;
+    const ProdId    prodId;
     const String    prodName;
     const String    testRoot;
     const String    pubRepoRoot;
@@ -70,15 +70,15 @@ protected:
         : mutex()
         , cond()
         , prodData{}
-        , prodIndex{1}
+        , prodId{1}
         , prodName{"foo/bar/product.dat"}
         , testRoot("/tmp/Node_test")
         , pubRepoRoot(testRoot + "/pub")
         , subRepoRoot(testRoot + "/sub")
         , maxOpenFiles(25)
         , filePath(testRoot + "/" + prodName)
-        , prodInfo(prodIndex, prodName, PROD_SIZE)
-        , segId(prodIndex, 0)
+        , prodInfo(prodId, prodName, PROD_SIZE)
+        , segId(prodId, 0)
         , mcastAddr("232.1.1.1:3880")
         , loAddr{"127.0.0.1"}
         , pubP2pAddr{loAddr, 0}
@@ -192,7 +192,7 @@ TEST_F(NodeTest, Sending)
             ASSERT_TRUE(NodeTest::prodInfo == prodInfo);
 
             for (SegOffset offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
-                DataSegId  segId(prodIndex, offset);
+                DataSegId  segId(prodId, offset);
                 const auto dataSeg = subNode->getDataSeg(segId);
                 const auto size = DataSeg::size(PROD_SIZE, offset);
                 ASSERT_EQ(size, dataSeg.getSize());

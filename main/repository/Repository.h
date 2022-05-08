@@ -94,7 +94,7 @@ public:
     /**
      * Returns information on a product.
      *
-     * @param[in] prodIndex  Index of product
+     * @param[in] prodId     Product identifier
      * @return               Information on product. Will test false if no such
      *                       information exists.
      * @threadsafety         Safe
@@ -102,7 +102,7 @@ public:
      * @cancellationpoint    No
      * @see `ProdInfo::operator bool()`
      */
-    ProdInfo getProdInfo(const ProdId prodIndex) const;
+    ProdInfo getProdInfo(const ProdId prodId) const;
 
     /**
      * Returns a data-segment
@@ -243,11 +243,11 @@ public:
     /**
      * Indicates if product-information exists.
      *
-     * @param[in] prodIndex  Index of the product in question
+     * @param[in] prodId     Product identifier
      * @retval    `false`    Product-information doesn't exist
      * @retval    `true`     Product-information does exist
      */
-    bool exists(const ProdId prodIndex) const;
+    bool exists(const ProdId prodId) const;
 
     /**
      * Indicates if a data-segment exists.

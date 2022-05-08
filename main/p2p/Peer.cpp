@@ -568,7 +568,7 @@ class SubPeerImpl final : public PeerImpl
          *
          * @param[in] p2pMgr       Subscriber's P2P manager
          * @param[in] rmtSockAddr  Socket address of the remote peer
-         * @see SubP2pNode::missed(ProdIndex, SockAddr)
+         * @see SubP2pNode::missed(ProdId, SockAddr)
          * @see SubP2pNode::missed(DataSegId, SockAddr)
          */
         void drainTo(
