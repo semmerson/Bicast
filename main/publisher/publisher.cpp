@@ -22,21 +22,12 @@
 
 #include "config.h"
 
-#include "error.h"
-#include "HycastProto.h"
 #include "Node.h"
-#include "SockAddr.h"
+#include "SubInfo.h"
 #include "ThreadException.h"
 
-#include <atomic>
-#include <cstring>
-#include <cstdio>
-#include <exception>
 #include <inttypes.h>
-#include <iostream>
-#include <limits.h>
 #include <semaphore.h>
-#include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
 using namespace hycast;
@@ -66,7 +57,7 @@ struct RunPar {
         , maxSegSize(1444)
         , srvr(SockAddr("0.0.0.0:38800"), 256)
         , mcast(SockAddr("232.1.1.1:38800"), InetAddr())
-        , p2p(SockAddr(), 8, 8, 100, 60000)
+        , p2p(SockAddr(), 8, 8, 100, 60)
         , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
     {
         mcast.srcAddr = UdpSock(mcast.dstAddr).getLclAddr().getInetAddr();
@@ -74,74 +65,33 @@ struct RunPar {
     }
 };
 
-// Subscription information transmitted to each subscriber
-struct SubInfo : public XprtAble {
-    uint16_t  version;    ///< Protocol version
-    String    feedName;   ///< Name of data-product stream
-    SegSize   maxSegSize; ///< Maximum size of a data-segment in bytes
-    struct Mcast {
-        SockAddr dstAddr; ///< Multicast destination address
-        InetAddr srcAddr; ///< Multicast source address
-    }         mcast;
-    struct P2p {
-        SockAddr addr;    ///< Address of publisher's P2P server
-        Tracker  tracker; ///< Addresses of subscriber's P2P servers
-    }         p2p;
-    uint32_t  keepTime;   ///< Duration to keep data-products in seconds
-    bool write(Xprt xprt) const {
-        return xprt.write(version) &&
-                xprt.write<uint8_t>(feedName) &&
-                xprt.write(maxSegSize) &&
-                mcast.dstAddr.write(xprt) &&
-                mcast.srcAddr.write(xprt) &&
-                p2p.addr.write(xprt) &&
-                p2p.tracker.write(xprt) &&
-                xprt.write(keepTime);
-    }
-    bool read(Xprt xprt) {
-        return xprt.read(version) &&
-                xprt.read<uint8_t>(feedName) &&
-                xprt.read(maxSegSize) &&
-                mcast.dstAddr.read(xprt) &&
-                mcast.srcAddr.read(xprt) &&
-                p2p.addr.read(xprt) &&
-                p2p.tracker.read(xprt) &&
-                xprt.read(keepTime);
-    }
-};
-
-static sem_t             sem;       ///< Semaphore for state changes
+static sem_t             sem;       ///< Semaphore for async-signal-safe state changes
 static std::atomic<bool> stop;      ///< Should the program stop?
 static ThreadEx          threadEx;  ///< Exception thrown by a thread
 static RunPar            runPar;    ///< Runtime parameters:
 const static RunPar      defRunPar; ///< Default runtime parameters
-static PubNode::Pimpl    pubNode{}; ///< Data-product publishing node
+static PubNode::Pimpl    pubNode;   ///< Data-product publishing node
 static SubInfo           subInfo;   ///< Subscription information passed to subscribers
-static Tracker           tracker;   ///< Addresses of subscriber's P2P servers
 
 static void usage()
 {
     std::cerr <<
 "Usage:\n"
 "    " << log_getName() << " -h\n"
-"    " << log_getName() << "[-c <configFile>] [-e <evalTime>] [-f <name>] [-i <pubAddr>]\n"
-"        [-k <keepTime>] [-L <trackerSize>] [-l <level>] [-M <mcastAddr>]\n"
-"        [-m <maxPeers>] [-o <maxOpenFiles>] [-p <p2pAddr>] [-Q <listenSize>]\n"
-"        [-q <listenSize>] [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>]\n"
+"    " << log_getName() << " [-c <configFile>] [-e <evalTime>] [-f <name>] [-k <keepTime>]\n"
+"        [-l <level>] [-M <mcastAddr>] [-m <maxPeers>] [-o <maxOpenFiles>]\n"
+"        [-P <pubAddr>] [-p <p2pAddr>] [-Q <listenSize>] [-q <listenSize>]\n"
+"        [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>] [-t <trackerSize>]\n"
 "where:\n"
 "    -h                Print this help message on standard error, then exit.\n"
 "\n"
 "    -c <configFile>   Pathname of configuration-file. Overrides previous\n"
 "                      arguments; overridden by subsequent ones.\n"
-"    -e <evalTime>     Peer evaluation duration, in ms, before replacing poorest\n"
-"                      performer. Default is " << defRunPar.p2p.evalTime << ".\n"
+"    -e <evalTime>     Peer evaluation duration, in seconds, before replacing\n"
+"                      poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
 "    -f <name>         Name of data-product feed. Default is \"" << defRunPar.feedName << "\".\n"
-"    -i <pubAddr>      Socket address of the publisher (not the P2P server).\n"
-"                      Default is \"" << defRunPar.srvr.addr << "\".\n"
 "    -k <keepTime>     How long to keep data-products in seconds. Default is\n" <<
 "                      " << defRunPar.repo.keepTime << " s.\n"
-"    -L <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
-"                      " << defRunPar.p2p.trackerSize << ".\n"
 "    -l <level>        Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
@@ -152,6 +102,8 @@ static void usage()
                        defRunPar.p2p.maxPeers << ".\n"
 "    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
                        defRunPar.repo.maxOpenFiles << ".\n"
+"    -P <pubAddr>      Socket address of the publisher (not its P2P server).\n"
+"                      Default is \"" << defRunPar.srvr.addr << "\".\n"
 "    -p <p2pAddr>      Internet address of local P2P server (not the publisher).\n"
 "                      Default is \"" << defRunPar.p2p.srvr.addr.getInetAddr() << "\".\n"
 "    -Q <listenSize>   Size of publisher's listen() queue (not the P2P server's).\n"
@@ -164,7 +116,116 @@ static void usage()
 "                      interface). Default is \"" << defRunPar.mcast.srcAddr << "\".\n"
 "    -s <maxSegSize>   Maximum size of a data-segment in bytes. Default is " <<
                        defRunPar.maxSegSize << ".\n"
+"    -t <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
+"                      " << defRunPar.p2p.trackerSize << ".\n"
+"\n"
 "SIGUSR2 rotates the logging level.\n";
+}
+
+/**
+ * Tries to decode a scalar (i.e., primitive) value in a YAML map.
+ *
+ * @tparam     T                 Type of scalar value
+ * @param[in]  parent            Map containing the scalar
+ * @param[in]  key               Name of the scalar
+ * @param[out] value             Scalar value
+ * @throw std::invalid_argument  Parent node isn't a map
+ * @throw std::invalid_argument  Subnode with given name isn't a scalar
+ */
+template<class T>
+static void tryDecode(YAML::Node&   parent,
+                      const String& key,
+                      T&            value)
+{
+    if (!parent.IsMap())
+        throw INVALID_ARGUMENT("Node \"" + parent.Tag() + "\" isn't a map");
+
+    auto child = parent[key];
+
+    if (child) {
+        if (!child.IsScalar())
+            throw INVALID_ARGUMENT("Node \"" + key + "\" isn't scalar");
+
+        value = child.as<T>();
+    }
+}
+
+/**
+ * Sets runtime parameters from a configuration-file.
+ *
+ * @param[in] pathname           Pathname of the configuration-file
+ * @throw std::runtime_error     Parser failure
+ */
+static void setFromConfig(const String& pathname)
+{
+    auto node0 = YAML::LoadFile(pathname);
+
+    try {
+        auto node1 = node0["LogLevel"];
+        if (node1)
+            log_setLevel(node1.as<String>());
+
+        tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
+        tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
+
+        node1 = node0["Server"];
+        if (node1) {
+            auto node2 = node1["SockAddr"];
+            if (node2)
+                runPar.srvr.addr = SockAddr(node2.as<String>());
+
+            tryDecode<decltype(runPar.srvr.listenSize)>(node1, "ListenSize",
+                    runPar.srvr.listenSize);
+        }
+
+        node1 = node0["Multicast"];
+        if (node1) {
+            auto node2 = node1["GroupAddr"];
+            if (node2)
+                runPar.mcast.dstAddr = SockAddr(node2.as<String>());
+
+            node2 = node1["Source"];
+            if (node2)
+                runPar.mcast.srcAddr = InetAddr(node2.as<String>());
+        }
+
+        node1 = node0["Peer2Peer"];
+        if (node1) {
+            auto node2 = node1["Server"];
+            if (node2) {
+                auto node2 = node1["InetAddr"];
+                if (node2)
+                    runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
+
+                tryDecode<decltype(runPar.p2p.srvr.listenSize)>(node2, "ListenSize",
+                        runPar.p2p.srvr.listenSize);
+            }
+
+            tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers", runPar.p2p.maxPeers);
+            tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
+                    runPar.p2p.trackerSize);
+
+            node2 = node1["ReplaceTrigger"];
+            if (node2) {
+                auto node3 = node2["Type"];
+                if (node3 && node3.as<String>() == "time")
+                    tryDecode<decltype(runPar.p2p.evalTime)>(node2, "Duration",
+                            runPar.p2p.evalTime);
+            }
+        }
+
+        node1 = node0["Repository"];
+        if (node1) {
+            tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname", runPar.repo.rootDir);
+            tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
+                    runPar.repo.maxOpenFiles);
+            tryDecode<decltype(runPar.repo.keepTime)>(node1, "KeepTime", runPar.repo.keepTime);
+        }
+    } // YAML file loaded
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" +
+                pathname + "\""));
+    }
 }
 
 static void vetRunPar()
@@ -203,117 +264,18 @@ static void vetRunPar()
                 std::to_string(UdpSock::MAX_PAYLOAD) + ")");
 }
 
-/**
- * Tries to decode a scalar (i.e., primitive) value in a YAML map.
- *
- * @tparam     T                 Type of scalar value
- * @param[in]  parent            Map containing the scalar
- * @param[in]  key               Name of the scalar
- * @param[out] value             Scalar value
- * @return     `true`            Success. `value` is set.
- * @return     `false`           No scalar with given name
- * @throw std::invalid_argument  Parent node isn't a map
- * @throw std::invalid_argument  Subnode with given name isn't a scalar
- */
-template<class T>
-static bool tryDecode(YAML::Node&   parent,
-                      const String& key,
-                      T&            value)
+static void init()
 {
-    if (!parent.IsMap())
-        throw INVALID_ARGUMENT("Node \"" + parent.Tag() + "\" isn't a map");
+    if (sem_init(&sem, 0, 0) == -1)
+            throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-    auto child = parent[key];
-
-    if (!child)
-        return false;
-
-    if (!child.IsScalar())
-        throw INVALID_ARGUMENT("Node \"" + key + "\" isn't scalar");
-
-    value = child.as<T>();
-    return true;
-}
-
-/**
- * Sets runtime parameters from a configuration-file.
- *
- * @param[in] pathname           Pathname of the configuration-file
- * @throw std::runtime_error     Parser failure
- */
-static void setFromConfig(const String& pathname)
-{
-    auto node0 = YAML::LoadFile(pathname);
-
-    try {
-        auto node1 = node0["LogLevel"];
-        if (node1)
-            log_setLevel(node1.as<String>());
-
-        tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
-        tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
-
-        node1 = node0["Server"];
-        if (node1) {
-            auto node2 = node1["SockAddr"];
-            if (node2)
-                runPar.srvr.addr = SockAddr(node2.as<String>());
-
-            tryDecode<decltype(runPar.srvr.listenSize)>(node1, "ListenSize",
-                    runPar.srvr.listenSize);
-        }
-
-        node1 = node0["Node"];
-        if (node1) {
-            auto node2 = node1["Multicast"];
-            if (node2) {
-                auto node3 = node2["GroupAddr"];
-                if (node3)
-                    runPar.mcast.dstAddr = SockAddr(node3.as<String>());
-
-                node3 = node2["Source"];
-                if (node3)
-                    runPar.mcast.srcAddr = InetAddr(node3.as<String>());
-            }
-
-            node2 = node1["Peer2Peer"];
-            if (node2) {
-                auto node3 = node2["Server"];
-                if (node3) {
-                    auto node3 = node2["InetAddr"];
-                    if (node3)
-                        runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
-
-                    tryDecode<decltype(runPar.p2p.srvr.listenSize)>(node3, "ListenSize",
-                            runPar.p2p.srvr.listenSize);
-                }
-
-                tryDecode<decltype(runPar.p2p.maxPeers)>(node2, "MaxPeers", runPar.p2p.maxPeers);
-                tryDecode<decltype(runPar.p2p.trackerSize)>(node2, "TrackerSize",
-                        runPar.p2p.trackerSize);
-            }
-
-            node2 = node1["ReplaceTrigger"];
-            if (node2) {
-                auto node3 = node2["Type"];
-                if (node3 && node3.as<String>() == "time")
-                    tryDecode<decltype(runPar.p2p.evalTime)>(node2, "Duration",
-                            runPar.p2p.evalTime);
-            }
-
-            node2 = node1["Repository"];
-            if (node2) {
-                tryDecode<decltype(runPar.repo.rootDir)>(node2, "Pathname", runPar.repo.rootDir);
-                tryDecode<decltype(runPar.repo.maxOpenFiles)>(node2, "MaxOpenFiles",
-                        runPar.repo.maxOpenFiles);
-                tryDecode<decltype(runPar.repo.keepTime)>(node2, "KeepTime", runPar.repo.keepTime);
-            }
-        }
-    } // YAML file loaded
-    catch (const std::exception& ex) {
-        std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" +
-                pathname + "\""));
-    }
+    subInfo.version = 1;
+    subInfo.feedName = runPar.feedName;
+    subInfo.maxSegSize = runPar.maxSegSize;
+    subInfo.mcast.dstAddr = runPar.mcast.dstAddr;
+    subInfo.mcast.srcAddr = runPar.mcast.srcAddr;
+    subInfo.tracker = Tracker(runPar.p2p.trackerSize);
+    subInfo.keepTime = runPar.repo.keepTime;
 }
 
 /**
@@ -333,7 +295,7 @@ static void getRunPars(
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
     int c;
-    while ((c = ::getopt(argc, argv, ":c:e:f:hi:L:l:M:m:o:p:Q:q:r:S:s:y:")) != -1) {
+    while ((c = ::getopt(argc, argv, ":c:e:f:hk:l:M:m:o:P:p:Q:q:r:S:s:t:")) != -1) {
         switch (c) {
         case 'h': {
             usage();
@@ -355,19 +317,11 @@ static void getRunPars(
             if (::sscanf(optarg, "%d", &evalTime) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (evalTime <= 0)
-                throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
             runPar.p2p.evalTime = evalTime;
             break;
         }
         case 'f': {
             runPar.feedName = String(optarg);
-            if (runPar.feedName.empty())
-                throw INVALID_ARGUMENT("Feed name is the empty string");
-            break;
-        }
-        case 'i': {
-            runPar.srvr.addr = SockAddr(optarg);
             break;
         }
         case 'k': {
@@ -375,8 +329,6 @@ static void getRunPars(
             if (::sscanf(optarg, "%" SCNd32, &keepTime) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (keepTime <= 0)
-                throw INVALID_ARGUMENT("How long to keep data-products is not positive");
             runPar.repo.keepTime = keepTime;
             break;
         }
@@ -385,8 +337,6 @@ static void getRunPars(
             if (::sscanf(optarg, "%d", &trackerSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (trackerSize <= 0)
-                throw INVALID_ARGUMENT("Tracker size is not positive");
             runPar.p2p.trackerSize = trackerSize;
             break;
         }
@@ -404,8 +354,6 @@ static void getRunPars(
             if (::sscanf(optarg, "%d", &maxPeers) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (maxPeers <= 0)
-                throw INVALID_ARGUMENT("Maximum number of peers is not positive");
             runPar.p2p.maxPeers = maxPeers;
             break;
         }
@@ -413,11 +361,10 @@ static void getRunPars(
             if (::sscanf(optarg, "%ld", &runPar.repo.maxOpenFiles) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.repo.maxOpenFiles <= 0)
-                throw INVALID_ARGUMENT("Maximum number of open repository files is not positive");
-            if (runPar.repo.maxOpenFiles > sysconf(_SC_OPEN_MAX))
-                throw INVALID_ARGUMENT("Maximum number of open repository files is "
-                        "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
+            break;
+        }
+        case 'P': {
+            runPar.srvr.addr = SockAddr(optarg);
             break;
         }
         case 'p': {
@@ -428,22 +375,16 @@ static void getRunPars(
             if (::sscanf(optarg, "%d", &runPar.srvr.listenSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.srvr.listenSize <= 0)
-                throw INVALID_ARGUMENT("Size of publisher's listen() queue is not positive");
             break;
         }
         case 'q': {
             if (::sscanf(optarg, "%d", &runPar.p2p.srvr.listenSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.srvr.listenSize <= 0)
-                throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
             break;
         }
         case 'r': {
             runPar.repo.rootDir = String(optarg);
-            if (runPar.repo.rootDir.empty())
-                throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
             break;
         }
         case 'S': {
@@ -455,9 +396,6 @@ static void getRunPars(
             if (::sscanf(optarg, "%d", &maxSegSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (maxSegSize <= 0)
-                throw INVALID_ARGUMENT("Maximum size of a data-segment is not positive");
-            runPar.maxSegSize = maxSegSize;
             break;
         }
         case ':': { // Missing option argument. Due to leading ":" in opt-string
@@ -475,23 +413,7 @@ static void getRunPars(
 
     vetRunPar();
     DataSeg::setMaxSegSize(runPar.maxSegSize);
-}
-
-static void init()
-{
-    if (sem_init(&sem, 0, 0) == -1)
-            throw SYSTEM_ERROR("Couldn't initialize semaphore");
-
-    tracker = Tracker(runPar.p2p.trackerSize);
-
-    subInfo.version = 1;
-    subInfo.feedName = runPar.feedName;
-    subInfo.maxSegSize = runPar.maxSegSize;
-    subInfo.mcast.dstAddr = runPar.mcast.dstAddr;
-    subInfo.mcast.srcAddr = runPar.mcast.srcAddr;
-    subInfo.p2p.addr = runPar.p2p.srvr.addr;
-    subInfo.p2p.tracker = tracker;
-    subInfo.keepTime = runPar.repo.keepTime;
+    init(); // Initializes non-command-line variables
 }
 
 /**
@@ -521,10 +443,17 @@ static void setSigHandling()
 
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = SA_RESTART; // Restart system calls if interrupted by a termination signal
+    sigact.sa_flags = 0; // Allow SIGINT and SIGTERM to interrupt system calls
     sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
+
+    // Ensure that the above signals will be caught
+    sigset_t sigset;
+    (void)sigemptyset(&sigset);
+    (void)sigaddset(&sigset, SIGINT);
+    (void)sigaddset(&sigset, SIGTERM);
+    (void)sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
 static void setException(const std::exception& ex)
@@ -547,11 +476,13 @@ static void serve()
 {
     try {
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
+
         for (;;) {
-            auto xprt = Xprt(srvrSock.accept());
+            auto     xprt = Xprt(srvrSock.accept());
             SockAddr p2pSrvrAddr;
+            // Keep consonant with `SubNode::getSubInfo()`
             if (p2pSrvrAddr.read(xprt) && subInfo.write(xprt))
-                tracker.insert(p2pSrvrAddr);
+                subInfo.tracker.insert(p2pSrvrAddr);
         }
     } catch (const std::exception& ex) {
         setException(ex);
@@ -576,7 +507,6 @@ int main(const int    argc,
 
     try {
         getRunPars(argc, argv);
-        init(); // Initializes non-command-line variables
 
         pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
         setSigHandling(); // Catches termination signals

@@ -26,8 +26,11 @@
 #include "Xprt.h"
 
 #include <climits>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <inttypes.h>
+#include <openssl11/openssl/sha.h>
 
 #ifndef _XOPEN_PATH_MAX
     // Not in gcc 4.8.5 for some reason
@@ -48,13 +51,43 @@ bool FeedInfo::read(Xprt xprt) {
             xprt.read(segSize);
 }
 
+/**
+ * Using a  hash value to uniquely identify a product means that the probability of two or more
+ * products having the same hash value in the repository is approximately 1 - e^-(n^2/2d), where n
+ * is the number of products and d is the number of possible hash values. For an 8-byte hash value
+ * and one hour of the feed with the highest rate of products (NEXRAD3: ~106e3/hr as of 2022-05)
+ * this is approximately 3.06e-10. See "Birthday problem" in Wikipedia for details.
+ *
+ * Alternatively, the probability that an incoming product will have the same hash value as an
+ * existing but different product is n/d, which is approximately 5.8e-15 in the above NEXRAD3
+ * case. So there's a 50% chance of a collision in approximately 93e3 years.
+ *
+ * Using the hash of the product name instead of a monotonically increasing unsigned integer means
+ * that 1) product names should be unique; and 2) redundant publishers are more easily supported.
+ */
+ProdId::ProdId(const String& prodName) {
+    union {
+        unsigned char bytes[SHA256_DIGEST_LENGTH]; // 32
+        uint64_t      uint64s[SHA256_DIGEST_LENGTH/sizeof(uint64_t)]; // 4
+    } md;
+    if (SHA256(reinterpret_cast<const unsigned char*>(prodName.data()), prodName.size(), md.bytes)
+            == nullptr)
+        throw RUNTIME_ERROR("Couldn't compute SHA-256 hash");
+    id = md.uint64s[0] ^ md.uint64s[1] ^ md.uint64s[2] ^ md.uint64s[3];
+}
+
+String ProdId::to_string() const noexcept {
+    char buf[sizeof(id)*2+1];
+    ::sprintf(buf, "%0" PRIx64, id);
+    return String(buf);
+}
+
 std::string DataSegId::to_string(const bool withName) const
 {
     String string;
     if (withName)
         string += "DataSegId";
-    return string + "{prodId=" + prodId.to_string() +
-            ", offset=" + std::to_string(offset) + "}";
+    return string + "{prodId=" + prodId.to_string() + ", offset=" + std::to_string(offset) + "}";
 }
 
 String DatumId::to_string() const {
@@ -189,7 +222,9 @@ public:
     }
 };
 
-ProdInfo::ProdInfo() =default;
+ProdInfo::ProdInfo()
+    : pImpl(nullptr)
+{}
 
 ProdInfo::ProdInfo(const ProdId   index,
                    const std::string name,
@@ -234,6 +269,9 @@ bool ProdInfo::read(Xprt xprt) {
 } // namespace
 
 namespace std {
+    string to_string(const hycast::ProdId prodId) {
+        return prodId.to_string();
+    }
     string to_string(const hycast::ProdInfo prodInfo) {
         return prodInfo.to_string();
     }

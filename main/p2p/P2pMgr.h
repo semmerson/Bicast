@@ -71,8 +71,8 @@ public:
             {}
         }         srvr;           ///< P2P server
         int       maxPeers;       ///< Maximum number of connected peers
-        int       trackerSize;    ///< Maximum size of list of P2P server's
-        int       evalTime;       ///< Time interval over which to evaluate performance of peers in ms
+        int       trackerSize;    ///< Maximum size of pool of P2P server addresses
+        int       evalTime;       ///< Time interval for evaluating peer performance in seconds
         RunPar( const SockAddr addr,
                 const int      listenSize,
                 const int      maxPeers,
@@ -94,6 +94,7 @@ public:
      *                          operating system will choose the port.
      * @param[in] maxPeers      Maximum number of subscribing peers
      * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @throw InvalidArgument   `listenSize` is zero
      * @return                  Publisher's P2P manager
      * @see `run()`
@@ -102,7 +103,8 @@ public:
             PubNode&       pubNode,
             const SockAddr peerSrvrAddr,
             unsigned       maxPeers,
-            const unsigned listenSize = 8);
+            const unsigned listenSize,
+            const unsigned evalTime);
 
     /**
      * Destroys.
@@ -151,10 +153,9 @@ public:
     virtual void halt() =0;
 
     /**
-     * Returns the address of this instance's peer-server. This function exists
-     * to support testing.
+     * Returns the address of this instance's P2P-server.
      *
-     * @return  Address of the peer-server
+     * @return  Address of the P2P-server
      */
     virtual SockAddr getSrvrAddr() const =0;
 
@@ -218,21 +219,22 @@ public:
     /**
      * Creates a subscribing P2P manager.
      *
-     * @param[in] subNode   Subscriber's node
-     * @param[in] tracker   Socket addresses of potential peer-servers
-     * @param[in] p2pAddr   Socket address of subscriber's P2P server. IP address *must not* specify
-     *                      all interfaces. If port number is 0, then O/S will choose.
-     * @param[in] maxPeers  Maximum number of peers. Might be adjusted upwards.
-     * @param[in] segSize   Size, in bytes, of canonical data-segment
-     * @return              Subscribing P2P manager
+     * @param[in] subNode      Subscriber's node
+     * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] p2pAddr      Socket address of subscriber's P2P server. IP address *must not* be
+     *                         wildcard. If port number is 0, then O/S will choose.
+     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
+     * @return                 Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static Pimpl create(
             SubNode&       subNode,
             Tracker        tracker,
             const SockAddr p2pAddr,
+            const int      listenSize,
             const unsigned maxPeers,
-            const SegSize  segSize);
+            const unsigned evalTime);
 
     /**
      * Destroys.

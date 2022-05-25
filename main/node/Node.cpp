@@ -33,6 +33,7 @@
 
 #include <semaphore.h>
 #include <semaphore.h>
+#include <SubInfo.h>
 #include <thread>
 
 namespace hycast {
@@ -403,6 +404,7 @@ public:
      *                          interface and not the wildcard. The port number may be 0, in which case
      *                          the operating system will choose the port.
      * @param[in] maxPeers      Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] listenSize    Size of `::listen()` queue
@@ -414,14 +416,15 @@ public:
      */
     PubNodeImpl(
             SockAddr       p2pAddr,
-            unsigned       maxPeers,
+            const unsigned maxPeers,
+            const unsigned evalTime,
             const SockAddr mcastAddr,
             const InetAddr ifaceAddr,
             const unsigned listenSize,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
-        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, listenSize))
+        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, listenSize, evalTime))
         , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
         , repo(PubRepo(repoRoot, maxSegSize, maxOpenFiles))
         , maxSegSize{maxSegSize}
@@ -494,13 +497,14 @@ public:
 PubNode::Pimpl PubNode::create(
         SockAddr       p2pAddr,
         unsigned       maxPeers,
+        const unsigned evalTime,
         const SockAddr mcastAddr,
         const InetAddr ifaceAddr,
         const unsigned listenSize,
         const String&  repoRoot,
         const SegSize  maxSegSize,
         const long     maxOpenFiles) {
-    return Pimpl{new PubNodeImpl(p2pAddr, maxPeers, mcastAddr, ifaceAddr,
+    return Pimpl{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
             listenSize, repoRoot, maxSegSize, maxOpenFiles)};
 }
 
@@ -509,8 +513,9 @@ PubNode::Pimpl PubNode::create(
         const McastPub::RunPar&  mcastRunPar,
         const PubP2pMgr::RunPar& p2pRunPar,
         const PubRepo::RunPar&   repoRunPar) {
-    return create(p2pRunPar.srvr.addr, p2pRunPar.maxPeers, mcastRunPar.dstAddr, mcastRunPar.srcAddr,
-            p2pRunPar.srvr.listenSize, repoRunPar.rootDir, maxSegSize, repoRunPar.maxOpenFiles);
+    return create(p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
+            mcastRunPar.srcAddr, p2pRunPar.srvr.listenSize, repoRunPar.rootDir, maxSegSize,
+            repoRunPar.maxOpenFiles);
 }
 
 /**************************************************************************************************/
@@ -526,6 +531,22 @@ class SubNodeImpl final : public NodeImpl, public SubNode
     std::atomic<unsigned long> numMcastDup;  ///< Number of duplicate multicast PDUs
     std::atomic<unsigned long> numP2pDup;    ///< Number of duplicate P2P PDUs
     McastSub::Pimpl            mcastSub;     ///< Multicast subscriber
+
+    /**
+     * Gets subscriber information from the publisher. Connects to it, sends the socket address
+     * of the local P2P server, reads the subscription information, and closes the connection.
+     *
+     * @param[in]  pubAddr  Socket address of the publisher
+     * @param[out] subInfo  Subscription information
+     */
+    void getSubInfo(
+            const SockAddr pubAddr,
+            SubInfo&       subInfo) {
+        // Keep consonant with `Publisher::serve()`
+        Xprt xprt{TcpClntSock(pubAddr)};
+        p2pMgr->getSrvrAddr().write(xprt);
+        subInfo.read(xprt);
+    }
 
 protected:
     void runMcast()
@@ -544,36 +565,89 @@ protected:
 
 public:
     /**
-     * Constructs.
+     * Constructs from everything it needs to know.
      *
-     * @param[in]     mcastAddr      Socket address of source-specific multicast group
-     * @param[in]     srcAddr        IP address of source
-     * @param[in]     ifaceAddr      IP address of interface to receive multicast on
-     * @param[in]     p2pAddr        Socket address for local P2P server. It shall not specify the
-     *                               wildcard. If port number is zero, then operating system will
-     *                               choose an ephemeral port.
-     * @param[in]     maxPeers       Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in,out] tracker        Pool of remote P2P-servers
-     * @param[in,out] repo           Data-product repository
+     * @param[in] mcastAddr     Socket address of source-specific multicast group
+     * @param[in] srcAddr       IP address of source
+     * @param[in] ifaceAddr     IP address of interface to receive multicast on
+     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
+     *                          wildcard. If port number is zero, then operating system will choose
+     *                          an ephemeral port.
+     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] trackerSize   Maximum number of P2P server addresses to keep
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
      */
     SubNodeImpl(
             const SockAddr mcastAddr,
             const InetAddr srcAddr,
             const InetAddr ifaceAddr,
             const SockAddr p2pAddr,
-            unsigned       maxPeers,
-            Tracker        tracker,
-            const String&  repoRoot,
+            const int      listenSize,
+            const unsigned maxPeers,
+            const unsigned evalTime,
+            const unsigned trackerSize,
+            const String&  repoDir,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
-        : NodeImpl(SubP2pMgr::create(*this, tracker, p2pAddr, maxPeers, maxSegSize))
-        , repo(SubRepo(repoRoot, maxSegSize, maxOpenFiles))
+        : NodeImpl(SubP2pMgr::create(*this, trackerSize, p2pAddr, listenSize, maxPeers, evalTime))
+        , repo(SubRepo(repoDir, maxSegSize, maxOpenFiles))
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}
         , numP2pDup{0}
         , mcastSub{McastSub::create(mcastAddr, srcAddr, ifaceAddr, *this)}
     {}
+
+    /**
+     * Constructs from partial information by contacting the publisher.
+     *
+     * @param[in] pubAddress    Socket address of publisher
+     * @param[in] ifaceAddr     IP address of interface to receive multicast on
+     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
+     *                          wildcard. If port number is zero, then operating system will choose
+     *                          an ephemeral port.
+     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] trackerSize   Maximum size of pool of remote P2P-servers
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     */
+    SubNodeImpl(
+            const SockAddr pubAddr,
+            const InetAddr mcastIface,
+            const SockAddr p2pAddr,
+            const int      listenSize,
+            const unsigned maxPeers,
+            const unsigned evalTime,
+            const unsigned trackerSize,
+            const String&  repoDir,
+            const long     maxOpenFiles)
+        : NodeImpl(SubP2pMgr::create(*this, Tracker{trackerSize}, p2pAddr, listenSize, maxPeers,
+                evalTime))
+        , repo()
+        , numMcastOrig{0}
+        , numP2pOrig{0}
+        , numMcastDup{0}
+        , numP2pDup{0}
+        , mcastSub{} // NB: Unset
+    {
+        SubInfo subInfo(p2pMgr->getTracker());
+
+        getSubInfo(pubAddr, subInfo);
+
+        repo = SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles);
+        numMcastOrig = 0;
+        numP2pOrig = 0;
+        numMcastDup = 0;
+        numP2pDup = 0;
+        mcastSub = McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface,
+                *this);
+    }
 
     ~SubNodeImpl() noexcept {
         try {
@@ -711,15 +785,32 @@ public:
 SubNode::Pimpl SubNode::create(
             const SockAddr mcastAddr,
             const InetAddr srcAddr,
-            const InetAddr ifaceAddr,
+            const InetAddr mcastIface,
             const SockAddr p2pAddr,
-            unsigned       maxPeers,
-            Tracker        tracker,
+            const int      listenSize,
+            const unsigned maxPeers,
+            const unsigned evalTime,
+            const unsigned trackerSize,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles) {
-    return Pimpl{new SubNodeImpl(mcastAddr, srcAddr, ifaceAddr, p2pAddr, maxPeers, tracker,
-            repoRoot, maxSegSize, maxOpenFiles)};
+    return Pimpl{new SubNodeImpl(mcastAddr, srcAddr, mcastIface, p2pAddr, listenSize, maxPeers,
+            evalTime, trackerSize, repoRoot, maxSegSize, maxOpenFiles)};
 }
+
+SubNode::Pimpl SubNode::create(
+        const SockAddr pubAddr,
+        const InetAddr mcastIface,
+        const SockAddr p2pAddr,
+        const int      listenSize,
+        const unsigned maxPeers,
+        const unsigned evalTime,
+        const unsigned trackerSize,
+        const String&  repoRoot,
+        const long     maxOpenFiles) {
+    return Pimpl{new SubNodeImpl(pubAddr, mcastIface, p2pAddr, listenSize, maxPeers, evalTime,
+            trackerSize, repoRoot, maxOpenFiles)};
+}
+
 
 } // namespace

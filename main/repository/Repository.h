@@ -212,24 +212,26 @@ public:
     /**
      * Saves product-information in the corresponding product-file.
      *
-     * @param[in] prodInfo  Product information
-     * @retval    `true`    This item was saved
-     * @retval    `false`   This item was not saved because it already exists
-     * @threadsafety        Safe
-     * @exceptionsafety     Strong guarantee
-     * @cancellationpoint   No
+     * @param[in] prodInfo     Product information
+     * @retval    `true`       This item was saved
+     * @retval    `false`      This item was not saved because it already exists
+     * @throw InvalidArgument  Known product has a different size
+     * @threadsafety           Safe
+     * @exceptionsafety        Strong guarantee
+     * @cancellationpoint      No
      */
     bool save(const ProdInfo prodInfo) const;
 
     /**
      * Saves a data-segment in the corresponding product-file.
      *
-     * @param[in] dataSeg  Data-segment
-     * @retval    `true`   This item was saved
-     * @retval    `false`  This item was not saved because it already exists
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  No
+     * @param[in] dataSeg      Data-segment
+     * @retval    `true`       This item was saved
+     * @retval    `false`      This item was not saved because it already exists
+     * @throw InvalidArgument  Known product has a different size
+     * @threadsafety           Safe
+     * @exceptionsafety        Strong guarantee
+     * @cancellationpoint      No
      */
     bool save(DataSeg dataSeg) const;
 

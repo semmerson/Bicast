@@ -199,26 +199,39 @@ public:
     }
 };
 
+/**
+ * Product identifier.
+ */
 class ProdId : public XprtAble
 {
 public:
-    using Type = uint32_t;
+    /**
+     * The underlying type used to identify a product.
+     *
+     * Using a  hash value to identify a product means that the probability of two or more products
+     * having the same hash value in the repository is approximately 1 - e^-(n^2/2d), where n is the
+     * number of products and d is the number of possible hash values. For an 8-byte hash value and
+     * one hour of the feed with the highest rate of products (NEXRAD3: ~106e3/hr as of 2022-05)
+     * this is approximately 3.06e-10. See "Birthday problem" in Wikipedia for details.
+     *
+     * Alternatively, the probability that an incoming product will have the same hash value as an
+     * existing but different product is n/d, which is approximately 5.8e-15 in the above NEXRAD3
+     * case. So there's a 50% chance of a collision in approximately 93e3 years.
+     *
+     * Using the hash of the product name instead of a monotonically increasing unsigned integer
+     * means that 1) product names should be unique; and 2) redundant publishers are possible.
+     */
+    using Type = uint64_t;
 
 private:
-    Type id;    ///< Index of data-product
+    Type id;    ///< Data-product identifier
 
 public:
-    /**
-     * NB: Implicit construction.
-     * @param[in] id  Data-product identifier
-     */
-    ProdId(const Type id)
-        : id(id)
+    ProdId()
+        : id(0)
     {}
 
-    ProdId()
-        : ProdId(0)
-    {}
+    explicit ProdId(const String& prodName);
 
     ProdId(const ProdId& prodId) =default;
     ~ProdId() =default;
@@ -228,20 +241,11 @@ public:
         return id;
     }
 
-    std::string to_string(const bool withName = false) const {
-        return withName
-                ? "ProdId{" + std::to_string(id) + "}"
-                : std::to_string(id);
-    }
+    std::string to_string() const noexcept;
 
     size_t hash() const noexcept {
-        static std::hash<Type> indexHash;
-        return indexHash(id);
-    }
-
-    ProdId& operator++() {
-        ++id;
-        return *this;
+        static std::hash<Type> hash;
+        return hash(id);
     }
 
     bool write(Xprt xprt) const override {
@@ -260,7 +264,7 @@ struct DataSegId : public XprtAble
     SegOffset offset; ///< Offset of data segment in bytes
 
     DataSegId()
-        : prodId{0}
+        : prodId()
         , offset{0}
     {}
 
@@ -337,7 +341,7 @@ public:
 
     ProdInfo();
 
-    ProdInfo(const ProdId   index,
+    ProdInfo(const ProdId      prodId,
              const std::string name,
              const ProdSize    size);
 

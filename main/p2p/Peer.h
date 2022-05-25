@@ -196,7 +196,7 @@ public:
      */
     static Pimpl create(
             const SockAddr srvrAddr,
-            const unsigned backlog = 8);
+            const unsigned listenSize);
 
     virtual ~PeerSrvr() {};
 
@@ -205,8 +205,8 @@ public:
     virtual Peer::Pimpl accept(P2P_MGR& p2pMgr) =0;
 };
 
-using PubPeerSrvr = PeerSrvr<PubP2pMgr>;
-using SubPeerSrvr = PeerSrvr<SubP2pMgr>;
+using PubP2pSrvr = PeerSrvr<PubP2pMgr>;
+using SubP2pSrvr = PeerSrvr<SubP2pMgr>;
 
 } // namespace
 

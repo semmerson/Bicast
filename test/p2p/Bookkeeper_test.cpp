@@ -27,7 +27,7 @@ class BookkeeperTest : public ::testing::Test, public SubP2pMgr
 
 protected:
     SockAddr           pubAddr;
-    PubPeerSrvr::Pimpl pubPeerSrvr;
+    PubP2pSrvr::Pimpl pubPeerSrvr;
     std::thread        pubPeerSrvrThrd;
     ProdId             prodId;
     DataSegId          segId;
@@ -37,9 +37,9 @@ protected:
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
-        , pubPeerSrvr(PubPeerSrvr::create(pubAddr))
+        , pubPeerSrvr(PubP2pSrvr::create(pubAddr, 5))
         , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
-        , prodId{1}
+        , prodId{"product"}
         , segId(prodId, maxSegSize) // Second data-segment
         , subPeer1(Peer::create(*this, pubAddr))
         , subPeer2(Peer::create(*this, pubAddr))

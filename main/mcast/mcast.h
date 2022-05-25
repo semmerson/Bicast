@@ -87,9 +87,9 @@ public:
     /**
      * Returns a new instance.
      *
-     * @param[in] mcastAddr    Address of multicast group
-     * @param[in] srcAddr      IP address of publisher
-     * @param[in] iface        Name of interface to use
+     * @param[in] mcastAddr    Socket address of multicast group
+     * @param[in] srcAddr      Internet address of publisher
+     * @param[in] iface        Internet address of interface to use
      * @param[in] node         Subscribing node to call
      * @return                 New instance
      * @throw InvalidArgument  Multicast group IP address isn't source-specific

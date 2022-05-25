@@ -79,12 +79,12 @@ protected:
         , segDataCount(0)
     {
         DataSeg::setMaxSegSize(sizeof(memData));
-        String prodNames[2] = {"product1", "product2"};
+        String prodNames[] = {"product1", "product2"};
 
         ::memset(memData, 0xbd, segSize);
 
         for (int i = 0; i < 2; ++i) {
-            prodIds[i] = ProdId(i);
+            prodIds[i] = ProdId(prodNames[i]);
             prodInfos[i] = ProdInfo(prodIds[i], prodNames[i], prodSize);
             segIds[i] = DataSegId(prodIds[0], i*sizeof(memData));
             dataSegs[i] = DataSeg(segIds[i], prodSize, memData);

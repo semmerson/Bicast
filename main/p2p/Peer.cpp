@@ -85,7 +85,7 @@ protected:
                     connected = rpc->notify(datumId.tracker);
                 }
                 else if (datumId.id == DatumId::Id::PEER_SRVR_ADDR) {
-                    LOG_DEBUG("Peer %s is notifying about peer server %s",
+                    LOG_DEBUG("Peer %s is notifying about P2P server %s",
                             to_string().data(), datumId.to_string().data());
                     connected = rpc->notify(datumId.tracker);
                 }
@@ -235,7 +235,7 @@ public:
 
     void start() override {
         startNoticeWriter();
-        rpc->start(*this);
+        rpc->start(*this); // Services incoming calls
     }
 
     /**
@@ -667,7 +667,7 @@ public:
      * Constructs client-side.
      *
      * @param[in] p2pMgr        Subscriber's P2P manager
-     * @param[in] srvrAddr      Socket address of remote server
+     * @param[in] srvrAddr      Socket address of remote P2P server
      * @throw     LogicError    Destination port number is zero
      * @throw     SystemError   Couldn't connect. Bad failure.
      * @throw     RuntimeError  Couldn't connect. Might be temporary.
@@ -746,7 +746,7 @@ public:
     /**
      * Receives tracker information from the remote peer.
      *
-     * @param[in] tracker  Socket addresses of potential peer-servers
+     * @param[in] tracker  Socket addresses of potential P2P servers
      */
     void recvData(const Tracker tracker) {
         LOG_DEBUG("Peer %s received tacker %s",
@@ -754,12 +754,12 @@ public:
         subP2pMgr.recvData(tracker, rmtSockAddr);
     }
     /**
-     * Receives the address of a potential peer-server
+     * Receives the address of a potential P2P server
      *
-     * @param[in] tracker  Socket addresses of potential peer-server
+     * @param[in] tracker  Socket addresses of potential P2P server
      */
     void recvData(const SockAddr srvrAddr) {
-        LOG_DEBUG("Peer %s received peer-server address %s",
+        LOG_DEBUG("Peer %s received P2P server address %s",
                 to_string().data(), srvrAddr.to_string().data());
         subP2pMgr.recvData(srvrAddr, rmtSockAddr);
     }
@@ -832,8 +832,8 @@ PeerSrvr<PubP2pMgr>::Pimpl PeerSrvr<PubP2pMgr>::create(
 template<>
 PeerSrvr<SubP2pMgr>::Pimpl PeerSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,
-        const unsigned backlog) {
-    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrAddr, false, backlog)};
+        const unsigned listenSize) {
+    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrAddr, false, listenSize)};
 }
 
 } // namespace

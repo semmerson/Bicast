@@ -57,6 +57,7 @@ protected:
     static constexpr ProdSize PROD_SIZE = 1000;
     SockAddr         pubP2pSrvrAddr;
     SockAddr         localSrvrAddr;
+    String           prodName;
     ProdId           prodId;
     char             prodData[PROD_SIZE];
     ProdInfo         prodInfo;
@@ -71,9 +72,10 @@ protected:
         , state(INIT)
         , pubP2pSrvrAddr("127.0.0.1:38800")
         , localSrvrAddr("127.0.0.1:0")
-        , prodId(1)
+        , prodName("product")
+        , prodId(prodName)
         , prodData()
-        , prodInfo(prodId, "product", PROD_SIZE)
+        , prodInfo(prodId, prodName, PROD_SIZE)
         , subscriberCount(0)
         , numProdInfos(0)
         , numDataSegs(0)
@@ -206,7 +208,7 @@ public:
 // Tests construction of publisher's P2P manager
 TEST_F(P2pMgrTest, PubP2pMgrCtor)
 {
-    auto pubP2pMgr = hycast::P2pMgr::create(*this, pubP2pSrvrAddr, 8, SEG_SIZE);
+    auto pubP2pMgr = hycast::P2pMgr::create(*this, pubP2pSrvrAddr, 8, 8, 60);
 }
 #endif
 
@@ -217,7 +219,7 @@ TEST_F(P2pMgrTest, SingleSubscriber)
     subscriberCount = 1;
 
     LOG_NOTE("Creating publishing P2P manager");
-    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 8, SEG_SIZE);
+    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 8, 8, 60);
     Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
     Tracker    tracker{};
@@ -227,7 +229,7 @@ TEST_F(P2pMgrTest, SingleSubscriber)
     tracker.insert(addr);
 
     LOG_NOTE("Creating subscribing P2P manager");
-    auto       subP2pMgr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 8, SEG_SIZE);
+    auto       subP2pMgr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 5, 8, 60);
     LOG_NOTE("Starting subscribing P2P manager");
     Thread     subThread(&P2pMgrTest::runP2pMgr, this, subP2pMgr);
 
@@ -262,14 +264,14 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     subscriberCount = 2;
 
     //LOG_DEBUG("Creating publishing P2P manager");
-    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 1, SEG_SIZE);
+    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 1, 1, 60);
     Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
     Tracker    tracker1{};
     //LOG_DEBUG("Inserting address of publishing P2P server");
     tracker1.insert(pubP2pSrvrAddr);
     //LOG_DEBUG("Creating first subscribing P2P manager");
-    auto       subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr, 2, SEG_SIZE);
+    auto       subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr, 5, 2, 60);
     Thread     subThread1(&P2pMgrTest::runP2pMgr, this, subP2pMgr1);
 
     //LOG_DEBUG("Waiting for first subscriber to connect");
@@ -279,7 +281,7 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     //LOG_DEBUG("Inserting address of subscribing P2P server");
     tracker2.insert(subP2pMgr1->getSrvrAddr());
     //LOG_DEBUG("Creating second subscribing P2P manager");
-    auto    subP2pMgr2 = SubP2pMgr::create(*this, tracker2, localSrvrAddr, 1, SEG_SIZE);
+    auto    subP2pMgr2 = SubP2pMgr::create(*this, tracker2, localSrvrAddr, 5, 1, 60);
     Thread     subThread2(&P2pMgrTest::runP2pMgr, this, subP2pMgr2);
 
     //LOG_DEBUG("Waiting for second subscriber to connect");

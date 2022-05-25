@@ -174,7 +174,7 @@ public:
      * Constructs from product information. The instance is open.
      *
      * @param[in] rootFd           File descriptor open on root directory
-     * @param[in] prodId           Product identifier
+     * @param[in] pathname         Pathname of file relative to the root directory
      * @param[in] prodSize         Product size in bytes
      * @param[in] segSize          Size of canonical data-segment in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
@@ -182,6 +182,7 @@ public:
      */
     RcvProdFile(
             const int       rootFd,
+            const String&   pathname,
             const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize);
@@ -217,34 +218,41 @@ public:
     /**
      * Saves product information.
      *
-     * @param[in] rootFd           File descriptor open on repository's root
-     *                             directory
-     * @param[in] prodInfo         Product information to be saved
-     * @retval    `true`           This item was written to the product-file
-     * @retval    `false`          This item is already in the product-file and
-     *                             was not written
-     * @throws    InvalidArgument  Segment's offset is invalid
-     * @threadsafety               Safe
-     * @exceptionsafety            Strong guarantee
-     * @cancellationpoint          Yes
+     * @param[in] prodInfo     Product information to be saved
+     * @retval    `true`       This item is new and was saved
+     * @retval    `false`      This item is old and was not saved
+     * @throw InvalidArgument  Known product has a different size
+     * @throw InvalidArgument  Segment's offset is invalid
+     * @threadsafety           Safe
+     * @exceptionsafety        Strong guarantee
+     * @cancellationpoint      Yes
      */
-    bool save(
-            const int      rootFd,
-            const ProdInfo prodInfo) const;
+    bool save(const ProdInfo prodInfo) const;
 
     /**
      * Saves a data-segment.
      *
-     * @param[in] dataSeg           Data-segment to be saved
-     * @retval    `true`            This item was written to the product-file
-     * @retval    `false`           This item is already in the product-file and
-     *                              was not written
-     * @throws    InvalidArgument   Segment's offset is invalid
-     * @threadsafety                Safe
-     * @exceptionsafety             Strong guarantee
-     * @cancellationpoint           Yes
+     * @param[in] dataSeg      Data-segment to be saved
+     * @retval    `true`       This item is new and was saved
+     * @retval    `false`      This item is old and was not saved
+     * @throw InvalidArgument  Known product has a different size
+     * @throw InvalidArgument  Segment's offset is invalid
+     * @threadsafety           Safe
+     * @exceptionsafety        Strong guarantee
+     * @cancellationpoint      Yes
      */
     bool save(const DataSeg& dataSeg) const;
+
+    /**
+     * Renames the associated file.
+     *
+     * @param[in] rootFd       File descriptor open on repository's root directory
+     * @param[in] pathname     New pathname for the file
+     * @throw SystemError      Couldn't rename product-file
+     */
+    void rename(
+            const int     rootFd,
+            const String& pathname);
 
     /**
      * Gets the product information.

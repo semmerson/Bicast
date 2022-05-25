@@ -46,8 +46,8 @@ protected:
     SockAddr   ssmAddr;
     InetAddr   srcAddr;
     InetAddr   subIface;
-    ProdId     prodId;
     String     prodName;
+    ProdId     prodId;
     ProdSize   prodSize;
     ProdInfo   prodInfo;
     DataSegId  segId;
@@ -64,8 +64,8 @@ protected:
         , ssmAddr{"232.1.1.1:38800"}
         , srcAddr{"127.0.0.1"}
         , subIface{srcAddr}
-        , prodId{1}
         , prodName{"product"}
+        , prodId{prodName}
         , prodSize{100000}
         , prodInfo(prodId, prodName, prodSize)
         , segId(prodId, 0)

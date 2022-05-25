@@ -140,7 +140,7 @@ class Repository::Impl
 {
 protected:
     /**
-     * A product-index to product-file hash table whose entries form a doubly-linked list.
+     * A product-ID to product-file hash table whose entries form a doubly-linked list.
      *
      * @tparam PF  Type of product-file
      */
@@ -149,7 +149,7 @@ protected:
     {
         /*
          * Alternative implementations include using either an std::list<PF> or an
-         * std::map<ProdIndex, PF> in conjunction with an std::unordered map<ProdIndex, PF>. Neither
+         * std::map<ProdId, PF> in conjunction with an std::unordered map<ProdId, PF>. Neither
          * would scale as efficiently as incorporating the doubly-linked list into an unordered map.
          */
 
@@ -214,7 +214,7 @@ protected:
          *
          * @param[in] prodId      Product identifier
          * @param[in] prodFile    Associated product-file
-         * @throws    LogicError  An entry already exists for the product-index
+         * @throws    LogicError  An entry already exists for the product-ID
          */
         void pushBack(
                 const ProdId prodId,
@@ -239,7 +239,7 @@ protected:
          * Removes an entry.
          *
          * @param[in] prodId        Product identifier of entry to be removed
-         * @return                  Product-file associated with product-index
+         * @return                  Product-file associated with product-ID
          * @throws InvalidArgument  No such entry
          */
         PF erase(const ProdId prodId)
@@ -272,7 +272,7 @@ protected:
         }
 
         /**
-         * Returns the product-file associated with a product-index if it exists. The file will be
+         * Returns the product-file associated with a product-ID if it exists. The file will be
          * moved to the end of the list.
          *
          * @param[in] prodId     Product identifier
@@ -532,12 +532,6 @@ class PubRepo::Impl final : public Repository::Impl
     std::queue<ProdId>                           prodQueue; ///< Queue of products to be sent
     ProdId                                       prodId;    ///< Next product-identifier
 
-    ProdId getNextId()
-    {
-        // TODO: Make persistent between sessions
-        return ++prodId;
-    }
-
     /**
      * Ensures that there's one less than the maximum number of open product- files.
      *
@@ -650,29 +644,30 @@ public:
      * product-entry is created and added to the set of active product-entries.
      * for each new non-directory file in the repository's hierarchy:
      *
-     * @return              Index of next product to publish
+     * @return              Information on the next product to publish
      * @throws SystemError  System failure
      * @threadsafety        Compatible but unsafe
      */
     ProdInfo getNextProd()
     {
-        ProdInfo   prodInfo{};
-        const auto prodId = getNextId();
+        ProdInfo prodInfo{};
+        String   prodName;
 
         try {
             Watcher::WatchEvent event;
             watcher.getEvent(event);
 
-            const auto prodName = event.pathname.substr(rootPrefixLen);
-
+            prodName = event.pathname.substr(rootPrefixLen);
             SndProdFile prodFile(rootFd, prodName, segSize);
-            addProdFile(prodId, prodFile);
 
+            const ProdId prodId(prodName);
             prodInfo = ProdInfo(prodId, prodName, prodFile.getProdSize());
+
+            addProdFile(prodId, prodFile);
         }
         catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't get product-file corresponding to "
-                    "product ID " + prodId.to_string()));
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't create product-file for \"" + prodName +
+                    "\""));
         }
 
         return prodInfo;
@@ -695,8 +690,7 @@ public:
             return prodInfo;
         }
 
-        return ProdInfo(prodId, prodFile.getPathname(),
-                prodFile.getProdSize());
+        return ProdInfo(prodId, prodFile.getPathname(), prodFile.getProdSize());
     }
 
     /**
@@ -755,7 +749,7 @@ ProdInfo PubRepo::getNextProd() const {
  */
 class SubRepo::Impl final : public Repository::Impl
 {
-    std::queue<ProdInfo>       completeProds; ///< Queue of completed products
+    std::queue<ProdInfo>                         completeProds; ///< Queue of completed products
     Repository::Impl::LinkedProdMap<RcvProdFile> prodFiles;     ///< Known product-files
     Repository::Impl::LinkedProdMap<RcvProdFile> openFiles;     ///< Known and open product-files
 
@@ -811,15 +805,16 @@ class SubRepo::Impl final : public Repository::Impl
     }
 
     /**
-     * Returns the product-file that corresponds to a product-index. The file is
-     *   - Created if necessary
+     * Returns the product-file that corresponds to a product-ID. The file is
+     *   - Created if necessary in the ".unfinished" subdirectory
      *   - Open
      *   - At the tail-end of the open-files list
      *
-     * @pre                  State is unlocked
-     * @param[in] prodId     Product identifier
-     * @param[in] prodSize   Size of product in bytes
-     * @return               Product-file corresponding to product-index
+     * @pre                    State is unlocked
+     * @param[in] prodId       Product identifier
+     * @param[in] prodSize     Size of product in bytes
+     * @throw InvalidArgument  Product is known but with a different size
+     * @return                 Product-file corresponding to product-index
      */
     RcvProdFile getProdFile(
             const ProdId   prodId,
@@ -827,10 +822,18 @@ class SubRepo::Impl final : public Repository::Impl
         Guard guard{mutex};
         auto  prodFile = getProdFile(prodId);
 
-        if (!prodFile) {
+        if (prodFile) {
+            const auto knownSize = prodFile.getProdInfo().getSize();
+            if (prodSize != knownSize)
+                throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
+                        " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
+                        " bytes)");
+        }
+        else {
             LOG_DEBUG("Creating product " + prodId.to_string());
 
-            prodFile = RcvProdFile(rootFd, prodId, prodSize, segSize);
+            prodFile = RcvProdFile(rootFd, ".unfinished/" + prodId.to_string(), prodId, prodSize,
+                    segSize);
             addProdFile(prodId, prodFile);
         }
 
@@ -838,19 +841,23 @@ class SubRepo::Impl final : public Repository::Impl
     }
 
     /**
-     * Finishes processing a completely-received data-product by adding the product to the
+     * Finishes processing a data-product, if it's complete, by adding the product to the
      * completed-product queue
      *
-     * @pre                 State is locked
+     * @pre                 State is unlocked
      * @pre                 Product-file is complete
      * @param[in] prodFile  File containing the data-product
+     * @post                State is unlocked
      */
-    void finish(const RcvProdFile prodFile) {
-        const auto prodInfo = prodFile.getProdInfo();
-        Guard      guard(mutex);
+    void finishIfComplete(const RcvProdFile prodFile) {
+        if (prodFile.isComplete()) {
+            const auto prodInfo = prodFile.getProdInfo();
+            Guard      guard(mutex);
 
-        completeProds.push(prodInfo);
-        cond.notify_all();
+            prodFile.rename(rootFd, prodInfo.getName());
+            completeProds.push(prodInfo);
+            cond.notify_all();
+        }
     }
 
 public:
@@ -866,21 +873,19 @@ public:
      * Saves product-information in the corresponding product-file. If the resulting product becomes
      * complete, then it will be eventually returned by `getNextProd()`.
      *
-     * @param[in] rootFd       File descriptor open on repository's root directory
      * @param[in] prodInfo     Product information
      * @retval    `true`       This item was saved
      * @retval    `false`      This item was not saved because it already exists
-     * @throws    SystemError  System failure
+     * @throw InvalidArgument  Known product has a different size
+     * @throw SystemError      System failure
      * @see `getNextProd()`
      */
     bool save(const ProdInfo prodInfo)
     {
         auto       prodFile = getProdFile(prodInfo.getId(), prodInfo.getSize());
-        const bool wasSaved = prodFile.save(rootFd, prodInfo);
-
-        if (wasSaved && prodFile.isComplete())
-            finish(prodFile);
-
+        const auto wasSaved = prodFile.save(rootFd, prodInfo);
+        if (wasSaved)
+            finishIfComplete(prodFile);
         return wasSaved;
     }
 
@@ -888,19 +893,18 @@ public:
      * Saves a data-segment in the corresponding product-file. If the resulting product becomes
      * complete, then it will be eventually returned by `getNextProd()`.
      *
-     * @param[in] dataSeg   Data segment
-     * @retval    `true`    This item was saved
-     * @retval    `false`   This item was not saved because it already exists
+     * @param[in] dataSeg      Data segment
+     * @retval    `true`       This item was saved
+     * @retval    `false`      This item was not saved because it already exists
+     * @throw InvalidArgument  Known product has a different size
      * @see `getNextProd()`
      */
     bool save(const DataSeg dataSeg)
     {
         auto       prodFile = getProdFile(dataSeg.getId().prodId, dataSeg.getProdSize());
         const auto wasSaved = prodFile.save(dataSeg);
-
-        if (wasSaved && prodFile.isComplete())
-            finish(prodFile);
-
+        if (wasSaved)
+            finishIfComplete(prodFile);
         return wasSaved;
     }
 
@@ -925,8 +929,7 @@ public:
      * Returns information on a product, if it exists, given the product's ID.
      *
      * @param prodId     Product identifier
-     * @return           Product information. Will test false if no such product
-     *                   exists.
+     * @return           Product information. Will test false if no such product exists.
      */
     ProdInfo getProdInfo(const ProdId prodId)
     {
@@ -959,8 +962,7 @@ public:
             return dataSeg;
         }
 
-        return  DataSeg(segId, prodFile.getProdSize(),
-                prodFile.getData(offset));
+        return  DataSeg(segId, prodFile.getProdSize(), prodFile.getData(offset));
     }
 
     /**

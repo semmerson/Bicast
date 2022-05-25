@@ -384,10 +384,10 @@ bool SndProdFile::exists(ProdSize offset) const {
  */
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
-    ProdId            prodId;     ///< Product indentifier
+    ProdId            prodId;     ///< Product identifier
     std::vector<bool> haveSegs;   ///< Bitmap of received data-segments
     ProdSize          segCount;   ///< Number of received data-segments
-    bool              pathIsName; ///< File pathname is product name?
+    ProdInfo          prodInfo;   ///< Product information
 
     /**
      * Creates a file from product-information. The file will have the given
@@ -406,15 +406,13 @@ class RcvProdFile::Impl final : public ProdFile::Impl
     {
         ensureDir(rootFd, dirPath(pathname), 0700);
 
-        const int fd = ProdFile::Impl::open(rootFd, pathname,
-                O_RDWR|O_CREAT|O_EXCL);
+        const int fd = ProdFile::Impl::open(rootFd, pathname, O_RDWR|O_CREAT|O_EXCL);
         if (fd == -1)
             throw SYSTEM_ERROR("Couldn't create file \"" + pathname + "\"");
 
         try {
             if (::ftruncate(fd, prodSize))
-                throw SYSTEM_ERROR("ftruncate() failure on \"" + pathname +
-                        "\"");
+                throw SYSTEM_ERROR("ftruncate() failure on \"" + pathname + "\"");
             return fd;
         } // `fd` is open
         catch (...) {
@@ -443,8 +441,8 @@ public:
     /**
      * Constructs. The instance is open.
      *
-     * @param[in] rootFd           File descriptor open on root directory of
-     *                             repository
+     * @param[in] rootFd           File descriptor open on root directory of repository
+     * @param[in] pathname         Pathname of the file
      * @param[in] prodId           Product identifier
      * @param[in] prodSize         Product size in bytes
      * @param[in] segSize          Canonical segment size in bytes
@@ -452,14 +450,15 @@ public:
      * @throws    SystemError      `open()` or `ftruncate()` failure
      */
     Impl(   const int       rootFd,
+            const String&   pathname,
             const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize)
-        : ProdFile::Impl{prodId.to_string(), prodSize, segSize}
+        : ProdFile::Impl{pathname, prodSize, segSize}
         , prodId(prodId)
         , haveSegs(numSegs, false)
         , segCount{0}
-        , pathIsName(false)
+        , prodInfo()
     {
         fd = create(rootFd, pathname, prodSize);
         ensureAccess(rootFd, O_RDWR);
@@ -486,50 +485,42 @@ public:
     bool isComplete() const
     {
         Guard guard{mutex};
-        return pathIsName && (segCount == numSegs);
+        return prodInfo && (segCount == numSegs);
+    }
+
+    void rename(
+            const int     rootFd,
+            const String& pathname) {
+        ensureDir(rootFd, dirPath(pathname), 0755); // Only owner can write
+
+        Guard guard(mutex);
+        if (::renameat(rootFd, this->pathname.data(), rootFd, pathname.data()))
+            throw SYSTEM_ERROR("Couldn't rename product-file \"" + this->pathname + "\" to \"" +
+                    pathname + "\"");
+        this->pathname = pathname;
     }
 
     /**
      * Saves product-information.
      *
-     * @param[in] rootFd       File descriptor open on repository's root
-     *                         directory
-     * @param[in] prodInfo     Product information to be saved
-     * @retval    `true`       This item was written to the product-file
-     * @retval    `false`      This item is already in the product-file and was
-     *                         not written
-     * @throws    SystemError  Couldn't save product information
+     * @param[in] rootFd           File descriptor open on repository's root directory
+     * @param[in] prodInfo         Product information to be saved
+     * @retval    `true`           This item was written to the product-file
+     * @retval    `false`          This item is already in the product-file and was not written
+     * @throws    SystemError      Couldn't save product information
      */
-    bool save(
-            const int      rootFd,
-            const ProdInfo prodInfo) {
+    bool save(const ProdInfo prodInfo) {
         LOG_ASSERT(fd >= 0);
 
         bool  success; // This item was written to the product-file?
         Guard guard(mutex);
 
-        ProdInfo expected(prodId, prodInfo.getName(), prodSize);
-        if (!(prodInfo == expected))
-            throw INVALID_ARGUMENT("Actual prodInfo, " + prodInfo.to_string() +
-                    ", doesn't match expected, " + expected.to_string());
-
-        if (pathIsName) {
+        if (prodInfo) {
             success = false; // Already saved
         }
         else {
             //LOG_DEBUG("Saving product-information " + prodInfo.to_string());
-
-            const auto prodName = prodInfo.getName();
-
-            ensureDir(rootFd, dirPath(prodName), 0755); // Only owner can write
-
-            if (::renameat(rootFd, this->pathname.data(), rootFd,
-                    prodName.data()))
-                throw SYSTEM_ERROR("Couldn't rename product-file \"" +
-                        this->pathname + "\" to \"" + prodName + "\"");
-
-            this->pathname = prodName;
-            pathIsName = true;
+            this->prodInfo = prodInfo;
             success = true;
         }
 
@@ -541,8 +532,8 @@ public:
      *
      * @pre                        Instance is open
      * @param[in] seg              Data-segment to be saved
-     * @retval    `true`           This item was written to the product-file
-     * @retval    `false`          This item is already in the product-file and was not written
+     * @retval    `true`           This item is new and was saved
+     * @retval    `false`          This item is old and was not saved
      * @throws    InvalidArgument  Segment is invalid
      */
     bool save(const DataSeg& seg) {
@@ -589,10 +580,11 @@ RcvProdFile::RcvProdFile() noexcept =default;
 
 RcvProdFile::RcvProdFile(
         const int       rootFd,
+        const String&   pathname,
         const ProdId    prodId,
         const ProdSize  prodSize,
         const SegSize   segSize)
-    : ProdFile(std::make_shared<Impl>(rootFd, prodId, prodSize, segSize)) {
+    : ProdFile(std::make_shared<Impl>(rootFd, pathname, prodId, prodSize, segSize)) {
 }
 
 void RcvProdFile::open(const int rootFd) const {
@@ -609,15 +601,20 @@ bool RcvProdFile::isComplete() const {
 }
 
 bool
-RcvProdFile::save(
-        const int      rootFd,
-        const ProdInfo prodInfo) const {
+RcvProdFile::save(const ProdInfo prodInfo) const {
     return static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
 }
 
 bool
 RcvProdFile::save(const DataSeg& dataSeg) const {
     return static_cast<Impl*>(pImpl.get())->save(dataSeg);
+}
+
+void
+RcvProdFile::rename(
+        const int      rootFd,
+        const String&  pathname) {
+    return static_cast<Impl*>(pImpl.get())->rename(rootFd, pathname);
 }
 
 ProdInfo

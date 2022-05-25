@@ -53,7 +53,7 @@ protected:
         , rootDir(testDir + "/repo")
         , prodName{"foo/bar/product.dat"}
         , filePath(testDir + "/" + prodName)
-        , prodId{1} // Index of first product in empty repository is 1
+        , prodId{prodName}
         , memData{'A', 'B', 'C'}
         , segSize{sizeof(memData)}
         , prodSize{segSize}

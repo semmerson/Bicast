@@ -151,6 +151,7 @@ public:
      */
     void connect(const int sd) const
     {
+        // TODO: Add timeout to enable handling of unavailable remote hosts
         LOG_DEBUG("Connecting socket %d to %s", sd, to_string().data());
 
         struct sockaddr_storage storage;

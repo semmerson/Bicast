@@ -739,6 +739,7 @@ public:
                     "zero");
 
         //LOG_DEBUG("Connecting socket");
+        // TODO: Add timeout to enable handling of unavailable remote hosts
         sockAddr.connect(sd);
         //LOG_DEBUG("Setting remote socket address");
         rmtSockAddr = sockAddr;

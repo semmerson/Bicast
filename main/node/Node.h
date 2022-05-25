@@ -134,6 +134,7 @@ public:
      *                          interface and not the wildcard. The port number may be 0, in which
      *                          case the operating system will choose the port.
      * @param[in] maxPeers      Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
@@ -146,6 +147,7 @@ public:
     static Pimpl create(
             const SockAddr p2pAddr,
             const unsigned maxPeers,
+            const unsigned evalTime,
             const SockAddr mcastAddr,
             const InetAddr ifaceAddr,
             const unsigned listenSize,
@@ -195,28 +197,59 @@ public:
      * Creates and returns an instance. The instance immediately becomes ready to accept connections
      * from remote peers.
      *
-     * @param[in]     mcastAddr     Socket address of source-specific multicast group
-     * @param[in]     srcAddr       IP address of source
-     * @param[in]     ifaceAddr     IP address of interface to receive multicast on
-     * @param[in]     p2pAddr       Socket address for local P2P server. It shall not specify the
-     *                              wildcard. If the port number is zero, then the operating system
-     *                              will choose an ephemeral port number.
-     * @param[in]     maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in,out] tracker       Pool of remote P2P-servers
-     * @param[in]     repoRoot      Pathname of the root directory of the repository
-     * @param[in]     maxSegSize    Maximum size of a data-segment in bytes
-     * @param[in]     maxOpenFiles  Maximum number of open, data-products files
-     * @return                      An instance
+     * @param[in] mcastAddr     Socket address of source-specific multicast group
+     * @param[in] srcAddr       IP address of source
+     * @param[in] mcastIface    IP address of interface to receive multicast on. May be wildcard, in
+     *                          which case O/S chooses.
+     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
+     *                          wildcard. If the port number is zero, then the operating system will
+     *                          choose an ephemeral port number.
+     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] trackerSize   Maximum size of pool of P2P server addresses
+     * @param[in] repoRoot      Pathname of the root directory of the repository
+     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles  Maximum number of open, data-products files
+     * @return                  An instance
      */
     static Pimpl create(
             const SockAddr mcastAddr,
             const InetAddr srcAddr,
-            const InetAddr ifaceAddr,
+            const InetAddr mcastIface,
             const SockAddr p2pAddr,
-            unsigned       maxPeers,
-            Tracker        tracker,
+            const int      listenSize,
+            const unsigned maxPeers,
+            const unsigned evalTime,
+            const unsigned trackerSize,
             const String&  repoRoot,
             const SegSize  maxSegSize,
+            const long     maxOpenFiles);
+
+    /**
+     * Constructs from partial information by contacting the publisher.
+     *
+     * @param[in] pubAddress    Socket address of publisher
+     * @param[in] ifaceAddr     IP address of interface to receive multicast on
+     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
+     *                          wildcard. If port number is zero, then operating system will choose
+     *                          an ephemeral port.
+     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] trackerSize   Maximum size of pool of remote P2P-servers
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     */
+    static Pimpl create(
+            const SockAddr pubAddr,
+            const InetAddr mcastIface,
+            const SockAddr p2pAddr,
+            const int      listenSize,
+            const unsigned maxPeers,
+            const unsigned evalTime,
+            const unsigned trackerSize,
+            const String&  repoRoot,
             const long     maxOpenFiles);
 
     /**

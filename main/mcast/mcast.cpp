@@ -100,7 +100,7 @@ public:
      *
      * @param[in] mcastAddr    Address of multicast group
      * @param[in] srcAddr      IP address of publisher
-     * @param[in] iface        IP address of interface to use
+     * @param[in] iface        IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] node         Subscribing node to call
      * @throw InvalidArgument  Multicast group IP address isn't source-specific
      */

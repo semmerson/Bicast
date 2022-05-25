@@ -31,6 +31,7 @@ add_subdirectory(mcast)
 add_subdirectory(repository)
 add_subdirectory(node)
 add_subdirectory(publisher)
+add_subdirectory(subscriber)
 
 # Check for Doxygen(1)
 find_package(Doxygen)

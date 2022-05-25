@@ -1,4 +1,5 @@
-Name: TEST                   # Name of feed
+LogLevel: NOTE               # Logging level
+Publisher: localhost:38800   # Publisher's socket address
 MaxSegSize: 1444             # Maximum size of canonical data-segment in bytes
 Multicast:
   GroupAddr: 232.1.1.1:38800 # Socket address of multicast group

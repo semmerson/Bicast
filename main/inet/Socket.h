@@ -251,7 +251,7 @@ public:
      *
      * @param[in] mcastAddr    IP address of multicast group
      * @param[in] srcAddr      IP address of source
-     * @param[in] iface        IP address of interface to use
+     * @param[in] iface        IP address of interface to use. If wildcard, then O/S chooses.
      * @throw InvalidArgument  Multicast group IP address isn't source-specific
      * @cancellationpoint
      */

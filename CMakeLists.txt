@@ -40,6 +40,9 @@ configure_file(config-cmake.h config.h)
 include_directories(${CMAKE_BINARY_DIR}) # necessary
 include_directories(AFTER SYSTEM /usr/include/c++/4.8.5) # necessary
 
+# Find the OpenSSL library
+find_library(OPEN_SSL_LIBRARY ssl REQUIRED)
+
 # Add the main subdirectory
 add_subdirectory(main)
 

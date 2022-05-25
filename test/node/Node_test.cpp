@@ -48,8 +48,8 @@ protected:
     Mutex           mutex;
     Cond            cond;
     char            prodData[PROD_SIZE];
-    const ProdId    prodId;
     const String    prodName;
+    const ProdId    prodId;
     const String    testRoot;
     const String    pubRepoRoot;
     const String    subRepoRoot;
@@ -70,8 +70,8 @@ protected:
         : mutex()
         , cond()
         , prodData{}
-        , prodId{1}
         , prodName{"foo/bar/product.dat"}
+        , prodId{prodName}
         , testRoot("/tmp/Node_test")
         , pubRepoRoot(testRoot + "/pub")
         , subRepoRoot(testRoot + "/sub")
@@ -126,7 +126,7 @@ public:
 TEST_F(NodeTest, Construction)
 {
     LOG_NOTE("Creating publishing node");
-    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, mcastAddr, loAddr, 1, pubRepoRoot,
+    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, loAddr, 1, pubRepoRoot,
             SEG_SIZE, maxOpenFiles);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
@@ -139,7 +139,7 @@ TEST_F(NodeTest, Construction)
     tracker.insert(pubP2pSrvrAddr);
 
     LOG_NOTE("Creating subscribing node");
-    auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, maxPeers, tracker,
+    auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, 5, maxPeers, 60, tracker,
             subRepoRoot, SEG_SIZE, maxOpenFiles);
 
     const auto subP2pSrvrAddr = subNode->getP2pSrvrAddr();
@@ -165,7 +165,7 @@ TEST_F(NodeTest, Sending)
         EXPECT_EQ(0, ::close(fd));
 
         // Create publisher
-        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, mcastAddr, loAddr, 1,
+        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, loAddr, 1,
                 pubRepoRoot, SEG_SIZE, maxOpenFiles);
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
@@ -174,7 +174,7 @@ TEST_F(NodeTest, Sending)
         tracker.insert(pubP2pSrvrAddr);
 
         // Create subscriber
-        auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, maxPeers, tracker,
+        auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, 5, maxPeers, 60, tracker,
             subRepoRoot, SEG_SIZE, maxOpenFiles);
         Thread     subThread(&NodeTest::runNode, this, subNode);
 
