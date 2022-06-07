@@ -720,13 +720,13 @@ class TcpClntSock::Impl final : public TcpSock::Impl
 {
 public:
     /**
-     * Constructs.
+     * Constructs. Attempts to connect to the remote endpoint.
      *
      * @param[in] sockAddr      Address of remote endpoint
      * @throw     LogicError    Destination port number is zero
-     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
      * @throw     RuntimeError  Couldn't connect to `sockAddr`. Might be
      *                          temporary.
+     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       Yes
      */
@@ -735,8 +735,7 @@ public:
     {
         //LOG_DEBUG("Checking port number");
         if (sockAddr.getPort() == 0)
-            throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is "
-                    "zero");
+            throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is " "zero");
 
         //LOG_DEBUG("Connecting socket");
         // TODO: Add timeout to enable handling of unavailable remote hosts

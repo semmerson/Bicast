@@ -28,9 +28,11 @@
 
 #include <arpa/inet.h>
 #include <climits>
+#include <fcntl.h>
 #include <functional>
 #include <net/if.h>
 #include <netdb.h>
+#include <poll.h>
 #include <regex>
 #include <stdio.h>
 #include <sys/socket.h>
@@ -143,24 +145,60 @@ public:
     }
 
     /**
-     * Connects a socket to a remote socket address.
+     * Connects a socket to this address within a timeout.
      *
-     * @param[in] sd            Socket descriptor
-     * @throws    SystemError   Failure
-     * @threadsafety            Safe
+     * @param[in] sd           Socket descriptor
+     * @param[in] timeout      Timeout in ms. -1 => indefinite timeout; 0 => immediate return.
+     * @throw InvalidArgument  `timeout < -1`
+     * @throw RuntimeError     Timeout occurred
+     * @throw SystemError      System failure
      */
-    void connect(const int sd) const
-    {
-        // TODO: Add timeout to enable handling of unavailable remote hosts
+    void connect(
+            const int sd,
+            const int timeout) const {
         LOG_DEBUG("Connecting socket %d to %s", sd, to_string().data());
 
-        struct sockaddr_storage storage;
+        if (timeout < -1)
+            throw INVALID_ARGUMENT("Timeout < -1 ms: " + std::to_string(timeout));
 
-        if (::connect(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage))) {
-            //LOG_SYSERR("::connect() failure");
-            throw SYSTEM_ERROR("Couldn't connect socket " + std::to_string(sd) + " to " +
-                    to_string());
-        }
+        // Get original socket flags
+        int origSockFlags = ::fcntl(sd, F_GETFL, 0);
+        if (origSockFlags < 0)
+            throw SYSTEM_ERROR("Couldn't get socket flags");
+
+        // Set O_NONBLOCK
+        if (::fcntl(sd, F_SETFL, origSockFlags | O_NONBLOCK) == -1)
+            throw SYSTEM_ERROR("Couldn't make socket non-blocking");
+
+        // Start connecting asynchronously
+        struct sockaddr_storage storage;
+        if (::connect(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage)) &&
+                errno != EINPROGRESS)
+            throw SYSTEM_ERROR("connect() failure");
+
+        struct pollfd pfd = {.fd=sd, .events=POLLOUT};
+        int           status = ::poll(&pfd, 1, timeout);
+
+        if (status == -1)
+            throw SYSTEM_ERROR("poll() failure");
+        if (status == 0)
+            throw RUNTIME_ERROR("Couldn't connect to " + to_string() + " in " +
+                    std::to_string(timeout) + " ms");
+
+        // Restore original socket flags
+        if (fcntl(sd, F_SETFL, origSockFlags) == -1)
+            throw SYSTEM_ERROR("Couldn't restore socket flags");
+    }
+
+    /**
+     * Connects a socket to this address.
+     *
+     * @param[in] sd            Socket descriptor
+     * @throws    SystemError   System failure
+     * @threadsafety            Safe
+     */
+    void connect(const int sd) const {
+        connect(sd, -1);
     }
 
     /**
@@ -419,6 +457,13 @@ std::string SockAddr::to_string(const bool withName) const noexcept
 void SockAddr::bind(const int sd) const
 {
     pImpl->bind(sd);
+}
+
+void SockAddr::connect(
+        const int sd,
+        const int timeout) const
+{
+    return pImpl->connect(sd, timeout);
 }
 
 void SockAddr::connect(const int sd) const

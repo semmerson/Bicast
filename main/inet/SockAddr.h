@@ -210,11 +210,24 @@ public:
     void bind(const int sd) const;
 
     /**
-     * Connects a socket to a remote socket address.
+     * Connects a socket to this address within a timeout.
+     *
+     * @param[in] sd           Socket descriptor
+     * @param[in] timeout      Timeout in ms. -1 => indefinite timeout; 0 => immediate return.
+     * @throw InvalidArgument  `timeout < -1`
+     * @throw RuntimeError     Timeout occurred
+     * @throw SystemError      System failure
+     * @threadsafety           Safe
+     */
+    void connect(
+            const int sd,
+            const int timeout) const;
+
+    /**
+     * Connects a socket to this address.
      *
      * @param[in] sd            Socket descriptor
-     * @throws    SystemError   Bad failure
-     * @throws    RuntimeError  Failure. Might be temporary.
+     * @throws    SystemError   System failure
      * @threadsafety            Safe
      */
     void connect(const int sd) const;
