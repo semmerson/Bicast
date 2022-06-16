@@ -25,10 +25,12 @@
 #include "InetAddr.h"
 #include "Shield.h"
 #include "Socket.h"
+#include "Stopwatch.h"
 
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <mutex>
@@ -84,8 +86,7 @@ protected:
     static uint64_t       readPad;        ///< Read alignment buffer
 
     /**
-     * Constructs a server-side socket. Closes the socket descriptor on
-     * destruction.
+     * Constructs a server-side socket. Closes the socket descriptor on destruction.
      *
      * @param[in] sd  Socket descriptor
      */
@@ -97,15 +98,35 @@ protected:
     }
 
     /**
+     * Constructs an unbound and unconnected socket of a given address family, type, and protocol.
+     *
+     * @param[in] family    Address family (e.g., `AF_INET`, `AF_INET6`)
+     * @param[in] type      Type of socket (e.g., `SOCK_STREAM`, `SOCK_DGRAM`, `SOCK_SEQPACKET`)
+     * @param[in] protocol  Socket protocol (e.g., `IPPROTO_TCP`, `IPPROTO_UDP`; 0 obtains default
+     *                      for type)
+     */
+    Impl(   const int  family,
+            const int  type,
+            const int  protocol) noexcept
+        : Impl()
+    {
+        sd = ::socket(family, type, protocol);
+        if (sd == -1)
+            throw SYSTEM_ERROR("Couldn't create socket {family=" + std::to_string(family) +
+                    ", type=" + std::to_string(type) + ", proto=" + std::to_string(protocol));
+        domain = family;
+    }
+
+    /**
      * Constructs.
      *
      * @param[in] inetAddr  IP address. May be wildcard.
      * @param[in] type      Type of socket (e.g., SOCK_STREAM)
      * @param[in] protocol  Socket protocol (e.g., IPPROTO_TCP; 0 obtains default for type)
      */
-    Impl(   const InetAddr& inetAddr,
-            const int       type,
-            const int       protocol) noexcept
+    Impl(   const InetAddr inetAddr,
+            const int      type,
+            const int      protocol) noexcept
         : Impl()
     {
         Shield shield{};
@@ -121,8 +142,8 @@ protected:
          * Alternative?
          * See <https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding>.
          *
-         * Works for unsigned and two's-complement `nbytes` but not one's-
-         * complement nor sign-magnitude
+         * Works for unsigned and two's-complement `nbytes` but not one's-complement nor
+         * sign-magnitude
          *
          * padding = (align - (nbytes & (align - 1))) & (align - 1)
          *         = -nbytes & (align - 1)
@@ -222,14 +243,21 @@ public:
         return !shutdownCalled && sd >= 0;
     }
 
+    /**
+     * Returns the socket descriptor.
+     *
+     * @return Socket descriptor
+     */
+    int getSockDesc() const {
+        return sd;
+    }
+
     SockAddr getLclAddr() const {
         struct sockaddr_storage storage = {};
         socklen_t               socklen = sizeof(storage);
 
-        if (::getsockname(sd, reinterpret_cast<struct sockaddr*>(&storage),
-                &socklen))
-            throw SYSTEM_ERROR("getsockname() failure on socket " +
-                    std::to_string(sd));
+        if (::getsockname(sd, reinterpret_cast<struct sockaddr*>(&storage), &socklen))
+            throw SYSTEM_ERROR("getsockname() failure on socket " + std::to_string(sd));
 
         return SockAddr(storage);
     }
@@ -247,6 +275,76 @@ public:
     }
 
     virtual std::string to_string() const =0;
+
+    /**
+     * Assigns this instance a local socket address.
+     *
+     * @param[in] inetAddr   Socket address. Note that, for multicast reception, this will be the
+     *                       socket address of the multicast group.
+     * @return               This instance
+     * @throw   SystemError  System failure
+     */
+    Impl& bind(const SockAddr lclAddr) {
+        sockaddr_storage storage;
+        lclAddr.get_sockaddr(storage);
+        LOG_DEBUG("Binding socket %s to %s", std::to_string(sd).data(), lclAddr.to_string().data());
+        if (::bind(sd, reinterpret_cast<struct sockaddr*>(&storage), sizeof(storage)))
+            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
+        return *this;
+    }
+
+    /**
+     * Makes this instance non-blocking.
+     *
+     * @return  This instance.
+     * @throw   SystemError  System failure
+     */
+    Impl& makeNonBlocking() {
+        // Get current socket flags
+        int currSockFlags = ::fcntl(sd, F_GETFL, 0);
+        if (currSockFlags < 0)
+            throw SYSTEM_ERROR("Couldn't get socket flags");
+
+        // Set O_NONBLOCK
+        if (::fcntl(sd, F_SETFL, currSockFlags | O_NONBLOCK) == -1)
+            throw SYSTEM_ERROR("Couldn't make socket non-blocking");
+
+        return *this;
+    }
+
+    /**
+     * Makes this instance blocking.
+     *
+     * @return  This instance.
+     * @throw   SystemError  System failure
+     */
+    Impl& makeBlocking() {
+        // Get current socket flags
+        int currSockFlags = ::fcntl(sd, F_GETFL, 0);
+        if (currSockFlags < 0)
+            throw SYSTEM_ERROR("Couldn't get socket flags");
+
+        // Set O_NONBLOCK
+        if (::fcntl(sd, F_SETFL, currSockFlags & ~O_NONBLOCK) == -1)
+            throw SYSTEM_ERROR("Couldn't make socket blocking");
+
+        return *this;
+    }
+
+    /**
+     * Connects this instance to a remote socket address.
+     *
+     * @param[in]  rmtAddr   Remote socket address
+     * @return               This instance
+     * @throw   SystemError  System failure
+     */
+    Impl& connect(const SockAddr rmtAddr) {
+        struct sockaddr_storage storage;
+        if (::connect(sd, rmtAddr.get_sockaddr(storage), sizeof(storage)) && errno != EINPROGRESS)
+            throw SYSTEM_ERROR("connect() failure");
+        rmtSockAddr = rmtAddr;
+        return *this;
+    }
 
     /**
      * Writes bytes.
@@ -375,10 +473,12 @@ void Socket::swap(Socket& socket) noexcept {
     pImpl.swap(socket.pImpl);
 }
 
+int Socket::getSockDesc() const {
+    return pImpl->getSockDesc();
+}
+
 SockAddr Socket::getLclAddr() const {
-    SockAddr sockAddr(pImpl->getLclAddr());
-    //LOG_DEBUG("%s", sockAddr.to_string().c_str());
-    return sockAddr;
+    return pImpl->getLclAddr();
 }
 
 in_port_t Socket::getLclPort() const {
@@ -391,6 +491,26 @@ SockAddr Socket::getRmtAddr() const noexcept {
 
 in_port_t Socket::getRmtPort() const {
     return pImpl->getRmtPort();
+}
+
+Socket& Socket::bind(const SockAddr lclAddr) {
+    pImpl->bind(lclAddr);
+    return *this;
+}
+
+Socket& Socket::makeNonBlocking() {
+    pImpl->makeNonBlocking();
+    return *this;
+}
+
+Socket& Socket::makeBlocking() {
+    pImpl->makeBlocking();
+    return *this;
+}
+
+Socket& Socket::connect(const SockAddr rmtAddr) {
+    pImpl->connect(rmtAddr);
+    return *this;
 }
 
 bool Socket::write(const void*  data,
@@ -460,24 +580,7 @@ bool Socket::isShutdown() const
 class TcpSock::Impl : public Socket::Impl
 {
 protected:
-    friend class TcpSrvrSock;
-
     Impl();
-
-    explicit Impl(const int sd)
-        : Socket::Impl(sd)
-    {}
-
-    /**
-     * Constructs.
-     *
-     * @param[in] inetAddr  IP address. May be wildcard.
-     * @exceptionsafety     Strong guarantee
-     * @cancellationpoint
-     */
-    explicit Impl(const InetAddr& inetAddr)
-        : Socket::Impl{inetAddr, SOCK_STREAM, IPPROTO_TCP}
-    {}
 
     /**
      * Writes to the socket. No host-to-network translation is performed.
@@ -590,6 +693,27 @@ protected:
     }
 
 public:
+    /**
+     * Constructs.
+     *
+     * @param[in] inetAddr  Associated IP address. May be wildcard. Used to determine address
+     *                      family.
+     * @exceptionsafety     Strong guarantee
+     * @cancellationpoint
+     */
+    explicit Impl(const InetAddr inetAddr)
+        : Socket::Impl{inetAddr, SOCK_STREAM, IPPROTO_TCP}
+    {}
+
+    explicit Impl(const int sd)
+        : Socket::Impl(sd)
+    {}
+
+    Impl(   const int family,
+            const bool dummy)
+        : Socket::Impl{family, SOCK_STREAM, IPPROTO_TCP}
+    {}
+
     virtual std::string to_string() const override
     {
         return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string()
@@ -640,7 +764,7 @@ public:
     /**
      * Constructs. Calls `::listen()`.
      *
-     * @param[in] sockAddr           Server's local socket address. The IP address may be the
+     * @param[in] lclSockAddr        Server's local socket address. The IP address may be the
      *                               wildcard, in which case the server will listen on all
      *                               interfaces. The port number may be zero, in which case it will
      *                               be chosen by the operating system.
@@ -651,17 +775,18 @@ public:
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
      * @throws    std::system_error  `::listen()` failure
      */
-    Impl(   const SockAddr& sockAddr,
-            const int       queueSize)
-        : TcpSock::Impl{sockAddr.getInetAddr()}
+    Impl(   const SockAddr lclSockAddr,
+            const int      queueSize)
+        : TcpSock::Impl{lclSockAddr.getInetAddr()}
     {
         //LOG_DEBUG("Setting SO_REUSEADDR");
         const int enable = 1;
         if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
             throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " + to_string());
 
-        //LOG_DEBUG("Binding socket");
-        sockAddr.bind(sd);
+        //LOG_NOTE("Binding socket %s to address %s", std::to_string(sd).data(),
+                //lclSockAddr.to_string().data());
+        lclSockAddr.bind(sd);
 
         //LOG_DEBUG("Setting SO_KEEPALIVE");
         if (::setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)))
@@ -705,8 +830,8 @@ public:
 };
 
 TcpSrvrSock::TcpSrvrSock(
-        const SockAddr& sockAddr,
-        const int       queueSize)
+        const SockAddr sockAddr,
+        const int      queueSize)
     : TcpSock(new Impl(sockAddr, queueSize)) {
 }
 
@@ -718,36 +843,107 @@ TcpSock TcpSrvrSock::accept() const {
 
 class TcpClntSock::Impl final : public TcpSock::Impl
 {
-public:
     /**
-     * Constructs. Attempts to connect to the remote endpoint.
+     * Connects this socket to the remote address within a timeout.
      *
-     * @param[in] sockAddr      Address of remote endpoint
-     * @throw     LogicError    Destination port number is zero
-     * @throw     RuntimeError  Couldn't connect to `sockAddr`. Might be
-     *                          temporary.
-     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
-     * @exceptionsafety         Strong guarantee
-     * @cancellationpoint       Yes
+     * @param[in] timeout   Timeout in ms. <0 => system's default timeout.
+     * @throw RuntimeError  Timeout occurred
+     * @throw SystemError   System failure
      */
-    Impl(const SockAddr& sockAddr)
-        : TcpSock::Impl(sockAddr.getInetAddr())
+    void connect(const int timeout) const {
+        LOG_DEBUG("Connecting socket %s", to_string().data());
+
+        // Get original socket flags
+        int origSockFlags = ::fcntl(sd, F_GETFL, 0);
+        if (origSockFlags < 0)
+            throw SYSTEM_ERROR("Couldn't get socket flags");
+
+        // Set O_NONBLOCK
+        if (::fcntl(sd, F_SETFL, origSockFlags | O_NONBLOCK) == -1)
+            throw SYSTEM_ERROR("Couldn't make socket non-blocking");
+
+        // Call `::connect()`
+        struct sockaddr_storage storage;
+        if (::connect(sd, rmtSockAddr.get_sockaddr(storage), sizeof(storage)) &&
+                errno != EINPROGRESS)
+            throw SYSTEM_ERROR("connect() failure");
+
+        struct pollfd pfd = {.fd=sd, .events=POLLOUT};
+        int           status = ::poll(&pfd, 1, (timeout < 0) ? -1 : timeout);
+
+        if (status == -1)
+            throw SYSTEM_ERROR("poll() failure");
+        if (status == 0)
+            throw RUNTIME_ERROR("Couldn't connect to " + to_string() + " in " +
+                    std::to_string(timeout) + " ms");
+
+        if ((pfd.revents & (POLLHUP | POLLERR)) || !(pfd.revents & POLLOUT))
+            throw SYSTEM_ERROR("Couldn't connect to " + to_string());
+
+        // Restore original socket flags
+        if (fcntl(sd, F_SETFL, origSockFlags) == -1)
+            throw SYSTEM_ERROR("Couldn't restore socket flags");
+    }
+
+public:
+    Impl(const int family)
+        : TcpSock::Impl(family, true)
+    {}
+
+    /**
+     * Constructs. Attempts to connect to a remote server.
+     *
+     * @param[in] srvrAddr         Address of remote server
+     * @param[in] timeout          Timeout in ms. <0 => system's default timeout.
+     * @throw     LogicError       Destination port number is zero
+     * @throw     RuntimeError     Positive timeout occurred
+     * @throw     SystemError      System failure
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          Yes
+     */
+    Impl(   const SockAddr srvrAddr,
+            const int       timeout)
+        : TcpSock::Impl(srvrAddr.getInetAddr())
     {
         //LOG_DEBUG("Checking port number");
-        if (sockAddr.getPort() == 0)
-            throw LOGIC_ERROR("Port number of " + sockAddr.to_string() + " is " "zero");
+        if (srvrAddr.getPort() == 0)
+            throw LOGIC_ERROR("Port number of " + srvrAddr.to_string() + " is " "zero");
+
+        //LOG_DEBUG("Setting remote socket address");
+        rmtSockAddr = srvrAddr;
 
         //LOG_DEBUG("Connecting socket");
-        // TODO: Add timeout to enable handling of unavailable remote hosts
-        sockAddr.connect(sd);
-        //LOG_DEBUG("Setting remote socket address");
-        rmtSockAddr = sockAddr;
+        connect(timeout);
     }
+
+    /**
+     * Constructs. Attempts to connect to a remote server.
+     *
+     * @param[in] srvrAddr         Address of remote server
+     * @throw     LogicError       Destination port number is zero
+     * @throw     RuntimeError     Timeout occurred
+     * @throw     SystemError      System failure
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          Yes
+     */
+    Impl(   const SockAddr srvrAddr)
+        : Impl(srvrAddr, -1)
+    {}
 };
 
-TcpClntSock::TcpClntSock(const SockAddr& sockAddr)
-    : TcpSock(new Impl(sockAddr)) {
-}
+TcpClntSock::TcpClntSock(const int family)
+    : TcpSock(new Impl(family))
+{}
+
+TcpClntSock::TcpClntSock(
+        const SockAddr srvrAddr,
+        const int      timeout)
+    : TcpSock(new Impl(srvrAddr, timeout))
+{}
+
+TcpClntSock::TcpClntSock(const SockAddr srvrAddr)
+    : TcpSock(new Impl(srvrAddr))
+{}
 
 /******************************************************************************/
 
@@ -770,10 +966,10 @@ class UdpSock::Impl final : public Socket::Impl
      *                     called if either address is based on a name)
      */
     static void join(
-            const int          sd,
-            const SockAddr&    ssmAddr,
-            const InetAddr&    srcAddr,
-            const InetAddr&    ifAddr)
+            const int      sd,
+            const SockAddr ssmAddr,
+            const InetAddr srcAddr,
+            const InetAddr ifAddr)
     {
         // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
 
@@ -851,37 +1047,6 @@ protected:
 
 public:
     /**
-     * Constructs a sending UDP socket. The operating system will choose which interface to use. If
-     * the destination IP address of the socket is a multicast group, then the time-to-live is set
-     * and loopback of datagrams is enabled.
-     *
-     * @param[in] destAddr   Destination socket address
-     * @cancellationpoint
-     */
-    Impl(const SockAddr& destAddr)
-        : Socket::Impl(destAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
-        , buf()
-        , bufLen(0)
-    {
-        if (destAddr.getInetAddr().isMulticast()) {
-            unsigned char  ttl = 250;
-
-            if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)))
-                throw SYSTEM_ERROR("Couldn't set time-to-live for multicast packets");
-
-            // Enable loopback of multicast datagrams
-            {
-                unsigned char enable = 1;
-                if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable, sizeof(enable)))
-                    throw SYSTEM_ERROR("Couldn't enable loopback of multicast datagrams");
-            }
-        }
-
-        destAddr.connect(sd);
-        rmtSockAddr = destAddr;
-    }
-
-    /**
      * Constructs a sending UDP socket. If the destination IP address of the socket is a multicast
      * group, then the time-to-live is set and loopback of datagrams is enabled.
      *
@@ -889,8 +1054,8 @@ public:
      * @param[in] ifaceAddr  IP address of interface to use. If wildcard, then O/S will choose.
      * @cancellationpoint
      */
-    Impl(   const SockAddr& destAddr,
-            const InetAddr& ifaceAddr)
+    Impl(   const SockAddr destAddr,
+            const InetAddr ifaceAddr)
         : Socket::Impl(destAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
         , buf()
         , bufLen(0)
@@ -911,9 +1076,26 @@ public:
             }
         }
 
-        destAddr.connect(sd);
         rmtSockAddr = destAddr;
+
+        //destAddr.connect(sd);
+        LOG_DEBUG("Connecting socket %d to %s", sd, destAddr.to_string().data());
+        struct sockaddr_storage storage;
+        if (::connect(sd, destAddr.get_sockaddr(storage), sizeof(storage)))
+            throw SYSTEM_ERROR("connect() failure");
     }
+
+    /**
+     * Constructs a sending UDP socket. The operating system will choose which interface to use. If
+     * the destination IP address of the socket is a multicast group, then the time-to-live is set
+     * and loopback of datagrams is enabled.
+     *
+     * @param[in] destAddr   Destination socket address
+     * @cancellationpoint
+     */
+    Impl(const SockAddr destAddr)
+        : Impl(destAddr, InetAddr("0.0.0.0"))
+    {}
 
     /**
      * Constructs a receiving, source-specific multicast, UDP socket.
@@ -923,9 +1105,9 @@ public:
      * @param[in] iface     IP address of interface to use. If wildcard, then O/S chooses.
      * @cancellationpoint   Yes
      */
-    Impl(   const SockAddr& ssmAddr,
-            const InetAddr& srcAddr,
-            const InetAddr& iface)
+    Impl(   const SockAddr ssmAddr,
+            const InetAddr srcAddr,
+            const InetAddr iface)
         : Socket::Impl(ssmAddr.getInetAddr(), SOCK_DGRAM, IPPROTO_UDP)
         , buf()
         , bufLen(0)
@@ -942,6 +1124,7 @@ public:
         const int yes = 1;
         if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) != 0)
             throw SYSTEM_ERROR("Couldn't reuse the same source-specific multicast address");
+
         ssmAddr.bind(sd);
         join(sd, ssmAddr, srcAddr, iface);
     }
@@ -950,7 +1133,7 @@ public:
      * Sets the interface to be used by the UDP socket for multicasting. The
      * default is system dependent.
      */
-    void setMcastIface(const InetAddr& iface) const {
+    void setMcastIface(const InetAddr iface) const {
         iface.makeIface(sd);
     }
 
@@ -977,24 +1160,24 @@ public:
     }
 };
 
-UdpSock::UdpSock(const SockAddr& destAddr)
+UdpSock::UdpSock(const SockAddr destAddr)
     : Socket(new Impl{destAddr})
 {}
 
 UdpSock::UdpSock(
-        const SockAddr& destAddr,
-        const InetAddr& ifaceAddr)
+        const SockAddr destAddr,
+        const InetAddr ifaceAddr)
     : Socket(new Impl{destAddr, ifaceAddr})
 {}
 
 UdpSock::UdpSock(
-        const SockAddr& ssmAddr,
-        const InetAddr& srcAddr,
-        const InetAddr& iface)
+        const SockAddr ssmAddr,
+        const InetAddr srcAddr,
+        const InetAddr iface)
     : Socket(new Impl{ssmAddr, srcAddr, iface})
 {}
 
-const UdpSock& UdpSock::setMcastIface(const InetAddr& iface) const
+const UdpSock& UdpSock::setMcastIface(const InetAddr iface) const
 {
     static_cast<UdpSock::Impl*>(pImpl.get())->setMcastIface(iface);
     return *this;

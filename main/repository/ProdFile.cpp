@@ -515,7 +515,7 @@ public:
         bool  success; // This item was written to the product-file?
         Guard guard(mutex);
 
-        if (prodInfo) {
+        if (this->prodInfo) {
             success = false; // Already saved
         }
         else {
@@ -570,7 +570,7 @@ public:
 
     ProdInfo getProdInfo() {
         Guard guard{mutex};
-        return ProdInfo(prodId, pathname, prodSize);
+        return prodInfo;
     }
 };
 
@@ -602,7 +602,7 @@ bool RcvProdFile::isComplete() const {
 
 bool
 RcvProdFile::save(const ProdInfo prodInfo) const {
-    return static_cast<Impl*>(pImpl.get())->save(rootFd, prodInfo);
+    return static_cast<Impl*>(pImpl.get())->save(prodInfo);
 }
 
 bool

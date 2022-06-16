@@ -13,4 +13,5 @@ add_library(misc OBJECT
 			   LinkedHashMap.h
 	LinkedMap.cpp	   LinkedMap.h
 	Preferences.cpp    Preferences.h
+	                   Stopwatch.h
 )

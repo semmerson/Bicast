@@ -173,10 +173,11 @@ public:
      * Sets a socket address storage structure.
      *
      * @param[out] storage  The structure to be set
+     * @return              Pointer to the structure
      * @cancellationpoint   Maybe (`::getaddrinfo()` may be one and will be
      *                      called if the address is based on a name)
      */
-    void get_sockaddr(struct sockaddr_storage& storage) const;
+    struct sockaddr* get_sockaddr(struct sockaddr_storage& storage) const;
 
     /**
      * Indicates if this instance is considered less than another.
@@ -208,46 +209,6 @@ public:
      * @threadsafety                 Safe
      */
     void bind(const int sd) const;
-
-    /**
-     * Connects a socket to this address within a timeout.
-     *
-     * @param[in] sd           Socket descriptor
-     * @param[in] timeout      Timeout in ms. -1 => indefinite timeout; 0 => immediate return.
-     * @throw InvalidArgument  `timeout < -1`
-     * @throw RuntimeError     Timeout occurred
-     * @throw SystemError      System failure
-     * @threadsafety           Safe
-     */
-    void connect(
-            const int sd,
-            const int timeout) const;
-
-    /**
-     * Connects a socket to this address.
-     *
-     * @param[in] sd            Socket descriptor
-     * @throws    SystemError   System failure
-     * @threadsafety            Safe
-     */
-    void connect(const int sd) const;
-
-    /**
-     * Joins the source-specific multicast group identified by this instance
-     * and the address of the sending host.
-     *
-     * @param[in] sd       Socket identifier
-     * @param[in] srcAddr  Address of the sending host
-     * @param[in] iface    Name of interface to use
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
-     *                     called if either address is based on a name)
-     */
-    void join(
-            const int          sd,
-            const InetAddr&    srcAddr,
-            const std::string& iface) const;
 
     /**
      * Writes to a transport.

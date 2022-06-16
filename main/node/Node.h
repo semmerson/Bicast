@@ -27,6 +27,7 @@
 #include "mcast.h"
 #include "P2pMgr.h"
 #include "Repository.h"
+#include "SubInfo.h"
 
 #include <memory>
 
@@ -65,9 +66,10 @@ public:
 
     /**
      * Halts execution. Does nothing if this instance isn't executing. Causes `run()` to return.
-     * Doesn't block. Must be paired with `run()`.
+     * Doesn't block. Must be paired with `run()`. Idempotent.
      *
      * @see `run()`
+     * @asyncsignalsafe  No
      */
     virtual void halt() =0;
 
@@ -194,63 +196,55 @@ public:
     using Pimpl = std::shared_ptr<SubNode>;
 
     /**
-     * Creates and returns an instance. The instance immediately becomes ready to accept connections
-     * from remote peers.
+     * Constructs.
      *
-     * @param[in] mcastAddr     Socket address of source-specific multicast group
-     * @param[in] srcAddr       IP address of source
-     * @param[in] mcastIface    IP address of interface to receive multicast on. May be wildcard, in
-     *                          which case O/S chooses.
-     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
-     *                          wildcard. If the port number is zero, then the operating system will
-     *                          choose an ephemeral port number.
-     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] subInfo       Subscription information
+     * @param[in] mcastIface    IP address of interface to receive multicast on
+     * @param[in] srvrSock      Server socket for local P2P server. IP address shall not be the
+     *                          wildcard.
+     * @param[in] acceptQSize   Size of `RpcSrvr::accept()` queue. Don't use 0.
+     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] trackerSize   Maximum size of pool of P2P server addresses
-     * @param[in] repoRoot      Pathname of the root directory of the repository
-     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles  Maximum number of open, data-products files
-     * @return                  An instance
-     */
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
     static Pimpl create(
-            const SockAddr mcastAddr,
-            const InetAddr srcAddr,
-            const InetAddr mcastIface,
-            const SockAddr p2pAddr,
-            const int      listenSize,
-            const unsigned maxPeers,
-            const unsigned evalTime,
-            const unsigned trackerSize,
-            const String&  repoRoot,
-            const SegSize  maxSegSize,
-            const long     maxOpenFiles);
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const TcpSrvrSock srvrSock,
+            const int         acceptQSize,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles);
+     */
 
     /**
-     * Constructs from partial information by contacting the publisher.
+     * Constructs.
      *
-     * @param[in] pubAddress    Socket address of publisher
-     * @param[in] ifaceAddr     IP address of interface to receive multicast on
-     * @param[in] p2pAddr       Socket address for local P2P server. It shall not specify the
-     *                          wildcard. If port number is zero, then operating system will choose
-     *                          an ephemeral port.
-     * @param[in] listenSize    Size of `::listen()` queue. Don't use 0.
+     * @param[in] subInfo       Subscription information
+     * @param[in] mcastIface    IP address of interface to receive multicast on
+     * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
+     *                          wildcard. If the port number is zero, then then O/S will choose an
+     *                          ephemeral port number.
+     * @param[in] acceptQSize   Size of `RpcSrvr::accept()` queue. Don't use 0.
+     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] trackerSize   Maximum size of pool of remote P2P-servers
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxOpenFiles  Maximum number of open files in repository
      */
     static Pimpl create(
-            const SockAddr pubAddr,
-            const InetAddr mcastIface,
-            const SockAddr p2pAddr,
-            const int      listenSize,
-            const unsigned maxPeers,
-            const unsigned evalTime,
-            const unsigned trackerSize,
-            const String&  repoRoot,
-            const long     maxOpenFiles);
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const SockAddr    p2pSrvrAddr,
+            const int         acceptQSize,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles);
 
     /**
      * Destroys.

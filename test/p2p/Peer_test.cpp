@@ -21,14 +21,13 @@ protected:
     typedef enum {
         INIT = 0,
         LISTENING             =   0x1,
-        PEER_SRVR_ADDRS_RCVD  =   0x2,
-        PROD_NOTICE_RCVD      =   0x4,
-        SEG_NOTICE_RCVD       =   0x8,
-        PROD_REQUEST_RCVD     =  0x10,
-        SEG_REQUEST_RCVD      =  0x20,
-        PROD_INFO_RCVD        =  0x40,
-        DATA_SEG_RCVD         =  0x80,
-        PROD_INFO_MISSED      = 0x100,
+        PROD_NOTICE_RCVD      =   0x2,
+        SEG_NOTICE_RCVD       =   0x4,
+        PROD_REQUEST_RCVD     =   0x8,
+        SEG_REQUEST_RCVD      =  0x10,
+        PROD_INFO_RCVD        =  0x20,
+        DATA_SEG_RCVD         =  0x40,
+        PROD_INFO_MISSED      =  0x80,
         DATA_SEG_MISSED       = 0x200
     } State;
     State             state;
@@ -176,18 +175,6 @@ public:
     }
 
     // Subscriber-side
-    void recvData(const Tracker tracker, SockAddr rmtAddr) override
-    {
-        LOG_TRACE;
-        EXPECT_EQ(1, tracker.size());
-        orState(PEER_SRVR_ADDRS_RCVD);
-    }
-
-    // Subscriber-side
-    void recvData(const SockAddr srvrAddr, SockAddr rmtAddr) override
-    {}
-
-    // Subscriber-side
     void recvData(const ProdInfo data, SockAddr rmtAddr) override
     {
         LOG_TRACE;
@@ -234,8 +221,7 @@ public:
         pubPeer = Peer::create(*static_cast<PubP2pMgr*>(this), rpcSrvr->accept());
 
         auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
-        InetAddr localhost("127.0.0.1");
-        EXPECT_EQ(localhost, rmtAddr);
+        EXPECT_EQ(pubAddr, rmtAddr);
 
         LOG_DEBUG("Starting publishing peer");
         pubPeer->start();
@@ -351,7 +337,6 @@ TEST_F(PeerTest, DataExchange)
         // Wait for the exchange to complete
         auto done = static_cast<State>(
                LISTENING |
-               PEER_SRVR_ADDRS_RCVD |
                PROD_NOTICE_RCVD |
                SEG_NOTICE_RCVD |
                PROD_REQUEST_RCVD |

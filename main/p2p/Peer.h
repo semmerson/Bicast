@@ -166,14 +166,24 @@ public:
     virtual bool notify(const ProdId    prodId) =0;
     virtual bool notify(const DataSegId dataSegId) =0;
 
+    virtual bool add(const SockAddr p2pSrvr) =0;
+    virtual bool add(const Tracker  tracker) =0;
+
+    virtual bool remove(const SockAddr p2pSrvr) =0;
+    virtual bool remove(const Tracker tracker) =0;
+
+    virtual void recvAdd(const SockAddr p2pSrvr) =0;
+    virtual void recvAdd(const Tracker tracker) =0;
+
+    virtual void recvRemove(const SockAddr p2pSrvr) =0;
+    virtual void recvRemove(const Tracker tracker) =0;
+
     virtual bool recvNotice(const ProdId    prodId) =0;
     virtual bool recvNotice(const DataSegId dataSegId) =0;
 
     virtual bool recvRequest(const ProdId    prodId) =0;
     virtual bool recvRequest(const DataSegId dataSegId) =0;
 
-    virtual void recvData(const Tracker tracker) =0;
-    virtual void recvData(const SockAddr srvrAddr) =0;
     virtual void recvData(const ProdInfo prodInfo) =0;
     virtual void recvData(const DataSeg dataSeg) =0;
 };
@@ -192,11 +202,18 @@ public:
     using Pimpl = std::shared_ptr<PeerSrvr<P2P_MGR>>;
 
     /**
-     * @throw InvalidArgument  Backlog argument is zero
+     * @throw InvalidArgument  Accept-queue size is zero
+     */
+    static Pimpl create(
+            const TcpSrvrSock srvrSock,
+            const unsigned    acceptQSize);
+
+    /**
+     * @throw InvalidArgument  Accept-queue size is zero
      */
     static Pimpl create(
             const SockAddr srvrAddr,
-            const unsigned listenSize);
+            const unsigned acceptQSize);
 
     virtual ~PeerSrvr() {};
 

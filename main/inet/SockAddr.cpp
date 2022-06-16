@@ -104,9 +104,10 @@ public:
         return inetAddr.hash() ^ portHash(port);
     }
 
-    void get_sockaddr(struct sockaddr_storage& storage) const
+    struct sockaddr* get_sockaddr(struct sockaddr_storage& storage) const
     {
         inetAddr.get_sockaddr(storage, port);
+        return reinterpret_cast<struct sockaddr*>(&storage);
     }
 
     /**
@@ -139,99 +140,11 @@ public:
     {
         struct sockaddr_storage storage;
 
-        LOG_DEBUG("Binding socket " + std::to_string(sd) + " to " + to_string());
-        if (::bind(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage)))
+        //LOG_NOTE("Binding socket " + std::to_string(sd) + " to " + to_string());
+        struct sockaddr* sockaddr = inetAddr.get_sockaddr(storage, port);
+        //LOG_NOTE("sockaddr->sa_family=" + std::to_string(sockaddr->sa_family));
+        if (::bind(sd, sockaddr, sizeof(storage)))
             throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
-    }
-
-    /**
-     * Connects a socket to this address within a timeout.
-     *
-     * @param[in] sd           Socket descriptor
-     * @param[in] timeout      Timeout in ms. -1 => indefinite timeout; 0 => immediate return.
-     * @throw InvalidArgument  `timeout < -1`
-     * @throw RuntimeError     Timeout occurred
-     * @throw SystemError      System failure
-     */
-    void connect(
-            const int sd,
-            const int timeout) const {
-        LOG_DEBUG("Connecting socket %d to %s", sd, to_string().data());
-
-        if (timeout < -1)
-            throw INVALID_ARGUMENT("Timeout < -1 ms: " + std::to_string(timeout));
-
-        // Get original socket flags
-        int origSockFlags = ::fcntl(sd, F_GETFL, 0);
-        if (origSockFlags < 0)
-            throw SYSTEM_ERROR("Couldn't get socket flags");
-
-        // Set O_NONBLOCK
-        if (::fcntl(sd, F_SETFL, origSockFlags | O_NONBLOCK) == -1)
-            throw SYSTEM_ERROR("Couldn't make socket non-blocking");
-
-        // Start connecting asynchronously
-        struct sockaddr_storage storage;
-        if (::connect(sd, inetAddr.get_sockaddr(storage, port), sizeof(storage)) &&
-                errno != EINPROGRESS)
-            throw SYSTEM_ERROR("connect() failure");
-
-        struct pollfd pfd = {.fd=sd, .events=POLLOUT};
-        int           status = ::poll(&pfd, 1, timeout);
-
-        if (status == -1)
-            throw SYSTEM_ERROR("poll() failure");
-        if (status == 0)
-            throw RUNTIME_ERROR("Couldn't connect to " + to_string() + " in " +
-                    std::to_string(timeout) + " ms");
-
-        // Restore original socket flags
-        if (fcntl(sd, F_SETFL, origSockFlags) == -1)
-            throw SYSTEM_ERROR("Couldn't restore socket flags");
-    }
-
-    /**
-     * Connects a socket to this address.
-     *
-     * @param[in] sd            Socket descriptor
-     * @throws    SystemError   System failure
-     * @threadsafety            Safe
-     */
-    void connect(const int sd) const {
-        connect(sd, -1);
-    }
-
-    /**
-     * Joins the source-specific multicast group identified by this instance
-     * and the address of the sending host.
-     *
-     * @param[in] sd       Socket identifier
-     * @param[in] srcAddr  Address of the sending host
-     * @param[in] ifAddr   Interface to use
-     * @threadsafety       Safe
-     * @exceptionsafety    Strong guarantee
-     * @cancellationpoint  Maybe (`::getaddrinfo()` may be one and will be
-     *                     called if either address is based on a name)
-     */
-    void join(
-            const int          sd,
-            const InetAddr&    srcAddr,
-            const std::string& iface) const
-    {
-        LOG_DEBUG("Joining multicast group %s from source %s on interface %s",
-                to_string().data(), srcAddr.to_string().data(), iface.data());
-
-        // NB: The following is independent of protocol (i.e., IPv4 or IPv6)
-        struct group_source_req mreq = {};
-
-        mreq.gsr_interface = ::if_nametoindex(iface.data());
-        inetAddr.get_sockaddr(mreq.gsr_group, port);
-        srcAddr.get_sockaddr(mreq.gsr_source, 0);
-
-        if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq,
-                sizeof(mreq)))
-            throw SYSTEM_ERROR("Couldn't join multicast group " +
-                    to_string() + " from source " + srcAddr.to_string());
     }
 
     bool write(Xprt xprt) const {
@@ -459,26 +372,6 @@ void SockAddr::bind(const int sd) const
     pImpl->bind(sd);
 }
 
-void SockAddr::connect(
-        const int sd,
-        const int timeout) const
-{
-    return pImpl->connect(sd, timeout);
-}
-
-void SockAddr::connect(const int sd) const
-{
-    return pImpl->connect(sd);
-}
-
-void SockAddr::join(
-        const int          sd,
-        const InetAddr&    srcAddr,
-        const std::string& iface) const
-{
-    pImpl->join(sd, srcAddr, iface);
-}
-
 const InetAddr SockAddr::getInetAddr() const noexcept
 {
     return pImpl->getInetAddr();
@@ -489,7 +382,7 @@ in_port_t SockAddr::getPort() const noexcept
     return pImpl->getPort();
 }
 
-void SockAddr::get_sockaddr(struct sockaddr_storage& storage) const
+struct sockaddr* SockAddr::get_sockaddr(struct sockaddr_storage& storage) const
 {
     return pImpl->get_sockaddr(storage);
 }

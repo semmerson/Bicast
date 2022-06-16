@@ -60,10 +60,10 @@ protected:
      * Returns an appropriate socket.
      *
      * @param[in] family       Address family. One of `AF_INET` or `AF_INET6`.
-     * @param[in] type         Type of socket. One of `SOCK_STREAM`,
-     *                         `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
-     * @param[in] protocol     Protocol. E.g., `IPPROTO_TCP` or `0` to obtain
-     *                         the default protocol.
+     * @param[in] type         Type of socket. One of `SOCK_STREAM`, `SOCK_DGRAM`, or
+     *                         `SOCK_SEQPACKET`.
+     * @param[in] protocol     Protocol. E.g., `IPPROTO_TCP`, `IPPROTO_UDP`. `0` obtains the
+     *                         default protocol for the type.
      * @return                 Appropriate socket
      * @throws    SystemError  `::socket()` failure
      */
@@ -71,6 +71,8 @@ protected:
             const int family,
             const int type,
             const int protocol) {
+        //LOG_NOTE("Creating socket: family=" + std::to_string(family) +
+                //", type=" + std::to_string(type) + ", proto=" + std::to_string(protocol));
         int sd = ::socket(family, type, protocol);
 
         if (sd == -1)
@@ -104,7 +106,7 @@ public:
 
     virtual ~Impl() noexcept;
 
-    virtual int getFamily() const noexcept =0;
+    virtual int getFamily() const =0;
 
     AddrType getAddrType() const noexcept {
         return addrType;
@@ -130,11 +132,8 @@ public:
 
     virtual size_t hash() const noexcept =0;
 
-    virtual SockAddr getSockAddr(const in_port_t port) const =0;
-
     /**
-     * Returns a socket descriptor appropriate to this instance's address
-     * family.
+     * Returns a socket descriptor appropriate to this instance's address family.
      *
      * @param[in] type               Type of socket. One of `SOCK_STREAM`,
      *                               `SOCK_DGRAM`, or `SOCK_SEQPACKET`.
@@ -170,8 +169,6 @@ public:
      * @cancellationpoint     Unknown due to non-standard function usage
      */
     virtual void makeIface(int sd) const =0;
-
-    virtual bool isMemberOf(const struct sockaddr* ifa_netmask) const =0;
 
     /**
      * Returns the index of the interface that has this address.
@@ -258,7 +255,7 @@ public:
     }
 
     Inet4Addr()
-        : Inet4Addr(INADDR_ANY)
+        : Inet4Addr(htonl(INADDR_ANY))
     {}
 
     Inet4Addr(Xprt xprt)
@@ -268,8 +265,7 @@ public:
             throw RUNTIME_ERROR("Constructor failure");
     }
 
-    int getFamily() const noexcept
-    {
+    int getFamily() const noexcept override {
         return AF_INET;
     }
 
@@ -278,8 +274,7 @@ public:
         return &addr;
     }
 
-    std::string to_string() const
-    {
+    std::string to_string() const override {
         char buf[INET_ADDRSTRLEN];
 
         if (inet_ntop(AF_INET, &addr, buf, sizeof(buf)) == nullptr)
@@ -288,66 +283,51 @@ public:
         return std::string(buf);
     }
 
-    bool operator <(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator <(const InetAddr::Impl& rhs) const noexcept override {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet4Addr& rhs) const noexcept override {
         return ntohl(addr.s_addr) < ntohl(rhs.addr.s_addr);
     }
 
-    bool operator <(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet6Addr& rhs) const noexcept override {
         return true;
     }
 
-    bool operator <(const NameAddr& rhs) const noexcept
-    {
+    bool operator <(const NameAddr& rhs) const noexcept override {
         return true;
     }
 
-    bool operator ==(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept override {
         return rhs == *this;
     }
 
-    bool operator ==(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet4Addr& rhs) const noexcept override {
         return addr.s_addr == rhs.addr.s_addr;
     }
 
-    bool operator ==(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet6Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator ==(const NameAddr& rhs) const noexcept
-    {
+    bool operator ==(const NameAddr& rhs) const noexcept override {
         return false;
     }
 
-    size_t hash() const noexcept {
+    size_t hash() const noexcept override {
         return myHash(addr.s_addr);
     }
 
     int socket(
             const int type,
-            const int protocol) const
-    {
+            const int protocol) const override {
         return createSocket(AF_INET, type, protocol);
-    }
-
-    SockAddr getSockAddr(const in_port_t port) const
-    {
-        return SockAddr(addr.s_addr, port);
     }
 
     struct sockaddr* get_sockaddr(
             struct sockaddr_storage& storage,
-            const in_port_t          port) const
-    {
+            const in_port_t          port) const override {
         ::memset(&storage, 0, sizeof(storage));
         struct sockaddr_in* const sockaddr = reinterpret_cast<struct sockaddr_in*>(&storage);
         sockaddr->sin_family = AF_INET;
@@ -356,20 +336,12 @@ public:
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
-    void makeIface(int sd) const override
-    {
-        LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s",
-                sd, to_string().data());
-        if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr)) <
-                0)
-            throw SYSTEM_ERROR("Couldn't set multicast interface for IPv4 UDP "
-                    "socket " + std::to_string(sd) + " to " + to_string());
-    }
-
-    bool isMemberOf(const struct sockaddr* netmask) const override {
-        const struct sockaddr_in* maskAddr = reinterpret_cast<const struct sockaddr_in*>(netmask);
-        return maskAddr->sin_family == AF_INET &&
-                (addr.s_addr & maskAddr->sin_addr.s_addr) == maskAddr->sin_addr.s_addr;
+    void makeIface(int sd) const override {
+        LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s", sd,
+                to_string().data());
+        if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr)) < 0)
+            throw SYSTEM_ERROR("Couldn't set multicast interface for IPv4 UDP socket " +
+                    std::to_string(sd) + " to " + to_string());
     }
 
     bool isAny() const override {
@@ -386,7 +358,7 @@ public:
         return ip >= 0XE8000100 && ip <= 0XE8FFFFFF;
     }
 
-    bool write(Xprt xprt) const {
+    bool write(Xprt xprt) const override {
         return xprt.write(addr.s_addr);
     }
 
@@ -494,8 +466,7 @@ public:
             throw RUNTIME_ERROR("Constructor failure");
     }
 
-    int getFamily() const noexcept
-    {
+    int getFamily() const noexcept override {
         return AF_INET6;
     }
 
@@ -504,8 +475,7 @@ public:
         return &addr;
     }
 
-    std::string to_string() const
-    {
+    std::string to_string() const override {
         char buf[INET6_ADDRSTRLEN];
 
         if (inet_ntop(AF_INET6, &addr, buf, sizeof(buf)) == nullptr)
@@ -514,96 +484,67 @@ public:
         return std::string(buf);
     }
 
-    bool operator <(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator <(const InetAddr::Impl& rhs) const noexcept override {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet4Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator <(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet6Addr& rhs) const noexcept override {
         return ::memcmp(&addr, &rhs.addr, sizeof(addr)) < 0;
     }
 
-    bool operator <(const NameAddr& rhs) const noexcept
-    {
+    bool operator <(const NameAddr& rhs) const noexcept override {
         return true;
     }
 
-    bool operator ==(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept override {
         return rhs == *this;
     }
 
-    bool operator ==(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet4Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator ==(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet6Addr& rhs) const noexcept override {
         return ::memcmp(&addr, &rhs.addr, sizeof(addr)) == 0;
     }
 
-    bool operator ==(const NameAddr& rhs) const noexcept
-    {
+    bool operator ==(const NameAddr& rhs) const noexcept override {
         return false;
     }
 
-    size_t hash() const noexcept {
+    size_t hash() const noexcept override {
         return myHash(*reinterpret_cast<const uint64_t*>(addr.s6_addr) ^
                       *reinterpret_cast<const uint64_t*>(addr.s6_addr+8));
     }
 
     int socket(
             const int type,
-            const int protocol) const
-    {
+            const int protocol) const override {
         return createSocket(AF_INET6, type, protocol);
-    }
-
-    SockAddr getSockAddr(const in_port_t port) const
-    {
-        return SockAddr(addr, port);
     }
 
     struct sockaddr* get_sockaddr(
             struct sockaddr_storage& storage,
-            const in_port_t          port) const
-    {
+            const in_port_t          port) const override {
         ::memset(&storage, 0, sizeof(storage));
-        struct sockaddr_in6* const sockaddr =
-                reinterpret_cast<struct sockaddr_in6*>(&storage);
-        sockaddr->sin6_family = AF_INET;
+        struct sockaddr_in6* const sockaddr = reinterpret_cast<struct sockaddr_in6*>(&storage);
+        sockaddr->sin6_family = AF_INET6;
         sockaddr->sin6_addr = addr;
         sockaddr->sin6_port = htons(port);
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
-    void makeIface(int sd) const override
-    {
+    void makeIface(int sd) const override {
         unsigned ifaceIndex = getIfaceIndex();
         LOG_DEBUG("Setting multicast interface for IPv6 UDP socket %d to %u",
                 sd, ifaceIndex);
-        if (setsockopt(sd, IPPROTO_IP, IPV6_MULTICAST_IF, &ifaceIndex,
-                       sizeof(ifaceIndex)) < 0)
-            throw SYSTEM_ERROR("Couldn't set multicast interface for IPv6 UDP "
-                    "socket " + std::to_string(sd) + " to " +
-                    std::to_string(ifaceIndex));
-    }
-
-    bool isMemberOf(const struct sockaddr* netmask) const override {
-        const struct sockaddr_in6* maskAddr = reinterpret_cast<const struct sockaddr_in6*>(netmask);
-        if (maskAddr->sin6_family != AF_INET6)
-            return false;
-        for (int i = 0; i < sizeof(addr.s6_addr); ++i)
-            if (addr.s6_addr[i] & maskAddr->sin6_addr.s6_addr[i] != maskAddr->sin6_addr.s6_addr[i])
-                return false;
-        return true;
+        if (setsockopt(sd, IPPROTO_IP, IPV6_MULTICAST_IF, &ifaceIndex, sizeof(ifaceIndex)) < 0)
+            throw SYSTEM_ERROR("Couldn't set multicast interface for IPv6 UDP socket " +
+                    std::to_string(sd) + " to " + std::to_string(ifaceIndex));
     }
 
     bool isAny() const override {
@@ -615,8 +556,7 @@ public:
     }
 
     /*
-     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
-     * FF3X::FFFF:FFFF (for IPv6).
+     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through FF3X::FFFF:FFFF (for IPv6).
      */
     bool isSsm() const override {
         // Get address in host byte-order
@@ -635,12 +575,11 @@ public:
             return false;
 
         // Check last 4 bytes
-        const uint32_t last4 = (ip[12] << 24) | (ip[13] << 16) |
-                (ip[14] << 8) | ip[15];
+        const uint32_t last4 = (ip[12] << 24) | (ip[13] << 16) | (ip[14] << 8) | ip[15];
         return last4 <= 0X40000000 || last4 >= 0X80000000;
     }
 
-    bool write(Xprt xprt) const {
+    bool write(Xprt xprt) const override {
         return xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
     }
 
@@ -653,74 +592,56 @@ public:
 
 class NameAddr final : public InetAddr::Impl
 {
-    using SizeType = uint8_t; ///< Type for holding length of hostname
+    using SizeType = uint8_t; ///< Type for holding length of hostname for transport
 
     std::string            name;
-    std::hash<std::string> myHash;
 
     /**
-     * Sets a socket address from the first IP-based Internet address that
-     * matches the given information.
+     * Resolves the name into an IP address.
      *
-     * @param[out] storage            Socket address
-     * @param[in]  family             Address family. One of `AF_INET` or
-     *                                `AF_INET6`.
-     * @param[in]  port               Port number in host byte-order
-     * @retval     `true`             Success. `sockaddr` is set.
-     * @retval     `false`            Failure. `sockaddr` is not set.
-     * @throws     std::system_error  `::getaddrinfo()` failure
-     * @exceptionsafety               Strong guarantee
-     * @threadsafety                  Safe
-     * @cancellationpoint             Maybe (`::getaddrinfo()` may be one)
+     * @return                  Corresponding IP address
+     * @throw  SystemError      System failure
+     * @throw  InvalidArgument  Couldn't resolve into IP address
      */
-    bool get_sockaddr(
-            struct sockaddr_storage& storage,
-            const int                family,
-            const in_port_t          port) const
-    {
-        bool             success = false;
-        struct addrinfo  hints = {};
+    InetAddr getIpAddr() const {
+        const char*      cstr = name.data();
         struct addrinfo* list;
+        InetAddr         inetAddr;
 
-        hints.ai_family = family;
-        hints.ai_socktype = 0;
-
-        if (::getaddrinfo(name.data(), nullptr, &hints, &list))
-            throw SYSTEM_ERROR(
-                    std::string("::getaddrinfo() failure for host \"") +
-                    name.data() + "\"");
+        if (::getaddrinfo(cstr, nullptr, nullptr, &list))
+            throw SYSTEM_ERROR("::getaddrinfo() failure for \"" + name + "\"");
         try {
-            for (struct addrinfo* entry = list; entry != NULL;
-                    entry = entry->ai_next) {
+            struct addrinfo* entry = list;
+            for (; entry != NULL; entry = entry->ai_next) {
                 if (entry->ai_family == AF_INET) {
-                    auto*       dstaddr =
-                            reinterpret_cast<struct sockaddr_in*>(&storage);
-                    const auto* srcaddr = reinterpret_cast
-                            <const struct sockaddr_in*>(entry->ai_addr);
-                    *dstaddr = *srcaddr;
-                    dstaddr->sin_port = htons(port);
-                    success = true;
+                    inetAddr = InetAddr(reinterpret_cast<const struct sockaddr_in*>(
+                            entry->ai_addr)->sin_addr);
                     break;
                 }
                 else if (entry->ai_family == AF_INET6) {
-                    auto*       dstaddr =
-                            reinterpret_cast<struct sockaddr_in6*>(&storage);
-                    const auto* srcaddr = reinterpret_cast
-                            <const struct sockaddr_in6*>(entry->ai_addr);
-                    *dstaddr = *srcaddr;
-                    dstaddr->sin6_port = htons(port);
-                    success = true;
+                    inetAddr = InetAddr(reinterpret_cast<const struct sockaddr_in6*>(
+                            entry->ai_addr)->sin6_addr);
                     break;
                 }
             }
 
             freeaddrinfo(list);
-            return success;
+
+            if (entry == NULL)
+                throw INVALID_ARGUMENT("Couldn't resolve \"" + name + "\" to an IP address");
         }
         catch (...) {
             freeaddrinfo(list);
             throw;
         }
+
+        return inetAddr;
+    }
+
+protected:
+    const void* getAddr(socklen_t* size) const override {
+        *size = name.size();
+        return name.data();
     }
 
 public:
@@ -729,8 +650,8 @@ public:
         , name(name)
     {
         if (name.size() > _POSIX_HOST_NAME_MAX)
-            throw INVALID_ARGUMENT("Name is longer than " +
-                    std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
+            throw INVALID_ARGUMENT("Name is longer than " + std::to_string(_POSIX_HOST_NAME_MAX) +
+                    " bytes");
     }
 
     NameAddr()
@@ -744,136 +665,99 @@ public:
             throw RUNTIME_ERROR("NameAddr(Xprt) failure");
     }
 
-    int getFamily() const noexcept
-    {
+    int getFamily() const override {
+#if 1
+        return getIpAddr().getFamily();
+#else
         return AF_UNSPEC;
+#endif
     }
 
-    const void* getAddr(socklen_t* size) const override {
-        *size = name.size();
-        return name.data();
-    }
-
-    std::string to_string() const
-    {
+    std::string to_string() const override {
         return std::string(name);
+        //return getIpAddr().to_string();
     }
 
-    bool operator <(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator <(const InetAddr::Impl& rhs) const noexcept override {
         return !(rhs < *this) && !(rhs == *this);
     }
 
-    bool operator <(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet4Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator <(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator <(const Inet6Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator <(const NameAddr& rhs) const noexcept
-    {
+    bool operator <(const NameAddr& rhs) const noexcept override {
         return name < rhs.name;
     }
 
-    bool operator ==(const InetAddr::Impl& rhs) const noexcept
-    {
+    bool operator ==(const InetAddr::Impl& rhs) const noexcept override {
         return rhs == *this;
     }
 
-    bool operator ==(const Inet4Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet4Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator ==(const Inet6Addr& rhs) const noexcept
-    {
+    bool operator ==(const Inet6Addr& rhs) const noexcept override {
         return false;
     }
 
-    bool operator ==(const NameAddr& rhs) const noexcept
-    {
+    bool operator ==(const NameAddr& rhs) const noexcept override {
         return name == rhs.name;
     }
 
-    size_t hash() const noexcept {
+    size_t hash() const noexcept override {
+        static std::hash<std::string> myHash;
         return myHash(name);
     }
 
     int socket(
             const int type,
-            const int protocol) const
-    {
+            const int protocol) const override {
+#if 1
+        return getIpAddr().socket(type, protocol);
+#else
         struct sockaddr_storage storage;
         return createSocket(get_sockaddr(storage, 0)->sa_family, type,
                 protocol);
-    }
-
-    SockAddr getSockAddr(const in_port_t port) const
-    {
-        return SockAddr(name, port);
+#endif
     }
 
     struct sockaddr* get_sockaddr(
             struct sockaddr_storage& storage,
-            const in_port_t          port) const
-    {
-        if (!get_sockaddr(storage, AF_INET, port) &&
-            !get_sockaddr(storage, AF_INET6, port))
-                throw RUNTIME_ERROR(
-                        "Couldn't get IP address for \"" + name + "\"");
-        return reinterpret_cast<struct sockaddr*>(&storage);
+            const in_port_t          port) const override {
+        return getIpAddr().get_sockaddr(storage, port);
     }
 
-    void makeIface(int sd) const override
-    {
-        struct sockaddr_storage storage;
-        get_sockaddr(storage, 0);
-
-        if (storage.ss_family == AF_INET) {
-            const auto* sockaddr =
-                    reinterpret_cast<struct sockaddr_in*>(&storage);
-            Inet4Addr(sockaddr->sin_addr.s_addr).makeIface(sd);
-        }
-        else if (storage.ss_family == AF_INET6) {
-            const auto* sockaddr =
-                    reinterpret_cast<struct sockaddr_in6*>(&storage);
-            Inet6Addr(sockaddr->sin6_addr).makeIface(sd);
-        }
-        else {
-            throw LOGIC_ERROR("Unsupported address family: " +
-                    std::to_string(storage.ss_family));
-        }
-    }
-
-    bool isMemberOf(const struct sockaddr* netmask) const override {
-        return false;
+    void makeIface(int sd) const override {
+        getIpAddr().makeIface(sd);
     }
 
     bool isAny() const override {
-        return false;
+        return getIpAddr().isAny();
     }
 
     bool isMulticast() const override {
-        return false;
+        return getIpAddr().isMulticast();
     }
 
     bool isSsm() const override {
-        return false;
+        return getIpAddr().isSsm();
     }
 
-    bool write(Xprt xprt) const {
+    bool write(Xprt xprt) const override {
         return xprt.write<SizeType>(name);
     }
 
     bool read(Xprt xprt) {
         auto success = xprt.read<SizeType>(name);
         if (success && name.size() > _POSIX_HOST_NAME_MAX)
-            throw RUNTIME_ERROR("Hostname is longer than " +
-                    std::to_string(_POSIX_HOST_NAME_MAX) + " bytes");
+            throw RUNTIME_ERROR("Hostname is longer than " + std::to_string(_POSIX_HOST_NAME_MAX) +
+                    " bytes");
         return success;
     }
 };
@@ -910,27 +794,38 @@ InetAddr::InetAddr(const std::string& addr)
         pImpl.reset(new Inet6Addr(in6addr));
     }
     else {
-        pImpl.reset(new NameAddr(addr));
+        pImpl.reset(new NameAddr(cstr));
     }
 }
 
-InetAddr::operator bool() const noexcept
-{
+InetAddr::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-int InetAddr::getFamily() const noexcept
-{
+int InetAddr::getFamily() const {
     return pImpl->getFamily();
 }
 
-std::string InetAddr::to_string() const
-{
+InetAddr InetAddr::getWildcard(const int family) noexcept {
+    static InetAddr ipv4Wildcard{htonl(INADDR_ANY)};
+    static InetAddr ipv6Wildcard{in6addr_any};
+
+    if (family == AF_INET)
+        return ipv4Wildcard;
+    if (family == AF_INET6)
+        return ipv6Wildcard;
+    throw INVALID_ARGUMENT("Invalid Internet address family: " + std::to_string(family));
+}
+
+InetAddr InetAddr::getWildcard() const {
+    return getWildcard(pImpl->getFamily());
+}
+
+std::string InetAddr::to_string() const {
     return pImpl ? pImpl->to_string() : "<unset>";
 }
 
-bool InetAddr::operator<(const InetAddr& rhs) const noexcept
-{
+bool InetAddr::operator<(const InetAddr& rhs) const noexcept {
     auto impl1 = pImpl.get();
     auto impl2 = rhs.pImpl.get();
     return (impl1 == impl2)
@@ -940,58 +835,44 @@ bool InetAddr::operator<(const InetAddr& rhs) const noexcept
                   : *impl1 < *impl2;
 }
 
-bool InetAddr::operator==(const InetAddr& rhs) const noexcept
-{
+bool InetAddr::operator==(const InetAddr& rhs) const noexcept {
     return !(*pImpl < *rhs.pImpl || *rhs.pImpl < *pImpl);
 }
 
-size_t InetAddr::hash() const noexcept
-{
+size_t InetAddr::hash() const noexcept {
     return pImpl ? pImpl->hash() : 0;
-}
-
-SockAddr InetAddr::getSockAddr(const in_port_t port) const
-{
-    return pImpl->getSockAddr(port);
 }
 
 int InetAddr::socket(
         const int type,
-        const int protocol) const
-{
+        const int protocol) const {
     return pImpl->socket(type, protocol);
 }
 
 struct sockaddr* InetAddr::get_sockaddr(
         struct sockaddr_storage& storage,
-        const in_port_t          port) const
-{
+        const in_port_t          port) const {
     return pImpl->get_sockaddr(storage, port);
 }
 
-const InetAddr& InetAddr::makeIface(int sd) const
-{
+const InetAddr& InetAddr::makeIface(int sd) const {
     pImpl->makeIface(sd);
     return *this;
 }
 
-unsigned InetAddr::getIfaceIndex() const
-{
+unsigned InetAddr::getIfaceIndex() const {
     return pImpl->getIfaceIndex();
 }
 
-bool InetAddr::isAny() const
-{
+bool InetAddr::isAny() const {
     return pImpl->isAny();
 }
 
-bool InetAddr::isMulticast() const
-{
+bool InetAddr::isMulticast() const {
     return pImpl->isMulticast();
 }
 
-bool InetAddr::isSsm() const
-{
+bool InetAddr::isSsm() const {
     return pImpl->isSsm();
 }
 
@@ -1033,6 +914,3 @@ std::ostream& operator<<(std::ostream& ostream, const hycast::InetAddr& addr) {
 }
 
 } // namespace
-
-namespace std {
-}

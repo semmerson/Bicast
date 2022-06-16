@@ -115,7 +115,22 @@ public:
 
     operator bool() const noexcept;
 
-    int getFamily() const noexcept;
+    int getFamily() const;
+
+    /**
+     * Returns the wildcard address for an address family.
+     *
+     * @param[in] family  Internet address family: `AF_INET`, `AF_INET6`
+     * @return            Corresponding wildcard address
+     */
+    static InetAddr getWildcard(const int family) noexcept;
+
+    /**
+     * Returns the wildcard address for the address family of this instance.
+     *
+     * @return Wildcard address for this instance's address family
+     */
+    InetAddr getWildcard() const;
 
     /**
      * Returns the string representation of this instance.
@@ -129,15 +144,6 @@ public:
     bool operator ==(const InetAddr& rhs) const noexcept;
 
     size_t hash() const noexcept;
-
-    /**
-     * Returns a socket address corresponding to this instance and a port
-     * number.
-     *
-     * @param[in] port  Port number
-     * @return          Corresponding socket address
-     */
-    SockAddr getSockAddr(const in_port_t port) const;
 
     /**
      * Returns a socket descriptor appropriate to this instance's address

@@ -115,18 +115,6 @@ public:
 
     // Subscriber-side
     void recvData(
-            const Tracker  tracker,
-            const SockAddr rmtAddr) override
-    {}
-
-    // Subscriber-side
-    void recvData(
-            const SockAddr srvrAddr,
-            const SockAddr rmtAddr) override
-    {}
-
-    // Subscriber-side
-    void recvData(
             const ProdInfo data,
             const SockAddr rmtAddr) override
     {}

@@ -20,7 +20,7 @@
  *     applications is strictly locally determined by the sending host."
  */
 #define SSM_FAMILY     AF_INET
-#define SSM_IP_ADDR    "232.128.117.1"
+#define SSM_IP_ADDR    "232.1.1.1"
 #define SSM_PORT       38800
 #define SSM_SOCK_ADDR  SSM_IP_ADDR ":38800"
 

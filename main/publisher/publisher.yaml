@@ -1,23 +1,20 @@
 Name: TEST                   # Name of feed
 LogLevel: DEBUG              # Logging level
-Server:                      # Publisher's server (not the P2P server)
-  SockAddr: localhost:38800  # Socket address
-  ListenSize: 256            # Size of `::listen()` queue
 MaxSegSize: 1444             # Maximum size of a data-segment in bytes
+Server:                      # Publisher's server (not the P2P server)
+  SockAddr: localhost:38800  # Socket address of server. Port number must not be 0.
+  QueueSize: 256             # Maximum number of pending connections
 Multicast:                   # Multicast component
-  GroupAddr: 232.1.1.1:38800 # Socket address of multicast group
-  Source: localhost          # Internet address of source (i.e., which interface)
+  DstAddr: 232.1.1.1:38800   # Destination socket address of multicast group
+  SrcAddr: localhost         # Internet address of source (i.e., which interface). Must not be
+                             # wildcard.
 Peer2Peer:                   # Peer-to-peer component
   Server:                    # Local P2P server
-    InetAddr: localhost      # Internet address
-    ListenSize: 8            # Size of listen(2) queue
+    IfaceAddr: localhost     # Internet address of interface used by server. Must not be wildcard.
+    QueueSize: 8             # Maximum number of pending Hycast connections
   MaxPeers: 8                # Maximum number of connected subscriber-peers
   TrackerSize: 100           # Maximum size of list of P2P servers
-  ReplaceTrigger:            # When worst peer of full set should be replaced
-    Type: time               # Type of indicator
-    Duration: 60000          # Evaluation duration in ms
-    #Type: data               # Type of indicator
-    #Threshold: 1000000       # Threshold amount in bytes
+  EvalTime: 60               # Peer-evaluation duration in seconds
 Repository:                  # Data product repository
   Pathname: repo             # Pathname of repository
   MaxOpenFiles: 10           # Maximum number of open files

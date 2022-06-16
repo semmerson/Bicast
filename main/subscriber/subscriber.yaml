@@ -1,20 +1,17 @@
 LogLevel: NOTE               # Logging level
 Publisher: localhost:38800   # Publisher's socket address
 MaxSegSize: 1444             # Maximum size of canonical data-segment in bytes
-Multicast:
-  GroupAddr: 232.1.1.1:38800 # Socket address of multicast group
-  Source: localhost          # Internet address of source
-Peer2Peer:                   
+Multicast:                   # Multicast component
+  DstAddr: 232.1.1.1:38800   # Socket address of destination of multicast group
+  SrcAddr: localhost         # Internet address of source of multicast group
+Peer2Peer:                   # Peer-to-peer component
   Server:                    # Local P2P server
-    InetAddr: localhost      # Internet address
-    ListenSize: 8            # Size of listen(2) queue
-  MaxPeers: 8                # Maximum number of connected subscriber-peers
-  PeerListSize: 100          # Maximum size of list of potential P2P servers
-  ReplaceTrigger:            # When worst peer should be replaced
-    Type: time               # Type of indicator
-    Duration: 60000          # Evaluation duration in ms
-#   Type: data               # Type of indicator
-#   Threshold: 1000000       # Threshold amount in bytes
+    IfaceAddr: localhost     # Internet address of interface used by server. Must not be wildcard.
+    QueueSize: 8             # Maximum number of pending Hycast connections
+  Timeout: 15000             # Timeout, in ms, for connecting to remote P2P servers
+  MaxPeers: 8                # Maximum number of connected peers
+  TrackerSize: 100           # Maximum size of list of potential P2P servers
+  EvalTime: 60               # Peer-evaluation duration in seconds
 Repository:                  # Data product repository
   Pathname: repo             # Pathname of root directory of repository
   MaxOpenFiles: 10           # Maximum number of open product-files

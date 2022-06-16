@@ -40,24 +40,27 @@ struct RunPar {
     InetAddr  mcastIface; ///< Address of interface to use to receive multicast. May be wildcard.
     struct P2pArgs {
         struct SrvrArgs {
-            SockAddr addr;       ///< P2P server's address. Must not be wildcard.
-            int      listenSize; ///< Size of `::listen()` queue. Don't use 0.
+            SockAddr addr;        ///< P2P server's address. Must not be wildcard.
+            int      acceptQSize; ///< Size of `RpcSrvr::accept()` queue. Don't use 0.
             SrvrArgs(
                     const SockAddr& addr,
-                    const int       listenSize)
+                    const int       acceptQSize)
                 : addr(addr)
-                , listenSize(listenSize)
+                , acceptQSize(acceptQSize)
             {}
-        }         srvr;
+        }        srvr;
+        int      timeout;     ///< Timeout in ms for connecting to remote P2P server
         int      trackerSize; ///< Size of tracker object
         int      maxPeers;    ///< Maximum number of peers to have
         int      evalTime;    ///< Time interval for evaluating peer performance
         P2pArgs(const SockAddr& addr,
-                const int       listenSize,
+                const int       acceptQSize,
+                const int       timeout,
                 const int       trackerSize,
                 const int       maxPeers,
                 const int       evalTime)
-            : srvr(addr, listenSize)
+            : srvr(addr, acceptQSize)
+            , timeout(timeout)
             , trackerSize(trackerSize)
             , maxPeers(maxPeers)
             , evalTime(evalTime)
@@ -78,19 +81,15 @@ struct RunPar {
         : logLevel(LogLevel::NOTE)
         , pubAddr()
         , mcastIface("0.0.0.0")
-        , p2p(SockAddr(), 8, 100, 8, 60)
+        , p2p(SockAddr(), 8, 15000, 100, 8, 60)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
     {}
 };
 
 static sem_t             sem;       ///< Semaphore for async-signal-safe state changes
-static std::atomic<bool> stop;      ///< Should the program stop?
 static ThreadEx          threadEx;  ///< Exception thrown by a thread
 static RunPar            runPar;    ///< Runtime parameters:
-const static RunPar      defRunPar; ///< Default runtime parameters
-static SubNode::Pimpl    subNode;   ///< Data-product subscribing node
-static SubInfo           subInfo;   ///< Subscription information from publisher
-static Tracker           tracker;   ///< Addresses of P2P servers
+static const RunPar      defRunPar; ///< Default runtime parameters
 
 static void usage()
 {
@@ -98,7 +97,7 @@ static void usage()
 "Usage:\n"
 "    " << log_getName() << " -h\n"
 "    " << log_getName() << " [-c <configFile>] [-e <evalTime>] [-l <level>] [-m <maxPeers>]\n"
-"        [-o <maxOpenFiles>] [-q <listenSize>] [-r <repoRoot>] [-t <trackerSize>]\n"
+"        [-o <maxOpenFiles>] [-q <maxPending>] [-r <repoRoot>] [-t <trackerSize>]\n"
 "        <pubAddr> <p2pAddr>\n"
 "where:\n"
 "    -h                Print this help message on standard error, then exit.\n"
@@ -115,8 +114,10 @@ static void usage()
                        ".\n"
 "    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
                        defRunPar.repo.maxOpenFiles << ".\n"
-"    -q <listenSize>   Size of P2P server's listen() queue. Default is " <<
-                       defRunPar.p2p.srvr.listenSize << ".\n"
+"    -p <timeout>      Timeout, in ms, for connecting to remote P2P server. Default is " <<
+                       defRunPar.p2p.timeout << ".\n"
+"    -q <maxPending>   Maximum number of pending connections to P2P server. Default is " <<
+                       defRunPar.p2p.srvr.acceptQSize << ".\n"
 "    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
 "    -t <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
@@ -128,6 +129,16 @@ static void usage()
 "SIGUSR2 rotates the logging level.\n";
 }
 
+/**
+ * Tries to decode a scalar (i.e., primitive) value in a YAML map.
+ *
+ * @tparam     T                 Type of scalar value
+ * @param[in]  parent            Map containing the scalar
+ * @param[in]  key               Name of the scalar
+ * @param[out] value             Scalar value
+ * @throw std::invalid_argument  Parent node isn't a map
+ * @throw std::invalid_argument  Subnode with given name isn't a scalar
+ */
 template<class T>
 static void tryDecode(
         YAML::Node&   parent,
@@ -170,25 +181,18 @@ static void setFromConfig(const String& pathname)
         if (node1) {
             auto node2 = node1["Server"];
             if (node2) {
-                auto node2 = node1["InetAddr"];
+                auto node2 = node1["IfaceAddr"];
                 if (node2)
                     runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
-
-                tryDecode<decltype(runPar.p2p.srvr.listenSize)>(node2, "ListenSize",
-                        runPar.p2p.srvr.listenSize);
+                tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
+                        runPar.p2p.srvr.acceptQSize);
             }
 
+            tryDecode<decltype(runPar.p2p.timeout)>(node1, "Timeout", runPar.p2p.timeout);
             tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers", runPar.p2p.maxPeers);
             tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
                     runPar.p2p.trackerSize);
-
-            node2 = node1["ReplaceTrigger"];
-            if (node2) {
-                auto node3 = node1["Type"];
-                if (node3 && node3.as<String>() == "time")
-                    tryDecode<decltype(runPar.p2p.evalTime)>(node2, "Duration",
-                            runPar.p2p.evalTime);
-            }
+            tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime", runPar.p2p.evalTime);
         }
 
         node1 = node0["Repository"];
@@ -215,8 +219,10 @@ static void vetRunPars()
 
     if (!runPar.p2p.srvr.addr)
         throw INVALID_ARGUMENT("IP address for local P2P server wasn't specified");
-    if (runPar.p2p.srvr.listenSize <= 0)
+    if (runPar.p2p.srvr.acceptQSize <= 0)
         throw INVALID_ARGUMENT("Size of local P2P server's listen() queue is not positive");
+    if (runPar.p2p.timeout < -1)
+        throw INVALID_ARGUMENT("P2p connection timeout is less than -1");
     if (runPar.p2p.maxPeers <= 0)
         throw INVALID_ARGUMENT("Maximum number of peers is not positive");
     if (runPar.p2p.trackerSize <= 0)
@@ -233,15 +239,6 @@ static void vetRunPars()
                 "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
 }
 
-/// Initializes non-command-line runtime parameters
-static void init()
-{
-    if (sem_init(&sem, 0, 0) == -1)
-            throw SYSTEM_ERROR("Couldn't initialize semaphore");
-
-    tracker = Tracker(runPar.p2p.trackerSize);
-}
-
 /**
  * Sets runtime parameters from the command-line.
  *
@@ -256,7 +253,7 @@ static void getCmdPars(
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
     int c;
-    while ((c = ::getopt(argc, argv, ":c:e:l:m:o:q:r:t:")) != -1) {
+    while ((c = ::getopt(argc, argv, ":c:e:l:m:o:p:q:r:t:")) != -1) {
         switch (c) {
         case 'h': {
             usage();
@@ -309,11 +306,19 @@ static void getCmdPars(
                         "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
             break;
         }
-        case 'q': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.listenSize) != 1)
+        case 'p': {
+            if (::sscanf(optarg, "%d", &runPar.p2p.timeout) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.srvr.listenSize <= 0)
+            if (runPar.p2p.timeout < -1)
+                throw INVALID_ARGUMENT("P2P server connection-time is less than -1");
+            break;
+        }
+        case 'q': {
+            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.acceptQSize) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            if (runPar.p2p.srvr.acceptQSize <= 0)
                 throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
             break;
         }
@@ -345,7 +350,7 @@ static void getCmdPars(
     } // While getopt() loop
 
     if (argv[optind] == nullptr)
-        throw INVALID_ARGUMENT("Socket address of publisher wasn't specified");
+        throw INVALID_ARGUMENT("Publisher's socket address wasn't specified");
     runPar.pubAddr = SockAddr(argv[optind++]);
 
     if (argv[optind] == nullptr)
@@ -356,40 +361,54 @@ static void getCmdPars(
         throw INVALID_ARGUMENT("Excess arguments were specified");
 
     vetRunPars();
-    init(); // Initializes non-command-line variables
 }
 
-static void getSubInfo()
+/// Creates the subscriber node.
+static SubNode::Pimpl createSubNode()
 {
-    /**
-     * Gets subscriber information from the publisher. Connects to it, sends the socket address
-     * of the local P2P server, reads the subscription information, and closes the connection.
-     *
-     * @param[in]  pubAddr  Socket address of the publisher
-     * @param[out] subInfo  Subscription information
-     */
-    void getSubInfo(
-            const SockAddr pubAddr,
-            SubInfo&       subInfo) {
-        // Keep consonant with `Publisher::serve()`
-        Xprt xprt{TcpClntSock(pubAddr)};
-        p2pMgr->getSrvrAddr().write(xprt);
-        subInfo.read(xprt);
-    }
+    // Keep consonant with `Publisher::handleSubscriber()`
+
+    Xprt    xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
+    SubInfo subInfo;
+
+    if (!subInfo.read(xprt))
+        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher \"" +
+                runPar.pubAddr.to_string() + "\"");
+
+    auto subNode = SubNode::create(subInfo, runPar.mcastIface, runPar.p2p.srvr.addr,
+            runPar.p2p.srvr.acceptQSize, runPar.p2p.timeout, runPar.p2p.maxPeers,
+            runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
+
+    if (!subNode->getP2pSrvrAddr().write(xprt))
+        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher \"" +
+                runPar.pubAddr.to_string() + "\"");
+
+    return subNode;
 }
 
 /**
- * Halts the subscribing node.
+ * Signals the program to halt.
+ *
+ * @threadsafefy     Safe
+ * @asyncsignalsafe  Yes
+ */
+static void halt()
+{
+    sem_post(&sem);
+}
+
+/**
+ * Handles a termination signal.
  *
  * @param[in] sig  Signal number. Ignored.
  */
-static void sigHand(const int sig)
+static void sigHandler(const int sig)
 {
-    subNode->halt(); // Gracefully terminate
+    halt();
 }
 
 /**
- * Sets signal handler.
+ * Sets the signal handler.
  */
 static void setSigHand()
 {
@@ -397,21 +416,32 @@ static void setSigHand()
 
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = 0; // Allow SIGINT and SIGTERM to interrupt system calls
-    sigact.sa_handler = &sigHand;
+    sigact.sa_flags = SA_RESTART; // Restart interrupted system calls
+    sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
+}
 
-    // Ensure that the above signals will be caught
-    sigset_t sigset;
-    (void)sigemptyset(&sigset);
-    (void)sigaddset(&sigset, SIGINT);
-    (void)sigaddset(&sigset, SIGTERM);
-    (void)sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+/// Sets the exception thrown on an internal thread.
+static void setException(const std::exception& ex)
+{
+    threadEx.set(ex);
+    halt();
+}
+
+/// Executes the subscribing node.
+static void runNode(SubNode::Pimpl subNode)
+{
+    try {
+        subNode->run();
+    }
+    catch (const std::exception& ex) {
+        setException(ex);
+    }
 }
 
 /**
- * Publishes data-products.
+ * Subscribes to data-products.
  *
  * @param[in] argc  Number of command-line arguments
  * @param[in] argv  Command-line arguments
@@ -420,32 +450,32 @@ static void setSigHand()
  * @retval    2     Runtime error
  */
 int main(
-        const int    argc, ///< Number of command-line arguments
-        char* const* argv) ///< Command-line arguments
+        const int    argc,
+        char* const* argv)
 {
-    int status;
+    int status = 2;
 
     std::set_terminate(&terminate); // NB: Hycast version
 
     try {
         getCmdPars(argc, argv);
-        getSubInfo();
 
-        subNode = SubNode::create(
-            runPar.pubAddr,
-            runPar.mcastIface,
+        if (sem_init(&sem, 0, 0) == -1)
+                throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-            runPar.p2p.srvr.addr,
-            runPar.p2p.srvr.listenSize,
-            runPar.p2p.maxPeers,
-            runPar.p2p.evalTime,
-
-            runPar.p2p.trackerSize,
-
-            runPar.repo.rootDir,
-            runPar.repo.maxOpenFiles);
-
+        auto subNode = createSubNode();
         setSigHand(); // Catches termination signals
+
+        auto nodeThread = Thread(&runNode, subNode);
+
+        ::sem_wait(&sem); // Returns if failure on a thread or termination signal
+        ::sem_destroy(&sem);
+
+        subNode->halt(); // Idempotent
+        nodeThread.join();
+
+        threadEx.throwIfSet(); // Throws if failure on a thread
+        status = 0;
     }
     catch (const std::invalid_argument& ex) {
         LOG_FATAL(ex);
@@ -457,5 +487,5 @@ int main(
         status = 2;
     }
 
-    return 0;
+    return status;
 }

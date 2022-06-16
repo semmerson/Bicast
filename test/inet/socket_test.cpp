@@ -178,7 +178,9 @@ protected:
         clntSock = srvrAddr.getInetAddr().socket(SOCK_STREAM);
 
         try {
-            srvrAddr.connect(clntSock);
+            struct sockaddr_storage storage;
+            if (::connect(clntSock, srvrAddr.get_sockaddr(storage), sizeof(storage)))
+                throw hycast::SYSTEM_ERROR("connect() failure");
 
             for (;;) {
                 unsigned char byte = 0xbd;

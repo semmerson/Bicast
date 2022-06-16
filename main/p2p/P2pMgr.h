@@ -63,11 +63,11 @@ public:
     struct RunPar {
         struct Srvr {
             SockAddr addr;       ///< Socket address
-            int      listenSize; ///< Size of `::listen()` queue
+            int      acceptQSize; ///< Size of `::listen()` queue
             Srvr(   const SockAddr addr,
                     const int      listenSize)
                 : addr(addr)
-                , listenSize(listenSize)
+                , acceptQSize(listenSize)
             {}
         }         srvr;           ///< P2P server
         int       maxPeers;       ///< Maximum number of connected peers
@@ -86,7 +86,8 @@ public:
     };
 
     /**
-     * Creates a publishing P2P manager.
+     * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
+     * anything with it until `run()` or `start()` is called.
      *
      * @param[in] pubNode       Hycast publishing node
      * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a specific interface
@@ -217,29 +218,75 @@ public:
     using Pimpl     = std::shared_ptr<SubP2pMgr>;
 
     /**
-     * Creates a subscribing P2P manager.
+     * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
+     * anything with it until `run()` or `start()` is called.
      *
      * @param[in] subNode      Subscriber's node
      * @param[in] tracker      Pool of addresses of P2P servers
-     * @param[in] p2pAddr      Socket address of subscriber's P2P server. IP address *must not* be
-     *                         wildcard. If port number is 0, then O/S will choose.
+     * @param[in] p2pSrvr      Server socket for subscriber's P2P server. IP address *must not* be
+     *                         wildcard.
+     * @param[in] acceptQSize  Maximum number of outstanding, incoming, Hycast connections
+     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
+     * @return                 Subscribing P2P manager
+     * @see `getPeerSrvrAddr()`
+    static Pimpl create(
+            SubNode&          subNode,
+            Tracker           tracker,
+            const TcpSrvrSock p2pSrvr,
+            const int         acceptQSize,
+            const unsigned    maxPeers,
+            const unsigned    evalTime);
+     */
+
+    /**
+     * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
+     * anything with it until `run()` or `start()` is called.
+     *
+     * @param[in] subNode      Subscriber's node
+     * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] p2pSrvr      Socket address for subscriber's P2P server. IP address *must not* be
+     *                         wildcard. If the port number is zero, then the O/S will choose an
+     *                         ephemeral port number.
+     * @param[in] acceptQSize  Maximum number of outstanding, incoming, Hycast connections
+     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
+     *                         timeout; 0 => immediate return.
      * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
      * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
      * @return                 Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static Pimpl create(
-            SubNode&       subNode,
-            Tracker        tracker,
-            const SockAddr p2pAddr,
-            const int      listenSize,
-            const unsigned maxPeers,
-            const unsigned evalTime);
+            SubNode&          subNode,
+            Tracker           tracker,
+            const SockAddr    p2pSrvr,
+            const int         acceptQSize,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime);
 
     /**
      * Destroys.
      */
     virtual ~SubP2pMgr() noexcept =default;
+
+    /**
+     * Receives the address of a potential peer-server from a remote peer.
+     *
+     * @param[in] srvrAddr     Socket address of potential peer-server
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvAdd(const SockAddr p2pSrvr) {};
+    /**
+     * Receives a set of potential peer servers from a remote peer.
+     *
+     * @param[in] tracker      Set of potential peer-servers
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvAdd(const Tracker tracker) {};
+
+    virtual void recvRemove(const SockAddr p2pSrvr) {};
+    virtual void recvRemove(const Tracker tracker) {};
 
     /**
      * Receives a notice of available product information from a remote peer.
@@ -249,8 +296,8 @@ public:
      * @retval    `false`      Local peer shouldn't request from remote peer
      * @retval    `true`       Local peer should request from remote peer
      */
-    virtual bool recvNotice(const ProdId  notice,
-                            const SockAddr   rmtAddr) =0;
+    virtual bool recvNotice(const ProdId   notice,
+                            const SockAddr rmtAddr) =0;
     /**
      * Receives a notice of an available data-segment from a remote peer.
      *
@@ -282,23 +329,6 @@ public:
      */
     virtual void missed(const DataSegId dataSegId,
                         SockAddr        rmtAddr) =0;
-
-    /**
-     * Receives a set of potential peer servers from a remote peer.
-     *
-     * @param[in] tracker      Set of potential peer-servers
-     * @param[in] rmtAddr      Socket address of remote peer
-     */
-    virtual void recvData(const Tracker   tracker,
-                          const SockAddr  rmtAddr) =0;
-    /**
-     * Receives the address of a potential peer-server from a remote peer.
-     *
-     * @param[in] srvrAddr     Socket address of potential peer-server
-     * @param[in] rmtAddr      Socket address of remote peer
-     */
-    virtual void recvData(const SockAddr srvrAddr,
-                          const SockAddr rmtAddr) =0;
     /**
      * Receives product information from a remote peer.
      *

@@ -67,8 +67,8 @@ bool FeedInfo::read(Xprt xprt) {
  */
 ProdId::ProdId(const String& prodName) {
     union {
-        unsigned char bytes[SHA256_DIGEST_LENGTH]; // 32
-        uint64_t      uint64s[SHA256_DIGEST_LENGTH/sizeof(uint64_t)]; // 4
+        unsigned char bytes[SHA256_DIGEST_LENGTH]; // 32 bytes
+        uint64_t      uint64s[SHA256_DIGEST_LENGTH/sizeof(uint64_t)]; // 4 x 8 bytes
     } md;
     if (SHA256(reinterpret_cast<const unsigned char*>(prodName.data()), prodName.size(), md.bytes)
             == nullptr)
@@ -92,9 +92,9 @@ std::string DataSegId::to_string(const bool withName) const
 
 String DatumId::to_string() const {
     switch (id) {
-    case Id::PEER_SRVR_ADDR:
+    case Id::GOOD_P2P_SRVR:
         return srvrAddr.to_string();
-    case Id::TRACKER:
+    case Id::GOOD_P2P_SRVRS:
         return tracker.to_string();
     case Id::PROD_INDEX:
         return prodId.to_string();
@@ -149,7 +149,7 @@ class ProdInfo::Impl
 
     using NameLenType = uint16_t; ///< Type to hold length of product-name
 
-    ProdId index;   ///< Product index
+    ProdId    prodId;  ///< Product index
     String    name;    ///< Name of product
     ProdSize  size;    ///< Size of product in bytes
 
@@ -159,7 +159,7 @@ public:
     Impl(    const ProdId   index,
              const std::string name,
              const ProdSize    size)
-        : index{index}
+        : prodId{index}
         , name(name)
         , size{size}
     {
@@ -169,7 +169,7 @@ public:
     }
 
     bool operator==(const Impl& rhs) const {
-        return index == rhs.index &&
+        return prodId == rhs.prodId &&
                name == rhs.name &&
                size == rhs.size;
     }
@@ -179,13 +179,13 @@ public:
         String string;
         if (withName)
             string += "ProdInfo";
-        return string + "{index=" + index.to_string() + ", name=\"" + name +
+        return string + "{prodId=" + prodId.to_string() + ", name=\"" + name +
                 "\", size=" + std::to_string(size) + "}";
     }
 
     bool write(Xprt xprt) const {
         //LOG_DEBUG("Writing product information to %s", xprt.to_string().data());
-        auto success = index.write(xprt);
+        auto success = prodId.write(xprt);
         if (success) {
             //LOG_DEBUG("Writing product name to %s", xprt.to_string().data());
             success = xprt.write(static_cast<NameLenType>(name.size())) &&
@@ -200,7 +200,7 @@ public:
 
     bool read(Xprt xprt) {
         //LOG_DEBUG("Reading product information from %s", xprt.to_string().data());
-        auto success = index.read(xprt);
+        auto success = prodId.read(xprt);
         if (success) {
             //LOG_DEBUG("Reading product name from %s", xprt.to_string().data());
             NameLenType nbytes;
@@ -237,7 +237,7 @@ ProdInfo::operator bool() const noexcept {
 }
 
 const ProdId& ProdInfo::getId() const {
-    return pImpl->index;
+    return pImpl->prodId;
 }
 const String&    ProdInfo::getName() const {
     return pImpl->name;

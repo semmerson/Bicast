@@ -79,15 +79,25 @@ protected:
                             to_string().data(), datumId.to_string().data());
                     connected = rpc->notify(datumId.prodId);
                 }
-                else if (datumId.id == DatumId::Id::TRACKER) {
-                    LOG_DEBUG("Peer %s is notifying about tracker %s",
-                            to_string().data(), datumId.to_string().data());
-                    connected = rpc->notify(datumId.tracker);
-                }
-                else if (datumId.id == DatumId::Id::PEER_SRVR_ADDR) {
+                else if (datumId.id == DatumId::Id::GOOD_P2P_SRVR) {
                     LOG_DEBUG("Peer %s is notifying about P2P server %s",
                             to_string().data(), datumId.to_string().data());
-                    connected = rpc->notify(datumId.tracker);
+                    connected = rpc->add(datumId.tracker);
+                }
+                else if (datumId.id == DatumId::Id::GOOD_P2P_SRVRS) {
+                    LOG_DEBUG("Peer %s is notifying about tracker %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = rpc->add(datumId.tracker);
+                }
+                else if (datumId.id == DatumId::Id::BAD_P2P_SRVR) {
+                    LOG_DEBUG("Peer %s is notifying about P2P server %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = rpc->remove(datumId.tracker);
+                }
+                else if (datumId.id == DatumId::Id::BAD_P2P_SRVRS) {
+                    LOG_DEBUG("Peer %s is notifying about tracker %s",
+                            to_string().data(), datumId.to_string().data());
+                    connected = rpc->remove(datumId.tracker);
                 }
                 else {
                     throw LOGIC_ERROR("Datum ID is unset");
@@ -139,6 +149,21 @@ protected:
             ::pthread_cancel(noticeWriter.native_handle());
             noticeWriter.join();
         }
+    }
+
+
+    bool addNotice(const DatumId& datumId) {
+        throwIf();
+
+        if (connected && !rmtIsPub) {
+            //LOG_DEBUG("Peer %s is notifying about tracker %s", to_string().data(),
+                    //tracker.to_string().data());
+            Guard guard{noticeMutex};
+            noticeQ.push(datumId);
+            noticeCond.notify_all();
+        }
+
+        return connected;
     }
 
     /**
@@ -250,57 +275,31 @@ public:
         stopImpl();
     }
 
+    bool add(const SockAddr p2pSrvr) override {
+        return addNotice(DatumId{p2pSrvr});
+    }
+    bool add(const Tracker  tracker) override {
+        return addNotice(DatumId{tracker});
+    }
+
+    bool remove(const SockAddr p2pSrvr) override {
+        return addNotice(DatumId{p2pSrvr, false});
+    }
+    bool remove(const Tracker tracker) override {
+        return addNotice(DatumId{tracker, false});
+    }
+
     bool notify(const Tracker tracker) override {
-        throwIf();
-
-        if (connected && !rmtIsPub) {
-            //LOG_DEBUG("Peer %s is notifying about tracker %s", to_string().data(),
-                    //tracker.to_string().data());
-            Guard guard{noticeMutex};
-            noticeQ.push(DatumId{tracker});
-            noticeCond.notify_all();
-        }
-
-        return connected;
+        return addNotice(DatumId{tracker});
     }
     bool notify(const SockAddr srvrAddr) override {
-        throwIf();
-
-        if (connected && !rmtIsPub) {
-            //LOG_DEBUG("Peer %s is notifying about server %s", to_string().data(),
-                    //srvrAddr.to_string().data());
-            Guard guard{noticeMutex};
-            noticeQ.push(DatumId{srvrAddr});
-            noticeCond.notify_all();
-        }
-
-        return connected;
+        return addNotice(DatumId{srvrAddr});
     }
-    bool notify(const ProdId notice) override {
-        throwIf();
-
-        if (connected && !rmtIsPub) {
-            //LOG_DEBUG("Peer %s is notifying about product %s", to_string().data(),
-                    //notice.to_string().data());
-            Guard guard{noticeMutex};
-            noticeQ.push(DatumId{notice});
-            noticeCond.notify_all();
-        }
-
-        return connected;
+    bool notify(const ProdId prodId) override {
+        return addNotice(DatumId{prodId});
     }
-    bool notify(const DataSegId notice) override {
-        throwIf();
-
-        if (connected && !rmtIsPub) {
-            //LOG_DEBUG("Peer %s is notifying about data-segment %s", to_string().data(),
-                    //notice.to_string().data());
-            Guard guard{noticeMutex};
-            noticeQ.push(DatumId{notice});
-            noticeCond.notify_all();
-        }
-
-        return connected;
+    bool notify(const DataSegId segId) override {
+        return addNotice(DatumId{segId});
     }
 
     /**
@@ -377,24 +376,33 @@ public:
         return false;
     }
 
-    bool recvNotice(const ProdId prodId) {
+    void recvAdd(const SockAddr p2pSrvr) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+    void recvAdd(const Tracker tracker) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+
+    void recvRemove(const SockAddr p2pSrvr) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+    void recvRemove(const Tracker tracker) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+
+    bool recvNotice(const ProdId prodId) override {
         throw LOGIC_ERROR("Shouldn't have been called");
         return false;
     }
-    bool recvNotice(const DataSegId dataSegId) {
+    bool recvNotice(const DataSegId dataSegId) override {
         throw LOGIC_ERROR("Shouldn't have been called");
         return false;
     }
-    void recvData(const Tracker tracker) {
+
+    void recvData(const ProdInfo prodInfo) override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
-    void recvData(const SockAddr srvrAddr) {
-         throw LOGIC_ERROR("Shouldn't have been called");
-    }
-    void recvData(const ProdInfo prodInfo) {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
-    void recvData(const DataSeg dataSeg) {
+    void recvData(const DataSeg dataSeg) override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
 };
@@ -699,6 +707,20 @@ public:
         return rpc->isRmtPub();
     }
 
+    void recvAdd(const SockAddr p2pSrvr) override {
+        subP2pMgr.recvAdd(p2pSrvr);
+    }
+    void recvAdd(const Tracker tracker) override {
+        subP2pMgr.recvAdd(tracker);
+    }
+
+    void recvRemove(const SockAddr p2pSrvr) override {
+        subP2pMgr.recvRemove(p2pSrvr);
+    }
+    void recvRemove(const Tracker tracker) override {
+        subP2pMgr.recvRemove(tracker);
+    }
+
     /**
      * Receives a notice about available product information. Notifies the
      * subscriber's P2P manager. Requests the datum if told to do so by the P2P
@@ -741,27 +763,6 @@ public:
             connected = rpc->request(dataSegId);
         }
         return connected;
-    }
-
-    /**
-     * Receives tracker information from the remote peer.
-     *
-     * @param[in] tracker  Socket addresses of potential P2P servers
-     */
-    void recvData(const Tracker tracker) {
-        LOG_DEBUG("Peer %s received tacker %s",
-                to_string().data(), tracker.to_string().data());
-        subP2pMgr.recvData(tracker, rmtSockAddr);
-    }
-    /**
-     * Receives the address of a potential P2P server
-     *
-     * @param[in] tracker  Socket addresses of potential P2P server
-     */
-    void recvData(const SockAddr srvrAddr) {
-        LOG_DEBUG("Peer %s received P2P server address %s",
-                to_string().data(), srvrAddr.to_string().data());
-        subP2pMgr.recvData(srvrAddr, rmtSockAddr);
     }
     /**
      * Receives product information from the remote peer.
@@ -806,10 +807,17 @@ class PeerSrvrImpl : public PeerSrvr<P2P_MGR>
 
 public:
     PeerSrvrImpl(
+            const TcpSrvrSock p2pSrvr,
+            const bool        iAmPub,
+            const unsigned    acceptQSize)
+        : rpcSrvr(RpcSrvr::create(p2pSrvr, iAmPub, acceptQSize))
+    {}
+
+    PeerSrvrImpl(
             const SockAddr srvrAddr,
             const bool     iAmPub,
-            const unsigned backlog)
-        : rpcSrvr(RpcSrvr::create(srvrAddr, iAmPub, backlog))
+            const unsigned acceptQSize)
+        : rpcSrvr(RpcSrvr::create(srvrAddr, iAmPub, acceptQSize))
     {}
 
     SockAddr getSrvrAddr() const override {
@@ -824,16 +832,31 @@ public:
 
 template<>
 PeerSrvr<PubP2pMgr>::Pimpl PeerSrvr<PubP2pMgr>::create(
-        const SockAddr srvrAddr,
-        const unsigned backlog) {
-    return Pimpl{new PeerSrvrImpl<PubP2pMgr>(srvrAddr, true, backlog)};
+        const TcpSrvrSock srvrSock,
+        const unsigned    acceptQSize) {
+    return Pimpl{new PeerSrvrImpl<PubP2pMgr>(srvrSock, true, acceptQSize)};
+}
+
+template<>
+PeerSrvr<PubP2pMgr>::Pimpl PeerSrvr<PubP2pMgr>::create(
+        const SockAddr  srvrAddr,
+        const unsigned  acceptQSize) {
+    auto srvrSock = TcpSrvrSock(srvrAddr, 3*acceptQSize); // Connection comprises 3 separate sockets
+    return create(srvrSock, acceptQSize);
+}
+
+template<>
+PeerSrvr<SubP2pMgr>::Pimpl PeerSrvr<SubP2pMgr>::create(
+        const TcpSrvrSock srvrSock,
+        const unsigned    acceptQSize) {
+    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrSock, false, acceptQSize)};
 }
 
 template<>
 PeerSrvr<SubP2pMgr>::Pimpl PeerSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,
-        const unsigned listenSize) {
-    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrAddr, false, listenSize)};
+        const unsigned acceptQSize) {
+    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrAddr, false, acceptQSize)};
 }
 
 } // namespace

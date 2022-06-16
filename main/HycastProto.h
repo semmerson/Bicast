@@ -66,15 +66,17 @@ public:
     static constexpr Type UNSET             = 0;
     static constexpr Type PROTOCOL_VERSION  = 1;
     static constexpr Type IS_PUBLISHER      = 2;
-    static constexpr Type PEER_SRVR_ADDRS   = 3;
-    static constexpr Type PUB_PATH_NOTICE   = 4;
-    static constexpr Type PROD_INFO_NOTICE  = 5;
-    static constexpr Type DATA_SEG_NOTICE   = 6;
-    static constexpr Type PROD_INFO_REQUEST = 7;
-    static constexpr Type DATA_SEG_REQUEST  = 8;
-    static constexpr Type PEER_SRVR_ADDR    = 9;
-    static constexpr Type PROD_INFO         = 10;
-    static constexpr Type DATA_SEG          = 11;
+    static constexpr Type GOOD_P2P_SRVR     = 3;
+    static constexpr Type GOOD_P2P_SRVRS    = 4;
+    static constexpr Type BAD_P2P_SRVR      = 5;
+    static constexpr Type BAD_P2P_SRVRS     = 6;
+    static constexpr Type PUB_PATH_NOTICE   = 7;
+    static constexpr Type PROD_INFO_NOTICE  = 8;
+    static constexpr Type DATA_SEG_NOTICE   = 9;
+    static constexpr Type PROD_INFO_REQUEST = 10;
+    static constexpr Type DATA_SEG_REQUEST  = 11;
+    static constexpr Type PROD_INFO         = 12;
+    static constexpr Type DATA_SEG          = 13;
     static constexpr Type MAX_PDU_ID        = DATA_SEG;
 
     /**
@@ -119,7 +121,11 @@ public:
     }
 
     inline bool read(Xprt xprt) {
-        return xprt.read(value);
+        if (!xprt.read(value))
+            return false;
+        if (value > MAX_PDU_ID)
+            throw INVALID_ARGUMENT("value=" + to_string());
+        return true;
     }
 };
 
@@ -477,24 +483,25 @@ public:
 /******************************************************************************/
 
 /**
- * Class for both notices and requests sent to a remote peer. It exists so that
- * such entities can be handled as a single object for the purpose of argument
- * passing and container element.
+ * Class for both notices and requests sent to a remote peer. It exists so that such entities can be
+ * handled as a single object for the purpose of argument passing and container element.
  */
 struct DatumId
 {
 public:
     enum class Id {
         UNSET,
-        PEER_SRVR_ADDR,
-        TRACKER,
+        GOOD_P2P_SRVR,
+        GOOD_P2P_SRVRS,
+        BAD_P2P_SRVR,
+        BAD_P2P_SRVRS,
         PROD_INDEX,
         DATA_SEG_ID
     } id;
     union {
         SockAddr  srvrAddr;
         Tracker   tracker;
-        ProdId prodId;
+        ProdId    prodId;
         DataSegId dataSegId;
     };
 
@@ -503,13 +510,13 @@ public:
         , id(Id::UNSET)
     {}
 
-    explicit DatumId(const SockAddr srvrAddr) noexcept
-        : id(Id::PEER_SRVR_ADDR)
+    DatumId(const SockAddr srvrAddr, const bool isGood = true) noexcept
+        : id(isGood ? Id::GOOD_P2P_SRVR : Id::BAD_P2P_SRVR)
         , srvrAddr(srvrAddr)
     {}
 
-    explicit DatumId(const Tracker tracker) noexcept
-        : id(Id::TRACKER)
+    DatumId(const Tracker tracker, const bool isGood = true) noexcept
+        : id(isGood ? Id::GOOD_P2P_SRVRS : Id::BAD_P2P_SRVRS)
         , tracker(tracker)
     {}
 

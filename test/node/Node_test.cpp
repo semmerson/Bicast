@@ -25,6 +25,7 @@
 #include "FileUtil.h"
 #include "HycastProto.h"
 #include "Node.h"
+#include "SubInfo.h"
 #include "ThreadException.h"
 
 #include <condition_variable>
@@ -45,26 +46,27 @@ class NodeTest : public ::testing::Test
 protected:
     static constexpr SegSize  SEG_SIZE = 2048;
     static constexpr ProdSize PROD_SIZE = 4095;
-    Mutex           mutex;
-    Cond            cond;
-    char            prodData[PROD_SIZE];
-    const String    prodName;
-    const ProdId    prodId;
-    const String    testRoot;
-    const String    pubRepoRoot;
-    const String    subRepoRoot;
-    const long      maxOpenFiles;
-    const String    filePath;
-    const ProdInfo  prodInfo;
-    const DataSegId segId;
-    const SockAddr  mcastAddr;
-    const InetAddr  loAddr;
-    const SockAddr  pubP2pAddr;
-    const SockAddr  subP2pAddr;
-    const int       listenSize;
-    const unsigned  maxPeers;
-    int             numPeers;
-    ThreadEx        threadEx;
+    Mutex                     mutex;
+    Cond                      cond;
+    char                      prodData[PROD_SIZE];
+    const String              prodName;
+    const ProdId              prodId;
+    const String              testRoot;
+    const String              pubRepoRoot;
+    const String              subRepoRoot;
+    const long                maxOpenFiles;
+    const String              filePath;
+    const ProdInfo            prodInfo;
+    const DataSegId           segId;
+    const SockAddr            mcastAddr;
+    const InetAddr            loAddr;
+    const SockAddr            pubP2pAddr;
+    const SockAddr            subP2pAddr;
+    const int                 listenSize;
+    const unsigned            maxPeers;
+    int                       numPeers;
+    ThreadEx                  threadEx;
+    SubInfo                   subInfo;
 
     NodeTest()
         : mutex()
@@ -87,7 +89,11 @@ protected:
         , maxPeers{3}
         , numPeers{0}
         , threadEx()
+        , subInfo()
     {
+        subInfo.mcast.dstAddr = mcastAddr;
+        subInfo.mcast.srcAddr = loAddr;
+        subInfo.maxSegSize = SEG_SIZE;
         DataSeg::setMaxSegSize(SEG_SIZE);
         rmDirTree(testRoot);
         int i = 0;
@@ -95,7 +101,7 @@ protected:
             auto str = std::to_string(i++);
             int c = str[str.length()-1];
             ::memset(prodData+offset, c, DataSeg::size(PROD_SIZE, offset));
-        }
+       }
     }
 
     virtual ~NodeTest() {
@@ -135,12 +141,10 @@ TEST_F(NodeTest, Construction)
     const auto pubPort = pubP2pSrvrAddr.getPort();
     EXPECT_NE(0, pubPort);
 
-    Tracker tracker;
-    tracker.insert(pubP2pSrvrAddr);
-
     LOG_NOTE("Creating subscribing node");
-    auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, 5, maxPeers, 60, tracker,
-            subRepoRoot, SEG_SIZE, maxOpenFiles);
+    subInfo.tracker.insert(pubP2pSrvrAddr);
+    auto subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60, subRepoRoot,
+            maxOpenFiles);
 
     const auto subP2pSrvrAddr = subNode->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
@@ -170,13 +174,11 @@ TEST_F(NodeTest, Sending)
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
-        Tracker tracker;
-        tracker.insert(pubP2pSrvrAddr);
-
         // Create subscriber
-        auto subNode = SubNode::create(mcastAddr, loAddr, loAddr, subP2pAddr, 5, maxPeers, 60, tracker,
-            subRepoRoot, SEG_SIZE, maxOpenFiles);
-        Thread     subThread(&NodeTest::runNode, this, subNode);
+        subInfo.tracker.insert(pubP2pSrvrAddr);
+        auto   subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60,
+                subRepoRoot, maxOpenFiles);
+        Thread subThread(&NodeTest::runNode, this, subNode);
 
         // Wait for subscriber to connect to publisher
         pubNode->waitForPeer();

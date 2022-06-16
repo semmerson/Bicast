@@ -823,7 +823,7 @@ class SubRepo::Impl final : public Repository::Impl
         auto  prodFile = getProdFile(prodId);
 
         if (prodFile) {
-            const auto knownSize = prodFile.getProdInfo().getSize();
+            const auto knownSize = prodFile.getProdSize();
             if (prodSize != knownSize)
                 throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
                         " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
@@ -849,7 +849,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @param[in] prodFile  File containing the data-product
      * @post                State is unlocked
      */
-    void finishIfComplete(const RcvProdFile prodFile) {
+    void finishIfComplete(RcvProdFile prodFile) {
         if (prodFile.isComplete()) {
             const auto prodInfo = prodFile.getProdInfo();
             Guard      guard(mutex);
@@ -875,7 +875,7 @@ public:
      *
      * @param[in] prodInfo     Product information
      * @retval    `true`       This item was saved
-     * @retval    `false`      This item was not saved because it already exists
+     * @retval    `false`      This item was previously saved
      * @throw InvalidArgument  Known product has a different size
      * @throw SystemError      System failure
      * @see `getNextProd()`
@@ -883,7 +883,7 @@ public:
     bool save(const ProdInfo prodInfo)
     {
         auto       prodFile = getProdFile(prodInfo.getId(), prodInfo.getSize());
-        const auto wasSaved = prodFile.save(rootFd, prodInfo);
+        const auto wasSaved = prodFile.save(prodInfo);
         if (wasSaved)
             finishIfComplete(prodFile);
         return wasSaved;

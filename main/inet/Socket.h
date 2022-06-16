@@ -62,6 +62,13 @@ public:
     std::string to_string() const;
 
     /**
+     * Returns the socket descriptor.
+     *
+     * @return Socket descriptor
+     */
+    int getSockDesc() const;
+
+    /**
      * Returns the local socket address.
      *
      * @return Local socket address
@@ -89,6 +96,41 @@ public:
      * @return Remote port number in host byte-order
      */
     in_port_t getRmtPort() const;
+
+    /**
+     * Assigns this instance a local socket address.
+     *
+     * @param[in] lclAddr   Local socket address. For multicast reception, this will be the socket
+     *                      address of the multicast group.
+     * @return              This instance
+     * @throw  SystemError  System failure
+     */
+    Socket& bind(const SockAddr lclAddr);
+
+    /**
+     * Makes this instance non-blocking.
+     *
+     * @return  This instance.
+     * @throw   SystemError  System failure
+     */
+    Socket& makeNonBlocking();
+
+    /**
+     * Makes this instance blocking.
+     *
+     * @return  This instance.
+     * @throw   SystemError  System failure
+     */
+    Socket& makeBlocking();
+
+    /**
+     * Connects this instance to a remote socket address.
+     *
+     * @param[in]  rmtAddr   Remote socket address
+     * @return               This instance
+     * @throw   SystemError  System failure
+     */
+    Socket& connect(const SockAddr rmtAddr);
 
     bool write(const void*  data,
                const size_t nbytes) const;
@@ -183,8 +225,8 @@ public:
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
      */
-    explicit TcpSrvrSock(const SockAddr& sockaddr,
-                         const int       queueSize = 0);
+    explicit TcpSrvrSock(const SockAddr sockaddr,
+                         const int      queueSize = 0);
 
     /**
      * Accepts an incoming connection. Calls `::accept()`.
@@ -207,13 +249,34 @@ public:
     TcpClntSock() =default;
 
     /**
-     * @throw     LogicError    Destination port number is zero
-     * @throw     SystemError   Couldn't connect to `sockAddr`. Bad failure.
-     * @throw     RuntimeError  Couldn't connect to `sockAddr`. Might be
-     *                          temporary.
-     * @cancellationpoint
+     * Constructs an unbound socket of a given address family.
+     *
+     * @param[in] family  Address family. E.g., `AF_INET`, `AF_INET6`
      */
-    explicit TcpClntSock(const SockAddr& sockAddr);
+    TcpClntSock(int family);
+
+    /**
+     * @param[in] srvrAddr         Socket address of server
+     * @param[in] timeout          Timeout in ms. <0 => system's default timeout.
+     * @throw     LogicError       Destination port number is zero
+     * @throw     SystemError      Couldn't connect to `sockAddr`. Bad failure.
+     * @throw     RuntimeError     Connection attempt timed-out
+     * @cancellationpoint
+     * @see `makeBlocking()`
+     */
+    TcpClntSock(
+            const SockAddr srvrAddr,
+            const int      timeout);
+
+    /**
+     * @param[in] srvrAddr         Socket address of server
+     * @throw     LogicError       Destination port number is zero
+     * @throw     SystemError      Couldn't connect to `sockAddr`. Bad failure.
+     * @throw     RuntimeError     Connection attempt timed-out
+     * @cancellationpoint
+     * @see `makeBlocking()`
+     */
+    explicit TcpClntSock(const SockAddr srvrAddr);
 };
 
 /******************************************************************************/
@@ -233,7 +296,7 @@ public:
      * @param[in] destAddr   Destination socket address
      * @cancellationpoint
      */
-    UdpSock(const SockAddr& destAddr);
+    UdpSock(const SockAddr destAddr);
 
     /**
      * Constructs a sending UDP socket.
@@ -243,8 +306,8 @@ public:
      * @cancellationpoint
      */
     UdpSock(
-            const SockAddr& destAddr,
-            const InetAddr& ifaceAddr);
+            const SockAddr destAddr,
+            const InetAddr ifaceAddr);
 
     /**
      * Constructs a source-specific multicast, receiving socket.
@@ -255,9 +318,9 @@ public:
      * @throw InvalidArgument  Multicast group IP address isn't source-specific
      * @cancellationpoint
      */
-    UdpSock(const SockAddr& ssmAddr,
-            const InetAddr& srcAddr,
-            const InetAddr& iface);
+    UdpSock(const SockAddr ssmAddr,
+            const InetAddr srcAddr,
+            const InetAddr iface);
 
     /**
      * Sets the interface to be used for multicasting.
@@ -265,7 +328,7 @@ public:
      * @param[in] iface  The interface
      * @return           This instance
      */
-    const UdpSock& setMcastIface(const InetAddr& iface) const;
+    const UdpSock& setMcastIface(const InetAddr iface) const;
 
     /**
      * Flushes (writes) the UDP packet.

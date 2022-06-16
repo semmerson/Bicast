@@ -79,6 +79,8 @@ public:
         return static_cast<bool>(pImpl);
     }
 
+    Socket getSocket() const;
+
     SockAddr getRmtAddr() const noexcept;
 
     SockAddr getLclAddr() const;

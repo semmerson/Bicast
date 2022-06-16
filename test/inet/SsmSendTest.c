@@ -168,6 +168,8 @@ main(int argc, char *argv[])
              perror("send()");
              exit(1);
         }
+        if (verbose)
+            printf("%s\n", msg);
         sleep(1);
     }
 }

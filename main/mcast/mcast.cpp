@@ -118,8 +118,8 @@ public:
     }
 
     void run() {
-        for (;;) {
-            try {
+        try {
+            for (;;) {
                 PduId pduId;
                 if (!pduId.read(xprt))
                     break;
@@ -136,9 +136,9 @@ public:
 
                 xprt.clear();
             }
-            catch (const std::exception& ex) {
-                LOG_ERROR(ex, "Multicast error");
-            }
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Multicast error"));
         }
     }
 

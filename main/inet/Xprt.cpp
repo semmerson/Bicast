@@ -245,6 +245,10 @@ Xprt::Xprt& operator=(const Xprt& rhs);
 Xprt::~Xprt() noexcept;
 */
 
+Socket Xprt::getSocket() const {
+    return pImpl->getSocket();
+}
+
 SockAddr Xprt::getRmtAddr() const noexcept {
     return pImpl->getRmtAddr();
 }

@@ -28,20 +28,23 @@
 
 #include <inttypes.h>
 #include <semaphore.h>
+#include <thread>
 #include <yaml-cpp/yaml.h>
 
 using namespace hycast;
 
 using String = std::string;
 
-/// Runtime parameters of this program
+static constexpr int DEF_LISTEN_SIZE = 8;
+
+/// Command-line/configuration-file parameters of this program
 struct RunPar {
     String    feedName;                   ///< Name of data-product stream
     LogLevel  logLevel;                   ///< Logging level
     int32_t   maxSegSize;                 ///< Maximum size of a data-segment in bytes
     struct Srvr {
-        SockAddr  addr;                   ///< Socket address
-        int       listenSize;             ///< Size of `::listen()` queue
+        SockAddr      addr;               ///< Socket address
+        int           listenSize;         ///< Size of `::listen()` queue
         Srvr(   const SockAddr addr,
                 const int      listenSize)
             : addr(addr)
@@ -55,23 +58,50 @@ struct RunPar {
         : feedName("Hycast")
         , logLevel(LogLevel::NOTE)
         , maxSegSize(1444)
-        , srvr(SockAddr("0.0.0.0:38800"), 256)
+        , srvr(SockAddr("0.0.0.0:38800"), DEF_LISTEN_SIZE)
         , mcast(SockAddr("232.1.1.1:38800"), InetAddr())
         , p2p(SockAddr(), 8, 8, 100, 60)
         , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
     {
         mcast.srcAddr = UdpSock(mcast.dstAddr).getLclAddr().getInetAddr();
-        p2p.srvr.addr = mcast.srcAddr.getSockAddr(0);
+        p2p.srvr.addr = SockAddr(mcast.srcAddr, 0);
     }
 };
 
-static sem_t             sem;       ///< Semaphore for async-signal-safe state changes
-static std::atomic<bool> stop;      ///< Should the program stop?
-static ThreadEx          threadEx;  ///< Exception thrown by a thread
-static RunPar            runPar;    ///< Runtime parameters:
-const static RunPar      defRunPar; ///< Default runtime parameters
-static PubNode::Pimpl    pubNode;   ///< Data-product publishing node
-static SubInfo           subInfo;   ///< Subscription information passed to subscribers
+/// Helper class for counting and throttling the number of threads handling subscriptions.
+class Counter {
+    mutable Mutex mutex;          ///< Count mutex
+    mutable Cond  cond;           ///< Count condition variable
+    int           max;            ///< Maximum count allowed
+    int           count;          ///< Current count
+public:
+    Counter()
+        : mutex()
+        , cond()
+        , max(DEF_LISTEN_SIZE)
+        , count(0)
+    {}
+    void setMax(const int max) {
+        this->max = max;
+    }
+    void waitToInc() {
+        Lock lock{mutex};
+        cond.wait(lock, [&]{return count < max;});
+        ++count;
+    }
+    void operator--() {
+        Guard guard{mutex};
+        --count;
+        cond.notify_all();
+    }
+}                        numSubThreads; ///< Subscriber thread count
+static sem_t             sem;           ///< Semaphore for async-signal-safe state changes
+static std::atomic<bool> stop;          ///< Should the program stop?
+static ThreadEx          threadEx;      ///< Exception thrown by a thread
+static RunPar            runPar;        ///< Runtime parameters:
+static const RunPar      defRunPar;     ///< Default runtime parameters
+static PubNode::Pimpl    pubNode;       ///< Data-product publishing node
+static SubInfo           subInfo;       ///< Subscription information passed to subscribers
 
 static void usage()
 {
@@ -80,7 +110,7 @@ static void usage()
 "    " << log_getName() << " -h\n"
 "    " << log_getName() << " [-c <configFile>] [-e <evalTime>] [-f <name>] [-k <keepTime>]\n"
 "        [-l <level>] [-M <mcastAddr>] [-m <maxPeers>] [-o <maxOpenFiles>]\n"
-"        [-P <pubAddr>] [-p <p2pAddr>] [-Q <listenSize>] [-q <listenSize>]\n"
+"        [-P <pubAddr>] [-p <p2pAddr>] [-Q <size>] [-q <size>]\n"
 "        [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>] [-t <trackerSize>]\n"
 "where:\n"
 "    -h                Print this help message on standard error, then exit.\n"
@@ -106,10 +136,12 @@ static void usage()
 "                      Default is \"" << defRunPar.srvr.addr << "\".\n"
 "    -p <p2pAddr>      Internet address of local P2P server (not the publisher).\n"
 "                      Default is \"" << defRunPar.p2p.srvr.addr.getInetAddr() << "\".\n"
-"    -Q <listenSize>   Size of publisher's listen() queue (not the P2P server's).\n"
-"                      Default is " << defRunPar.srvr.listenSize << ".\n"
-"    -q <listenSize>   Size of P2P server's listen() queue (not the publisher's).\n"
-"                      Default is " << defRunPar.p2p.srvr.listenSize << ".\n"
+"    -Q <size>         Maximum number of pending connections to publisher's\n"
+"                      server (not the P2P server). Default is " << defRunPar.srvr.listenSize <<
+                       ".\n"
+"    -q <size>         Maximum number of pending connections to P2P server (not\n"
+"                      the publisher's server). Default is " << defRunPar.p2p.srvr.acceptQSize <<
+                       ".\n"
 "    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
 "    -S <srcAddr>      Internet address of multicast source (i.e., multicast\n"
@@ -161,11 +193,10 @@ static void setFromConfig(const String& pathname)
     auto node0 = YAML::LoadFile(pathname);
 
     try {
+        tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
         auto node1 = node0["LogLevel"];
         if (node1)
             log_setLevel(node1.as<String>());
-
-        tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
         tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
 
         node1 = node0["Server"];
@@ -173,18 +204,16 @@ static void setFromConfig(const String& pathname)
             auto node2 = node1["SockAddr"];
             if (node2)
                 runPar.srvr.addr = SockAddr(node2.as<String>());
-
-            tryDecode<decltype(runPar.srvr.listenSize)>(node1, "ListenSize",
+            tryDecode<decltype(runPar.srvr.listenSize)>(node1, "QueueSize",
                     runPar.srvr.listenSize);
         }
 
         node1 = node0["Multicast"];
         if (node1) {
-            auto node2 = node1["GroupAddr"];
+            auto node2 = node1["DstAddr"];
             if (node2)
                 runPar.mcast.dstAddr = SockAddr(node2.as<String>());
-
-            node2 = node1["Source"];
+            node2 = node1["SrcAddr"];
             if (node2)
                 runPar.mcast.srcAddr = InetAddr(node2.as<String>());
         }
@@ -193,25 +222,17 @@ static void setFromConfig(const String& pathname)
         if (node1) {
             auto node2 = node1["Server"];
             if (node2) {
-                auto node2 = node1["InetAddr"];
-                if (node2)
-                    runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
-
-                tryDecode<decltype(runPar.p2p.srvr.listenSize)>(node2, "ListenSize",
-                        runPar.p2p.srvr.listenSize);
+                auto node3 = node2["IfaceAddr"];
+                if (node3)
+                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
+                tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
+                        runPar.p2p.srvr.acceptQSize);
             }
 
             tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers", runPar.p2p.maxPeers);
             tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
                     runPar.p2p.trackerSize);
-
-            node2 = node1["ReplaceTrigger"];
-            if (node2) {
-                auto node3 = node2["Type"];
-                if (node3 && node3.as<String>() == "time")
-                    tryDecode<decltype(runPar.p2p.evalTime)>(node2, "Duration",
-                            runPar.p2p.evalTime);
-            }
+            tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime", runPar.p2p.evalTime);
         }
 
         node1 = node0["Repository"];
@@ -228,6 +249,7 @@ static void setFromConfig(const String& pathname)
     }
 }
 
+/// Vets the command-line/configuration-file parameters.
 static void vetRunPar()
 {
     if (runPar.p2p.evalTime <= 0)
@@ -248,10 +270,10 @@ static void vetRunPar()
         throw INVALID_ARGUMENT("How long to keep repository files is not positive");
 
     if (runPar.srvr.listenSize <= 0)
-        throw INVALID_ARGUMENT("Size of publisher's listen() queue is not positive");
+        throw INVALID_ARGUMENT("Size of publisher's server-queue is not positive");
 
-    if (runPar.p2p.srvr.listenSize <= 0)
-        throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
+    if (runPar.p2p.srvr.acceptQSize <= 0)
+        throw INVALID_ARGUMENT("Size of P2P server-queue is not positive");
 
     if (runPar.repo.rootDir.empty())
         throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
@@ -264,9 +286,12 @@ static void vetRunPar()
                 std::to_string(UdpSock::MAX_PAYLOAD) + ")");
 }
 
+/// Initializes runtime parameters that aren't set from the command-line/configuration-file
 static void init()
 {
-    if (sem_init(&sem, 0, 0) == -1)
+    DataSeg::setMaxSegSize(runPar.maxSegSize);
+
+    if (::sem_init(&sem, 0, 0) == -1)
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
     subInfo.version = 1;
@@ -276,17 +301,19 @@ static void init()
     subInfo.mcast.srcAddr = runPar.mcast.srcAddr;
     subInfo.tracker = Tracker(runPar.p2p.trackerSize);
     subInfo.keepTime = runPar.repo.keepTime;
+
+    numSubThreads.setMax(runPar.srvr.listenSize);
 }
 
 /**
- * Sets the runtime parameters.
+ * Sets command-line/configuration-file parameters.
  *
  * @param[in] argc               Number of command-line arguments
  * @param[in] argv               Command-line arguments
  * @throw std::invalid_argument  Invalid option, option argument, or operand
  * @throw std::logic_error       Too many or too few operands
  */
-static void getRunPars(
+static void getCmdPars(
         const int    argc,
         char* const* argv)
 {
@@ -378,7 +405,7 @@ static void getRunPars(
             break;
         }
         case 'q': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.listenSize) != 1)
+            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.acceptQSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
             break;
@@ -412,8 +439,6 @@ static void getRunPars(
         throw LOGIC_ERROR("Too many operands specified");
 
     vetRunPar();
-    DataSeg::setMaxSegSize(runPar.maxSegSize);
-    init(); // Initializes non-command-line variables
 }
 
 /**
@@ -421,7 +446,7 @@ static void getRunPars(
  */
 static void halt()
 {
-    sem_post(&sem);
+    ::sem_post(&sem);
 }
 
 /**
@@ -443,25 +468,20 @@ static void setSigHandling()
 
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = 0; // Allow SIGINT and SIGTERM to interrupt system calls
+    sigact.sa_flags = SA_RESTART; // Restart interrupted system calls
     sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
-
-    // Ensure that the above signals will be caught
-    sigset_t sigset;
-    (void)sigemptyset(&sigset);
-    (void)sigaddset(&sigset, SIGINT);
-    (void)sigaddset(&sigset, SIGTERM);
-    (void)sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
+/// Sets the exception thrown on an internal thread.
 static void setException(const std::exception& ex)
 {
     threadEx.set(ex);
     halt();
 }
 
+/// Runs the publishing node.
 static void runNode()
 {
     try {
@@ -472,17 +492,43 @@ static void runNode()
     }
 }
 
-static void serve()
+/**
+ * Handles a subscription request.
+ *
+ * @param[in] xprt  Transport connected to the subscriber
+ */
+static void handleSubscriber(Xprt xprt)
+{
+    try {
+        // Keep consonant with `Subscriber::createSubNode()`
+        SockAddr p2pSrvrAddr;
+        if (subInfo.write(xprt) && p2pSrvrAddr.read(xprt))
+            subInfo.tracker.insert(p2pSrvrAddr);
+        --numSubThreads;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR("Couldn't serve subscriber %s: %s", xprt.getRmtAddr().to_string().data(),
+                ex.what());
+        --numSubThreads;
+    }
+    catch (...) {
+        --numSubThreads;
+        throw;
+    }
+}
+
+/// Serves subscribers.
+static void runServer()
 {
     try {
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
 
+        subInfo.tracker.insert(pubNode->getP2pSrvrAddr());
+
         for (;;) {
-            auto     xprt = Xprt(srvrSock.accept());
-            SockAddr p2pSrvrAddr;
-            // Keep consonant with `SubNode::getSubInfo()`
-            if (p2pSrvrAddr.read(xprt) && subInfo.write(xprt))
-                subInfo.tracker.insert(p2pSrvrAddr);
+            numSubThreads.waitToInc();
+            auto xprt = Xprt(srvrSock.accept()); // RAII
+            std::thread(&handleSubscriber, xprt).detach();
         }
     } catch (const std::exception& ex) {
         setException(ex);
@@ -506,23 +552,25 @@ int main(const int    argc,
     std::set_terminate(&terminate); // NB: Hycast version
 
     try {
-        getRunPars(argc, argv);
+        getCmdPars(argc, argv);
+        init();
 
         pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
         setSigHandling(); // Catches termination signals
 
         auto nodeThread = Thread(&runNode);
-        auto serverThread = Thread(&serve);
+        auto serverThread = Thread(&runServer);
 
-        sem_wait(&sem); // Returns if thread failure or termination signal
-        sem_destroy(&sem);
-        threadEx.throwIfSet(); // Throws if thread failure
+        ::sem_wait(&sem); // Returns if failure on a thread or termination signal
+        ::sem_destroy(&sem);
 
         ::pthread_cancel(serverThread.native_handle());
-        pubNode->halt(); // Gracefully terminates
+        pubNode->halt(); // Idempotent
 
         serverThread.join();
         nodeThread.join();
+
+        threadEx.throwIfSet(); // Throws if failure on a thread
 
         status = 0;
     }
