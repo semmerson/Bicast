@@ -156,7 +156,7 @@ class Watcher::Impl final
                                 watchIfNew(pathname, addRegFiles);
                             }
                             else if (addRegFiles) {
-                                LOG_DEBUG("Pushing regular file \"%s\"", pathname.data());
+                                LOG_DEBUG("Queuing regular file \"%s\"", pathname.data());
                                 regFiles.push(pathname);
                                 scannedFiles[wd].insert(pathname);
                             }
@@ -242,12 +242,12 @@ class Watcher::Impl final
         }
         else if (isLink(pathname)) {
             if ((mask & IN_CREATE) && !isScannedFile(wd, pathname)) {
-                LOG_DEBUG("Pushing link \"%s\"", pathname.data());
+                //LOG_DEBUG("Queuing link \"%s\"", pathname.data());
                 regFiles.push(pathname);
             }
         }
         else if ((mask & IN_CLOSE_WRITE) && !isScannedFile(wd, pathname)) {
-            LOG_DEBUG("Pushing regular file \"%s\"", pathname.data());
+            //LOG_DEBUG("Queuing regular file \"%s\"", pathname.data());
             regFiles.push(pathname);
         }
     }

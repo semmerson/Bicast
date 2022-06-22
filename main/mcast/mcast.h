@@ -87,12 +87,13 @@ public:
     /**
      * Returns a new instance.
      *
-     * @param[in] mcastAddr    Socket address of multicast group
-     * @param[in] srcAddr      Internet address of publisher
-     * @param[in] iface        Internet address of interface to use
-     * @param[in] node         Subscribing node to call
-     * @return                 New instance
-     * @throw InvalidArgument  Multicast group IP address isn't source-specific
+     * @param[in] mcastAddr        Socket address of multicast group
+     * @param[in] srcAddr          Internet address of publisher
+     * @param[in] iface            Internet address of interface to use
+     * @param[in] node             Subscribing node to call
+     * @return                     New instance
+     * @throw     InvalidArgument  Multicast group IP address isn't source-specific
+     * @throw     LogicError       IP address families don't match
      */
     static Pimpl create(
             const SockAddr& mcastAddr,

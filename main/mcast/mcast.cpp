@@ -98,11 +98,12 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] mcastAddr    Address of multicast group
-     * @param[in] srcAddr      IP address of publisher
-     * @param[in] iface        IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] node         Subscribing node to call
-     * @throw InvalidArgument  Multicast group IP address isn't source-specific
+     * @param[in] mcastAddr        Address of multicast group
+     * @param[in] srcAddr          IP address of publisher
+     * @param[in] iface            IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] node             Subscribing node to call
+     * @throw     InvalidArgument  Multicast group IP address isn't source-specific
+     * @throw     LogicError       IP address families don't match
      */
     McastSubImpl(
             const SockAddr& mcastAddr,
@@ -118,6 +119,7 @@ public:
     }
 
     void run() {
+        LOG_DEBUG("Running multicast receiver using transport " + xprt.to_string());
         try {
             for (;;) {
                 PduId pduId;

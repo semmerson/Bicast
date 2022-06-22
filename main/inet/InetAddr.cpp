@@ -51,6 +51,14 @@ class Inet4Addr;
 class Inet6Addr;
 class NameAddr;
 
+static int getSockFamily(const int sd) {
+    struct sockaddr_storage storage;
+    socklen_t               socklen = sizeof(storage);
+    if (::getsockname(sd, reinterpret_cast<struct sockaddr*>(&storage), &socklen))
+        throw SYSTEM_ERROR("Couldn't get local address of socket " + std::to_string(sd));
+    return storage.ss_family;
+}
+
 class InetAddr::Impl
 {
 protected:
@@ -337,8 +345,8 @@ public:
     }
 
     void makeIface(int sd) const override {
-        LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s", sd,
-                to_string().data());
+        //LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s", sd,
+                //to_string().data());
         if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF, &addr, sizeof(addr)) < 0)
             throw SYSTEM_ERROR("Couldn't set multicast interface for IPv4 UDP socket " +
                     std::to_string(sd) + " to " + to_string());
@@ -856,6 +864,9 @@ struct sockaddr* InetAddr::get_sockaddr(
 }
 
 const InetAddr& InetAddr::makeIface(int sd) const {
+    if (getSockFamily(sd) != pImpl->getFamily())
+        throw INVALID_ARGUMENT("Socket's address family (" + std::to_string(getSockFamily(sd)) +
+                ") != interface's address family (" + std::to_string(pImpl->getFamily()) + ")");
     pImpl->makeIface(sd);
     return *this;
 }

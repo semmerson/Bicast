@@ -85,7 +85,7 @@ protected:
                     connected = rpc->add(datumId.tracker);
                 }
                 else if (datumId.id == DatumId::Id::GOOD_P2P_SRVRS) {
-                    LOG_DEBUG("Peer %s is notifying about tracker %s",
+                    LOG_DEBUG("Peer %s is notifying about good P2P servers %s",
                             to_string().data(), datumId.to_string().data());
                     connected = rpc->add(datumId.tracker);
                 }
@@ -95,7 +95,7 @@ protected:
                     connected = rpc->remove(datumId.tracker);
                 }
                 else if (datumId.id == DatumId::Id::BAD_P2P_SRVRS) {
-                    LOG_DEBUG("Peer %s is notifying about tracker %s",
+                    LOG_DEBUG("Peer %s is notifying about bad P2P servers %s",
                             to_string().data(), datumId.to_string().data());
                     connected = rpc->remove(datumId.tracker);
                 }
@@ -141,7 +141,7 @@ protected:
     }
 
     void startNoticeWriter() {
-        LOG_DEBUG("Starting notice-writer thread");
+        //LOG_DEBUG("Starting notice-writer thread");
         noticeWriter = Thread(&PeerImpl::runNoticeWriter, this);
     }
     void stopNoticeWriter() {

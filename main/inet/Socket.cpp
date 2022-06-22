@@ -287,7 +287,7 @@ public:
     Impl& bind(const SockAddr lclAddr) {
         sockaddr_storage storage;
         lclAddr.get_sockaddr(storage);
-        LOG_DEBUG("Binding socket %s to %s", std::to_string(sd).data(), lclAddr.to_string().data());
+        //LOG_DEBUG("Binding socket %s to %s", std::to_string(sd).data(), lclAddr.to_string().data());
         if (::bind(sd, reinterpret_cast<struct sockaddr*>(&storage), sizeof(storage)))
             throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
         return *this;
@@ -851,8 +851,6 @@ class TcpClntSock::Impl final : public TcpSock::Impl
      * @throw SystemError   System failure
      */
     void connect(const int timeout) const {
-        LOG_DEBUG("Connecting socket %s", to_string().data());
-
         // Get original socket flags
         int origSockFlags = ::fcntl(sd, F_GETFL, 0);
         if (origSockFlags < 0)
@@ -877,12 +875,15 @@ class TcpClntSock::Impl final : public TcpSock::Impl
             throw RUNTIME_ERROR("Couldn't connect to " + to_string() + " in " +
                     std::to_string(timeout) + " ms");
 
-        if ((pfd.revents & (POLLHUP | POLLERR)) || !(pfd.revents & POLLOUT))
-            throw SYSTEM_ERROR("Couldn't connect to " + to_string());
+        // NB: This use of poll() causes `pfd.revents` to also contain `POLLHUP | POLLERR`
+        if (!(pfd.revents & POLLOUT))
+            throw RUNTIME_ERROR("Couldn't connect to " + to_string());
 
         // Restore original socket flags
         if (fcntl(sd, F_SETFL, origSockFlags) == -1)
             throw SYSTEM_ERROR("Couldn't restore socket flags");
+
+        LOG_DEBUG("Connected socket %s", to_string().data());
     }
 
 public:
@@ -1050,8 +1051,9 @@ public:
      * Constructs a sending UDP socket. If the destination IP address of the socket is a multicast
      * group, then the time-to-live is set and loopback of datagrams is enabled.
      *
-     * @param[in] destAddr   Destination socket address
-     * @param[in] ifaceAddr  IP address of interface to use. If wildcard, then O/S will choose.
+     * @param[in] destAddr     Destination socket address
+     * @param[in] ifaceAddr    IP address of interface to use. If wildcard, then O/S will choose.
+     * @throw     LogicError   Socket can't use given interface
      * @cancellationpoint
      */
     Impl(   const SockAddr destAddr,
@@ -1060,8 +1062,6 @@ public:
         , buf()
         , bufLen(0)
     {
-        setMcastIface(ifaceAddr);
-
         if (destAddr.getInetAddr().isMulticast()) {
             unsigned char  ttl = 250;
 
@@ -1078,8 +1078,11 @@ public:
 
         rmtSockAddr = destAddr;
 
+        // Must precede `connect()` if interface address isn't wildcard
+        setMcastIface(ifaceAddr);
+
         //destAddr.connect(sd);
-        LOG_DEBUG("Connecting socket %d to %s", sd, destAddr.to_string().data());
+        //LOG_DEBUG("Connecting socket %d to %s", sd, destAddr.to_string().data());
         struct sockaddr_storage storage;
         if (::connect(sd, destAddr.get_sockaddr(storage), sizeof(storage)))
             throw SYSTEM_ERROR("connect() failure");
@@ -1094,16 +1097,17 @@ public:
      * @cancellationpoint
      */
     Impl(const SockAddr destAddr)
-        : Impl(destAddr, InetAddr("0.0.0.0"))
+        : Impl(destAddr, destAddr.getInetAddr().getWildcard())
     {}
 
     /**
      * Constructs a receiving, source-specific multicast, UDP socket.
      *
-     * @param[in] ssmAddr   Socket address of source-specific multicast group
-     * @param[in] srcAddr   IP address of source host
-     * @param[in] iface     IP address of interface to use. If wildcard, then O/S chooses.
-     * @cancellationpoint   Yes
+     * @param[in] ssmAddr     Socket address of source-specific multicast group
+     * @param[in] srcAddr     IP address of source host
+     * @param[in] iface       IP address of interface to use. If wildcard, then O/S chooses.
+     * @throw     LogicError  IP address families don't match
+     * @cancellationpoint     Yes
      */
     Impl(   const SockAddr ssmAddr,
             const InetAddr srcAddr,
@@ -1112,6 +1116,13 @@ public:
         , buf()
         , bufLen(0)
     {
+        if (ssmAddr.getInetAddr().getFamily() != srcAddr.getFamily() ||
+                srcAddr.getFamily() != iface.getFamily())
+            throw LOGIC_ERROR("IP address families don't match: ssmAddr=" +
+                    std::to_string(ssmAddr.getInetAddr().getFamily()) + ", srcAddr=" +
+                    std::to_string(srcAddr.getFamily()) + ", iface=" +
+                    std::to_string(iface.getFamily()));
+
         auto& ipAddr = ssmAddr.getInetAddr();
         if (!ipAddr.isSsm())
             throw INVALID_ARGUMENT("Multicast group IP address, " + ipAddr.to_string() +
@@ -1132,9 +1143,18 @@ public:
     /**
      * Sets the interface to be used by the UDP socket for multicasting. The
      * default is system dependent.
+     *
+     * @param[in] iface        IP address of interface
+     * @throw     LogicError   Socket can't use given interface
      */
     void setMcastIface(const InetAddr iface) const {
-        iface.makeIface(sd);
+        try {
+            iface.makeIface(sd);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(LOGIC_ERROR("Socket " + to_string() + " can't use interface " +
+                    iface.to_string()));
+        }
     }
 
     std::string to_string() const override {

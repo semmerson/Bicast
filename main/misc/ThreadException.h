@@ -32,34 +32,40 @@ class ThreadEx
     using Guard = std::lock_guard<Mutex>;
     using ExPtr = std::exception_ptr;
 
-    ExPtr exPtr;
-    Mutex mutex;
+    mutable Mutex mutex;
+    ExPtr         exPtr;
+    bool          isSet; // Used because `exception_ptr::swap()` slices exceptions
 
 public:
     /**
      * Default constructs.
      */
-    ThreadEx() =default;
+    ThreadEx()
+        : mutex()
+        , exPtr()
+        , isSet(false)
+    {}
 
     /**
      * Sets the exception if it isn't already set.
      */
     void set(const std::exception& ex) {
         Guard guard(mutex);
-        if (!exPtr)
+        if (!isSet)
             exPtr = std::make_exception_ptr(ex);
     }
 
     operator bool() {
-        return exPtr.operator bool();
+        Guard guard(mutex);
+        return isSet;
     }
 
     void throwIfSet() {
         Guard guard(mutex);
-        if (exPtr) {
-            ExPtr tmp{};
-            tmp.swap(exPtr);
-            std::rethrow_exception(tmp);
+        if (isSet) {
+            // The original exception is thrown because `exPtr.swap()` slices the exception
+            isSet = false;
+            std::rethrow_exception(exPtr);
         }
     }
 };

@@ -252,6 +252,12 @@ static void setFromConfig(const String& pathname)
 /// Vets the command-line/configuration-file parameters.
 static void vetRunPar()
 {
+    if (runPar.mcast.dstAddr.getInetAddr().getFamily() !=
+            runPar.mcast.srcAddr.getFamily())
+        throw INVALID_ARGUMENT("Address of multicast group (" + runPar.mcast.dstAddr.to_string() +
+                ") and address of multicast source (" + runPar.mcast.srcAddr.to_string() +
+                ") belong to different address families");
+
     if (runPar.p2p.evalTime <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
 
@@ -488,6 +494,7 @@ static void runNode()
         pubNode->run();
     }
     catch (const std::exception& ex) {
+        //LOG_DEBUG("Setting exception: %s", ex.what());
         setException(ex);
     }
 }
@@ -497,13 +504,24 @@ static void runNode()
  *
  * @param[in] xprt  Transport connected to the subscriber
  */
-static void handleSubscriber(Xprt xprt)
+static void servSubscriber(Xprt xprt)
 {
     try {
         // Keep consonant with `Subscriber::createSubNode()`
-        SockAddr p2pSrvrAddr;
-        if (subInfo.write(xprt) && p2pSrvrAddr.read(xprt))
-            subInfo.tracker.insert(p2pSrvrAddr);
+        LOG_INFO("Sending subscription information to subscriber %s",
+                xprt.getRmtAddr().to_string().data());
+        if (subInfo.write(xprt)) {
+            SockAddr p2pSrvrAddr;
+            if (p2pSrvrAddr.read(xprt)) {
+                LOG_DEBUG("Received P2P server's address (" + p2pSrvrAddr.to_string() +
+                        ") from subscriber " + xprt.getRmtAddr().to_string());
+                subInfo.tracker.insert(p2pSrvrAddr);
+            }
+        }
+        else {
+            LOG_DEBUG("Couldn't write subscription information to subscriber %s",
+                    xprt.getRmtAddr().to_string().data());
+        }
         --numSubThreads;
     }
     catch (const std::exception& ex) {
@@ -521,6 +539,7 @@ static void handleSubscriber(Xprt xprt)
 static void runServer()
 {
     try {
+        //LOG_DEBUG("Creating listening server");
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
 
         subInfo.tracker.insert(pubNode->getP2pSrvrAddr());
@@ -528,9 +547,11 @@ static void runServer()
         for (;;) {
             numSubThreads.waitToInc();
             auto xprt = Xprt(srvrSock.accept()); // RAII
-            std::thread(&handleSubscriber, xprt).detach();
+            LOG_NOTE("Accepted connection from subscriber " + xprt.getRmtAddr().to_string());
+            std::thread(&servSubscriber, xprt).detach();
         }
     } catch (const std::exception& ex) {
+        //LOG_DEBUG("Setting exception: %s", ex.what());
         setException(ex);
     }
 }
@@ -558,18 +579,26 @@ int main(const int    argc,
         pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
         setSigHandling(); // Catches termination signals
 
+        //LOG_DEBUG("Starting node thread");
         auto nodeThread = Thread(&runNode);
+        //LOG_DEBUG("Starting server thread");
         auto serverThread = Thread(&runServer);
 
+        //LOG_DEBUG("Waiting on semaphore");
         ::sem_wait(&sem); // Returns if failure on a thread or termination signal
         ::sem_destroy(&sem);
 
+        //LOG_DEBUG("Canceling server thread");
         ::pthread_cancel(serverThread.native_handle());
+        //LOG_DEBUG("Halting node");
         pubNode->halt(); // Idempotent
 
+        //LOG_DEBUG("Joining server thread");
         serverThread.join();
+        //LOG_DEBUG("Joining node thread");
         nodeThread.join();
 
+        //LOG_DEBUG("Throwing exception if set");
         threadEx.throwIfSet(); // Throws if failure on a thread
 
         status = 0;

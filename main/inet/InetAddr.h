@@ -175,12 +175,13 @@ public:
     /**
      * Makes the given socket use the interface associated with this instance.
      *
-     * @param[in] sd          UDP socket descriptor
-     * @return                This instance
-     * @throws    LogicError  This instance is based on a hostname and not an IP address
-     * @threadsafety          Safe
-     * @exceptionsafety       Strong guarantee
-     * @cancellationpoint     Unknown due to non-standard function usage
+     * @param[in] sd               UDP socket descriptor
+     * @return                     This instance
+     * @throws    LogicError       This instance is based on a hostname and not an IP address
+     * @throw     InvalidArgument  Socket's address family != this instances
+     * @threadsafety               Safe
+     * @exceptionsafety            Strong guarantee
+     * @cancellationpoint          Unknown due to non-standard function usage
      */
     const InetAddr& makeIface(int sd) const;
 

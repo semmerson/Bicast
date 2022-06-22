@@ -11,6 +11,10 @@ add_executable(connect_test connect_test.c)
 target_link_libraries(connect_test pthread)
 add_test(connect_test connect_test)
 
+add_executable(NonBlockingConn_test NonBlockingConn_test.c)
+target_link_libraries(NonBlockingConn_test pthread)
+add_test(NonBlockingConn_test connect_test)
+
 add_executable(SockAddr_test SockAddr_test.cpp)
 target_link_libraries(SockAddr_test hycast gtest)
 add_test(SockAddr_test SockAddr_test)

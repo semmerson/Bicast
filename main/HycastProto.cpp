@@ -68,7 +68,7 @@ bool FeedInfo::read(Xprt xprt) {
 ProdId::ProdId(const String& prodName) {
     union {
         unsigned char bytes[SHA256_DIGEST_LENGTH]; // 32 bytes
-        uint64_t      uint64s[SHA256_DIGEST_LENGTH/sizeof(uint64_t)]; // 4 x 8 bytes
+        uint64_t      uint64s[SHA256_DIGEST_LENGTH/sizeof(uint64_t)]; // 4
     } md;
     if (SHA256(reinterpret_cast<const unsigned char*>(prodName.data()), prodName.size(), md.bytes)
             == nullptr)
@@ -92,14 +92,18 @@ std::string DataSegId::to_string(const bool withName) const
 
 String DatumId::to_string() const {
     switch (id) {
+    case Id::DATA_SEG_ID:
+        return dataSegId.to_string();
+    case Id::PROD_INDEX:
+        return prodId.to_string();
     case Id::GOOD_P2P_SRVR:
+        return srvrAddr.to_string();
+    case Id::BAD_P2P_SRVR:
         return srvrAddr.to_string();
     case Id::GOOD_P2P_SRVRS:
         return tracker.to_string();
-    case Id::PROD_INDEX:
-        return prodId.to_string();
-    case Id::DATA_SEG_ID:
-        return dataSegId.to_string();
+    case Id::BAD_P2P_SRVRS:
+        return tracker.to_string();
     default:
         return "<unset>";
     }

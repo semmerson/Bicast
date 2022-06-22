@@ -312,10 +312,11 @@ public:
     /**
      * Constructs a source-specific multicast, receiving socket.
      *
-     * @param[in] mcastAddr    IP address of multicast group
-     * @param[in] srcAddr      IP address of source
-     * @param[in] iface        IP address of interface to use. If wildcard, then O/S chooses.
-     * @throw InvalidArgument  Multicast group IP address isn't source-specific
+     * @param[in] mcastAddr        IP address of multicast group
+     * @param[in] srcAddr          IP address of source
+     * @param[in] iface            IP address of interface to use. If wildcard, then O/S chooses.
+     * @throw     InvalidArgument  Multicast group IP address isn't source-specific
+     * @throw     LogicError       IP address families don't match
      * @cancellationpoint
      */
     UdpSock(const SockAddr ssmAddr,

@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include "Node.h"
+#include "Socket.h"
 #include "SubInfo.h"
 #include "ThreadException.h"
 
@@ -37,7 +38,7 @@ using String = std::string;
 struct RunPar {
     LogLevel  logLevel;   ///< Logging level
     SockAddr  pubAddr;    ///< Address of publisher
-    InetAddr  mcastIface; ///< Address of interface to use to receive multicast. May be wildcard.
+    InetAddr  mcastIface; ///< Address of interface for multicast reception. May be wildcard.
     struct P2pArgs {
         struct SrvrArgs {
             SockAddr addr;        ///< P2P server's address. Must not be wildcard.
@@ -80,7 +81,7 @@ struct RunPar {
     RunPar()
         : logLevel(LogLevel::NOTE)
         , pubAddr()
-        , mcastIface("0.0.0.0")
+        , mcastIface("0.0.0.0") // Might get changed to match family of multicast group
         , p2p(SockAddr(), 8, 15000, 100, 8, 60)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
     {}
@@ -366,22 +367,40 @@ static void getCmdPars(
 /// Creates the subscriber node.
 static SubNode::Pimpl createSubNode()
 {
-    // Keep consonant with `Publisher::handleSubscriber()`
+    // Keep consonant with `Publisher::servSubscriber()`
 
+    LOG_NOTE("Connecting to publisher " + runPar.pubAddr.to_string());
     Xprt    xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
     SubInfo subInfo;
 
-    if (!subInfo.read(xprt))
+    LOG_INFO("Receiving subscription information from publisher \"" +
+            runPar.pubAddr.to_string() + "\"");
+    if (!subInfo.read(xprt)) {
         throw RUNTIME_ERROR("Couldn't receive subscription information from publisher \"" +
                 runPar.pubAddr.to_string() + "\"");
+    }
 
+    DataSeg::setMaxSegSize(subInfo.maxSegSize);
+
+    // Address family of receiving interface should match that of multicast group
+    if (runPar.mcastIface.isAny()) {
+        // The following doesn't work if the outgoing multicast interface is localhost
+        //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
+        // The following works in that context
+        runPar.mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
+        //LOG_DEBUG("Set interface for multicast reception to " + runPar.mcastIface.to_string());
+    }
+
+    //LOG_DEBUG("Creating subnode");
     auto subNode = SubNode::create(subInfo, runPar.mcastIface, runPar.p2p.srvr.addr,
             runPar.p2p.srvr.acceptQSize, runPar.p2p.timeout, runPar.p2p.maxPeers,
             runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
 
+    LOG_DEBUG("Sending P2P server's address (" + subNode->getP2pSrvrAddr().to_string() +
+            ") to publisher (" + runPar.pubAddr.to_string() + ")");
     if (!subNode->getP2pSrvrAddr().write(xprt))
-        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher \"" +
-                runPar.pubAddr.to_string() + "\"");
+        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher (" +
+                runPar.pubAddr.to_string() + ")");
 
     return subNode;
 }
@@ -463,6 +482,7 @@ int main(
         if (sem_init(&sem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
+        //LOG_DEBUG("Creating subnode");
         auto subNode = createSubNode();
         setSigHand(); // Catches termination signals
 

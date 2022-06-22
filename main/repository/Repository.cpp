@@ -315,12 +315,12 @@ protected:
     const SegSize     segSize;      ///< Size of canonical data-segment in bytes
     size_t            maxOpenFiles; ///< Max number open files
 
-    Impl(   const std::string& rootPathname,
+    Impl(   const std::string& rootDir,
             const SegSize      segSize,
             const long         maxOpenFiles)
         : mutex{}
         , cond()
-        , rootPathname(makeAbsolute(rootPathname))
+        , rootPathname(makeAbsolute(rootDir))
         , rootPrefixLen{rootPathname.size() + 1}
         , rootFd(-1)
         , segSize{segSize}
@@ -657,6 +657,8 @@ public:
             Watcher::WatchEvent event;
             watcher.getEvent(event);
 
+            //LOG_DEBUG("event.pathname=%s", event.pathname.data());
+            //LOG_DEBUG("rootPrefixLen=%zu", rootPrefixLen);
             prodName = event.pathname.substr(rootPrefixLen);
             SndProdFile prodFile(rootFd, prodName, segSize);
 

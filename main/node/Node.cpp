@@ -255,6 +255,7 @@ protected:
      */
     void setException(const std::exception& ex) {
         Guard guard{stateMutex};
+        LOG_DEBUG("Setting exception: %s", ex.what());
         threadEx.set(ex);
         state = State::STOPPING;
         stateCond.notify_one();
@@ -369,6 +370,7 @@ protected:
             for (;;) {
                 auto prodInfo = repo.getNextProd();
 
+#if 1
                 // Send product-information
                 send(prodInfo);
 
@@ -381,6 +383,27 @@ protected:
                 for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
                     // TODO: Test for valid segment
                     send(repo.getDataSeg(DataSegId(prodId, offset)));
+#else
+                /*
+                 * This code multicasts the entire product and only then notifies the peers. This
+                 * was done to verify (again) that a subscribing node won't request anything already
+                 * received via multicast.
+                 */
+                mcastPub->multicast(prodInfo);
+
+                auto prodId = prodInfo.getId();
+                auto prodSize = prodInfo.getSize();
+
+                for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
+                    // TODO: Test for valid segment
+                    mcastPub->multicast(repo.getDataSeg(DataSegId(prodId, offset)));
+
+                p2pMgr->notify(prodInfo.getId());
+
+                for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
+                    // TODO: Test for valid segment
+                    p2pMgr->notify(DataSegId(prodId, offset));
+#endif
             }
         }
         catch (const std::exception& ex) {
@@ -611,6 +634,8 @@ public:
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @throw     LogicError    IP address families of multicast group address and multicast
+     *                          interface don't match
      */
     SubNodeImpl(
             SubInfo&          subInfo,
@@ -635,9 +660,16 @@ public:
     ~SubNodeImpl() noexcept {
         try {
             stopImpl();
+            LOG_NOTE("Metrics:");
+            LOG_NOTE("  Number of multicast PDUs:");
+            LOG_NOTE("      Original:  " + std::to_string(numMcastOrig));
+            LOG_NOTE("      Duplicate: " + std::to_string(numMcastDup));
+            LOG_NOTE("  Number of P2P PDUs:");
+            LOG_NOTE("      Original:  " + std::to_string(numP2pOrig));
+            LOG_NOTE("      Duplicate: " + std::to_string(numP2pDup));
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex, "Couldn't stop execution");
+            LOG_ERROR(ex, "~SubNodeImpl() failure");
         }
     }
 

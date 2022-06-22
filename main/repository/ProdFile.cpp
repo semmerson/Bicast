@@ -516,6 +516,7 @@ public:
         Guard guard(mutex);
 
         if (this->prodInfo) {
+            LOG_DEBUG("Duplicate product information: " + prodInfo.to_string());
             success = false; // Already saved
         }
         else {

@@ -57,7 +57,8 @@ struct SubInfo : public XprtAble {
         : SubInfo(100)
     {}
     bool write(Xprt xprt) const {
-        return xprt.write(version) &&
+        return
+                xprt.write(version) &&
                 xprt.write<uint8_t>(feedName) &&
                 xprt.write(maxSegSize) &&
                 mcast.dstAddr.write(xprt) &&
@@ -66,13 +67,18 @@ struct SubInfo : public XprtAble {
                 xprt.write(keepTime);
     }
     bool read(Xprt xprt) {
-        return xprt.read(version) &&
+        auto success =
+                xprt.read(version) &&
                 xprt.read<uint8_t>(feedName) &&
                 xprt.read(maxSegSize) &&
                 mcast.dstAddr.read(xprt) &&
                 mcast.srcAddr.read(xprt) &&
                 tracker.read(xprt) &&
                 xprt.read(keepTime);
+        if (success && mcast.dstAddr.getInetAddr().getFamily() != mcast.srcAddr.getFamily())
+            throw LOGIC_ERROR("Family of multicast address " + mcast.dstAddr.to_string() +
+                    " != family of source address " + mcast.srcAddr.to_string());
+        return success;
     }
 };
 

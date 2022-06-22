@@ -234,6 +234,8 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @throw     LogicError    IP address families of multicast group address and multicast
+     *                          interface don't match
      */
     static Pimpl create(
             SubInfo&          subInfo,
