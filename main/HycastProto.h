@@ -212,7 +212,7 @@ class ProdId : public XprtAble
 {
 public:
     /**
-     * The underlying type used to identify a product.
+     * The underlying type used to uniquely identify a product.
      *
      * Using a  hash value to identify a product means that the probability of two or more products
      * having the same hash value in the repository is approximately 1 - e^-(n^2/2d), where n is the
