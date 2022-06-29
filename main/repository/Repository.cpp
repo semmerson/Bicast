@@ -793,7 +793,7 @@ class SubRepo::Impl final : public Repository::Impl
 
     /**
      * Returns the product-file that corresponds to a product-ID. The file is
-     *   - Created if necessary in the ".unfinished" subdirectory
+     *   - Created if necessary in the ".incomplete" subdirectory
      *   - Open
      *   - At the tail-end of the open-files list
      *
@@ -819,7 +819,7 @@ class SubRepo::Impl final : public Repository::Impl
         else {
             LOG_DEBUG("Creating product " + prodId.to_string());
 
-            prodFile = RcvProdFile(rootFd, ".unfinished/" + prodId.to_string(), prodId, prodSize,
+            prodFile = RcvProdFile(rootFd, ".incomplete/" + prodId.to_string(), prodId, prodSize,
                     segSize);
             addProdFile(prodId, prodFile);
         }
