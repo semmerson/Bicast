@@ -150,7 +150,9 @@ TEST_F(RepositoryTest, CreatProdForSending)
     // Verify repository access
     try {
         auto repoProdInfo = repo.getNextProd();
-        ASSERT_TRUE(prodInfo == repoProdInfo);
+        ASSERT_TRUE(prodInfo.getId() == repoProdInfo.getId());
+        ASSERT_TRUE(prodInfo.getName() == repoProdInfo.getName());
+        ASSERT_TRUE(prodInfo.getSize() == repoProdInfo.getSize());
         auto repoDataSeg = repo.getDataSeg(segId);
         ASSERT_TRUE(repoDataSeg);
         ASSERT_TRUE(dataSeg == repoDataSeg);

@@ -39,6 +39,8 @@
 
 namespace hycast {
 
+using namespace std::chrono;
+
 class PubRepo;
 class SubRepo;
 
@@ -263,6 +265,32 @@ public:
     }
 };
 
+/// Creation-time of a product
+class CreationTime : public XprtAble
+{
+    system_clock::time_point time; // System time with microsecond resolution at best
+
+public:
+    CreationTime()
+        : time(system_clock::time_point(
+                duration_cast<microseconds>(system_clock::now().time_since_epoch())))
+    {}
+
+    String to_string() const noexcept;
+
+    bool operator==(const CreationTime& rhs) const {
+        return time == rhs.time;
+    }
+
+    bool operator<(const CreationTime& rhs) const {
+        return time < rhs.time;
+    }
+
+    bool write(Xprt xprt) const override;
+
+    bool read(Xprt xprt) override;
+};
+
 /// Data-segment identifier
 struct DataSegId : public XprtAble
 {
@@ -276,7 +304,7 @@ struct DataSegId : public XprtAble
 
     DataSegId(const ProdId    prodId,
               const SegOffset offset)
-        : prodId{prodId}
+        : prodId(prodId)
         , offset{offset}
     {}
 
@@ -336,7 +364,7 @@ struct Timestamp : public XprtAble
     }
 };
 
-/// Handle class for roduct information
+/// Handle class for product information
 struct ProdInfo : public XprtAble
 {
     class                 Impl;
@@ -347,6 +375,13 @@ public:
 
     ProdInfo();
 
+    /**
+     * The creation-time of the product will be the current time.
+     *
+     * @param[in] prodId  Product ID
+     * @param[in] name    Name of product
+     * @param[in] size    Size of product in bytes
+     */
     ProdInfo(const ProdId      prodId,
              const std::string name,
              const ProdSize    size);

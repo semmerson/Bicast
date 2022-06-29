@@ -32,11 +32,6 @@
 #include <inttypes.h>
 #include <openssl11/openssl/sha.h>
 
-#ifndef _XOPEN_PATH_MAX
-    // Not in gcc 4.8.5 for some reason
-    #define _XOPEN_PATH_MAX 1024
-#endif
-
 namespace hycast {
 
 bool FeedInfo::write(Xprt xprt) const {
@@ -80,6 +75,37 @@ String ProdId::to_string() const noexcept {
     char buf[sizeof(id)*2+1];
     ::sprintf(buf, "%0" PRIx64, id);
     return String(buf);
+}
+
+String CreationTime::to_string() const noexcept {
+    const time_t s = system_clock::to_time_t(time);
+    struct tm    tm;
+    ::gmtime_r(&s, &tm);
+
+    char         buf[30] = {}; // YYYY-MM-DDThh:mm:ss.uuuuuuZ
+    auto         nbytes = ::strftime(buf, sizeof(buf)-1, "%FT%T", &tm);
+
+    const long   us =
+            duration_cast<microseconds>(time - system_clock::from_time_t(0)).count() % 1000000;
+    ::snprintf(buf+nbytes, sizeof(buf)-1-nbytes, ".%06ldZ", us);
+    return String(buf);
+}
+
+bool CreationTime::write(Xprt xprt) const {
+    // Microseconds since 1970-01-01T00:00:00Z
+    const uint64_t us = duration_cast<microseconds>(time - system_clock::from_time_t(0)).count();
+    //LOG_DEBUG("Writing " + std::to_string(us));
+    return xprt.write(us);
+}
+
+bool CreationTime::read(Xprt xprt) {
+    uint64_t    us; // Microseconds since 1970-01-01T00:00:00Z
+    const auto success = xprt.read(us);
+    if (success) {
+        //LOG_DEBUG("Read    " + std::to_string(us));
+        time = system_clock::from_time_t(0) + microseconds(us);
+    }
+    return success;
 }
 
 std::string DataSegId::to_string(const bool withName) const
@@ -153,29 +179,31 @@ class ProdInfo::Impl
 
     using NameLenType = uint16_t; ///< Type to hold length of product-name
 
-    ProdId    prodId;  ///< Product index
-    String    name;    ///< Name of product
-    ProdSize  size;    ///< Size of product in bytes
+    ProdId       prodId;       ///< Product ID
+    String       name;         ///< Name of product
+    ProdSize     size;         ///< Size of product in bytes
+    CreationTime creationTime; ///< When product was created
 
 public:
     Impl() =default;
 
-    Impl(    const ProdId   index,
+    Impl(    const ProdId      prodId,
              const std::string name,
              const ProdSize    size)
-        : prodId{index}
+        : prodId(prodId)
         , name(name)
         , size{size}
+        , creationTime()
     {
-        if (name.size() > _XOPEN_PATH_MAX-1)
-            throw INVALID_ARGUMENT("Name is longer than " +
-                    std::to_string(_XOPEN_PATH_MAX-1) + " bytes");
+        if (name.size() > PATH_MAX-1)
+            throw INVALID_ARGUMENT("Name is longer than " + std::to_string(PATH_MAX-1) + " bytes");
     }
 
     bool operator==(const Impl& rhs) const {
         return prodId == rhs.prodId &&
                name == rhs.name &&
-               size == rhs.size;
+               size == rhs.size &&
+               creationTime == rhs.creationTime;
     }
 
     String to_string(const bool withName) const
@@ -184,7 +212,7 @@ public:
         if (withName)
             string += "ProdInfo";
         return string + "{prodId=" + prodId.to_string() + ", name=\"" + name +
-                "\", size=" + std::to_string(size) + "}";
+                "\", size=" + std::to_string(size) + ", created=" + creationTime.to_string() + "}";
     }
 
     bool write(Xprt xprt) const {
@@ -197,6 +225,8 @@ public:
             if (success) {
                 //LOG_DEBUG("Writing product size to %s", xprt.to_string().data());
                 success = xprt.write(size);
+                if (success)
+                    success = creationTime.write(xprt);
             }
         }
         return success;
@@ -210,15 +240,17 @@ public:
             NameLenType nbytes;
             success = xprt.read(nbytes);
             if (success) {
-                if (nbytes > _XOPEN_PATH_MAX-1)
-                    throw RUNTIME_ERROR("Name is longer than " +
-                            std::to_string(_XOPEN_PATH_MAX-1) + " bytes");
+                if (nbytes > PATH_MAX-1)
+                    throw RUNTIME_ERROR(
+                            "Name is longer than " + std::to_string(PATH_MAX-1) + " bytes");
                 char bytes[nbytes];
                 success = xprt.read(bytes, nbytes);
                 if (success) {
                     name.assign(bytes, nbytes);
                     //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
                     success = xprt.read(size);
+                    if (success)
+                        success = creationTime.read(xprt);
                 }
             }
         }

@@ -168,9 +168,9 @@ class NodeImpl : public Node
     /**
      * Executes the multicast component on a separate thread. Doesn't block.
      */
-    void startMcast() {
+    void startSending() {
         try {
-            mcastThread = Thread(&NodeImpl::runMcast, this);
+            mcastThread = Thread(&NodeImpl::runSending, this);
         }
         catch (const std::exception& ex) {
             std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run multicast "
@@ -181,9 +181,9 @@ class NodeImpl : public Node
     /**
      * Stops the multicast component. Shouldn't block for long.
      */
-    void stopMcast() {
+    void stopSending() {
         if (mcastThread.joinable()) {
-            haltMcast();
+            haltSending();
             mcastThread.join();
         }
     }
@@ -194,7 +194,7 @@ class NodeImpl : public Node
     void startThreads() {
         try {
             startP2pMgr();
-            startMcast();
+            startSending();
         }
         catch (const std::exception& ex) {
             stopThreads();
@@ -206,7 +206,7 @@ class NodeImpl : public Node
      * Stops all sub-threads. Doesn't block.
      */
     void stopThreads() {
-        stopMcast();
+        stopSending();
         stopP2pMgr();
     }
 
@@ -264,12 +264,12 @@ protected:
     /**
      * Executes the multicast component. Blocks until it returns.
      */
-    virtual void runMcast() =0;
+    virtual void runSending() =0;
 
     /**
      * Halts the multicast component. Doesn't block.
      */
-    virtual void haltMcast() =0;
+    virtual void haltSending() =0;
 
 public:
     /**
@@ -364,7 +364,7 @@ protected:
     /**
      * Multicasts new data-products in the repository and notifies peers.
      */
-    void runMcast()
+    void runSending()
     {
         try {
             for (;;) {
@@ -415,7 +415,7 @@ protected:
         }
     }
 
-    void haltMcast() {
+    void haltSending() {
         ::pthread_cancel(mcastThread.native_handle());
     }
 
@@ -572,7 +572,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
     }
 
 protected:
-    void runMcast()
+    void runSending()
     {
         try {
             mcastSub->run();
@@ -582,7 +582,7 @@ protected:
         }
     }
 
-    void haltMcast() {
+    void haltSending() {
         mcastSub->halt();
     }
 

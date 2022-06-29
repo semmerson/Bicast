@@ -191,7 +191,13 @@ TEST_F(NodeTest, Sending)
             auto prodInfo = subNode->getNextProd();
 
             EXPECT_FALSE(threadEx);
-            ASSERT_TRUE(NodeTest::prodInfo == prodInfo);
+            /*
+             * The creation-time can't be compared because it's constructed by the repository;
+             * consequently, the times will differ.
+             */
+            ASSERT_TRUE(NodeTest::prodInfo.getId() == prodInfo.getId());
+            ASSERT_TRUE(NodeTest::prodInfo.getName() == prodInfo.getName());
+            ASSERT_TRUE(NodeTest::prodInfo.getSize() == prodInfo.getSize());
 
             for (SegOffset offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
                 DataSegId  segId(prodId, offset);
