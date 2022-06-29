@@ -210,7 +210,6 @@ public:
  */
 class ProdId : public XprtAble
 {
-public:
     /**
      * The underlying type used to uniquely identify a product.
      *
@@ -227,10 +226,7 @@ public:
      * Using the hash of the product name instead of a monotonically increasing unsigned integer
      * means that 1) product names should be unique; and 2) redundant publishers are possible.
      */
-    using Type = uint64_t;
-
-private:
-    Type id;    ///< Data-product identifier
+    uint64_t id;    ///< Data-product identifier
 
 public:
     ProdId()
@@ -243,15 +239,19 @@ public:
     ~ProdId() =default;
     ProdId& operator=(const ProdId& rhs) =default;
 
-    operator Type() const {
-        return id;
-    }
-
     std::string to_string() const noexcept;
 
     size_t hash() const noexcept {
-        static std::hash<Type> hash;
+        static std::hash<decltype(id)> hash;
         return hash(id);
+    }
+
+    bool operator==(const ProdId& rhs) const noexcept {
+        return id == id;
+    }
+
+    bool operator<(const ProdId& rhs) const noexcept {
+        return id < id;
     }
 
     bool write(Xprt xprt) const override {
