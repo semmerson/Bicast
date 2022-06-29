@@ -422,21 +422,6 @@ class RcvProdFile::Impl final : public ProdFile::Impl
         }
     }
 
-    static std::string getIndexPath(const ProdId prodId)
-    {
-        const auto  index = (ProdId::Type)prodId;
-        char        buf[sizeof(index)*3 + 1 + 1]; // Room for final '/'
-        char*       cp = buf;
-
-        for (int nshift = 8*(sizeof(index)-1); nshift >= 0; nshift -= 8) {
-            (void)sprintf(cp, "%.2x/", (index >> nshift) & 0xff);
-            cp += 3;
-        }
-        *--cp = 0; // Squash final '/'
-
-        return buf;
-    }
-
 public:
     /**
      * Constructs. The instance is open.
