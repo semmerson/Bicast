@@ -287,7 +287,7 @@ bool ProdInfo::operator==(const ProdInfo rhs) const {
 }
 
 String ProdInfo::to_string(const bool withName) const {
-    return pImpl->to_string(withName);
+    return pImpl ? pImpl->to_string(withName) : "<unset>";
 }
 
 bool ProdInfo::write(Xprt xprt) const {

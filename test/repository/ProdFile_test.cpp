@@ -132,7 +132,7 @@ TEST_F(ProdFileTest, BadSndProdFile)
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
     try {
-        hycast::RcvProdFile(rootFd, prodName, prodId, 1, 0);
+        hycast::RcvProdFile(rootFd, prodName, 1, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -145,7 +145,7 @@ TEST_F(ProdFileTest, BadRcvProdFile)
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
     hycast::ProdSize    prodSize(0);
-    hycast::RcvProdFile prodFile(rootFd, prodName, prodId, prodSize, 0);
+    hycast::RcvProdFile prodFile(rootFd, prodName, prodSize, 0);
     hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
     EXPECT_TRUE(prodFile.save(prodInfo));
     ASSERT_TRUE(prodFile.isComplete());
@@ -156,7 +156,7 @@ TEST_F(ProdFileTest, RcvProdFile)
 {
     hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
     hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
-    hycast::RcvProdFile prodFile(rootFd, prodName, prodId, prodSize, segSize);
+    hycast::RcvProdFile prodFile(rootFd, prodName, prodSize, segSize);
     ASSERT_TRUE(prodFile.save(prodInfo));
     {
         for (int i = 0; i < 2; ++i) {

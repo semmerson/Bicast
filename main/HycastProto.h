@@ -244,8 +244,8 @@ public:
     std::string to_string() const noexcept;
 
     size_t hash() const noexcept {
-        static std::hash<decltype(id)> hash;
-        return hash(id);
+        static auto myHash = std::hash<decltype(id)>{};
+        return myHash(id);
     }
 
     bool operator==(const ProdId& rhs) const noexcept {

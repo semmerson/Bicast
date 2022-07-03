@@ -690,8 +690,8 @@ public:
     }
 
     /**
-     * Indicates if information on a product should be requested from the P2P
-     * network. Called by the peer-to-peer component.
+     * Indicates if information on a product should be requested from the P2P network. Called by the
+     * peer-to-peer component.
      *
      * @param[in] prodId     Identifier of product
      * @retval    `false`    Information shouldn't be requested

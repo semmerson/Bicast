@@ -5,7 +5,7 @@
  *  Created on: Dec 16, 2017
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2022 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,128 +24,102 @@
 #define MAIN_MISC_LINKEDHASHMAP_H_
 
 #include <exception>
-#include <list>
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 
 namespace hycast {
 
-template<class Key, class Value>
+template<class KEY, class VALUE>
 class LinkedHashMap
 {
-    typedef std::shared_ptr<Key> KeyPtr;
+    using Mutex = std::mutex;
+    using Guard = std::lock_guard<Mutex>;
+
     struct MapValue
     {
-        KeyPtr prev;
-        KeyPtr next;
-        Value  value;
+        VALUE  value;
+        KEY    prev;
+        KEY    next;
 
         inline MapValue(
-                const KeyPtr& prev,
-                const Value&  value)
-            : prev{prev}
+                const KEY&   prev,
+                const VALUE& value)
+            : value{value}
+            , prev{prev}
             , next{}
-            , value{value}
         {}
     };
-    typedef std::mutex             Mutex;
-    typedef std::lock_guard<Mutex> LockGuard;
 
-    std::unordered_map<Key, MapValue> map;
-    Mutex                          mutex;
-    KeyPtr                         front;
-    KeyPtr                         back;
+    std::unordered_map<KEY, MapValue> map;
+    Mutex                             mutex;
+    KEY                               head;
+    KEY                               tail;
 
 public:
     LinkedHashMap()
         : map{}
         , mutex{}
-        , front{}
-        , back{}
+        , head{}
+        , tail{}
+    {}
+
+    LinkedHashMap(const ssize_t initialSize)
+        : map{initialSize}
+        , mutex{}
+        , head{}
+        , tail{}
     {}
 
     /**
-     * Inserts a key/value pair.
+     * Adds a key/value pair to the back of the map.
+     *
      * @param[in] key    Key
      * @param[in] value  Value
      * @retval `true`    Previous entry under `key` did not exist
-     * @retval `false`   Previous entry under `key` did exist. Entry wasn't
-     *                   replaced.
+     * @retval `false`   Previous entry under `key` did exist. Entry wasn't replaced.
      * @throw            Exceptions related to construction of `Key` and `Value`
      * @exceptionSafety  Strong guarantee
      * @threadsafety     Safe
      */
-    bool insert(
-            const Key&   key,
-            const Value& value)
-    {
-        LockGuard lock{mutex};
-        auto      pair = map.emplace(key, MapValue{back, value});
-        try {
-            if (!pair.second)
-                return false;
-            back = KeyPtr{new Key{key}};
-            if (!front)
-                front = back;
-        }
-        catch (const std::exception& ex) {
-            map.erase(key);
-            throw;
-        }
-        return true;
-    }
+    bool pushBack(
+            const KEY&   key,
+            const VALUE& value);
 
     /**
-     * Removes the oldest inserted entry and returns its value.
-     * @param[out] value  Value
-     * @retval `true`     Oldest entry existed
-     * @retval `false`    No entries
+     * Returns a reference to the oldest value.
+     *
+     * @throw OutOfRange  Map is empty
      * @exceptionSafety   Nothrow
      * @threadsafety      Safe
      */
-    bool pop(Value& value) noexcept
-    {
-        LockGuard lock{mutex};
-        if (!front)
-            return false;
-        KeyPtr    keyPtr = front;
-        MapValue& mapValue = map.at(*keyPtr);
-        value = mapValue.value;
-        front = mapValue.next;
-        front
-            ? map.at(*front).prev.reset()
-            : back.reset();
-        map.erase(*keyPtr);
-        return true;
-    }
+    VALUE& front() noexcept;
+
+    /**
+     * Returns a pointer to a given value.
+     *
+     * @param[in] key  Key
+     * @return         Pointer to value associated with key
+     */
+    VALUE* get(const KEY& key) const;
+
+    /**
+     * Deletes the oldest value.
+     *
+     * @throw OutOfRange  Map is empty
+     * @threadsafety      Safe
+     */
+    void pop() noexcept;
 
     /**
      * Removes the entry corresponding to a key.
+     *
      * @param[in]  key    Key
      * @retval `true`     Entry existed
      * @retval `false`    Entry did not exist
      * @exceptionSafety   Nothrow
      * @threadsafety      Safe
      */
-    bool remove(Key& key) noexcept
-    {
-        LockGuard lock{mutex};
-        auto iter = map.find(key);
-        if (iter == map.end())
-            return false;
-        MapValue& mapValue = iter->second;
-        KeyPtr keyPtr = mapValue.prev;
-        keyPtr
-            ? (map.at(*keyPtr).next = mapValue.next)
-            : (front = mapValue.next);
-        keyPtr = mapValue.next;
-        keyPtr
-            ? (map.at(*keyPtr).prev = mapValue.prev)
-            : (back = mapValue.prev);
-        map.erase(iter);
-        return true;
-    }
+    bool remove(KEY& key) noexcept;
 };
 
 } // namespace

@@ -384,10 +384,8 @@ bool SndProdFile::exists(ProdSize offset) const {
  */
 class RcvProdFile::Impl final : public ProdFile::Impl
 {
-    ProdId            prodId;     ///< Product identifier
     std::vector<bool> haveSegs;   ///< Bitmap of received data-segments
     ProdSize          segCount;   ///< Number of received data-segments
-    ProdInfo          prodInfo;   ///< Product information
 
     /**
      * Creates a file from product-information. The file will have the given
@@ -428,7 +426,6 @@ public:
      *
      * @param[in] rootFd           File descriptor open on root directory of repository
      * @param[in] pathname         Pathname of the file
-     * @param[in] prodId           Product identifier
      * @param[in] prodSize         Product size in bytes
      * @param[in] segSize          Canonical segment size in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
@@ -436,14 +433,11 @@ public:
      */
     Impl(   const int       rootFd,
             const String&   pathname,
-            const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize)
         : ProdFile::Impl{pathname, prodSize, segSize}
-        , prodId(prodId)
         , haveSegs(numSegs, false)
         , segCount{0}
-        , prodInfo()
     {
         fd = create(rootFd, pathname, prodSize);
         ensureAccess(rootFd, O_RDWR);
@@ -470,7 +464,7 @@ public:
     bool isComplete() const
     {
         Guard guard{mutex};
-        return prodInfo && (segCount == numSegs);
+        return segCount == numSegs;
     }
 
     void rename(
@@ -483,34 +477,6 @@ public:
             throw SYSTEM_ERROR("Couldn't rename product-file \"" + this->pathname + "\" to \"" +
                     pathname + "\"");
         this->pathname = pathname;
-    }
-
-    /**
-     * Saves product-information.
-     *
-     * @param[in] rootFd           File descriptor open on repository's root directory
-     * @param[in] prodInfo         Product information to be saved
-     * @retval    `true`           This item was written to the product-file
-     * @retval    `false`          This item is already in the product-file and was not written
-     * @throws    SystemError      Couldn't save product information
-     */
-    bool save(const ProdInfo prodInfo) {
-        LOG_ASSERT(fd >= 0);
-
-        bool  success; // This item was written to the product-file?
-        Guard guard(mutex);
-
-        if (this->prodInfo) {
-            LOG_DEBUG("Duplicate product information: " + prodInfo.to_string());
-            success = false; // Already saved
-        }
-        else {
-            //LOG_DEBUG("Saving product-information " + prodInfo.to_string());
-            this->prodInfo = prodInfo;
-            success = true;
-        }
-
-        return success;
     }
 
     /**
@@ -553,11 +519,6 @@ public:
 
         return needed;
     }
-
-    ProdInfo getProdInfo() {
-        Guard guard{mutex};
-        return prodInfo;
-    }
 };
 
 /******************************************************************************/
@@ -567,10 +528,9 @@ RcvProdFile::RcvProdFile() noexcept =default;
 RcvProdFile::RcvProdFile(
         const int       rootFd,
         const String&   pathname,
-        const ProdId    prodId,
         const ProdSize  prodSize,
         const SegSize   segSize)
-    : ProdFile(std::make_shared<Impl>(rootFd, pathname, prodId, prodSize, segSize)) {
+    : ProdFile(std::make_shared<Impl>(rootFd, pathname, prodSize, segSize)) {
 }
 
 void RcvProdFile::open(const int rootFd) const {
@@ -587,11 +547,6 @@ bool RcvProdFile::isComplete() const {
 }
 
 bool
-RcvProdFile::save(const ProdInfo prodInfo) const {
-    return static_cast<Impl*>(pImpl.get())->save(prodInfo);
-}
-
-bool
 RcvProdFile::save(const DataSeg& dataSeg) const {
     return static_cast<Impl*>(pImpl.get())->save(dataSeg);
 }
@@ -601,11 +556,6 @@ RcvProdFile::rename(
         const int      rootFd,
         const String&  pathname) {
     return static_cast<Impl*>(pImpl.get())->rename(rootFd, pathname);
-}
-
-ProdInfo
-RcvProdFile::getProdInfo() const {
-    return static_cast<Impl*>(pImpl.get())->getProdInfo();
 }
 
 } // namespace

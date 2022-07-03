@@ -183,7 +183,6 @@ public:
     RcvProdFile(
             const int       rootFd,
             const String&   pathname,
-            const ProdId    prodId,
             const ProdSize  prodSize,
             const SegSize   segSize);
 
@@ -208,26 +207,12 @@ public:
     bool exists(ProdSize offset) const override;
 
     /**
-     * Indicates if the product is complete.
+     * Indicates if the product has all the data.
      *
      * @retval `true`   The product is complete
      * @retval `false`  The product is not complete
      */
     bool isComplete() const;
-
-    /**
-     * Saves product information.
-     *
-     * @param[in] prodInfo     Product information to be saved
-     * @retval    `true`       This item is new and was saved
-     * @retval    `false`      This item is old and was not saved
-     * @throw InvalidArgument  Known product has a different size
-     * @throw InvalidArgument  Segment's offset is invalid
-     * @threadsafety           Safe
-     * @exceptionsafety        Strong guarantee
-     * @cancellationpoint      Yes
-     */
-    bool save(const ProdInfo prodInfo) const;
 
     /**
      * Saves a data-segment.
@@ -253,13 +238,6 @@ public:
     void rename(
             const int     rootFd,
             const String& pathname);
-
-    /**
-     * Gets the product information.
-     *
-     * @return  Product information
-     */
-    ProdInfo getProdInfo() const;
 };
 
 } // namespace

@@ -10,7 +10,8 @@ add_library(misc OBJECT
 	FileUtil.cpp       FileUtil.h
 	MapOfLists.cpp	   MapOfLists.h
         Thread.cpp         Thread.h
-			   LinkedHashMap.h
+	LinkedHashMap.cpp  LinkedHashMap.h
+	LinkedHashSet.cpp  LinkedHashSet.h
 	LinkedMap.cpp	   LinkedMap.h
 	Preferences.cpp    Preferences.h
 	                   Stopwatch.h
