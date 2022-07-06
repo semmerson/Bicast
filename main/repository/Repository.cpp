@@ -26,8 +26,8 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "LinkedHashMap.h"
-#include "LinkedHashSet.h"
+#include "HashMapQueue.h"
+#include "HashSetQueue.h"
 #include "ProdFile.h"
 #include "Watcher.h"
 
@@ -51,11 +51,10 @@ namespace hycast {
 /**
  * @tparam PF  Product-file type
  */
-template <class PF>
 struct ProdEntry
 {
     ProdInfo  prodInfo;  ///< Product information
-    PF        prodFile;  ///< Product file
+    ProdFile  prodFile;  ///< Product file
     ProdId    prev;      ///< Previous entry in queue
     ProdId    next;      ///< Next entry in queue
 
@@ -66,14 +65,14 @@ struct ProdEntry
         , next{}
     {}
 
-    ProdEntry(PF prodFile)
+    ProdEntry(ProdFile prodFile)
         : prodInfo()
         , prodFile(prodFile)
         , prev{}
         , next{}
     {}
 
-    ProdEntry(PF&& prodFile)
+    ProdEntry(ProdFile&& prodFile)
         : prodInfo()
         , prodFile(prodFile)
         , prev{}
@@ -85,26 +84,26 @@ struct ProdEntry
 
     inline ProdEntry& operator=(const ProdEntry& rhs) =default;
 
-    void save(const ProdInfo prodInfo) {
-        if (this->prodInfo)
-            throw LOGIC_ERROR("Product information already set");
-        const auto prodSize = prodInfo.getSize();
-        const auto knownSize = prodFile.getProdSize();
-        if (prodSize != knownSize)
-            throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
-                    " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
-                    " bytes)");
-        this->prodInfo = prodInfo;
+    bool save(const ProdInfo prodInfo) {
+        bool saved;
+        if (this->prodInfo) {
+            saved = false;
+        }
+        else {
+            const auto prodSize = prodInfo.getSize();
+            const auto knownSize = prodFile.getProdSize();
+            if (prodSize != knownSize)
+                throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
+                        " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
+                        " bytes)");
+            this->prodInfo = prodInfo;
+            saved = true;
+        }
+        return saved;
     }
 
-    void save(const DataSeg dataSeg) {
-        const auto prodSize = dataSeg.getProdSize();
-        const auto knownSize = prodFile.getProdSize();
-        if (prodSize != knownSize)
-            throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
-                    " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
-                    " bytes)");
-        prodFile.save(dataSeg);
+    bool save(const DataSeg dataSeg) {
+        return prodFile.save(dataSeg);
     }
 
     inline ProdSize getProdSize() const {
@@ -160,17 +159,17 @@ struct ProdEntry
 
 /**
  * Abstract, base implementation of a repository of temporary data-products.
- *
- * @tparam PF  Type of product-entry: `PubProdEntry` or `SubProdEntry`
  */
 class Repository::Impl
 {
 protected:
-    using LinkedSet = LinkedHashSet<ProdId>;
+    using SetQueue = HashSetQueue<ProdId>;
+    using MapQueue = HashMapQueue<ProdId, ProdEntry>;
 
     mutable Mutex     mutex;        ///< For concurrency
     mutable Cond      cond;         ///< For concurrency
-    LinkedSet         openProds;    ///< Open products
+    MapQueue          allProds;     ///< All existing products
+    SetQueue          openProds;    ///< Open products
     const std::string rootPathname; ///< Absolute pathname of root directory of repository
     size_t            rootPrefixLen;///< Length in bytes of root pathname prefix
     int               rootFd;       ///< File descriptor open on root-directory of repository
@@ -179,14 +178,16 @@ protected:
 
     Impl(   const std::string& rootDir,
             const SegSize      segSize,
-            const long         maxOpenFiles)
+            const size_t       maxOpenFiles)
         : mutex{}
         , cond()
+        , allProds{maxOpenFiles}
+        , openProds{maxOpenFiles}
         , rootPathname(makeAbsolute(rootDir))
         , rootPrefixLen{rootPathname.size() + 1}
         , rootFd(-1)
         , segSize{segSize}
-        , maxOpenFiles{static_cast<size_t>(maxOpenFiles)}
+        , maxOpenFiles{maxOpenFiles}
     {
         if (maxOpenFiles <= 0)
             throw INVALID_ARGUMENT("maxOpenFiles=" + std::to_string(maxOpenFiles));
@@ -207,8 +208,7 @@ protected:
         }
     }
 
-    template<typename LM>
-    void ensureRoom(LM& allProds) {
+    void ensureRoom() {
         while (openProds.size() >= maxOpenFiles) {
             allProds.get(openProds.front())->close();
             openProds.pop();
@@ -366,12 +366,8 @@ DataSeg Repository::getDataSeg(const DataSegId segId) const {
 /**
  * Implementation of a publisher's repository.
  */
-template<>
 class PubRepo::Impl final : public Repository::Impl
 {
-    using LinkedMap = LinkedHashMap<ProdId, ProdEntry<SndProdFile>>;
-
-    LinkedMap          allProds;    ///< All existing products
     Watcher            watcher;     ///< Watches filename hierarchy
     std::queue<ProdId> prodQueue;   ///< Queue of products to be sent
     ProdId             prodId;      ///< Next product-identifier
@@ -385,10 +381,10 @@ class PubRepo::Impl final : public Repository::Impl
      */
     void addProd(
             const ProdId prodId,
-            SndProdFile  prodFile) {
+            ProdFile     prodFile) {
         Guard guard(mutex);
 
-        allProds.pushBack(prodId, PubProdEntry{prodFile});
+        allProds.push(prodId, ProdEntry{prodFile});
         prodQueue.push(prodId);
         cond.notify_all();
     }
@@ -405,19 +401,18 @@ class PubRepo::Impl final : public Repository::Impl
      * @post              State is locked
      * @exceptionsafety   Basic guarantee
      */
-    PubProdEntry* getProdEntry(const ProdId prodId)
-    {
+    ProdEntry* getProdEntry(const ProdId prodId) {
         LOG_ASSERT(!mutex.try_lock());
 
         auto prodEntry = allProds.get(prodId);
 
         if (prodEntry) {
-            if (!openProds.remove(prodId)) {
+            if (!openProds.erase(prodId)) {
                 // Product wasn't open
-                ensureRoom<decltype(allProds)>(allProds);
+                ensureRoom();
                 prodEntry->open(rootFd);
             }
-            openProds.pushBack(prodId);
+            openProds.push(prodId);
         }
 
         return prodEntry;
@@ -426,10 +421,12 @@ class PubRepo::Impl final : public Repository::Impl
 public:
     Impl(   const std::string& rootPathname,
             const SegSize      segSize,
+#ifdef OPEN_MAX
+            const long         maxOpenFiles = OPEN_MAX/2)
+#else
             const long         maxOpenFiles = sysconf(_SC_OPEN_MAX)/2)
-        : Repository::Impl{rootPathname, segSize, maxOpenFiles}
-        , allProds(maxOpenFiles)
-        , openProds(maxOpenFiles)
+#endif
+        : Repository::Impl{rootPathname, segSize, static_cast<size_t>(maxOpenFiles)}
         , watcher(this->rootPathname) // Is absolute pathname
         , prodQueue()
         , prodId()
@@ -491,7 +488,7 @@ public:
             //LOG_DEBUG("event.pathname=%s", event.pathname.data());
             //LOG_DEBUG("rootPrefixLen=%zu", rootPrefixLen);
             prodName = event.pathname.substr(rootPrefixLen);
-            SndProdFile prodFile(rootFd, prodName, segSize);
+            ProdFile prodFile(rootFd, prodName, segSize);
 
             const ProdId prodId(prodName);
             prodInfo = ProdInfo(prodId, prodName, prodFile.getProdSize());
@@ -582,11 +579,7 @@ ProdInfo PubRepo::getNextProd() const {
  */
 class SubRepo::Impl final : public Repository::Impl
 {
-    using SubProdEntry = ProdEntry<RcvProdFile>;
-
-    std::queue<ProdInfo>                prodQueue; ///< Queue of completed products
-    LinkedHashMap<ProdId, SubProdEntry> allProds;  ///< All products
-    LinkedHashSet<ProdId>               openProds; ///< Open products
+    std::queue<ProdInfo>             prodQueue; ///< Queue of completed products
 
     void makeRoom()
     {
@@ -594,6 +587,41 @@ class SubRepo::Impl final : public Repository::Impl
             allProds.get(openProds.front())->close();
             openProds.pop();
         }
+    }
+
+    /**
+     * Returns the product-entry corresponding to a product-ID. The product-entry is created if it
+     * doesn't exist. The corresponding product is open and at the back of the open-products set.
+     *
+     * @pre                 State is locked
+     * @param[in] prodId    Product identifier
+     * @param[in] prodSize  Size of product in bytes
+     * @return              Corresponding product-entry. The product is open.
+     * @post                State is locked
+     * @exceptionsafety     Basic guarantee
+     */
+    ProdEntry& getProdEntry(
+            const ProdId   prodId,
+            const ProdSize prodSize)
+    {
+        LOG_ASSERT(!mutex.try_lock());
+
+        auto prodEntry = allProds.get(prodId);
+
+        if (prodEntry == nullptr) {
+            auto      prodFile = ProdFile(rootFd, ".incomplete/" + prodId.to_string(), segSize,
+                    prodSize);
+            ProdEntry entry{prodFile};
+            prodEntry = allProds.push(prodId, entry);
+        }
+
+        if (!openProds.erase(prodId)) {
+            ensureRoom();
+            prodEntry->open(rootFd); // Idempotent
+        }
+        openProds.push(prodId);
+
+        return *prodEntry;
     }
 
     /**
@@ -608,19 +636,19 @@ class SubRepo::Impl final : public Repository::Impl
      * @post              State is locked
      * @exceptionsafety   Basic guarantee
      */
-    SubProdEntry* getProdEntry(const ProdId prodId)
+    ProdEntry* getProdEntry(const ProdId prodId)
     {
         LOG_ASSERT(!mutex.try_lock());
 
         auto prodEntry = allProds.get(prodId);
 
         if (prodEntry) {
-            if (!openProds.remove(prodId)) {
+            if (!openProds.erase(prodId)) {
                 // Product wasn't open
-                ensureRoom<decltype(allProds)>(allProds);
+                ensureRoom();
                 prodEntry->open(rootFd);
             }
-            openProds.pushBack(prodId);
+            openProds.push(prodId);
         }
 
         return prodEntry;
@@ -634,7 +662,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @param[in] prodFile  Product entry
      * @post                State is locked
      */
-    void finishIfComplete(const SubProdEntry& prodEntry) {
+    void finishIfComplete(const ProdEntry& prodEntry) {
         if (prodEntry.isComplete()) {
             prodEntry.rename(rootFd);
             prodQueue.push(prodEntry.getProdInfo());
@@ -645,10 +673,8 @@ class SubRepo::Impl final : public Repository::Impl
 public:
     Impl(   const std::string& rootPathname,
             const SegSize      segSize,
-            const long         maxOpenFiles)
+            const size_t       maxOpenFiles)
         : Repository::Impl{rootPathname, segSize, maxOpenFiles}
-        , allProds(maxOpenFiles) // TODO: Add existing files
-        , openProds(static_cast<size_t>(maxOpenFiles))
     {}
 
     /**
@@ -656,28 +682,21 @@ public:
      * becomes complete, then it will be added to the outgoing queue.
      *
      * @param[in] prodInfo     Product information
+     * @retval    `true``      Product information was saved
+     * @retval    `false`      Product information was previously saved
      * @throw InvalidArgument  Known product has a different size
      * @throw LogicError       Metadata was previously saved
      * @throw SystemError      System failure
      * @see `getNextProd()`
      */
-    void save(const ProdInfo prodInfo) {
+    bool save(const ProdInfo prodInfo) {
         Guard      guard{mutex};
         const auto prodId = prodInfo.getId();
-        auto       prodEntry = allProds.get(prodId);
-        const auto prodSize = prodInfo.getSize();
+        auto&      prodEntry = getProdEntry(prodId, prodInfo.getSize());
+        auto       saved = prodEntry.save(prodInfo);
 
-        if (prodEntry) {
-            prodEntry->save(prodInfo);
-        }
-        else {
-            ensureRoom<decltype<allProds>(allProds);
-            auto entry = RcvProdFile(rootFd, ".incomplete/" + prodId.to_string(),
-                    prodInfo.getSize(), segSize);
-            allProds.pushBack(prodId, entry);
-            openProds.pushBack(prodId);
-        }
-        finishIfComplete(*prodEntry);
+        finishIfComplete(prodEntry);
+        return saved;
     }
 
     /**
@@ -691,30 +710,15 @@ public:
      * @throw SystemError      System failure
      * @see `getNextProd()`
      */
-    void save(const DataSeg dataSeg)
+    bool save(const DataSeg dataSeg)
     {
         Guard      guard{mutex};
         const auto prodId = dataSeg.getId().prodId;
-        auto       prodEntry = getProdEntry(prodId);
-        const auto prodSize = dataSeg.getProdSize();
+        auto&      prodEntry = getProdEntry(prodId, dataSeg.getProdSize());
+        const bool saved = prodEntry.save(dataSeg);
 
-        if (prodEntry) {
-            const auto knownSize = prodEntry->getProdSize();
-            if (prodSize != knownSize)
-                throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
-                        " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
-                        " bytes)");
-            prodEntry.open();
-            prodEntry->prodFile.save(dataSeg);
-        }
-        else {
-            ensureRoom<decltype<allProds>(allProds);
-            auto entry = RcvProdFile(rootFd, ".incomplete/" + prodId.to_string(), prodSize,
-                    segSize);
-            allProds.pushBack(prodId, entry);
-            openProds.pushBack(prodId);
-        }
-        finishIfComplete(*prodEntry);
+        finishIfComplete(prodEntry);
+        return saved;
     }
 
     /**

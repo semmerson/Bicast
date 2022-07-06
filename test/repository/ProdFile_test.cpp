@@ -85,17 +85,17 @@ protected:
     }
 };
 
-// Tests a zero-size SndProdFile
+// Tests a zero-size sending ProdFile
 TEST_F(ProdFileTest, ZeroSndProdFile)
 {
     const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
     ASSERT_NE(-1, fd);
     ASSERT_NE(-1, ::close(fd));
-    hycast::SndProdFile prodFile(rootFd, prodName, 0);
+    hycast::ProdFile prodFile(rootFd, prodName, 0);
     EXPECT_THROW(prodFile.getData(0), hycast::InvalidArgument);
 }
 
-// Tests a valid SndProdFile
+// Tests a valid sending ProdFile
 TEST_F(ProdFileTest, ValidSndProdFile)
 {
     const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
@@ -103,14 +103,14 @@ TEST_F(ProdFileTest, ValidSndProdFile)
     const char bytes[2] = {1, 2};
     ASSERT_EQ(2, ::write(fd, bytes, sizeof(bytes)));
     ASSERT_NE(-1, ::close(fd));
-    hycast::SndProdFile prodFile(rootFd, prodName, 2);
+    hycast::ProdFile prodFile(rootFd, prodName, 2);
     const char* data = static_cast<const char*>(prodFile.getData(0));
     EXPECT_EQ(1, data[0]);
     EXPECT_EQ(2, data[1]);
     EXPECT_THROW(prodFile.getData(1), hycast::InvalidArgument);
 }
 
-// Tests a bad SndProdFile
+// Tests a bad sending ProdFile
 TEST_F(ProdFileTest, BadSndProdFile)
 {
     try {
@@ -119,7 +119,7 @@ TEST_F(ProdFileTest, BadSndProdFile)
         const char byte = 1;
         ASSERT_EQ(1, ::write(fd, &byte, sizeof(byte)));
         ASSERT_NE(-1, ::close(fd));
-        hycast::SndProdFile(rootFd, prodName, 0);
+        hycast::ProdFile(rootFd, prodName, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -128,11 +128,11 @@ TEST_F(ProdFileTest, BadSndProdFile)
     }
 }
 
-// Tests a bad RcvProdFile
+// Tests a bad receiving ProdFile
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
     try {
-        hycast::RcvProdFile(rootFd, prodName, 1, 0);
+        hycast::ProdFile(rootFd, prodName, 1, 0);
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -141,27 +141,24 @@ TEST_F(ProdFileTest, BadRcvProdFile)
     }
 }
 
-// Tests a zero-size RcvProdFile
+// Tests a zero-size receiving ProdFile
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
-    hycast::ProdSize    prodSize(0);
-    hycast::RcvProdFile prodFile(rootFd, prodName, prodSize, 0);
-    hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
-    EXPECT_TRUE(prodFile.save(prodInfo));
+    hycast::ProdSize prodSize(0);
+    hycast::ProdFile prodFile(rootFd, prodName, 0, prodSize);
     ASSERT_TRUE(prodFile.isComplete());
 }
 
-// Tests a RcvProdFile
-TEST_F(ProdFileTest, RcvProdFile)
+// Tests a receiving ProdFile
+TEST_F(ProdFileTest, RecvProdFile)
 {
-    hycast::ProdSize    prodSize{static_cast<hycast::ProdSize>(2*segSize)};
-    hycast::ProdInfo    prodInfo(prodId, prodName, prodSize);
-    hycast::RcvProdFile prodFile(rootFd, prodName, prodSize, segSize);
-    ASSERT_TRUE(prodFile.save(prodInfo));
+    hycast::ProdSize prodSize{static_cast<hycast::ProdSize>(2*segSize)};
+    hycast::ProdInfo prodInfo(prodId, prodName, prodSize);
+    hycast::ProdFile prodFile(rootFd, prodName, segSize, prodSize);
     {
         for (int i = 0; i < 2; ++i) {
             hycast::DataSegId segId(prodId, i*segSize);
-            hycast::DataSeg   memSeg{segId, prodSize, memData};
+            hycast::DataSeg   memSeg(segId, prodSize, memData);
             ASSERT_TRUE(prodFile.save(memSeg));
         }
     } // Closes file

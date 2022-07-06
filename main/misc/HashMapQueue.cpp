@@ -1,7 +1,7 @@
 /**
  * This file defines a thread-safe, combined doubly-linked list and hash table.
  *
- *  @file:  LinkedHashSet.cpp
+ *  @file:  LinkedHashMap.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
@@ -22,81 +22,83 @@
 #include "config.h"
 
 #include "error.h"
-#include "LinkedHashSet.h"
+#include "LinkedHashMap.h"
 
 namespace hycast {
 
-template<class VALUE>
-bool LinkedHashSet<VALUE>::pushBack(const VALUE& value)
+template<class KEY, class VALUE>
+bool HashMapQueue<KEY, VALUE>::pushBack(
+        const KEY&   key,
+        const VALUE& value)
 {
     Guard lock{mutex};
-    auto  pair = set.emplace(Elt{tail, value});
+    auto  pair = map.emplace(key, MapValue{tail, value});
     try {
         if (!pair.second)
             return false;
-        tail = value;
-        if (set.size() == 1)
+        tail = key;
+        if (map.size() == 1)
             head = tail;
     }
     catch (const std::exception& ex) {
-        set.erase(value);
+        map.erase(key);
         throw;
     }
     return true;
 }
 
-template<class VALUE>
-VALUE& LinkedHashSet<VALUE>::front() noexcept
+template<class KEY, class VALUE>
+VALUE& HashMapQueue<KEY, VALUE>::front() noexcept
 {
     Guard lock{mutex};
-    if (set.size() == 0)
+    if (map.size() == 0)
         throw OUT_OF_RANGE("Map is empty");
-    return set.at(head).value;
+    return map.at(head).value;
 }
 
-template<class VALUE>
-void LinkedHashSet<VALUE>::pop() noexcept
+template<class KEY, class VALUE>
+void HashMapQueue<KEY, VALUE>::pop() noexcept
 {
     Guard lock{mutex};
-    if (set.size() == 0)
+    if (map.size() == 0)
         throw OUT_OF_RANGE("Map is empty");
-    if (set.size() == 1) {
-        set.erase(head);
-        head = tail = VALUE();
+    if (map.size() == 1) {
+        map.erase(head);
+        head = tail = KEY();
     }
     else {
         auto origHead = head;
-        head = set.at(head).next;
-        set.erase(origHead);
+        head = map.at(head).next;
+        map.erase(origHead);
     }
 }
 
-template<class VALUE>
-bool LinkedHashSet<VALUE>::remove(const VALUE& value) noexcept
+template<class KEY, class VALUE>
+bool HashMapQueue<KEY, VALUE>::remove(KEY& key) noexcept
 {
     Guard lock{mutex};
-    auto iter = set.find(value);
-    if (iter == set.end())
+    auto iter = map.find(key);
+    if (iter == map.end())
         return false;
-    auto& elt = iter->second;
-    if (set.size() == 1) {
-        head = tail = VALUE();
+    MapValue& mapValue = iter->second;
+    if (map.size() == 1) {
+        head = tail = KEY();
     }
     else {
-        if (head == value) {
-            head = elt.next;
-            set.at(elt.next).prev = elt.prev;
+        if (head == key) {
+            head = mapValue.next;
+            map.at(mapValue.next).prev = mapValue.prev;
         }
-        else if (tail == value) {
-            tail = elt.prev;
-            set.at(elt.prev).next = elt.next;
+        else if (tail == key) {
+            tail = mapValue.prev;
+            map.at(mapValue.prev).next = mapValue.next;
         }
         else {
-            set.at(elt.next).prev = elt.prev;
-            set.at(elt.prev).next = elt.next;
+            map.at(mapValue.next).prev = mapValue.prev;
+            map.at(mapValue.prev).next = mapValue.next;
         }
     }
-    set.erase(iter);
+    map.erase(iter);
     return true;
 }
 

@@ -34,24 +34,42 @@ namespace hycast {
  */
 class ProdFile
 {
-protected:
+public:
     class                 Impl;
+
+private:
     std::shared_ptr<Impl> pImpl;
 
-    ProdFile(std::shared_ptr<Impl>&& impl) noexcept;
+    ProdFile(Impl* pImpl) noexcept;
 
 public:
-    ProdFile() noexcept;
+    ProdFile() =default;
 
-    ProdFile(const ProdFile& prodFile) noexcept;
+    /**
+     * Constructs a sending-only (i.e., read-only) product-file.
+     *
+     * @param[in] rootFd    File descriptor open on root-directory of product-files
+     * @param[in] pathname  Pathname of product-file relative to root-directory
+     * @param[in] segSize   Maximum segment size in bytes
+     */
+    ProdFile(
+            const int       rootFd,
+            const String&   pathname,
+            const SegSize   segSize);
 
-    ProdFile(ProdFile&& prodFile) noexcept;
-
-    virtual ~ProdFile();
-
-    ProdFile& operator =(const ProdFile& rhs) noexcept;
-
-    ProdFile& operator =(ProdFile&& rhs) noexcept;
+    /**
+     * Constructs a receiving/sending (i.e., read/write) product-file.
+     *
+     * @param[in] rootFd    File descriptor open on root-directory of product-files
+     * @param[in] pathname  Pathname of product-file relative to root-directory
+     * @param[in] segSize   Maximum segment size in bytes
+     * @param[in] prodSize  Product size in bytes
+     */
+    ProdFile(
+            const int       rootFd,
+            const String&   pathname,
+            const SegSize   segSize,
+            const ProdSize  prodSize);
 
     /**
      * Indicates if this instance is valid.
@@ -86,7 +104,7 @@ public:
      *
      * @param[in] rootFd  File descriptor open on the root directory
      */
-    virtual void open(const int rootFd) const =0;
+    void open(const int rootFd) const;
 
     /**
      * Disables access to the underlying file.
@@ -104,7 +122,7 @@ public:
      * @exceptionsafety            Strong guarantee
      * @cancellationpoint          No
      */
-    virtual bool exists(ProdSize offset) const =0;
+    virtual bool exists(ProdSize offset) const;
 
     /**
      * Returns a pointer to a data-segment within the product.
@@ -119,100 +137,6 @@ public:
      * @cancellationpoint           No
      */
     const char* getData(ProdSize offset) const;
-};
-
-/******************************************************************************/
-
-/**
- * Product-file for the source of data-products.
- */
-class SndProdFile final : public ProdFile
-{
-    class Impl;
-
-public:
-    SndProdFile() noexcept; // Will test false
-
-    /**
-     * Constructs from an existing file. Access to the underlying file is
-     * closed.
-     *
-     * @param[in] rootFd        File descriptor open on root directory
-     * @param[in] pathname      Pathname of file relative to root directory
-     * @param[in] segSize       Size of a canonical segment in bytes
-     * @throws    SystemError   Open failure
-     * @cancellationpoint       No
-     */
-    SndProdFile(
-            const int          rootFd,
-            const std::string& pathname,
-            SegSize            segSize);
-
-    /**
-     * Enables access to the underlying file.
-     *
-     * @param[in] rootFd  File descriptor open on the root directory
-     */
-    void open(const int rootFd) const override;
-
-    bool exists(ProdSize offset) const override;
-};
-
-/******************************************************************************/
-
-/**
- * Product-file for a receiver of data-products.
- */
-class RcvProdFile final : public ProdFile
-{
-    class Impl;
-
-public:
-    RcvProdFile() noexcept; // Will test false
-
-    /**
-     * Constructs from product information. The instance is open.
-     *
-     * @param[in] rootFd           File descriptor open on root directory
-     * @param[in] pathname         Pathname of file relative to the root directory
-     * @param[in] prodSize         Product size in bytes
-     * @param[in] segSize          Size of canonical data-segment in bytes
-     * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
-     * @throws    SystemError      `open()` or `ftruncate()` failure
-     */
-    RcvProdFile(
-            const int       rootFd,
-            const String&   pathname,
-            const ProdSize  prodSize,
-            const SegSize   segSize);
-
-    /**
-     * Enables access to the underlying file.
-     *
-     * @param[in] rootFd  File descriptor open on the root directory
-     */
-    void open(const int rootFd) const override;
-
-    /**
-     * Indicates if the file contains a data-segment.
-     *
-     * @param[in] offset           Offset of data-segment in bytes
-     * @retval    `true`           Yes
-     * @retval    `false`          No
-     * @throws    IllegalArgument  Offset is invalid
-     * @threadsafety               Safe
-     * @exceptionsafety            Strong guarantee
-     * @cancellationpoint          No
-     */
-    bool exists(ProdSize offset) const override;
-
-    /**
-     * Indicates if the product has all the data.
-     *
-     * @retval `true`   The product is complete
-     * @retval `false`  The product is not complete
-     */
-    bool isComplete() const;
 
     /**
      * Saves a data-segment.
@@ -229,6 +153,14 @@ public:
     bool save(const DataSeg& dataSeg) const;
 
     /**
+     * Indicates if the product has all the data.
+     *
+     * @retval `true`   The product is complete
+     * @retval `false`  The product is not complete
+     */
+    bool isComplete() const;
+
+    /**
      * Renames the associated file.
      *
      * @param[in] rootFd       File descriptor open on repository's root directory
@@ -237,7 +169,7 @@ public:
      */
     void rename(
             const int     rootFd,
-            const String& pathname);
+            const String& pathname) const;
 };
 
 } // namespace
