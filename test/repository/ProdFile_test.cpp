@@ -91,7 +91,7 @@ TEST_F(ProdFileTest, ZeroSndProdFile)
     const int fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0666);
     ASSERT_NE(-1, fd);
     ASSERT_NE(-1, ::close(fd));
-    hycast::ProdFile prodFile(rootFd, prodName, 0);
+    hycast::ProdFile prodFile(rootFd, prodName, 0, hycast::Timestamp());
     EXPECT_THROW(prodFile.getData(0), hycast::InvalidArgument);
 }
 
@@ -103,7 +103,7 @@ TEST_F(ProdFileTest, ValidSndProdFile)
     const char bytes[2] = {1, 2};
     ASSERT_EQ(2, ::write(fd, bytes, sizeof(bytes)));
     ASSERT_NE(-1, ::close(fd));
-    hycast::ProdFile prodFile(rootFd, prodName, 2);
+    hycast::ProdFile prodFile(rootFd, prodName, 2, hycast::Timestamp());
     const char* data = static_cast<const char*>(prodFile.getData(0));
     EXPECT_EQ(1, data[0]);
     EXPECT_EQ(2, data[1]);
@@ -119,7 +119,7 @@ TEST_F(ProdFileTest, BadSndProdFile)
         const char byte = 1;
         ASSERT_EQ(1, ::write(fd, &byte, sizeof(byte)));
         ASSERT_NE(-1, ::close(fd));
-        hycast::ProdFile(rootFd, prodName, 0);
+        hycast::ProdFile(rootFd, prodName, 0, hycast::Timestamp());
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -132,7 +132,7 @@ TEST_F(ProdFileTest, BadSndProdFile)
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
     try {
-        hycast::ProdFile(rootFd, prodName, 1, 0);
+        hycast::ProdFile(rootFd, prodName, 1, 0, hycast::Timestamp());
     }
     catch (const hycast::InvalidArgument& ex) {
     }
@@ -145,7 +145,7 @@ TEST_F(ProdFileTest, BadRcvProdFile)
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
     hycast::ProdSize prodSize(0);
-    hycast::ProdFile prodFile(rootFd, prodName, 0, prodSize);
+    hycast::ProdFile prodFile(rootFd, prodName, 0, prodSize, hycast::Timestamp());
     ASSERT_TRUE(prodFile.isComplete());
 }
 
@@ -154,7 +154,7 @@ TEST_F(ProdFileTest, RecvProdFile)
 {
     hycast::ProdSize prodSize{static_cast<hycast::ProdSize>(2*segSize)};
     hycast::ProdInfo prodInfo(prodId, prodName, prodSize);
-    hycast::ProdFile prodFile(rootFd, prodName, segSize, prodSize);
+    hycast::ProdFile prodFile(rootFd, prodName, segSize, prodSize, hycast::Timestamp());
     {
         for (int i = 0; i < 2; ++i) {
             hycast::DataSegId segId(prodId, i*segSize);

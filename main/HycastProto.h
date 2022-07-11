@@ -265,30 +265,46 @@ public:
     }
 };
 
-/// Creation-time of a product
-class CreationTime : public XprtAble
+/// Timestamp
+class Timestamp : public XprtAble
 {
-    system_clock::time_point time; // System time with microsecond resolution at best
-
 public:
-    CreationTime()
-        : time(system_clock::time_point(
-                duration_cast<microseconds>(system_clock::now().time_since_epoch())))
+    using Clock     = system_clock;
+    using TimePoint = Clock::time_point;
+    using Duration  = Clock::duration;
+
+    Timestamp()
+        : timePoint(Clock::now())
     {}
 
+    Timestamp(const TimePoint& timePoint)
+        : timePoint(timePoint)
+    {}
+
+    Timestamp(const TimePoint&& timePoint)
+        : timePoint(timePoint)
+    {}
+
+    const TimePoint getTimePoint() const noexcept {
+        return timePoint;
+    }
+
+    bool operator==(const Timestamp& rhs) const noexcept {
+        return timePoint == rhs.timePoint;
+    }
+
+    bool operator<(const Timestamp& rhs) const noexcept {
+        return timePoint < rhs.timePoint;
+    }
+
     String to_string() const noexcept;
-
-    bool operator==(const CreationTime& rhs) const {
-        return time == rhs.time;
-    }
-
-    bool operator<(const CreationTime& rhs) const {
-        return time < rhs.time;
-    }
 
     bool write(Xprt xprt) const override;
 
     bool read(Xprt xprt) override;
+
+private:
+    TimePoint timePoint;
 };
 
 /// Data-segment identifier
@@ -340,30 +356,6 @@ struct DataSegId : public XprtAble
     }
 };
 
-/// Timestamp
-struct Timestamp : public XprtAble
-{
-    uint64_t sec;  ///< Seconds since the epoch
-    uint32_t nsec; ///< Nanoseconds
-
-    bool operator==(const Timestamp& rhs) const {
-        return sec == rhs.sec && nsec == rhs.nsec;
-    }
-
-    /**
-     * Returns string representation as "YYYY-MM-DDThh:mm:ss.nnnnnnZ"
-     */
-    std::string to_string(bool withName = false) const;
-
-    bool write(Xprt xprt) const override {
-        return xprt.write(sec) && xprt.write(nsec);
-    }
-
-    bool read(Xprt xprt) override {
-        return xprt.read(sec) && xprt.read(nsec);
-    }
-};
-
 /// Handle class for product information
 struct ProdInfo : public XprtAble
 {
@@ -382,9 +374,9 @@ public:
      * @param[in] name    Name of product
      * @param[in] size    Size of product in bytes
      */
-    ProdInfo(const ProdId      prodId,
-             const std::string name,
-             const ProdSize    size);
+    ProdInfo(const ProdId       prodId,
+             const std::string& name,
+             const ProdSize     size);
 
     operator bool() const noexcept;
 

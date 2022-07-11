@@ -38,6 +38,7 @@ class HashMapQueue
 {
     using Mutex = std::mutex;
     using Guard = std::lock_guard<Mutex>;
+    using Cond  = std::condition_variable;
 
     struct MappedValue
     {
@@ -58,16 +59,18 @@ class HashMapQueue
     using Equal = std::function<bool(const KEY&, const KEY&)>;
     using Map = std::unordered_map<KEY, MappedValue, Hash, Equal>;
 
-    Mutex  mutex;
-    Hash   myHash;
-    Equal  myEqual;
-    Map    map;
-    KEY    head;
-    KEY    tail;
+    mutable Mutex  mutex;
+    mutable Cond   cond;
+    Hash           myHash;
+    Equal          myEqual;
+    Map            map;
+    KEY            head;
+    KEY            tail;
 
 public:
     explicit HashMapQueue(const size_t initialSize = 10)
         : mutex{}
+        , cond()
         , myHash([](const KEY& key){return key.hash();})
         , myEqual([](const KEY& key1, const KEY& key2){return key1 == key2;})
         , map{initialSize, myHash, myEqual}
@@ -77,7 +80,7 @@ public:
 
 
     /**
-     * Adds a value to the back of the queue.
+     * Adds an entry to the back of the queue.
      *
      * @param[in] key        Key
      * @param[in] value      Value
@@ -90,7 +93,7 @@ public:
     VALUE* push(
             const KEY&   key,
             const VALUE& value) {
-        Guard lock{mutex};
+        Guard guard{mutex};
         auto  pair = map.emplace(key, MappedValue{tail, value});
         try {
             if (!pair.second)
@@ -105,17 +108,42 @@ public:
         }
         return &pair.first->second.value;
     }
+
+    bool empty() const {
+        Guard guard(mutex);
+        return map.empty();
+    }
+
     /**
-     * Returns a reference to the front value.
+     * Returns the front entry.
      *
-     * @return            Pointer to front value
-     * @retval `nullptr`  Queue is empty.
-     * @exceptionSafety   Nothrow
+     * @param[out] key    Key
+     * @return            Pointer to value referenced by key
+     * @throw OutOfRange  Queue is empty
      * @threadsafety      Safe
+    VALUE& front(const KEY*& key) {
+        Guard guard(mutex);
+        if (map.size() == 0)
+            throw OUT_OF_RANGE("Queue is empty");
+
+        key = &head;
+        return map.at(head).value;
+    }
+    const KEY& front(VALUE*& value) {
+        Guard guard(mutex);
+        if (map.size() == 0)
+            throw OUT_OF_RANGE("Queue is empty");
+
+        value = &map.at(head).value;
+        return head;
+    }
      */
-    VALUE* front() noexcept {
-        Guard lock{mutex};
-        return map.size() ? &map.at(head).value : nullptr;
+    std::pair<const KEY&, VALUE&> front() {
+        Guard guard(mutex);
+        if (map.size() == 0)
+            throw OUT_OF_RANGE("Queue is empty");
+
+        return {head, map.at(head).value};
     }
 
     /**
@@ -136,7 +164,7 @@ public:
      * @threadsafety    Safe
      */
     void pop() noexcept {
-        Guard lock{mutex};
+        Guard guard(mutex);
         if (map.size()) {
             auto& next = map.at(head).next;
             map.erase(head);
@@ -159,7 +187,7 @@ public:
      * @threadsafety      Safe
      */
     bool erase(KEY& key) noexcept {
-        Guard lock{mutex};
+        Guard guard(mutex);
 
         auto iter = map.find(key);
         if (iter == map.end())

@@ -48,28 +48,32 @@ public:
     /**
      * Constructs a sending-only (i.e., read-only) product-file.
      *
-     * @param[in] rootFd    File descriptor open on root-directory of product-files
-     * @param[in] pathname  Pathname of product-file relative to root-directory
-     * @param[in] segSize   Maximum segment size in bytes
+     * @param[in] rootFd      File descriptor open on root-directory of product-files
+     * @param[in] pathname    Pathname of product-file relative to root-directory
+     * @param[in] segSize     Maximum segment size in bytes
+     * @param[in] deleteTime  When this product should be deleted
      */
     ProdFile(
-            const int       rootFd,
-            const String&   pathname,
-            const SegSize   segSize);
+            const int        rootFd,
+            const String&    pathname,
+            const SegSize    segSize,
+            const Timestamp& deleteTime);
 
     /**
      * Constructs a receiving/sending (i.e., read/write) product-file.
      *
-     * @param[in] rootFd    File descriptor open on root-directory of product-files
-     * @param[in] pathname  Pathname of product-file relative to root-directory
-     * @param[in] segSize   Maximum segment size in bytes
-     * @param[in] prodSize  Product size in bytes
+     * @param[in] rootFd      File descriptor open on root-directory of product-files
+     * @param[in] pathname    Pathname of product-file relative to root-directory
+     * @param[in] segSize     Maximum segment size in bytes
+     * @param[in] prodSize    Product size in bytes
+     * @param[in] deleteTime  When this product should be deleted
      */
     ProdFile(
-            const int       rootFd,
-            const String&   pathname,
-            const SegSize   segSize,
-            const ProdSize  prodSize);
+            const int        rootFd,
+            const String&    pathname,
+            const SegSize    segSize,
+            const ProdSize   prodSize,
+            const Timestamp& deleteTime);
 
     /**
      * Indicates if this instance is valid.
@@ -111,6 +115,8 @@ public:
      */
     void close() const;
 
+    void deleteFile() const;
+
     /**
      * Indicates if the file contains a particular data-segment.
      *
@@ -137,6 +143,13 @@ public:
      * @cancellationpoint           No
      */
     const char* getData(ProdSize offset) const;
+
+    /**
+     * Returns this instance's delete-time.
+     *
+     * @return  This instance's delete-time
+     */
+    const Timestamp& getDeleteTime() const;
 
     /**
      * Saves a data-segment.

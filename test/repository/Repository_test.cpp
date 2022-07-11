@@ -21,7 +21,7 @@
  */
 #include "config.h"
 
-#include "error.h"
+#include "logging.h"
 #include "FileUtil.h"
 #include "HycastProto.h"
 #include "Repository.h"
@@ -63,7 +63,7 @@ protected:
     {
         hycast::DataSeg::setMaxSegSize(sizeof(memData));
         hycast::rmDirTree(testDir);
-        hycast::ensureDir(hycast::dirPath(filePath));
+        hycast::ensureDir(hycast::dirname(filePath));
     }
 
     ~RepositoryTest() {
@@ -96,7 +96,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
     ASSERT_FALSE(repo.getProdInfo(prodId));
     ASSERT_TRUE(repo.save(prodInfo));
     auto actual = repo.getProdInfo(prodId);
-    ASSERT_TRUE(actual);
+    ASSERT_EQ(true, actual);
     EXPECT_EQ(prodInfo, actual);
 }
 
@@ -109,8 +109,8 @@ TEST_F(RepositoryTest, SaveInfoThenData)
     ASSERT_TRUE(repo.save(dataSeg));
 
     auto prodInfo = repo.getNextProd();
-    ASSERT_TRUE(prodInfo);
-    EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
+    ASSERT_EQ(true, prodInfo);
+    EXPECT_EQ(this->prodInfo, prodInfo);
 
     auto actual = repo.getDataSeg(segId);
     ASSERT_TRUE(actual);
@@ -126,7 +126,7 @@ TEST_F(RepositoryTest, SaveDataThenInfo)
     ASSERT_TRUE(repo.save(prodInfo));
 
     auto prodInfo = repo.getNextProd();
-    ASSERT_TRUE(prodInfo);
+    ASSERT_EQ(true, prodInfo);
     EXPECT_EQ(RepositoryTest::prodInfo, prodInfo);
 
     auto actual = repo.getDataSeg(dataSeg.getId());
@@ -168,6 +168,9 @@ TEST_F(RepositoryTest, CreatProdForSending)
 }  // namespace
 
 int main(int argc, char **argv) {
+  hycast::log_setName(::basename(argv[0]));
+  hycast::log_setLevel(hycast::LogLevel::DEBUG);
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

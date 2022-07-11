@@ -30,6 +30,7 @@
 
 #include <fcntl.h>
 #include <mutex>
+#include <chrono>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -42,6 +43,12 @@ namespace hycast {
  */
 class ProdFile::Impl
 {
+    const ProdSize  prodSize;
+    int             mode; ///< Open mode (e.g., O_RDONLY, O_RDWR)
+    const SegSize   segSize;
+    const SegSize   lastSegSize;
+    const Timestamp deleteTime;
+
     /**
      * Opens the underlying file. Idempotent.
      *
@@ -121,12 +128,8 @@ protected:
     mutable Mutex     mutex;
     String            pathname;
     char*             data; ///< For `get()`
-    const ProdSize    prodSize;
     const ProdSize    numSegs;
     int               fd;
-    int               mode; ///< Open mode (e.g., O_RDONLY, O_RDWR)
-    const SegSize     segSize;
-    const SegSize     lastSegSize;
 
     inline ProdSize segIndex(const ProdSize offset) const {
         return offset / segSize;
@@ -199,24 +202,27 @@ public:
      * @param[in] segSize          Size of a canonical segment in bytes. Shall not be zero if file
      *                             has positive size.
      * @param[in] mode             Open mode (e.g., O_RDONLY, O_RDWR)
+     * @param[in] deleteTime       When this product should be deleted
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
      * @cancellationpoint          No
      */
     Impl(   const std::string& pathname,
             const SegSize      segSize,
             const ProdSize     prodSize,
-            const int          mode)
-        : mutex()
-        , pathname(pathname)
-        , data{nullptr}
-        , prodSize{prodSize}
-        , numSegs{segSize ? ((prodSize + segSize - 1) / segSize) : 0}
-        , fd{-1}
+            const int          mode,
+            const Timestamp&   deleteTime)
+        : prodSize{prodSize}
         , mode(mode)
         , segSize{segSize}
         , lastSegSize{static_cast<SegSize>(segSize
                 ? (prodSize%segSize ? prodSize%segSize : segSize)
                 : 0)}
+        , deleteTime(deleteTime)
+        , mutex()
+        , pathname(pathname)
+        , data{nullptr}
+        , numSegs{segSize ? ((prodSize + segSize - 1) / segSize) : 0}
+        , fd{-1}
     {
         if (prodSize && segSize == 0)
             throw INVALID_ARGUMENT("Zero segment-size specified for non-empty file \"" + pathname +
@@ -242,9 +248,13 @@ public:
                 : segSize;
     }
 
+    const Timestamp& getDeleteTime() const {
+        return deleteTime;
+    }
+
     String to_string() const {
         return "{pathname=" + pathname + ", prodSize=" + std::to_string(prodSize) + ", fd=" +
-                std::to_string(fd) + "}";
+                std::to_string(fd) + ", deleteTime=" + deleteTime.to_string() + "}";
     }
 
     void open(const int rootFd) {
@@ -255,6 +265,13 @@ public:
     void close() {
         Guard guard(mutex);
         disableAccess();
+    }
+
+    void deleteFile() {
+        Guard guard(mutex);
+        disableAccess();
+        if (::unlinkat(fd, pathname.data(), 0))
+            throw SYSTEM_ERROR("Couldn't delete file \"" + pathname + "\"");
     }
 
     const char* getData(const ProdSize offset) const {
@@ -316,8 +333,16 @@ const char* ProdFile::getData(const ProdSize offset) const {
     return pImpl->getData(offset);
 }
 
+const Timestamp& ProdFile::getDeleteTime() const {
+    return pImpl->getDeleteTime();
+}
+
 void ProdFile::close() const {
     return pImpl->close();
+}
+
+void ProdFile::deleteFile() const {
+    return pImpl->deleteFile();
 }
 
 void ProdFile::open(const int rootFd) const {
@@ -354,25 +379,29 @@ public:
     /**
      * Constructs. The instance is open.
      *
-     * @param[in] rootFd  ///< File descriptor open on the root-directory of the product-files
-     * @param pathname    ///< Pathname of the underlying file relative to the root-directory
-     * @param segSize     ///< Maximum data-segment size in bytes
+     * @param[in] rootFd      File descriptor open on the root-directory of the product-files
+     * @param[in] pathname    Pathname of the underlying file relative to the root-directory
+     * @param[in] segSize     Maximum data-segment size in bytes
+     * @param[in] deleteTime  When this product should be deleted
      */
     SendProdFile(
-            const int      rootFd,
-            const String   pathname,
-            const SegSize  segSize)
-        : ProdFile::Impl{pathname, segSize, ProdFile::Impl::getFileSize(rootFd, pathname), O_RDWR}
+            const int        rootFd,
+            const String&    pathname,
+            const SegSize    segSize,
+            const Timestamp& deleteTime)
+        : ProdFile::Impl{pathname, segSize, ProdFile::Impl::getFileSize(rootFd, pathname), O_RDWR,
+                deleteTime}
     {
         open(rootFd);
     }
 };
 
 ProdFile::ProdFile(
-        const int     rootFd,
-        const String& pathname,
-        const SegSize segSize)
-    : ProdFile(new SendProdFile(rootFd, pathname, segSize))
+        const int        rootFd,
+        const String&    pathname,
+        const SegSize    segSize,
+        const Timestamp& deleteTime)
+    : ProdFile(new SendProdFile(rootFd, pathname, segSize, deleteTime))
 {}
 
 /**************************************************************************************************/
@@ -395,19 +424,21 @@ public:
      * @param[in] pathname         Pathname of the file
      * @param[in] segSize          Canonical segment size in bytes
      * @param[in] prodSize         Product size in bytes
+     * @param[in] deleteTime       When this product should be deleted
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
      * @throws    SystemError      `::open()` or `::ftruncate()` failure
      */
     RecvProdFile(
-            const int       rootFd,
-            const String&   pathname,
-            const SegSize   segSize,
-            const ProdSize  prodSize)
-        : ProdFile::Impl(pathname, segSize, prodSize, O_RDWR)
+            const int        rootFd,
+            const String&    pathname,
+            const SegSize    segSize,
+            const ProdSize   prodSize,
+            const Timestamp& deleteTime)
+        : ProdFile::Impl(pathname, segSize, prodSize, O_RDWR, deleteTime)
         , haveSegs(numSegs, false)
         , segCount{0}
     {
-        ensureDir(rootFd, dirPath(pathname), 0700);
+        ensureDir(rootFd, dirname(pathname), 0700);
 
         fd = ::openat(rootFd, pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0600);
         if (fd == -1)
@@ -490,7 +521,7 @@ public:
     void rename(
             const int     rootFd,
             const String& pathname) override {
-        ensureDir(rootFd, dirPath(pathname), 0755); // Only owner can write
+        ensureDir(rootFd, dirname(pathname), 0755); // Only owner can write
 
         Guard guard(mutex);
         if (::renameat(rootFd, this->pathname.data(), rootFd, pathname.data()))
@@ -503,11 +534,12 @@ public:
 /**************************************************************************************************/
 
 ProdFile::ProdFile(
-        const int       rootFd,
-        const String&   pathname,
-        const SegSize   segSize,
-        const ProdSize  prodSize)
-    : ProdFile(new RecvProdFile(rootFd, pathname, segSize, prodSize))
+        const int        rootFd,
+        const String&    pathname,
+        const SegSize    segSize,
+        const ProdSize   prodSize,
+        const Timestamp& deleteTime)
+    : ProdFile(new RecvProdFile(rootFd, pathname, segSize, prodSize, deleteTime))
 {}
 
 } // namespace

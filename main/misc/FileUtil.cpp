@@ -28,6 +28,7 @@
 #include "FileUtil.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <libgen.h>
 #include <cstring>
 #include <string>
@@ -45,18 +46,33 @@ std::string makeAbsolute(const std::string& pathname)
     return std::string(::getcwd(cwd, sizeof(cwd))) + "/" + pathname;
 }
 
-std::string filename(const std::string& pathname)
+std::string basename(const std::string& pathname) noexcept
 {
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
     return std::string(::basename(buf));
 }
 
-std::string dirPath(const std::string& pathname)
+std::string dirname(const std::string& pathname) noexcept
 {
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
     return std::string(::dirname(buf));
+}
+
+void trimPathname(std::string& pathname) noexcept
+{
+    pathname = dirname(pathname) + '/' +  basename(pathname);
+}
+
+size_t getSize(const std::string& pathname)
+{
+    struct stat statBuf;
+
+    if (::stat(pathname.data(), &statBuf))
+        throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname + "\"");
+
+    return statBuf.st_size;
 }
 
 void ensureDir(
@@ -67,14 +83,12 @@ void ensureDir(
 
     if (::stat(pathname.data(), &statBuf)) {
         if (errno != ENOENT)
-            throw SYSTEM_ERROR(std::string("stat() failure on \"") +
-                    pathname + "\"");
+            throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname + "\"");
 
-        ensureDir(dirPath(pathname), mode);
+        ensureDir(dirname(pathname), mode);
 
         if (::mkdir(pathname.data(), mode))
-            throw SYSTEM_ERROR(std::string("mkdir() failure on \"") +
-                    pathname + "\"");
+            throw SYSTEM_ERROR(std::string("mkdir() failure on \"") + pathname + "\"");
     }
 }
 
@@ -87,14 +101,12 @@ void ensureDir(
 
     if (::fstatat(fd, pathname.data(), &statBuf, 0)) {
         if (errno != ENOENT)
-            throw SYSTEM_ERROR(std::string("stat() failure on \"") +
-                    pathname + "\"");
+            throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname + "\"");
 
-        ensureDir(fd, dirPath(pathname), mode);
+        ensureDir(fd, dirname(pathname), mode);
 
         if (::mkdirat(fd, pathname.data(), mode))
-            throw SYSTEM_ERROR(std::string("mkdir() failure on \"") +
-                    pathname + "\"");
+            throw SYSTEM_ERROR(std::string("mkdir() failure on \"") + pathname + "\"");
     }
 }
 
@@ -102,7 +114,7 @@ void ensureParent(
         const std::string& pathname,
         const mode_t       mode)
 {
-    ensureDir(dirPath(pathname), mode);
+    ensureDir(dirname(pathname), mode);
 }
 
 void rmDirTree(const std::string& dirPath)
@@ -114,7 +126,6 @@ void rmDirTree(const std::string& dirPath)
             struct dirent  entry;
             struct dirent* result;
             int            status;
-            bool           shouldDelete = true;
 
             for (status = ::readdir_r(dir, &entry, &result);
                     status == 0 && result != nullptr;
@@ -126,27 +137,23 @@ void rmDirTree(const std::string& dirPath)
                     struct stat       statBuf;
 
                     if (::lstat(subName.data(), &statBuf))
-                        throw SYSTEM_ERROR(std::string("Couldn't stat() \"") +
-                                subName + "\"");
+                        throw SYSTEM_ERROR(std::string("lstat() failure on \"") + subName + "\"");
 
                     if (S_ISDIR(statBuf.st_mode)) {
                         rmDirTree(subName);
                     }
                     else if (::unlink(subName.data())) {
-                        throw SYSTEM_ERROR("Couldn't delete file \"" + subName +
-                                "\"");
+                        throw SYSTEM_ERROR("Couldn't delete file \"" + subName + "\"");
                     }
                 }
             }
             if (status && status != ENOENT)
-                throw SYSTEM_ERROR("Couldn't read directory \"" + dirPath +
-                        "\"");
+                throw SYSTEM_ERROR("Couldn't read directory \"" + dirPath + "\"");
 
             ::closedir(dir);
 
             if (::rmdir(dirPath.data()))
-                throw SYSTEM_ERROR("Couldn't delete directory \"" + dirPath +
-                        "\"");
+                throw SYSTEM_ERROR("Couldn't delete directory \"" + dirPath + "\"");
         } // `dir` is set
         catch (...) {
             ::closedir(dir);
@@ -155,64 +162,43 @@ void rmDirTree(const std::string& dirPath)
     }
 }
 
-void deleteDir(const std::string& pathname)
+void pruneEmptyDirPath(
+        const int     fd,
+        std::string&& dirPath)
 {
-    DIR* dir = ::opendir(pathname.data());
+    struct stat statBuf;
+    if (::fstatat(fd, ".", &statBuf, 0))
+        throw SYSTEM_ERROR("fstatat() failure on fd-relative directory \".\"");
+    const auto rootInode = statBuf.st_ino;
 
-    if (dir) {
-        try {
-            struct dirent  entry;
-            struct dirent* result;
-            int            status;
-            bool           shouldDelete = true;
+    for (;;) {
+        if (::fstatat(fd, dirPath.data(), &statBuf, AT_SYMLINK_NOFOLLOW))
+            throw SYSTEM_ERROR("fstatat() failure on fd-relative directory \"" + dirPath + "\"");
 
-            for (status = ::readdir_r(dir, &entry, &result);
-                    status == 0 && result != nullptr;
-                    status = ::readdir_r(dir, &entry, &result)) {
-                const char* name = entry.d_name;
+        if (statBuf.st_ino == rootInode)
+            break; // Stop because at root directory
 
-                if (::strcmp(".", name) && ::strcmp("..", name)) {
-                    const std::string subName = pathname + "/" + name;
-                    struct stat       statBuf;
-
-                    if (::stat(subName.data(), &statBuf))
-                        throw SYSTEM_ERROR(std::string("stat() failure on \"") +
-                                subName + "\"");
-
-                    if (!S_ISDIR(statBuf.st_mode)) {
-                        ::unlink(subName.data());
-                    }
-                    else {
-                        deleteDir(subName);
-                    }
-                }
-            }
-            if (status && status != ENOENT)
-                throw SYSTEM_ERROR("Couldn't read directory \"" + pathname +
-                        "\"");
-
-            if (::rmdir(pathname.data()))
-                throw SYSTEM_ERROR("Couldn't delete directory \"" + pathname +
-                        "\"");
-
-            ::closedir(dir);
+        auto status = unlinkat(fd, dirPath.data(), AT_REMOVEDIR);
+        if (status) {
+            if (status == EEXIST || status == ENOTEMPTY)
+                break; // Stop because directory isn't empty
+            throw SYSTEM_ERROR(std::string("unlinkat() failure on fd-relative directory \"") +
+                    dirPath + "\"");
         }
-        catch (...) {
-            ::closedir(dir);
-            throw;
+        else {
+            dirPath = dirname(dirPath); // Repeat with parent directory
         }
     }
 }
 
-size_t getSize(const std::string& pathname)
+void removeFileAndPrune(
+        const int    fd,
+        std::string& pathname)
 {
-    struct stat statBuf;
+    if (::unlinkat(fd, pathname.data(), 0))
+        throw SYSTEM_ERROR("::unlinkat() failure on fd-relative file \"" + pathname + "\"");
 
-    if (::stat(pathname.data(), &statBuf))
-        throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname +
-                "\"");
-
-    return statBuf.st_size;
+    pruneEmptyDirPath(fd, dirname(pathname));
 }
 
 } // namespace

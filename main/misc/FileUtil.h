@@ -39,9 +39,13 @@ namespace hycast {
  */
 std::string makeAbsolute(const std::string& pathname);
 
-std::string filename(const std::string& pathname);
+std::string basename(const std::string& pathname) noexcept;
 
-std::string dirPath(const std::string& pathname);
+std::string dirname(const std::string& pathname) noexcept;
+
+void trimPathname(std::string& pathname) noexcept;
+
+size_t getSize(const std::string& pathname);
 
 /**
  * Follows symbolic links.
@@ -76,22 +80,42 @@ void ensureParent(
         const mode_t       mode = 0777);
 
 /**
- * Removes a directory hierarchy. All files in the hierarchy -- including the
- * root directory -- are removed.
+ * Removes a directory tree. The given directory tree is recursively traversed depth first. All
+ * files in the tree are removed, including the root directory. Symbolic links are removed but not
+ * the file the link references.
  *
  * @param[in] pathname  Root of directory hierarchy
  */
 void rmDirTree(const std::string& dirPath);
 
 /**
- * Deletes a directory. The given directory hierarchy is recursively
- * traversed depth first. All files are deleted, including the given directory.
+ * Deletes empty directories starting with a leaf directory and progressing towards a root
+ * directory. Stops when a non-empty directory or the root directory is encountered. The root
+ * directory is not deleted.
  *
- * @param[in] pathname  Root of directory hierarchy. Will be deleted.
+ * @param[in] fd           File descriptor open on the root directory
+ * @param[in,out] dirPath  Pathname of the leaf directory at which to start
+ * @throw SystemError      A directory couldn't be `stat()`ed
+ * @throw SystemError      A directory couldn't be deleted
  */
-void deleteDir(const std::string& pathname);
+void pruneEmptyDirPath(
+        const int      fd,
+        std::string&& dirPath);
 
-size_t getSize(const std::string& pathname);
+/**
+ * Deletes a file and any empty directories on the path from a root directory to the file. The
+ * root directory is not deleted.
+ *
+ * @param fd           File descriptor open on the root directory
+ * @param pathname     Pathname of the file to be deleted
+ * @throw SystemError  The file couldn't be deleted
+ * @throw SystemError  A directory couldn't be `stat()`ed
+ * @throw SystemError  A directory couldn't be deleted
+ * @see `pruneEmptyDirPath()`
+ */
+void removeFileAndPrune(
+        const int    fd,
+        std::string& pathname);
 
 } // namespace
 

@@ -77,8 +77,8 @@ String ProdId::to_string() const noexcept {
     return String(buf);
 }
 
-String CreationTime::to_string() const noexcept {
-    const time_t s = system_clock::to_time_t(time);
+String Timestamp::to_string() const noexcept {
+    const time_t s = Clock::to_time_t(timePoint);
     struct tm    tm;
     ::gmtime_r(&s, &tm);
 
@@ -86,24 +86,24 @@ String CreationTime::to_string() const noexcept {
     auto         nbytes = ::strftime(buf, sizeof(buf)-1, "%FT%T", &tm);
 
     const long   us =
-            duration_cast<microseconds>(time - system_clock::from_time_t(0)).count() % 1000000;
+            duration_cast<microseconds>(timePoint - Clock::from_time_t(0)).count() % 1000000;
     ::snprintf(buf+nbytes, sizeof(buf)-1-nbytes, ".%06ldZ", us);
     return String(buf);
 }
 
-bool CreationTime::write(Xprt xprt) const {
+bool Timestamp::write(Xprt xprt) const {
     // Microseconds since 1970-01-01T00:00:00Z
-    const uint64_t us = duration_cast<microseconds>(time - system_clock::from_time_t(0)).count();
+    const uint64_t us = duration_cast<microseconds>(timePoint - Clock::from_time_t(0)).count();
     //LOG_DEBUG("Writing " + std::to_string(us));
     return xprt.write(us);
 }
 
-bool CreationTime::read(Xprt xprt) {
+bool Timestamp::read(Xprt xprt) {
     uint64_t    us; // Microseconds since 1970-01-01T00:00:00Z
     const auto success = xprt.read(us);
     if (success) {
         //LOG_DEBUG("Read    " + std::to_string(us));
-        time = system_clock::from_time_t(0) + microseconds(us);
+        timePoint = Clock::from_time_t(0) + microseconds(us);
     }
     return success;
 }
@@ -151,25 +151,6 @@ bool DatumId::operator==(const DatumId& rhs) const noexcept {
             : dataSegId == rhs.dataSegId;
 }
 
-std::string Timestamp::to_string(const bool withName) const
-{
-    const time_t time = sec;
-    const auto   timeStruct = *::gmtime(&time);
-    char         buf[40];
-    auto         nbytes = ::strftime(buf, sizeof(buf), "%FT%T.", &timeStruct);
-    ::snprintf(buf+nbytes, sizeof(buf)-nbytes, "%06luZ}",
-            static_cast<unsigned long>(nsec/1000));
-
-    String string;
-    if (withName)
-        string += "TimeStamp{";
-    string += buf;
-    if (withName)
-        string += "}";
-
-    return string;
-}
-
 /******************************************************************************/
 
 /// Product information
@@ -179,17 +160,17 @@ class ProdInfo::Impl
 
     using NameLenType = uint16_t; ///< Type to hold length of product-name
 
-    ProdId       prodId;       ///< Product ID
-    String       name;         ///< Name of product
-    ProdSize     size;         ///< Size of product in bytes
-    CreationTime creationTime; ///< When product was created
+    ProdId    prodId;       ///< Product ID
+    String    name;         ///< Name of product
+    ProdSize  size;         ///< Size of product in bytes
+    Timestamp creationTime; ///< When product was created
 
 public:
     Impl() =default;
 
-    Impl(    const ProdId      prodId,
-             const std::string name,
-             const ProdSize    size)
+    Impl(    const ProdId       prodId,
+             const std::string& name,
+             const ProdSize     size)
         : prodId(prodId)
         , name(name)
         , size{size}
@@ -200,10 +181,13 @@ public:
     }
 
     bool operator==(const Impl& rhs) const {
+        /**
+         * The creation-time is not compared because timestamps created by different computers
+         * that should be equal can be different.
+         */
         return prodId == rhs.prodId &&
                name == rhs.name &&
-               size == rhs.size &&
-               creationTime == rhs.creationTime;
+               size == rhs.size;
     }
 
     String to_string(const bool withName) const
@@ -262,9 +246,9 @@ ProdInfo::ProdInfo()
     : pImpl(nullptr)
 {}
 
-ProdInfo::ProdInfo(const ProdId   index,
-                   const std::string name,
-                   const ProdSize    size)
+ProdInfo::ProdInfo(const ProdId       index,
+                   const std::string& name,
+                   const ProdSize     size)
     : pImpl{new Impl(index, name, size)}
 {}
 
