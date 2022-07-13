@@ -38,6 +38,14 @@ add_test(error_test error_test)
 #target_link_libraries(DelayQueue_test hycast gtest)
 #add_test(DelayQueue_test DelayQueue_test)
 
+add_executable(HashSetQueue_test HashSetQueue_test.cpp)
+target_link_libraries(HashSetQueue_test hycast gtest pthread)
+add_test(HashSetQueue_test HashSetQueue_test)
+
+add_executable(HashMapQueue_test HashMapQueue_test.cpp)
+target_link_libraries(HashMapQueue_test hycast gtest pthread)
+add_test(HashMapQueue_test HashMapQueue_test)
+
 add_executable(reuseaddr_test reuseaddr_test.c)
 target_link_libraries(reuseaddr_test hycast pthread)
 add_test(reuseaddr_test reuseaddr_test)
