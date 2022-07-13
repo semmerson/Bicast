@@ -32,6 +32,9 @@
 
 namespace {
 
+using namespace hycast;
+using namespace std;
+
 /// The fixture for testing class `Repository`
 class RepositoryTest : public ::testing::Test
 {
@@ -41,7 +44,7 @@ protected:
     std::string           prodName;
     const std::string     filePath;
     hycast::ProdId        prodId;
-    char                  memData[1450];
+    char                  memData[10000];
     const hycast::SegSize segSize;
     hycast::ProdSize      prodSize;
     hycast::ProdInfo      prodInfo;
@@ -162,8 +165,36 @@ TEST_F(RepositoryTest, CreatProdForSending)
         GTEST_FAIL();
     }
 }
-#if 0
-#endif
+
+TEST_F(RepositoryTest, Performance)
+{
+    hycast::SubRepo repo(rootDir, segSize, 5);
+
+    const auto     start = steady_clock::now();
+    const auto     numProds = 5000;
+    const ProdSize prodSize = 10*segSize;
+
+    for (int i = 0; i < numProds; ++i) {
+        prodName = std::to_string(i);
+        auto prodId = ProdId(prodName);
+        auto prodInfo = ProdInfo(prodId, prodName, prodSize);
+
+        ASSERT_TRUE(repo.save(prodInfo));
+
+        for (SegOffset offset = 0; offset < prodSize; offset += segSize) {
+            auto segId = DataSegId(prodId, offset);
+            auto dataSeg = DataSeg(segId, prodSize, memData);
+
+            ASSERT_TRUE(repo.save(dataSeg));
+        }
+    }
+
+    const auto stop = chrono::steady_clock::now();
+    const auto s = chrono::duration_cast<chrono::duration<double>>(stop - start);
+    LOG_NOTE(to_string(numProds) + " " + std::to_string(prodSize) + "-byte products in " +
+            to_string(s.count()) + " seconds = " + to_string(numProds/s.count()) +
+            " products per second");
+}
 
 }  // namespace
 
