@@ -169,10 +169,27 @@ class Repository::Impl
 {
     Thread scourThread;
 
-    void stopExecution() {
-        Guard guard{mutex};
-        stop = true;
-        cond.notify_all();
+    /**
+     * Returns the product-entry corresponding to a product-ID. The corresponding product is open
+     * and at the back of the open-products set.
+     *
+     * @pre               State is locked
+     * @param[in] prodId  Product identifier
+     * @param[in] open    Does the product need to be open?
+     * @return            Corresponding product-entry. The product is open.
+     * @retval `nullptr`  No such entry exists
+     * @post              State is locked
+     * @exceptionsafety   Basic guarantee
+     */
+    ProdEntry* getProdEntry(const ProdId prodId) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        auto prodEntry = allProds.get(prodId);
+
+        if (prodEntry)
+            ensureOpen(prodId, *prodEntry);
+
+        return prodEntry;
     }
 
     void scour() {
@@ -189,10 +206,10 @@ class Repository::Impl
                 LOG_DEBUG("now=" + Timestamp().to_string() +  ", deleteTime=" +
                         allProds.front().second.prodFile.getDeleteTime().to_string());
 
-                auto  pair = allProds.front(); // `!allProds.empty()` => nothrow
+                auto  pair = allProds.front(); // `!allProds.empty() && !stop` => nothrow
+                openProds.erase(pair.first);
                 auto& prodEntry = pair.second;
-                if (openProds.erase(pair.first))
-                    prodEntry.close();
+                prodEntry.close();
                 auto pathname = prodEntry.getPathname();
                 removeFileAndPrune(rootFd, pathname);
                 allProds.pop();
@@ -205,13 +222,19 @@ class Repository::Impl
         }
     }
 
+    void stopExecution() {
+        Guard guard{mutex};
+        stop = true;
+        cond.notify_all();
+    }
+
 protected:
     using ProdIdQueue    = HashSetQueue<ProdId>;
     using ProdEntryQueue = HashMapQueue<ProdId, ProdEntry>;
     using Clock          = std::chrono::system_clock;
     using KeepTime       = std::chrono::seconds;
 
-    bool              stop;
+    bool              stop;         ///< Stop execution because scour thread terminated?
     mutable Mutex     mutex;        ///< For concurrency
     mutable Cond      cond;         ///< For concurrency
     ProdEntryQueue    allProds;     ///< All existing products
@@ -224,47 +247,18 @@ protected:
     ThreadEx          threadEx;     ///< Subtask exception
     const KeepTime    keepTime;     ///< Duration to keep products
 
-    void ensureRoom() {
+    void ensureOpen(
+            const ProdId prodId,
+            ProdEntry&   prodEntry) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        openProds.erase(prodId);
         while (openProds.size() >= maxOpenFiles) {
             allProds.get(openProds.front())->close();
             openProds.pop();
         }
-    }
-
-    static bool tryHardLink(
-            const std::string& extantPath,
-            const std::string& linkPath)
-    {
-        LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
-        ensureDir(dirname(linkPath), 0700);
-        return ::link(extantPath.data(), linkPath.data()) == 0;
-    }
-
-    static void hardLink(
-            const std::string& extantPath,
-            const std::string& linkPath)
-    {
-        if (!tryHardLink(extantPath, linkPath))
-            throw SYSTEM_ERROR("Couldn't link \"" + linkPath + "\" to \"" +
-                    extantPath + "\"");
-    }
-
-    static bool trySoftLink(
-            const std::string& extantPath,
-            const std::string& linkPath)
-    {
-        LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
-        ensureDir(dirname(linkPath), 0700);
-        return ::symlink(extantPath.data(), linkPath.data()) == 0;
-    }
-
-    static void softLink(
-            const std::string& extantPath,
-            const std::string& linkPath)
-    {
-        if (!trySoftLink(extantPath, linkPath))
-            throw SYSTEM_ERROR("Couldn't link \"" + linkPath + "\" to \"" +
-                    extantPath + "\"");
+        prodEntry.open(rootFd); // Idempotent
+        openProds.push(prodId);
     }
 
     /**
@@ -273,8 +267,7 @@ protected:
      * @param[in] pathname  Absolute pathname of a product-file
      * @return              Corresponding product-name
      */
-    std::string getProdName(const std::string& pathname) const
-    {
+    std::string getProdName(const std::string& pathname) const {
         return pathname.substr(rootPathname.length()+1); // Remove `rootPathname+"/"`
     }
 
@@ -338,9 +331,53 @@ public:
         return rootPathname;
     }
 
-    virtual ProdInfo getProdInfo(const ProdId prodId) =0;
+    /**
+     * Returns the product-information corresponding to a product-ID if it exists.
+     *
+     * @pre                  Instance is unlocked
+     * @param[in] prodId     Product identifier
+     * @return               Corresponding product-information. Will test false if no such
+     *                       information exists.
+     */
+    ProdInfo getProdInfo(const ProdId prodId)
+    {
+        threadEx.throwIfSet();
 
-    virtual DataSeg getDataSeg(const DataSegId segId) =0;
+        Guard      guard{mutex};
+        const auto prodEntry = allProds.get(prodId);
+
+        if (prodEntry == nullptr) {
+            static const ProdInfo prodInfo{};
+            return prodInfo;
+        }
+
+        return prodEntry->getProdInfo();
+    }
+
+    /**
+     * Returns the in-memory data-segment corresponding to a segment identifier.
+     *
+     * @pre              State is unlocked
+     * @param[in] segId  Data-segment identifier
+     * @return           Corresponding in-memory data-segment Will test false if no such segment
+     *                   exists.
+     * @post             State is unlocked
+     * @see `DataSeg::operator bool()`
+     */
+    DataSeg getDataSeg(const DataSegId segId)
+    {
+        threadEx.throwIfSet();
+
+        Guard      guard{mutex};
+        const auto prodEntry = getProdEntry(segId.prodId);
+
+        if (!prodEntry) {
+            static const DataSeg dataSeg{};
+            return dataSeg;
+        }
+
+        return prodEntry->getDataSeg(segId);
+    }
 
     /**
      * Returns the absolute pathname of the file corresponding to a product name.
@@ -430,7 +467,38 @@ class PubRepo::Impl final : public Repository::Impl
 {
     Watcher            watcher;     ///< Watches filename hierarchy
     std::queue<ProdId> prodQueue;   ///< Queue of products to be sent
-    ProdId             prodId;      ///< Next product-identifier
+
+    static bool tryHardLink(
+            const std::string& extantPath,
+            const std::string& linkPath) {
+        LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
+        ensureDir(dirname(linkPath), 0700);
+        return ::link(extantPath.data(), linkPath.data()) == 0;
+    }
+
+    static void hardLink(
+            const std::string& extantPath,
+            const std::string& linkPath) {
+        if (!tryHardLink(extantPath, linkPath))
+            throw SYSTEM_ERROR("Couldn't link \"" + linkPath + "\" to \"" +
+                    extantPath + "\"");
+    }
+
+    static bool trySoftLink(
+            const std::string& extantPath,
+            const std::string& linkPath) {
+        LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
+        ensureDir(dirname(linkPath), 0700);
+        return ::symlink(extantPath.data(), linkPath.data()) == 0;
+    }
+
+    static void softLink(
+            const std::string& extantPath,
+            const std::string& linkPath) {
+        if (!trySoftLink(extantPath, linkPath))
+            throw SYSTEM_ERROR("Couldn't link \"" + linkPath + "\" to \"" +
+                    extantPath + "\"");
+    }
 
     /**
      * Adds a new product to the set of all products and to the queue of products to be sent.
@@ -451,35 +519,6 @@ class PubRepo::Impl final : public Repository::Impl
         }
     }
 
-    /**
-     * Returns the product-entry corresponding to a product-ID. The corresponding product is open
-     * and at the back of the open-products set.
-     *
-     * @pre               State is locked
-     * @param[in] prodId  Product identifier
-     * @param[in] open    Does the product need to be open?
-     * @return            Corresponding product-entry. The product is open.
-     * @retval `nullptr`  No such entry exists
-     * @post              State is locked
-     * @exceptionsafety   Basic guarantee
-     */
-    ProdEntry* getProdEntry(const ProdId prodId) {
-        LOG_ASSERT(!mutex.try_lock());
-
-        auto prodEntry = allProds.get(prodId);
-
-        if (prodEntry) {
-            if (!openProds.erase(prodId)) {
-                // Product wasn't open
-                ensureRoom();
-                prodEntry->open(rootFd);
-            }
-            openProds.push(prodId);
-        }
-
-        return prodEntry;
-    }
-
 public:
     Impl(   const std::string& rootPathname,
             const SegSize      segSize,
@@ -491,7 +530,6 @@ public:
         : Repository::Impl{rootPathname, segSize, static_cast<size_t>(maxOpenFiles)}
         , watcher(this->rootPathname) // Is absolute pathname
         , prodQueue()
-        , prodId()
     {
         if (maxOpenFiles <= 0)
             throw INVALID_ARGUMENT("maxOpenFiles=" + std::to_string(maxOpenFiles));
@@ -569,54 +607,6 @@ public:
 
         return prodInfo;
     }
-
-    /**
-     * Returns the product-information corresponding to a product-ID.
-     *
-     * @pre                  Instance is unlocked
-     * @param[in] prodId     Product identifier
-     * @return               Corresponding product-information. Will test false if no such
-     *                       information exists.
-     */
-    ProdInfo getProdInfo(const ProdId prodId)
-    {
-        threadEx.throwIfSet();
-
-        Guard      guard{mutex};
-        const auto prodEntry = allProds.get(prodId);
-
-        if (prodEntry == nullptr) {
-            static const ProdInfo prodInfo{};
-            return prodInfo;
-        }
-
-        return prodEntry->getProdInfo();
-    }
-
-    /**
-     * Returns the in-memory data-segment corresponding to a segment identifier.
-     *
-     * @pre              State is unlocked
-     * @param[in] segId  Data-segment identifier
-     * @return           Corresponding in-memory data-segment Will test false if no such segment
-     *                   exists.
-     * @post             State is unlocked
-     * @see `DataSeg::operator bool()`
-     */
-    DataSeg getDataSeg(const DataSegId segId)
-    {
-        threadEx.throwIfSet();
-
-        Guard      guard{mutex};
-        const auto prodEntry = getProdEntry(segId.prodId);
-
-        if (!prodEntry) {
-            static const DataSeg dataSeg{};
-            return dataSeg;
-        }
-
-        return prodEntry->getDataSeg(segId);
-    }
 };
 
 /******************************************************************************/
@@ -652,14 +642,6 @@ class SubRepo::Impl final : public Repository::Impl
 {
     std::queue<ProdInfo>             prodQueue; ///< Queue of completed products
 
-    void makeRoom()
-    {
-        while (openProds.size() >= maxOpenFiles) {
-            allProds.get(openProds.front())->close();
-            openProds.pop();
-        }
-    }
-
     /**
      * Returns the product-entry corresponding to a product-ID. The product-entry is created if it
      * doesn't exist. The corresponding product is open and at the back of the open-products set.
@@ -680,49 +662,15 @@ class SubRepo::Impl final : public Repository::Impl
         auto prodEntry = allProds.get(prodId);
 
         if (prodEntry == nullptr) {
-            auto      prodFile = ProdFile(rootFd, ".incomplete/" + prodId.to_string(), segSize,
+            auto prodFile = ProdFile(rootFd, ".incomplete/" + prodId.to_string(), segSize,
                     prodSize, Timestamp().getTimePoint() + keepTime);
             ProdEntry entry{prodFile};
             prodEntry = allProds.push(prodId, entry);
         }
 
-        if (!openProds.erase(prodId)) {
-            ensureRoom();
-            prodEntry->open(rootFd); // Idempotent
-        }
-        openProds.push(prodId);
+        ensureOpen(prodId, *prodEntry);
 
         return *prodEntry;
-    }
-
-    /**
-     * Returns the product-entry corresponding to a product-ID. The corresponding product is open
-     * and at the back of the open-products set.
-     *
-     * @pre               State is locked
-     * @param[in] prodId  Product identifier
-     * @param[in] open    Does the product need to be open?
-     * @return            Corresponding product-entry. The product is open.
-     * @retval `nullptr`  No such entry exists
-     * @post              State is locked
-     * @exceptionsafety   Basic guarantee
-     */
-    ProdEntry* getProdEntry(const ProdId prodId)
-    {
-        LOG_ASSERT(!mutex.try_lock());
-
-        auto prodEntry = allProds.get(prodId);
-
-        if (prodEntry) {
-            if (!openProds.erase(prodId)) {
-                // Product wasn't open
-                ensureRoom();
-                prodEntry->open(rootFd);
-            }
-            openProds.push(prodId);
-        }
-
-        return prodEntry;
     }
 
     /**
@@ -813,50 +761,6 @@ public:
         prodQueue.pop();
 
         return prodInfo;
-    }
-
-    /**
-     * Returns information on a product if it exists.
-     *
-     * @param prodId     Product identifier
-     * @return           Product information. Will test false if no such product exists.
-     */
-    ProdInfo getProdInfo(const ProdId prodId)
-    {
-        threadEx.throwIfSet();
-
-        Guard guard{mutex};
-        auto  prodEntry = allProds.get(prodId);
-
-        if (prodEntry == nullptr) {
-            static const ProdInfo prodInfo{};
-            return prodInfo;
-        }
-
-        return prodEntry->getProdInfo();
-    }
-
-    /**
-     * Returns the data-segment corresponding to a segment identifier if it exists.
-     *
-     * @param[in] segId  Segment identifier
-     * @return           Corresponding memory data-segment. Will test false if
-     *                   no such segment exists.
-     */
-    DataSeg getDataSeg(const DataSegId segId)
-    {
-        threadEx.throwIfSet();
-
-        auto  offset = segId.offset;
-        Guard guard{mutex};
-        auto  prodEntry = getProdEntry(segId.prodId);
-
-        if (prodEntry == nullptr) {
-            static const DataSeg dataSeg{};
-            return dataSeg;
-        }
-
-        return  prodEntry->getDataSeg(segId);
     }
 
     /**
