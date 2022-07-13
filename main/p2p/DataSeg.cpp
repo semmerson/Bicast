@@ -56,7 +56,7 @@ public:
     static SegSize size(
             const ProdSize  prodSize,
             const SegOffset offset) noexcept {
-        SegSize nbytes = prodSize - offset;
+        const auto nbytes = prodSize - offset;
         return (nbytes <= maxSegSize)
                 ? nbytes
                 : static_cast<SegSize>(maxSegSize);
