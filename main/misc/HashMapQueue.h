@@ -23,7 +23,10 @@
 #ifndef MAIN_MISC_HASHMAPQUEUE_H_
 #define MAIN_MISC_HASHMAPQUEUE_H_
 
+#include "error.h"
+
 #include <mutex>
+#include <condition_variable>
 #include <unordered_map>
 
 namespace hycast {
@@ -94,24 +97,30 @@ public:
             const KEY&   key,
             const VALUE& value) {
         Guard guard{mutex};
+        //LOG_DEBUG("Inserting {key=" + key.to_string() + "}");
         auto  pair = map.emplace(key, MappedValue{tail, value});
-        try {
-            if (!pair.second)
-                return nullptr;
-            tail = key;
-            if (map.size() == 1)
-                head = tail;
+        if (!pair.second)
+            return nullptr;
+
+        if (map.size() == 1) {
+            head = key;
         }
-        catch (const std::exception& ex) {
-            map.erase(key);
-            throw;
+        else {
+            map.at(tail).next = key;
         }
+        tail = key;
+
         return &pair.first->second.value;
     }
 
     bool empty() const {
         Guard guard(mutex);
         return map.empty();
+    }
+
+    size_t size() const {
+        Guard guard(mutex);
+        return map.size();
     }
 
     /**
@@ -154,6 +163,7 @@ public:
      * @retval    `nullptr`  No such value
      */
     VALUE* get(const KEY& key) {
+        //LOG_DEBUG("Finding key=" + key.to_string());
         auto iter = map.find(key);
         return (iter == map.end()) ? nullptr : &iter->second.value;
     }
@@ -177,6 +187,7 @@ public:
             }
         }
     }
+
     /**
      * Deletes an entry.
      *

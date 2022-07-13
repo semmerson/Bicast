@@ -62,25 +62,25 @@ class HashSetQueue
     using Equal = std::function<bool(const VALUE&, const VALUE&)>;
     using Map = std::unordered_map<VALUE, Links, Hash, Equal>;
 
-    Mutex mutex;
-    Hash  myHash;
-    Equal myEqual;
-    Map   map;
-    VALUE head;
-    VALUE tail;
+    mutable Mutex mutex;
+    Hash          myHash;
+    Equal         myEqual;
+    Map           linksMap;
+    VALUE         head;
+    VALUE         tail;
 
 public:
     explicit HashSetQueue(const size_t initialSize = 10)
         : mutex{}
         , myHash([](const VALUE& value){return value.hash();})
         , myEqual([](const VALUE& value1, const VALUE& value2){return value1 == value2;})
-        , map(initialSize, myHash, myEqual)
+        , linksMap(initialSize, myHash, myEqual)
         , head{}
         , tail{}
     {}
 
     size_t size() const {
-        return map.size();
+        return linksMap.size();
     }
 
     /**
@@ -95,18 +95,19 @@ public:
      */
     bool push(const VALUE& value) {
         Guard lock{mutex};
-        auto  pair = map.emplace(value, Links{tail});
-        try {
-            if (!pair.second)
-                return false;
-            tail = value;
-            if (map.size() == 1)
-                head = tail;
+
+        auto  pair = linksMap.emplace(value, Links{tail});
+        if (!pair.second)
+            return false;
+
+        if (linksMap.size() == 1) {
+            head = value;
         }
-        catch (const std::exception& ex) {
-            map.erase(value);
-            throw;
+        else {
+            linksMap.at(tail).next = value;
         }
+        tail = value;
+
         return true;
     }
 
@@ -119,8 +120,9 @@ public:
      */
     const VALUE& front() noexcept {
         Guard lock{mutex};
-        if (map.size() == 0)
+        if (linksMap.size() == 0)
             throw OUT_OF_RANGE("Queue is empty");
+        //LOG_DEBUG("Returning head=" + head.to_string());
         return head;
     }
 
@@ -132,16 +134,16 @@ public:
      */
     void pop() noexcept {
         Guard lock{mutex};
-        if (map.size() == 0)
+        if (linksMap.size() == 0)
             throw OUT_OF_RANGE("Queue is empty");
-        auto& next = map.at(head).next;
-        map.erase(head);
+        auto next = linksMap.at(head).next;
+        linksMap.erase(head);
         head = next;
-        if (map.size() == 0) {
+        if (linksMap.size() == 0) {
             tail = VALUE();
         }
         else {
-            map.at(head).prev = VALUE();
+            linksMap.at(head).prev = VALUE();
         }
     }
 
@@ -157,8 +159,8 @@ public:
     bool erase(const VALUE& value) noexcept {
         Guard lock{mutex};
 
-        auto iter = map.find(value);
-        if (iter == map.end())
+        auto iter = linksMap.find(value);
+        if (iter == linksMap.end())
             return false;
 
         auto& links = iter->second;
@@ -167,17 +169,17 @@ public:
             head = links.next;
         }
         else {
-            map.at(links.prev).next = links.next;
+            linksMap.at(links.prev).next = links.next;
         }
 
         if (tail == value) {
             tail = links.prev;
         }
         else {
-            map.at(links.next).prev = links.prev;
+            linksMap.at(links.next).prev = links.prev;
         }
 
-        map.erase(iter);
+        linksMap.erase(iter);
         return true;
     }
 };
