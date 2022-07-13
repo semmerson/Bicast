@@ -249,11 +249,11 @@ public:
     }
 
     bool operator==(const ProdId& rhs) const noexcept {
-        return id == id;
+        return id == rhs.id;
     }
 
     bool operator<(const ProdId& rhs) const noexcept {
-        return id < id;
+        return id < rhs.id;
     }
 
     bool write(Xprt xprt) const override {
