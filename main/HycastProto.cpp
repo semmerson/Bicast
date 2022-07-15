@@ -257,12 +257,18 @@ ProdInfo::operator bool() const noexcept {
 }
 
 const ProdId& ProdInfo::getId() const {
+    if (!pImpl)
+        throw LOGIC_ERROR("Unset product information");
     return pImpl->prodId;
 }
 const String&    ProdInfo::getName() const {
+    if (!pImpl)
+        throw LOGIC_ERROR("Unset product information");
     return pImpl->name;
 }
 const ProdSize&  ProdInfo::getSize() const {
+    if (!pImpl)
+        throw LOGIC_ERROR("Unset product information");
     return pImpl->size;
 }
 
