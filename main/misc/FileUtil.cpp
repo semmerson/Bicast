@@ -101,7 +101,8 @@ void ensureDir(
 
     if (::fstatat(fd, pathname.data(), &statBuf, 0)) {
         if (errno != ENOENT)
-            throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname + "\"");
+            throw SYSTEM_ERROR(std::string("fstatat() failure on \"") + pathname + "\"; fd=" +
+                    std::to_string(fd));
 
         ensureDir(fd, dirname(pathname), mode);
 
