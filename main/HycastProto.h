@@ -285,7 +285,15 @@ public:
         : timePoint(timePoint)
     {}
 
+    Timestamp(const struct timespec& time)
+        : timePoint(Clock::from_time_t(time.tv_sec) + nanoseconds(time.tv_nsec))
+    {}
+
     const TimePoint getTimePoint() const noexcept {
+        return timePoint;
+    }
+
+    operator TimePoint() {
         return timePoint;
     }
 
