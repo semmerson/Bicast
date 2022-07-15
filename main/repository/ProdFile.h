@@ -46,7 +46,7 @@ public:
     ProdFile() =default;
 
     /**
-     * Constructs a sending-only (i.e., read-only) product-file.
+     * Constructs a read-only product-file from an existing file.
      *
      * @param[in] rootFd      File descriptor open on root-directory of product-files
      * @param[in] pathname    Pathname of product-file relative to root-directory
