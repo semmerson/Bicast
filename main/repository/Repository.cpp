@@ -35,10 +35,12 @@
 #include <condition_variable>
 #include <cstring>
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <functional>
 #include <libgen.h>
 #include <limits.h>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <sys/stat.h>
@@ -48,6 +50,8 @@
 #include <unordered_map>
 
 namespace hycast {
+
+static String INCOMPLETE_DIR_NAME(".incomplete");
 
 /**
  * @tparam PF  Product-file type
@@ -97,6 +101,14 @@ struct ProdEntry
 
     bool save(const DataSeg dataSeg) {
         return prodFile.save(dataSeg);
+    }
+
+    /**
+     * @return  Product identifier.
+     */
+    inline const ProdId& getProdId() const
+    {
+        return prodInfo.getId();
     }
 
     inline ProdSize getProdSize() const {
@@ -222,6 +234,102 @@ class Repository::Impl
         }
     }
 
+    using ScanMap = std::map<Timestamp, ProdEntry>;
+
+    /**
+     * Scans the repository. Adds products within the "keep time" window to a map. Deletes files
+     * that lie outside that window.
+     *
+     * @param[in]     parentPathname  Pathname of the parent directory
+     * @param[in,out] prods           Map of products
+     */
+    void scanRepo(
+            const String& parentPathname,
+            ScanMap&      prods) {
+        const int parentFd = ::open(parentPathname.data(), O_RDONLY | O_DIRECTORY);
+        if (parentFd == -1)
+            throw SYSTEM_ERROR("::open() failure on directory \"" + parentPathname + "\"");
+
+        auto dir = ::fdopendir(parentFd);
+        if (dir == nullptr)
+            throw SYSTEM_ERROR("::opendir() failure on \"" + parentPathname + "\"; parentFd=" +
+                    std::to_string(parentFd));
+
+        try {
+            struct dirent  entry;
+            struct dirent* result;
+            int            status;
+            size_t         numDeleted = 0;
+            size_t         numAdded = 0;
+
+            for (status = ::readdir_r(dir, &entry, &result);
+                    status == 0 && result != nullptr;
+                    status = ::readdir_r(dir, &entry, &result)) {
+                const char* childFileName = entry.d_name;
+
+                if (::strcmp(".", childFileName) == 0 || ::strcmp("..", childFileName) == 0 ||
+                        ::strcmp(INCOMPLETE_DIR_NAME.data(), childFileName) == 0)
+                    continue;
+
+                const std::string childPathname = parentPathname + "/" + childFileName;
+                struct stat       statBuf;
+
+                if (::lstat(childPathname.data(), &statBuf)) // `lstat()` doen't follow symlinks
+                    throw SYSTEM_ERROR(std::string("::lstat() failure on \"") + childPathname +
+                            "\"");
+
+                if (S_ISDIR(statBuf.st_mode)) {
+                    int childFd = ::open(childPathname.data(), O_RDONLY);
+                    if (childFd == -1)
+                        throw SYSTEM_ERROR("::open() failure on directory " + childPathname);
+
+                    scanRepo(childPathname, prods);
+                }
+                else {
+                    const Timestamp fileTime{statBuf.st_mtim};
+                    const Timestamp deleteTime{fileTime.getTimePoint() + keepTime};
+
+                    if (deleteTime.getTimePoint() >= Timestamp::Clock::now()) {
+                        // No sense adding files that will be immediately scoured
+                        if (::unlink(childPathname.data()))
+                            throw SYSTEM_ERROR("Couldn't delete file \"" + childPathname + "\"");
+                        ++numDeleted;
+                    }
+                    else {
+                        ProdFile  prodFile{parentFd, childFileName, segSize, deleteTime};
+                        ProdEntry prodEntry(prodFile);
+                        prodEntry.close();
+                        prods.emplace(fileTime, prodEntry);
+                        ++numAdded;
+                    }
+                }
+            }
+            if (status && status != ENOENT)
+                throw SYSTEM_ERROR("Couldn't read directory \"" + parentPathname + "\"");
+
+            ::closedir(dir); // NB: Closes `parentFd`
+
+            LOG_DEBUG("Files added=" + std::to_string(numAdded) + "; files deleted=" +
+                    std::to_string(numDeleted));
+        } // `dir` is initialized
+        catch (...) {
+            ::closedir(dir);
+            throw;
+        }
+    }
+
+    /**
+     * Scans the repository, populating the `allProds` queue.
+     */
+    void scanRepo() {
+        LOG_DEBUG("Scanning repository \"" + rootPathname + "\"");
+        ScanMap scanMap;
+        scanRepo(rootPathname, scanMap);
+        for (auto& pair : scanMap)
+            // NB: Products are added oldest to youngest
+            allProds.push(pair.second.getProdId(), pair.second);
+    }
+
     void stopExecution() {
         Guard guard{mutex};
         stop = true;
@@ -297,20 +405,23 @@ public:
 
         ensureDir(rootPathname, 0755); // Only owner can write
 
-        rootFd = ::open(rootPathname.data(), O_RDONLY);
+        rootFd = ::open(rootPathname.data(), O_DIRECTORY | O_RDONLY);
         if (rootFd == -1)
             throw SYSTEM_ERROR("Couldn't open root-directory of repository, \"" + rootPathname +
                     "\"");
+        LOG_DEBUG("Opened directory \"" + rootPathname + "\"; rootFd=" + std::to_string(rootFd));
 
         try {
             if (maxOpenFiles == 0)
                 throw INVALID_ARGUMENT("Maximum number of open files is zero");
+
+            scourThread = Thread(&Impl::scour, this);
+            scanRepo();
         } // `rootFd` is open
         catch (const std::exception& ex) {
             ::close(rootFd);
+            throw;
         }
-
-        scourThread = Thread(&Impl::scour, this);
     }
 
     virtual ~Impl() noexcept {
@@ -662,7 +773,7 @@ class SubRepo::Impl final : public Repository::Impl
         auto prodEntry = allProds.get(prodId);
 
         if (prodEntry == nullptr) {
-            auto prodFile = ProdFile(rootFd, ".incomplete/" + prodId.to_string(), segSize,
+            auto prodFile = ProdFile(rootFd, INCOMPLETE_DIR_NAME + "/" + prodId.to_string(), segSize,
                     prodSize, Timestamp().getTimePoint() + keepTime);
             ProdEntry entry{prodFile};
             prodEntry = allProds.push(prodId, entry);
