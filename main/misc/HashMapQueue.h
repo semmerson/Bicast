@@ -1,5 +1,6 @@
 /**
- * This file declares a thread-safe, hybrid, unordered-map and queue.
+ * This file declares a combination of unordered-map and queue. The implementation is
+ * thread-compatible, but not thread-safe.
  *
  *        File: HashMapQueue.h
  *  Created on: July 6, 2022
@@ -7,17 +8,15 @@
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #ifndef MAIN_MISC_HASHMAPQUEUE_H_
@@ -25,31 +24,27 @@
 
 #include "error.h"
 
-#include <mutex>
-#include <condition_variable>
+#include <iterator>
 #include <unordered_map>
 
 namespace hycast {
 
 /**
- * @tparam KEY    Key that references the stored values.  Smaller types are better.
- * @tparam VALUE  Value to be stored in the queue. Must have default constructor and functions
- *                `operator=()`, `hash()`, and `operator==()`.
+ * @tparam KEY    Key that references the stored values. Must have default constructor, assignment
+ *                operator, `hash()`, and `operator==()`. Smaller types are better.
+ * @tparam VALUE  Value to be stored in the queue. Must have default constructor and assignment
+ *                operator.
  */
 template<class KEY, class VALUE>
 class HashMapQueue
 {
-    using Mutex = std::mutex;
-    using Guard = std::lock_guard<Mutex>;
-    using Cond  = std::condition_variable;
-
-    struct MappedValue
+    struct LinkedValue
     {
         VALUE  value;
         KEY    prev;
         KEY    next;
 
-        inline MappedValue(
+        inline LinkedValue(
                 const KEY&   prev,
                 const VALUE& value)
             : value{value}
@@ -58,12 +53,26 @@ class HashMapQueue
         {}
     };
 
-    using Hash = std::function<size_t(const KEY&)>;
-    using Equal = std::function<bool(const KEY&, const KEY&)>;
-    using Map = std::unordered_map<KEY, MappedValue, Hash, Equal>;
+    using Hash         = std::function<size_t(const KEY&)>;
+    using Equal        = std::function<bool(const KEY&, const KEY&)>;
+    using Map          = std::unordered_map<KEY, LinkedValue, Hash, Equal>;
+    using LogicalEntry = std::pair<const KEY&, VALUE&>;
 
-    mutable Mutex  mutex;
-    mutable Cond   cond;
+    class Iterator : public std::iterator<std::input_iterator_tag, LogicalEntry>
+    {
+        KEY next;
+
+    public:
+        Iterator(KEY next) : next(next) {}
+        Iterator(const Iterator& iter) : next(iter.next) {}
+        Iterator& operator=(const Iterator& rhs) {next=rhs.next;}
+        Iterator& operator++() {if (next) next = next->next; return *this;}
+        Iterator operator++(int) {Iterator tmp(*this); operator++(); return tmp;}
+        bool operator==(const Iterator& rhs) const {return next==rhs.next;}
+        bool operator!=(const Iterator& rhs) const {return next!=rhs.next;}
+        LogicalEntry operator*() {return LogicalEntry{next->first, next->second.value};}
+    };
+
     Hash           myHash;
     Equal          myEqual;
     Map            map;
@@ -72,9 +81,7 @@ class HashMapQueue
 
 public:
     explicit HashMapQueue(const size_t initialSize = 10)
-        : mutex{}
-        , cond()
-        , myHash([](const KEY& key){return key.hash();})
+        : myHash([](const KEY& key){return key.hash();})
         , myEqual([](const KEY& key1, const KEY& key2){return key1 == key2;})
         , map{initialSize, myHash, myEqual}
         , head{}
@@ -96,9 +103,8 @@ public:
     VALUE* push(
             const KEY&   key,
             const VALUE& value) {
-        Guard guard{mutex};
         //LOG_DEBUG("Inserting {key=" + key.to_string() + "}");
-        auto  pair = map.emplace(key, MappedValue{tail, value});
+        auto  pair = map.emplace(key, LinkedValue{tail, value});
         if (!pair.second)
             return nullptr;
 
@@ -114,12 +120,10 @@ public:
     }
 
     bool empty() const {
-        Guard guard(mutex);
         return map.empty();
     }
 
     size_t size() const {
-        Guard guard(mutex);
         return map.size();
     }
 
@@ -130,29 +134,12 @@ public:
      * @return            Pointer to value referenced by key
      * @throw OutOfRange  Queue is empty
      * @threadsafety      Safe
-    VALUE& front(const KEY*& key) {
-        Guard guard(mutex);
-        if (map.size() == 0)
-            throw OUT_OF_RANGE("Queue is empty");
-
-        key = &head;
-        return map.at(head).value;
-    }
-    const KEY& front(VALUE*& value) {
-        Guard guard(mutex);
-        if (map.size() == 0)
-            throw OUT_OF_RANGE("Queue is empty");
-
-        value = &map.at(head).value;
-        return head;
-    }
      */
-    std::pair<const KEY&, VALUE&> front() {
-        Guard guard(mutex);
+    LogicalEntry front() {
         if (map.size() == 0)
             throw OUT_OF_RANGE("Queue is empty");
 
-        return {head, map.at(head).value};
+        return LogicalEntry{head, map.at(head).value};
     }
 
     /**
@@ -174,7 +161,6 @@ public:
      * @threadsafety    Safe
      */
     void pop() noexcept {
-        Guard guard(mutex);
         if (map.size()) {
             auto& next = map.at(head).next;
             map.erase(head);
@@ -198,8 +184,6 @@ public:
      * @threadsafety      Safe
      */
     bool erase(KEY& key) noexcept {
-        Guard guard(mutex);
-
         auto iter = map.find(key);
         if (iter == map.end())
             return false;
@@ -222,6 +206,14 @@ public:
 
         map.erase(iter);
         return true;
+    }
+
+    Iterator begin() {
+        return Iterator(head);
+    }
+
+    Iterator end() {
+        return ++Iterator{tail};
     }
 };
 

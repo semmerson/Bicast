@@ -22,6 +22,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "FileUtil.h"
 #include "HycastProto.h"
 #include "Xprt.h"
 
@@ -160,21 +161,22 @@ class ProdInfo::Impl
 
     using NameLenType = uint16_t; ///< Type to hold length of product-name
 
-    ProdId    prodId;       ///< Product ID
-    String    name;         ///< Name of product
-    ProdSize  size;         ///< Size of product in bytes
-    Timestamp creationTime; ///< When product was created
+    ProdId       prodId;       ///< Product ID
+    String       name;         ///< Name of product
+    ProdSize     size;         ///< Size of product in bytes
+    SysTimePoint creationTime; ///< When product was created
 
 public:
     Impl() =default;
 
     Impl(    const ProdId       prodId,
              const std::string& name,
-             const ProdSize     size)
+             const ProdSize     size,
+             const SysTimePoint createTime)
         : prodId(prodId)
         , name(name)
         , size{size}
-        , creationTime()
+        , creationTime(createTime)
     {
         if (name.size() > PATH_MAX-1)
             throw INVALID_ARGUMENT("Name is longer than " + std::to_string(PATH_MAX-1) + " bytes");
@@ -246,10 +248,17 @@ ProdInfo::ProdInfo()
     : pImpl(nullptr)
 {}
 
-ProdInfo::ProdInfo(const ProdId       index,
-                   const std::string& name,
-                   const ProdSize     size)
-    : pImpl{new Impl(index, name, size)}
+ProdInfo::ProdInfo(const ProdId        index,
+                   const std::string&  name,
+                   const ProdSize      size,
+                   const SysTimePoint& createTime)
+    : pImpl{new Impl(index, name, size, createTime)}
+{}
+
+ProdInfo::ProdInfo(const std::string&  name,
+                   const ProdSize      size,
+                   const SysTimePoint& createTime)
+    : ProdInfo(ProdId{name}, name, size, createTime)
 {}
 
 ProdInfo::operator bool() const noexcept {
@@ -270,6 +279,11 @@ const ProdSize&  ProdInfo::getSize() const {
     if (!pImpl)
         throw LOGIC_ERROR("Unset product information");
     return pImpl->size;
+}
+const SysTimePoint&  ProdInfo::getCreateTime() const {
+    if (!pImpl)
+        throw LOGIC_ERROR("Unset product information");
+    return pImpl->creationTime;
 }
 
 bool ProdInfo::operator==(const ProdInfo rhs) const {

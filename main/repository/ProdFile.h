@@ -46,34 +46,25 @@ public:
     ProdFile() =default;
 
     /**
-     * Constructs a read-only product-file from an existing file.
+     * Constructs a publisher's product-file from an existing file.
      *
-     * @param[in] rootFd      File descriptor open on root-directory of product-files
-     * @param[in] pathname    Pathname of product-file relative to root-directory
-     * @param[in] segSize     Maximum segment size in bytes
-     * @param[in] deleteTime  When this product should be deleted
+     * @param[in] pathname    Pathname of product-file
      */
-    ProdFile(
-            const int        rootFd,
-            const String&    pathname,
-            const SegSize    segSize,
-            const Timestamp& deleteTime);
+    ProdFile(const String& pathname);
 
     /**
-     * Constructs a receiving/sending (i.e., read/write) product-file.
+     * Constructs a subscriber's product-file. Creates a new, underlying file from
+     * product-information and any necessary antecedent directories. The file will have the given
+     * size and be zero-filled. The instance is open.
      *
-     * @param[in] rootFd      File descriptor open on root-directory of product-files
-     * @param[in] pathname    Pathname of product-file relative to root-directory
-     * @param[in] segSize     Maximum segment size in bytes
-     * @param[in] prodSize    Product size in bytes
-     * @param[in] deleteTime  When this product should be deleted
+     * @param[in] pathname         Pathname of the file
+     * @param[in] prodSize         Product size in bytes
+     * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
+     * @throws    SystemError      `::open()` or `::ftruncate()` failure
      */
     ProdFile(
-            const int        rootFd,
             const String&    pathname,
-            const SegSize    segSize,
-            const ProdSize   prodSize,
-            const Timestamp& deleteTime);
+            const ProdSize   prodSize);
 
     /**
      * Indicates if this instance is valid.
@@ -85,37 +76,41 @@ public:
      */
     operator bool() const noexcept;
 
+    String to_string() const;
+
     const std::string& getPathname() const noexcept;
 
     /**
-     * Returns the size of the data-product in bytes.
+     * Returns the size of the underlying file in bytes.
      *
-     * @return Size of the data-product in bytes
+     * @return Size of the underlying file in bytes
      */
-    ProdSize getProdSize() const noexcept;
+    ProdSize getFileSize() const noexcept;
 
     /**
-     * Returns the size, in bytes, of a data-segment.
-     *
-     * @param[in] offset         Offset to segment in bytes
-     * @return                   Size of segment
-     * @throws invalid_argument  Offset is invalid
+     * Opens the underlying file. Idempotent.
      */
-    SegSize getSegSize(const ProdSize offset) const;
+    void open() const;
 
     /**
-     * Enables access to the underlying file.
-     *
-     * @param[in] rootFd  File descriptor open on the root directory
-     */
-    void open(const int rootFd) const;
-
-    /**
-     * Disables access to the underlying file.
+     * Closes the underlying file. Idempotent.
      */
     void close() const;
 
-    void deleteFile() const;
+    /**
+     * Returns the last modification time of the underlying file.
+     *
+     * @param[out] modTime  Last modification time of the underlying file
+     * @return              Reference to `modTime`
+     */
+    SysTimePoint& getModTime(SysTimePoint& modTime) const;
+
+    /**
+     * Sets the last modification time of the underlying file.
+     *
+     * @param[in]  Modification time for the underlying file
+     */
+    void setModTime(const SysTimePoint& modTime) const;
 
     /**
      * Indicates if the file contains a particular data-segment.
@@ -145,13 +140,6 @@ public:
     const char* getData(ProdSize offset) const;
 
     /**
-     * Returns this instance's delete-time.
-     *
-     * @return  This instance's delete-time
-     */
-    const Timestamp& getDeleteTime() const;
-
-    /**
      * Saves a data-segment.
      *
      * @param[in] dataSeg      Data-segment to be saved
@@ -166,23 +154,27 @@ public:
     bool save(const DataSeg& dataSeg) const;
 
     /**
-     * Indicates if the product has all the data.
+     * Indicates if the underlying file is open.
+     *
+     * @retval `true`   The underlying file is open
+     * @retval `false`  The underlying file is not open
+     */
+    bool isOpen() const;
+
+    /**
+     * Indicates if the product is complete.
      *
      * @retval `true`   The product is complete
      * @retval `false`  The product is not complete
      */
     bool isComplete() const;
 
+    void rename(const String& newPathname) const;
+
     /**
-     * Renames the associated file.
-     *
-     * @param[in] rootFd       File descriptor open on repository's root directory
-     * @param[in] pathname     New pathname for the file
-     * @throw SystemError      Couldn't rename product-file
+     * Deletes the underlying file.
      */
-    void rename(
-            const int     rootFd,
-            const String& pathname) const;
+    void deleteFile() const;
 };
 
 } // namespace

@@ -66,6 +66,10 @@ public:
         return (prodSize + (maxSegSize - 1)) / maxSegSize;
     }
 
+    static ProdSize getSegIndex(const ProdSize offset) {
+        return offset/maxSegSize;
+    }
+
     Impl()
         : segId()
         , prodSize(0)
@@ -180,6 +184,10 @@ SegSize DataSeg::size(
 
 ProdSize DataSeg::numSegs(const ProdSize prodSize) noexcept {
     return Impl::numSegs(prodSize);
+}
+
+ProdSize DataSeg::getSegIndex(const ProdSize offset) noexcept {
+    return Impl::getSegIndex(offset);
 }
 
 DataSeg::DataSeg()

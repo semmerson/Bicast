@@ -25,7 +25,6 @@
 #include "FileUtil.h"
 
 #include "error.h"
-#include "FileUtil.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -37,35 +36,40 @@
 
 namespace hycast {
 
-std::string makeAbsolute(const std::string& pathname)
+bool FileUtil::isAbsolute(const std::string& pathname)
 {
-    if (pathname.at(0) == '/')
+    return pathname.at(0) == '/';
+}
+
+std::string FileUtil::makeAbsolute(const std::string& pathname)
+{
+    if (pathname.size() && pathname.at(0) == '/')
         return std::string(pathname);
 
     char cwd[PATH_MAX];
     return std::string(::getcwd(cwd, sizeof(cwd))) + "/" + pathname;
 }
 
-std::string basename(const std::string& pathname) noexcept
+std::string FileUtil::basename(const std::string& pathname) noexcept
 {
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
     return std::string(::basename(buf));
 }
 
-std::string dirname(const std::string& pathname) noexcept
+std::string FileUtil::dirname(const std::string& pathname) noexcept
 {
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
     return std::string(::dirname(buf));
 }
 
-void trimPathname(std::string& pathname) noexcept
+void FileUtil::trimPathname(std::string& pathname) noexcept
 {
     pathname = dirname(pathname) + '/' +  basename(pathname);
 }
 
-size_t getSize(const std::string& pathname)
+size_t FileUtil::getSize(const std::string& pathname)
 {
     struct stat statBuf;
 
@@ -75,7 +79,114 @@ size_t getSize(const std::string& pathname)
     return statBuf.st_size;
 }
 
-void ensureDir(
+struct stat& FileUtil::lstat(
+        const std::string& pathname,
+        struct stat&       statBuf)
+{
+    if (::stat(pathname.data(), &statBuf))
+        throw SYSTEM_ERROR("::stat() failure");
+}
+
+/**
+ * Returns the statistics of a file.
+ *
+ * @param[in] rootFd        File descriptor open on root-directory
+ * @param[in] pathname      Pathname of existing file
+ * @return                  Statistics of the file
+ * @throws    SYSTEM_ERROR  `::openat()` failure
+ * @throws    SYSTEM_ERROR  `::stat()` failure
+ * @threadsafety            Safe
+ * @exceptionsafety         Strong guarantee
+ * @cancellationpoint       No
+ */
+struct stat FileUtil::getStat(
+        const int          rootFd,
+        const std::string& pathname)
+{
+    const int fd = ::openat(rootFd, pathname.data(), O_RDONLY);
+    if (fd == -1)
+        throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
+
+    try {
+        struct stat statBuf;
+        int         status = ::fstat(fd, &statBuf);
+
+        if (status)
+            throw SYSTEM_ERROR("stat() failure");
+
+        ::close(fd);
+        return statBuf;
+    } // `fd` is open
+    catch (...) {
+        ::close(fd);
+        throw;
+    }
+}
+
+SysTimePoint& FileUtil::getModTime(
+        const std::string& pathname,
+        SysTimePoint&      modTime)
+{
+    struct stat statBuf;
+    FileUtil::lstat(pathname, statBuf); // Doesn't follow symlinks
+    modTime = SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
+            std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
+    return modTime;
+}
+
+SysTimePoint FileUtil::getModTime(
+        const int          rootFd,
+        const std::string& pathname)
+{
+    auto statBuf = getStat(rootFd, pathname);
+    return SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
+            std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
+}
+
+void FileUtil::setModTime(
+        const int           rootFd,
+        const std::string&  pathname,
+        const SysTimePoint& modTime,
+        const bool          followSymLinks) {
+    struct timespec times[2];
+    times[0].tv_nsec = UTIME_OMIT;
+    times[1].tv_sec = SysClock::to_time_t(modTime);
+    times[1].tv_nsec = duration_cast<std::chrono::nanoseconds>(
+            modTime - SysClock::from_time_t(times[1].tv_sec)).count();
+    if (::utimensat(rootFd, pathname.data(), times, followSymLinks ? 0 : AT_SYMLINK_NOFOLLOW))
+        throw SYSTEM_ERROR("::utimensat() failure");
+}
+
+void FileUtil::setModTime(
+        const std::string&  pathname,
+        const SysTimePoint& modTime,
+        const bool          followSymLinks) {
+    setModTime(AT_FDCWD, pathname, modTime, followSymLinks);
+}
+
+off_t FileUtil::getFileSize(const std::string& pathname)
+{
+    return lstat(pathname).st_size;
+}
+
+off_t FileUtil::getFileSize(
+        const int          rootFd,
+        const std::string& pathname)
+{
+    return getStat(rootFd, pathname).st_size;
+}
+
+void FileUtil::rename(
+        const int          rootFd,
+        const std::string& oldPathname,
+        const std::string& newPathname)
+{
+    if (::renameat(rootFd, oldPathname.data(), rootFd, newPathname.data()))
+        throw SYSTEM_ERROR("::renameat() failure: from=\"" + oldPathname + "\", to=\"" +
+                newPathname + "\"");
+}
+
+const std::string& FileUtil::ensureDir(
         const std::string& pathname,
         const mode_t       mode)
 {
@@ -90,9 +201,11 @@ void ensureDir(
         if (::mkdir(pathname.data(), mode))
             throw SYSTEM_ERROR(std::string("mkdir() failure on \"") + pathname + "\"");
     }
+
+    return pathname;
 }
 
-void ensureDir(
+const std::string& FileUtil::ensureDir(
         const int          fd,
         const std::string& pathname,
         const mode_t       mode)
@@ -109,16 +222,18 @@ void ensureDir(
         if (::mkdirat(fd, pathname.data(), mode))
             throw SYSTEM_ERROR(std::string("mkdir() failure on \"") + pathname + "\"");
     }
+
+    return pathname;
 }
 
-void ensureParent(
+void FileUtil::ensureParent(
         const std::string& pathname,
         const mode_t       mode)
 {
     ensureDir(dirname(pathname), mode);
 }
 
-void rmDirTree(const std::string& dirPath)
+void FileUtil::rmDirTree(const std::string& dirPath)
 {
     DIR* dir = ::opendir(dirPath.data());
 
@@ -163,7 +278,7 @@ void rmDirTree(const std::string& dirPath)
     }
 }
 
-void pruneEmptyDirPath(
+void FileUtil::pruneEmptyDirPath(
         const int     fd,
         std::string&& dirPath)
 {
@@ -192,9 +307,9 @@ void pruneEmptyDirPath(
     }
 }
 
-void removeFileAndPrune(
-        const int    fd,
-        std::string& pathname)
+void FileUtil::removeFileAndPrune(
+        const int          fd,
+        const std::string& pathname)
 {
     if (::unlinkat(fd, pathname.data(), 0))
         throw SYSTEM_ERROR("::unlinkat() failure on fd-relative file \"" + pathname + "\"");

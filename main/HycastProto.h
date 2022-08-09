@@ -45,12 +45,14 @@ class PubRepo;
 class SubRepo;
 
 // Convenience types
-using Thread = std::thread;
-using Mutex  = std::mutex;
-using Guard  = std::lock_guard<Mutex>;
-using Lock   = std::unique_lock<Mutex>;
-using Cond   = std::condition_variable;
-using String = std::string;
+using Thread       = std::thread;
+using Mutex        = std::mutex;
+using Guard        = std::lock_guard<Mutex>;
+using Lock         = std::unique_lock<Mutex>;
+using Cond         = std::condition_variable;
+using String       = std::string;
+using SysClock     = std::chrono::system_clock;
+using SysTimePoint = SysClock::time_point;
 
 constexpr uint8_t PROTOCOL_VERSION = 1;
 
@@ -270,9 +272,13 @@ class Timestamp : public XprtAble
 {
 public:
     using Clock     = system_clock;
-    using TimePoint = Clock::time_point;
     using Duration  = Clock::duration;
+    using TimePoint = Clock::time_point;
 
+private:
+    TimePoint timePoint;
+
+public:
     Timestamp()
         : timePoint(Clock::now())
     {}
@@ -288,6 +294,10 @@ public:
     Timestamp(const struct timespec& time)
         : timePoint(Clock::from_time_t(time.tv_sec) + nanoseconds(time.tv_nsec))
     {}
+
+    size_t hash() const {
+        return 0; // TODO
+    }
 
     const TimePoint getTimePoint() const noexcept {
         return timePoint;
@@ -310,9 +320,6 @@ public:
     bool write(Xprt xprt) const override;
 
     bool read(Xprt xprt) override;
-
-private:
-    TimePoint timePoint;
 };
 
 /// Data-segment identifier
@@ -382,15 +389,28 @@ public:
      * @param[in] name    Name of product
      * @param[in] size    Size of product in bytes
      */
-    ProdInfo(const ProdId       prodId,
-             const std::string& name,
-             const ProdSize     size);
+    ProdInfo(const ProdId        prodId,
+             const std::string&  name,
+             const ProdSize      size,
+             const SysTimePoint& createTime = SysClock::now());
+
+    /**
+     * The creation-time of the product will be the current time.
+     *
+     * @param[in] prodId  Product ID
+     * @param[in] name    Name of product
+     * @param[in] size    Size of product in bytes
+     */
+    ProdInfo(const std::string&  name,
+             const ProdSize      size,
+             const SysTimePoint& createTime = Sysclock::now());
 
     operator bool() const noexcept;
 
-    const ProdId&    getId() const;
-    const String&    getName() const;
-    const ProdSize&  getSize() const;
+    const ProdId&       getId() const;
+    const String&       getName() const;
+    const ProdSize&     getSize() const;
+    const SysTimePoint& getCreateTime() const;
 
     bool operator==(const ProdInfo rhs) const;
 
@@ -447,6 +467,14 @@ public:
      * @return              Number of data-segments in the product
      */
     static ProdSize numSegs(const ProdSize prodSize) noexcept;
+
+    /**
+     * Returns the origin-0 index of a data-segment.
+     *
+     * @param[in] offset  Offset, in bytes, of the data-segment
+     * @return            Origin-0 index of the segment
+     */
+    static ProdSize getSegIndex(const ProdSize offset) noexcept;
 
     static constexpr PduId::Type pduId = PduId::DATA_SEG;
 
@@ -602,6 +630,30 @@ public:
 };
 
 /******************************************************************************/
+
+/// Handle class for a set of product identifiers
+class ProdIdSet final : public XprtAble
+{
+    class Impl;
+    std::shared_ptr<Impl> pImpl;
+
+public:
+    using iterator = std::iterator<std::forward_iterator_tag, ProdId>;
+
+    ProdIdSet();
+
+    iterator begin();
+
+    iterator end();
+
+    void erase(const ProdIdSet prodIds);
+
+    bool write(Xprt xprt) const;
+
+    bool read(Xprt xprt);
+};
+
+/******************************************************************************/
 // Receiver/server interfaces:
 
 /// Multicast receiver/server
@@ -683,6 +735,13 @@ namespace std {
     struct hash<hycast::ProdId> {
         size_t operator()(const hycast::ProdId& prodId) const noexcept {
             return prodId.hash();
+        }
+    };
+
+    template<>
+    struct hash<hycast::Timestamp> {
+        size_t operator()(const hycast::Timestamp& timestamp) const noexcept {
+            return timestamp.hash();
         }
     };
 

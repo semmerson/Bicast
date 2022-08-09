@@ -34,6 +34,11 @@ include_directories(${CMAKE_SOURCE_DIR}/main/misc)
 target_link_libraries(error_test hycast gtest)
 add_test(error_test error_test)
 
+#add_executable(MapQ_test MapQ_test.cpp)
+#include_directories(${CMAKE_SOURCE_DIR}/main/misc)
+#target_link_libraries(MapQ_test hycast gtest)
+#add_test(MapQ_test MapQ_test)
+
 #add_executable(DelayQueue_test DelayQueue_test.cpp)
 #target_link_libraries(DelayQueue_test hycast gtest)
 #add_test(DelayQueue_test DelayQueue_test)

@@ -82,14 +82,21 @@ public:
     SegSize getMaxSegSize() const noexcept;
 
     /**
-     * Returns the pathname of the root-directory for this instance.
+     * Returns the absolute pathname of the root-directory for this instance.
      *
-     * @return             Pathname of root-directory
+     * @return             Absolute pathname of root-directory
      * @threadsafety       Safe
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
     const std::string& getRootDir() const noexcept;
+
+    /**
+     * Returns the next product to process (i.e., either transmitted or locally processed).
+     *
+     * @return  Metadata of the next product to process
+     */
+    ProdInfo getNextProd() const;
 
     /**
      * Returns information on a product.
@@ -137,13 +144,13 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] root          Pathname of the root of the repository
-     * @param[in] segSize       Size of canonical data-segment in bytes
+     * @param[in] rootDir       Pathname of the root-directory of the repository
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
+     * @param[in] keepTime      Duration to keep products before deleting them in seconds
      */
-    PubRepo(const std::string& root,
-            const SegSize      segSize,
-            const long         maxOpenFiles);
+    PubRepo(const String& rootDir,
+            const long    maxOpenFiles,
+            const int     keepTime = 3600);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -194,12 +201,12 @@ public:
      * Constructs.
      *
      * @param[in] rootPathname  Pathname of the root of the repository
-     * @param[in] segSize       Size of canonical data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
+     * @param[in] keepTime      Duration, in seconds, to keep products before deleting them
      */
     SubRepo(const std::string& rootPathname,
-            const SegSize      segSize,
-            const size_t       maxOpenFiles);
+            const size_t       maxOpenFiles,
+            const int          keepTime);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).

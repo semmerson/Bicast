@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.19)
 PROJECT(Hycast VERSION 1.0
         DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
 
+#set(CMAKE_BINARY_DIR "${CMAKE_SOURCE_DIR}/build/Debug")
+
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
 #if(USE_SYSTEM_GRPC)
@@ -26,6 +28,7 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 # Specify the C++ standard
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_BUILD_TYPE Debug)
 
 # Specify the Eclipse IDE version
 set(CMAKE_ECLIPSE_VERSION 4.17)

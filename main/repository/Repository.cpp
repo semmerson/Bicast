@@ -32,6 +32,7 @@
 #include "ThreadException.h"
 #include "Watcher.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <errno.h>
@@ -48,127 +49,65 @@
 #include <time.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <vector>
 
 namespace hycast {
+
+using namespace std::chrono;
+
+using Duration  = SysClock::duration;
 
 static String INCOMPLETE_DIR_NAME(".incomplete");
 
 /**
  * @tparam PF  Product-file type
  */
-struct ProdEntry
+struct ProdEntry final
 {
-    ProdInfo  prodInfo;  ///< Product information
     ProdFile  prodFile;  ///< Product file
+    ProdInfo  prodInfo;  ///< Product information
 
     ProdEntry()
         : prodFile{}
-        , prodInfo{}
+        , prodInfo()
     {}
 
-    ProdEntry(ProdFile prodFile)
-        : prodInfo()
-        , prodFile(prodFile)
+    explicit ProdEntry(
+            ProdFile       prodFile,
+            const ProdInfo prodInfo = ProdInfo{})
+        : prodFile(prodFile)
+        , prodInfo(prodInfo)
     {}
 
-    ProdEntry(ProdFile&& prodFile)
-        : prodInfo()
-        , prodFile(prodFile)
+    explicit ProdEntry(
+            ProdFile&&       prodFile,
+            const ProdInfo&& prodInfo = ProdInfo{})
+        : prodFile(prodFile)
+        , prodInfo(prodInfo)
     {}
 
-    virtual ~ProdEntry() noexcept
+    explicit ProdEntry(const String& pathname)
+        : ProdEntry(ProdFile(pathname))
+    {
+        LOG_ASSERT(!FileUtil::isAbsolute(pathname));
+    }
+
+    ~ProdEntry() noexcept
     {}
 
     inline ProdEntry& operator=(const ProdEntry& rhs) =default;
-
-    bool save(const ProdInfo prodInfo) {
-        bool saved;
-        if (this->prodInfo) {
-            saved = false;
-        }
-        else {
-            const auto prodSize = prodInfo.getSize();
-            const auto knownSize = prodFile.getProdSize();
-            if (prodSize != knownSize)
-                throw INVALID_ARGUMENT("Known product size (" + std::to_string(knownSize) +
-                        " bytes) doesn't equal given product-size (" + std::to_string(prodSize) +
-                        " bytes)");
-            this->prodInfo = prodInfo;
-            saved = true;
-        }
-        return saved;
-    }
-
-    bool save(const DataSeg dataSeg) {
-        return prodFile.save(dataSeg);
-    }
-
-    /**
-     * @return  Product identifier.
-     */
-    inline const ProdId& getProdId() const
-    {
-        return prodInfo.getId();
-    }
-
-    inline ProdSize getProdSize() const {
-        return prodInfo.getSize();
-    }
 
     /**
      * @return  Product metadata. Will test false if it hasn't been set by `set(const ProdInfo)`.
      * @see `set(const ProdInfo)`
      */
-    inline const ProdInfo& getProdInfo() const
-    {
-        return prodInfo;
-    }
-
-    inline const std::string& getProdName() const
-    {
-        if (!prodInfo)
-            throw LOGIC_ERROR("ProdInfo is null");
-
-        return prodInfo.getName();
-    }
-
-    inline const std::string& getPathname() const
-    {
-        return prodFile.getPathname();
-    }
-
-    inline DataSeg getDataSeg(const DataSegId& segId) const {
-        return DataSeg{segId, prodFile.getProdSize(), prodFile.getData(segId.offset)};
-    }
-
-    inline bool exists(const ProdSize offset) const
-    {
-        return prodFile.exists(offset);
+    inline ProdInfo getProdInfo() const {
+        return ProdInfo{};
     }
 
     inline std::string to_string() const
     {
-        return prodInfo.to_string();
-    }
-
-    inline bool isComplete() const noexcept {
-        return prodInfo && prodFile.isComplete();
-    }
-
-    inline void rename(const int rootFd) const {
-        prodFile.rename(rootFd, prodInfo.getName());
-    }
-
-    inline void open(const int rootFd) const {
-        prodFile.open(rootFd);
-    }
-
-    inline void close() const {
-        prodFile.close();
-    }
-
-    inline void deleteFile() const {
-        prodFile.deleteFile();
+        return prodFile.to_string();
     }
 };
 
@@ -179,7 +118,23 @@ struct ProdEntry
  */
 class Repository::Impl
 {
-    Thread scourThread;
+    struct DeleteEntry
+    {
+        SysTimePoint deleteTime;
+        ProdId       prodId;
+
+        DeleteEntry(
+                const SysTimePoint& deleteTime,
+                const ProdId        prodId)
+            : deleteTime(deleteTime)
+            , prodId(prodId)
+        {}
+
+        bool operator<(const DeleteEntry& rhs) {
+            // `>` because `deleteQueue.top()` returns maximum entry
+            return deleteTime > rhs.deleteTime;
+        }
+    };
 
     /**
      * Returns the product-entry corresponding to a product-ID. The corresponding product is open
@@ -206,26 +161,8 @@ class Repository::Impl
 
     void scour() {
         try {
-            Lock lock{mutex};
-
-            auto pred =[&]{return (!allProds.empty() && Timestamp::Clock::now() >=
-                    allProds.front().second.prodFile.getDeleteTime().getTimePoint()) || stop;};
-            for (;;) {
-                cond.wait(lock, pred);
-                if (stop)
-                    break;
-
-                LOG_DEBUG("now=" + Timestamp().to_string() +  ", deleteTime=" +
-                        allProds.front().second.prodFile.getDeleteTime().to_string());
-
-                auto  pair = allProds.front(); // `!allProds.empty() && !stop` => nothrow
-                openProds.erase(pair.first);
-                auto& prodEntry = pair.second;
-                prodEntry.close();
-                auto pathname = prodEntry.getPathname();
-                removeFileAndPrune(rootFd, pathname);
-                allProds.pop();
-            }
+            for (;;)
+                productDb.getNextDelete().deleteFile();
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
@@ -237,29 +174,26 @@ class Repository::Impl
     using ScanMap = std::map<Timestamp, ProdEntry>;
 
     /**
-     * Scans the repository. Adds products within the "keep time" window to a map. Deletes files
-     * that lie outside that window.
+     * Scans the repository. Adds products to the database.
      *
-     * @param[in]     parentPathname  Pathname of the parent directory
-     * @param[in,out] prods           Map of products
+     * @param[in] absPathParent  Absolute pathname of directory to recursively scan
      */
-    void scanRepo(
-            const String& parentPathname,
-            ScanMap&      prods) {
-        const int parentFd = ::open(parentPathname.data(), O_RDONLY | O_DIRECTORY);
+    void scanRepo(const String& absPathParent) {
+        LOG_ASSERT(FileUtil::isAbsolute(absPathParent));
+
+        const int parentFd = ::open(absPathParent.data(), O_RDONLY | O_DIRECTORY);
         if (parentFd == -1)
-            throw SYSTEM_ERROR("::open() failure on directory \"" + parentPathname + "\"");
+            throw SYSTEM_ERROR("::open() failure on directory \"" + absPathParent + "\"");
 
         auto dir = ::fdopendir(parentFd);
         if (dir == nullptr)
-            throw SYSTEM_ERROR("::opendir() failure on \"" + parentPathname + "\"; parentFd=" +
+            throw SYSTEM_ERROR("::opendir() failure on \"" + absPathParent + "\"; parentFd=" +
                     std::to_string(parentFd));
 
         try {
             struct dirent  entry;
             struct dirent* result;
             int            status;
-            size_t         numDeleted = 0;
             size_t         numAdded = 0;
 
             for (status = ::readdir_r(dir, &entry, &result);
@@ -271,46 +205,29 @@ class Repository::Impl
                         ::strcmp(INCOMPLETE_DIR_NAME.data(), childFileName) == 0)
                     continue;
 
-                const std::string childPathname = parentPathname + "/" + childFileName;
+                const std::string absPathChild = absPathParent + "/" + childFileName;
+                const std::string relPathChild = absPathChild.substr(rootPrefixLen);
                 struct stat       statBuf;
 
-                if (::lstat(childPathname.data(), &statBuf)) // `lstat()` doen't follow symlinks
-                    throw SYSTEM_ERROR(std::string("::lstat() failure on \"") + childPathname +
-                            "\"");
+                FileUtil::lstat(absPathChild, statBuf);
 
                 if (S_ISDIR(statBuf.st_mode)) {
-                    int childFd = ::open(childPathname.data(), O_RDONLY);
-                    if (childFd == -1)
-                        throw SYSTEM_ERROR("::open() failure on directory " + childPathname);
-
-                    scanRepo(childPathname, prods);
+                    scanRepo(absPathChild);
                 }
-                else {
-                    const Timestamp fileTime{statBuf.st_mtim};
-                    const Timestamp deleteTime{fileTime.getTimePoint() + keepTime};
-
-                    if (deleteTime.getTimePoint() >= Timestamp::Clock::now()) {
-                        // No sense adding files that will be immediately scoured
-                        if (::unlink(childPathname.data()))
-                            throw SYSTEM_ERROR("Couldn't delete file \"" + childPathname + "\"");
-                        ++numDeleted;
-                    }
-                    else {
-                        ProdFile  prodFile{parentFd, childFileName, segSize, deleteTime};
-                        ProdEntry prodEntry(prodFile);
-                        prodEntry.close();
-                        prods.emplace(fileTime, prodEntry);
-                        ++numAdded;
-                    }
+                else if (S_ISLNK(statBuf.st_mode)) {
+                    throw RUNTIME_ERROR("Repository doesn't yet support symbolic links like \"" +
+                            absPathChild + "\"");
+                }
+                else if (S_ISREG(statBuf.st_mode) && productDb.add(relPathChild)) {
+                    ++numAdded;
                 }
             }
             if (status && status != ENOENT)
-                throw SYSTEM_ERROR("Couldn't read directory \"" + parentPathname + "\"");
+                throw SYSTEM_ERROR("Couldn't read directory \"" + absPathParent + "\"");
 
             ::closedir(dir); // NB: Closes `parentFd`
 
-            LOG_DEBUG("Files added=" + std::to_string(numAdded) + "; files deleted=" +
-                    std::to_string(numDeleted));
+            LOG_DEBUG("Files added=" + std::to_string(numAdded));
         } // `dir` is initialized
         catch (...) {
             ::closedir(dir);
@@ -319,15 +236,19 @@ class Repository::Impl
     }
 
     /**
-     * Scans the repository, populating the `allProds` queue.
+     * Ensures that an existing product-file is open and puts it at the back of the open-products
+     * queue.
+     *
+     * @param[in] prodId       Product identifier
+     * @throw OutOfRangeError  No such product-file
      */
-    void scanRepo() {
-        LOG_DEBUG("Scanning repository \"" + rootPathname + "\"");
-        ScanMap scanMap;
-        scanRepo(rootPathname, scanMap);
-        for (auto& pair : scanMap)
-            // NB: Products are added oldest to youngest
-            allProds.push(pair.second.getProdId(), pair.second);
+    ProdFile activate(const ProdId prodId) {
+        LOG_ASSERT(!mutex.try_lock());
+        auto& prodFile = prodEntries.at(prodId).prodFile;
+        prodFile.open(); // Idempotent
+        openProds.erase(prodId); // Idempotent
+        openProds.push(prodId); // Idempotent
+        return prodFile;
     }
 
     void stopExecution() {
@@ -336,24 +257,127 @@ class Repository::Impl
         cond.notify_all();
     }
 
-protected:
-    using ProdIdQueue    = HashSetQueue<ProdId>;
-    using ProdEntryQueue = HashMapQueue<ProdId, ProdEntry>;
-    using Clock          = std::chrono::system_clock;
-    using KeepTime       = std::chrono::seconds;
+    /**
+     * Adds a product from an existing file.
+     *
+     * @param[in] pathname  Pathname of file relative to root directory
+     * @retval    `true`    Referenced product was added
+     * @retval    `false`   Referenced product was not added because it's a duplicate
+     */
+    bool add(const String& pathname) {
+        LOG_ASSERT(!FileUtil::isAbsolute(pathname));
 
-    bool              stop;         ///< Stop execution because scour thread terminated?
-    mutable Mutex     mutex;        ///< For concurrency
-    mutable Cond      cond;         ///< For concurrency
-    ProdEntryQueue    allProds;     ///< All existing products
-    ProdIdQueue       openProds;    ///< Open products
-    const String      rootPathname; ///< Absolute pathname of root directory of repository
-    size_t            rootPrefixLen;///< Length in bytes of root pathname prefix
-    int               rootFd;       ///< File descriptor open on root-directory of repository
-    const SegSize     segSize;      ///< Size of canonical data-segment in bytes
-    size_t            maxOpenFiles; ///< Max number open files
-    ThreadEx          threadEx;     ///< Subtask exception
-    const KeepTime    keepTime;     ///< Duration to keep products
+        Guard     guard{mutex};
+        ProdId    prodId{pathname};
+        ProdEntry prodEntry{pathname};
+        bool      wasAdded = prodEntries.emplace(prodId, prodEntry).second;
+
+        if (wasAdded) {
+            auto& prodFile = prodEntry.prodFile;
+            prodFile.close(); // No need for it to be open at this time
+            SysTimePoint modTime;;
+            deleteQueue.push(DeleteEntry{prodFile.getModTime(modTime)+keepTime, prodId});
+            cond.notify_all(); // Database state changed
+        }
+
+        return wasAdded;
+    }
+
+    ProdFile getNextDelete() {
+        Lock lock{mutex};
+        cond.wait(lock, [&] {return !deleteQueue.empty() &&
+                deleteQueue.top().deleteTime >= SysClock::now();});
+
+        const auto prodId = deleteQueue.top().prodId;
+        auto&      prodFile = prodEntries.at(prodId).prodFile;
+
+        prodFile.close();
+        FileUtil::removeFileAndPrune(rootFd, prodFile.getPathname());
+        openProds.erase(prodId);
+        prodEntries.erase(prodId);
+        deleteQueue.pop();
+
+        return prodFile;
+    }
+
+    void scour() {
+        /**
+         * The following code deletes products on-time regardless of their arrival.
+         */
+        static const auto endOfTime = SysTimePoint() + duration_values<SysTimePoint::rep>::max();
+        Lock              lock{mutex};
+
+        for (auto deleteTime{deleteQueue.empty() ? endOfTime : deleteQueue.top().deleteTime}; ;
+                deleteTime = deleteQueue.empty() ? endOfTime : deleteQueue.top().deleteTime) {
+            if (cond.wait_until(lock, deleteTime, [&] {return !deleteQueue.empty() &&
+                    deleteQueue.top().deleteTime >= SysClock::now();})) {
+                const auto prodId = deleteQueue.top().prodId;
+                auto       prodFile = prodEntries.at(prodId).prodFile;
+
+                prodFile.close();
+                FileUtil::removeFileAndPrune(rootFd, prodFile.getPathname());
+                openProds.erase(prodId);
+                prodEntries.erase(prodId);
+                deleteQueue.pop();
+            }
+        }
+    }
+
+    ProdFile findProdFile(const ProdId prodId) {
+        static ProdFile invalid{};
+        Guard guard{mutex};
+        return (prodEntries.count(prodId))
+                ? activate(prodId)
+                : invalid;
+    }
+
+    ProdEntry* findProdEntry(const ProdId prodId) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (prodEntries.count(prodId) == 0)
+            return nullptr;
+
+        auto prodEntry = &prodEntries.at(prodId);
+        prodEntry->prodFile.open(); // Idempotent
+        openProds.erase(prodId);
+        openProds.push(prodId);
+
+        return prodEntry;
+    }
+
+    ProdEntry getProdEntry(
+            const ProdId   prodId,
+            const String&  pathname,
+            const ProdSize prodSize) {
+        Guard guard{mutex};
+        return prodEntries.count(prodId)
+                ? prodEntries.at(prodId)
+                : prodEntries.emplace(prodId, ProdEntry{
+                        INCOMPLETE_DIR_NAME + "/" + prodId.to_string()}).first->second;
+    }
+
+protected:
+    using ProdEntries = std::unordered_map<ProdId, ProdEntry>;
+    using DeleteQueue = std::priority_queue<DeleteEntry>;
+    using Pair        = std::pair<ProdEntry&, bool>;
+
+    mutable Mutex        mutex;          ///< To maintain consistency
+    mutable Cond         cond;           ///< For inter-thread communication
+    const Duration       keepTime;       ///< Length of time to keep products
+    ProdEntries          prodEntries;    ///< Product entries
+    DeleteQueue          deleteQueue;    ///< Queue of when to delete products
+    HashSetQueue<ProdId> openProds;      ///< Products whose files are open
+    const size_t         maxOpenProds;   ///< Maximum number of open products
+    bool                 stop;           ///< Stop execution because scour thread terminated?
+    const String         absPathRoot;    ///< Absolute pathname of root directory of repository
+    size_t               rootPrefixLen;  ///< Length in bytes of root pathname prefix
+    int                  rootFd;         ///< File descriptor open on root-directory of repository
+    size_t               maxOpenFiles;   ///< Max number open files
+    ThreadEx             threadEx;       ///< Subtask exception
+    const Duration       keepTime;       ///< Duration to keep products
+    Thread               scourThread;    ///< Thread for deleting old products
+    std::queue<ProdInfo> prodQueue;      ///< Queue of products for external processing
+
 
     void ensureOpen(
             const ProdId prodId,
@@ -365,7 +389,7 @@ protected:
             allProds.get(openProds.front())->close();
             openProds.pop();
         }
-        prodEntry.open(rootFd); // Idempotent
+        prodEntry.open(); // Idempotent
         openProds.push(prodId);
     }
 
@@ -376,47 +400,64 @@ protected:
      * @return              Corresponding product-name
      */
     std::string getProdName(const std::string& pathname) const {
-        return pathname.substr(rootPathname.length()+1); // Remove `rootPathname+"/"`
+        LOG_ASSERT(FileUtil::isAbsolute(pathname));
+        return pathname.substr(rootPrefixLen); // Remove `absPathRoot+"/"`
+    }
+
+    void addToOpenList(const ProdId prodId) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        openProds.push(prodId);
+
+        while (openProds.size() > maxOpenProds) {
+            prodEntries.at(openProds.front()).prodFile.close();
+            openProds.pop();
+        }
     }
 
 public:
-    Impl(   const std::string& rootDir,
-            const SegSize      segSize,
-            const size_t       maxOpenFiles,
-            const int          keepTime = 3600)
-        : scourThread()
-        , stop(false)
-        , mutex{}
+    /**
+     * Constructs.
+     *
+     * @param[in] rootDir          Root directory of the repository
+     * @param[in] maxOpenProds     Maximum number of products with open file descriptors
+     * @param[in] keepTime         Duration to keep products before deleting them in seconds
+     * @throw     InvalidArgument  `maxOpenProds <= 0`
+     * @throw     InvalidArgument  `keepTime <= 0`
+     * @throw     SystemError      Couldn't open root directory of repository
+     */
+    Impl(   const String& rootDir,
+            const size_t  maxOpenProds,
+            const int     keepTime)
+        : mutex()
         , cond()
-        , allProds{maxOpenFiles}
-        , openProds{maxOpenFiles}
-        , rootPathname(makeAbsolute(rootDir))
-        , rootPrefixLen{rootPathname.size() + 1}
-        , rootFd(-1)
-        , segSize{segSize}
-        , maxOpenFiles{maxOpenFiles}
-        , keepTime(keepTime)
+        , keepTime(duration_cast<Duration>(seconds(keepTime)))
+        , prodEntries()
+        , deleteQueue()
+        , openProds()
+        , maxOpenProds{maxOpenProds}
+        , stop(false)
+        , absPathRoot(FileUtil::makeAbsolute(rootDir))
+        , rootPrefixLen{absPathRoot.size() + 1}
+        , rootFd(::open(FileUtil::ensureDir(absPathRoot).data(), O_DIRECTORY | O_RDONLY))
+        , threadEx()
+        , scourThread()
+        , prodQueue()
     {
-        if (maxOpenFiles <= 0)
-            throw INVALID_ARGUMENT("maxOpenFiles=" + std::to_string(maxOpenFiles));
+        if (maxOpenProds <= 0)
+            throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
 
-        if (keepTime <= 0)
-            throw INVALID_ARGUMENT("keepTime=" + std::to_string(keepTime));
+        if (keepTime <= Duration(0))
+            throw INVALID_ARGUMENT("keepTime=" + std::to_string(keepTime.count()));
 
-        ensureDir(rootPathname, 0755); // Only owner can write
-
-        rootFd = ::open(rootPathname.data(), O_DIRECTORY | O_RDONLY);
         if (rootFd == -1)
-            throw SYSTEM_ERROR("Couldn't open root-directory of repository, \"" + rootPathname +
+            throw SYSTEM_ERROR("Couldn't open root-directory of repository, \"" + absPathRoot +
                     "\"");
-        LOG_DEBUG("Opened directory \"" + rootPathname + "\"; rootFd=" + std::to_string(rootFd));
 
         try {
-            if (maxOpenFiles == 0)
-                throw INVALID_ARGUMENT("Maximum number of open files is zero");
-
             scourThread = Thread(&Impl::scour, this);
-            scanRepo();
+
+            scanRepo(absPathRoot);
         } // `rootFd` is open
         catch (const std::exception& ex) {
             ::close(rootFd);
@@ -432,37 +473,22 @@ public:
             ::close(rootFd);
     }
 
-    SegSize getSegSize() const noexcept
-    {
-        return segSize;
-    }
-
     const std::string& getRootDir() const noexcept
     {
-        return rootPathname;
+        return absPathRoot;
     }
 
-    /**
-     * Returns the product-information corresponding to a product-ID if it exists.
-     *
-     * @pre                  Instance is unlocked
-     * @param[in] prodId     Product identifier
-     * @return               Corresponding product-information. Will test false if no such
-     *                       information exists.
-     */
-    ProdInfo getProdInfo(const ProdId prodId)
-    {
+    virtual ProdInfo getNextProd() =0;
+
+    ProdInfo getProdInfo(const ProdId prodId) {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
-        const auto prodEntry = allProds.get(prodId);
+        static ProdInfo empty{};
+        Guard           guard{mutex};
 
-        if (prodEntry == nullptr) {
-            static const ProdInfo prodInfo{};
-            return prodInfo;
-        }
-
-        return prodEntry->getProdInfo();
+        return (prodEntries.count(prodId))
+                ? prodEntries.at(prodId).prodInfo
+                : empty; // Will test false
     }
 
     /**
@@ -479,15 +505,14 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
-        const auto prodEntry = getProdEntry(segId.prodId);
+        static const DataSeg empty{};
+        Guard                guard{mutex};
 
-        if (!prodEntry) {
-            static const DataSeg dataSeg{};
-            return dataSeg;
-        }
+        if (prodEntries.count(segId.prodId) == 0)
+            return DataSeg{};
 
-        return prodEntry->getDataSeg(segId);
+        auto& prodFile = prodEntries.at(segId.prodId).prodFile;
+        return DataSeg{segId, prodFile.getFileSize(), prodFile.getData(segId.offset)};
     }
 
     /**
@@ -497,20 +522,11 @@ public:
      * @param[in] prodName  Product name
      * @return              Absolute pathname of corresponding file
      */
-    std::string getPathname(const std::string& name) const
+    std::string getAbsPathname(const std::string& name) const
     {
         LOG_ASSERT(name.size());
-        return rootPathname + "/" + name;
+        return absPathRoot + "/" + name;
     }
-
-    /**
-     * Returns information on the next product to process. Blocks until one is ready.
-     *
-     * @return              Information on the next product to process
-     * @throws SystemError  System failure
-     * @threadsafety        Compatible but unsafe
-     */
-    virtual ProdInfo getNextProd() =0;
 
 #if 0
     /**
@@ -552,12 +568,12 @@ Repository::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
-SegSize Repository::getMaxSegSize() const noexcept {
-    return pImpl->getSegSize();
-}
-
 const std::string& Repository::getRootDir() const noexcept {
     return pImpl->getRootDir();
+}
+
+ProdInfo Repository::getNextProd() const {
+    return pImpl->getNextProd();
 }
 
 ProdInfo Repository::getProdInfo(const ProdId prodId) const {
@@ -577,13 +593,12 @@ DataSeg Repository::getDataSeg(const DataSegId segId) const {
 class PubRepo::Impl final : public Repository::Impl
 {
     Watcher            watcher;     ///< Watches filename hierarchy
-    std::queue<ProdId> prodQueue;   ///< Queue of products to be sent
 
     static bool tryHardLink(
             const std::string& extantPath,
             const std::string& linkPath) {
         LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
-        ensureDir(dirname(linkPath), 0700);
+        FileUtil::ensureDir(FileUtil::dirname(linkPath), 0700);
         return ::link(extantPath.data(), linkPath.data()) == 0;
     }
 
@@ -599,7 +614,7 @@ class PubRepo::Impl final : public Repository::Impl
             const std::string& extantPath,
             const std::string& linkPath) {
         LOG_DEBUG("Linking \"" + linkPath + "\" to \"" + extantPath + "\"");
-        ensureDir(dirname(linkPath), 0700);
+        FileUtil::ensureDir(FileUtil::dirname(linkPath), 0700);
         return ::symlink(extantPath.data(), linkPath.data()) == 0;
     }
 
@@ -631,20 +646,16 @@ class PubRepo::Impl final : public Repository::Impl
     }
 
 public:
-    Impl(   const std::string& rootPathname,
-            const SegSize      segSize,
+    Impl(   const String& rootPathname,
 #ifdef OPEN_MAX
-            const long         maxOpenFiles = OPEN_MAX/2)
+            const long    maxOpenFiles = OPEN_MAX/2)
 #else
-            const long         maxOpenFiles = sysconf(_SC_OPEN_MAX)/2)
+            const long    maxOpenFiles = sysconf(_SC_OPEN_MAX)/2,
 #endif
-        : Repository::Impl{rootPathname, segSize, static_cast<size_t>(maxOpenFiles)}
-        , watcher(this->rootPathname) // Is absolute pathname
-        , prodQueue()
-    {
-        if (maxOpenFiles <= 0)
-            throw INVALID_ARGUMENT("maxOpenFiles=" + std::to_string(maxOpenFiles));
-    }
+            const int     keepTime)
+        : Repository::Impl{rootPathname, static_cast<size_t>(maxOpenFiles), keepTime}
+        , watcher(absPathRoot)
+    {}
 
     /**
      * Links to a file (which could be a directory) that's outside the repository. The watcher will
@@ -658,8 +669,8 @@ public:
      * @throws InvalidArgument  `prodName` is invalid
      */
     void link(
-            const std::string& pathname,
-            const std::string& prodName)
+            const String& pathname,
+            const String& prodName)
     {
         threadEx.throwIfSet();
 
@@ -668,11 +679,11 @@ public:
         if (prodName.size() == 0 || prodName[0] == '/')
             throw INVALID_ARGUMENT("Invalid product name: \"" + prodName + "\"");
 
-        const std::string extantPath = makeAbsolute(pathname);
-        const std::string linkPath = getPathname(prodName);
+        const std::string extantPath = FileUtil::makeAbsolute(pathname);
+        const std::string linkPath = getAbsPathname(prodName);
         Guard             guard(mutex);
 
-        ensureDir(dirname(linkPath), 0700);
+        FileUtil::ensureDir(FileUtil::dirname(linkPath), 0700);
 
         if (!tryHardLink(extantPath, linkPath) &&
                 !trySoftLink(extantPath, linkPath))
@@ -680,17 +691,15 @@ public:
     }
 
     /**
-     * Returns information on the next product to publish. Blocks until one is
-     * ready. Watches the repository's directory hierarchy for new files. A
-     * product-entry is created and added to the set of active product-entries.
-     * for each new non-directory file in the repository's hierarchy:
+     * Returns information on the next product to publish. Blocks until one is ready. Watches the
+     * repository's directory hierarchy for new files. A product-entry is created and added to the
+     * set of active product-entries. for each new non-directory file in the repository's hierarchy:
      *
      * @return              Information on the next product to publish
      * @throws SystemError  System failure
      * @threadsafety        Compatible but unsafe
      */
-    ProdInfo getNextProd()
-    {
+    ProdInfo getNextProd() override {
         threadEx.throwIfSet();
 
         ProdInfo prodInfo{};
@@ -703,11 +712,10 @@ public:
             //LOG_DEBUG("event.pathname=%s", event.pathname.data());
             //LOG_DEBUG("rootPrefixLen=%zu", rootPrefixLen);
             prodName = event.pathname.substr(rootPrefixLen);
-            auto deleteTime = Timestamp().getTimePoint() + keepTime;
-            ProdFile prodFile(rootFd, prodName, segSize, deleteTime);
+            ProdFile prodFile(absPathRoot + '/' + prodName);
 
             const ProdId prodId(prodName);
-            prodInfo = ProdInfo(prodId, prodName, prodFile.getProdSize());
+            prodInfo = ProdInfo(prodId, prodName, prodFile.getFileSize());
 
             addProd(prodId, prodFile);
         }
@@ -727,20 +735,16 @@ PubRepo::PubRepo()
 {}
 
 PubRepo::PubRepo(
-        const std::string& rootPathname,
-        const SegSize      segSize,
-        const long         maxOpenFiles)
-    : Repository(new Impl(rootPathname, segSize, maxOpenFiles)) {
-}
+        const String& rootPathname,
+        const long    maxOpenFiles,
+        const int     keepTime)
+    : Repository(new Impl(rootPathname, maxOpenFiles, keepTime))
+{}
 
 void PubRepo::link(
         const std::string& pathname,
         const std::string& prodName) {
     return static_cast<Impl*>(pImpl.get())->link(pathname, prodName);
-}
-
-ProdInfo PubRepo::getNextProd() const {
-    return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
 /******************************************************************************/
@@ -751,11 +755,47 @@ ProdInfo PubRepo::getNextProd() const {
  */
 class SubRepo::Impl final : public Repository::Impl
 {
-    std::queue<ProdInfo>             prodQueue; ///< Queue of completed products
+    /**
+     * Returns a temporary absolute pathname.
+     *
+     * @param[in] prodId  Product identifier
+     * @return            Temporary absolute pathname
+     */
+    inline String tempAbsPathname(const ProdId prodId) {
+        return absPathRoot + '/' + INCOMPLETE_DIR_NAME + '/' + prodId.to_string();
+    }
+
+    /**
+     * Adds a product-entry. Upon return, the entry is open, at the back of the open-products list,
+     * and in the delete-queue.
+     *
+     * @param[in] prodId     Product-ID
+     * @param[in] prodEntry  Product-entry
+     * @return               Pointer to the added entry
+     */
+    ProdEntry* add(
+            const ProdId prodId,
+            ProdEntry&&  prodEntry) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        auto pair = prodEntries.emplace(prodId, prodEntry);
+        auto entryPtr = &*pair.first;
+
+        if (pair.second) {
+            deleteQueue.push(DeleteEntry{prodEntry.prodInfo.getCreateTime()+keepTime, prodId});
+            prodEntry.prodFile.open();
+            openProds.erase(prodId);
+            addToOpenList(prodId);
+            cond.notify_all(); // State changed
+        }
+
+        return entryPtr;
+    }
 
     /**
      * Returns the product-entry corresponding to a product-ID. The product-entry is created if it
-     * doesn't exist. The corresponding product is open and at the back of the open-products set.
+     * doesn't exist. Upon return, the corresponding product is open, at the back of the
+     * open-products list, and in the delete-queue.
      *
      * @pre                 State is locked
      * @param[in] prodId    Product identifier
@@ -770,46 +810,57 @@ class SubRepo::Impl final : public Repository::Impl
     {
         LOG_ASSERT(!mutex.try_lock());
 
-        auto prodEntry = allProds.get(prodId);
+        auto prodEntry = findProdEntry(prodId);
 
         if (prodEntry == nullptr) {
-            auto prodFile = ProdFile(rootFd, INCOMPLETE_DIR_NAME + "/" + prodId.to_string(), segSize,
-                    prodSize, Timestamp().getTimePoint() + keepTime);
-            ProdEntry entry{prodFile};
-            prodEntry = allProds.push(prodId, entry);
+            ProdFile  prodFile{tempAbsPathname(prodId), prodSize};
+            prodEntry = add(prodId, ProdEntry{prodFile});
         }
-
-        ensureOpen(prodId, *prodEntry);
 
         return *prodEntry;
     }
 
     /**
-     * Finishes processing a data-product. The product's metadata is added to the outgoing
-     * -product queue if the product is complete.
+     * Finishes processing a data-product if it's complete. The product is closed and its  metadata
+     * is added to the outgoing-product queue.
      *
-     * @pre                 State is locked
-     * @param[in] prodFile  Product entry
-     * @post                State is locked
+     * @pre                  State is locked
+     * @param[in] prodEntry  Product entry
+     * @post                 State is locked
      */
-    void finishIfComplete(const ProdEntry& prodEntry) {
-        if (prodEntry.isComplete()) {
-            prodEntry.rename(rootFd);
-            prodQueue.push(prodEntry.getProdInfo());
-            cond.notify_all();
+    void finishIfComplete(
+            const ProdId prodId,
+            ProdEntry&   prodEntry) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (prodEntry.prodInfo) {
+            auto& prodFile = prodEntry.prodFile;
+            if (prodFile.isComplete()) {
+                const auto& prodInfo = prodEntry.prodInfo;
+                const auto& modTime = prodInfo.getCreateTime();
+                prodFile.setModTime(modTime);
+
+                const auto newPathname = absPathRoot + '/' + prodInfo.getName();
+                FileUtil::ensureDir(FileUtil::dirname(newPathname), 0755);
+                prodFile.rename(newPathname);
+                prodFile.close();
+
+                prodQueue.push(prodEntry.prodInfo);
+                cond.notify_all();
+            }
         }
     }
 
 public:
     Impl(   const std::string& rootPathname,
-            const SegSize      segSize,
-            const size_t       maxOpenFiles)
-        : Repository::Impl{rootPathname, segSize, maxOpenFiles}
+            const size_t       maxOpenFiles,
+            const int          keepTime)
+        : Repository::Impl{rootPathname, maxOpenFiles, keepTime}
     {}
 
     /**
      * Saves product-information. Creates a new product if necessary. If the resulting product
-     * becomes complete, then it will be added to the outgoing queue.
+     * becomes complete, then it will be eventually returned by `getNextProd()`.
      *
      * @param[in] prodInfo     Product information
      * @retval    `true``      Product information was saved
@@ -822,18 +873,32 @@ public:
     bool save(const ProdInfo prodInfo) {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
+        bool       wasSaved = false;
         const auto prodId = prodInfo.getId();
-        auto&      prodEntry = getProdEntry(prodId, prodInfo.getSize());
-        auto       saved = prodEntry.save(prodInfo);
+        Guard      guard{mutex};
+        auto       prodEntry = findProdEntry(prodId);
 
-        finishIfComplete(prodEntry);
-        return saved;
+        if (prodEntry) {
+            // Entry is open and appended to open-list
+            if (!prodEntry->prodInfo) {
+                prodEntry->prodInfo = prodInfo;
+                finishIfComplete(prodId, *prodEntry);
+                wasSaved = true;
+            }
+        }
+        else {
+            ProdFile  prodFile{tempAbsPathname(prodId), prodInfo.getProdSize()}; // Is open
+            prodEntry = add(prodId, ProdEntry{prodFile, prodInfo});
+            finishIfComplete(prodId, *prodEntry); // Supports products with no data
+            wasSaved = true;
+        }
+
+        return wasSaved;
     }
 
     /**
-     * Saves a data-segment in the corresponding product-file. If the resulting product becomes
-     * complete, then it will be eventually returned by `getNextProd()`.
+     * Saves a data-segment. If the resulting product becomes complete, then it will be eventually
+     * returned by `getNextProd()`.
      *
      * @param[in] dataSeg      Data segment
      * @retval    `true`       This item was saved
@@ -846,13 +911,25 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
+        bool       wasSaved = false;
         const auto prodId = dataSeg.getId().prodId;
-        auto&      prodEntry = getProdEntry(prodId, dataSeg.getProdSize());
-        const bool saved = prodEntry.save(dataSeg);
+        auto       prodEntry = findProdEntry(prodId);
 
-        finishIfComplete(prodEntry);
-        return saved;
+        if (prodEntry) {
+            if (prodEntry->prodFile.save(dataSeg)) {
+                finishIfComplete(prodId, *prodEntry);
+                wasSaved = true;
+            }
+        }
+        else {
+            ProdFile prodFile{tempAbsPathname(prodId), dataSeg.getProdSize()}; // Is open
+            prodFile.save(dataSeg);
+            prodEntry = add(prodId, ProdEntry{prodFile});
+            finishIfComplete(prodId, *prodEntry); // Supports products with no data
+            wasSaved = true;
+        }
+
+        return wasSaved;
     }
 
     /**
@@ -860,8 +937,7 @@ public:
      *
      * @return Next, completed data-product
      */
-    ProdInfo getNextProd()
-    {
+    ProdInfo getNextProd() override {
         Lock lock(mutex);
 
         cond.wait(lock, [&]{return !prodQueue.empty() || stop;});
@@ -875,18 +951,18 @@ public:
     }
 
     /**
-     * Indicates if complete information on a data-product exists.
+     * Indicates if a data-product's metadata exists.
      *
      * @param[in] prodId     Product identifier
-     * @retval    `true`     Product information does exist
-     * @retval    `false`    Product information does not exist
+     * @retval    `true`     Product metadata does exist
+     * @retval    `false`    Product metadata does not exist
      */
     bool exists(const ProdId prodId)
     {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
-        auto  prodEntry = allProds.get(prodId);
+        auto  prodEntry = findProdEntry(prodId);
         return prodEntry && prodEntry->prodInfo;
     }
 
@@ -902,12 +978,12 @@ public:
         threadEx.throwIfSet();
 
         Guard guard{mutex};
-        auto  prodEntry = allProds.get(segId.prodId);
-        return prodEntry != nullptr && prodEntry->prodFile.exists(segId.offset);
+        auto  prodEntry = findProdEntry(segId.prodId);
+        return prodEntry && prodEntry->prodFile.exists(segId.offset);
     }
 };
 
-/******************************************************************************/
+/**************************************************************************************************/
 
 SubRepo::SubRepo()
     : Repository{nullptr}
@@ -915,9 +991,9 @@ SubRepo::SubRepo()
 
 SubRepo::SubRepo(
         const std::string& rootPathname,
-        const SegSize      segSize,
-        const size_t       maxOpenFiles)
-    : Repository{new Impl(rootPathname, segSize, maxOpenFiles)} {
+        const size_t       maxOpenFiles,
+        const int          keepTime)
+    : Repository{new Impl(rootPathname, maxOpenFiles, keepTime)} {
 }
 
 bool SubRepo::save(const ProdInfo prodInfo) const {
@@ -926,10 +1002,6 @@ bool SubRepo::save(const ProdInfo prodInfo) const {
 
 bool SubRepo::save(const DataSeg dataSeg) const {
     return static_cast<Impl*>(pImpl.get())->save(dataSeg);
-}
-
-ProdInfo SubRepo::getNextProd() const {
-    return static_cast<Impl*>(pImpl.get())->getNextProd();
 }
 
 bool SubRepo::exists(const ProdId prodId) const {

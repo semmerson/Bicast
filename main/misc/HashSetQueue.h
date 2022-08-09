@@ -33,8 +33,8 @@
 namespace hycast {
 
 /**
- * @tparam VALUE  Value to be stored. Must have default constructor and functions `operator=()`,
- *                `hash()`, and `operator==()`. Smaller values are better.
+ * @tparam VALUE  Value to be stored. Must have default constructor, copy assignment,  `hash()`, and
+ *                `operator==()`. Smaller values are better.
  */
 template<class VALUE>
 class HashSetQueue
@@ -78,6 +78,10 @@ public:
         , head{}
         , tail{}
     {}
+
+    bool empty() const {
+        return linksMap.empty();
+    }
 
     size_t size() const {
         return linksMap.size();
