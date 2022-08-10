@@ -10,6 +10,5 @@ core.*
 *.svg
 /.base.h.swp
 /DerivedTemplateOfABC.cpp
-/p2p/
 /p2p-old/
 /protocol/
