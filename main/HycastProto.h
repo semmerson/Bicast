@@ -22,20 +22,18 @@
 #ifndef MAIN_PROTO_HYCASTPROTO_H_
 #define MAIN_PROTO_HYCASTPROTO_H_
 
+#include "CommonTypes.h"
 #include "error.h"
 #include "Socket.h"
 #include "Tracker.h"
 #include "Xprt.h"
 
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <set>
-#include <string>
-#include <thread>
 #include <time.h>
+#include <unordered_set>
 
 namespace hycast {
 
@@ -43,16 +41,6 @@ using namespace std::chrono;
 
 class PubRepo;
 class SubRepo;
-
-// Convenience types
-using Thread       = std::thread;
-using Mutex        = std::mutex;
-using Guard        = std::lock_guard<Mutex>;
-using Lock         = std::unique_lock<Mutex>;
-using Cond         = std::condition_variable;
-using String       = std::string;
-using SysClock     = std::chrono::system_clock;
-using SysTimePoint = SysClock::time_point;
 
 constexpr uint8_t PROTOCOL_VERSION = 1;
 
@@ -67,21 +55,26 @@ class PduId : public XprtAble
 public:
     using Type = decltype(value);
 
-    static constexpr Type UNSET             = 0;
-    static constexpr Type PROTOCOL_VERSION  = 1;
-    static constexpr Type IS_PUBLISHER      = 2;
-    static constexpr Type GOOD_P2P_SRVR     = 3;
-    static constexpr Type GOOD_P2P_SRVRS    = 4;
-    static constexpr Type BAD_P2P_SRVR      = 5;
-    static constexpr Type BAD_P2P_SRVRS     = 6;
-    static constexpr Type PUB_PATH_NOTICE   = 7;
-    static constexpr Type PROD_INFO_NOTICE  = 8;
-    static constexpr Type DATA_SEG_NOTICE   = 9;
-    static constexpr Type PROD_INFO_REQUEST = 10;
-    static constexpr Type DATA_SEG_REQUEST  = 11;
-    static constexpr Type PROD_INFO         = 12;
-    static constexpr Type DATA_SEG          = 13;
-    static constexpr Type MAX_PDU_ID        = DATA_SEG;
+    enum id : Type {
+        UNSET,
+        PROTOCOL_VERSION,
+        IS_PUBLISHER,
+        AM_PUB_PATH,
+        AM_NOT_PUB_PATH,
+        GOOD_P2P_SRVR,
+        GOOD_P2P_SRVRS,
+        BAD_P2P_SRVR,
+        BAD_P2P_SRVRS,
+        PUB_PATH_NOTICE,
+        PROD_INFO_NOTICE,
+        DATA_SEG_NOTICE,
+        BACKLOG_REQUEST,
+        PROD_INFO_REQUEST,
+        DATA_SEG_REQUEST,
+        PROD_INFO,
+        DATA_SEG,
+        MAX_PDU_ID = DATA_SEG
+    };
 
     /**
      * Constructs.
@@ -100,8 +93,11 @@ public:
         : value(UNSET)
     {}
 
-    operator bool() const noexcept {
-        return value != UNSET;
+    PduId(Xprt xprt) {
+        if (!xprt.read(value))
+            throw EOF_ERROR("Couldn't read value");
+        if (value > MAX_PDU_ID)
+            throw INVALID_ARGUMENT("value=" + to_string());
     }
 
     inline String to_string() const {
@@ -116,7 +112,7 @@ public:
         return value == rhs.value;
     }
 
-    inline bool operator==(const Type rhs) const noexcept {
+    inline bool operator==(const enum id rhs) const noexcept {
         return value == rhs;
     }
 
@@ -267,6 +263,20 @@ public:
     }
 };
 
+} // namespace
+
+namespace std {
+    // Defined here because it's used in `ProdIdSet` below
+    template<>
+    struct hash<hycast::ProdId> {
+        size_t operator()(const hycast::ProdId& prodId) const noexcept {
+            return prodId.hash();
+        }
+    };
+} // namespace
+
+namespace hycast {
+
 /// Timestamp
 class Timestamp : public XprtAble
 {
@@ -403,7 +413,18 @@ public:
      */
     ProdInfo(const std::string&  name,
              const ProdSize      size,
-             const SysTimePoint& createTime = Sysclock::now());
+             const SysTimePoint& createTime = SysClock::now());
+
+    /**
+     * The creation-time of the product will be the current time.
+     *
+     * @param[in] prodId  Product ID
+     * @param[in] name    Name of product
+     * @param[in] size    Size of product in bytes
+     */
+    ProdInfo(const std::string&&  name,
+             const ProdSize       size,
+             const SysTimePoint&& createTime = SysClock::now());
 
     operator bool() const noexcept;
 
@@ -549,11 +570,12 @@ public:
  * Class for both notices and requests sent to a remote peer. It exists so that such entities can be
  * handled as a single object for the purpose of argument passing and container element.
  */
-struct DatumId
+struct Notice
 {
 public:
     enum class Id {
         UNSET,
+        AM_PUB_PATH,
         GOOD_P2P_SRVR,
         GOOD_P2P_SRVRS,
         BAD_P2P_SRVR,
@@ -562,42 +584,48 @@ public:
         DATA_SEG_ID
     } id;
     union {
+        bool      amPubPath;
         SockAddr  srvrAddr;
         Tracker   tracker;
         ProdId    prodId;
         DataSegId dataSegId;
     };
 
-    DatumId() noexcept
+    Notice() noexcept
         : prodId()
         , id(Id::UNSET)
     {}
 
-    DatumId(const SockAddr srvrAddr, const bool isGood = true) noexcept
+    explicit Notice(const bool amPubPath) noexcept
+        : id(Id::AM_PUB_PATH)
+        , amPubPath(amPubPath)
+    {}
+
+    explicit Notice(const SockAddr srvrAddr, const bool isGood = true) noexcept
         : id(isGood ? Id::GOOD_P2P_SRVR : Id::BAD_P2P_SRVR)
         , srvrAddr(srvrAddr)
     {}
 
-    DatumId(const Tracker tracker, const bool isGood = true) noexcept
+    explicit Notice(const Tracker tracker, const bool isGood = true) noexcept
         : id(isGood ? Id::GOOD_P2P_SRVRS : Id::BAD_P2P_SRVRS)
         , tracker(tracker)
     {}
 
-    explicit DatumId(const ProdId prodId) noexcept
+    explicit Notice(const ProdId prodId) noexcept
         : id(Id::PROD_INDEX)
         , prodId(prodId)
     {}
 
-    explicit DatumId(const DataSegId dataSegId) noexcept
+    explicit Notice(const DataSegId dataSegId) noexcept
         : id(Id::DATA_SEG_ID)
         , dataSegId(dataSegId)
     {}
 
-    DatumId(const DatumId& datumId) noexcept {
-        ::memcpy(this, &datumId, sizeof(DatumId));
+    Notice(const Notice& datumId) noexcept {
+        ::memcpy(this, &datumId, sizeof(Notice));
     }
 
-    ~DatumId() noexcept {
+    ~Notice() noexcept {
     }
 
     Id getType() const noexcept {
@@ -612,8 +640,8 @@ public:
         return id == Id::DATA_SEG_ID && this->dataSegId == dataSegId;
     }
 
-    DatumId& operator=(const DatumId& rhs) noexcept {
-        ::memcpy(this, &rhs, sizeof(DatumId));
+    Notice& operator=(const Notice& rhs) noexcept {
+        ::memcpy(this, &rhs, sizeof(Notice));
         return *this;
     }
 
@@ -626,27 +654,31 @@ public:
     // `std::hash<DatumId>()` is also defined
     size_t hash() const noexcept;
 
-    bool operator==(const DatumId& rhs) const noexcept;
+    bool operator==(const Notice& rhs) const noexcept;
 };
 
 /******************************************************************************/
 
-/// Handle class for a set of product identifiers
-class ProdIdSet final : public XprtAble
+/// A set of product identifiers
+class ProdIdSet : public std::unordered_set<ProdId>, public XprtAble
 {
-    class Impl;
-    std::shared_ptr<Impl> pImpl;
-
 public:
-    using iterator = std::iterator<std::forward_iterator_tag, ProdId>;
+    using Pimpl = std::shared_ptr<ProdIdSet>;
 
-    ProdIdSet();
+    ProdIdSet()
+        : std::unordered_set<ProdId>{}
+    {}
 
-    iterator begin();
+    explicit ProdIdSet(const size_t n)
+        : std::unordered_set<ProdId>{n}
+    {}
 
-    iterator end();
-
-    void erase(const ProdIdSet prodIds);
+    /**
+     * Subtracts (i.e., erases) all identifiers in another set.
+     *
+     * @param[in] other  The other set
+     */
+    void subtract(const Pimpl other);
 
     bool write(Xprt xprt) const;
 
@@ -732,13 +764,6 @@ public:
 
 namespace std {
     template<>
-    struct hash<hycast::ProdId> {
-        size_t operator()(const hycast::ProdId& prodId) const noexcept {
-            return prodId.hash();
-        }
-    };
-
-    template<>
     struct hash<hycast::Timestamp> {
         size_t operator()(const hycast::Timestamp& timestamp) const noexcept {
             return timestamp.hash();
@@ -746,8 +771,8 @@ namespace std {
     };
 
     template<>
-    struct hash<hycast::DatumId> {
-        size_t operator()(const hycast::DatumId& datumId) const noexcept {
+    struct hash<hycast::Notice> {
+        size_t operator()(const hycast::Notice& datumId) const noexcept {
             return datumId.hash();
         }
     };

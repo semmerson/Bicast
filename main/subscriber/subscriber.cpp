@@ -23,8 +23,6 @@
 #include "config.h"
 
 #include "Node.h"
-#include "Socket.h"
-#include "SubInfo.h"
 #include "ThreadException.h"
 
 #include <semaphore.h>
@@ -53,7 +51,7 @@ struct RunPar {
         int      timeout;     ///< Timeout in ms for connecting to remote P2P server
         int      trackerSize; ///< Size of tracker object
         int      maxPeers;    ///< Maximum number of peers to have
-        int      evalTime;    ///< Time interval for evaluating peer performance
+        int      evalTime;    ///< Time interval for evaluating peer performance in seconds
         P2pArgs(const SockAddr& addr,
                 const int       acceptQSize,
                 const int       timeout,
@@ -82,7 +80,7 @@ struct RunPar {
         : logLevel(LogLevel::NOTE)
         , pubAddr()
         , mcastIface("0.0.0.0") // Might get changed to match family of multicast group
-        , p2p(SockAddr(), 8, 15000, 100, 8, 60)
+        , p2p(SockAddr(), 8, 15000, 100, 8, 300)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
     {}
 };
@@ -396,11 +394,11 @@ static SubNode::Pimpl createSubNode()
             runPar.p2p.srvr.acceptQSize, runPar.p2p.timeout, runPar.p2p.maxPeers,
             runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
 
-    LOG_DEBUG("Sending P2P server's address (" + subNode->getP2pSrvrAddr().to_string() +
-            ") to publisher (" + runPar.pubAddr.to_string() + ")");
+    LOG_DEBUG("Sending P2P server's address " + subNode->getP2pSrvrAddr().to_string() +
+            " to publisher " + runPar.pubAddr.to_string());
     if (!subNode->getP2pSrvrAddr().write(xprt))
-        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher (" +
-                runPar.pubAddr.to_string() + ")");
+        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher " +
+                runPar.pubAddr.to_string());
 
     return subNode;
 }

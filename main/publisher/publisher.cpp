@@ -23,7 +23,6 @@
 #include "config.h"
 
 #include "Node.h"
-#include "SubInfo.h"
 #include "ThreadException.h"
 
 #include <inttypes.h>
@@ -60,7 +59,7 @@ struct RunPar {
         , maxSegSize(1444)
         , srvr(SockAddr("0.0.0.0:38800"), DEF_LISTEN_SIZE)
         , mcast(SockAddr("232.1.1.1:38800"), InetAddr())
-        , p2p(SockAddr(), 8, 8, 100, 60)
+        , p2p(SockAddr(), 8, 8, 100, 300)
         , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
     {
         mcast.srcAddr = UdpSock(mcast.dstAddr).getLclAddr().getInetAddr();

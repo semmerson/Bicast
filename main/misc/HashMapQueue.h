@@ -24,6 +24,7 @@
 
 #include "error.h"
 
+#include <functional>
 #include <iterator>
 #include <unordered_map>
 

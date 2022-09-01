@@ -124,6 +124,21 @@ public:
      * @see `DataSeg::operator bool()`
      */
     DataSeg getDataSeg(const DataSegId segId) const;
+
+    /**
+     * Returns a set of this instance's identifiers of complete products minus those of another set.
+     *
+     * @param[in]  other    Other set of product identifiers to be subtracted from this instance
+     * @return              This instance's identifiers minus those of the other set
+     */
+    ProdIdSet::Pimpl subtract(const ProdIdSet::Pimpl other) const;
+
+    /**
+     * Returns the set of identifiers of complete products.
+     *
+     * @return             Set of complete product identifiers
+     */
+    ProdIdSet::Pimpl getProdIds() const;
 };
 
 /******************************************************************************/
@@ -159,27 +174,6 @@ public:
      * @retval `false`  This instance is not valid
      */
     operator bool() const noexcept;
-
-    /**
-     * Links to a file (which could be a directory) that's outside the
-     * repository. The file or files will be eventually referenced by
-     * `getNextProd()`.
-     *
-     * @param[in] filePath  Pathname of outside file or directory
-     * @param[in] prodName  Name of product or product-prefix
-     * @see `getNextProd()`
-     */
-    void link(
-            const std::string& filePath,
-            const std::string& prodName);
-
-    /**
-     * Returns information on the next product to publish. Blocks until one is
-     * ready.
-     *
-     * @return Information on the next product to publish
-     */
-    ProdInfo getNextProd() const;
 };
 
 /******************************************************************************/
@@ -206,7 +200,7 @@ public:
      */
     SubRepo(const std::string& rootPathname,
             const size_t       maxOpenFiles,
-            const int          keepTime);
+            const int          keepTime = 3600);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -241,13 +235,6 @@ public:
      * @cancellationpoint      No
      */
     bool save(DataSeg dataSeg) const;
-
-    /**
-     * Returns information on the next data-product to process. Blocks until one is available.
-     *
-     * @return Information on the next completed data-product
-     */
-    ProdInfo getNextProd() const;
 
     /**
      * Indicates if product-information exists.

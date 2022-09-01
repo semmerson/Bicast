@@ -87,6 +87,23 @@ public:
     virtual void waitForPeer() = 0;
 
     /**
+     * Returns a set of this instance's identifiers of complete products minus those of another set.
+     *
+     * @param[in]  other    Other set of product identifiers to be subtracted from the ones this
+     *                      instance has
+     * @return              This instance's identifiers minus those of the other set
+     */
+    virtual ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const =0;
+
+
+    /**
+     * Returns the set of identifiers of complete products.
+     *
+     * @return             Set of complete product identifiers
+     */
+    virtual ProdIdSet::Pimpl getProdIds() const =0;
+
+    /**
      * Receives a request for information on a product.
      *
      * @param[in] request      Which product
@@ -167,23 +184,6 @@ public:
      * Destroys.
      */
     virtual ~PubNode() noexcept {}
-
-    /**
-     * Links to a file (which could be a directory) that's outside the
-     * repository. All regular files will be published.
-     *
-     * @param[in] pathname       Absolute pathname (with no trailing '/') of the
-     *                           file or directory to be linked to
-     * @param[in] prodName       Product name if the pathname references a file
-     *                           and Product name prefix if the pathname
-     *                           references a directory
-     * @throws InvalidArgument  `pathname` is empty or a relative pathname
-     * @throws InvalidArgument  `prodName` is invalid
-     */
-    virtual void link(
-            const std::string& pathname,
-            const std::string& prodName) {
-    }
 };
 
 /**

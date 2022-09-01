@@ -43,8 +43,7 @@ public:
             const char*       func,
             const std::string msg);
 
-#define INVALID_ARGUMENT(msg) InvalidArgument(__FILE__, __LINE__, __func__, \
-        (msg))
+#define INVALID_ARGUMENT(msg) InvalidArgument(__FILE__, __LINE__, __func__, (msg))
 };
 
 class LogicError : public std::logic_error

@@ -53,13 +53,13 @@ protected:
         , relFilePath(std::string("foo/bar/") + filename)
     {
         char buf[PATH_MAX];
-        hycast::rmDirTree(testDir);
-        hycast::ensureDir(rootDir);
+        hycast::FileUtil::rmDirTree(testDir);
+        hycast::FileUtil::ensureDir(rootDir);
     }
 
     virtual ~WatcherTest()
     {
-        hycast::rmDirTree(rootDir);
+        hycast::FileUtil::rmDirTree(rootDir);
     }
 
     // If the constructor and destructor are not enough for setting up
@@ -77,7 +77,7 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
 
     void createFile(const std::string pathname) {
-        hycast::ensureParent(pathname);
+        hycast::FileUtil::ensureParent(pathname);
         const int fd = ::open(pathname.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
         ASSERT_NE(-1, fd);
         ::close(fd);
@@ -124,7 +124,7 @@ TEST_F(WatcherTest, AddSymbolicLink)
             &watcher, &linkPath);
 
     createFile(filePath);
-    hycast::ensureParent(linkPath);
+    hycast::FileUtil::ensureParent(linkPath);
     ASSERT_NE(-1, ::symlink(filePath.data(), linkPath.data()));
 
     thread.join();
@@ -140,7 +140,7 @@ TEST_F(WatcherTest, AddHardLink)
             &watcher, &linkPath);
 
     createFile(filePath);
-    hycast::ensureParent(linkPath);
+    hycast::FileUtil::ensureParent(linkPath);
     ASSERT_NE(-1, ::link(filePath.data(), linkPath.data()));
 
     thread.join();

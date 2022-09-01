@@ -40,7 +40,7 @@ class RepositoryTest : public ::testing::Test
 {
 protected:
     const std::string     testDir;
-    const std::string     rootDir;
+    const std::string     repoDir;
     std::string           prodName;
     const std::string     filePath;
     hycast::ProdId        prodId;
@@ -53,7 +53,7 @@ protected:
 
     RepositoryTest()
         : testDir("/tmp/Repository_test")
-        , rootDir(testDir + "/repo")
+        , repoDir(testDir + "/repo")
         , prodName{"foo/bar/product.dat"}
         , filePath(testDir + "/" + prodName)
         , prodId{prodName}
@@ -65,12 +65,12 @@ protected:
         , dataSeg(segId, prodSize, memData)
     {
         hycast::DataSeg::setMaxSegSize(sizeof(memData));
-        hycast::rmDirTree(testDir);
-        hycast::ensureDir(hycast::dirname(filePath));
+        hycast::FileUtil::rmDirTree(testDir);
+        hycast::FileUtil::ensureDir(hycast::FileUtil::dirname(filePath));
     }
 
     ~RepositoryTest() {
-        hycast::rmDirTree(testDir);
+        hycast::FileUtil::rmDirTree(testDir);
     }
 
 public:
@@ -85,28 +85,31 @@ public:
     }
 };
 
+#if 1
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
-    hycast::PubRepo pubRepo{rootDir, segSize, 5};
-    hycast::SubRepo subRepo{rootDir, segSize, 5};
+    hycast::PubRepo pubRepo{repoDir, 5};
+    hycast::SubRepo subRepo{repoDir, 5};
 }
+#endif
 
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    hycast::SubRepo repo(rootDir, segSize, 5);
+    hycast::SubRepo repo(repoDir, 5);
     ASSERT_FALSE(repo.getProdInfo(prodId));
     ASSERT_TRUE(repo.save(prodInfo));
     auto actual = repo.getProdInfo(prodId);
-    ASSERT_EQ(true, actual);
+    EXPECT_TRUE(actual);
     EXPECT_EQ(prodInfo, actual);
 }
 
+#if 1
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    hycast::SubRepo repo(rootDir, segSize, 5);
+    hycast::SubRepo repo(repoDir, 5);
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
@@ -123,7 +126,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    hycast::SubRepo repo(rootDir, segSize, 5);
+    hycast::SubRepo repo(repoDir, 5);
 
     ASSERT_TRUE(repo.save(dataSeg));
     ASSERT_TRUE(repo.save(prodInfo));
@@ -147,8 +150,10 @@ TEST_F(RepositoryTest, CreatProdForSending)
     ASSERT_EQ(0, ::close(fd));
 
     // Create the publisher's repository and tell it about the file
-    hycast::PubRepo repo(rootDir, segSize, 5);
-    repo.link(filePath, prodInfo.getName());
+    hycast::PubRepo repo(repoDir, 5);
+    const auto repoProdPath = repoDir + '/' + prodName;
+    FileUtil::ensureParent(repoProdPath);
+    FileUtil::hardLink(filePath, repoProdPath);
 
     // Verify repository access
     try {
@@ -166,9 +171,50 @@ TEST_F(RepositoryTest, CreatProdForSending)
     }
 }
 
+// Tests subtracting product IDs from what the repository has.
+TEST_F(RepositoryTest, Subtract)
+{
+    hycast::SubRepo  repo(repoDir, 5);
+    ProdIdSet::Pimpl other{new ProdIdSet()};
+    ProdIdSet::Pimpl prodIds{};
+
+    prodIds = repo.subtract(other); // empty - empty -> empty
+    EXPECT_EQ(0, prodIds->size());
+
+    other->emplace(prodId);
+    prodIds = repo.subtract(other); // empty - prodId -> empty
+    EXPECT_EQ(0, prodIds->size());
+
+    ASSERT_TRUE(repo.save(prodInfo));
+    ASSERT_TRUE(repo.save(dataSeg));
+    prodIds = repo.subtract(other); // prodId - prodId -> empty
+    EXPECT_EQ(0, prodIds->size());
+
+    other->clear();
+    prodIds = repo.subtract(other); // prodId - empty -> prodId
+    EXPECT_EQ(1, prodIds->size());
+    EXPECT_EQ(prodId, *prodIds->begin());
+}
+
+// Tests getting the set of complete product identifiers
+TEST_F(RepositoryTest, getProdIds)
+{
+    hycast::SubRepo repo(repoDir, 5);
+    ProdIdSet::Pimpl prodIds{};
+
+    prodIds = repo.getProdIds(); // empty
+    EXPECT_EQ(0, prodIds->size());
+
+    ASSERT_TRUE(repo.save(prodInfo));
+    ASSERT_TRUE(repo.save(dataSeg));
+    prodIds = repo.getProdIds(); // prodId
+    EXPECT_EQ(1, prodIds->size());
+    EXPECT_EQ(prodId, *prodIds->begin());
+}
+
 TEST_F(RepositoryTest, Performance)
 {
-    hycast::SubRepo repo(rootDir, segSize, 5);
+    hycast::SubRepo repo(repoDir, 5);
 
     const auto     start = steady_clock::now();
     const auto     numProds = 5000;
@@ -195,12 +241,14 @@ TEST_F(RepositoryTest, Performance)
             to_string(s.count()) + " seconds = " + to_string(numProds/s.count()) +
             " products per second");
 }
+#endif
 
 }  // namespace
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
   hycast::log_setLevel(hycast::LogLevel::DEBUG);
+  std::set_terminate(&hycast::terminate);
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

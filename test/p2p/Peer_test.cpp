@@ -128,6 +128,14 @@ public:
     void run() {};
     void halt() {};
 
+    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+        return ProdIdSet::Pimpl{};
+    }
+
+    ProdIdSet::Pimpl getProdIds() const override {
+        return ProdIdSet::Pimpl{};
+    }
+
     // Subscriber-side
     bool recvNotice(const ProdId notice, SockAddr rmtAddr) override
     {
@@ -147,8 +155,7 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(const ProdId request,
-                         SockAddr        rmtAddr) override
+    ProdInfo getDatum(const ProdId request, const SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(prodIds[prodRequestCount], request);
@@ -161,8 +168,7 @@ public:
     }
 
     // Publisher-side
-    DataSeg recvRequest(const DataSegId request,
-                        SockAddr        rmtAddr) override
+    DataSeg getDatum(const DataSegId request, const SockAddr rmtAddr) override
     {
         LOG_TRACE;
         EXPECT_EQ(segIds[segRequestCount], request);
@@ -327,9 +333,7 @@ TEST_F(PeerTest, DataExchange)
         srvrThread.join();
         // `pubPeer` is running
 
-        Tracker tracker{};
-        tracker.insert(pubAddr);
-        ASSERT_TRUE(pubPeer->notify(tracker));
+        ASSERT_TRUE(pubPeer->add(pubAddr));
 
         // Start an exchange
         ASSERT_TRUE(notify(pubPeer));

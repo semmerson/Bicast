@@ -50,7 +50,7 @@ std::string FileUtil::makeAbsolute(const std::string& pathname)
     return std::string(::getcwd(cwd, sizeof(cwd))) + "/" + pathname;
 }
 
-std::string FileUtil::basename(const std::string& pathname) noexcept
+std::string FileUtil::filename(const std::string& pathname) noexcept
 {
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
@@ -59,6 +59,7 @@ std::string FileUtil::basename(const std::string& pathname) noexcept
 
 std::string FileUtil::dirname(const std::string& pathname) noexcept
 {
+    // Workaround `dirname()` not being re-entrant
     char buf[PATH_MAX];
     ::strncpy(buf, pathname.data(), sizeof(buf))[sizeof(buf)-1] = 0;
     return std::string(::dirname(buf));
@@ -66,12 +67,12 @@ std::string FileUtil::dirname(const std::string& pathname) noexcept
 
 void FileUtil::trimPathname(std::string& pathname) noexcept
 {
-    pathname = dirname(pathname) + '/' +  basename(pathname);
+    pathname = dirname(pathname) + '/' +  filename(pathname);
 }
 
 size_t FileUtil::getSize(const std::string& pathname)
 {
-    struct stat statBuf;
+    struct ::stat    statBuf;
 
     if (::stat(pathname.data(), &statBuf))
         throw SYSTEM_ERROR(std::string("stat() failure on \"") + pathname + "\"");
@@ -79,12 +80,13 @@ size_t FileUtil::getSize(const std::string& pathname)
     return statBuf.st_size;
 }
 
-struct stat& FileUtil::lstat(
+struct ::stat& FileUtil::statNoFollow(
         const std::string& pathname,
-        struct stat&       statBuf)
+        struct ::stat&     statBuf)
 {
     if (::stat(pathname.data(), &statBuf))
-        throw SYSTEM_ERROR("::stat() failure");
+        throw SYSTEM_ERROR("::stat() failure on file \"" + pathname + "\"");
+    return statBuf;
 }
 
 /**
@@ -108,8 +110,8 @@ struct stat FileUtil::getStat(
         throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
 
     try {
-        struct stat statBuf;
-        int         status = ::fstat(fd, &statBuf);
+        struct ::stat statBuf;
+        int           status = ::fstat(fd, &statBuf);
 
         if (status)
             throw SYSTEM_ERROR("stat() failure");
@@ -123,12 +125,29 @@ struct stat FileUtil::getStat(
     }
 }
 
+void FileUtil::setOwnership(
+        const String& pathname,
+        const uid_t   uid,
+        const gid_t   gid)
+{
+    if (::chown(pathname.data(), uid, gid))
+        throw SYSTEM_ERROR("::chown() failure on file \"" + pathname + "\"");
+}
+
+void FileUtil::setProtection(
+        const String& pathname,
+        const mode_t  protMask)
+{
+    if (::chmod(pathname.data(), protMask))
+        throw SYSTEM_ERROR("::chmod() failure on file \"" + pathname + "\"");
+}
+
 SysTimePoint& FileUtil::getModTime(
         const std::string& pathname,
         SysTimePoint&      modTime)
 {
-    struct stat statBuf;
-    FileUtil::lstat(pathname, statBuf); // Doesn't follow symlinks
+    struct ::stat statBuf;
+    FileUtil::statNoFollow(pathname, statBuf); // Doesn't follow symlinks
     modTime = SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
             std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
     return modTime;
@@ -151,7 +170,7 @@ void FileUtil::setModTime(
     struct timespec times[2];
     times[0].tv_nsec = UTIME_OMIT;
     times[1].tv_sec = SysClock::to_time_t(modTime);
-    times[1].tv_nsec = duration_cast<std::chrono::nanoseconds>(
+    times[1].tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(
             modTime - SysClock::from_time_t(times[1].tv_sec)).count();
     if (::utimensat(rootFd, pathname.data(), times, followSymLinks ? 0 : AT_SYMLINK_NOFOLLOW))
         throw SYSTEM_ERROR("::utimensat() failure");
@@ -166,7 +185,8 @@ void FileUtil::setModTime(
 
 off_t FileUtil::getFileSize(const std::string& pathname)
 {
-    return lstat(pathname).st_size;
+    struct ::stat statBuf;
+    return statNoFollow(pathname, statBuf).st_size;
 }
 
 off_t FileUtil::getFileSize(
@@ -190,7 +210,7 @@ const std::string& FileUtil::ensureDir(
         const std::string& pathname,
         const mode_t       mode)
 {
-    struct stat statBuf;
+    struct ::stat statBuf;
 
     if (::stat(pathname.data(), &statBuf)) {
         if (errno != ENOENT)
@@ -210,7 +230,7 @@ const std::string& FileUtil::ensureDir(
         const std::string& pathname,
         const mode_t       mode)
 {
-    struct stat statBuf;
+    struct ::stat statBuf;
 
     if (::fstatat(fd, pathname.data(), &statBuf, 0)) {
         if (errno != ENOENT)
@@ -233,6 +253,14 @@ void FileUtil::ensureParent(
     ensureDir(dirname(pathname), mode);
 }
 
+void FileUtil::hardLink(
+        const String& extantPath,
+        const String& linkPath)
+{
+    if (::link(extantPath.data(), linkPath.data()))
+        throw SYSTEM_ERROR("::link() failure from \"" + linkPath + "\" to \"" + linkPath + "\"");
+}
+
 void FileUtil::rmDirTree(const std::string& dirPath)
 {
     DIR* dir = ::opendir(dirPath.data());
@@ -250,10 +278,9 @@ void FileUtil::rmDirTree(const std::string& dirPath)
 
                 if (::strcmp(".", name) && ::strcmp("..", name)) {
                     const std::string subName = dirPath + "/" + name;
-                    struct stat       statBuf;
+                    struct ::stat     statBuf;
 
-                    if (::lstat(subName.data(), &statBuf))
-                        throw SYSTEM_ERROR(std::string("lstat() failure on \"") + subName + "\"");
+                    statNoFollow(subName, statBuf);
 
                     if (S_ISDIR(statBuf.st_mode)) {
                         rmDirTree(subName);
@@ -279,12 +306,41 @@ void FileUtil::rmDirTree(const std::string& dirPath)
 }
 
 void FileUtil::pruneEmptyDirPath(
+        const std::string& rootPathname,
+        const std::string& dirPathname)
+{
+    struct ::stat statBuf;
+    const auto    rootInode = statNoFollow(rootPathname, statBuf).st_ino;
+    std::string   dirPath(dirPathname);
+
+    for (;;) {
+        statNoFollow(dirPath, statBuf);
+
+        if (statBuf.st_ino == rootInode)
+            break; // Stop because at root directory
+
+        if (!S_ISDIR(statBuf.st_mode))
+            // Must be a symbolic link. Should first be removed by `removeFileAndPrune()` instead.
+            break;
+
+        auto status = ::rmdir(dirPath.data());
+        if (status) {
+            if (status == EEXIST || status == ENOTEMPTY)
+                break; // Stop because directory isn't empty
+            throw SYSTEM_ERROR(std::string("::rmdir() failure on directory \"") + dirPath + "\"");
+        }
+
+        dirPath = dirname(dirPath); // Repeat with parent directory
+    }
+}
+
+void FileUtil::pruneEmptyDirPath(
         const int     fd,
         std::string&& dirPath)
 {
-    struct stat statBuf;
-    if (::fstatat(fd, ".", &statBuf, 0))
-        throw SYSTEM_ERROR("fstatat() failure on fd-relative directory \".\"");
+    struct ::stat statBuf;
+    if (::fstat(fd, &statBuf))
+        throw SYSTEM_ERROR("fstat() failure on file-descriptor " + std::to_string(fd));
     const auto rootInode = statBuf.st_ino;
 
     for (;;) {
@@ -305,6 +361,16 @@ void FileUtil::pruneEmptyDirPath(
             dirPath = dirname(dirPath); // Repeat with parent directory
         }
     }
+}
+
+void FileUtil::removeFileAndPrune(
+        const std::string& rootPathname,
+        const std::string& pathname)
+{
+    if (::unlink(pathname.data()))
+        throw SYSTEM_ERROR("::unlink() failure on file \"" + pathname + "\"");
+
+    pruneEmptyDirPath(rootPathname, dirname(pathname));
 }
 
 void FileUtil::removeFileAndPrune(

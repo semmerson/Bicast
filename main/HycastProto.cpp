@@ -18,7 +18,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#define _XOPEN_SOURCE 700
 #include "config.h"
 
 #include "error.h"
@@ -26,10 +25,11 @@
 #include "HycastProto.h"
 #include "Xprt.h"
 
+#include <chrono>
 #include <climits>
 #include <cstdio>
 #include <cstring>
-#include <ctime>
+#include <time.h>
 #include <inttypes.h>
 #include <openssl11/openssl/sha.h>
 
@@ -117,7 +117,7 @@ std::string DataSegId::to_string(const bool withName) const
     return string + "{prodId=" + prodId.to_string() + ", offset=" + std::to_string(offset) + "}";
 }
 
-String DatumId::to_string() const {
+String Notice::to_string() const {
     switch (id) {
     case Id::DATA_SEG_ID:
         return dataSegId.to_string();
@@ -136,7 +136,7 @@ String DatumId::to_string() const {
     }
 }
 
-size_t DatumId::hash() const noexcept {
+size_t Notice::hash() const noexcept {
     return (id == Id::PROD_INDEX)
             ? prodId.hash()
             : (id == Id::DATA_SEG_ID)
@@ -144,12 +144,45 @@ size_t DatumId::hash() const noexcept {
                 : 0;
 }
 
-bool DatumId::operator==(const DatumId& rhs) const noexcept {
+bool Notice::operator==(const Notice& rhs) const noexcept {
     if (id != rhs.id)    return false;
     if (id == Id::UNSET) return true;
     return (id == Id::PROD_INDEX)
             ? prodId == rhs.prodId
             : dataSegId == rhs.dataSegId;
+}
+
+/******************************************************************************/
+
+/// Set of product identifiers
+
+void ProdIdSet::subtract(const Pimpl other) {
+    for (auto iter = other->begin(), stop = other->end(); iter != stop; ++iter)
+        erase(*iter);
+}
+
+bool ProdIdSet::write(Xprt xprt) const {
+    if (!xprt.write(static_cast<uint32_t>(size())))
+        return false;
+    for (auto iter = begin(), stop = end(); iter != stop; ++iter)
+        if (!iter->write(xprt))
+            return false;
+    return true;
+}
+
+bool ProdIdSet::read(Xprt xprt) {
+    uint32_t size;
+    if (!xprt.read(size))
+        return false;
+    clear();
+    reserve(size);
+    for (uint32_t i; i < size; ++i) {
+        ProdId prodId;
+        if (!prodId.read(xprt))
+            return false;
+        emplace(prodId);
+    }
+    return true;
 }
 
 /******************************************************************************/
@@ -197,8 +230,18 @@ public:
         String string;
         if (withName)
             string += "ProdInfo";
+
+        auto      secs = SysClock::to_time_t(creationTime);
+        struct tm tmStruct;
+        ::gmtime_r(&secs, &tmStruct);
+        char      iso8601[28]; // "YYYY-MM-DDThh:mm:ss.uuuuuuZ"
+        auto nbytes = ::strftime(iso8601, sizeof(iso8601), "%FT%T", &tmStruct);
+        long usecs = std::chrono::duration_cast<std::chrono::microseconds>(
+                creationTime - SysClock::from_time_t(secs)).count();
+        ::snprintf(iso8601+nbytes, sizeof(iso8601)-nbytes, ".%06ldZ", usecs);
+
         return string + "{prodId=" + prodId.to_string() + ", name=\"" + name +
-                "\", size=" + std::to_string(size) + ", created=" + creationTime.to_string() + "}";
+                "\", size=" + std::to_string(size) + ", created=" + iso8601 + "}";
     }
 
     bool write(Xprt xprt) const {
@@ -211,8 +254,11 @@ public:
             if (success) {
                 //LOG_DEBUG("Writing product size to %s", xprt.to_string().data());
                 success = xprt.write(size);
-                if (success)
-                    success = creationTime.write(xprt);
+                if (success) {
+                    uint64_t count = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            creationTime.time_since_epoch()).count();
+                    success = xprt.write(count);
+                }
             }
         }
         return success;
@@ -235,8 +281,12 @@ public:
                     name.assign(bytes, nbytes);
                     //LOG_DEBUG("Reading product size from %s", xprt.to_string().data());
                     success = xprt.read(size);
-                    if (success)
-                        success = creationTime.read(xprt);
+                    if (success) {
+                        uint64_t count;
+                        success = xprt.read(count);
+                        if (success)
+                            creationTime = SysTimePoint(SysClock::duration(count));
+                    }
                 }
             }
         }

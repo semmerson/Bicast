@@ -5,7 +5,7 @@
  *  Created on: Jun 29, 2019
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2022 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,8 @@ class Tracker::Impl final : public XprtAble
      * @retval    `false`   Address was not added because it already exists
      */
     bool add(const SockAddr& srvrAddr) {
+        LOG_ASSERT(!mutex.try_lock());
+
         auto pair = map.emplace(srvrAddr, Links(tail));
         if (!pair.second)
             return false;
@@ -115,10 +117,12 @@ public:
     }
 
     std::string to_string() const {
+        Guard guard(mutex);
         return "{size=" + std::to_string(map.size()) + "}";
     }
 
     size_t size() const {
+        Guard guard(mutex);
         return map.size();
     }
 
@@ -161,9 +165,17 @@ public:
     SockAddr removeHead() {
         Lock lock{mutex};
         cond.wait(lock, [&]{return !map.empty();});
-        SockAddr srvrAddr = head;
+        auto newHead = map.at(head).next;
+        if (newHead) {
+            map.at(newHead).prev = SockAddr();
+        }
+        else {
+            tail = SockAddr();
+        }
         map.erase(head);
-        return srvrAddr;
+        auto oldHead = head;
+        head = newHead;
+        return oldHead;
     }
 
     bool write(Xprt xprt) const {
@@ -199,6 +211,7 @@ public:
     }
 };
 
+// TODO: Make capacity user-configurable
 Tracker::Tracker(const size_t capacity)
     : pImpl{new Impl(capacity)} {
 }

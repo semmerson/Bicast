@@ -23,15 +23,17 @@
 #ifndef MAIN_MISC_FILEUTIL_H_
 #define MAIN_MISC_FILEUTIL_H_
 
-#include "HycastProto.h"
+#include "CommonTypes.h"
 
-#include <string>
 #include <chrono>
+#include <string>
+#include <sys/stat.h>
 
 namespace hycast {
 
 class FileUtil
 {
+public:
     /**
      * Indicates if a pathname is absolute or not.
      *
@@ -53,7 +55,7 @@ class FileUtil
      */
     static std::string makeAbsolute(const std::string& pathname);
 
-    static std::string basename(const std::string& pathname) noexcept;
+    static std::string filename(const std::string& pathname) noexcept;
 
     static std::string dirname(const std::string& pathname) noexcept;
 
@@ -66,14 +68,15 @@ class FileUtil
      *
      * @param[in]  pathname     Pathname of existing file
      * @param[out] statBuf      Metadata of the file
+     * @return                  Reference to `statBuf`
      * @throws     SystemError  `::stat()` failure
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
-    static void lstat(
+    static struct ::stat& statNoFollow(
             const std::string& pathname,
-            struct stat&       statBuf);
+            struct ::stat&     statBuf);
 
     /**
      * Returns the statistics of a file.
@@ -90,6 +93,30 @@ class FileUtil
     static struct stat getStat(
             const int          rootFd,
             const std::string& pathname);
+
+    /**
+     * Sets the ownership of an existing file.
+     *
+     * @param[in] pathname     Pathname of file
+     * @param[in] uid          User ID
+     * @param[in] gid          Group ID
+     * @throw     SystemError  `::chown()` failure on file
+     */
+    static void setOwnership(
+            const String& pathname,
+            const uid_t   uid,
+            const gid_t   gid);
+
+    /**
+     * Sets the file-protection bits of an existing file.
+     *
+     * @param[in] pathname     Pathname of file
+     * @param[in] protMask     Protection mask (e.g., 0644)
+     * @throw     SystemError  `::chmod()` failure on file
+     */
+    static void setProtection(
+            const String& pathname,
+            const mode_t  protMask);
 
     /**
      * Returns the modification time of a file.
@@ -223,13 +250,38 @@ class FileUtil
             const mode_t       mode = 0777);
 
     /**
+     * Creates a hard link to a file.
+     *
+     * @param[in] extantPath  Pathname of existing file
+     * @param[in] linkPath    Pathname of link. Its parent directory must exist.
+     * @see `ensureParent()`
+     */
+    static void hardLink(
+            const String& extantPath,
+            const String& linkPath);
+
+    /**
      * Removes a directory tree. The given directory tree is recursively traversed depth first. All
-     * files in the tree are removed, including the root directory. Symbolic links are removed but not
-     * the file the link references.
+     * files in the tree are removed, including the root directory. Symbolic links are removed but
+     * not the file the link references.
      *
      * @param[in] pathname  Root of directory hierarchy
      */
     static void rmDirTree(const std::string& dirPath);
+
+    /**
+     * Deletes empty directories starting with a leaf directory and progressing towards a root
+     * directory. Stops when a non-empty directory or the root directory is encountered. The root
+     * directory is not deleted.
+     *
+     * @param[in] rootPathname     Pathname of the root directory
+     * @param[in,out] dirPathname  Pathname of the leaf directory at which to start
+     * @throw SystemError          A directory couldn't be `stat()`ed
+     * @throw SystemError          A directory couldn't be deleted
+     */
+    static void pruneEmptyDirPath(
+            const std::string& rootPathname,
+            const std::string& dirPathname);
 
     /**
      * Deletes empty directories starting with a leaf directory and progressing towards a root
@@ -244,6 +296,21 @@ class FileUtil
     static void pruneEmptyDirPath(
             const int      fd,
             std::string&& dirPath);
+
+    /**
+     * Deletes a file and any empty directories on the path from the file to a root directory. The
+     * root directory is not deleted.
+     *
+     * @param rootPathname  Pathname of the root directory
+     * @param pathname      Pathname of the file to be deleted
+     * @throw SystemError   The file couldn't be deleted
+     * @throw SystemError   A directory couldn't be `stat()`ed
+     * @throw SystemError   A directory couldn't be deleted
+     * @see `pruneEmptyDirPath()`
+     */
+    static void removeFileAndPrune(
+            const std::string& rootPathname,
+            const std::string& pathname);
 
     /**
      * Deletes a file and any empty directories on the path from a root directory to the file. The

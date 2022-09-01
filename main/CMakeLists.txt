@@ -17,6 +17,7 @@ endif()
 add_library(main OBJECT
         HycastProto.cpp HycastProto.h
 )
+include_directories(.)
 include_directories(misc)
 include_directories(inet)
 include_directories(p2p)

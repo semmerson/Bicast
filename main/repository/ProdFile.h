@@ -46,16 +46,16 @@ public:
     ProdFile() =default;
 
     /**
-     * Constructs a publisher's product-file from an existing file.
+     * Constructs a product-file from an existing file. The instance is not open.
      *
      * @param[in] pathname    Pathname of product-file
      */
     ProdFile(const String& pathname);
 
     /**
-     * Constructs a subscriber's product-file. Creates a new, underlying file from
-     * product-information and any necessary antecedent directories. The file will have the given
-     * size and be zero-filled. The instance is open.
+     * Constructs a subscriber's product-file. Creates a new, underlying file -- and any necessary
+     * antecedent directories --  from product-information. The file will have the given size and be
+     * zero-filled. The instance is not open.
      *
      * @param[in] pathname         Pathname of the file
      * @param[in] prodSize         Product size in bytes
@@ -88,14 +88,16 @@ public:
     ProdSize getFileSize() const noexcept;
 
     /**
-     * Opens the underlying file. Idempotent.
-     */
-    void open() const;
-
-    /**
      * Closes the underlying file. Idempotent.
      */
     void close() const;
+
+    /**
+     * Returns the last modification time of the underlying file.
+     *
+     * @return Last modification time of the underlying file
+     */
+    SysTimePoint getModTime() const;
 
     /**
      * Returns the last modification time of the underlying file.
@@ -126,7 +128,8 @@ public:
     virtual bool exists(ProdSize offset) const;
 
     /**
-     * Returns a pointer to a data-segment within the product.
+     * Returns a pointer to a data-segment within the product. Opens the underlying file if
+     * necessary.
      *
      * @param[in] offset            Segment's offset in bytes
      * @retval                      Pointer to data
@@ -140,7 +143,7 @@ public:
     const char* getData(ProdSize offset) const;
 
     /**
-     * Saves a data-segment.
+     * Saves a data-segment. Opens the underlying file if necessary.
      *
      * @param[in] dataSeg      Data-segment to be saved
      * @retval    `true`       This item is new and was saved
@@ -152,14 +155,6 @@ public:
      * @cancellationpoint      Yes
      */
     bool save(const DataSeg& dataSeg) const;
-
-    /**
-     * Indicates if the underlying file is open.
-     *
-     * @retval `true`   The underlying file is open
-     * @retval `false`  The underlying file is not open
-     */
-    bool isOpen() const;
 
     /**
      * Indicates if the product is complete.

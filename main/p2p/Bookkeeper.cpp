@@ -20,12 +20,12 @@
  * limitations under the License.
  */
 
-#include <p2p/Trigger.h>
 #include "config.h"
 
 #include "Bookkeeper.h"
 #include "HycastProto.h"
 #include "logging.h"
+#include "Trigger.h"
 
 #include <climits>
 #include <list>
@@ -154,12 +154,12 @@ public:
         RequestCount  maxCount = -1;
         Guard         guard(mutex);
 
-        for (auto& elt : numRequests) {
-            const auto count = elt.second;
+        for (auto iter = numRequests.begin(), stop = numRequests.end(); iter != stop; ++iter) {
+            const auto count = iter->second;
 
             if (count && count > maxCount) {
                 maxCount = count;
-                peer = elt.first;
+                peer = iter->first;
             }
         }
 
@@ -169,8 +169,8 @@ public:
     void reset() noexcept override {
         Guard guard(mutex);
 
-        for (auto& elt : numRequests)
-            elt.second = 0;
+        for (auto iter = numRequests.begin(), stop = numRequests.end(); iter != stop; ++iter)
+            iter->second = 0;
     }
 };
 
@@ -186,7 +186,7 @@ Bookkeeper::Pimpl Bookkeeper::createPub(const int maxPeers) {
 class SubBookkeeper final : public BookkeeperImpl
 {
     using Rating     = uint_fast32_t;
-    using DatumIdSet = std::set<DatumId>;
+    using DatumIdSet = std::set<Notice>;
 
     struct PeerInfo {
         Rating     rating;   ///< Peer rating
@@ -209,7 +209,7 @@ class SubBookkeeper final : public BookkeeperImpl
         std::unordered_set<Peer::Pimpl> set;
         std::list<Peer::Pimpl>          list;
     };
-    using DatumPeersMap = std::unordered_map<DatumId, DatumPeers>;
+    using DatumPeersMap = std::unordered_map<Notice, DatumPeers>;
 
     /// Map of peer -> peer entry
     PeerInfoMap peerInfoMap;
@@ -243,7 +243,7 @@ class SubBookkeeper final : public BookkeeperImpl
      */
     bool shouldNotify(
             Peer::Pimpl   peer,
-            const DatumId datumId) const
+            const Notice datumId) const
     {
         Guard guard(mutex);
 
@@ -271,7 +271,7 @@ class SubBookkeeper final : public BookkeeperImpl
      */
     bool shouldRequest(
             Peer::Pimpl   peer,
-            const DatumId datumId)
+            const Notice datumId)
     {
         Guard guard(mutex);
 
@@ -297,20 +297,18 @@ class SubBookkeeper final : public BookkeeperImpl
     }
 
     /**
-     * Process reception of a datum. The rating of the associated peer is
-     * increased.
+     * Process reception of a datum. The rating of the associated peer is increased.
      *
      * @param[in] peer        Peer that received the datum
      * @param[in] datumId     Datum identifier
      * @retval    `true`      Success
-     * @retval    `false`     Datum is unknown or remote peer didn't announce
-     *                        that it had the datum
+     * @retval    `false`     Datum is unexpected
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
     bool received(Peer::Pimpl   peer,
-                  const DatumId datumId)
+                  const Notice datumId)
     {
         bool   success = false;
         Guard  guard(mutex);
@@ -325,7 +323,7 @@ class SubBookkeeper final : public BookkeeperImpl
         return success;
     }
 
-    void erase(const DatumId datumId) {
+    void erase(const Notice datumId) {
         Guard  guard(mutex);
         if (datumPeersMap.count(datumId)) {
             for (auto peer : datumPeersMap[datumId].list)
@@ -345,7 +343,7 @@ class SubBookkeeper final : public BookkeeperImpl
      */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl badPeer,
-            const DatumId     datumId) {
+            const Notice     datumId) {
         Guard        guard{mutex};
         Peer::Pimpl  altPeer;
 
@@ -441,55 +439,55 @@ public:
     bool shouldNotify(
             Peer::Pimpl  peer,
             const ProdId prodId) const override {
-        return shouldNotify(peer, DatumId(prodId));
+        return shouldNotify(peer, Notice(prodId));
     }
 
     bool shouldNotify(
             Peer::Pimpl     peer,
             const DataSegId dataSegId) const override {
-        return shouldNotify(peer, DatumId(dataSegId));
+        return shouldNotify(peer, Notice(dataSegId));
     }
 
     bool shouldRequest(
             Peer::Pimpl  peer,
             const ProdId prodId) override {
-        return shouldRequest(peer, DatumId(prodId));
+        return shouldRequest(peer, Notice(prodId));
     }
 
     bool shouldRequest(
             Peer::Pimpl     peer,
             const DataSegId dataSegId) override {
-        return shouldRequest(peer, DatumId(dataSegId));
+        return shouldRequest(peer, Notice(dataSegId));
     }
 
     bool received(Peer::Pimpl  peer,
                   const ProdId prodId) override {
-        return received(peer, DatumId{prodId});
+        return received(peer, Notice{prodId});
     }
 
     bool received(Peer::Pimpl     peer,
                   const DataSegId dataSegId) override {
-        return received(peer, DatumId{dataSegId});
+        return received(peer, Notice{dataSegId});
     }
 
     void erase(const ProdId prodId) override {
-        erase(DatumId(prodId));
+        erase(Notice(prodId));
     }
 
     void erase(const DataSegId dataSegId) override {
-        erase(DatumId(dataSegId));
+        erase(Notice(dataSegId));
     }
 
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
             const ProdId      prodId) override {
-        return getAltPeer(peer, DatumId{prodId});
+        return getAltPeer(peer, Notice{prodId});
     }
 
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
             const DataSegId   dataSegId) override {
-        return getAltPeer(peer, DatumId{dataSegId});
+        return getAltPeer(peer, Notice{dataSegId});
     }
 
     /**
@@ -502,9 +500,9 @@ public:
     {
         static Peer::Pimpl noPeer{};
         Peer::Pimpl        peer{};
-        Rating      minRating = ~(Rating)0;
-        bool        valid = false;
-        Guard       guard(mutex);
+        Rating             minRating = ~(Rating)0;
+        bool               valid = false;
+        Guard              guard(mutex);
 
         for (auto& elt : peerInfoMap) {
             if (elt.first->isClient()) {

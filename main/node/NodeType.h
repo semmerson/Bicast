@@ -26,13 +26,76 @@
 #ifndef MAIN_NODE_NODETYPE_H_
 #define MAIN_NODE_NODETYPE_H_
 
+#include "InetAddr.h"
+#include "Xprt.h"
+
+#include <atomic>
+
 namespace hycast {
 
-enum NodeType
+class NodeType : public XprtAble
 {
-    PUBLISHER,
-    PATH_TO_PUBLISHER,
-    NO_PATH_TO_PUBLISHER
+public:
+    using Type = uint8_t;
+
+private:
+    enum Mask : uint8_t {
+        PUBLISHER = 0x1,
+        PATH_TO_PUBLISHER = 0x2
+    };
+
+    std::atomic<uint8_t>  mask;
+
+public:
+    constexpr NodeType(const bool isPublisher)
+        : mask{static_cast<Type>(isPublisher ? PUBLISHER | PATH_TO_PUBLISHER : 0)}
+    {}
+
+    constexpr NodeType()
+        : NodeType{false}
+    {}
+
+    inline void setPathToPub(const bool pathToPub) noexcept {
+        mask.fetch_or(PATH_TO_PUBLISHER);
+    }
+
+    inline bool isPathToPub() const noexcept {
+        return mask.load() & PATH_TO_PUBLISHER;
+    }
+
+    inline std::string to_string() const {
+        return std::to_string(static_cast<Type>(mask));
+    }
+
+    inline bool isPublisher() const {
+        return mask.load() & PUBLISHER;
+    }
+
+    inline bool isSubscriber() const {
+        return !isPublisher();
+    }
+
+    inline bool hasPathToPub() const {
+        return mask.load() & (PUBLISHER | PATH_TO_PUBLISHER);
+    }
+
+    inline operator Type() const noexcept {
+        return static_cast<Type>(mask);
+    }
+
+    inline bool operator==(const NodeType& rhs) const noexcept {
+        return mask.load() == rhs.mask.load();
+    }
+
+    inline bool operator!=(const NodeType& rhs) const noexcept {
+        return !(*this == rhs);
+    }
+
+    inline bool write(Xprt xprt) const override {
+        return xprt.write(static_cast<Type>(mask));
+    }
+
+    bool read(Xprt xprt) override;
 };
 
 } // namespace

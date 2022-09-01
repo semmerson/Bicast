@@ -125,6 +125,15 @@ public:
     virtual void stop() =0;
 
     /**
+     * Notifies the remote as to whether this local end is a path to the publisher.
+     *
+     * @param[in] amPubPath  Is this end a path to the publisher?
+     * @retval    `true`     Success
+     * @retval    `false`    Lost connection
+     */
+    virtual bool notifyAmPubPath(const bool amPubPath) =0;
+
+    /**
      * Adds a P2P-server to the remote's pool.
      *
      * @param[in] srvrAddr  Socket address of peer-server
@@ -220,6 +229,14 @@ public:
      * @retval    `false`    Lost connection
      */
     virtual bool send(const DataSeg dataSeg) =0;
+
+    /**
+     * Sends identifiers of products to the remote peer.
+     *
+     * @param[in] prodIds  Product identifiers
+     * @return
+     */
+    virtual bool send(const ProdIdSet::Pimpl prodIds) =0;
 };
 
 /******************************************************************************/

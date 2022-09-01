@@ -154,6 +154,14 @@ public:
 
     void waitForPeer() {}
 
+    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+        return ProdIdSet::Pimpl{};
+    }
+
+    ProdIdSet::Pimpl getProdIds() const override {
+        return ProdIdSet::Pimpl{};
+    }
+
     bool shouldRequest(const ProdId index) override {
         EXPECT_TRUE(index == this->prodId);
         orState(PROD_NOTICE_RCVD);
@@ -185,7 +193,7 @@ public:
 
     void recvP2pData(const ProdInfo prodInfo) {
         EXPECT_EQ(this->prodInfo, prodInfo);
-        //LOG_DEBUG("numProdInfos=%d, subscriberCount=%d", (int)numProdInfos, (int)subscriberCount);
+        LOG_DEBUG("numProdInfos=%d, subscriberCount=%d", (int)numProdInfos, (int)subscriberCount);
         if (++numProdInfos == subscriberCount) {
             //LOG_DEBUG("Setting product information received");
             orState(PROD_INFO_RCVD);
@@ -196,7 +204,7 @@ public:
         const auto offset = dataSeg.getId().offset;
         DataSeg expect(dataSeg.getId(), prodInfo.getSize(), prodData+offset);
         EXPECT_EQ(expect, dataSeg);
-        //LOG_DEBUG("numDataSegs=%d, subscriberCount=%d", (int)numDataSegs, (int)subscriberCount);
+        LOG_DEBUG("numDataSegs=%d, subscriberCount=%d", (int)numDataSegs, (int)subscriberCount);
         if (offset+SEG_SIZE >= prodInfo.getSize() && ++numDataSegs == subscriberCount) {
             //LOG_DEBUG("Setting data segment received");
             orState(SEG_RCVD);

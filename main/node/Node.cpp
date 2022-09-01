@@ -24,16 +24,10 @@
 
 #include "Node.h"
 
-#include "error.h"
-#include "HycastProto.h"
-#include "mcast.h"
-#include "P2pMgr.h"
-#include "Repository.h"
 #include "ThreadException.h"
 
 #include <semaphore.h>
 #include <semaphore.h>
-#include <SubInfo.h>
 #include <thread>
 
 namespace hycast {
@@ -449,7 +443,7 @@ public:
             const long     maxOpenFiles)
         : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, listenSize, evalTime))
         , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
-        , repo(PubRepo(repoRoot, maxSegSize, maxOpenFiles))
+        , repo(PubRepo(repoRoot, maxOpenFiles))
         , maxSegSize{maxSegSize}
     {}
 
@@ -478,22 +472,12 @@ public:
         NodeImpl::waitForPeer();
     }
 
-    /**
-     * Links to a regular file or directory that's outside the repository. All regular files will be
-     * published.
-     *
-     * @param[in] pathname       Absolute pathname (with no trailing '/') of the file or directory
-     *                           to be linked to
-     * @param[in] prodName       Product name if the pathname references a regular file and product
-     *                           name prefix if the pathname references a directory
-     * @throws LogicError        This instance doesn't support such linking
-     * @throws InvalidArgument  `pathname` is empty or a relative pathname
-     * @throws InvalidArgument  `prodName` is invalid
-     */
-    void link(
-            const std::string& pathname,
-            const std::string& prodName) override {
-        repo.link(pathname, prodName);
+    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+        return repo.subtract(other);
+    }
+
+    ProdIdSet::Pimpl getProdIds() const override {
+        return repo.getProdIds();
     }
 
     /**
@@ -683,6 +667,14 @@ public:
 
     void waitForPeer() override {
         NodeImpl::waitForPeer();
+    }
+
+    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+        return repo.subtract(other);
+    }
+
+    ProdIdSet::Pimpl getProdIds() const override {
+        return repo.getProdIds();
     }
 
     SockAddr getP2pSrvrAddr() const override {

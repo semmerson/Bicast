@@ -227,7 +227,7 @@ inline void log_fatal(const std::exception& ex) {
 #define LOG_SYSERR(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::ERROR)) { \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
+            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, "%s", \
                     strerror(errno)); \
             hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
                     __VA_ARGS__); \

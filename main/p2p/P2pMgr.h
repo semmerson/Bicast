@@ -1,23 +1,21 @@
 /**
- * This file declares the interface for a peer-to-peer manager. Such a manager
- * is called by peers to handle received PDU-s.
+ * This file declares the interface for a peer-to-peer manager. Such a manager is called by peers to
+ * handle received PDU-s.
  * 
  * @file:   P2pMgr.h
  * @author: Steven R. Emmerson
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #ifndef MAIN_P2P_P2PMGR_H_
@@ -62,7 +60,7 @@ public:
     ///< Peer-to-peer runtime parameters
     struct RunPar {
         struct Srvr {
-            SockAddr addr;       ///< Socket address
+            SockAddr addr;        ///< Socket address
             int      acceptQSize; ///< Size of `::listen()` queue
             Srvr(   const SockAddr addr,
                     const int      listenSize)
@@ -161,14 +159,53 @@ public:
     virtual SockAddr getSrvrAddr() const =0;
 
     /**
-     * Blocks until at least one remote peer has established a connection via
-     * the local peer-server. Useful for unit-testing.
+     * Blocks until at least one remote peer has established a connection via the local peer-server.
+     * Useful for unit-testing.
      */
     virtual void waitForSrvrPeer() =0;
 
     /**
-     * Notifies connected remote peers about the availability of product
-     * information.
+     * Receives notification as to whether a remote P2P node provides a path to the publisher.
+     *
+     * @param[in] havePubPath  Does the remote P2P node provide a path to the publisher?
+     * @param[in] rmtAddr      Socket address of associated remote peer
+     */
+    virtual void recvHavePubPath(
+            const bool     havePubPath,
+            const SockAddr rmtAddr) {};
+
+    /**
+     * Receives the address of a potential peer-server from a remote peer.
+     *
+     * @param[in] srvrAddr     Socket address of potential peer-server
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvAdd(const SockAddr p2pSrvr) {}; // Default implemented so mocks don't have to
+    /**
+     * Receives a set of potential peer servers from a remote peer.
+     *
+     * @param[in] tracker      Set of potential peer-servers
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvAdd(Tracker tracker) {};
+
+    /**
+     * Receives the address of a bad peer-server from a remote peer.
+     *
+     * @param[in] srvrAddr     Socket address of potential peer-server
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvRemove(const SockAddr p2pSrvr) {};
+    /**
+     * Receives a set of bad peer servers from a remote peer.
+     *
+     * @param[in] tracker      Set of bad peer-servers
+     * @param[in] rmtAddr      Socket address of remote peer
+     */
+    virtual void recvRemove(const Tracker tracker) {};
+
+    /**
+     * Notifies connected remote peers about the availability of product information.
      *
      * @param[in] prodInfo  Product information
      */
@@ -183,26 +220,42 @@ public:
     virtual void notify(const DataSegId dataSegId) =0;
 
     /**
-     * Receives a request for product information from a remote peer.
+     * Returns a set of this instance's identifiers of complete products minus those of another set.
      *
-     * @param[in] request      Which product
-     * @param[in] rmtAddr      Socket address of remote peer
-     * @return                 Product information. Will test false if it
-     *                         shouldn't be sent to remote peer.
+     * @param[in]  other    Other set of product identifiers to be subtracted from the ones this
+     *                      instance has
+     * @return              This instance's identifiers minus those of the other set
      */
-    virtual ProdInfo recvRequest(
-            const ProdId request,
-            const SockAddr  rmtAddr) =0;
+    virtual ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const =0;
+
     /**
-     * Receives a request for a data-segment from a remote peer.
+     * Returns the set of identifiers of complete products.
      *
-     * @param[in] request      Which data-segment
+     * @return             Set of complete product identifiers
+     */
+    virtual ProdIdSet::Pimpl getProdIds() const =0;
+
+    /**
+     * Returns information on a product. This might count against the remote peer.
+     *
+     * @param[in] prodId       Which product
      * @param[in] rmtAddr      Socket address of remote peer
      * @return                 Product information. Will test false if it
      *                         shouldn't be sent to remote peer.
      */
-    virtual DataSeg  recvRequest(
-            const DataSegId request,
+    virtual ProdInfo getDatum(
+            const ProdId   prodId,
+            const SockAddr rmtAddr) =0;
+    /**
+     * Returns a data-segment. This might count against the remote peer.
+     *
+     * @param[in] dataSegId    Which data-segment
+     * @param[in] rmtAddr      Socket address of remote peer
+     * @return                 Product information. Will test false if it
+     *                         shouldn't be sent to remote peer.
+     */
+    virtual DataSeg getDatum(
+            const DataSegId dataSegId,
             const SockAddr  rmtAddr) =0;
 };
 
@@ -271,24 +324,6 @@ public:
     virtual ~SubP2pMgr() noexcept =default;
 
     /**
-     * Receives the address of a potential peer-server from a remote peer.
-     *
-     * @param[in] srvrAddr     Socket address of potential peer-server
-     * @param[in] rmtAddr      Socket address of remote peer
-     */
-    virtual void recvAdd(const SockAddr p2pSrvr) {};
-    /**
-     * Receives a set of potential peer servers from a remote peer.
-     *
-     * @param[in] tracker      Set of potential peer-servers
-     * @param[in] rmtAddr      Socket address of remote peer
-     */
-    virtual void recvAdd(const Tracker tracker) {};
-
-    virtual void recvRemove(const SockAddr p2pSrvr) {};
-    virtual void recvRemove(const Tracker tracker) {};
-
-    /**
      * Receives a notice of available product information from a remote peer.
      *
      * @param[in] notice       Which product
@@ -310,8 +345,7 @@ public:
                             const SockAddr  rmtAddr) =0;
 
     /**
-     * Handles a request for data-product information not being satisfied by a
-     * remote peer.
+     * Handles a request for data-product information not being satisfied by a remote peer.
      *
      * @param[in] prodId     Index of the data-product
      * @param[in] rmtAddr    Socket address of remote peer
@@ -321,8 +355,7 @@ public:
             SockAddr     rmtAddr) =0;
 
     /**
-     * Handles a request for a data-segment not being satisfied by a remote
-     * peer.
+     * Handles a request for a data-segment not being satisfied by a remote peer.
      *
      * @param[in] dataSegId  ID of data-segment
      * @param[in] rmtAddr    Socket address of remote peer

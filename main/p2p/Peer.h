@@ -43,7 +43,7 @@ public:
     using Pimpl = std::shared_ptr<Peer>;
 
     /**
-     * Server-side construction.
+     * Publisher's server-side construction.
      *
      * @param[in] p2pMgr  Publisher's P2P manager
      * @param[in] rpc     RPC instance
@@ -53,7 +53,7 @@ public:
             Rpc::Pimpl rpc);
 
     /**
-     * Server-side construction.
+     * Subscriber's client- & server-side construction.
      *
      * @param[in] p2pMgr       Subscriber's P2P manager
      * @param[in] rpc          RPC instance
@@ -64,8 +64,8 @@ public:
             Rpc::Pimpl rpc);
 
     /**
-     * Client-side construction. The resulting peer is fully connected and ready
-     * for `start()` to be called.
+     * Subscriber's client-side construction. The resulting peer is fully connected and ready for
+     * `start()` to be called.
      *
      * @param[in] p2pMgr        Subscriber's P2P manager
      * @param[in] srvrAddr      Address of remote peer-server
@@ -106,6 +106,14 @@ public:
     virtual bool isRmtPub() const noexcept =0;
 
     /**
+     * Indicates if the remote node is a path to the publisher.
+     *
+     * @retval `true`   Remote node is a path to the publisher
+     * @retval `false`  Remote node isn't a path to the publisher
+     */
+    virtual bool isRmtPathToPub() const noexcept =0;
+
+    /**
      * Returns the socket address of the local peer.
      *
      * @return Socket address of local peer
@@ -113,7 +121,8 @@ public:
     virtual SockAddr getLclAddr() const noexcept =0;
 
     /**
-     * Returns the socket address of the remote peer.
+     * Returns the socket address of the remote peer. This will be the socket address of the remote
+     * P2P server iff this peer was constructed client-side (i.e., initiated the connection).
      *
      * @return Socket address of remote peer
      */
@@ -153,7 +162,50 @@ public:
     virtual void stop() =0;
 
     /**
-     * Notifies the remote peer.
+     * Notifies the remote peer as to whether the local node has a path to the publisher.
+     *
+     * @param[in] havePubPath  Does the local node have a path to the publisher?
+     * @retval    `true`       Success
+     * @retval    `false`      Lost connection
+     */
+    virtual bool notifyHavePubPath(const bool havePubPath) =0;
+
+    /**
+     * Tells the remote peer to add a potential peer-server.
+     *
+     * @param[in] p2pSrvr  Peer-server to add
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
+    virtual bool add(const SockAddr p2pSrvr) =0;
+    /**
+     * Tells the remote peer to add some potential peer-servers.
+     *
+     * @param[in] tracker  Peer-servers to add
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
+    virtual bool add(const Tracker  tracker) =0;
+
+    /**
+     * Tells the remote peer to remove a potential peer-server.
+     *
+     * @param[in] p2pSrvr  Peer-server to remove
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
+    virtual bool remove(const SockAddr p2pSrvr) =0;
+    /**
+     * Tells the remote peer to remove some potential peer-servers.
+     *
+     * @param[in] tracker  Peer-servers to remove
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
+    virtual bool remove(const Tracker tracker) =0;
+
+    /**
+     * Notifies the remote peer about available data.
      *
      * @retval    `true`      Success
      * @retval    `false`     Connection lost
@@ -161,30 +213,110 @@ public:
      * @throw     LogicError  `start()` not yet called
      * @see       `start()`
      */
-    virtual bool notify(const Tracker   tracker) =0;
-    virtual bool notify(const SockAddr  srvrAddr) =0;
     virtual bool notify(const ProdId    prodId) =0;
     virtual bool notify(const DataSegId dataSegId) =0;
 
-    virtual bool add(const SockAddr p2pSrvr) =0;
-    virtual bool add(const Tracker  tracker) =0;
+    /**
+     * Receives notification as to whether the remote node has a path to the publisher.
+     *
+     * @param[in] hasPubPath  Does the remote node have a path to the publisher?
+     */
+    virtual void recvHavePubPath(const bool hasPubPath) =0;
 
-    virtual bool remove(const SockAddr p2pSrvr) =0;
-    virtual bool remove(const Tracker tracker) =0;
+    /**
+     * Receives the set of product-identifiers that the remote peer has for determination of the
+     * backlog of products to notify the remote peer about. The remote peer will not be the
+     * publisher.
+     *
+     * @param[in] prodIds  Product-identifiers
+     * @throw LogicError   Remote peer is the publisher
+     * @throw LogicError   The backlog is already being handled
+     */
+    virtual void recvHaveProds(ProdIdSet::Pimpl prodIds) =0;
 
+    /**
+     * Receives notification to add a potential peer-server.
+     *
+     * @param[in] p2pSrvr  Potential peer-server to add
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual void recvAdd(const SockAddr p2pSrvr) =0;
+    /**
+     * Receives notification to add potential peer-servers.
+     *
+     * @param[in] p2pSrvr  Potential peer-servers to add
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual void recvAdd(const Tracker tracker) =0;
 
+    /**
+     * Receives notification to remove a potential peer-server.
+     *
+     * @param[in] p2pSrvr  Potential peer-server to remove
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual void recvRemove(const SockAddr p2pSrvr) =0;
+    /**
+     * Receives notification to remove potential peer-servers.
+     *
+     * @param[in] p2pSrvr  Potential peer-servers to remove
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual void recvRemove(const Tracker tracker) =0;
 
+    /**
+     * Receives notification of available product-information.
+     *
+     * @param[in] prodId   Identifier of the data-product
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual bool recvNotice(const ProdId    prodId) =0;
+    /**
+     * Receives notification of an available data-segment.
+     *
+     * @param[in] dataSegId  Identifier of the data-segment
+     * @retval    `true`     Success
+     * @retval    `false`    EOF
+     */
     virtual bool recvNotice(const DataSegId dataSegId) =0;
 
+    /**
+     * Receives a request for product-information.
+     *
+     * @param[in] prodId   Identifier of the data-product
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual bool recvRequest(const ProdId    prodId) =0;
+    /**
+     * Receives a request for a data-segment.
+     *
+     * @param[in] dataSegId  Identifier of the data-segment
+     * @retval    `true`     Success
+     * @retval    `false`    EOF
+     */
     virtual bool recvRequest(const DataSegId dataSegId) =0;
 
+    /**
+     * Receives information on a product.
+     *
+     * @param[in] prodInfo  Data-product information
+     * @retval    `true`    Success
+     * @retval    `false`   EOF
+     */
     virtual void recvData(const ProdInfo prodInfo) =0;
+    /**
+     * Receives a data-segment.
+     *
+     * @param[in] dataSeg  Data-segment
+     * @retval    `true`   Success
+     * @retval    `false`  EOF
+     */
     virtual void recvData(const DataSeg dataSeg) =0;
 };
 

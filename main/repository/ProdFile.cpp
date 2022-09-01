@@ -48,63 +48,17 @@ private:
     int mode; ///< Open mode (e.g., O_RDONLY, O_RDWR)
 
     void mapFile(const int prot) {
-        if (prodSize) {
-            data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize, prot, MAP_SHARED, fd,
-                    0));
-            if (data == MAP_FAILED) {
-                throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
-                        "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
-                        std::to_string(fd) + "}");
-            } // Memory-mapping failed
-        } // Positive product-size
+        data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize, prot, MAP_SHARED, fd,
+                0));
+        if (data == MAP_FAILED) {
+            throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
+                    "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
+                    std::to_string(fd) + "}");
+        } // Memory-mapping failed
     }
 
     void unmapFile() {
         ::munmap(data, prodSize);
-    }
-
-    /**
-     * Ensures access to the underlying file. Opens the file if necessary. Maps the file if
-     * necessary. Idempotent.
-     *
-     * @param[in] mode         File open mode
-     * @throws    SystemError  Couldn't open file
-     */
-    void ensureAccess() {
-        const bool wasClosed = fd < 0;
-
-        if (wasClosed) {
-            fd = ::open(pathname.data(), mode, 0600);
-            if (fd == -1)
-                throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
-        }
-
-        try {
-            if (data == nullptr)
-                mapFile((mode == O_RDONLY) ? PROT_READ : PROT_READ|PROT_WRITE);
-        } // `fd` is open
-        catch (const std::exception& ex) {
-            if (wasClosed) {
-                ::close(fd);
-                fd = -1;
-            }
-            throw;
-        }
-    }
-
-    /**
-     * Disables access to the data of the underlying file. Idempotent.
-     */
-    void disableAccess() noexcept {
-        if (data) {
-            unmapFile();
-            data = nullptr;
-        }
-
-        if (fd >= 0) {
-            ::close(fd);
-            fd = -1;
-        }
     }
 
 protected:
@@ -114,6 +68,52 @@ protected:
     char*             data; ///< For `get()`
     const ProdSize    numSegs;
     int               fd;
+
+    /**
+     * Ensures access to the underlying file. Opens the file if necessary. Maps the file if
+     * necessary. Idempotent.
+     *
+     * @pre                    Instance is locked
+     * @param[in] mode         File open mode
+     * @throws    SystemError  Couldn't open file
+     * @post                   Instance is locked
+     */
+    void ensureAccess() {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (fd < 0) {
+            fd = ::open(pathname.data(), mode, 0600);
+            if (fd == -1)
+                throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
+
+            try {
+                mapFile((mode == O_RDONLY) ? PROT_READ : PROT_READ|PROT_WRITE);
+            } // `fd` is open
+            catch (const std::exception& ex) {
+                ::close(fd);
+                fd = -1;
+                throw;
+            }
+        }
+    }
+
+    /**
+     * Disables access to the data of the underlying file. Idempotent.
+     *
+     * @pre                    Instance is locked
+     * @post                   Instance is locked
+     */
+    void disableAccess() noexcept {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (fd >= 0) {
+            unmapFile();
+            data = nullptr;
+
+            ::close(fd);
+            fd = -1;
+        }
+    }
 
     /**
      * Vets a data-segment.
@@ -153,7 +153,8 @@ public:
         , fd{-1}
     {}
 
-    virtual ~Impl() noexcept {
+    virtual ~Impl() {
+        Guard guard{mutex};
         disableAccess();
     }
 
@@ -163,6 +164,11 @@ public:
 
     ProdSize getProdSize() const noexcept {
         return prodSize;
+    }
+
+    SysTimePoint getModTime() {
+        SysTimePoint modTime;
+        return FileUtil::getModTime(pathname, modTime);
     }
 
     SysTimePoint& getModTime(SysTimePoint& modTime) {
@@ -176,11 +182,6 @@ public:
     String to_string() const {
         return "{pathname=" + pathname + ", prodSize=" + std::to_string(prodSize) + ", fd=" +
                 std::to_string(fd) + "}";
-    }
-
-    void open() {
-        Guard guard(mutex);
-        ensureAccess();
     }
 
     void close() {
@@ -197,11 +198,12 @@ public:
             throw SYSTEM_ERROR("::unlink() failure on file file \"" + pathname + "\"");
     }
 
-    const char* getData(const ProdSize offset) const {
+    const char* getData(const ProdSize offset) {
         vet(offset);
         Guard guard{mutex};
+        ensureAccess();
         if (data == nullptr)
-            throw LOGIC_ERROR("Product file + " + to_string() + " isn't open");
+            throw LOGIC_ERROR("Product file " + to_string() + " isn't open");
         return data + offset;
     }
 
@@ -221,11 +223,6 @@ public:
 
     virtual bool save(const DataSeg& dataSeg) {
         throw LOGIC_ERROR("Operation not supported by this instance");
-    }
-
-    bool isOpen() {
-        Guard guard{mutex};
-        return fd >= 0;
     }
 
     virtual void rename(const String& newPathname) {
@@ -263,6 +260,10 @@ void ProdFile::close() const {
     return pImpl->close();
 }
 
+SysTimePoint ProdFile::getModTime() const {
+    return pImpl->getModTime();
+}
+
 SysTimePoint& ProdFile::getModTime(SysTimePoint& modTime) const {
     return pImpl->getModTime(modTime);
 }
@@ -273,10 +274,6 @@ void ProdFile::setModTime(const SysTimePoint& modTime) const {
 
 void ProdFile::deleteFile() const {
     return pImpl->deleteFile();
-}
-
-void ProdFile::open() const {
-    pImpl->open();
 }
 
 bool ProdFile::exists(const ProdSize offset) const {
@@ -295,10 +292,6 @@ bool ProdFile::save(const DataSeg& dataSeg) const {
     return pImpl->save(dataSeg);
 }
 
-bool ProdFile::isOpen() const {
-    return pImpl->isOpen();
-}
-
 /**************************************************************************************************/
 /**************************************************************************************************/
 
@@ -309,15 +302,18 @@ class PubProdFile final : public ProdFile::Impl
 {
 public:
     /**
-     * Constructs. The instance is not open.
+     * Constructs. The instance is open.
      *
      * @param[in] pathname    Pathname of the underlying file
      */
-    PubProdFile(
-            const String&    pathname)
+    PubProdFile(const String& pathname)
         : ProdFile::Impl{pathname, static_cast<ProdSize>(FileUtil::getFileSize(pathname)), O_RDONLY}
     {}
 };
+
+ProdFile::ProdFile(const String& pathname)
+    : ProdFile(new PubProdFile(pathname))
+{}
 
 /**************************************************************************************************/
 /**************************************************************************************************/
@@ -334,7 +330,7 @@ public:
     /**
      * Constructs a subscriber's product-file. Creates a new, underlying file from
      * product-information and any necessary antecedent directories. The file will have the given
-     * size and be zero-filled. The instance is open.
+     * size and be zero-filled. The instance is not open.
      *
      * @param[in] pathname         Pathname of the file
      * @param[in] prodSize         Product size in bytes
@@ -350,17 +346,18 @@ public:
     {
         FileUtil::ensureDir(FileUtil::dirname(pathname), 0700);
 
-        fd = ::open(pathname.data(), O_RDWR|O_CREAT|O_EXCL, 0600);
+        fd = ::open(pathname.data(), O_RDWR|O_CREAT, 0600);
         if (fd == -1)
             throw SYSTEM_ERROR("::open() failure on file \"" + pathname + "\"");
 
         try {
             if (::ftruncate(fd, prodSize))
                 throw SYSTEM_ERROR("::ftruncate() failure on \"" + pathname + "\"");
+            ::close(fd);
+            fd = -1;
         } // `fd` is open
         catch (...) {
             ::close(fd);
-            ::unlink(pathname.data());
             throw;
         }
     }
@@ -401,8 +398,9 @@ public:
         }
         else {
             //LOG_DEBUG("Saving data-segment " + seg.getId().to_string());
-            haveSegs[iSeg] = true;
+            ensureAccess();
             ::memcpy(data+offset, seg.getData(), segSize);
+            haveSegs[iSeg] = true;
             ++segCount;
         }
 

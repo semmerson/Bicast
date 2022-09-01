@@ -81,8 +81,7 @@ public:
                (withName ? "}" : "");
     }
 
-    bool operator<(const Impl& rhs) const noexcept
-    {
+    inline bool operator<(const Impl& rhs) const noexcept {
         return (inetAddr < rhs.inetAddr)
                 ? true
                 : (rhs.inetAddr < inetAddr)
@@ -90,9 +89,12 @@ public:
                   : (port < rhs.port);
     }
 
-    bool operator==(const Impl& rhs) const
-    {
-        return !((*this < rhs) || (rhs < *this));
+    inline bool operator!=(const Impl& rhs) const noexcept {
+        return (*this < rhs) || (rhs < *this);
+    }
+
+    inline bool operator==(const Impl& rhs) const noexcept {
+        return !(*this != rhs);
     }
 
     /**

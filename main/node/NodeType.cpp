@@ -5,7 +5,7 @@
  *  Created on: Mar 9, 2020
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2022 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,37 +27,14 @@
 
 namespace hycast {
 
-NodeType::NodeType(const int value)
-{
-    if (value < 0 || value > 2)
-        throw INVALID_ARGUMENT("Node-type " + std::to_string(value) +
-                " is invalid");
-    this->value = value;
-}
-
-const NodeType NodeType::PUBLISHER = NodeType(0);
-const NodeType NodeType::PATH_TO_PUBLISHER = NodeType(1);
-const NodeType NodeType::NO_PATH_TO_PUBLISHER = NodeType(2);
-
-NodeType::NodeType(const NodeType& nodeType)
-{
-    value = nodeType.value.load();
-}
-
-NodeType::operator unsigned() const noexcept
-{
-    return value;
-}
-
-NodeType& NodeType::operator =(const NodeType& rhs) noexcept
-{
-    value = rhs.value.load();
-    return *this;
-}
-
-bool NodeType::operator ==(const NodeType& rhs) const noexcept
-{
-    return value == rhs.value;
+bool NodeType::read(Xprt xprt) {
+    Type value;
+    if (!xprt.read(value))
+        return false;
+    if (value > PATH_TO_PUBLISHER)
+        throw INVALID_ARGUMENT("value=" + to_string());
+    mask = value;
+    return true;
 }
 
 } // namespace

@@ -171,7 +171,9 @@ public:
     virtual void erase(const DataSegId dataSegId) =0;
 
     /**
-     * Returns the worst performing local peer.
+     * Returns the worst performing local peer. For a publisher, this will be the peer whose remote
+     * counterpart made the most requests. For a subscriber, this will be the peer whose remote
+     * counterpart supplied the least amount of data.
      *
      * @return Worst performing peer. Will test false if no such peer exists.
      */

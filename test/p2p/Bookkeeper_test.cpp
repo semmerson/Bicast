@@ -65,6 +65,14 @@ public:
         return SockAddr();
     }
 
+    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+        return ProdIdSet::Pimpl{};
+    }
+
+    ProdIdSet::Pimpl getProdIds() const override {
+        return ProdIdSet::Pimpl{};
+    }
+
     // Subscriber-side
     bool recvNotice(
             const ProdId notice,
@@ -82,17 +90,13 @@ public:
     }
 
     // Publisher-side
-    ProdInfo recvRequest(
-            const ProdId request,
-            const SockAddr  rmtAddr) override
+    ProdInfo getDatum(const ProdId request, const SockAddr rmtAddr) override
     {
         return ProdInfo{};
     }
 
     // Publisher-side
-    DataSeg recvRequest(
-            const DataSegId request,
-            const SockAddr  rmtAddr) override
+    DataSeg getDatum(const DataSegId request, const SockAddr rmtAddr) override
     {
         return DataSeg{};
     }

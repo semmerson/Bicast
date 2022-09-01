@@ -94,7 +94,8 @@ void terminate()
     auto exPtr = std::current_exception();
 
     if (!exPtr) {
-        LOG_FATAL("terminate() called without an active exception");
+        LOG_FATAL("terminate() called without an active exception. "
+                "A joinable thread was likely destroyed.");
     }
     else {
         try {

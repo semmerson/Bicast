@@ -362,6 +362,13 @@ class RpcImpl final : public Rpc
                     peer.recvRemove(tracker);
                 break;
             }
+            case PduId::BACKLOG_REQUEST: {
+                ProdIdSet::Pimpl prodIds;
+                auto success = prodIds->read(requestXprt);
+                if (success)
+                    peer.recvHaveProds(prodIds);
+                break;
+            }
             default :
                 throw LOGIC_ERROR("RPC layer " + to_string() + ": invalid PDU type: " +
                     pduId.to_string());
@@ -381,9 +388,23 @@ class RpcImpl final : public Rpc
     void runReader(Xprt xprt, std::function<void(PduId)> process) {
         try {
             //LOG_DEBUG("Executing reader");
+#if 1
+            // This works
             for (PduId pduId{}; pduId.read(xprt); process(pduId))
                 ;
             LOG_NOTE("Connection %s closed", xprt.to_string().data());
+#else
+            // This also works. It tests `xprt.read<>()`. Seems to be equally efficient.
+            for (;;) {
+                try {
+                    process(xprt.read<PduId>());
+                }
+                catch (const EofError& ex) {
+                    LOG_NOTE("Connection %s closed", xprt.to_string().data());
+                    break;
+                }
+            }
+#endif
         }
         catch (const std::exception& ex) {
             log_error(ex);
@@ -413,21 +434,21 @@ class RpcImpl final : public Rpc
     /**
      * Processes notices of an available datum. Calls the associated peer.
      *
-     * @tparam    DATUM_ID  Type of datum ID
-     * @param[in] pduId     PDU ID for associated request
-     * @param[in] peer      Associated peer
-     * @param[in] desc      Description of associated datum
+     * @tparam    NOTICE  Type of notice
+     * @param[in] pduId   PDU ID for associated request
+     * @param[in] peer    Associated peer
+     * @param[in] desc    Description of associated datum
      */
-    template<class DATUM_ID>
+    template<class NOTICE>
     inline void processNotice(
             PduId             pduId,
             Peer&             peer,
             const char* const desc) {
-        DATUM_ID datumId;
-        if (datumId.read(noticeXprt)) {
+        NOTICE notice;
+        if (notice.read(noticeXprt)) {
             //LOG_DEBUG("RPC layer %s received notice about %s %s",
                     //to_string().data(), desc, datumId.to_string().data());
-            peer.recvNotice(datumId);
+            peer.recvNotice(notice);
         }
     }
     /**
@@ -439,14 +460,62 @@ class RpcImpl final : public Rpc
     void processNotice(
             PduId pduId,
             Peer& peer) {
-        if (pduId == PduId::DATA_SEG_NOTICE) {
+        switch (pduId) {
+        case PduId::DATA_SEG_NOTICE: {
             processNotice<DataSegId>(PduId::DATA_SEG_REQUEST, peer, "data-segment");
+            break;
         }
-        else if (pduId == PduId::PROD_INFO_NOTICE) {
+        case PduId::PROD_INFO_NOTICE: {
             processNotice<ProdId>(PduId::PROD_INFO_REQUEST, peer, "information on product");
+            break;
         }
-        else {
+        case PduId::AM_PUB_PATH: {
+            peer.recvHavePubPath(true);
+            break;
+        }
+        case PduId::AM_NOT_PUB_PATH: {
+            peer.recvHavePubPath(false);
+            break;
+        }
+        case PduId::GOOD_P2P_SRVR: {
+            SockAddr p2pSrvrAddr;
+            if (p2pSrvrAddr.read(noticeXprt)) {
+                LOG_DEBUG("RPC layer %s received notice about good P2P server %s",
+                        to_string().data(), p2pSrvrAddr.to_string().data());
+                peer.recvAdd(p2pSrvrAddr);
+            }
+            break;
+        }
+        case PduId::GOOD_P2P_SRVRS: {
+            Tracker tracker;
+            if (tracker.read(noticeXprt)) {
+                LOG_DEBUG("RPC layer %s received notice about good P2P servers %s",
+                        to_string().data(), tracker.to_string().data());
+                peer.recvAdd(tracker);
+            }
+            break;
+        }
+        case PduId::BAD_P2P_SRVR: {
+            SockAddr p2pSrvrAddr;
+            if (p2pSrvrAddr.read(noticeXprt)) {
+                LOG_DEBUG("RPC layer %s received notice about bad P2P server %s",
+                        to_string().data(), p2pSrvrAddr.to_string().data());
+                peer.recvRemove(p2pSrvrAddr);
+            }
+            break;
+        }
+        case PduId::BAD_P2P_SRVRS: {
+            Tracker tracker;
+            if (tracker.read(noticeXprt)) {
+                LOG_DEBUG("RPC layer %s received notice about bad P2P servers %s",
+                        to_string().data(), tracker.to_string().data());
+                peer.recvRemove(tracker);
+            }
+            break;
+        }
+        default: {
             throw RUNTIME_ERROR("Invalid PDU type: " + pduId.to_string());
+        }
         }
     }
 
@@ -578,6 +647,20 @@ class RpcImpl final : public Rpc
         }
         if (throwEx)
             std::rethrow_exception(exPtr);
+    }
+
+    /**
+     * Sends a PDU with no payload.
+     *
+     * @param[in] xprt     Transport to use
+     * @param[in] pduId    PDU ID
+     * @retval    `true`   Success
+     * @retval    `false`  Lost connection
+     */
+    inline bool send(
+            Xprt            xprt,
+            const PduId     pduId) {
+        return pduId.write(xprt) && xprt.flush();
     }
 
     /**
@@ -719,6 +802,12 @@ public:
         started = false;
     }
 
+    bool notifyAmPubPath(const bool amPubPath) override {
+        return amPubPath
+                ? send(noticeXprt, PduId::AM_PUB_PATH)
+                : send(noticeXprt, PduId::AM_NOT_PUB_PATH);
+    }
+
     bool add(const SockAddr srvrAddr) override {
         //LOG_DEBUG("RPC layer %s: sending available peer-server address %s",
                 //to_string().data(), srvrAddr.to_string().data());
@@ -740,33 +829,36 @@ public:
         return send(requestXprt, PduId::BAD_P2P_SRVRS, srvrAddrs);
     }
 
-    bool notify(const ProdId prodId) {
+    bool notify(const ProdId prodId) override {
         //LOG_DEBUG("RPC layer %s: sending product index %s",
                 //to_string().data(), prodId.to_string().data());
         return send(noticeXprt, PduId::PROD_INFO_NOTICE, prodId);
     }
-    bool notify(const DataSegId dataSegId) {
+    bool notify(const DataSegId dataSegId) override {
         //LOG_DEBUG("RPC layer %s: sending data segment ID %s",
                 //to_string().data(), dataSegId.to_string().data());
         return send(noticeXprt, PduId::DATA_SEG_NOTICE, dataSegId);
     }
 
-    bool request(const ProdId prodId) {
+    bool request(const ProdId prodId) override {
         return send(requestXprt, PduId::PROD_INFO_REQUEST, prodId);
     }
-    bool request(const DataSegId dataSegId) {
+    bool request(const DataSegId dataSegId) override {
         return send(requestXprt, PduId::DATA_SEG_REQUEST, dataSegId);
     }
 
-    bool send(const ProdInfo prodInfo) {
+    bool send(const ProdInfo prodInfo) override {
         //LOG_DEBUG("RPC layer %s: sending product information %s",
                 //to_string().data(), prodInfo.to_string().data());
         return send(dataXprt, PduId::PROD_INFO, prodInfo);
     }
-    bool send(const DataSeg dataSeg) {
+    bool send(const DataSeg dataSeg) override {
         //LOG_DEBUG("RPC layer %s: sending data segment %s",
                 //to_string().data(), dataSeg.to_string().data());
         return send(dataXprt, PduId::DATA_SEG, dataSeg);
+    }
+    bool send(const ProdIdSet::Pimpl prodIds) override {
+        return send(requestXprt, PduId::BACKLOG_REQUEST, *prodIds);
     }
 };
 

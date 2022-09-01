@@ -1,6 +1,6 @@
 # Add the library
 add_library(node OBJECT
-                        NodeType.h
+        NodeType.cpp    NodeType.h
         Node.cpp        Node.h
 )
 include_directories(

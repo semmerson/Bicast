@@ -31,7 +31,7 @@
 namespace hycast {
 
 /**
- * Tracks peer servers for a publisher.
+ * Tracks available P2P servers.
  */
 class Tracker final : public XprtAble
 {

@@ -95,7 +95,7 @@ protected:
         subInfo.mcast.srcAddr = loAddr;
         subInfo.maxSegSize = SEG_SIZE;
         DataSeg::setMaxSegSize(SEG_SIZE);
-        rmDirTree(testRoot);
+        FileUtil::rmDirTree(testRoot);
         int i = 0;
         for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
             auto str = std::to_string(i++);
@@ -159,7 +159,7 @@ TEST_F(NodeTest, Sending)
 {
     try {
         // Create product-file
-        ensureParent(filePath, 0700);
+        FileUtil::ensureParent(filePath, 0700);
         const int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
         EXPECT_NE(-1, fd);
         for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
@@ -184,7 +184,9 @@ TEST_F(NodeTest, Sending)
         pubNode->waitForPeer();
 
         // Publish
-        pubNode->link(filePath, prodName);
+        const auto repoProdPath = pubRepoRoot + '/' + prodName;
+        FileUtil::ensureParent(repoProdPath);
+        FileUtil::hardLink(filePath, repoProdPath);
 
         // Verify reception
         try {

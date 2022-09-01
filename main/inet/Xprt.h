@@ -127,11 +127,24 @@ public:
 
     /**
      * Prepares the transport for further input in case the underlying socket
-     * is record based (e.g., SCTP).
+     * is not a byte-stream (e.g., UDP, SCTP).
      */
     void clear() const;
 
     void shutdown();
+
+    /**
+     * Returns a  object constructed from this transport. The object must have a
+     * constructor that takes this transport.
+     *
+     * @tparam T        Transportable object
+     * @return          An instance of the transportable object
+     * @throw EofError  End-of-file on transport
+     */
+    template<class T>
+    T read() {
+        return T(*this);
+    }
 };
 
 } // namespace
