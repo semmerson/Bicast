@@ -89,11 +89,11 @@ public:
     /**
      * Returns a set of this instance's identifiers of complete products minus those of another set.
      *
-     * @param[in]  other    Other set of product identifiers to be subtracted from the ones this
+     * @param[in]  rhs      Other set of product identifiers to be subtracted from the ones this
      *                      instance has
      * @return              This instance's identifiers minus those of the other set
      */
-    virtual ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const =0;
+    virtual ProdIdSet subtract(ProdIdSet rhs) const =0;
 
 
     /**
@@ -101,7 +101,7 @@ public:
      *
      * @return             Set of complete product identifiers
      */
-    virtual ProdIdSet::Pimpl getProdIds() const =0;
+    virtual ProdIdSet getProdIds() const =0;
 
     /**
      * Receives a request for information on a product.
@@ -304,9 +304,11 @@ public:
     }
 
     virtual ProdInfo getNextProd() {
+        return ProdInfo{};
     }
 
     virtual DataSeg getDataSeg(const DataSegId segId) {
+        return DataSeg{};
     }
 };
 

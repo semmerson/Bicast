@@ -48,8 +48,7 @@ private:
     int mode; ///< Open mode (e.g., O_RDONLY, O_RDWR)
 
     void mapFile(const int prot) {
-        data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize, prot, MAP_SHARED, fd,
-                0));
+        data = static_cast<char*>(::mmap(static_cast<void*>(0), prodSize, prot, MAP_SHARED, fd, 0));
         if (data == MAP_FAILED) {
             throw SYSTEM_ERROR("mmap() failure: {pathname: \"" + pathname +
                     "\", prodSize: " + std::to_string(prodSize) + ", fd: " +
@@ -82,7 +81,7 @@ protected:
         LOG_ASSERT(!mutex.try_lock());
 
         if (fd < 0) {
-            fd = ::open(pathname.data(), mode, 0600);
+            fd = ::open(pathname.data(), mode, 0600|O_CLOEXEC);
             if (fd == -1)
                 throw SYSTEM_ERROR("open() failure on \"" + pathname + "\"");
 
@@ -207,6 +206,14 @@ public:
         return data + offset;
     }
 
+    const char* getData() {
+        Guard guard{mutex};
+        ensureAccess();
+        if (data == nullptr)
+            throw LOGIC_ERROR("Product file " + to_string() + " isn't open");
+        return data;
+    }
+
     /**
      * The following, default functions are valid for a publisher's product-files: they are not
      * valid for a subscriber's.
@@ -248,12 +255,16 @@ const std::string& ProdFile::getPathname() const noexcept {
     return pImpl->getPathname();
 }
 
-ProdSize ProdFile::getFileSize() const noexcept {
+ProdSize ProdFile::getProdSize() const noexcept {
     return pImpl->getProdSize();
 }
 
 const char* ProdFile::getData(const ProdSize offset) const {
     return pImpl->getData(offset);
+}
+
+const char* ProdFile::getData() const {
+    return pImpl->getData();
 }
 
 void ProdFile::close() const {
@@ -394,7 +405,7 @@ public:
         bool     needed = !haveSegs[iSeg];
 
         if (!needed) {
-            LOG_DEBUG("Duplicate data segment: " + seg.getId().to_string());
+            LOG_TRACE("Duplicate data segment: " + seg.getId().to_string());
         }
         else {
             //LOG_DEBUG("Saving data-segment " + seg.getId().to_string());

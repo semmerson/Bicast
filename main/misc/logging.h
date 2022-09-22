@@ -157,6 +157,10 @@ void log(
         const char*           func,
         const std::exception& ex);
 
+inline void log_trace(const std::exception& ex) {
+    if (log_enabled(LogLevel::TRACE))
+        log(LogLevel::TRACE, ex);
+}
 inline void log_debug(const std::exception& ex) {
     if (log_enabled(LogLevel::DEBUG))
         log(LogLevel::DEBUG, ex);
@@ -182,46 +186,40 @@ inline void log_fatal(const std::exception& ex) {
         log(LogLevel::FATAL, ex);
 }
 
-#define LOG_TRACE \
+#define LOG_TRACE(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::TRACE)) \
-            hycast::log(hycast::LogLevel::TRACE, __FILE__, __LINE__, \
-                    __func__); \
+            hycast::log(hycast::LogLevel::TRACE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_DEBUG(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::DEBUG)) \
-            hycast::log(hycast::LogLevel::DEBUG, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::DEBUG, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_INFO(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::INFO)) \
-            hycast::log(hycast::LogLevel::INFO, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::INFO, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_NOTE(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::NOTE)) \
-            hycast::log(hycast::LogLevel::NOTE, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::NOTE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_WARNING(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::WARN)) \
-            hycast::log(hycast::LogLevel::WARN, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::WARN, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_ERROR(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::ERROR)) \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 #define LOG_SYSERR(...) \
@@ -229,16 +227,14 @@ inline void log_fatal(const std::exception& ex) {
         if (hycast::log_enabled(hycast::LogLevel::ERROR)) { \
             hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, "%s", \
                     strerror(errno)); \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
         } \
     while(false)
 
 #define LOG_FATAL(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::FATAL)) \
-            hycast::log(hycast::LogLevel::FATAL, __FILE__, __LINE__, __func__, \
-                    __VA_ARGS__); \
+            hycast::log(hycast::LogLevel::FATAL, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 

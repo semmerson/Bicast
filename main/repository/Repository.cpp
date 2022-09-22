@@ -359,7 +359,7 @@ protected:
         ProdFile   prodFile{absPathname}; // Instance is closed
         const auto modTime = prodFile.getModTime();
         const auto prodName = absPathname.substr(rootPrefixLen);
-        ProdInfo   prodInfo(prodName, prodFile.getFileSize(), modTime);
+        ProdInfo   prodInfo(prodName, prodFile.getProdSize(), modTime);
         ProdEntry  prodEntry{prodFile, prodInfo};
         auto       pair = prodEntries.emplace(prodInfo.getId(), prodEntry);
         const auto wasAdded = pair.second;
@@ -373,7 +373,7 @@ protected:
             tt = SysClock::to_time_t(deleteTime);
             const String delT = ::ctime(&tt);
 
-            LOG_DEBUG("Adding to delete-queue: modTime=\"%s\", deleteTime=\"%s\"", modT.data(),
+            LOG_TRACE("Adding to delete-queue: modTime=\"%s\", deleteTime=\"%s\"", modT.data(),
                     delT.data());
             deleteQueue.push(DeleteEntry(deleteTime, prodInfo.getId()));
         }
@@ -543,24 +543,26 @@ public:
 
         return (prodEntry == nullptr)
                 ?  empty
-                :  DataSeg{segId, prodEntry->prodFile.getFileSize(),
+                :  DataSeg{segId, prodEntry->prodFile.getProdSize(),
                         prodEntry->prodFile.getData(segId.offset)};
     }
 
     /**
      * Returns the set of product identifiers comprising this instance's minus those of another set.
      *
-     * @param[in]  other   Other set of product identifiers to be subtracted from this instance's
+     * @param[in]  rhs     Other set of product identifiers to be subtracted from this instance's
      * @return             This instance's product identifiers minus those of the other set
      */
-    ProdIdSet::Pimpl subtract(const ProdIdSet::Pimpl other) {
-        Guard            guard{mutex};
-        ProdIdSet::Pimpl result((prodEntries.size() > other->size())
-                ? new ProdIdSet(prodEntries.size() - other->size())
-                : new ProdIdSet());
+    ProdIdSet subtract(const ProdIdSet rhs) {
+        Guard     guard{mutex};
+        ProdIdSet result(prodEntries.size() <= rhs.size()
+                ? 0
+                : prodEntries.size() - rhs.size());
+
         for (auto pair : prodEntries)
-            if (other->count(pair.first) == 0)
-                result->emplace(pair.first);
+            if (rhs.count(pair.first) == 0)
+                result.insert(pair.first);
+
         return result;
     }
 
@@ -569,11 +571,11 @@ public:
      *
      * @return The set of complete product identifiers
      */
-    ProdIdSet::Pimpl getProdIds() {
-        Guard            guard{mutex};
-        ProdIdSet::Pimpl prodIds(new ProdIdSet(prodEntries.size()));
+    ProdIdSet getProdIds() {
+        Guard     guard{mutex};
+        ProdIdSet prodIds(prodEntries.size());
         for (auto pair : prodEntries)
-            prodIds->emplace(pair.first);
+            prodIds.insert(pair.first);
         return prodIds;
     }
 
@@ -633,11 +635,11 @@ DataSeg Repository::getDataSeg(const DataSegId segId) const {
     return pImpl->getDataSeg(segId);
 }
 
-ProdIdSet::Pimpl Repository::subtract(const ProdIdSet::Pimpl other) const {
-    return pImpl->subtract(other);
+ProdIdSet Repository::subtract(const ProdIdSet rhs) const {
+    return pImpl->subtract(rhs);
 }
 
-ProdIdSet::Pimpl Repository::getProdIds() const {
+ProdIdSet Repository::getProdIds() const {
     return pImpl->getProdIds();
 }
 
@@ -688,7 +690,7 @@ class PubRepo::Impl final : public Repository::Impl
      * Watches the repository. Adds new files as products to the database.
      */
     void watchRepo() {
-        LOG_DEBUG("Watching repository for new product-files");
+        LOG_DEBUG("Watching repository %s for new product-files", absPathRoot.data());
         try {
             for (;;) {
                 Watcher::WatchEvent event;

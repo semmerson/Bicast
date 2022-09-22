@@ -30,6 +30,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <set>
 #include <time.h>
@@ -277,61 +278,6 @@ namespace std {
 
 namespace hycast {
 
-/// Timestamp
-class Timestamp : public XprtAble
-{
-public:
-    using Clock     = system_clock;
-    using Duration  = Clock::duration;
-    using TimePoint = Clock::time_point;
-
-private:
-    TimePoint timePoint;
-
-public:
-    Timestamp()
-        : timePoint(Clock::now())
-    {}
-
-    Timestamp(const TimePoint& timePoint)
-        : timePoint(timePoint)
-    {}
-
-    Timestamp(const TimePoint&& timePoint)
-        : timePoint(timePoint)
-    {}
-
-    Timestamp(const struct timespec& time)
-        : timePoint(Clock::from_time_t(time.tv_sec) + nanoseconds(time.tv_nsec))
-    {}
-
-    size_t hash() const {
-        return 0; // TODO
-    }
-
-    const TimePoint getTimePoint() const noexcept {
-        return timePoint;
-    }
-
-    operator TimePoint() {
-        return timePoint;
-    }
-
-    bool operator==(const Timestamp& rhs) const noexcept {
-        return timePoint == rhs.timePoint;
-    }
-
-    bool operator<(const Timestamp& rhs) const noexcept {
-        return timePoint < rhs.timePoint;
-    }
-
-    String to_string() const noexcept;
-
-    bool write(Xprt xprt) const override;
-
-    bool read(Xprt xprt) override;
-};
-
 /// Data-segment identifier
 struct DataSegId : public XprtAble
 {
@@ -414,17 +360,6 @@ public:
     ProdInfo(const std::string&  name,
              const ProdSize      size,
              const SysTimePoint& createTime = SysClock::now());
-
-    /**
-     * The creation-time of the product will be the current time.
-     *
-     * @param[in] prodId  Product ID
-     * @param[in] name    Name of product
-     * @param[in] size    Size of product in bytes
-     */
-    ProdInfo(const std::string&&  name,
-             const ProdSize       size,
-             const SysTimePoint&& createTime = SysClock::now());
 
     operator bool() const noexcept;
 
@@ -660,29 +595,47 @@ public:
 /******************************************************************************/
 
 /// A set of product identifiers
-class ProdIdSet : public std::unordered_set<ProdId>, public XprtAble
+class ProdIdSet : public XprtAble
 {
 public:
-    using Pimpl = std::shared_ptr<ProdIdSet>;
+    class Impl;
 
-    ProdIdSet()
-        : std::unordered_set<ProdId>{}
-    {}
+private:
+    std::shared_ptr<Impl> pImpl;
 
-    explicit ProdIdSet(const size_t n)
-        : std::unordered_set<ProdId>{n}
-    {}
+public:
+    //using iterator = std::iterator<std::forward_iterator_tag, const ProdId>;
+    using iterator = std::unordered_set<ProdId>::iterator; // HACK!
+
+    /**
+     * Constructs.
+     *
+     * @param[in] n  Initial capacity
+     */
+    ProdIdSet(const size_t n = 0);
 
     /**
      * Subtracts (i.e., erases) all identifiers in another set.
      *
-     * @param[in] other  The other set
+     * @param[in] rhs  The other set
      */
-    void subtract(const Pimpl other);
+    void subtract(const ProdIdSet rhs);
 
     bool write(Xprt xprt) const;
 
     bool read(Xprt xprt);
+
+    size_t size() const;
+
+    size_t count(const ProdId prodId) const;
+
+    void insert(const ProdId prodId) const;
+
+    iterator begin() const;
+
+    iterator end() const;
+
+    void clear() const;
 };
 
 /******************************************************************************/
@@ -763,13 +716,6 @@ public:
 } // namespace
 
 namespace std {
-    template<>
-    struct hash<hycast::Timestamp> {
-        size_t operator()(const hycast::Timestamp& timestamp) const noexcept {
-            return timestamp.hash();
-        }
-    };
-
     template<>
     struct hash<hycast::Notice> {
         size_t operator()(const hycast::Notice& datumId) const noexcept {

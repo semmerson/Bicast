@@ -59,15 +59,15 @@ public:
     {}
 
     void multicast(const ProdInfo prodInfo) {
-        LOG_DEBUG("Multicasting product information %s on transport %s",
-                prodInfo.to_string().data(), xprt.to_string().data());
         cast<ProdInfo>(prodInfo);
+        LOG_DEBUG("Multicasted product information %s on transport %s",
+                prodInfo.to_string().data(), xprt.to_string().data());
     }
 
     void multicast(const DataSeg dataSeg) {
-        LOG_DEBUG("Multicasting data segment %s on transport %s",
-                dataSeg.getId().to_string().data(), xprt.to_string().data());
         cast<DataSeg>(dataSeg);
+        LOG_DEBUG("Multicasted data segment %s on transport %s",
+                dataSeg.getId().to_string().data(), xprt.to_string().data());
     }
 };
 
@@ -89,6 +89,8 @@ class McastSubImpl final : public McastImpl, public McastSub
         DATUM datum;
         if (!datum.read(xprt))
             throw SYSTEM_ERROR("Multicast transport, " + xprt.to_string() + ", closed");
+        LOG_TRACE("Received multicast datum %s on transport %s", datum.getId().to_string().data(),
+                xprt.to_string().data());
         node.recvMcastData(datum);
     }
 

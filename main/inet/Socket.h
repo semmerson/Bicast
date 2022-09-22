@@ -231,8 +231,7 @@ public:
     /**
      * Accepts an incoming connection. Calls `::accept()`.
      *
-     * @return               The accepted socket. Will test false if
-     *                       `shutdown()` has been called.
+     * @return               The accepted socket. Will test false if `shutdown()` has been called.
      * @throws  SystemError  `::accept()` failure
      * @cancellationpoint
      */

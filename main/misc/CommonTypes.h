@@ -30,4 +30,10 @@ using SysDuration  = SysClock::duration;
 
 } // namespace
 
+namespace std {
+    using namespace hycast;
+
+    String to_string(const SysTimePoint& timePoint);
+}
+
 #endif /* MAIN_MISC_COMMONTYPES_H_ */

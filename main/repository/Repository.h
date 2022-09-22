@@ -131,14 +131,14 @@ public:
      * @param[in]  other    Other set of product identifiers to be subtracted from this instance
      * @return              This instance's identifiers minus those of the other set
      */
-    ProdIdSet::Pimpl subtract(const ProdIdSet::Pimpl other) const;
+    ProdIdSet subtract(const ProdIdSet other) const;
 
     /**
      * Returns the set of identifiers of complete products.
      *
      * @return             Set of complete product identifiers
      */
-    ProdIdSet::Pimpl getProdIds() const;
+    ProdIdSet getProdIds() const;
 };
 
 /******************************************************************************/

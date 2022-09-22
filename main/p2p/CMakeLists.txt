@@ -10,5 +10,3 @@ add_library(p2p OBJECT
 #       NoticeArray.cpp   NoticeArray.h
 #       PeerSet.cpp       PeerSet.h
 #       Trigger.cpp       Trigger.h
-
-include_directories(.. ../misc ../inet ../node)

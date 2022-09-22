@@ -7,22 +7,21 @@
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #include "config.h"
 
 #include "Node.h"
+#include "Parser.h"
 #include "ThreadException.h"
 
 #include <inttypes.h>
@@ -94,7 +93,7 @@ public:
         cond.notify_all();
     }
 }                        numSubThreads; ///< Subscriber thread count
-static sem_t             sem;           ///< Semaphore for async-signal-safe state changes
+static sem_t             stopSem;       ///< Semaphore for async-signal-safe stopping
 static std::atomic<bool> stop;          ///< Should the program stop?
 static ThreadEx          threadEx;      ///< Exception thrown by a thread
 static RunPar            runPar;        ///< Runtime parameters:
@@ -154,34 +153,6 @@ static void usage()
 }
 
 /**
- * Tries to decode a scalar (i.e., primitive) value in a YAML map.
- *
- * @tparam     T                 Type of scalar value
- * @param[in]  parent            Map containing the scalar
- * @param[in]  key               Name of the scalar
- * @param[out] value             Scalar value
- * @throw std::invalid_argument  Parent node isn't a map
- * @throw std::invalid_argument  Subnode with given name isn't a scalar
- */
-template<class T>
-static void tryDecode(YAML::Node&   parent,
-                      const String& key,
-                      T&            value)
-{
-    if (!parent.IsMap())
-        throw INVALID_ARGUMENT("Node \"" + parent.Tag() + "\" isn't a map");
-
-    auto child = parent[key];
-
-    if (child) {
-        if (!child.IsScalar())
-            throw INVALID_ARGUMENT("Node \"" + key + "\" isn't scalar");
-
-        value = child.as<T>();
-    }
-}
-
-/**
  * Sets runtime parameters from a configuration-file.
  *
  * @param[in] pathname           Pathname of the configuration-file
@@ -192,18 +163,18 @@ static void setFromConfig(const String& pathname)
     auto node0 = YAML::LoadFile(pathname);
 
     try {
-        tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
+        Parser::tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
         auto node1 = node0["LogLevel"];
         if (node1)
             log_setLevel(node1.as<String>());
-        tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
+        Parser::tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
 
         node1 = node0["Server"];
         if (node1) {
             auto node2 = node1["SockAddr"];
             if (node2)
                 runPar.srvr.addr = SockAddr(node2.as<String>());
-            tryDecode<decltype(runPar.srvr.listenSize)>(node1, "QueueSize",
+            Parser::tryDecode<decltype(runPar.srvr.listenSize)>(node1, "QueueSize",
                     runPar.srvr.listenSize);
         }
 
@@ -224,22 +195,26 @@ static void setFromConfig(const String& pathname)
                 auto node3 = node2["IfaceAddr"];
                 if (node3)
                     runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
-                tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
+                Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
                         runPar.p2p.srvr.acceptQSize);
             }
 
-            tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers", runPar.p2p.maxPeers);
-            tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
+            Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers",
+                    runPar.p2p.maxPeers);
+            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
                     runPar.p2p.trackerSize);
-            tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime", runPar.p2p.evalTime);
+            Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime",
+                    runPar.p2p.evalTime);
         }
 
         node1 = node0["Repository"];
         if (node1) {
-            tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname", runPar.repo.rootDir);
-            tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
+            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname",
+                    runPar.repo.rootDir);
+            Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
                     runPar.repo.maxOpenFiles);
-            tryDecode<decltype(runPar.repo.keepTime)>(node1, "KeepTime", runPar.repo.keepTime);
+            Parser::tryDecode<decltype(runPar.repo.keepTime)>(node1, "KeepTime",
+                    runPar.repo.keepTime);
         }
     } // YAML file loaded
     catch (const std::exception& ex) {
@@ -295,9 +270,6 @@ static void vetRunPar()
 static void init()
 {
     DataSeg::setMaxSegSize(runPar.maxSegSize);
-
-    if (::sem_init(&sem, 0, 0) == -1)
-            throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
     subInfo.version = 1;
     subInfo.feedName = runPar.feedName;
@@ -447,21 +419,13 @@ static void getCmdPars(
 }
 
 /**
- * Signals the program to halt.
- */
-static void halt()
-{
-    ::sem_post(&sem);
-}
-
-/**
  * Handles a termination signal.
  *
  * @param[in] sig  Signal number. Ignored.
  */
 static void sigHandler(const int sig)
 {
-    halt();
+    ::sem_post(&stopSem);
 }
 
 /**
@@ -473,7 +437,11 @@ static void setSigHandling()
 
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = SA_RESTART; // Restart interrupted system calls
+    /*
+     * System calls interrupted by a termination signal are restarted because termination is more
+     * cleanly handled by this application.
+     */
+    sigact.sa_flags = SA_RESTART;
     sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
@@ -483,7 +451,7 @@ static void setSigHandling()
 static void setException(const std::exception& ex)
 {
     threadEx.set(ex);
-    halt();
+    ::sem_post(&stopSem);
 }
 
 /// Runs the publishing node.
@@ -512,8 +480,8 @@ static void servSubscriber(Xprt xprt)
         if (subInfo.write(xprt)) {
             SockAddr p2pSrvrAddr;
             if (p2pSrvrAddr.read(xprt)) {
-                LOG_DEBUG("Received P2P server's address (" + p2pSrvrAddr.to_string() +
-                        ") from subscriber " + xprt.getRmtAddr().to_string());
+                LOG_DEBUG("Received P2P server's address, " + p2pSrvrAddr.to_string() +
+                        ", from subscriber " + xprt.getRmtAddr().to_string());
                 subInfo.tracker.insert(p2pSrvrAddr);
             }
         }
@@ -575,6 +543,9 @@ int main(const int    argc,
         getCmdPars(argc, argv);
         init();
 
+        if (::sem_init(&stopSem, 0, 0) == -1)
+                throw SYSTEM_ERROR("Couldn't initialize semaphore");
+
         pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
         setSigHandling(); // Catches termination signals
 
@@ -584,8 +555,8 @@ int main(const int    argc,
         auto serverThread = Thread(&runServer);
 
         //LOG_DEBUG("Waiting on semaphore");
-        ::sem_wait(&sem); // Returns if failure on a thread or termination signal
-        ::sem_destroy(&sem);
+        ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
+        ::sem_destroy(&stopSem);
 
         //LOG_DEBUG("Canceling server thread");
         ::pthread_cancel(serverThread.native_handle());

@@ -81,11 +81,11 @@ public:
     const std::string& getPathname() const noexcept;
 
     /**
-     * Returns the size of the underlying file in bytes.
+     * Returns the size of the product in bytes.
      *
-     * @return Size of the underlying file in bytes
+     * @return Size of the product in bytes
      */
-    ProdSize getFileSize() const noexcept;
+    ProdSize getProdSize() const noexcept;
 
     /**
      * Closes the underlying file. Idempotent.
@@ -141,6 +141,17 @@ public:
      * @cancellationpoint           No
      */
     const char* getData(ProdSize offset) const;
+
+    /**
+     * Returns a pointer to all the data within the product. Opens the underlying file if
+     * necessary.
+     *
+     * @retval                      Pointer to data
+     * @threadsafety                Safe
+     * @exceptionsafety             Strong guarantee
+     * @cancellationpoint           No
+     */
+    const char* getData() const;
 
     /**
      * Saves a data-segment. Opens the underlying file if necessary.

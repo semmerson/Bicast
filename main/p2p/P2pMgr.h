@@ -111,43 +111,23 @@ public:
     virtual ~P2pMgr() noexcept {};
 
     /**
-     * Starts this instance. Starts internal threads that create, accept, and execute peers. Doesn't
-     * block. Must be paired with `stop()` only.
-     *
-     * @throw LogicError  Instance can't be re-executed
-     * @see `stop()`
-     */
-    virtual void start() =0;
-
-    /**
-     * Stops execution. Does nothing if this instance hasn't been started. Blocks until execution
-     * terminates. Rethrows the first unrecoverable exception thrown by an internal thread if one
-     * exists. Must be paired with `start()` only.
-     *
-     * @throw SystemError   System failure
-     * @throw RuntimeError  P2p server failure
-     * @see `start()`
-     */
-    virtual void stop() =0;
-
-    /**
      * Executes this instance. Starts internal threads that create, accept, and execute peers.
-     * Doesn't return until `halt()` is called or an internal thread throws an unrecoverable
-     * exception. Rethrows the first unrecoverable exception thrown by an internal thread if one
-     * exists. Must be paired with `halt()` only.
+     * Doesn't return until `halt()` is called or an internal thread throws an  exception. Rethrows
+     * the first exception thrown by an internal thread if it exists.
      *
-     * @throw LogicError    Instance can't be re-executed
+     * @throw LogicError    Function called more than once
      * @throw SystemError   System failure
      * @throw RuntimeError  P2p server failure
-     * @see `halt()`
+     * @see                 `halt()`
      */
     virtual void run() =0;
 
     /**
-     * Halts execution. Does nothing if this instance isn't executing. Causes `run()` to return.
-     * Doesn't block. Must be paired with `run()` only.
+     * Halts execution. Causes `run()` to return. Doesn't block.
      *
-     * @see `run()`
+     * @throw LogicError   `run()` hasn't been called
+     * @asyncsignalsafety  Safe
+     * @see                `run()`
      */
     virtual void halt() =0;
 
@@ -222,18 +202,18 @@ public:
     /**
      * Returns a set of this instance's identifiers of complete products minus those of another set.
      *
-     * @param[in]  other    Other set of product identifiers to be subtracted from the ones this
+     * @param[in]  rhs      Other set of product identifiers to be subtracted from the ones this
      *                      instance has
      * @return              This instance's identifiers minus those of the other set
      */
-    virtual ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const =0;
+    virtual ProdIdSet subtract(ProdIdSet rhs) const =0;
 
     /**
      * Returns the set of identifiers of complete products.
      *
      * @return             Set of complete product identifiers
      */
-    virtual ProdIdSet::Pimpl getProdIds() const =0;
+    virtual ProdIdSet getProdIds() const =0;
 
     /**
      * Returns information on a product. This might count against the remote peer.

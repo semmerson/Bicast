@@ -128,18 +128,18 @@ public:
     void run() {};
     void halt() {};
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return ProdIdSet{};
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet getProdIds() const override {
+        return ProdIdSet{};
     }
 
     // Subscriber-side
     bool recvNotice(const ProdId notice, SockAddr rmtAddr) override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         EXPECT_EQ(prodIds[prodNoticeCount++], notice);
         orState(PROD_NOTICE_RCVD);
         return true;
@@ -148,7 +148,7 @@ public:
     // Subscriber-side
     bool recvNotice(const DataSegId notice, SockAddr rmtAddr) override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         EXPECT_EQ(segIds[segNoticeCount++], notice);
         orState(SEG_NOTICE_RCVD);
         return true;
@@ -157,7 +157,7 @@ public:
     // Publisher-side
     ProdInfo getDatum(const ProdId request, const SockAddr rmtAddr) override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         EXPECT_EQ(prodIds[prodRequestCount], request);
         orState(PROD_REQUEST_RCVD);
         auto prodInfo = (skipping && prodRequestCount == 0)
@@ -170,7 +170,7 @@ public:
     // Publisher-side
     DataSeg getDatum(const DataSegId request, const SockAddr rmtAddr) override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         EXPECT_EQ(segIds[segRequestCount], request);
         orState(SEG_REQUEST_RCVD);
         auto dataSeg = (skipping && segRequestCount == 0)
@@ -183,7 +183,7 @@ public:
     // Subscriber-side
     void recvData(const ProdInfo data, SockAddr rmtAddr) override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         EXPECT_EQ((skipping) ? prodInfos[1] : prodInfos[prodDataCount++], data);
         orState(PROD_INFO_RCVD);
     }
@@ -192,7 +192,7 @@ public:
     void recvData(const DataSeg actualDataSeg, SockAddr rmtAddr)
             override
     {
-        LOG_TRACE;
+        LOG_TRACE("Entered");
         ASSERT_EQ(segSize, actualDataSeg.getSize());
         EXPECT_EQ(0, ::memcmp(dataSeg.getData(), actualDataSeg.getData(),
                 segSize));

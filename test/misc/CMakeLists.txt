@@ -30,12 +30,10 @@ target_link_libraries(unordered_map_test gtest)
 add_test(unordered_map_test unordered_map_test)
 
 add_executable(error_test error_test.cpp)
-include_directories(${CMAKE_SOURCE_DIR}/main/misc)
 target_link_libraries(error_test hycast gtest)
 add_test(error_test error_test)
 
 #add_executable(MapQ_test MapQ_test.cpp)
-#include_directories(${CMAKE_SOURCE_DIR}/main/misc)
 #target_link_libraries(MapQ_test hycast gtest)
 #add_test(MapQ_test MapQ_test)
 

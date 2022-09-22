@@ -31,6 +31,7 @@
 #include <exception>
 #include <list>
 #include <pthread.h>
+#include <semaphore.h>
 #include <set>
 #include <system_error>
 #include <unordered_map>
@@ -67,10 +68,11 @@ protected:
         STOPPING,
         STOPPED
     }                    state;         ///< State of this instance
-    mutable Mutex        stateMutex;    ///< For changing state
+    mutable Mutex        stateMutex;    ///< Guards state
     mutable Cond         stateCond;     ///< For changing state
-    mutable Mutex        peerSetMutex;  ///< To protect the set of active peers
-    mutable Cond         peerSetCond;   ///< To support concurrency
+    mutable Mutex        peerSetMutex;  ///< Guards set of active peers
+    mutable Cond         peerSetCond;   ///< For changing set of active peers
+    mutable sem_t        runSem;        ///< For async-signal-safe state changes
     Tracker              tracker;       ///< Socket addresses of available but unused P2P servers
     ThreadEx             threadEx;      ///< Exception thrown by internal threads
     const unsigned       maxSrvrPeers;  ///< Maximum number of server-side peers
@@ -83,11 +85,13 @@ protected:
     std::chrono::seconds evalTime;      ///< Evaluation interval for poorest-performing peer
 
     /**
-     * @pre               The state mutex is locked
+     * @pre               The state mutex is unlocked
+     * @throw LogicError  The state isn't INIT
      * @post              The state is STARTED
-     * @throw LogicError  Instance can't be re-executed
+     * @post              The state mutex is unlocked
      */
     void startImpl() {
+        Guard guard{stateMutex};
         if (state != State::INIT)
             throw LOGIC_ERROR("Instance can't be re-executed");
         startThreads();
@@ -97,30 +101,51 @@ protected:
     /**
      * Idempotent.
      *
-     * @pre  The state mutex is locked
-     * @post The state is STOPPED
+     * @pre               The state mutex is unlocked
+     * @throw LogicError  The state is stopping
+     * @post              The state is STOPPED
+     * @post              The state mutex is unlocked
      */
     void stopImpl() {
+        Guard guard{stateMutex};
+        LOG_ASSERT(state == State::STARTED);
+
+        state = State::STOPPING;
+
         /*
-         * Ensure that the set of active peers will no longer be changed so that it can be iterated
+         * Ensure that the set of active peers will no longer change so that it can be iterated
          * through without locking it, which can deadlock with `SubP2pMgr::recvData()`.
          */
         stopThreads();
-        // Ensure the latest view of the set of active peers now that it won't change.
-        { Guard guard{peerSetMutex}; }
+
         for (auto peer : peerSet) {
             peer->stop();
             bookkeeper->erase(peer); // Necessary to prevent P2pMgr_test hanging for some reason
         }
+
         state = State::STOPPED;
-        threadEx.throwIfSet();
     }
 
     void setException(const std::exception& ex) {
+        ::sem_post(&runSem);
+        /*
         Guard guard{stateMutex};
         threadEx.set(ex);
         state = State::STOPPING;
-        stateCond.notify_one();
+        stateCond.notify_all();
+        */
+    }
+
+    void runPeer(Peer::Pimpl peer) {
+        try {
+            peer->run();
+            LOG_INFO("Peer %s terminated", peer->to_string().data());
+        }
+        catch (const std::exception& ex) {
+            LOG_ERROR(ex);
+            LOG_ERROR("Peer %s failed", peer->to_string().data());
+        }
+        remove(peer);
     }
 
     /**
@@ -134,9 +159,13 @@ protected:
      */
     virtual bool peerAdded(Peer::Pimpl peer) =0;
 
+    void start(Peer::Pimpl peer) {
+        Thread(&P2pMgrImpl::runPeer, this, peer).detach();
+    }
+
     /**
      * Adds a peer. Adds the peer to the set of active peers and the bookkeeper; then starts the
-     * peer. Notifies waiting threads about the change.
+     * peer. Notifies waiting threads about the change to the set of active peers.
      *
      * @pre                   Mutex is unlocked
      * @param[in] peer        Peer to be added
@@ -225,7 +254,7 @@ protected:
      * Returns the server-side peer corresponding to an accepted connection from a client-side peer.
      * The returned peer is connected to its remote counterpart but not yet receiving from it.
      *
-     * @return  Server-side peer
+     * @return  Server-side peer. Will test false if the P2P-server has been halted.
      */
     virtual Peer::Pimpl accept() =0;
 
@@ -327,6 +356,7 @@ public:
         , peersChanged(false)
         , peerSetMutex()
         , peerSetCond()
+        , runSem()
         , tracker(tracker)
         , threadEx()
         , maxSrvrPeers(maxSrvrPeers)
@@ -341,55 +371,55 @@ public:
         if (maxSrvrPeers <= 0)
             throw INVALID_ARGUMENT("Invalid maximum number of server-side peers: " +
                     std::to_string(maxSrvrPeers));
+
+        if (::sem_init(&runSem, 0, 0) == -1)
+            throw SYSTEM_ERROR("Couldn't initialize semaphore");
     }
 
     virtual ~P2pMgrImpl() noexcept {
-        //LOG_DEBUG("Called");
-        //LOG_DEBUG("Returning");
-    }
-
-    void start() override {
         Guard guard{stateMutex};
-        startImpl();
-    }
-
-    /**
-     * This function is necessary for the caller to catch an exception thrown by an internal thread.
-     */
-    void stop() override {
-        Guard guard{stateMutex};
-        if (state == State::STARTED)
-            stopImpl();
+        LOG_ASSERT(state == State::INIT || state == State::STOPPED);
+        ::sem_destroy(&runSem);
     }
 
     void run() override {
-        Lock lock{stateMutex};
         startImpl();
-        stateCond.wait(lock, [&]{return state == State::STOPPING;});
+        ::sem_wait(&runSem); // Blocks until `halt()` called or `threadEx` is true
+        //stateCond.wait(lock, [&]{return state == State::STOPPING;});
         stopImpl();
+        threadEx.throwIfSet();
     }
 
     void halt() override {
         Guard guard{stateMutex};
-        if (state == State::STARTED) {
-            state = State::STOPPING;
-            stateCond.notify_one();
-        }
+        if (state != State::STARTED)
+            throw LOGIC_ERROR("Instance isn't in state STARTED");
+        ::sem_post(&runSem);
+
+        /*
+        haltP2pSrvr();
+
+        Guard guard{stateMutex};
+        state = State::STOPPING;
+        stateCond.notify_all();
+        */
     }
 
     /**
-     * Runs the P2P server. Accepts connecting remote peers and adds them to the set of active
+     * Runs the P2P server. Accepts connections from remote peers and adds them to the set of active
      * server-side peers. Must be public because it's the start function for a thread.
      *
      * NB: `noexcept` is incompatible with thread cancellation.
      */
     void acceptPeers() {
         try {
-            auto needPeer = [&]{return numSrvrPeers < maxSrvrPeers;};
+            auto doSomething = [&]{return numSrvrPeers < maxSrvrPeers || state == State::STOPPING;};
             for (;;) {
                 {
                     Lock lock{peerSetMutex};
-                    peerSetCond.wait(lock, needPeer);
+                    peerSetCond.wait(lock, doSomething);
+                    if (state == State::STOPPING)
+                        break;
                     /*
                      * The mutex is released immediately because  a server-side peer is only added
                      * by the current thread.
@@ -397,6 +427,9 @@ public:
                 }
 
                 auto peer = accept();
+                if (!peer)
+                    break; // `p2pSrvr->halt()` was called
+
                 if (!add(peer)) {
                     LOG_WARNING("Peer %s was previously accepted", peer->to_string().data());
                 }
@@ -409,8 +442,7 @@ public:
         }
         catch (const std::exception& ex) {
             try {
-                std::throw_with_nested(
-                        RUNTIME_ERROR("PeerSrvr::accept() failure"));
+                std::throw_with_nested(RUNTIME_ERROR("PeerSrvr::accept() failure"));
             }
             catch (const std::exception& ex) {
                 setException(ex);
@@ -432,14 +464,18 @@ public:
             const unsigned maxPeers) {
         try {
             Lock lock{peerSetMutex};
-            auto resetNeeded = [&]{return peersChanged;};
+            auto doSomething = [&]{return peersChanged || state == State::STOPPING;};
 
             for (;;) {
                 bookkeeper->reset();
                 peersChanged = false;
 
                 // Wait until the set of relevant peers is unchanged for the evaluation duration
-                if (!peerSetCond.wait_for(lock, evalTime, resetNeeded) && (numPeers >= maxPeers)) {
+                if (peerSetCond.wait_for(lock, evalTime, doSomething)) {
+                    if (state == State::STOPPING)
+                        break;
+                }
+                else if (numPeers >= maxPeers) {
                     auto worstPeer = bookkeeper->getWorstPeer();
                     if (worstPeer)
                         lockedRemove(worstPeer);
@@ -466,11 +502,11 @@ public:
         notify<DataSegId>(segId);
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return node.subtract(other);
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return node.subtract(rhs);
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
+    ProdIdSet getProdIds() const override {
         return node.getProdIds();
     }
 
@@ -527,17 +563,14 @@ class PubP2pMgrImpl final : public P2pMgrImpl
 {
     PubP2pSrvr::Pimpl p2pSrvr;   ///< P2P server
 
-    void stopThreadsImpl() {
-        cancelAndJoin(improveThread);
-        cancelAndJoin(acceptThread);
-    }
-
 protected:
     Peer::Pimpl accept() override {
         return p2pSrvr->accept(*this);
     }
 
     void startThreads() override {
+        LOG_ASSERT(state == State::INIT);
+
         try {
             acceptThread = Thread(&P2pMgrImpl::acceptPeers, this);
             improveThread = Thread(&P2pMgrImpl::improvePeers, this,
@@ -550,16 +583,26 @@ protected:
     }
 
     void stopThreads() override {
-        stopThreadsImpl();
+        LOG_ASSERT(!stateMutex.try_lock());
+        LOG_ASSERT(state == State::STOPPING);
+
+        p2pSrvr->halt(); // Causes `accept()` to return a false peer
+        {
+            Guard guard{peerSetMutex};
+            peerSetCond.notify_all(); // Signals improvement and accept threads to terminate
+        } // `peerSetMutex` must be unlocked for the threads to terminate
+
+        improveThread.join();
+        acceptThread.join();
     }
 
     bool peerAdded(Peer::Pimpl peer) override {
         /*
-         * The remote peer knows that this instance is a publisher's; therefore, there's no need to
+         * The remote peer knows that this instance is a publisher; therefore, there's no need to
          * inform it that this instance is a path to the publisher.
          *
          * `getPeerSetTracker()` is useless because all those peers were constructed server-side,
-         * which means that their remote addresses aren't their P2P servers'.
+         * which means that their remote addresses aren't those of their P2P servers'.
          */
         return peer->add(tracker);
     }
@@ -613,15 +656,6 @@ public:
     }
 
     PubP2pMgrImpl(const PubP2pMgrImpl& impl) =delete;
-
-    ~PubP2pMgrImpl() noexcept {
-        try {
-            stop();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex, "Couldn't stop execution");
-        }
-    }
 
     PubP2pMgrImpl& operator=(const PubP2pMgrImpl& rhs) =delete;
 
@@ -702,6 +736,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
         mutable Cond     cond;
         const size_t     capacity;
         std::list<Entry> fifo;
+        bool             done;
 
     public:
         /**
@@ -715,6 +750,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
             , cond()
             , capacity(capacity)
             , fifo()
+            , done(false)
         {}
 
         /**
@@ -745,13 +781,25 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
          */
         SockAddr removeNext() {
             Lock lock(mutex);
-            cond.wait(lock, [&]{return !fifo.empty() &&
-                Clock::now() >= fifo.front().revealTime;});
+            cond.wait(lock, [&]{return (!fifo.empty() &&
+                Clock::now() >= fifo.front().revealTime) || done;});
+
+            if (done)
+                return SockAddr();
 
             SockAddr sockAddr = fifo.front().sockAddr;
             fifo.pop_front();
 
             return sockAddr;
+        }
+
+        /**
+         * Causes `removeNext()` to always return a socket address that tests false.
+         */
+        void halt() {
+            Guard guard{mutex};
+            done = true;
+            cond.notify_all();
         }
     };
 
@@ -771,7 +819,13 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
     void retry() {
         try {
             for (;;) {
-                auto sockAddr = delayFifo.removeNext(); // Blocks until ready
+                // Blocks until ready or `delayFifo.halt()` called
+                auto sockAddr = delayFifo.removeNext();
+                if (!sockAddr) {
+                    // `delayFifo.halt()` called
+                    LOG_ASSERT(state == State::STOPPING);
+                    break;
+                }
                 tracker.insert(sockAddr);
             }
         }
@@ -808,30 +862,49 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
      */
     void connectPeers() {
         try {
-            auto needPeer = [&]{return numClntPeers < maxClntPeers;};
+            auto needPeer = [&]{return numClntPeers < maxClntPeers || state == State::STOPPING;};
             for (;;) {
                 {
+                    LOG_TRACE("Locking the peer-set mutex");
                     Lock lock{peerSetMutex};
+                    LOG_TRACE("Waiting for the need for a peer");
                     peerSetCond.wait(lock, needPeer);
+
+                    if (state == State::STOPPING)
+                        break;
                     /*
                      * The peer-set mutex is released immediately because a client-side peer is only
                      * added by the current thread.
                      */
                 }
 
-                auto rmtSrvrAddr = tracker.removeHead(); // Blocks if empty
+                LOG_TRACE("Removing tracker head");
+                auto rmtSrvrAddr = tracker.removeHead(); // Blocks if empty. Cancellation point.
+                if (!rmtSrvrAddr) {
+                    // tracker.halt() called
+                    LOG_ASSERT(state == State::STOPPING);
+                    break;
+                }
+
                 try {
+                    LOG_TRACE("Creating peer");
                     auto peer = Peer::create(*this, rmtSrvrAddr);
                     try {
-                        if (!add(peer))
+                        LOG_TRACE("Adding peer to peer-set");
+                        if (!add(peer)) {
+                            LOG_DEBUG("Throwing logic error");
                             throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
+                        }
 
                         try {
                             LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
-                            if (!peerAdded(peer))
+                            if (!peerAdded(peer)) {
+                                LOG_DEBUG("Removing peer %s", rmtSrvrAddr.to_string().data());
                                 remove(peer);
-                        } // Peer was added to peer-set
-                        catch (const std::exception& ex) {
+                            }
+                        } // Peer is active and in peer-set
+                        catch (...) {
+                            LOG_DEBUG("Removing peer");
                             remove(peer);
                             throw;
                         }
@@ -849,19 +922,24 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                             delayFifo.insert(rmtSrvrAddr);
                         }
                         else {
+                            LOG_DEBUG("Throwing exception %s", ex.what());
                             throw;
                         }
                     }
                 } // `rmtSrvrAddr` removed from tracker
-                catch (...) {
+                catch (const std::exception& ex) {
                     // The exception is unrelated to peer availability
-                    tracker.insert(rmtSrvrAddr);
-                    throw; // A thread cancellation "exception" *must* be rethrown
+                    tracker.insert(rmtSrvrAddr); // Put it back
                 }
-            }
+            } // New client-side peer loop
         }
         catch (const std::exception& ex) {
+            LOG_DEBUG("Setting exception %s", ex.what());
             setException(ex);
+        }
+        catch (...) {
+            LOG_DEBUG("Caught cancellation exception?");
+            throw; // A thread cancellation "exception" *must* be rethrown
         }
     }
 
@@ -885,6 +963,9 @@ protected:
     }
 
     void startThreads() override {
+        LOG_ASSERT(!stateMutex.try_lock());
+        LOG_ASSERT(state == State::INIT);
+
         try {
             retryThread = Thread(&SubP2pMgrImpl::retry, this);
             connectThread = Thread(&SubP2pMgrImpl::connectPeers, this);
@@ -899,10 +980,21 @@ protected:
     }
 
     void stopThreads() override {
-        cancelAndJoin(improveThread);
-        cancelAndJoin(acceptThread);
-        cancelAndJoin(connectThread);
-        cancelAndJoin(retryThread);
+        LOG_ASSERT(!stateMutex.try_lock());
+        LOG_ASSERT(state == State::STOPPING);
+
+        p2pSrvr->halt(); // Causes `accept()` to return a false peer
+        {
+            Guard guard{peerSetMutex};
+            tracker.halt();           // Causes connect thread to terminate
+            delayFifo.halt();         // Causes retry thread to terminate
+            peerSetCond.notify_all(); // Causes improve and connect threads to terminate
+        } // `peerSetMutex` must be unlocked for some threads to terminate
+
+        improveThread.join();
+        acceptThread.join();
+        connectThread.join();
+        retryThread.join();
     }
 
     void incPeerCount(Peer::Pimpl peer) override {
@@ -969,24 +1061,7 @@ public:
 
     SubP2pMgrImpl(const SubP2pMgrImpl& impl) =delete;
 
-    ~SubP2pMgrImpl() noexcept {
-        try {
-            stop();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex, "Couldn't stop execution");
-        }
-    }
-
     SubP2pMgrImpl& operator=(const SubP2pMgrImpl& rhs) =delete;
-
-    void start() override {
-        P2pMgrImpl::start();
-    }
-
-    void stop() override {
-        P2pMgrImpl::stop();
-    }
 
     void run() {
         P2pMgrImpl::run();
@@ -1012,11 +1087,11 @@ public:
         P2pMgrImpl::notify(segId);
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
+    ProdIdSet subtract(ProdIdSet other) const override {
         return P2pMgrImpl::subtract(other);
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
+    ProdIdSet getProdIds() const override {
         return P2pMgrImpl::getProdIds();
     }
 
@@ -1068,9 +1143,9 @@ public:
     void recvData(const DATUM datum,
                   SockAddr    rmtAddr) {
         const auto id = datum.getId();
-        LOG_DEBUG("Locking peer-set mutex");
+        LOG_TRACE("Locking peer-set mutex");
         Guard      guard{peerSetMutex};
-        LOG_DEBUG("Peer-set mutex locked");
+        LOG_TRACE("Peer-set mutex locked");
 
         if (peerMap.count(rmtAddr)) {
             auto& peer = peerMap[rmtAddr];
@@ -1082,21 +1157,21 @@ public:
              *      from the bookkeeper; and
              *   3) The relevant bookkeeper entries are deleted.
              */
-            LOG_DEBUG("Calling bookkeeper");
+            LOG_TRACE("Calling bookkeeper");
             if (bookkeeper->received(peer, id)) {
-                LOG_DEBUG("Calling subscribing node");
+                LOG_TRACE("Calling subscribing node");
                 subNode.recvP2pData(datum);
 
-                LOG_DEBUG("Notifying peers");
+                LOG_DEBUG("Notifying peers about datum %s", id.to_string().data());
                 for (auto p : peerSet) {
                     if (shouldNotify(p, datum.getId()))
                         p->notify(id);
                 }
-                LOG_DEBUG("Erasing bookkeeper entry");
+                LOG_TRACE("Erasing bookkeeper entry");
                 bookkeeper->erase(id); // No longer relevant
             }
             else {
-                LOG_DEBUG("Datum " + id.to_string() + " was unexpected");
+                LOG_WARNING("Datum " + id.to_string() + " was unexpected");
             }
         }
         else {

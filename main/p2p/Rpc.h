@@ -125,6 +125,24 @@ public:
     virtual void stop() =0;
 
     /**
+     * Runs this instance. Doesn't return until `halt()` is called or an internal thread throws an
+     * exception.
+     *
+     * @param[in] peer        Containing peer
+     * @throw LogicException  Instance was previously started
+     * @see `halt()`
+     */
+    virtual void run(Peer& peer) =0;
+
+    /**
+     * Halts this instance. Causes `run()` to return. Doesn't block.
+     *
+     * @throw LogicException  Instance was not started
+     * @see `run()`
+     */
+    virtual void halt() =0;
+
+    /**
      * Notifies the remote as to whether this local end is a path to the publisher.
      *
      * @param[in] amPubPath  Is this end a path to the publisher?
@@ -236,7 +254,7 @@ public:
      * @param[in] prodIds  Product identifiers
      * @return
      */
-    virtual bool send(const ProdIdSet::Pimpl prodIds) =0;
+    virtual bool send(const ProdIdSet prodIds) =0;
 };
 
 /******************************************************************************/
@@ -291,12 +309,18 @@ public:
     virtual SockAddr getSrvrAddr() const =0;
 
     /**
-     * Returns a new RPC instance that's connected to a remote RPC client.
-     * Blocks until one is ready.
+     * Returns a new RPC instance that's connected to a remote RPC client. Blocks until one is
+     * ready.
      *
-     * @return RPC layer connected to remote RPC client
+     * @return RPC layer connected to remote RPC client. Will test false if `halt()` has been
+     * called.
      */
     virtual Rpc::Pimpl accept() =0;
+
+    /**
+     * Halts the RPC-server.
+     */
+    virtual void halt() =0;
 };
 
 } // namespace

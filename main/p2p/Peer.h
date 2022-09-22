@@ -34,8 +34,8 @@
 namespace hycast {
 
 /**
- * Interface for handling low-level, asynchronous, bidirectional messaging with
- * a remote counterpart.
+ * Interface for handling low-level, asynchronous, bidirectional messaging with a remote
+ * counterpart.
  */
 class Peer
 {
@@ -162,6 +162,17 @@ public:
     virtual void stop() =0;
 
     /**
+     * Executes this instance. Doesn't return until `halt()` is called or an internal thread throws
+     * an exception.
+     */
+    virtual void run() =0;
+
+    /**
+     * Halts this instance. Causes `run()` to return.
+     */
+    virtual void halt() =0;
+
+    /**
      * Notifies the remote peer as to whether the local node has a path to the publisher.
      *
      * @param[in] havePubPath  Does the local node have a path to the publisher?
@@ -232,7 +243,7 @@ public:
      * @throw LogicError   Remote peer is the publisher
      * @throw LogicError   The backlog is already being handled
      */
-    virtual void recvHaveProds(ProdIdSet::Pimpl prodIds) =0;
+    virtual void recvHaveProds(ProdIdSet prodIds) =0;
 
     /**
      * Receives notification to add a potential peer-server.
@@ -323,15 +334,15 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for a peer-server.
+ * Interface for a P2P-server.
  *
  * @tparam P2P_MGR  Type of P2P manager: `PubP2pMgr` or `SubP2pMgr`
  */
 template<typename P2P_MGR>
-class PeerSrvr
+class P2pSrvr
 {
 public:
-    using Pimpl = std::shared_ptr<PeerSrvr<P2P_MGR>>;
+    using Pimpl = std::shared_ptr<P2pSrvr<P2P_MGR>>;
 
     /**
      * @throw InvalidArgument  Accept-queue size is zero
@@ -347,15 +358,25 @@ public:
             const SockAddr srvrAddr,
             const unsigned acceptQSize);
 
-    virtual ~PeerSrvr() {};
+    virtual ~P2pSrvr() {};
 
     virtual SockAddr getSrvrAddr() const =0;
 
+    /**
+     * Returns the next, accepted peer. Will test false if `halt()` has been called.
+     * @param p2pMgr
+     * @return
+     */
     virtual Peer::Pimpl accept(P2P_MGR& p2pMgr) =0;
+
+    /**
+     * Halts the peer-server.
+     */
+    virtual void halt() =0;
 };
 
-using PubP2pSrvr = PeerSrvr<PubP2pMgr>;
-using SubP2pSrvr = PeerSrvr<SubP2pMgr>;
+using PubP2pSrvr = P2pSrvr<PubP2pMgr>;
+using SubP2pSrvr = P2pSrvr<SubP2pMgr>;
 
 } // namespace
 

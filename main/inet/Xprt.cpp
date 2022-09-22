@@ -24,6 +24,7 @@
 #include <error.h>
 #include <inttypes.h>
 #include <Socket.h>
+#include <string>
 #include <Xprt.h>
 
 namespace hycast {
@@ -159,7 +160,7 @@ public:
     }
 
     bool flush() {
-        sock.flush();
+        return sock.flush();
     }
 
     /**

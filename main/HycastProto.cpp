@@ -78,37 +78,6 @@ String ProdId::to_string() const noexcept {
     return String(buf);
 }
 
-String Timestamp::to_string() const noexcept {
-    const time_t s = Clock::to_time_t(timePoint);
-    struct tm    tm;
-    ::gmtime_r(&s, &tm);
-
-    char         buf[30] = {}; // YYYY-MM-DDThh:mm:ss.uuuuuuZ
-    auto         nbytes = ::strftime(buf, sizeof(buf)-1, "%FT%T", &tm);
-
-    const long   us =
-            duration_cast<microseconds>(timePoint - Clock::from_time_t(0)).count() % 1000000;
-    ::snprintf(buf+nbytes, sizeof(buf)-1-nbytes, ".%06ldZ", us);
-    return String(buf);
-}
-
-bool Timestamp::write(Xprt xprt) const {
-    // Microseconds since 1970-01-01T00:00:00Z
-    const uint64_t us = duration_cast<microseconds>(timePoint - Clock::from_time_t(0)).count();
-    //LOG_DEBUG("Writing " + std::to_string(us));
-    return xprt.write(us);
-}
-
-bool Timestamp::read(Xprt xprt) {
-    uint64_t    us; // Microseconds since 1970-01-01T00:00:00Z
-    const auto success = xprt.read(us);
-    if (success) {
-        //LOG_DEBUG("Read    " + std::to_string(us));
-        timePoint = Clock::from_time_t(0) + microseconds(us);
-    }
-    return success;
-}
-
 std::string DataSegId::to_string(const bool withName) const
 {
     String string;
@@ -156,33 +125,109 @@ bool Notice::operator==(const Notice& rhs) const noexcept {
 
 /// Set of product identifiers
 
-void ProdIdSet::subtract(const Pimpl other) {
-    for (auto iter = other->begin(), stop = other->end(); iter != stop; ++iter)
-        erase(*iter);
+class ProdIdSet::Impl
+{
+    using Set = std::unordered_set<ProdId>;
+
+    Set prodIds;
+
+public:
+    Impl(const size_t n)
+        : prodIds{n}
+    {}
+
+    void subtract(const Impl& rhs) {
+        for (auto iter = rhs.prodIds.begin(), end = rhs.prodIds.end(); iter != end; ++iter)
+            prodIds.erase(*iter);
+    }
+
+    bool write(Xprt xprt) const {
+        if (!xprt.write(static_cast<uint32_t>(prodIds.size())))
+            return false;
+        for (auto iter = prodIds.begin(), end = prodIds.end(); iter != end; ++iter)
+            if (!iter->write(xprt))
+                return false;
+        return true;
+    }
+
+    bool read(Xprt xprt) {
+        uint32_t size;
+        if (!xprt.read(size))
+            return false;
+        prodIds.clear();
+        prodIds.reserve(size);
+        for (uint32_t i; i < size; ++i) {
+            ProdId prodId;
+            if (!prodId.read(xprt))
+                return false;
+            prodIds.insert(prodId);
+        }
+        return true;
+    }
+
+    size_t size() const {
+        return prodIds.size();
+    }
+
+    size_t count(const ProdId prodId) const {
+        return prodIds.count(prodId);
+    }
+
+    void insert(const ProdId prodId) {
+        prodIds.insert(prodId);
+    }
+
+    Set::iterator begin() {
+        return prodIds.begin();
+    }
+
+    Set::iterator end() {
+        return prodIds.end();
+    }
+
+    void clear() {
+        prodIds.clear();
+    }
+};
+
+ProdIdSet::ProdIdSet(const size_t n)
+    : pImpl{new Impl(n)}
+{}
+
+void ProdIdSet::subtract(const ProdIdSet rhs) {
+    pImpl->subtract(*rhs.pImpl);
 }
 
 bool ProdIdSet::write(Xprt xprt) const {
-    if (!xprt.write(static_cast<uint32_t>(size())))
-        return false;
-    for (auto iter = begin(), stop = end(); iter != stop; ++iter)
-        if (!iter->write(xprt))
-            return false;
-    return true;
+    return pImpl->write(xprt);
 }
 
 bool ProdIdSet::read(Xprt xprt) {
-    uint32_t size;
-    if (!xprt.read(size))
-        return false;
-    clear();
-    reserve(size);
-    for (uint32_t i; i < size; ++i) {
-        ProdId prodId;
-        if (!prodId.read(xprt))
-            return false;
-        emplace(prodId);
-    }
-    return true;
+    return pImpl->read(xprt);
+}
+
+size_t ProdIdSet::size() const {
+    return pImpl->size();
+}
+
+size_t ProdIdSet::count(const ProdId prodId) const {
+    return pImpl->count(prodId);
+}
+
+void ProdIdSet::insert(const ProdId prodId) const {
+    pImpl->insert(prodId);
+}
+
+ProdIdSet::iterator ProdIdSet::begin() const {
+    return pImpl->begin();
+}
+
+ProdIdSet::iterator ProdIdSet::end() const {
+    return pImpl->end();
+}
+
+void ProdIdSet::clear() const {
+    pImpl->clear();
 }
 
 /******************************************************************************/

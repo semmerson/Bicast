@@ -7,22 +7,21 @@
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #include "config.h"
 
 #include "Node.h"
+#include "Parser.h"
 #include "ThreadException.h"
 
 #include <semaphore.h>
@@ -85,7 +84,7 @@ struct RunPar {
     {}
 };
 
-static sem_t             sem;       ///< Semaphore for async-signal-safe state changes
+static sem_t             stopSem;   ///< Semaphore for async-signal-safe stopping
 static ThreadEx          threadEx;  ///< Exception thrown by a thread
 static RunPar            runPar;    ///< Runtime parameters:
 static const RunPar      defRunPar; ///< Default runtime parameters
@@ -129,35 +128,6 @@ static void usage()
 }
 
 /**
- * Tries to decode a scalar (i.e., primitive) value in a YAML map.
- *
- * @tparam     T                 Type of scalar value
- * @param[in]  parent            Map containing the scalar
- * @param[in]  key               Name of the scalar
- * @param[out] value             Scalar value
- * @throw std::invalid_argument  Parent node isn't a map
- * @throw std::invalid_argument  Subnode with given name isn't a scalar
- */
-template<class T>
-static void tryDecode(
-        YAML::Node&   parent,
-        const String& key,
-        T&            value)
-{
-    if (!parent.IsMap())
-        throw INVALID_ARGUMENT("Node \"" + parent.Tag() + "\" isn't a map");
-
-    auto child = parent[key];
-
-    if (child) {
-        if (!child.IsScalar())
-            throw INVALID_ARGUMENT("Node \"" + key + "\" isn't scalar");
-
-        value = child.as<T>();
-    }
-}
-
-/**
  * Sets runtime parameters from a configuration-file.
  *
  * @param[in] pathname           Pathname of the configuration-file
@@ -183,21 +153,24 @@ static void setFromConfig(const String& pathname)
                 auto node2 = node1["IfaceAddr"];
                 if (node2)
                     runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
-                tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
+                Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
                         runPar.p2p.srvr.acceptQSize);
             }
 
-            tryDecode<decltype(runPar.p2p.timeout)>(node1, "Timeout", runPar.p2p.timeout);
-            tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers", runPar.p2p.maxPeers);
-            tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
+            Parser::tryDecode<decltype(runPar.p2p.timeout)>(node1, "Timeout", runPar.p2p.timeout);
+            Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers",
+                    runPar.p2p.maxPeers);
+            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
                     runPar.p2p.trackerSize);
-            tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime", runPar.p2p.evalTime);
+            Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime",
+                    runPar.p2p.evalTime);
         }
 
         node1 = node0["Repository"];
         if (node1) {
-            tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname", runPar.repo.rootDir);
-            tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
+            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname",
+                    runPar.repo.rootDir);
+            Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
                     runPar.repo.maxOpenFiles);
         }
     } // YAML file loaded
@@ -394,24 +367,13 @@ static SubNode::Pimpl createSubNode()
             runPar.p2p.srvr.acceptQSize, runPar.p2p.timeout, runPar.p2p.maxPeers,
             runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
 
-    LOG_DEBUG("Sending P2P server's address " + subNode->getP2pSrvrAddr().to_string() +
-            " to publisher " + runPar.pubAddr.to_string());
+    LOG_DEBUG("Sending P2P server's address, " + subNode->getP2pSrvrAddr().to_string() +
+            ", to publisher " + runPar.pubAddr.to_string());
     if (!subNode->getP2pSrvrAddr().write(xprt))
         throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher " +
                 runPar.pubAddr.to_string());
 
     return subNode;
-}
-
-/**
- * Signals the program to halt.
- *
- * @threadsafefy     Safe
- * @asyncsignalsafe  Yes
- */
-static void halt()
-{
-    sem_post(&sem);
 }
 
 /**
@@ -421,7 +383,7 @@ static void halt()
  */
 static void sigHandler(const int sig)
 {
-    halt();
+    ::sem_post(&stopSem);
 }
 
 /**
@@ -433,7 +395,11 @@ static void setSigHand()
 
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = SA_RESTART; // Restart interrupted system calls
+    /*
+     * System calls interrupted by a termination signal are restarted because termination is more
+     * cleanly handled by this application.
+     */
+    sigact.sa_flags = SA_RESTART;
     sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
@@ -443,7 +409,7 @@ static void setSigHand()
 static void setException(const std::exception& ex)
 {
     threadEx.set(ex);
-    halt();
+    ::sem_post(&stopSem);
 }
 
 /// Executes the subscribing node.
@@ -477,7 +443,7 @@ int main(
     try {
         getCmdPars(argc, argv);
 
-        if (sem_init(&sem, 0, 0) == -1)
+        if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
         //LOG_DEBUG("Creating subnode");
@@ -486,8 +452,8 @@ int main(
 
         auto nodeThread = Thread(&runNode, subNode);
 
-        ::sem_wait(&sem); // Returns if failure on a thread or termination signal
-        ::sem_destroy(&sem);
+        ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
+        ::sem_destroy(&stopSem);
 
         subNode->halt(); // Idempotent
         nodeThread.join();
@@ -504,6 +470,7 @@ int main(
         LOG_FATAL(ex);
         status = 2;
     }
+    LOG_NOTE("Exiting with status %d", status);
 
     return status;
 }

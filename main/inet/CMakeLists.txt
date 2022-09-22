@@ -6,4 +6,3 @@ add_library(inet OBJECT
     Socket.cpp          Socket.h
     PortPool.cpp        PortPool.h
 )
-include_directories(../misc)

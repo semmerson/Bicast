@@ -126,12 +126,12 @@ protected:
     void operator()() {
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return ProdIdSet{};
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet getProdIds() const override {
+        return ProdIdSet{};
     }
 
     SockAddr getP2pSrvrAddr() const override {

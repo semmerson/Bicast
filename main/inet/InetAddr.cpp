@@ -814,7 +814,14 @@ int InetAddr::getFamily() const {
     return pImpl->getFamily();
 }
 
-InetAddr InetAddr::getWildcard(const int family) noexcept {
+/**
+ * Returns the wildcard IP address for the given address family.
+ *
+ * @param[in] family       Address family: `AF_INET` or `AF_INET6`.
+ * @return                 Associated wildcard IP address
+ * @throw InvalidArgument  Invalid address family
+ */
+InetAddr InetAddr::getWildcard(const int family) {
     static InetAddr ipv4Wildcard{htonl(INADDR_ANY)};
     static InetAddr ipv6Wildcard{in6addr_any};
 

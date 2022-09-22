@@ -59,12 +59,10 @@ class HashSetQueue
     };
 
     using Hash = std::function<size_t(const VALUE&)>;
-    using Equal = std::function<bool(const VALUE&, const VALUE&)>;
-    using Map = std::unordered_map<VALUE, Links, Hash, Equal>;
+    using Map = std::unordered_map<VALUE, Links, Hash>;
 
     mutable Mutex mutex;
     Hash          myHash;
-    Equal         myEqual;
     Map           linksMap;
     VALUE         head;
     VALUE         tail;
@@ -73,8 +71,7 @@ public:
     explicit HashSetQueue(const size_t initialSize = 10)
         : mutex{}
         , myHash([](const VALUE& value){return value.hash();})
-        , myEqual([](const VALUE& value1, const VALUE& value2){return value1 == value2;})
-        , linksMap(initialSize, myHash, myEqual)
+        , linksMap(initialSize, myHash)
         , head{}
         , tail{}
     {}
@@ -88,7 +85,7 @@ public:
     }
 
     /**
-     * Adds a value to the queue.
+     * Adds a value to the queue to the back of the queue.
      *
      * @param[in] value  Value
      * @retval `true`    Value added
@@ -121,8 +118,9 @@ public:
      * @throw OutOfRange  Map is empty
      * @exceptionSafety   Nothrow
      * @threadsafety      Safe
+     * @throw OutOfRange  Queue is empty
      */
-    const VALUE& front() noexcept {
+    const VALUE& front() {
         Guard lock{mutex};
         if (linksMap.size() == 0)
             throw OUT_OF_RANGE("Queue is empty");
@@ -133,10 +131,10 @@ public:
     /**
      * Deletes the front value.
      *
-     * @throw OutOfRange  Map is empty
+     * @throw OutOfRange  Queue is empty
      * @threadsafety      Safe
      */
-    void pop() noexcept {
+    void pop() {
         Guard lock{mutex};
         if (linksMap.size() == 0)
             throw OUT_OF_RANGE("Queue is empty");

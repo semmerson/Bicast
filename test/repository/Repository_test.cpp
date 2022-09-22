@@ -175,41 +175,40 @@ TEST_F(RepositoryTest, CreatProdForSending)
 TEST_F(RepositoryTest, Subtract)
 {
     hycast::SubRepo  repo(repoDir, 5);
-    ProdIdSet::Pimpl other{new ProdIdSet()};
-    ProdIdSet::Pimpl prodIds{};
+    ProdIdSet other{0};
+    ProdIdSet prodIds{};
 
     prodIds = repo.subtract(other); // empty - empty -> empty
-    EXPECT_EQ(0, prodIds->size());
+    EXPECT_EQ(0, prodIds.size());
 
-    other->emplace(prodId);
+    other.insert(prodId);
     prodIds = repo.subtract(other); // empty - prodId -> empty
-    EXPECT_EQ(0, prodIds->size());
+    EXPECT_EQ(0, prodIds.size());
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
     prodIds = repo.subtract(other); // prodId - prodId -> empty
-    EXPECT_EQ(0, prodIds->size());
+    EXPECT_EQ(0, prodIds.size());
 
-    other->clear();
+    other.clear();
     prodIds = repo.subtract(other); // prodId - empty -> prodId
-    EXPECT_EQ(1, prodIds->size());
-    EXPECT_EQ(prodId, *prodIds->begin());
+    EXPECT_EQ(1, prodIds.size());
+    EXPECT_EQ(prodId, *prodIds.begin());
 }
 
 // Tests getting the set of complete product identifiers
 TEST_F(RepositoryTest, getProdIds)
 {
     hycast::SubRepo repo(repoDir, 5);
-    ProdIdSet::Pimpl prodIds{};
 
-    prodIds = repo.getProdIds(); // empty
-    EXPECT_EQ(0, prodIds->size());
+    auto prodIds = repo.getProdIds(); // empty
+    EXPECT_EQ(0, prodIds.size());
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
     prodIds = repo.getProdIds(); // prodId
-    EXPECT_EQ(1, prodIds->size());
-    EXPECT_EQ(prodId, *prodIds->begin());
+    EXPECT_EQ(1, prodIds.size());
+    EXPECT_EQ(prodId, *prodIds.begin());
 }
 
 TEST_F(RepositoryTest, Performance)

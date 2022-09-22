@@ -1,8 +1,3 @@
-include_directories(
-        ${CMAKE_SOURCE_DIR}/main/misc
-        ${CMAKE_SOURCE_DIR}/main/inet
-)
-
 add_executable(ReuseAddr_test ReuseAddr_test.cpp)
 target_link_libraries(ReuseAddr_test hycast gtest)
 add_test(ReuseAddr_test ReuseAddr_test)

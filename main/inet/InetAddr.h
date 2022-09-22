@@ -120,10 +120,11 @@ public:
     /**
      * Returns the wildcard address for an address family.
      *
-     * @param[in] family  Internet address family: `AF_INET`, `AF_INET6`
-     * @return            Corresponding wildcard address
+     * @param[in] family       Internet address family: `AF_INET`, `AF_INET6`
+     * @return                 Corresponding wildcard address
+     * @throw InvalidArgument  Invalid address family
      */
-    static InetAddr getWildcard(const int family) noexcept;
+    static InetAddr getWildcard(const int family);
 
     /**
      * Returns the wildcard address for the address family of this instance.

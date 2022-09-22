@@ -1,0 +1,12 @@
+MaxPersistent: 20  # Maximum umber of actions to persist between data-products
+PatternActions:
+  # Append Metars
+  - Include: ^SAUS(..) (....) 
+    Action: PIPE
+    Args: [sh, -c, cat >>data/surface/US/$2/$1]
+    Persist: true
+
+  # Keep only the most recent SIGMET.
+  - Include: ^WS
+    Action: PIPE
+    Args: [sh, -c, cat >data/WWA/lastSIGMET]

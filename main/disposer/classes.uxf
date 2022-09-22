@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="14.3.0">
+  <help_text>// Uncomment the following line to change the fontsize and font:
+// fontsize=14
+// fontfamily=SansSerif //possible: SansSerif,Serif,Monospaced
+fontfamily=Monospaced
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// Welcome to UMLet!
+//
+// Double-click on elements to add them to the diagram, or to copy them
+// Edit elements by modifying the text in this panel
+// Hold Ctrl to select multiple elements
+// Use Ctrl+mouse to select via lasso
+//
+// Use +/- or Ctrl+mouse wheel to zoom
+// Drag a whole relation at its central square icon
+//
+// Press Ctrl+C to copy the whole diagram to the system clipboard (then just paste it to, eg, Word)
+// Edit the files in the "palettes" directory to create your own element palettes
+//
+// Select "Custom Elements &gt; New..." to create new element types
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// This text will be stored with each diagram;  use it for notes.</help_text>
+  <zoom_level>10</zoom_level>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>700</x>
+      <y>610</y>
+      <w>320</w>
+      <h>150</h>
+    </coordinates>
+    <panel_attributes>/Action/
+--
+#const bool persist
+--
+
+/+size_t hash()/
+/+bool operator==(const Action action)/
+/+bool shouldPersist()/
+/+void process(char*  data,/
+/              size_t nbytes)/</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>670</x>
+      <y>810</y>
+      <w>390</w>
+      <h>170</h>
+    </coordinates>
+    <panel_attributes>Pipe
+--
+#const int  fd
+--
++Pipe(const std::vector&lt;String&gt; args,
+      const bool                keepOpen)</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>840</x>
+      <y>750</y>
+      <w>30</w>
+      <h>80</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;60.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>140</x>
+      <y>600</y>
+      <w>420</w>
+      <h>160</h>
+    </coordinates>
+    <panel_attributes>/ActionTemplate/
+--
+#std::vector&lt;String&gt; argTemplates
+#bool                persist
+--
++ActionTemplate(std::vector&lt;String&gt; argTemplates,
+                bool                persist)
+/+Action reify(std::smatch match)/
+--
+Responsibilities
+-- Converts action template into concrete one</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>290</x>
+      <y>860</y>
+      <w>110</w>
+      <h>30</h>
+    </coordinates>
+    <panel_attributes>PipeTemplate
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>340</x>
+      <y>750</y>
+      <w>30</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;-</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;110.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>390</x>
+      <y>860</y>
+      <w>300</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+m1=0..n
+m2=reify</panel_attributes>
+    <additional_attributes>280.0;10.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>840</x>
+      <y>540</y>
+      <w>60</w>
+      <h>90</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+m1=0..n</panel_attributes>
+    <additional_attributes>10.0;70.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>160</x>
+      <y>310</y>
+      <w>380</w>
+      <h>140</h>
+    </coordinates>
+    <panel_attributes>PatternAction
+--
++std::regex     include
++std::regex     exclude
++ActionTemplate action
+--
++PatternAction(const String         include,
+               const String         exclude,
+               const ActionTemplate action)</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>530</x>
+      <y>380</y>
+      <w>140</w>
+      <h>40</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+m1=0..n</panel_attributes>
+    <additional_attributes>10.0;10.0;120.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>650</x>
+      <y>230</y>
+      <w>410</w>
+      <h>320</h>
+    </coordinates>
+    <panel_attributes>Disposer
+--
+-std::list&lt;PatternAction&gt;   patActs
+-std::unordered_set&lt;Action&gt; actionSet
+-HashSetQueue&lt;Action&gt;       actionQueue
+-int                        maxPersistent
+--
++Disposer(int maxPersistent)
++add(const PatternAction patAct)
++void disposeOf(ProdInfo prodInfo, char* bytes)
+--
+Responsibilities:
+-- Matches product name against patterns
+-- Reifies matching action template into action
+-- If action should persist
+  -- Searches actions for matching action
+  -- Limits number of actions by deleting LRU
+  -- Inserts created action if no match
+   --Adds action to tail of action queue
+-- Calls on action to process product</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>340</x>
+      <y>440</y>
+      <w>50</w>
+      <h>180</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;-
+m1=has</panel_attributes>
+    <additional_attributes>10.0;160.0;10.0;10.0</additional_attributes>
+  </element>
+</diagram>

@@ -53,6 +53,7 @@ class Tracker::Impl final : public XprtAble
     Map           map;
     SockAddr      head;
     SockAddr      tail;
+    bool          done;
 
     /**
      * Adds a socket address.
@@ -111,6 +112,7 @@ public:
         , cond()
         , capacity(capacity)
         , map()
+        , done(false)
     {
         if (capacity == 0)
             throw INVALID_ARGUMENT("Capacity is zero");
@@ -164,7 +166,11 @@ public:
 
     SockAddr removeHead() {
         Lock lock{mutex};
-        cond.wait(lock, [&]{return !map.empty();});
+        cond.wait(lock, [&]{return !map.empty() || done;});
+
+        if (done)
+            return SockAddr();
+
         auto newHead = map.at(head).next;
         if (newHead) {
             map.at(newHead).prev = SockAddr();
@@ -176,6 +182,12 @@ public:
         auto oldHead = head;
         head = newHead;
         return oldHead;
+    }
+
+    void halt() {
+        Guard guard{mutex};
+        done = true;
+        cond.notify_all();
     }
 
     bool write(Xprt xprt) const {
@@ -242,6 +254,10 @@ void Tracker::erase(const Tracker tracker) {
 
 SockAddr Tracker::removeHead() const {
     return pImpl->removeHead();
+}
+
+void Tracker::halt() const {
+    pImpl->halt();
 }
 
 bool Tracker::write(Xprt xprt) const {

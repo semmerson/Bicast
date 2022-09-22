@@ -36,8 +36,7 @@ namespace SslHelp {
 /**
  * Initializes the OpenSSL pseudo-random number generator (PRNG).
  *
- * @param[in] numBytes         Number of bytes from "/dev/random" to initialize
- *                             the PRNG with
+ * @param[in] numBytes         Number of bytes from "/dev/random" to initialize the PRNG with
  * @throws std::system_error   Couldn't open "/dev/random"
  * @throws std::system_error   `read(2)` failure
  * @throws std::runtime_error  `RAND_bytes()` failure

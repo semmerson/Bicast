@@ -104,16 +104,17 @@ protected:
      * @param[in] type      Type of socket (e.g., `SOCK_STREAM`, `SOCK_DGRAM`, `SOCK_SEQPACKET`)
      * @param[in] protocol  Socket protocol (e.g., `IPPROTO_TCP`, `IPPROTO_UDP`; 0 obtains default
      *                      for type)
+     * @throw SystemError   Couldn't create socket
      */
     Impl(   const int  family,
             const int  type,
-            const int  protocol) noexcept
+            const int  protocol)
         : Impl()
     {
         sd = ::socket(family, type, protocol);
         if (sd == -1)
             throw SYSTEM_ERROR("Couldn't create socket {family=" + std::to_string(family) +
-                    ", type=" + std::to_string(type) + ", proto=" + std::to_string(protocol));
+                    ", type=" + std::to_string(type) + ", proto=" + std::to_string(protocol) + "}");
         domain = family;
     }
 
@@ -205,8 +206,7 @@ protected:
     void shut(const int what) {
         //LOG_DEBUG("Shutting down socket %s", std::to_string(sd).data());
         if (::shutdown(sd, what) && errno != ENOTCONN)
-            throw SYSTEM_ERROR("::shutdown failure on socket " +
-                    std::to_string(sd));
+            throw SYSTEM_ERROR("::shutdown failure on socket " + std::to_string(sd));
         shutdownCalled = true;
     }
 

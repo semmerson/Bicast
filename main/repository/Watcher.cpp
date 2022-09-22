@@ -52,13 +52,11 @@ class Watcher::Impl final
     WdMap       wds;          ///< inotify(7) watch descriptors
     FilesMap    scannedFiles; ///< Regular files found by scanning
     PathQueue   regFiles;     ///< Queue of pre-existing but new regular files
-    /// inotify(7) event-buffer
-    union {
-        struct inotify_event event; ///< For alignment
-        char                 buf[100*(sizeof(struct inotify_event)+NAME_MAX+1)];
-    }           eventBuf;
+    char        buf[100*(sizeof(struct inotify_event)+NAME_MAX+1)];
     char*       nextEvent;    ///< Next event to access in event-buffer
     char*       endEvent;     ///< End of events in event-buffer
+    /// inotify(7) event-buffer
+    alignas(inotify_event)
 
     /**
      * Indicates if a pathname references a directory, either directly or via
@@ -186,13 +184,13 @@ class Watcher::Impl final
      * @throws SystemError  Couldn't read inotify(7) file-descriptor
      */
     void readEvents() {
-        ssize_t nbytes = ::read(fd, eventBuf.buf, sizeof(eventBuf)); // Blocks
+        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Blocks
 
         if (nbytes == -1)
             throw SYSTEM_ERROR("Couldn't read inotify(7) file-descriptor");
 
-        nextEvent = eventBuf.buf;
-        endEvent = eventBuf.buf + nbytes;
+        nextEvent = buf;
+        endEvent = buf + nbytes;
     }
 
     /**
@@ -291,7 +289,8 @@ public:
         , wds()
         , scannedFiles()
         , regFiles()
-        , nextEvent(eventBuf.buf)
+        , buf()
+        , nextEvent(buf)
         , endEvent(nextEvent)
     {
         if (fd == -1)
@@ -300,7 +299,7 @@ public:
         if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
             throw SYSTEM_ERROR("Couldn't set inotify(7) file-descriptor to close-on-exec");
 
-        LOG_DEBUG("Watching directory %s", rootDir.data());
+        LOG_TRACE("Watching directory %s", rootDir.data());
         watchIfNew(rootDir, true);
     }
 
@@ -328,7 +327,7 @@ public:
 
         watchEvent.pathname = regFiles.front();
         regFiles.pop();
-        LOG_DEBUG("Returning pathname \"%s\"", watchEvent.pathname.data());
+        LOG_TRACE("Returning pathname \"%s\"", watchEvent.pathname.data());
     }
 };
 

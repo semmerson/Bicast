@@ -26,12 +26,14 @@
 #include "error.h"
 #include "HycastProto.h"
 #include "Peer.h"
+#include "ThreadException.h"
 
 #include <array>
 #include <list>
 #include <memory>
 #include <poll.h>
 #include <queue>
+#include <semaphore.h>
 #include <sstream>
 #include <unordered_map>
 
@@ -44,9 +46,14 @@ using XprtArray = std::array<Xprt, 3>;
  */
 class RpcImpl final : public Rpc
 {
-    mutable Mutex      exceptMutex;   ///< For accessing thread exception
-    std::exception_ptr exPtr;         ///< Internal thread exception
-    mutable Mutex      startMutex;    ///< Protects `started`
+    enum class State {
+        INIT,
+        STARTED,
+        STOPPED
+    }                  state;         ///< State of this instance
+    ThreadEx           threadEx;      ///< Internal thread exception
+    mutable Mutex      stateMutex;    ///< Protects state changes
+    mutable sem_t      stopSem;       ///< For async-signal-safe stopping
     const bool         iAmClient;     ///< This instance initiated the connection?
     const bool         iAmPub;        ///< This instance is publisher?
     bool               rmtIsPub;      ///< Remote peer is publisher?
@@ -363,8 +370,8 @@ class RpcImpl final : public Rpc
                 break;
             }
             case PduId::BACKLOG_REQUEST: {
-                ProdIdSet::Pimpl prodIds;
-                auto success = prodIds->read(requestXprt);
+                ProdIdSet prodIds{0};
+                auto success = prodIds.read(requestXprt);
                 if (success)
                     peer.recvHaveProds(prodIds);
                 break;
@@ -408,7 +415,7 @@ class RpcImpl final : public Rpc
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            setExPtr();
+            setExPtr(ex);
         }
     }
 
@@ -422,6 +429,9 @@ class RpcImpl final : public Rpc
             //LOG_DEBUG("Request reader thread is %s", threadId.str().data());
         }
     }
+    /**
+     * Idempotent.
+     */
     void stopRequestReader() {
         if (requestXprt) {
             //LOG_DEBUG("Shutting down request transport");
@@ -524,6 +534,9 @@ class RpcImpl final : public Rpc
         noticeReader = Thread(&RpcImpl::runReader, this, noticeXprt, [&](PduId pduId) {
                 return processNotice(pduId, peer);});
     }
+    /**
+     * Idempotent.
+     */
     void stopNoticeReader() {
         //LOG_DEBUG("Entered");
         if (noticeXprt) {
@@ -590,6 +603,9 @@ class RpcImpl final : public Rpc
         dataReader = Thread(&RpcImpl::runReader, this, dataXprt,
             [&](PduId pduId) {return processData(pduId, peer);});
     }
+    /**
+     * Idempotent.
+     */
     void stopDataReader() {
         if (dataXprt) {
             //LOG_DEBUG("Shutting down data transport");
@@ -612,41 +628,64 @@ class RpcImpl final : public Rpc
      * Idempotent.
      */
     void stopThreads() {
-        stopRequestReader();
-        stopNoticeReader();
-        stopDataReader();
+        stopRequestReader(); // Idempotent
+        stopNoticeReader();  // Idempotent
+        stopDataReader();   // Idempotent
+    }
+
+    /**
+     * @pre               The state mutex is unlocked
+     * @throw LogicError  The state isn't INIT
+     * @post              The state is STARTED
+     * @post              The state mutex is unlocked
+     */
+    void startImpl(Peer& peer) {
+        Guard guard{stateMutex};
+        if (state != State::INIT)
+            throw LOGIC_ERROR("Instance can't be re-executed");
+        startThreads(peer);
+        state = State::STARTED;
+    }
+
+    /**
+     * Idempotent.
+     *
+     * @pre               The state mutex is unlocked
+     * @throw LogicError  The state is not STARTED
+     * @post              The state is STOPPED
+     * @post              The state mutex is unlocked
+     */
+    void stopImpl() {
+        Guard guard{stateMutex};
+        if (state != State::STARTED)
+            throw LOGIC_ERROR("Instance has not been started");
+
+        stopThreads();
+        state = State::STOPPED;
     }
 
     /**
      * Sets the internal thread exception.
      */
-    void setExPtr() {
-        Guard guard{exceptMutex};
-        if (!exPtr)
-            exPtr = std::current_exception();
+    void setExPtr(const std::exception& ex) {
+        threadEx.set(ex);
+        ::sem_post(&stopSem);
     }
 
     /**
-     * Throws an exception if this instance hasn't been started or an exception
-     * was thrown by one of this instance's internal threads.
+     * Throws an exception if this instance hasn't been started or an exception was thrown by one of
+     * this instance's internal threads.
      *
      * @throw LogicError  Instance hasn't been started
      * @see   `start()`
      */
     void throwIf() {
         {
-            Guard guard{startMutex};
+            Guard guard{stateMutex};
             if (!started)
                 throw LOGIC_ERROR("Instance hasn't been started");
         }
-
-        bool throwEx = false;
-        {
-            Guard guard{exceptMutex};
-            throwEx = static_cast<bool>(exPtr);
-        }
-        if (throwEx)
-            std::rethrow_exception(exPtr);
+        threadEx.throwIfSet();
     }
 
     /**
@@ -689,9 +728,10 @@ public:
      */
     RpcImpl(const bool iAmClient,
             const bool iAmPub)
-        : exceptMutex()
-        , exPtr()
-        , startMutex()
+        : state(State::INIT)
+        , threadEx()
+        , stateMutex()
+        , stopSem()
         , iAmClient(iAmClient)
         , iAmPub(iAmPub)
         , rmtIsPub(false)
@@ -707,7 +747,18 @@ public:
     {
         if (iAmClient && iAmPub)
             throw LOGIC_ERROR("Can't be both client and publisher");
+
+        if (::sem_init(&stopSem, 0, 0) == -1)
+            throw SYSTEM_ERROR("Couldn't initialize semaphore");
     }
+
+    /**
+     * Default constructs. Will test false.
+     *
+     */
+    RpcImpl()
+        : RpcImpl(true, false)
+    {}
 
     /**
      * Constructs client-side.
@@ -751,12 +802,13 @@ public:
     }
 
     ~RpcImpl() noexcept {
-        try {
-            stopThreads();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
+        Guard guard{stateMutex};
+        LOG_ASSERT(state == State::INIT || state == State::STOPPED);
+        ::sem_destroy(&stopSem);
+    }
+
+    operator bool() {
+        return rmtSockAddr && lclSockAddr;
     }
 
     bool isClient() const noexcept {
@@ -780,8 +832,8 @@ public:
                 noticeXprt.getRmtAddr().to_string() + "}";
     }
 
-    void start(Peer& peer) {
-        Guard guard{startMutex};
+    void start(Peer& peer) override {
+        Guard guard{stateMutex};
 
         if (started)
             throw LOGIC_ERROR("start() already called");
@@ -796,10 +848,24 @@ public:
         }
     }
 
-    void stop() {
-        Guard guard{startMutex};
+    void stop() override {
+        Guard guard{stateMutex};
         stopThreads();
         started = false;
+    }
+
+    void run(Peer& peer) override {
+        startImpl(peer);
+        ::sem_wait(&stopSem); // Blocks until `halt()` called or `threadEx` is true
+        stopImpl();
+        threadEx.throwIfSet();
+    }
+
+    void halt() override {
+        Guard guard{stateMutex};
+        if (state != State::STARTED)
+            throw LOGIC_ERROR("Instance has not been started");
+        ::sem_post(&stopSem);
     }
 
     bool notifyAmPubPath(const bool amPubPath) override {
@@ -857,8 +923,8 @@ public:
                 //to_string().data(), dataSeg.to_string().data());
         return send(dataXprt, PduId::DATA_SEG, dataSeg);
     }
-    bool send(const ProdIdSet::Pimpl prodIds) override {
-        return send(requestXprt, PduId::BACKLOG_REQUEST, *prodIds);
+    bool send(const ProdIdSet prodIds) override {
+        return send(requestXprt, PduId::BACKLOG_REQUEST, prodIds);
     }
 };
 
@@ -943,13 +1009,13 @@ private:
         }
     };
 
-    mutable Mutex mutex;
-    mutable Cond  cond;
-    RpcFactory    rpcFactory;
+    mutable Mutex mutex;        ///< State-protecting mutex
+    mutable Cond  cond;         ///< To support inter-thread communication
+    RpcFactory    rpcFactory;   ///< Combines 3 unicast connections into one RPC connection
     TcpSrvrSock   srvrSock;     ///< Socket on which this instance listens
     RpcQ          acceptQ;      ///< Queue of accepted RPC transports
     const bool    iAmPub;       ///< Is this instance the publisher's?
-    size_t        acceptQSize;      ///< Maximum size of the RPC queue
+    size_t        acceptQSize;  ///< Maximum size of the RPC queue
     Thread        acceptThread; ///< Accepts incoming sockets
 
     /**
@@ -965,6 +1031,8 @@ private:
         if (xprt.read(noticePort)) { // Might take a while
             // The rest is fast
             Guard guard{mutex};
+
+            // TODO: Remove old, stale entries from accept-queue
 
             if (acceptQ.size() < acceptQSize) {
                 //LOG_DEBUG("Adding transport to factory");
@@ -983,8 +1051,15 @@ private:
             for (;;) {
                 //LOG_DEBUG("Accepting a socket");
                 auto sock = srvrSock.accept();
-                if (!sock)
-                    throw SYSTEM_ERROR("accept() failure");
+                if (!sock) {
+                    // The server's listening socket has been shut down
+                    Guard guard{mutex};
+                    RpcQ  emptyQ;
+                    acceptQ.swap(emptyQ); // Empties accept-queue
+                    acceptQ.push(Rpc::Pimpl{}); // Will test false
+                    cond.notify_one();
+                    break;
+                }
 
                 processSock(sock);
                 //LOG_DEBUG("Processed socket %s", sock.to_string().data());
@@ -1022,6 +1097,10 @@ public:
             throw INVALID_ARGUMENT("Server's IP address is wildcard");
         if (acceptQSize == 0)
             throw INVALID_ARGUMENT("Size of accept-queue is zero");
+        /*
+         * Connections are accepted on a separate thread so that a slow connection attempt won't
+         * hinder faster attempts.
+         */
         //LOG_DEBUG("Starting thread to accept incoming connections");
         acceptThread = Thread(&RpcSrvrImpl::acceptSocks, this);
         // TODO: Lower priority of thread to favor data transmission
@@ -1033,7 +1112,7 @@ public:
 
     ~RpcSrvrImpl() noexcept {
         if (acceptThread.joinable()) {
-            ::pthread_cancel(acceptThread.native_handle());
+            ::pthread_cancel(acceptThread.native_handle()); // Failsafe
             acceptThread.join();
         }
     }
@@ -1050,7 +1129,7 @@ public:
     /**
      * Returns the next RPC instance.
      *
-     * @return              Next RPC instance
+     * @return              Next RPC instance. Will test false if `halt()` has been called.
      * @throws SystemError  `::accept()` failure
      */
     Rpc::Pimpl accept() override {
@@ -1058,9 +1137,16 @@ public:
         cond.wait(lock, [&]{return !acceptQ.empty();});
 
         auto pImpl = acceptQ.front();
-        acceptQ.pop();
+
+        // Leave "done" sentinel in queue
+        if (pImpl)
+            acceptQ.pop();
 
         return pImpl;
+    }
+
+    void halt() {
+        srvrSock.shutdown();
     }
 };
 

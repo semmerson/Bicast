@@ -70,6 +70,11 @@ public:
 
     SockAddr removeHead() const;
 
+    /**
+     * Causes `removeHead()` to always return a socket address that tests false. Idempotent.
+     */
+    void halt() const;
+
     bool write(Xprt xprt) const;
 
     bool read(Xprt xprt);

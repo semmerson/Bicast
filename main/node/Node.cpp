@@ -472,11 +472,11 @@ public:
         NodeImpl::waitForPeer();
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return repo.subtract(other);
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return repo.subtract(rhs);
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
+    ProdIdSet getProdIds() const override {
         return repo.getProdIds();
     }
 
@@ -669,11 +669,11 @@ public:
         NodeImpl::waitForPeer();
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return repo.subtract(other);
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return repo.subtract(rhs);
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
+    ProdIdSet getProdIds() const override {
         return repo.getProdIds();
     }
 
@@ -734,12 +734,13 @@ public:
      * @param[in] prodInfo  Product information
      */
     void recvMcastData(const ProdInfo prodInfo) override {
-        LOG_DEBUG("Saving product-information " + prodInfo.to_string());
         if (repo.save(prodInfo)) {
+            LOG_DEBUG("Saved product-information " + prodInfo.to_string());
             ++numMcastOrig;
             p2pMgr->notify(prodInfo.getId());
         }
         else {
+            LOG_DEBUG("Rejected product-information %s as duplicate", prodInfo.to_string().data());
             ++numMcastDup;
         }
     }
@@ -750,8 +751,14 @@ public:
      * @param[in] prodInfo  Product information
      */
     void recvP2pData(const ProdInfo prodInfo) override {
-        LOG_DEBUG("Saving product-information " + prodInfo.to_string());
-        repo.save(prodInfo) ? ++numP2pOrig : ++numP2pDup;
+        if (repo.save(prodInfo)) {
+            LOG_DEBUG("Saved product-information " + prodInfo.to_string());
+            ++numP2pOrig;
+        }
+        else {
+            LOG_DEBUG("Rejected product-information %s as duplicate", prodInfo.to_string().data());
+            ++numP2pDup;
+        }
     }
 
     /**
@@ -760,12 +767,13 @@ public:
      * @param[in] udpSeg   Multicast data-segment
      */
     void recvMcastData(const DataSeg dataSeg) override {
-        LOG_DEBUG("Saving data-segment " + dataSeg.getId().to_string());
         if (repo.save(dataSeg)) {
+            LOG_DEBUG("Saved data-segment %s", dataSeg.getId().to_string().data());
             ++numMcastOrig;
             p2pMgr->notify(dataSeg.getId());
         }
         else {
+            LOG_DEBUG("Rejected data-segment %s as duplicate", dataSeg.getId().to_string().data());
             ++numMcastDup;
         }
     }
@@ -776,8 +784,14 @@ public:
      * @param[in] tcpSeg   Unicast data-segment
      */
     void recvP2pData(const DataSeg dataSeg) override {
-        LOG_DEBUG("Saving data-segment " + dataSeg.getId().to_string());
-        repo.save(dataSeg) ? ++numP2pOrig : ++numP2pDup;
+        if (repo.save(dataSeg)) {
+            LOG_DEBUG("Saved data-segment " + dataSeg.getId().to_string());
+            ++numP2pOrig;
+        }
+        else {
+            LOG_DEBUG("Rejected data-segment %s as duplicate", dataSeg.getId().to_string().data());
+            ++numP2pDup;
+        }
     }
 
     ProdInfo getNextProd() override {

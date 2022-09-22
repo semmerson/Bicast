@@ -65,12 +65,12 @@ public:
         return SockAddr();
     }
 
-    ProdIdSet::Pimpl subtract(ProdIdSet::Pimpl other) const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        return ProdIdSet{};
     }
 
-    ProdIdSet::Pimpl getProdIds() const override {
-        return ProdIdSet::Pimpl{};
+    ProdIdSet getProdIds() const override {
+        return ProdIdSet{};
     }
 
     // Subscriber-side

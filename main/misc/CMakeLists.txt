@@ -1,6 +1,3 @@
-include_directories(..)
-include_directories(SYSTEM /usr/include/openssl11)
-
 # Add the library
 add_library(misc OBJECT
 	logging.cpp	   logging.h

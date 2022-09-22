@@ -152,6 +152,7 @@ TEST_F(SocketTest, ShutdownAcceptSocket)
     hycast::TcpSock     srvrSock{};
 
     startServer(lstnSock, srvrSock);
+    ::sleep(1);
     lstnSock.shutdown();
     srvrThread.join();
 }

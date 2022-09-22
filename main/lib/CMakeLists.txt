@@ -4,6 +4,7 @@ add_library(hycast
         $<TARGET_OBJECTS:p2p>
         $<TARGET_OBJECTS:mcast>
         $<TARGET_OBJECTS:repository>
+        $<TARGET_OBJECTS:disposer>
         $<TARGET_OBJECTS:node>
         $<TARGET_OBJECTS:main>
 )
