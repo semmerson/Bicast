@@ -118,7 +118,6 @@ protected:
 
         for (auto peer : peerSet) {
             peer->halt();
-            bookkeeper->erase(peer); // Necessary to prevent P2pMgr_test hanging for some reason
         }
         peerSetCond.wait(lock, [&]{return peerSet.empty();});
 

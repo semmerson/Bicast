@@ -85,7 +85,7 @@ public:
 
     /**
      * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
-     * anything with it until `run()` or `start()` is called.
+     * anything with it until `run()` is called.
      *
      * @param[in] pubNode       Hycast publishing node
      * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a specific interface
@@ -251,7 +251,7 @@ public:
 
     /**
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
-     * anything with it until `run()` or `start()` is called.
+     * anything with it until `run()` is called.
      *
      * @param[in] subNode      Subscriber's node
      * @param[in] tracker      Pool of addresses of P2P servers
@@ -273,7 +273,7 @@ public:
 
     /**
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
-     * anything with it until `run()` or `start()` is called.
+     * anything with it until `run()` is called.
      *
      * @param[in] subNode      Subscriber's node
      * @param[in] tracker      Pool of addresses of P2P servers
