@@ -67,7 +67,6 @@ protected:
         STOPPED
     }                    state;         ///< State of this instance
     mutable Mutex        stateMutex;    ///< Guards state
-    mutable Cond         stateCond;     ///< For changing state
     mutable Mutex        peerSetMutex;  ///< Guards set of active peers
     mutable Cond         peerSetCond;   ///< For changing set of active peers
     mutable sem_t        stopSem;       ///< For async-signal-safe stopping
@@ -125,13 +124,8 @@ protected:
     }
 
     void setException(const std::exception& ex) {
-        ::sem_post(&stopSem);
-        /*
-        Guard guard{stateMutex};
         threadEx.set(ex);
-        state = State::STOPPING;
-        stateCond.notify_all();
-        */
+        ::sem_post(&stopSem);
     }
 
     bool addPeer(Peer::Pimpl peer) {
@@ -316,7 +310,6 @@ public:
             const unsigned evalTime)
         : state(State::INIT)
         , stateMutex()
-        , stateCond()
         , node(node)
         , peersChanged(false)
         , peerSetMutex()
@@ -360,14 +353,6 @@ public:
         ::sem_getvalue(&stopSem, &semval);
         if (semval < 1)
             ::sem_post(&stopSem);
-
-        /*
-        haltP2pSrvr();
-
-        Guard guard{stateMutex};
-        state = State::STOPPING;
-        stateCond.notify_all();
-        */
     }
 
     /**
