@@ -673,22 +673,6 @@ class RpcImpl final : public Rpc
     }
 
     /**
-     * Throws an exception if this instance hasn't been started or an exception was thrown by one of
-     * this instance's internal threads.
-     *
-     * @throw LogicError  Instance hasn't been started
-     * @see   `start()`
-     */
-    void throwIf() {
-        {
-            Guard guard{stateMutex};
-            if (!started)
-                throw LOGIC_ERROR("Instance hasn't been started");
-        }
-        threadEx.throwIfSet();
-    }
-
-    /**
      * Sends a PDU with no payload.
      *
      * @param[in] xprt     Transport to use
