@@ -205,54 +205,34 @@ class NodeImpl : public Node
     }
 
 protected:
-    enum class State {
-        INIT,
-        STARTED,
-        STOPPING,
-        STOPPED
-    }             state;        ///< State of this instance
-    Mutex         stateMutex;   ///< For state changes
-    Cond          stateCond;    ///< For state changes
-    Thread        mcastThread;  ///< Multicast thread (either sending or receiving)
-    Thread        p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
-    P2pMgr::Pimpl p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
-    ThreadEx      threadEx;     ///< Subtask exception
+    mutable Thread mcastThread;  ///< Multicast thread (either sending or receiving)
+    mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
+    mutable sem_t  stopSem;      ///< For async-signal-safe stopping
+    P2pMgr::Pimpl  p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
+    ThreadEx       threadEx;     ///< Subtask exception
 
     /**
-     * @pre               The state mutex is locked
-     * @post              The state is STARTED
-     * @throw LogicError  Instance can't be restarted
      */
     void startImpl() {
-        if (state != State::INIT)
-            throw LOGIC_ERROR("Instance can't be restarted");
         startThreads();
-        state = State::STARTED;
     }
 
     /**
      * Idempotent.
-     *
-     * @pre   The state mutex is locked
-     * @post  The state is STOPPED
      */
     void stopImpl() {
         stopThreads();
-        state = State::STOPPED;
         threadEx.throwIfSet();
     }
 
     /**
-     * Sets the first exception thrown by a sub-thread. Sets the state to STOPPING.
+     * Sets the first exception thrown by a sub-thread.
      *
      * @param[in] ex  Sub-thread exception
      */
     void setException(const std::exception& ex) {
-        Guard guard{stateMutex};
-        LOG_DEBUG("Setting exception: %s", ex.what());
         threadEx.set(ex);
-        state = State::STOPPING;
-        stateCond.notify_one();
+        ::sem_post(&stopSem);
     }
 
     /**
@@ -273,31 +253,32 @@ public:
      * @throws    std::system_error  Couldn't initialize semaphore
      */
     NodeImpl(P2pMgr::Pimpl p2pMgr)
-        : state(State::INIT)
-        , stateMutex()
-        , stateCond()
-        , mcastThread()
+        : mcastThread()
         , p2pThread()
+        , stopSem()
         , p2pMgr(p2pMgr)
         , threadEx()
-    {}
+    {
+        if (::sem_init(&stopSem, 0, 0) == -1)
+            throw SYSTEM_ERROR("Couldn't initialize semaphore");
+    }
 
     virtual ~NodeImpl() noexcept {
+        ::sem_destroy(&stopSem);
     }
 
     void run() override {
-        Lock lock{stateMutex};
         startImpl();
-        stateCond.wait(lock, [&]{return state == State::STOPPING;});
+        ::sem_wait(&stopSem);
         stopImpl();
+        threadEx.throwIfSet();
     }
 
     void halt() override {
-        Guard guard{stateMutex};
-        if (state == State::STARTED) {
-            state = State::STOPPING;
-            stateCond.notify_one();
-        }
+        int semval = 0;
+        ::sem_getvalue(&stopSem, &semval);
+        if (semval < 1)
+            ::sem_post(&stopSem);
     }
 
     void waitForPeer() override {
