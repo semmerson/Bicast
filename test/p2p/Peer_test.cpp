@@ -52,6 +52,7 @@ protected:
     int               segRequestCount;
     int               prodDataCount;
     int               segDataCount;
+    Thread            pubPeerThread;
 
     PeerTest()
         : state(INIT)
@@ -230,18 +231,13 @@ public:
         EXPECT_EQ(pubAddr, rmtAddr);
 
         LOG_DEBUG("Starting publishing peer");
-        pubPeer->start();
+        pubPeerThread = Thread(&Peer::run, pubPeer.get());
     }
 
-    bool notify(Peer::Pimpl pubPeer) {
+    void notify(Peer::Pimpl pubPeer) {
         // Start an exchange
-        return pubPeer->notify(prodId) && pubPeer->notify(segId);
-    }
-
-    bool loopNotify(Peer::Pimpl pubPeer) {
-        while (notify(pubPeer))
-            ::usleep(1000);
-        return false;
+        pubPeer->notify(prodId);
+        pubPeer->notify(segId);
     }
 };
 
@@ -263,17 +259,21 @@ TEST_F(PeerTest, PrematureStop)
         waitForState(LISTENING);
 
         auto subPeer = Peer::create(*this, pubAddr);
-        subPeer->start();
+        Thread subPeerThread(&Peer::run, subPeer.get());
 
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
 
-        subPeer->stop();
-        pubPeer->stop();
+        subPeer->halt();
+        subPeerThread.join();
+
+        pubPeer->halt();
+        pubPeerThread.join();
     } // `srvrThread` created
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
-        pubPeer->stop();
+        pubPeer->halt();
+        pubPeerThread.join();
         if (srvrThread.joinable())
             srvrThread.join();
     }
@@ -327,16 +327,16 @@ TEST_F(PeerTest, DataExchange)
          * Apparently, there's a race condition for O/S-assigned port numbers in
          * a `::connect()` call for an unbound socket. Sheesh!
          */
-        subPeer->start();
+        Thread subPeerThread(&Peer::run, subPeer.get());
 
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
         // `pubPeer` is running
 
-        ASSERT_TRUE(pubPeer->add(pubAddr));
+        pubPeer->add(pubAddr);
 
         // Start an exchange
-        ASSERT_TRUE(notify(pubPeer));
+        notify(pubPeer);
 
         // Wait for the exchange to complete
         auto done = static_cast<State>(
@@ -348,12 +348,17 @@ TEST_F(PeerTest, DataExchange)
                PROD_INFO_RCVD |
                DATA_SEG_RCVD);
         waitForState(done);
-        subPeer->stop();
-        pubPeer->stop();
+
+        subPeer->halt();
+        subPeerThread.join();
+
+        pubPeer->halt();
+        pubPeerThread.join();
     } // `srvrThread` created
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
-        pubPeer->stop();
+        pubPeer->halt();
+        pubPeerThread.join();
         if (srvrThread.joinable())
             srvrThread.join();
     }
@@ -373,35 +378,27 @@ TEST_F(PeerTest, BrokenConnection)
             // Create and execute reception by subscribing peer on separate thread
             auto subPeer = Peer::create(*this, pubAddr);
             LOG_DEBUG("Starting subscribing peer");
-            /*
-             * If this program is executed in a "while" loop, then the following
-             * will eventually cause the process to crash due to a segmentation
-             * violation (SIGSEGV) because the subscribing peer will be unable
-             * to establish a 3 socket connection with the publishing peer
-             * because a `::connect()` call will have failed because it was
-             * unable to assign the socket a local address using the O/S-chosen
-             * port number. Apparently, there's a race condition for
-             * O/S-assigned port numbers in a `::connect()` call for an unbound
-             * socket. Sheesh!
-             */
-            subPeer->start();
+            Thread subPeerThread(&Peer::run, subPeer.get());
 
             ASSERT_TRUE(srvrThread.joinable());
             srvrThread.join();
             // `pubPeer` is running
 
             LOG_DEBUG("Stopping subscribing peer");
-            subPeer->stop();
+            subPeer->halt();
+            subPeerThread.join();
         } // `subPeer` destroyed
 
         // Try to send to subscribing peer
         LOG_DEBUG("Notifying subscribing peer");
-        ASSERT_FALSE(loopNotify(pubPeer));
-        pubPeer->stop();
+        notify(pubPeer);
+        // The broken connection should stop the publishing peer
+        pubPeerThread.join();
     } // `srvrThread` running
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
-        pubPeer->stop();
+        pubPeer->halt();
+        pubPeerThread.join();
         if (srvrThread.joinable())
             srvrThread.join();
     }
@@ -423,17 +420,17 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             // Create and execute reception by subscribing peer on separate thread
             auto subPeer = Peer::create(*this, pubAddr);
             LOG_DEBUG("Starting subscribing peer");
-            subPeer->start();
+            Thread subPeerThread(&Peer::run, subPeer.get());
 
             ASSERT_TRUE(srvrThread.joinable());
             srvrThread.join();
             // `pubPeer` is running
 
             // Start an exchange
-            ASSERT_TRUE(pubPeer->notify(prodIds[0]));
-            ASSERT_TRUE(pubPeer->notify(segIds[0]));
-            ASSERT_TRUE(pubPeer->notify(segIds[1]));
-            ASSERT_TRUE(pubPeer->notify(prodIds[1]));
+            pubPeer->notify(prodIds[0]);
+            pubPeer->notify(segIds[0]);
+            pubPeer->notify(segIds[1]);
+            pubPeer->notify(prodIds[1]);
 
             // Wait for the exchange to complete
             const auto done = static_cast<State>(
@@ -447,13 +444,18 @@ TEST_F(PeerTest, UnsatisfiedRequests)
                 PROD_INFO_MISSED |
                 DATA_SEG_MISSED);
             waitForState(done);
-            subPeer->stop();
-            pubPeer->stop();
+
+            subPeer->halt();
+            subPeerThread.join();
+
+            pubPeer->halt();
+            pubPeerThread.join();
         } // `subPeer` destroyed
     } // `srvrThread` running
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
-        pubPeer->stop();
+        pubPeer->halt();
+        pubPeerThread.join();
         if (srvrThread.joinable())
             srvrThread.join();
     }

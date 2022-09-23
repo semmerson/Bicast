@@ -125,7 +125,6 @@ public:
     /**
      * Halts execution. Causes `run()` to return. Doesn't block.
      *
-     * @throw LogicError   `run()` hasn't been called
      * @asyncsignalsafety  Safe
      * @see                `run()`
      */

@@ -43,7 +43,6 @@ class PeerImpl : public Peer
         STOPPED
     }                  state;         ///< State of this instance
     mutable Mutex      stateMutex;    ///< Protects state changes
-    mutable sem_t      stopSem;       ///< For async-signal-safe stopping
     mutable Mutex      noticeMutex;   ///< For accessing notice queue
     mutable Cond       noticeCond;    ///< For accessing notice queue
     Thread             noticeThread;  ///< For sending notices
@@ -58,7 +57,7 @@ class PeerImpl : public Peer
 
     void setThreadEx(const std::exception& ex) {
         threadEx.set(ex);
-        sem_post(&stopSem);
+        ::sem_post(&stopSem);
     }
 
     /**
@@ -99,6 +98,7 @@ class PeerImpl : public Peer
     }
 
 protected:
+    mutable sem_t      stopSem;     ///< For async-signal-safe stopping
     Rpc::Pimpl         rpc;         ///< Remote procedure call module
     SockAddr           rmtSockAddr; ///< Remote socket address
     std::atomic<bool>  connected;   ///< Connected to remote peer?
@@ -156,13 +156,14 @@ protected:
                     throw LOGIC_ERROR("Notice ID is unknown: " + std::to_string((int)notice.id));
                 }
             }
+
+            ::sem_post(&stopSem);
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
             setThreadEx(ex);
         }
-        connected = false;
-        LOG_DEBUG("Terminating");
+        LOG_TRACE("Terminating");
     }
 
     void startNoticeWriter() {
@@ -266,7 +267,6 @@ public:
             const bool rmtIsPathToPub)
         : state(State::INIT)
         , stateMutex()
-        , stopSem()
         , noticeMutex()
         , noticeCond()
         , noticeThread()
@@ -278,6 +278,7 @@ public:
         , lclSockAddr(rpc->getLclAddr())
         , rmtIsPub(rpc->isRmtPub())
         , rmtIsPubPath(rmtIsPathToPub)
+        , stopSem()
         , rpc(rpc)
         , rmtSockAddr(rpc->getRmtAddr())
         , connected{true}
@@ -345,51 +346,42 @@ public:
         return "{lcl=" + lclSockAddr.to_string() + ", rmt=" + rmtSockAddr.to_string() + "}";
     }
 
-    void start() override {
-        startImpl();
-    }
-
-    /**
-     * Stops this instance from serving its remote counterpart. Causes the threads serving the
-     * remote peer to terminate.
-     *
-     * Idempotent.
-     *
-     * @see   `start()`
-     */
-    void stop() override {
-        stopImpl();
-    }
-
     void run() override {
         startImpl();
-        ::sem_wait(&stopSem); // Blocks until `halt()` called or `threadEx` is true
+        /*
+         * Blocks until
+         *   - `connected` is false
+         *   - `halt()` called
+         *   - `threadEx` is true
+         */
+        ::sem_wait(&stopSem);
         stopImpl();
         threadEx.throwIfSet();
     }
 
     void halt() override {
-        Guard guard{stateMutex};
-        if (state == State::STARTED)
+        int semval = 0;
+        ::sem_getvalue(&stopSem, &semval);
+        if (semval < 1)
             ::sem_post(&stopSem);
     }
 
-    bool notifyHavePubPath(const bool havePubPath) override {
-        return addNotice(Notice{havePubPath});
+    void notifyHavePubPath(const bool havePubPath) override {
+        addNotice(Notice{havePubPath});
     }
 
-    bool add(const SockAddr p2pSrvr) override {
-        return addNotice(Notice{p2pSrvr});
+    void add(const SockAddr p2pSrvr) override {
+        addNotice(Notice{p2pSrvr});
     }
-    bool add(const Tracker  tracker) override {
-        return addNotice(Notice{tracker});
+    void add(const Tracker  tracker) override {
+        addNotice(Notice{tracker});
     }
 
-    bool remove(const SockAddr p2pSrvr) override {
-        return addNotice(Notice{p2pSrvr, false});
+    void remove(const SockAddr p2pSrvr) override {
+        addNotice(Notice{p2pSrvr, false});
     }
-    bool remove(const Tracker tracker) override {
-        return addNotice(Notice{tracker, false});
+    void remove(const Tracker tracker) override {
+        addNotice(Notice{tracker, false});
     }
 
     void recvHavePubPath(const bool havePubPath) override {
@@ -400,11 +392,11 @@ public:
         return rmtIsPubPath;
     }
 
-    bool notify(const ProdId prodId) override {
-        return addNotice(Notice{prodId});
+    void notify(const ProdId prodId) override {
+        addNotice(Notice{prodId});
     }
-    bool notify(const DataSegId segId) override {
-        return addNotice(Notice{segId});
+    void notify(const DataSegId segId) override {
+        addNotice(Notice{segId});
     }
 
     void recvHaveProds(ProdIdSet prodIds) override {
@@ -420,16 +412,16 @@ public:
      *
      * @param[in] prodId     Index of the product
      */
-    bool recvRequest(const ProdId prodId) override {
+    void recvRequest(const ProdId prodId) override {
         LOG_TRACE("Peer %s received request for information on product %s", to_string().data(),
                 prodId.to_string().data());
         auto prodInfo = p2pMgr.getDatum(prodId, rmtSockAddr);
         if (prodInfo) {
             LOG_TRACE("Peer %s is sending information on product %s", to_string().data(),
                     prodId.to_string().data());
-            connected = rpc->send(prodInfo);
+            if (!(connected = rpc->send(prodInfo)))
+                ::sem_post(&stopSem);
         }
-        return connected;
     }
 
     /**
@@ -437,16 +429,16 @@ public:
      *
      * @param[in] dataSegId     Data segment ID
      */
-    bool recvRequest(const DataSegId dataSegId) override {
+    void recvRequest(const DataSegId dataSegId) override {
         LOG_TRACE("Peer %s received request for data segment %s", to_string().data(),
                 dataSegId.to_string().data());
         auto dataSeg = p2pMgr.getDatum(dataSegId, rmtSockAddr);
         if (dataSeg) {
             LOG_TRACE("Peer %s is sending data segment %s", to_string().data(),
                     dataSegId.to_string().data());
-            connected = rpc->send(dataSeg);
+            if (!(connected = rpc->send(dataSeg)))
+                ::sem_post(&stopSem);
         }
-        return connected;
     }
 };
 
@@ -739,7 +731,8 @@ class SubPeerImpl final : public PeerImpl
              * therefore, the remote peer is informed of data that this instance has, which will
              * cause it to notify this instance of data that it has but this instance doesn't.
              */
-            connected = rpc->send(prodIds);
+            if (!(connected = rpc->send(prodIds)))
+                ::sem_post(&stopSem);
     }
 
     /**
@@ -862,9 +855,13 @@ public:
         if (subP2pMgr.recvNotice(prodId, rmtSockAddr)) {
             // Subscriber wants the product information
             requested.push(Notice{prodId});
-            if ((connected = rpc->request(prodId)))
+            if ((connected = rpc->request(prodId))) {
                 LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
                         prodId.to_string().data());
+            }
+            else {
+                ::sem_post(&stopSem);
+            }
         }
         else {
             LOG_TRACE("Peer %s didn't request information on product %s", to_string().data(),
@@ -892,9 +889,13 @@ public:
         if (subP2pMgr.recvNotice(dataSegId, rmtSockAddr)) {
             // Subscriber wants the data segment
             requested.push(Notice{dataSegId});
-            if ((connected = rpc->request(dataSegId)))
+            if ((connected = rpc->request(dataSegId))) {
                 LOG_TRACE("Peer %s requested data segment %s", to_string().data(),
                         dataSegId.to_string().data());
+            }
+            else {
+                ::sem_post(&stopSem);
+            }
         }
         else {
             LOG_TRACE("Peer %s didn't request data segment %s", to_string().data(),

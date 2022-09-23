@@ -51,10 +51,8 @@ class P2pMgrImpl : public P2pMgr
         Guard guard{peerSetMutex};
         for (auto iter = peerSet.begin(), stop = peerSet.end(); iter != stop; ) {
             auto peer = *(iter++); // Increment prevents becoming invalid
-            if (shouldNotify(peer, id)) {
-                if (!peer->notify(id))
-                    lockedRemove(peer);
-            }
+            if (shouldNotify(peer, id))
+                peer->notify(id);
         }
     }
 
@@ -72,7 +70,7 @@ protected:
     mutable Cond         stateCond;     ///< For changing state
     mutable Mutex        peerSetMutex;  ///< Guards set of active peers
     mutable Cond         peerSetCond;   ///< For changing set of active peers
-    mutable sem_t        runSem;        ///< For async-signal-safe state changes
+    mutable sem_t        stopSem;       ///< For async-signal-safe stopping
     Tracker              tracker;       ///< Socket addresses of available but unused P2P servers
     ThreadEx             threadEx;      ///< Exception thrown by internal threads
     const unsigned       maxSrvrPeers;  ///< Maximum number of server-side peers
@@ -107,7 +105,7 @@ protected:
      * @post              The state mutex is unlocked
      */
     void stopImpl() {
-        Guard guard{stateMutex};
+        Lock lock{stateMutex};
         LOG_ASSERT(state == State::STARTED);
 
         state = State::STOPPING;
@@ -119,15 +117,16 @@ protected:
         stopThreads();
 
         for (auto peer : peerSet) {
-            peer->stop();
+            peer->halt();
             bookkeeper->erase(peer); // Necessary to prevent P2pMgr_test hanging for some reason
         }
+        peerSetCond.wait(lock, [&]{return peerSet.empty();});
 
         state = State::STOPPED;
     }
 
     void setException(const std::exception& ex) {
-        ::sem_post(&runSem);
+        ::sem_post(&stopSem);
         /*
         Guard guard{stateMutex};
         threadEx.set(ex);
@@ -136,16 +135,58 @@ protected:
         */
     }
 
+    bool addPeer(Peer::Pimpl peer) {
+        Guard guard{peerSetMutex};
+
+        if (!peerSet.insert(peer).second)
+            return false;
+
+        peerMap[peer->getRmtAddr()] = peer;
+        const auto added = bookkeeper->add(peer);
+        LOG_ASSERT(added);
+        incPeerCount(peer);
+        peersChanged = true;
+        peerSetCond.notify_all();
+
+        return true;
+    }
+
+    void removePeer(Peer::Pimpl peer) {
+        Guard guard{peerSetMutex};
+
+        if (peerSet.erase(peer)) {
+            const auto n = peerMap.erase(peer->getRmtAddr());
+            LOG_ASSERT(n);
+            const auto existed = bookkeeper->erase(peer);
+            LOG_ASSERT(existed);
+            decPeerCount(peer);
+            peersChanged = true;
+            peerSetCond.notify_all();
+        }
+    }
+
+    /**
+     * Handles a peer being removed from the set of active peers. Does nothing by default because a
+     * publishing P2P manager doesn't initiate connections to remote P2P servers -- so nothing
+     * needs doing.
+     *
+     * @param[in] peer  The peer that was removed from the set of active peers
+     */
+    virtual void peerRemoved(Peer::Pimpl peer) {
+    }
+
     void runPeer(Peer::Pimpl peer) {
         try {
             peer->run();
             LOG_INFO("Peer %s terminated", peer->to_string().data());
-        }
+        } // Peer was added to active peer set
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
             LOG_ERROR("Peer %s failed", peer->to_string().data());
         }
-        remove(peer);
+
+        removePeer(peer);
+        peerRemoved(peer);
     }
 
     /**
@@ -154,14 +195,8 @@ protected:
      *   - The addresses of known, potential P2P servers.
      *
      * @param[in] peer     Peer whose remote counterpart is to be notified.
-     * @retval    `true`   Success
-     * @retval    `false`  Lost connection
      */
-    virtual bool peerAdded(Peer::Pimpl peer) =0;
-
-    void start(Peer::Pimpl peer) {
-        Thread(&P2pMgrImpl::runPeer, this, peer).detach();
-    }
+    virtual void peerAdded(Peer::Pimpl peer) =0;
 
     /**
      * Adds a peer. Adds the peer to the set of active peers and the bookkeeper; then starts the
@@ -174,80 +209,11 @@ protected:
      * @post                  Mutex is unlocked
      */
     bool add(Peer::Pimpl peer) {
-        {
-            Guard guard{peerSetMutex};
-            if (!peerSet.insert(peer).second)
-                return false;
-
-            peerMap[peer->getRmtAddr()] = peer;
-            const auto added = bookkeeper->add(peer);
-            LOG_ASSERT(added);
-            incPeerCount(peer);
-            peersChanged = true;
-            peerSetCond.notify_all();
-        }
-
-        peer->start();
+        if (!addPeer(peer))
+            return false;
+        Thread(&P2pMgrImpl::runPeer, this, peer).detach();
+        peerAdded(peer);
         return true;
-    }
-
-    /**
-     * Handles a peer being removed from the set of active peers. Does nothing by default because a
-     * publishing P2P manager doesn't initiate connections to remote P2P servers.
-     *
-     * @pre             Peer set mutex is locked
-     * @param[in] peer  The peer that was removed
-     * @post            Peer set mutex is locked
-     */
-    virtual void peerRemoved(Peer::Pimpl peer) {
-    }
-
-    /**
-     * Removes a peer.
-     *   - Stops the peer;
-     *   - Removes it from the set of active peers;
-     *   - Removes it from the bookkeeper;
-     *   - Decrements the count of peers;
-     *   - Calls the peer-removed cleanup function; and
-     *   - Notifies waiting threads that the set of peers has changed.
-     *
-     * @pre              Set-of-peers mutex is locked
-     * @param[in] peer   Peer to be removed
-     * @post             Set-of-peers mutex is locked
-     * @see 'decPeerCount()`
-     * @see 'peerRemoved()`
-     */
-    void lockedRemove(Peer::Pimpl peer) {
-        LOG_ASSERT(!peerSetMutex.try_lock());
-
-        peer->stop();
-
-        if (peerSet.erase(peer)) {
-            const auto n = peerMap.erase(peer->getRmtAddr());
-            LOG_ASSERT(n);
-            const auto existed = bookkeeper->erase(peer);
-            LOG_ASSERT(existed);
-            decPeerCount(peer);
-            peersChanged = true;
-            peerSetCond.notify_all();
-            peerRemoved(peer);
-        }
-    }
-
-    /**
-     * Removes a peer.
-     *   - Locks the peer-set mutex;
-     *   - Calls `lockedRemove()`; and
-     *   - Unlocks the peer-set mutex.
-     *
-     * @pre              Set-of-peers mutex is unlocked
-     * @param[in] peer   Peer to be removed
-     * @post             Set-of-peers mutex is unlocked
-     * @see `lockedRemove()`
-     */
-    void remove(Peer::Pimpl peer) {
-        Guard guard{peerSetMutex};
-        lockedRemove(peer);
     }
 
     /**
@@ -356,7 +322,7 @@ public:
         , peersChanged(false)
         , peerSetMutex()
         , peerSetCond()
-        , runSem()
+        , stopSem()
         , tracker(tracker)
         , threadEx()
         , maxSrvrPeers(maxSrvrPeers)
@@ -372,29 +338,29 @@ public:
             throw INVALID_ARGUMENT("Invalid maximum number of server-side peers: " +
                     std::to_string(maxSrvrPeers));
 
-        if (::sem_init(&runSem, 0, 0) == -1)
+        if (::sem_init(&stopSem, 0, 0) == -1)
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
     }
 
     virtual ~P2pMgrImpl() noexcept {
         Guard guard{stateMutex};
         LOG_ASSERT(state == State::INIT || state == State::STOPPED);
-        ::sem_destroy(&runSem);
+        ::sem_destroy(&stopSem);
     }
 
     void run() override {
         startImpl();
-        ::sem_wait(&runSem); // Blocks until `halt()` called or `threadEx` is true
+        ::sem_wait(&stopSem); // Blocks until `halt()` called or `threadEx` is true
         //stateCond.wait(lock, [&]{return state == State::STOPPING;});
         stopImpl();
         threadEx.throwIfSet();
     }
 
     void halt() override {
-        Guard guard{stateMutex};
-        if (state != State::STARTED)
-            throw LOGIC_ERROR("Instance isn't in state STARTED");
-        ::sem_post(&runSem);
+        int semval = 0;
+        ::sem_getvalue(&stopSem, &semval);
+        if (semval < 1)
+            ::sem_post(&stopSem);
 
         /*
         haltP2pSrvr();
@@ -435,8 +401,6 @@ public:
                 }
                 else {
                     LOG_NOTE("Accepted connection from peer %s", peer->to_string().data());
-                    if (!peerAdded(peer))
-                        remove(peer);
                 }
             }
         }
@@ -477,8 +441,10 @@ public:
                 }
                 else if (numPeers >= maxPeers) {
                     auto worstPeer = bookkeeper->getWorstPeer();
-                    if (worstPeer)
-                        lockedRemove(worstPeer);
+                    if (worstPeer) {
+                        LOG_DEBUG("Halting peer %s", worstPeer->to_string().data());
+                        worstPeer->halt();
+                    }
                 }
             }
         }
@@ -532,7 +498,7 @@ public:
                 if (peer->isClient()) {
                     LOG_DEBUG("Disconnecting from P2P node " + peer->getRmtAddr().to_string() +
                             " because it isn't a path to the publisher");
-                    lockedRemove(peer);
+                    peer->halt();
                 }
             }
         }
@@ -596,7 +562,7 @@ protected:
         acceptThread.join();
     }
 
-    bool peerAdded(Peer::Pimpl peer) override {
+    void peerAdded(Peer::Pimpl peer) override {
         /*
          * The remote peer knows that this instance is a publisher; therefore, there's no need to
          * inform it that this instance is a path to the publisher.
@@ -604,7 +570,7 @@ protected:
          * `getPeerSetTracker()` is useless because all those peers were constructed server-side,
          * which means that their remote addresses aren't those of their P2P servers'.
          */
-        return peer->add(tracker);
+        peer->add(tracker);
     }
 
     void incPeerCount(Peer::Pimpl peer) override {
@@ -898,14 +864,10 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
 
                         try {
                             LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
-                            if (!peerAdded(peer)) {
-                                LOG_DEBUG("Removing peer %s", rmtSrvrAddr.to_string().data());
-                                remove(peer);
-                            }
                         } // Peer is active and in peer-set
                         catch (...) {
-                            LOG_DEBUG("Removing peer");
-                            remove(peer);
+                            LOG_DEBUG("Halting peer");
+                            peer->halt();
                             throw;
                         }
                     } // `peer` is connected
@@ -1007,15 +969,15 @@ protected:
         peer->isClient() ? --numClntPeers : --numSrvrPeers;
     }
 
-    bool peerAdded(Peer::Pimpl peer) override {
-        return peer->notifyHavePubPath(isPathToPubFor(peer)) &&
-                peer->add(tracker) &&
-                peer->add(getPeerSetTracker()) &&
-                (!peer->isClient() || peer->add(p2pSrvr->getSrvrAddr()));
+    void peerAdded(Peer::Pimpl peer) override {
+        peer->notifyHavePubPath(isPathToPubFor(peer));
+        peer->add(tracker);
+        peer->add(getPeerSetTracker());
+        if (!peer->isClient())
+            peer->add(p2pSrvr->getSrvrAddr());
     }
 
     void peerRemoved(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
         // Remote socket address is remote P2P server's only for a peer constructed client-side
         if (peer->isClient())
             delayFifo.insert(peer->getRmtAddr());

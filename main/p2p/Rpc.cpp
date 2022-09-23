@@ -862,10 +862,10 @@ public:
     }
 
     void halt() override {
-        Guard guard{stateMutex};
-        if (state != State::STARTED)
-            throw LOGIC_ERROR("Instance has not been started");
-        ::sem_post(&stopSem);
+        int semval = 0;
+        ::sem_getvalue(&stopSem, &semval);
+        if (semval < 1)
+            ::sem_post(&stopSem);
     }
 
     bool notifyAmPubPath(const bool amPubPath) override {
