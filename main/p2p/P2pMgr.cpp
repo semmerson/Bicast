@@ -160,8 +160,7 @@ protected:
 
     /**
      * Handles a peer being removed from the set of active peers. Does nothing by default because a
-     * publishing P2P manager doesn't request data from remote peers -- so there are no outstanding
-     * requests that need to be reassigned.
+     * publisher's P2P manager doesn't have client-side peers -- so there's nothing to be done.
      *
      * @param[in] peer  The peer that was removed from the set of active peers
      */
