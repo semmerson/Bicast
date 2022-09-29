@@ -222,6 +222,20 @@ public:
     virtual void recvHaveProds(ProdIdSet prodIds) =0;
 
     /**
+     * Requests product information from the remote peer.
+     *
+     * @param[in] prodId  Product ID
+     */
+    virtual void request(const ProdId prodId) =0;
+
+    /**
+     * Requests a data-segment from the remote peer.
+     *
+     * @param[in] segId  Data-segment ID
+     */
+    virtual void request(const DataSegId& segId) =0;
+
+    /**
      * Receives notification to add a potential peer-server.
      *
      * @param[in] p2pSrvr  Potential peer-server to add
@@ -301,6 +315,15 @@ public:
      * @retval    `false`  EOF
      */
     virtual void recvData(const DataSeg dataSeg) =0;
+
+    /**
+     * Drains outstanding requests to the subscriber's P2P manager. Should only be called after the
+     * peer has stopped.
+     *
+     * @throw LogicError  This instance doesn't request data
+     * @see `SubP2pMgr::missed()`
+     */
+    virtual void drainPending() =0;
 };
 
 /******************************************************************************/

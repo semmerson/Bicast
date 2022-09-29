@@ -166,13 +166,13 @@ Disposer Disposer::create(const String& configFile) {
 
     try {
         int maxPersistent = 20;
-        if (node0["MaxPersistent"]) {
+        if (node0["MaxKeepOpen"]) {
             try {
-                maxPersistent = node0["MaxPersistent"].as<int>();
+                maxPersistent = node0["MaxKeepOpen"].as<int>();
             }
             catch (const std::exception& ex) {
-                std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"MaxPersistent\" value: \"" +
-                        node0["MaxPersistent"].as<String>() + "\""));
+                std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"MaxKeepOpen\" value: \"" +
+                        node0["MaxKeepOpen"].as<String>() + "\""));
             }
         }
 
@@ -210,10 +210,10 @@ Disposer Disposer::create(const String& configFile) {
 
                 bool persist = false;
                 try {
-                    Parser::tryDecode<bool>(patActNode, "Persist", persist);
+                    Parser::tryDecode<bool>(patActNode, "KeepOpen", persist);
                 }
                 catch (const std::exception& ex) {
-                    std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"Persist\" value in "
+                    std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"KeepOpen\" value in "
                             "pattern-action " + std::to_string(iPatAct)));
                 }
 
@@ -224,11 +224,11 @@ Disposer Disposer::create(const String& configFile) {
 
                 PatternAction patAct;
                 if (::strcasecmp(action.data(), "PIPE") == 0) {
-                    if (!patActNode["Args"])
-                        throw RUNTIME_ERROR("No \"Args\" node specified in pattern-action " +
+                    if (!patActNode["Command"])
+                        throw RUNTIME_ERROR("No \"Command\" node specified in pattern-action " +
                                 std::to_string(iPatAct));
 
-                    auto                argsNode = patActNode["Args"];
+                    auto                argsNode = patActNode["Command"];
                     std::vector<String> args(argsNode.size());
                     for (size_t iarg = 0; iarg < argsNode.size(); ++iarg)
                         args[iarg] = argsNode[iarg].as<String>();
@@ -238,9 +238,35 @@ Disposer Disposer::create(const String& configFile) {
                     }
                     catch (const std::exception& ex) {
                         std::throw_with_nested(RUNTIME_ERROR("Couldn't create decoder template "
-                                "from \"Args\" node in pattern-action " + std::to_string(iPatAct)));
+                                "from \"Command\" node in pattern-action " +
+                                std::to_string(iPatAct)));
                     }
                 } // PIPE action
+                else if ((::strcasecmp(action.data(), "FILE") == 0 ||
+                        (::strcasecmp(action.data(), "APPEND") == 0))) {
+                    if (!patActNode["Path"])
+                        throw RUNTIME_ERROR("No \"Path\" node specified in pattern-action " +
+                                std::to_string(iPatAct));
+
+                    auto                pathNode = patActNode["Path"];
+                    std::vector<String> pathname(1);
+                    pathname[0] = pathNode.as<String>();
+
+                    try {
+                        ActionTemplate actTempl;
+                        if (::strcasecmp(action.data(), "FILE") == 0) {
+                            actTempl = FileTemplate(pathname, persist);
+                        }
+                        else {
+                            actTempl = AppendTemplate(pathname, persist);
+                        }
+                        patAct = PatternAction(include, exclude, actTempl);
+                    }
+                    catch (const std::exception& ex) {
+                        std::throw_with_nested(RUNTIME_ERROR("Couldn't create pathname template "
+                                "from \"Path\" node in pattern-action " + std::to_string(iPatAct)));
+                    }
+                }
 
                 disposer.add(patAct);
             } // Pattern-action loop

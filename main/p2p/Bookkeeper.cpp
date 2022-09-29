@@ -185,15 +185,15 @@ Bookkeeper::Pimpl Bookkeeper::createPub(const int maxPeers) {
  */
 class SubBookkeeper final : public BookkeeperImpl
 {
-    using Rating     = uint_fast32_t;
-    using DatumIdSet = std::set<Notice>;
+    using Rating    = uint_fast32_t;
+    using NoticeSet = std::set<Notice>;
 
     struct PeerInfo {
-        Rating     rating;   ///< Peer rating
-        DatumIdSet datumIds; ///< Data available from remote peer
+        Rating    rating;   ///< Peer rating
+        NoticeSet notices; ///< Data available from remote peer
         PeerInfo()
             : rating(0)
-            , datumIds()
+            , notices()
         {}
     };
 
@@ -204,19 +204,19 @@ class SubBookkeeper final : public BookkeeperImpl
      *   - A peer with a given datum to be in the datum's list of peers at most
      *     once.
      */
-    using PeerInfoMap = std::unordered_map<Peer::Pimpl, PeerInfo>;
-    struct DatumPeers {
+    using PeerToInfo = std::unordered_map<Peer::Pimpl, PeerInfo>;
+    struct Peers {
         std::unordered_set<Peer::Pimpl> set;
         std::list<Peer::Pimpl>          list;
     };
-    using DatumPeersMap = std::unordered_map<Notice, DatumPeers>;
+    using NoticeToPeers = std::unordered_map<Notice, Peers>;
 
     /// Map of peer -> peer entry
-    PeerInfoMap peerInfoMap;
+    PeerToInfo peerToInfo;
     /**
      * Map of datum ID to peers that have the datum.
      */
-    DatumPeersMap datumPeersMap;
+    NoticeToPeers noticeToPeers;
 
     /**
      * Vets a peer.
@@ -226,15 +226,15 @@ class SubBookkeeper final : public BookkeeperImpl
      * @throw     LogicError  Peer is unknown
      */
     inline void vetPeer(Peer::Pimpl peer) const {
-        if (peerInfoMap.count(peer) == 0)
+        if (peerToInfo.count(peer) == 0)
             throw LOGIC_ERROR("Peer::Pimpl " + peer->to_string() + " is unknown");
     }
 
     /**
-     * Indicates if a given peer should be notified about an available datum.
+     * Indicates if a given, remote peer should be notified about an available datum.
      *
-     * @param[in] peer        Peer
-     * @param[in] datumId     ID of available datum
+     * @param[in] peer        Local peer connected to remote peer
+     * @param[in] notice      Notice of available datum
      * @return    `true`      Notice should be sent
      * @return    `false`     Notice shouldn't be sent
      * @throws    LogicError  Peer is unknown
@@ -242,27 +242,27 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldNotify(
-            Peer::Pimpl   peer,
-            const Notice datumId) const
+            Peer::Pimpl  peer,
+            const Notice notice) const
     {
         Guard guard(mutex);
 
         vetPeer(peer);
 
         /*
-         * The peer should be notified if no remote peer has announced that it
-         * has the given datum or the given peer hasn't announced that it has.
+         * The remote peer should be notified if no remote peer has announced that it
+         * has the given datum or the given remote peer hasn't announced that it has.
          */
-        return datumPeersMap.count(datumId) == 0 ||
-                datumPeersMap.at(datumId).set.count(peer) == 0;
+        return noticeToPeers.count(notice) == 0 ||
+                noticeToPeers.at(notice).set.count(peer) == 0;
     }
 
     /**
-     * Indicates if a request should be made by a peer. The peer is added to the
-     * list of peers that have the datum.
+     * Indicates if a local peer should request a datum from its remote peer. The peer is added to
+     * the list of peers whose remote counterparts have the datum.
      *
-     * @param[in] peer        Peer
-     * @param[in] datumId     Request identifier
+     * @param[in] peer        Local peer
+     * @param[in] notice      Notice of available data
      * @return    `true`      Request should be made
      * @return    `false`     Request shouldn't be made
      * @throws    LogicError  Peer is unknown
@@ -270,26 +270,26 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldRequest(
-            Peer::Pimpl   peer,
-            const Notice datumId)
+            Peer::Pimpl  peer,
+            const Notice notice)
     {
         Guard guard(mutex);
 
         vetPeer(peer);
 
         //LOG_DEBUG("Peer %s has datum %s", peer->to_string().data(),
-                //datumId.to_string().data());
+                //notice.to_string().data());
 
         /*
          * A request for the given datum should be made if there are no peers
          * for the given datum currently.
          */
-        bool  should = datumPeersMap.count(datumId) == 0;
+        bool  should = noticeToPeers.count(notice) == 0;
         /*
          * In any case, the given peer must now be added to the set of peers
          * that have the datum.
          */
-        auto& datumPeers = datumPeersMap[datumId];
+        auto& datumPeers = noticeToPeers[notice];
         if (datumPeers.set.insert(peer).second)
             datumPeers.list.push_back(peer);
 
@@ -300,62 +300,64 @@ class SubBookkeeper final : public BookkeeperImpl
      * Process reception of a datum. The rating of the associated peer is increased.
      *
      * @param[in] peer        Peer that received the datum
-     * @param[in] datumId     Datum identifier
+     * @param[in] noticed     Notice of available data
      * @retval    `true`      Success
      * @retval    `false`     Datum is unexpected
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
-    bool received(Peer::Pimpl   peer,
-                  const Notice datumId)
+    bool received(Peer::Pimpl  peer,
+                  const Notice notice)
     {
         bool   success = false;
         Guard  guard(mutex);
 
         vetPeer(peer);
 
-        if (datumPeersMap.count(datumId) && datumPeersMap[datumId].set.count(peer)) {
-            ++(peerInfoMap.at(peer).rating);
+        if (noticeToPeers.count(notice) && noticeToPeers[notice].set.count(peer)) {
+            ++(peerToInfo.at(peer).rating);
             success = true;
         }
 
         return success;
     }
 
-    void erase(const Notice datumId) {
+    void erase(const Notice notice) {
         Guard  guard(mutex);
-        if (datumPeersMap.count(datumId)) {
-            for (auto peer : datumPeersMap[datumId].list)
-                peerInfoMap.at(peer).datumIds.erase(datumId);
-            datumPeersMap.erase(datumId);
+        if (noticeToPeers.count(notice)) {
+            for (auto peer : noticeToPeers[notice].list)
+                peerToInfo.at(peer).notices.erase(notice);
+            noticeToPeers.erase(notice);
         }
     }
 
     /**
      * Returns the best alternative peer for a datum.
      *
-     * @param[in] badPeer  Peer that couldn't supply the datum. It will be
-     *                     removed from the set of peers that indicated they
-     *                     have the datum.
-     * @param[in] datumId  Datum ID
-     * @return             Best alternative peer. Will test false if none exist.
+     * @param[in] badPeer  Local peer whose remote couldn't supply the datum. Upon return, it will
+     *                     not be in the the set of peers that indicated availability of the datum.
+     * @param[in] notice   Notice of available data
+     * @return             Best alternative peer. Will test false if it doesn't exist.
      */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl badPeer,
-            const Notice     datumId) {
-        Guard        guard{mutex};
-        Peer::Pimpl  altPeer;
+            const Notice      notice) {
+        Guard       guard{mutex};
+        Peer::Pimpl altPeer;
 
-        const auto count = peerInfoMap.at(badPeer).datumIds.erase(datumId);
-        LOG_ASSERT(count == 1);
+        if (peerToInfo.count(badPeer))
+            const auto count = peerToInfo[badPeer].notices.erase(notice);
 
-        auto& peers = datumPeersMap.at(datumId).list;
-        if (peers.size()) {
-            LOG_ASSERT(peers.front() == badPeer);
-            peers.pop_front();
-            if (peers.size())
-                altPeer = peers.front();
+        if (noticeToPeers.count(notice)) {
+            noticeToPeers[notice].set.erase(badPeer);
+            auto& peers = noticeToPeers[notice].list;
+            if (peers.size()) {
+                if (peers.front() == badPeer)
+                    peers.pop_front();
+                if (peers.size())
+                    altPeer = peers.front();
+            }
         }
 
         return altPeer;
@@ -371,8 +373,8 @@ public:
      */
     SubBookkeeper(const int maxPeers)
         : BookkeeperImpl()
-        , peerInfoMap(maxPeers)
-        , datumPeersMap()
+        , peerToInfo(maxPeers)
+        , noticeToPeers()
     {}
 
     ~SubBookkeeper() noexcept {
@@ -397,7 +399,7 @@ public:
      */
     bool add(Peer::Pimpl peer) override {
         Guard guard(mutex);
-        return peerInfoMap.insert({peer, PeerInfo{}}).second;
+        return peerToInfo.insert({peer, PeerInfo{}}).second;
     }
 
     /**
@@ -414,20 +416,19 @@ public:
     {
         bool  existed = false;
         Guard guard{mutex};
-        if (peerInfoMap.count(peer)) {
-            for (const auto& datumId : peerInfoMap[peer].datumIds) {
-                auto& datumPeers = datumPeersMap.at(datumId);
-                auto& peerList = datumPeers.list;
-                for (auto iter = peerList.begin(), end = peerList.end();
-                        iter != end; ++iter) {
+        if (peerToInfo.count(peer)) {
+            for (const auto& notice : peerToInfo[peer].notices) {
+                auto& peers = noticeToPeers.at(notice);
+                auto& peerList = peers.list;
+                for (auto iter = peerList.begin(), end = peerList.end(); iter != end; ++iter) {
                     if (*iter == peer) {
                         peerList.erase(iter);
                         break;
                     }
                 }
-                datumPeers.set.erase(peer);
+                peers.set.erase(peer);
             }
-            peerInfoMap.erase(peer);
+            peerToInfo.erase(peer);
             existed = true;
         }
         return existed;
@@ -504,7 +505,7 @@ public:
         bool               valid = false;
         Guard              guard(mutex);
 
-        for (auto& elt : peerInfoMap) {
+        for (auto& elt : peerToInfo) {
             if (elt.first->isClient()) {
                 const auto rating = elt.second.rating;
                 if (rating)
@@ -529,7 +530,7 @@ public:
     void reset() noexcept override {
         Guard guard(mutex);
 
-        for (auto& elt : peerInfoMap)
+        for (auto& elt : peerToInfo)
             elt.second.rating = 0;
     }
 };

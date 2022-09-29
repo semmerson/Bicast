@@ -614,6 +614,8 @@ public:
      */
     ProdIdSet(const size_t n = 0);
 
+    String to_string() const;
+
     /**
      * Subtracts (i.e., erases) all identifiers in another set.
      *

@@ -1,4 +1,4 @@
-set -ex
+set -e
 
 name=${1?Product name wasn\'t specified}
 

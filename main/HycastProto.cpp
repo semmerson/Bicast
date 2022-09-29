@@ -136,6 +136,10 @@ public:
         : prodIds{n}
     {}
 
+    String to_string() const {
+        return "{size=" + std::to_string(prodIds.size()) + "}";
+    }
+
     void subtract(const Impl& rhs) {
         for (auto iter = rhs.prodIds.begin(), end = rhs.prodIds.end(); iter != end; ++iter)
             prodIds.erase(*iter);
@@ -193,6 +197,10 @@ public:
 ProdIdSet::ProdIdSet(const size_t n)
     : pImpl{new Impl(n)}
 {}
+
+String ProdIdSet::to_string() const {
+    return pImpl->to_string();
+}
 
 void ProdIdSet::subtract(const ProdIdSet rhs) {
     pImpl->subtract(*rhs.pImpl);

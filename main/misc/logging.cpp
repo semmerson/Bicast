@@ -38,10 +38,15 @@ static int LOC_WIDTH = 32;
 
 class StreamGuard
 {
-    FILE* stream;
+    FILE*      stream;
+    std::mutex mutex;
 
 public:
-    StreamGuard(FILE* stream) : stream{stream} {
+    StreamGuard(FILE* stream)
+        : stream{stream}
+        , mutex()
+    {
+        mutex.lock();
         ::flockfile(stream);
     }
 
@@ -51,6 +56,7 @@ public:
 
     ~StreamGuard() {
         ::funlockfile(stream);
+        mutex.unlock();
     }
 };
 
@@ -216,7 +222,7 @@ std::string makeWhat(
     return what;
 }
 
-void log(
+static void log(
         const LogLevel    level,
         const char* const file,
         const int         line,
@@ -224,8 +230,6 @@ void log(
         const char* const fmt,
         va_list           argList)
 {
-    StreamGuard guard(stderr);
-
     logHeader(level, file, line, func);
 
     // Message

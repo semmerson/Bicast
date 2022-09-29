@@ -118,39 +118,39 @@ protected:
                 }
 
                 if (notice.id == Notice::Id::DATA_SEG_ID) {
-                    if ((connected = rpc->notify(notice.dataSegId)))
-                        LOG_TRACE("Peer %s notified remote about data-segment %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->notify(notice.dataSegId);
+                        //LOG_TRACE("Peer %s notified remote about data-segment %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::PROD_INDEX) {
-                    if ((connected = rpc->notify(notice.prodId)))
-                        LOG_TRACE("Peer %s notified remote about product %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->notify(notice.prodId);
+                        //LOG_TRACE("Peer %s notified remote about product %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::AM_PUB_PATH) {
-                    if ((connected = rpc->notifyAmPubPath(notice.amPubPath)))
-                        LOG_TRACE("Peer %s notified remote that it %s a path to the publisher",
-                                to_string().data(), notice.amPubPath ? "is" : "is not");
+                    connected = rpc->notifyAmPubPath(notice.amPubPath);
+                        //LOG_TRACE("Peer %s notified remote that it %s a path to the publisher",
+                                //to_string().data(), notice.amPubPath ? "is" : "is not");
                 }
                 else if (notice.id == Notice::Id::GOOD_P2P_SRVR) {
-                    if ((connected = rpc->add(notice.srvrAddr)))
-                        LOG_TRACE("Peer %s notified remote about good P2P server %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->add(notice.srvrAddr);
+                        //LOG_TRACE("Peer %s notified remote about good P2P server %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::GOOD_P2P_SRVRS) {
-                    if ((connected = rpc->add(notice.tracker)))
-                        LOG_TRACE("Peer %s notified remote about good P2P servers %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->add(notice.tracker);
+                        //LOG_TRACE("Peer %s notified remote about good P2P servers %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::BAD_P2P_SRVR) {
-                    if ((connected = rpc->remove(notice.srvrAddr)))
-                        LOG_TRACE("Peer %s notified remote about bad P2P server %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->remove(notice.srvrAddr);
+                        //LOG_TRACE("Peer %s notified remote about bad P2P server %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::BAD_P2P_SRVRS) {
-                    if ((connected = rpc->remove(notice.tracker)))
-                        LOG_TRACE("Peer %s notified remote about bad P2P servers %s",
-                                to_string().data(), notice.to_string().data());
+                    connected = rpc->remove(notice.tracker);
+                        //LOG_TRACE("Peer %s notified remote about bad P2P servers %s",
+                                //to_string().data(), notice.to_string().data());
                 }
                 else {
                     throw LOGIC_ERROR("Notice ID is unknown: " + std::to_string((int)notice.id));
@@ -243,7 +243,7 @@ protected:
         threadEx.throwIfSet();
 
         if (connected && !rmtIsPub) {
-            //LOG_DEBUG("Peer %s is adding notice %s", to_string().data(),
+            //LOG_TRACE("Peer %s is adding notice %s", to_string().data(),
                     //notice.to_string().data());
             Guard guard{noticeMutex};
             noticeQ.push(notice);
@@ -413,12 +413,12 @@ public:
      * @param[in] prodId     Index of the product
      */
     void recvRequest(const ProdId prodId) override {
-        LOG_TRACE("Peer %s received request for information on product %s", to_string().data(),
-                prodId.to_string().data());
+        //LOG_TRACE("Peer %s received request for information on product %s", to_string().data(),
+         //       prodId.to_string().data());
         auto prodInfo = p2pMgr.getDatum(prodId, rmtSockAddr);
         if (prodInfo) {
-            LOG_TRACE("Peer %s is sending information on product %s", to_string().data(),
-                    prodId.to_string().data());
+            //LOG_TRACE("Peer %s is sending information on product %s", to_string().data(),
+             //       prodId.to_string().data());
             if (!(connected = rpc->send(prodInfo)))
                 ::sem_post(&stopSem);
         }
@@ -430,12 +430,12 @@ public:
      * @param[in] dataSegId     Data segment ID
      */
     void recvRequest(const DataSegId dataSegId) override {
-        LOG_TRACE("Peer %s received request for data segment %s", to_string().data(),
-                dataSegId.to_string().data());
+        //LOG_TRACE("Peer %s received request for data segment %s", to_string().data(),
+                //dataSegId.to_string().data());
         auto dataSeg = p2pMgr.getDatum(dataSegId, rmtSockAddr);
         if (dataSeg) {
-            LOG_TRACE("Peer %s is sending data segment %s", to_string().data(),
-                    dataSegId.to_string().data());
+            //LOG_TRACE("Peer %s is sending data segment %s", to_string().data(),
+                    //dataSegId.to_string().data());
             if (!(connected = rpc->send(dataSeg)))
                 ::sem_post(&stopSem);
         }
@@ -484,6 +484,13 @@ public:
         return false;
     }
 
+    void request(const ProdId prodId) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+    void request(const DataSegId& segId) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+
     void recvAdd(const SockAddr p2pSrvr) override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
@@ -511,6 +518,10 @@ public:
         throw LOGIC_ERROR("Shouldn't have been called");
     }
     void recvData(const DataSeg dataSeg) override {
+        throw LOGIC_ERROR("Shouldn't have been called");
+    }
+
+    void drainPending() override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
 };
@@ -571,7 +582,7 @@ class SubPeerImpl final : public PeerImpl
         class Iter : public std::iterator<std::input_iterator_tag, Notice>
         {
             RequestQ& queue;
-            Notice   request;
+            Notice    request;
 
         public:
             Iter(RequestQ& queue, const Notice& request)
@@ -587,7 +598,7 @@ class SubPeerImpl final : public PeerImpl
             Notice* operator->() {return &request;}
             Iter& operator++() {
                 Guard guard{queue.mutex};
-                request = queue.requests[request];
+                request = queue.requests[request]; // Value component references next entry
                 return *this;
             }
         };
@@ -713,7 +724,7 @@ class SubPeerImpl final : public PeerImpl
             Guard guard{mutex};
             return Iter{*this, Notice{}};
         }
-    };
+    }; // RequestQ
 
     SubP2pMgr&     subP2pMgr;   ///< Subscriber's P2P manager
     RequestQ       requested;   ///< Requests sent to remote peer
@@ -736,11 +747,11 @@ class SubPeerImpl final : public PeerImpl
     }
 
     /**
-     * Received a datum from the remote peer. If the datum wasn't requested, then it is ignored and
-     * each request in the requested queue before the request for the given datum is removed from
-     * the queue and passed to the P2P manager as not satisfiable by the remote peer. Otherwise, the
-     * datum is passed to the subscriber's P2P manager and the pending request is removed from the
-     * requested queue.
+     * Received a datum from the remote peer. If the datum wasn't requested, then an exception is
+     * thrown. Each request in the requested queue before the request for the given datum is removed
+     * from the queue and passed to the P2P manager as not satisfiable by the remote peer.
+     * Otherwise, the datum is passed to the subscriber's P2P manager and the pending request is
+     * removed from the requested queue.
      *
      * @tparam    DATUM       Type of datum: `ProdInfo` or `DataSeg`
      * @param[in] datum       Datum
@@ -761,8 +772,8 @@ class SubPeerImpl final : public PeerImpl
                 return;
             }
             /*
-             *  NB: A missed response from the remote peer means that it doesn't have the requested
-             *  data.
+             * NB: A skipped response from the remote peer means that it doesn't have the requested
+             * data.
              */
             if (iter->getType() == Notice::Id::DATA_SEG_ID) {
                 subP2pMgr.missed(iter->dataSegId, rmtSockAddr);
@@ -774,7 +785,8 @@ class SubPeerImpl final : public PeerImpl
             ++iter; // Must occur before `requested.pop()`
             requested.pop();
         }
-        LOG_DEBUG("Datum " + datum.to_string() + " wasn't requested");
+        throw LOGIC_ERROR("Peer " + to_string() + " received unrequested datum " +
+                datum.to_string());
     }
 
 public:
@@ -821,6 +833,27 @@ public:
         return rpc->isRmtPub();
     }
 
+    void request(const ProdId prodId) override {
+        requested.push(Notice{prodId});
+        if ((connected = rpc->request(prodId))) {
+            //LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
+                    //prodId.to_string().data());
+        }
+        else {
+            ::sem_post(&stopSem);
+        }
+    }
+    void request(const DataSegId& segId) override {
+        requested.push(Notice{segId});
+        if ((connected = rpc->request(segId))) {
+            //LOG_TRACE("Peer %s requested information on data-segment %s", to_string().data(),
+                    //segId.to_string().data());
+        }
+        else {
+            ::sem_post(&stopSem);
+        }
+    }
+
     void recvAdd(const SockAddr p2pSrvr) override {
         subP2pMgr.recvAdd(p2pSrvr);
     }
@@ -847,21 +880,14 @@ public:
      * @retval    `true`     Success
      */
     bool recvNotice(const ProdId prodId) {
-        LOG_TRACE("Peer %s received notice about product %s", to_string().data(),
-                prodId.to_string().data());
+        //LOG_TRACE("Peer %s received notice about product %s", to_string().data(),
+                //prodId.to_string().data());
 
         std::call_once(backlogFlag, [&]{requestBacklog();});
 
         if (subP2pMgr.recvNotice(prodId, rmtSockAddr)) {
             // Subscriber wants the product information
-            requested.push(Notice{prodId});
-            if ((connected = rpc->request(prodId))) {
-                LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
-                        prodId.to_string().data());
-            }
-            else {
-                ::sem_post(&stopSem);
-            }
+            request(prodId);
         }
         else {
             LOG_TRACE("Peer %s didn't request information on product %s", to_string().data(),
@@ -881,21 +907,14 @@ public:
      * @retval    `true`     Success
      */
     bool recvNotice(const DataSegId dataSegId) {
-        LOG_TRACE("Peer %s received notice about data segment %s", to_string().data(),
-                dataSegId.to_string().data());
+        //LOG_TRACE("Peer %s received notice about data segment %s", to_string().data(),
+                //dataSegId.to_string().data());
 
         std::call_once(backlogFlag, [&]{requestBacklog();});
 
         if (subP2pMgr.recvNotice(dataSegId, rmtSockAddr)) {
             // Subscriber wants the data segment
-            requested.push(Notice{dataSegId});
-            if ((connected = rpc->request(dataSegId))) {
-                LOG_TRACE("Peer %s requested data segment %s", to_string().data(),
-                        dataSegId.to_string().data());
-            }
-            else {
-                ::sem_post(&stopSem);
-            }
+            request(dataSegId);
         }
         else {
             LOG_TRACE("Peer %s didn't request data segment %s", to_string().data(),
@@ -910,8 +929,8 @@ public:
      * @param[in] prodInfo  Product information
      */
     void recvData(const ProdInfo prodInfo) {
-        LOG_TRACE("Peer %s received information on product %s",
-                to_string().data(), prodInfo.getId().to_string().data());
+        //LOG_TRACE("Peer %s received information on product %s",
+                //to_string().data(), prodInfo.getId().to_string().data());
         processData<ProdInfo>(prodInfo);
     }
     /**
@@ -920,9 +939,13 @@ public:
      * @param[in] dataSeg  Data segment
      */
     void recvData(const DataSeg dataSeg) {
-        LOG_TRACE("Peer %s received data-segment %s", to_string().data(),
-                dataSeg.to_string().data());
+        //LOG_TRACE("Peer %s received data-segment %s", to_string().data(),
+                //dataSeg.to_string().data());
         processData<DataSeg>(dataSeg);
+    }
+
+    void drainPending() override {
+        requested.drainTo(subP2pMgr, rmtSockAddr);
     }
 };
 

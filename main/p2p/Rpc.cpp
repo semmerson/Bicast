@@ -311,8 +311,8 @@ class RpcImpl final : public Rpc
         ID   id;
         bool success = id.read(requestXprt);
         if (success) {
-            //LOG_DEBUG("RPC layer %s received request for %s %s",
-                    //to_string().data(), desc, id.to_string().data());
+            LOG_TRACE("RPC %s received request for %s %s",
+                    to_string().data(), desc, id.to_string().data());
             peer.recvRequest(id);
         }
         return success;
@@ -394,7 +394,7 @@ class RpcImpl final : public Rpc
      */
     void runReader(Xprt xprt, std::function<void(PduId)> process) {
         try {
-            //LOG_DEBUG("Executing reader");
+            LOG_TRACE("Executing reader");
 #if 1
             // This works
             for (PduId pduId{}; pduId.read(xprt); process(pduId))
@@ -420,13 +420,13 @@ class RpcImpl final : public Rpc
     }
 
     void startRequestReader(Peer& peer) {
-        //LOG_DEBUG("Starting thread to read requests");
+        LOG_TRACE("Starting thread to read requests");
         requestReader = Thread(&RpcImpl::runReader, this, requestXprt,
                 [&](PduId pduId) {return processRequest(pduId, peer);});
         if (log_enabled(LogLevel::DEBUG)) {
             std::ostringstream threadId;
             threadId << requestReader.get_id();
-            //LOG_DEBUG("Request reader thread is %s", threadId.str().data());
+            LOG_TRACE("Request reader thread is %s", threadId.str().data());
         }
     }
     /**
@@ -434,7 +434,7 @@ class RpcImpl final : public Rpc
      */
     void stopRequestReader() {
         if (requestXprt) {
-            //LOG_DEBUG("Shutting down request transport");
+            LOG_TRACE("Shutting down request transport");
             requestXprt.shutdown();
         }
         if (requestReader.joinable())
@@ -445,19 +445,17 @@ class RpcImpl final : public Rpc
      * Processes notices of an available datum. Calls the associated peer.
      *
      * @tparam    NOTICE  Type of notice
-     * @param[in] pduId   PDU ID for associated request
      * @param[in] peer    Associated peer
      * @param[in] desc    Description of associated datum
      */
     template<class NOTICE>
     inline void processNotice(
-            PduId             pduId,
             Peer&             peer,
             const char* const desc) {
         NOTICE notice;
         if (notice.read(noticeXprt)) {
-            //LOG_DEBUG("RPC layer %s received notice about %s %s",
-                    //to_string().data(), desc, datumId.to_string().data());
+            LOG_TRACE("RPC %s received notice about %s %s",
+                    to_string().data(), desc, notice.to_string().data());
             peer.recvNotice(notice);
         }
     }
@@ -472,11 +470,11 @@ class RpcImpl final : public Rpc
             Peer& peer) {
         switch (pduId) {
         case PduId::DATA_SEG_NOTICE: {
-            processNotice<DataSegId>(PduId::DATA_SEG_REQUEST, peer, "data-segment");
+            processNotice<DataSegId>(peer, "data-segment");
             break;
         }
         case PduId::PROD_INFO_NOTICE: {
-            processNotice<ProdId>(PduId::PROD_INFO_REQUEST, peer, "information on product");
+            processNotice<ProdId>(peer, "product");
             break;
         }
         case PduId::AM_PUB_PATH: {
@@ -490,7 +488,7 @@ class RpcImpl final : public Rpc
         case PduId::GOOD_P2P_SRVR: {
             SockAddr p2pSrvrAddr;
             if (p2pSrvrAddr.read(noticeXprt)) {
-                LOG_DEBUG("RPC layer %s received notice about good P2P server %s",
+                LOG_TRACE("RPC %s received notice about good P2P server %s",
                         to_string().data(), p2pSrvrAddr.to_string().data());
                 peer.recvAdd(p2pSrvrAddr);
             }
@@ -499,7 +497,7 @@ class RpcImpl final : public Rpc
         case PduId::GOOD_P2P_SRVRS: {
             Tracker tracker;
             if (tracker.read(noticeXprt)) {
-                LOG_DEBUG("RPC layer %s received notice about good P2P servers %s",
+                LOG_TRACE("RPC %s received notice about good P2P servers %s",
                         to_string().data(), tracker.to_string().data());
                 peer.recvAdd(tracker);
             }
@@ -508,7 +506,7 @@ class RpcImpl final : public Rpc
         case PduId::BAD_P2P_SRVR: {
             SockAddr p2pSrvrAddr;
             if (p2pSrvrAddr.read(noticeXprt)) {
-                LOG_DEBUG("RPC layer %s received notice about bad P2P server %s",
+                LOG_TRACE("RPC %s received notice about bad P2P server %s",
                         to_string().data(), p2pSrvrAddr.to_string().data());
                 peer.recvRemove(p2pSrvrAddr);
             }
@@ -517,7 +515,7 @@ class RpcImpl final : public Rpc
         case PduId::BAD_P2P_SRVRS: {
             Tracker tracker;
             if (tracker.read(noticeXprt)) {
-                LOG_DEBUG("RPC layer %s received notice about bad P2P servers %s",
+                LOG_TRACE("RPC %s received notice about bad P2P servers %s",
                         to_string().data(), tracker.to_string().data());
                 peer.recvRemove(tracker);
             }
@@ -530,7 +528,7 @@ class RpcImpl final : public Rpc
     }
 
     void startNoticeReader(Peer& peer) {
-        //LOG_DEBUG("Starting thread to read notices");
+        LOG_TRACE("Starting thread to read notices");
         noticeReader = Thread(&RpcImpl::runReader, this, noticeXprt, [&](PduId pduId) {
                 return processNotice(pduId, peer);});
     }
@@ -564,8 +562,8 @@ class RpcImpl final : public Rpc
         DATUM datum{};
         auto  success = datum.read(dataXprt);
         if (success) {
-            //LOG_DEBUG("RPC layer %s received %s %s",
-                    //to_string().data(), desc, datum.to_string().data());
+            LOG_TRACE("RPC %s received %s %s",
+                    to_string().data(), desc, datum.to_string().data());
             peer.recvData(datum);
         }
         return success;
@@ -591,7 +589,7 @@ class RpcImpl final : public Rpc
             success = processData<ProdInfo>("product information", peer);
         }
         else {
-            //LOG_DEBUG("Unknown PDU ID: %s", pduId.to_string().data());
+            LOG_TRACE("Unknown PDU ID: %s", pduId.to_string().data());
             throw LOGIC_ERROR("Invalid PDU ID: " + pduId.to_string());
         }
 
@@ -599,7 +597,7 @@ class RpcImpl final : public Rpc
     }
 
     void startDataReader(Peer& peer) {
-        //LOG_DEBUG("Starting thread to read data");
+        LOG_TRACE("Starting thread to read data");
         dataReader = Thread(&RpcImpl::runReader, this, dataXprt,
             [&](PduId pduId) {return processData(pduId, peer);});
     }
@@ -608,7 +606,7 @@ class RpcImpl final : public Rpc
      */
     void stopDataReader() {
         if (dataXprt) {
-            //LOG_DEBUG("Shutting down data transport");
+            LOG_TRACE("Shutting down data transport");
             dataXprt.shutdown();
         }
         if (dataReader.joinable())
@@ -755,14 +753,14 @@ public:
             const int      timeout)
         : RpcImpl(true, false)
     {
-        //LOG_DEBUG("Connecting");
+        LOG_TRACE("Connecting");
         connect(srvrAddr, timeout); // Sets transports
         rmtSockAddr = noticeXprt.getRmtAddr();
         lclSockAddr = noticeXprt.getLclAddr();
 
-        //LOG_DEBUG("Exchanging protocol version with server");
+        LOG_TRACE("Exchanging protocol version with server");
         sendAndVetProtoVers();
-        //LOG_DEBUG("Receiving isPub from server");
+        LOG_TRACE("Receiving isPub from server");
         recvIsPub();
     }
 
@@ -779,9 +777,9 @@ public:
         rmtSockAddr = noticeXprt.getRmtAddr();
         lclSockAddr = noticeXprt.getLclAddr();
 
-        //LOG_DEBUG("Exchanging protocol version with client");
+        LOG_TRACE("Exchanging protocol version with client");
         recvAndVetProtoVers();
-        //LOG_DEBUG("Sending isPub to client");
+        LOG_TRACE("Sending isPub to client");
         sendIsPub();
     }
 
@@ -859,56 +857,84 @@ public:
     }
 
     bool add(const SockAddr srvrAddr) override {
-        //LOG_DEBUG("RPC layer %s: sending available peer-server address %s",
-                //to_string().data(), srvrAddr.to_string().data());
-        return send(requestXprt, PduId::GOOD_P2P_SRVR, srvrAddr);
+        const auto success = send(requestXprt, PduId::GOOD_P2P_SRVR, srvrAddr);
+        if (success)
+            LOG_TRACE("RPC %s sent available peer-server address %s",
+                    to_string().data(), srvrAddr.to_string().data());
+        return success;
     }
     bool add(const Tracker srvrAddrs) override {
-        //LOG_DEBUG("RPC layer %s: sending available peer-server addresses %s",
-                //to_string().data(), srvrAddrs.to_string().data());
-        return send(requestXprt, PduId::GOOD_P2P_SRVRS, srvrAddrs);
+        const auto success = send(requestXprt, PduId::GOOD_P2P_SRVRS, srvrAddrs);
+        if (success)
+            LOG_TRACE("RPC %s sent available peer-server addresses %s",
+                    to_string().data(), srvrAddrs.to_string().data());
+        return success;
     }
     bool remove(const SockAddr srvrAddr) override {
-        //LOG_DEBUG("RPC layer %s: sending unavailable peer-server address %s",
-                //to_string().data(), srvrAddr.to_string().data());
-        return send(requestXprt, PduId::BAD_P2P_SRVR, srvrAddr);
+        const auto success = send(requestXprt, PduId::BAD_P2P_SRVR, srvrAddr);
+        if (success)
+            LOG_TRACE("RPC %s sent unavailable peer-server address %s",
+                    to_string().data(), srvrAddr.to_string().data());
+        return success;
     }
     bool remove(const Tracker srvrAddrs) override {
-        //LOG_DEBUG("RPC layer %s: sending unavailable peer-server addresses %s",
-                //to_string().data(), srvrAddrs.to_string().data());
-        return send(requestXprt, PduId::BAD_P2P_SRVRS, srvrAddrs);
+        const auto success = send(requestXprt, PduId::BAD_P2P_SRVRS, srvrAddrs);
+        if (success)
+            LOG_TRACE("RPC %s sent unavailable peer-server addresses %s",
+                    to_string().data(), srvrAddrs.to_string().data());
+        return success;
     }
 
     bool notify(const ProdId prodId) override {
-        //LOG_DEBUG("RPC layer %s: sending product index %s",
-                //to_string().data(), prodId.to_string().data());
-        return send(noticeXprt, PduId::PROD_INFO_NOTICE, prodId);
+        const auto success = send(noticeXprt, PduId::PROD_INFO_NOTICE, prodId);
+        if (success)
+            LOG_TRACE("RPC %s sent product index %s",
+                    to_string().data(), prodId.to_string().data());
+        return success;
     }
     bool notify(const DataSegId dataSegId) override {
-        //LOG_DEBUG("RPC layer %s: sending data segment ID %s",
-                //to_string().data(), dataSegId.to_string().data());
-        return send(noticeXprt, PduId::DATA_SEG_NOTICE, dataSegId);
+        const auto success = send(noticeXprt, PduId::DATA_SEG_NOTICE, dataSegId);
+        if (success)
+            LOG_TRACE("RPC %s sent data segment ID %s",
+                    to_string().data(), dataSegId.to_string().data());
+        return success;
     }
 
     bool request(const ProdId prodId) override {
-        return send(requestXprt, PduId::PROD_INFO_REQUEST, prodId);
+        const auto success = send(requestXprt, PduId::PROD_INFO_REQUEST, prodId);
+        if (success)
+            LOG_TRACE("RPC %s requested information on product %s",
+                    to_string().data(), prodId.to_string().data());
+        return success;
     }
     bool request(const DataSegId dataSegId) override {
-        return send(requestXprt, PduId::DATA_SEG_REQUEST, dataSegId);
+        const auto success = send(requestXprt, PduId::DATA_SEG_REQUEST, dataSegId);
+        if (success)
+            LOG_TRACE("RPC %s requested data segment %s",
+                    to_string().data(), dataSegId.to_string().data());
+        return success;
     }
 
     bool send(const ProdInfo prodInfo) override {
-        //LOG_DEBUG("RPC layer %s: sending product information %s",
-                //to_string().data(), prodInfo.to_string().data());
-        return send(dataXprt, PduId::PROD_INFO, prodInfo);
+        const auto success = send(dataXprt, PduId::PROD_INFO, prodInfo);
+        if (success)
+            LOG_TRACE("RPC %s sent product information %s",
+                    to_string().data(), prodInfo.to_string().data());
+        return success;
     }
     bool send(const DataSeg dataSeg) override {
-        //LOG_DEBUG("RPC layer %s: sending data segment %s",
-                //to_string().data(), dataSeg.to_string().data());
-        return send(dataXprt, PduId::DATA_SEG, dataSeg);
+        const auto success = send(dataXprt, PduId::DATA_SEG, dataSeg);
+        if (success)
+            LOG_TRACE("RPC %s sent data segment %s", to_string().data(),
+                    dataSeg.to_string().data());
+        return success;
     }
     bool send(const ProdIdSet prodIds) override {
-        return send(requestXprt, PduId::BACKLOG_REQUEST, prodIds);
+        const auto success = send(requestXprt, PduId::BACKLOG_REQUEST, prodIds);
+        if (success)
+            LOG_TRACE("RPC %s sent product IDs %s", to_string().data(),
+                    prodIds.to_string().data());
+        return success;
     }
 };
 
@@ -1008,7 +1034,7 @@ private:
      * @param[in] sock  Newly-accepted socket
      */
     void processSock(TcpSock sock) {
-        //LOG_DEBUG("Starting to process a socket");
+        LOG_TRACE("Starting to process a socket");
         in_port_t noticePort;
         Xprt      xprt{sock}; // Might take a while depending on `Xprt`
 
@@ -1019,9 +1045,9 @@ private:
             // TODO: Remove old, stale entries from accept-queue
 
             if (acceptQ.size() < acceptQSize) {
-                //LOG_DEBUG("Adding transport to factory");
+                LOG_TRACE("Adding transport to factory");
                 if (rpcFactory.add(xprt, noticePort)) {
-                    //LOG_DEBUG("Emplacing RPC implementation in queue");
+                    LOG_TRACE("Emplacing RPC implementation in queue");
                     acceptQ.emplace(new RpcImpl(rpcFactory.get(xprt, noticePort), iAmPub));
                     cond.notify_one();
                 }
@@ -1031,9 +1057,9 @@ private:
 
     void acceptSocks() {
         try {
-            //LOG_DEBUG("Starting to accept sockets");
+            LOG_TRACE("Starting to accept sockets");
             for (;;) {
-                //LOG_DEBUG("Accepting a socket");
+                LOG_TRACE("Accepting a socket");
                 auto sock = srvrSock.accept();
                 if (!sock) {
                     // The server's listening socket has been shut down
@@ -1046,7 +1072,7 @@ private:
                 }
 
                 processSock(sock);
-                //LOG_DEBUG("Processed socket %s", sock.to_string().data());
+                LOG_TRACE("Processed socket %s", sock.to_string().data());
             }
         }
         catch (const std::exception& ex) {
@@ -1085,7 +1111,7 @@ public:
          * Connections are accepted on a separate thread so that a slow connection attempt won't
          * hinder faster attempts.
          */
-        //LOG_DEBUG("Starting thread to accept incoming connections");
+        LOG_TRACE("Starting thread to accept incoming connections");
         acceptThread = Thread(&RpcSrvrImpl::acceptSocks, this);
         // TODO: Lower priority of thread to favor data transmission
     }

@@ -121,13 +121,6 @@ void log(
         const LogLevel level,
         const char*    file,
         const int      line,
-        const char*    func,
-        const char*    fmt,
-        va_list        argList);
-void log(
-        const LogLevel level,
-        const char*    file,
-        const int      line,
         const char*    func);
 void log(
         const LogLevel level,

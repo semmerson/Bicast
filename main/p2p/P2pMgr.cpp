@@ -56,6 +56,36 @@ class P2pMgrImpl : public P2pMgr
         }
     }
 
+    bool addPeer(Peer::Pimpl peer) {
+        Guard guard{peerSetMutex};
+
+        if (!peerSet.insert(peer).second)
+            return false;
+
+        peerMap[peer->getRmtAddr()] = peer;
+        const auto added = bookkeeper->add(peer);
+        LOG_ASSERT(added);
+        incPeerCount(peer);
+        peersChanged = true;
+        peerSetCond.notify_all();
+
+        return true;
+    }
+
+    void removePeer(Peer::Pimpl peer) {
+        Guard guard{peerSetMutex};
+
+        if (peerSet.erase(peer)) {
+            const auto n = peerMap.erase(peer->getRmtAddr());
+            LOG_ASSERT(n);
+            const auto existed = bookkeeper->erase(peer);
+            LOG_ASSERT(existed);
+            decPeerCount(peer);
+            peersChanged = true;
+            peerSetCond.notify_all();
+        }
+    }
+
 protected:
     using PeerSet = std::set<Peer::Pimpl>;
     using PeerMap = std::unordered_map<SockAddr, Peer::Pimpl>;
@@ -128,40 +158,10 @@ protected:
         ::sem_post(&stopSem);
     }
 
-    bool addPeer(Peer::Pimpl peer) {
-        Guard guard{peerSetMutex};
-
-        if (!peerSet.insert(peer).second)
-            return false;
-
-        peerMap[peer->getRmtAddr()] = peer;
-        const auto added = bookkeeper->add(peer);
-        LOG_ASSERT(added);
-        incPeerCount(peer);
-        peersChanged = true;
-        peerSetCond.notify_all();
-
-        return true;
-    }
-
-    void removePeer(Peer::Pimpl peer) {
-        Guard guard{peerSetMutex};
-
-        if (peerSet.erase(peer)) {
-            const auto n = peerMap.erase(peer->getRmtAddr());
-            LOG_ASSERT(n);
-            const auto existed = bookkeeper->erase(peer);
-            LOG_ASSERT(existed);
-            decPeerCount(peer);
-            peersChanged = true;
-            peerSetCond.notify_all();
-        }
-    }
-
     /**
      * Handles a peer being removed from the set of active peers. Does nothing by default because a
-     * publishing P2P manager doesn't initiate connections to remote P2P servers -- so nothing
-     * needs doing.
+     * publishing P2P manager doesn't request data from remote peers -- so there are no outstanding
+     * requests that need to be reassigned.
      *
      * @param[in] peer  The peer that was removed from the set of active peers
      */
@@ -903,6 +903,15 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
         return tracker;
     }
 
+    template<class ID>
+    void reassign(
+            const Peer::Pimpl peer,
+            const ID&         id) {
+        auto altPeer = bookkeeper->getAltPeer(peer, id);
+        if (altPeer)
+            altPeer->request(id);
+    }
+
 protected:
     Peer::Pimpl accept() override {
         return p2pSrvr->accept(*this);
@@ -1076,22 +1085,26 @@ public:
 
     void missed(const ProdId prodId,
                 SockAddr     rmtAddr) {
-        // TODO
-        throw LOGIC_ERROR("Not implemented yet");
+        Guard guard{peerSetMutex};
+        if (peerMap.count(rmtAddr)) {
+            auto& peer = peerMap[rmtAddr];
+            reassign(peerMap[rmtAddr], prodId);
+        }
     }
     void missed(const DataSegId dataSegId,
                 SockAddr        rmtAddr) {
-        // TODO
-        throw LOGIC_ERROR("Not implemented yet");
+        Guard guard{peerSetMutex};
+        if (peerMap.count(rmtAddr)) {
+            auto& peer = peerMap[rmtAddr];
+            reassign(peerMap[rmtAddr], dataSegId);
+        }
     }
 
     template<class DATUM>
     void recvData(const DATUM datum,
                   SockAddr    rmtAddr) {
         const auto id = datum.getId();
-        LOG_TRACE("Locking peer-set mutex");
         Guard      guard{peerSetMutex};
-        LOG_TRACE("Peer-set mutex locked");
 
         if (peerMap.count(rmtAddr)) {
             auto& peer = peerMap[rmtAddr];
@@ -1103,9 +1116,7 @@ public:
              *      from the bookkeeper; and
              *   3) The relevant bookkeeper entries are deleted.
              */
-            LOG_TRACE("Calling bookkeeper");
             if (bookkeeper->received(peer, id)) {
-                LOG_TRACE("Calling subscribing node");
                 subNode.recvP2pData(datum);
 
                 LOG_DEBUG("Notifying peers about datum %s", id.to_string().data());
