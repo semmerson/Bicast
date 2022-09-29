@@ -903,6 +903,13 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
         return tracker;
     }
 
+    /**
+     * Reassigns a request that coulddn't be satisfied by a peer to another peer, if possible.
+     *
+     * @tparam ID   Type of requested object. Either `ProdId` or `DataSegId`.
+     * @param peer  Peer that couldn't satisfy the request
+     * @param id    Requested object
+     */
     template<class ID>
     void reassign(
             const Peer::Pimpl peer,
