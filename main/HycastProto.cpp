@@ -250,7 +250,7 @@ class ProdInfo::Impl
     ProdId       prodId;       ///< Product ID
     String       name;         ///< Name of product
     ProdSize     size;         ///< Size of product in bytes
-    SysTimePoint creationTime; ///< When product was created
+    SysTimePoint creationTime; ///< When product was initially created
 
 public:
     Impl() =default;
