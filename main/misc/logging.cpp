@@ -26,6 +26,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <ctime>
+#include <fcntl.h>
 #include <iostream>
 #include <mutex>
 #include <sstream>
@@ -46,7 +47,12 @@ public:
         : stream{stream}
         , mutex()
     {
+        struct flock flock = {0};
+        flock.l_type = F_WRLCK;
+        flock.l_whence = SEEK_SET;
+
         mutex.lock();
+        ::fcntl(::fileno(stream), F_SETLKW, &flock);  // Can't hurt?
         ::flockfile(stream);
     }
 
@@ -55,7 +61,12 @@ public:
     StreamGuard& operator=(const StreamGuard& rhs) =delete;
 
     ~StreamGuard() {
+        struct flock flock = {0};
+        flock.l_type = F_UNLCK;
+        flock.l_whence = SEEK_SET;
+
         ::funlockfile(stream);
+        ::fcntl(::fileno(stream), F_SETLK, &flock);
         mutex.unlock();
     }
 };
