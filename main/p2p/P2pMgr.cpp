@@ -167,6 +167,16 @@ protected:
     virtual void peerRemoved(Peer::Pimpl peer) {
     }
 
+    /**
+     * Reassigns unsatisfied requests for data from a peer to other peers. Should be executed only
+     * *after* the peer has stopped. This implementation does nothing because a publisher doesn't
+     * request data.
+     *
+     * @param[in] peer  Peer with unsatisfied requests.
+     */
+    virtual void reassignRequests(Peer::Pimpl peer) {
+    }
+
     void runPeer(Peer::Pimpl peer) {
         try {
             peer->run();
@@ -177,6 +187,8 @@ protected:
             LOG_ERROR("Peer %s failed", peer->to_string().data());
         }
 
+        // Must occur before `removePeer()` because `missed()` requires that `peerMap` contain `peer`
+        reassignRequests(peer);
         removePeer(peer);
         peerRemoved(peer);
     }
@@ -980,6 +992,16 @@ protected:
         // Remote socket address is remote P2P server's only for a peer constructed client-side
         if (peer->isClient())
             delayFifo.insert(peer->getRmtAddr());
+    }
+
+    /**
+     * Reassigns unsatisfied requests for data from a peer to other peers. Should be executed only
+     * *after* the peer has stopped.
+     *
+     * @param[in] peer  Peer with unsatisfied requests.
+     */
+    void reassignRequests(Peer::Pimpl peer) override {
+        peer->drainPending(); // Calls `missed()` with unsatisfied requests
     }
 
     bool shouldNotify(
