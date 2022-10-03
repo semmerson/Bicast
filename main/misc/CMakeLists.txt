@@ -1,6 +1,7 @@
 # Add the library
 add_library(misc OBJECT
 	logging.cpp	   logging.h
+	CommonTypes.cpp    CommonTypes.h
 	error.cpp	   error.h
                    Shield.h
 #			   DelayQueue.h
