@@ -227,7 +227,6 @@ class Watcher::Impl final
             }
             else if (mask & IN_DELETE) {
                 LOG_DEBUG("Unwatching directory \"%s\"", pathname.data());
-                const auto wd = wds.at(pathname); // Eclipses parameter `wd`
                 if (scannedFiles.count(wd)) {
                     auto& pathnames = scannedFiles.at(wd);
                     if (pathnames.erase(pathname) && pathnames.empty())

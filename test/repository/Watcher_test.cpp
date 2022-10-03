@@ -26,6 +26,7 @@
 #include "error.h"
 #include "FileUtil.h"
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <gtest/gtest.h>
@@ -101,13 +102,27 @@ TEST_F(WatcherTest, DefaultConstruction)
     hycast::Watcher watcher(rootDir);
 }
 
+// Tests making and deleting a directory
+TEST_F(WatcherTest, DeleteDirectory)
+{
+    hycast::Watcher   watcher(rootDir);
+    const std::string dirPath = rootDir + "/subdir";
+
+    ASSERT_EQ(0, ::mkdir(dirPath.data(), 0777));
+    DIR* const dirStream = ::opendir(dirPath.data());
+    ASSERT_NE(nullptr, dirStream);
+    ASSERT_EQ(0, ::closedir(dirStream));
+
+    ASSERT_EQ(0, ::rmdir(dirPath.data()));
+    ASSERT_EQ(nullptr, ::opendir(dirPath.data()));
+}
+
 // Tests adding a file
 TEST_F(WatcherTest, AddFile)
 {
     hycast::Watcher   watcher(rootDir);
     const std::string filePath = rootDir + "/" + relFilePath;
-    auto              thrd = std::thread(&WatcherTest::getNextFile, this,
-            &watcher, &filePath);
+    auto              thrd = std::thread(&WatcherTest::getNextFile, this, &watcher, &filePath);
 
     createFile(filePath);
 
