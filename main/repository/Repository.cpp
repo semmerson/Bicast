@@ -365,16 +365,11 @@ protected:
         const auto wasAdded = pair.second;
 
         if (pair.second) {
-            auto&        prodFile = prodEntry.prodFile;
-            auto         tt = SysClock::to_time_t(modTime);
-            const String modT = ::ctime(&tt);
+            auto&      prodFile = prodEntry.prodFile;
+            const auto deleteTime = modTime + keepTime;
 
-            const auto   deleteTime = modTime + keepTime;
-            tt = SysClock::to_time_t(deleteTime);
-            const String delT = ::ctime(&tt);
-
-            LOG_TRACE("Adding to delete-queue: modTime=\"%s\", deleteTime=\"%s\"", modT.data(),
-                    delT.data());
+            LOG_TRACE("Adding to delete-queue: modTime=%s, deleteTime=%s",
+                    std::to_string(modTime).data(), std::to_string(deleteTime).data());
             deleteQueue.push(DeleteEntry(deleteTime, prodInfo.getId()));
         }
 
