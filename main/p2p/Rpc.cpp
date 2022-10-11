@@ -393,6 +393,7 @@ class RpcImpl final : public Rpc
      * @throw LogicError    Message type is unknown or unsupported
      */
     void runReader(Xprt xprt, std::function<void(PduId)> process) {
+        // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
 #if 1
