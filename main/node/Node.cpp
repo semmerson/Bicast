@@ -341,6 +341,7 @@ protected:
      */
     void runSending()
     {
+        // TODO: Make the priority of this thread less than the handling of missed-data requests
         try {
             for (;;) {
                 auto prodInfo = repo.getNextProd();
