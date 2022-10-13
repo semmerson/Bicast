@@ -28,7 +28,7 @@ fontsize=18
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>50</x>
+      <x>80</x>
       <y>390</y>
       <w>180</w>
       <h>80</h>
@@ -41,7 +41,7 @@ Multicast</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>320</x>
+      <x>350</x>
       <y>380</y>
       <w>190</w>
       <h>170</h>
@@ -53,7 +53,7 @@ Node</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>420</y>
       <w>120</w>
       <h>50</h>
@@ -65,7 +65,7 @@ receive</panel_attributes>
   <element>
     <id>Text</id>
     <coordinates>
-      <x>590</x>
+      <x>620</x>
       <y>680</y>
       <w>100</w>
       <h>80</h>
@@ -86,7 +86,7 @@ drawArc(0,height*3/5,width,height*2/5,180,180,true) fg=black bg=#222222 //Parame
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>690</y>
       <w>110</w>
       <h>60</h>
@@ -99,7 +99,7 @@ write</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>100</x>
+      <x>130</x>
       <y>780</y>
       <w>200</w>
       <h>50</h>
@@ -111,7 +111,7 @@ has reply</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>100</x>
+      <x>130</x>
       <y>830</y>
       <w>200</w>
       <h>50</h>
@@ -123,7 +123,7 @@ no reply</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>320</x>
+      <x>350</x>
       <y>690</y>
       <w>190</w>
       <h>60</h>
@@ -135,7 +135,7 @@ Repository</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>320</x>
+      <x>350</x>
       <y>540</y>
       <w>90</w>
       <h>170</h>
@@ -147,7 +147,7 @@ exists?</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>410</x>
+      <x>440</x>
       <y>540</y>
       <w>70</w>
       <h>170</h>
@@ -159,7 +159,7 @@ save</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>490</x>
+      <x>520</x>
       <y>540</y>
       <w>60</w>
       <h>170</h>
@@ -171,7 +171,7 @@ get</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>1150</x>
+      <x>1180</x>
       <y>790</y>
       <w>140</w>
       <h>110</h>
@@ -183,7 +183,7 @@ Peer</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>1150</x>
+      <x>1180</x>
       <y>640</y>
       <w>140</w>
       <h>80</h>
@@ -195,7 +195,7 @@ Peer Set</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>770</y>
       <w>260</w>
       <h>50</h>
@@ -207,7 +207,7 @@ notify</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>830</y>
       <w>260</w>
       <h>50</h>
@@ -219,7 +219,7 @@ receive</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>1210</x>
+      <x>1240</x>
       <y>710</y>
       <w>60</w>
       <h>100</h>
@@ -232,7 +232,7 @@ m1=1..n</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>680</y>
       <w>260</w>
       <h>50</h>
@@ -244,7 +244,7 @@ notify</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>800</y>
       <w>260</w>
       <h>50</h>
@@ -256,7 +256,7 @@ get</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>620</y>
       <w>260</w>
       <h>50</h>
@@ -268,7 +268,7 @@ add peer</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>650</y>
       <w>260</w>
       <h>50</h>
@@ -280,7 +280,7 @@ remove peer</panel_attributes>
   <element>
     <id>UMLNote</id>
     <coordinates>
-      <x>70</x>
+      <x>100</x>
       <y>540</y>
       <w>160</w>
       <h>70</h>
@@ -293,7 +293,7 @@ Not in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>570</y>
       <w>220</w>
       <h>30</h>
@@ -304,7 +304,7 @@ Not in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>240</x>
+      <x>270</x>
       <y>460</y>
       <w>100</w>
       <h>280</h>
@@ -316,7 +316,7 @@ r1=notify</panel_attributes>
   <element>
     <id>UMLNote</id>
     <coordinates>
-      <x>70</x>
+      <x>100</x>
       <y>630</y>
       <w>160</w>
       <h>70</h>
@@ -329,7 +329,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>660</y>
       <w>60</w>
       <h>30</h>
@@ -340,7 +340,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>780</x>
+      <x>810</x>
       <y>380</y>
       <w>140</w>
       <h>520</h>
@@ -352,7 +352,7 @@ P2P Manager</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>380</y>
       <w>260</w>
       <h>50</h>
@@ -364,7 +364,7 @@ add peer</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>560</y>
       <w>260</w>
       <h>50</h>
@@ -376,7 +376,7 @@ get worst peer</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>500</y>
       <w>260</w>
       <h>50</h>
@@ -388,7 +388,7 @@ requested</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>410</y>
       <w>260</w>
       <h>50</h>
@@ -400,7 +400,7 @@ remove peer</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>440</y>
       <w>260</w>
       <h>50</h>
@@ -412,7 +412,7 @@ notify</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>1150</x>
+      <x>1180</x>
       <y>380</y>
       <w>140</w>
       <h>220</h>
@@ -424,7 +424,7 @@ Bookkeeper</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>430</y>
       <w>300</w>
       <h>50</h>
@@ -436,7 +436,7 @@ get</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>470</y>
       <w>300</w>
       <h>50</h>
@@ -448,7 +448,7 @@ receive</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>390</y>
       <w>300</w>
       <h>50</h>
@@ -460,7 +460,7 @@ notify</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>510</y>
       <w>300</w>
       <h>50</h>
@@ -472,7 +472,7 @@ notify</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>490</x>
+      <x>520</x>
       <y>820</y>
       <w>140</w>
       <h>50</h>
@@ -484,7 +484,7 @@ Peer Server</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>620</x>
+      <x>650</x>
       <y>820</y>
       <w>180</w>
       <h>60</h>
@@ -497,19 +497,19 @@ remote peer</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>260</x>
+      <x>290</x>
       <y>250</y>
       <w>140</w>
       <h>70</h>
     </coordinates>
-    <panel_attributes>&lt;&lt;component&gt;&gt;
+    <panel_attributes>&lt;&lt;application&gt;&gt;
 Publisher</panel_attributes>
     <additional_attributes/>
   </element>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>570</x>
+      <x>600</x>
       <y>590</y>
       <w>140</w>
       <h>50</h>
@@ -522,7 +522,7 @@ Disposer
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>630</x>
+      <x>660</x>
       <y>630</y>
       <w>70</w>
       <h>70</h>
@@ -534,7 +534,7 @@ write</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>500</x>
+      <x>530</x>
       <y>540</y>
       <w>90</w>
       <h>70</h>
@@ -546,7 +546,7 @@ notify</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>590</y>
       <w>370</w>
       <h>30</h>
@@ -557,19 +557,19 @@ notify</panel_attributes>
   <element>
     <id>UMLGeneric</id>
     <coordinates>
-      <x>430</x>
+      <x>460</x>
       <y>250</y>
       <w>140</w>
       <h>70</h>
     </coordinates>
-    <panel_attributes>&lt;&lt;component&gt;&gt;
+    <panel_attributes>&lt;&lt;application&gt;&gt;
 Subscriber</panel_attributes>
     <additional_attributes/>
   </element>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>470</y>
       <w>260</w>
       <h>50</h>
@@ -581,7 +581,7 @@ received</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>530</y>
       <w>260</w>
       <h>50</h>
@@ -593,7 +593,7 @@ get alt. peer</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>910</x>
+      <x>940</x>
       <y>860</y>
       <w>260</w>
       <h>50</h>
@@ -605,7 +605,7 @@ get outstanding</panel_attributes>
   <element>
     <id>UMLNote</id>
     <coordinates>
-      <x>840</x>
+      <x>870</x>
       <y>250</y>
       <w>160</w>
       <h>70</h>
@@ -618,7 +618,7 @@ Not in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>550</y>
       <w>130</w>
       <h>30</h>
@@ -629,7 +629,7 @@ Not in publisher</panel_attributes>
   <element>
     <id>UMLNote</id>
     <coordinates>
-      <x>1020</x>
+      <x>1050</x>
       <y>250</y>
       <w>160</w>
       <h>70</h>
@@ -642,7 +642,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>920</x>
+      <x>950</x>
       <y>310</y>
       <w>30</w>
       <h>180</h>
@@ -653,7 +653,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>1100</x>
+      <x>1130</x>
       <y>310</y>
       <w>30</w>
       <h>240</h>
@@ -664,7 +664,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>940</x>
+      <x>970</x>
       <y>310</y>
       <w>30</w>
       <h>210</h>
@@ -675,7 +675,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>960</x>
+      <x>990</x>
       <y>310</y>
       <w>30</w>
       <h>270</h>
@@ -686,7 +686,7 @@ Only in publisher</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>340</x>
+      <x>370</x>
       <y>310</y>
       <w>100</w>
       <h>90</h>
@@ -698,7 +698,7 @@ creates</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>470</x>
+      <x>500</x>
       <y>310</y>
       <w>100</w>
       <h>90</h>
@@ -710,7 +710,7 @@ creates</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>220</x>
+      <x>250</x>
       <y>380</y>
       <w>120</w>
       <h>50</h>
@@ -722,7 +722,7 @@ send</panel_attributes>
   <element>
     <id>Relation</id>
     <coordinates>
-      <x>0</x>
+      <x>30</x>
       <y>360</y>
       <w>300</w>
       <h>330</h>
