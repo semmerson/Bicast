@@ -39,7 +39,7 @@
 
 namespace hycast {
 
-using XprtArray = std::array<Xprt, 3>;
+using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connection to a peer
 
 /**
  * Implements a P2P RPC layer.
@@ -301,8 +301,8 @@ class RpcImpl final : public Rpc
      * @tparam    ID       Identifier of requested data
      * @param[in] peer     Associated local peer
      * @param[in] desc     Description of datum
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     template<class ID>
     inline bool processRequest(
@@ -323,8 +323,8 @@ class RpcImpl final : public Rpc
      *
      * @param[in] pduId         PDU ID
      * @param[in] peer          Associated local peer
-     * @retval    `false`       Connection lost
-     * @retval    `true`        Success
+     * @retval    false         Connection lost
+     * @retval    true          Success
      * @throw     LogicError    Message is unknown or unsupported
      */
     bool processRequest(
@@ -575,8 +575,8 @@ class RpcImpl final : public Rpc
      *
      * @param[in] pduId    Protocol data unit identifier
      * @param[in] peer     Associated local peer
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     bool processData(
             PduId pduId,
@@ -676,8 +676,8 @@ class RpcImpl final : public Rpc
      *
      * @param[in] xprt     Transport to use
      * @param[in] pduId    PDU ID
-     * @retval    `true`   Success
-     * @retval    `false`  Lost connection
+     * @retval    true     Success
+     * @retval    false    Lost connection
      */
     inline bool send(
             Xprt            xprt,
@@ -691,8 +691,8 @@ class RpcImpl final : public Rpc
      * @param[in] xprt     Transport to use
      * @param[in] pduId    PDU ID
      * @param[in] obj      Object to be sent
-     * @retval    `true`   Success
-     * @retval    `false`  Lost connection
+     * @retval    true     Success
+     * @retval    false    Lost connection
      */
     inline bool send(
             Xprt            xprt,
@@ -769,6 +769,7 @@ public:
      * Constructs server-side.
      *
      * @param[in,out] xprts   Transports comprising connection to remote peer
+     * @param[in]     iAmPub  Is this for the publisher?
      */
     RpcImpl(XprtArray  xprts,
             const bool iAmPub)
@@ -790,6 +791,11 @@ public:
         ::sem_destroy(&stopSem);
     }
 
+    /**
+     * Indicates if this instance is valid.
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     operator bool() {
         return rmtSockAddr && lclSockAddr;
     }
@@ -810,6 +816,10 @@ public:
         return rmtIsPub;
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const {
         return "{lcl=" + noticeXprt.getLclAddr().to_string() + ", rmt=" +
                 noticeXprt.getRmtAddr().to_string() + "}";
@@ -916,6 +926,12 @@ public:
         return success;
     }
 
+    /**
+     * Sends information on a product to the remote.
+     * @param[in] prodInfo  Product information to send
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
     bool send(const ProdInfo prodInfo) override {
         const auto success = send(dataXprt, PduId::PROD_INFO, prodInfo);
         if (success)
@@ -923,6 +939,12 @@ public:
                     to_string().data(), prodInfo.to_string().data());
         return success;
     }
+    /**
+     * Sends a data segment to the remote.
+     * @param[in] dataSeg   Data Segment to send
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
     bool send(const DataSeg dataSeg) override {
         const auto success = send(dataXprt, PduId::DATA_SEG, dataSeg);
         if (success)
@@ -930,6 +952,12 @@ public:
                     dataSeg.to_string().data());
         return success;
     }
+    /**
+     * Sends a backlog request to the remote.
+     * @param[in] prodIds   Set of identifiers of previously-received products
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
     bool send(const ProdIdSet prodIds) override {
         const auto success = send(requestXprt, PduId::BACKLOG_REQUEST, prodIds);
         if (success)
@@ -998,8 +1026,8 @@ private:
          *
          * @param[in]  xprt        Individual transport
          * @param[in]  noticePort  Port number of the notification transport
-         * @retval     `false`     Connection is not complete
-         * @retval     `true`      Connection is complete
+         * @retval     false       Connection is not complete
+         * @retval     true        Connection is complete
          * @threadsafety           Unsafe
          */
         bool add(Xprt xprt, in_port_t noticePort) {
@@ -1087,7 +1115,7 @@ public:
      *
      * @param[in] srvrSock     Server socket
      * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] backlog      Maximum number of outstanding RPC connections
+     * @param[in] acceptQSize  Maximum number of outstanding RPC connections
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Backlog argument is zero
      */
@@ -1119,6 +1147,11 @@ public:
 
     /// Implement when needed
     RpcSrvrImpl(const RpcSrvrImpl& other) =delete;
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other instance
+     * @return         A reference to this just-assigned instance
+     */
     RpcSrvrImpl& operator=(const RpcSrvrImpl& rhs) =delete;
 
     ~RpcSrvrImpl() noexcept {
@@ -1141,7 +1174,7 @@ public:
      * Returns the next RPC instance.
      *
      * @return              Next RPC instance. Will test false if `halt()` has been called.
-     * @throws SystemError  `::accept()` failure
+     * @throws SystemError  Couldn't accept connection
      */
     Rpc::Pimpl accept() override {
         Lock lock{mutex};

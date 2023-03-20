@@ -40,4 +40,4 @@ sndrRepo/
 .libs/
 vgcore.*
 /hycast-1.0/
-/build/
+/_build/

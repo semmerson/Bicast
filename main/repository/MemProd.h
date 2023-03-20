@@ -29,12 +29,18 @@
 
 namespace hycast {
 
+/// A data product that exists in memory
 class MemProd
 {
 protected:
     class                 Impl;
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     MemProd(Impl* const impl);
 
 public:
@@ -60,8 +66,8 @@ public:
      * Accepts a data-chunk for incorporation.
      *
      * @param[in] chunk    Data-chunk
-     * @retval    `true`   Chunk was incorporated
-     * @retval    `false`  Chunk was previously incorporated. `log()` called.
+     * @retval    true     Chunk was incorporated
+     * @retval    false    Chunk was previously incorporated. `log()` called.
      * @threadsafety       Safe
      * @exceptionsafety    Strong guarantee
      * @cancellationpoint  No
@@ -72,8 +78,8 @@ public:
      * Indicates if this instance is complete (i.e., `accept()` has been called
      * for all segments).
      *
-     * @retval `true`   Instance is complete
-     * @retval `false`  Instance is not complete
+     * @retval true     Instance is complete
+     * @retval false    Instance is not complete
      */
     bool isComplete() const noexcept;
 

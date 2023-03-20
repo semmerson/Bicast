@@ -45,6 +45,10 @@ public:
         ::pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &previous);
     }
 
+    /**
+     * Copy constructs.
+     * @param[in] shield  The other instance
+     */
     Shield(const Shield& shield) =delete;
 
     /**
@@ -55,6 +59,11 @@ public:
         ::pthread_setcancelstate(previous, &previous);
     }
 
+    /**
+     * Copy assisgns.
+     * @param[in] rhs  The instance on the right-hand-side
+     * @return         Reference to this just-assigned instance
+     */
     Shield& operator=(const Shield& rhs) =delete;
 };
 

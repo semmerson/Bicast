@@ -46,6 +46,7 @@
 
 namespace hycast {
 
+/// Implementation of a socket
 class Socket::Impl
 {
     Impl()
@@ -72,18 +73,18 @@ class Socket::Impl
     }
 
 protected:
-    using Mutex   = std::mutex;
-    using Guard   = std::lock_guard<Mutex>;
+    using Mutex   = std::mutex;             ///< Type of mutex for maintaining consistency
+    using Guard   = std::lock_guard<Mutex>; ///< Type of lock guard
 
-    mutable Mutex         mutex;
-    SockAddr              rmtSockAddr;
-    int                   sd;             ///< Socket descriptor
-    int                   domain;         ///< IP domain: AF_INET, AF_INET6
-    bool                  shutdownCalled; ///< `shutdown()` has been called?
-    mutable unsigned      bytesWritten =0;
-    mutable unsigned      bytesRead =0;
-    static const uint64_t writePad;       ///< Write alignment buffer
-    static uint64_t       readPad;        ///< Read alignment buffer
+    mutable Mutex         mutex;           ///< Mutex for maintaining consistency
+    SockAddr              rmtSockAddr;     ///< Socket address of remote endpoint
+    int                   sd;              ///< Socket descriptor
+    int                   domain;          ///< IP domain: AF_INET, AF_INET6
+    bool                  shutdownCalled;  ///< `shutdown()` has been called?
+    mutable unsigned      bytesWritten =0; ///< Number of bytes written
+    mutable unsigned      bytesRead =0;    ///< Number of bytes read
+    static const uint64_t writePad;        ///< Write alignment buffer
+    static uint64_t       readPad;         ///< Read alignment buffer
 
     /**
      * Constructs a server-side socket. Closes the socket descriptor on destruction.
@@ -135,6 +136,12 @@ protected:
         domain = inetAddr.getFamily();
     }
 
+    /**
+     * Returns the minimum number of padding bytes needed to align the next I/O action.
+     * @param[in] nbytes  Number of bytes already read or written
+     * @param[in] align   Number to align the next action to
+     * @return            The minimum number of padding bytes
+     */
     static inline size_t padLen(
             const unsigned nbytes,
             const size_t   align) {
@@ -151,6 +158,12 @@ protected:
          */
     }
 
+    /**
+     * Writes zero or more bytes in order to align the next write.
+     * @param[in] align    Number of bytes in the next write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     inline bool alignWriteTo(size_t align)
     {
         //LOG_DEBUG("bytesWritten=%s, align=%s",
@@ -162,6 +175,12 @@ protected:
                 : true;
     }
 
+    /**
+     * Aligns the next read.
+     * @param[in] align    Number of bytes to align to
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     inline bool alignReadTo(size_t align)
     {
         const auto nbytes = padLen(bytesRead, align);
@@ -176,8 +195,8 @@ protected:
      *
      * @param[in] data      Bytes to write.
      * @param[in] nbytes    Number of bytes to write.
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool writeBytes(const void* data,
                             size_t      nbytes) =0;
@@ -188,8 +207,8 @@ protected:
      *
      * @param[out] data         Destination buffer
      * @param[in]  nbytes       Number of bytes to read
-     * @retval     `true`       Success
-     * @retval     `false`      Lost connection
+     * @retval     true         Success
+     * @retval     false        Lost connection
      * @throw      SystemError  I/O failure
      */
     virtual bool readBytes(void* const data,
@@ -201,7 +220,7 @@ protected:
      * @pre                `mutex` is locked
      * @param[in] what     What to shut down. One of `SHUT_RD`, `SHUT_WR`, or
      *                     `SHUT_RDWR`.
-     * @throw SystemError  `::shutdown()` failure
+     * @throw SystemError  Couldn't shutdown socket
      */
     void shut(const int what) {
         //LOG_DEBUG("Shutting down socket %s", std::to_string(sd).data());
@@ -216,10 +235,20 @@ public:
         ::close(sd);
     }
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept {
         return getLclAddr().hash() ^ getRmtAddr().hash();
     }
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is less than the other
+     * @retval    false    This instance is not less than the other
+     */
     bool operator<(const Impl& rhs) const noexcept {
         auto lhsAddr = getLclAddr();
         auto rhsAddr = rhs.getLclAddr();
@@ -238,6 +267,11 @@ public:
         return false;
     }
 
+    /**
+     * Indicates if this instance is valid.
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     operator bool() const {
         Guard guard{mutex};
         return !shutdownCalled && sd >= 0;
@@ -252,6 +286,10 @@ public:
         return sd;
     }
 
+    /**
+     * Returns the socket address of the local endpoint.
+     * @return The socket address of the local endpoint
+     */
     SockAddr getLclAddr() const {
         struct sockaddr_storage storage = {};
         socklen_t               socklen = sizeof(storage);
@@ -262,25 +300,41 @@ public:
         return SockAddr(storage);
     }
 
+    /**
+     * Returns the socket address of the remote endpoint.
+     * @return The socket address of the remote endpoint
+     */
     SockAddr getRmtAddr() const noexcept {
         return rmtSockAddr;
     }
 
+    /**
+     * Returns the port number of the local endpoint.
+     * @return The port number of the local endpoint
+     */
     in_port_t getLclPort() const {
         return getLclAddr().getPort();
     }
 
+    /**
+     * Returns the port number of the remote endpoint.
+     * @return The port number of the remote endpoint
+     */
     in_port_t getRmtPort() const noexcept {
         return getRmtAddr().getPort();
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     virtual std::string to_string() const =0;
 
     /**
      * Assigns this instance a local socket address.
      *
-     * @param[in] inetAddr   Socket address. Note that, for multicast reception, this will be the
-     *                       socket address of the multicast group.
+     * @param[in] lclAddr    Local socket address. Note that, for multicast reception, this will be
+     *                       the socket address of the multicast group.
      * @return               This instance
      * @throw   SystemError  System failure
      */
@@ -351,8 +405,8 @@ public:
      *
      * @param[in] data          Bytes to write.
      * @param[in] nbytes        Number of bytes to write.
-     * @retval     `true`       Success
-     * @retval     `false`      Lost connection
+     * @retval     true         Success
+     * @retval     false        Lost connection
      * @throw      SystemError  I/O failure
      */
     bool write(const void*  data,
@@ -373,6 +427,11 @@ public:
         return alignWriteTo(sizeof(value)) && write(&value, sizeof(value));
     }
 
+    /**
+     * Flushes this instance. Does nothing for TCP. Writes a datagram for UDP.
+     * @retval true     Success
+     * @retval false    Lost connection
+     */
     virtual bool flush() =0;
 
     /**
@@ -380,8 +439,8 @@ public:
      *
      * @param[out] data         Destination buffer
      * @param[in]  nbytes       Number of bytes to read
-     * @retval     `true`       Success
-     * @retval     `false`      Lost connection
+     * @retval     true         Success
+     * @retval     false        Lost connection
      * @throw      SystemError  I/O failure
      */
     bool read(void* const  data,
@@ -394,6 +453,10 @@ public:
         return false;
     }
 
+    /**
+     * Readies this instance for new input. Does nothing if a TCP connection. Clears the input
+     * buffer if a UDP connection.
+     */
     virtual void clear() =0;
 
     /**
@@ -404,6 +467,13 @@ public:
         return alignReadTo(sizeof(value)) && read(&value, sizeof(value));
     }
 
+    /**
+     * Reads a string.
+     * @tparam     UINT     The type of integer encoding the number of characters in the string
+     * @param[out] string   The string to be set
+     * @retval     true     Success
+     * @retval     false    Success
+     */
     template<typename UINT>
     bool read(std::string& string) {
         UINT size;
@@ -423,13 +493,18 @@ public:
      *
      * @param what          What to shut down. One of `SHUT_RD`, `SHUT_WR`, or
      *                      `SHUT_RDWR`
-     * @throws SystemError  `::shutdown()` failure
+     * @throws SystemError  Couldn't shutdown socket
      */
     void shutdown(const int what) {
         Guard guard{mutex};
         shut(what);
     }
 
+    /**
+     * Indicates if this instance is shut down.
+     * @retval true     This instance is shut down
+     * @retval false    This instance is not shut down
+     */
     bool isShutdown() const {
         Guard guard{mutex};
         return shutdownCalled;
@@ -577,6 +652,7 @@ bool Socket::isShutdown() const
 
 /******************************************************************************/
 
+/// Implementation of a TCP socket
 class TcpSock::Impl : public Socket::Impl
 {
 protected:
@@ -587,8 +663,8 @@ protected:
      *
      * @param[in] data         Bytes to write
      * @param[in] nbytes       Number of bytes to write
-     * @retval    `false`      Connection is closed
-     * @retval    `true`       Success
+     * @retval    false        Connection is closed
+     * @retval    true         Success
      * @throws    SystemError  System error
      */
     bool writeBytes(const void* data,
@@ -642,8 +718,8 @@ protected:
      *
      * @param[out] data         Destination buffer
      * @param[in]  nbytes       Number of bytes to read
-     * @retval     `true`       Success
-     * @retval     `false`      EOF or `shutdown()` called
+     * @retval     true         Success
+     * @retval     false        EOF or `shutdown()` called
      * @throw      SystemError  I/O failure
      */
     bool readBytes(void* const  data,
@@ -705,15 +781,28 @@ public:
         : Socket::Impl{inetAddr, SOCK_STREAM, IPPROTO_TCP}
     {}
 
+    /**
+     * Constructs.
+     * @param[in] sd  The underlying socket descriptor
+     */
     explicit Impl(const int sd)
         : Socket::Impl(sd)
     {}
 
+    /**
+     * Constructs.
+     * @param[in] family  Address family: `AF_INET` or `AF_INET6`
+     * @param dummy       Dummy argument to differentiate constructors
+     */
     Impl(   const int family,
             const bool dummy)
         : Socket::Impl{family, SOCK_STREAM, IPPROTO_TCP}
     {}
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     virtual std::string to_string() const override
     {
         return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string()
@@ -758,22 +847,23 @@ TcpSock& TcpSock::setDelay(bool enable) {
 
 /******************************************************************************/
 
+/// Implementation of a TCP server socket
 class TcpSrvrSock::Impl final : public TcpSock::Impl
 {
 public:
     /**
-     * Constructs. Calls `::listen()`.
+     * Constructs. Starts listening on the created socket.
      *
      * @param[in] lclSockAddr        Server's local socket address. The IP address may be the
      *                               wildcard, in which case the server will listen on all
      *                               interfaces. The port number may be zero, in which case it will
      *                               be chosen by the operating system.
      * @param[in] queueSize          Size of listening queue
-     * @throws    std::system_error  `::socket()` failure
+     * @throws    std::system_error  Couldn't create socket
      * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
-     * @throws    std::system_error  `::listen()` failure
+     * @throws    std::system_error  Couldn't listen on socket
      */
     Impl(   const SockAddr lclSockAddr,
             const int      queueSize)
@@ -803,11 +893,11 @@ public:
     }
 
     /**
-     * Accepts an incoming connection. Calls `::accept()`.
+     * Accepts the next, incoming connection.
      *
      * @retval  `nullptr`    Socket was closed
      * @return               The accepted socket
-     * @throws  SystemError  `::accept()` failure
+     * @throws  SystemError  Couldn't accept the connection
      * @cancellationpoint    Yes
      */
     TcpSock::Impl* accept()
@@ -841,6 +931,7 @@ TcpSock TcpSrvrSock::accept() const {
 
 /******************************************************************************/
 
+/// A client-side TCP socket
 class TcpClntSock::Impl final : public TcpSock::Impl
 {
     /**
@@ -887,6 +978,10 @@ class TcpClntSock::Impl final : public TcpSock::Impl
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] family  The address family (e.g., AF_INET, AF_INET6)
+     */
     Impl(const int family)
         : TcpSock::Impl(family, true)
     {}
@@ -948,6 +1043,7 @@ TcpClntSock::TcpClntSock(const SockAddr srvrAddr)
 
 /******************************************************************************/
 
+/// Implementation of a UDP socket
 class UdpSock::Impl final : public Socket::Impl
 {
     char          buf[MAX_PAYLOAD]; ///< UDP payload buffer
@@ -990,8 +1086,8 @@ class UdpSock::Impl final : public Socket::Impl
     /**
      * Reads the next UDP packet from the socket into the buffer.
      *
-     * @retval    `false`       EOF or `halt()` called
-     * @retval    `true`        Success
+     * @retval    false         EOF or `halt()` called
+     * @retval    true          Success
      * @throws    SystemError   I/O error
      * @throws    RuntimeError  Packet is too small
      * @cancellationpoint       Yes

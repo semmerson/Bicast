@@ -40,9 +40,15 @@ struct RunPar {
     String    feedName;                   ///< Name of data-product stream
     LogLevel  logLevel;                   ///< Logging level
     int32_t   maxSegSize;                 ///< Maximum size of a data-segment in bytes
+    /// Runtime parameters for a publisher's server (not its P2P server)
     struct Srvr {
-        SockAddr      addr;               ///< Socket address
-        int           listenSize;         ///< Size of `::listen()` queue
+        SockAddr      addr;               ///< Socket address of publisher's server (not P2P server)
+        int           listenSize;         ///< Size of `listen()` queue
+        /**
+         * Constructs.
+         * @param addr        Socket address of publisher's server (not P2P server)
+         * @param listenSize  Size of publisher's `listen()` queue
+         */
         Srvr(   const SockAddr addr,
                 const int      listenSize)
             : addr(addr)
@@ -52,6 +58,9 @@ struct RunPar {
     McastPub::RunPar  mcast;              ///< Multicast component
     PubP2pMgr::RunPar p2p;                ///< Peer-to-peer component
     PubRepo::RunPar   repo;               ///< Data-product repository
+    /**
+     * Default constructs.
+     */
     RunPar()
         : feedName("Hycast")
         , logLevel(LogLevel::NOTE)
@@ -79,14 +88,24 @@ public:
         , max(DEF_LISTEN_SIZE)
         , count(0)
     {}
+    /**
+     * Sets the maximum allowable count.
+     * @param[in] max  The maximum allowable count
+     */
     void setMax(const int max) {
         this->max = max;
     }
+    /**
+     * Increments the count. Blocks until the count is less than the maximum allowable.
+     */
     void waitToInc() {
         Lock lock{mutex};
         cond.wait(lock, [&]{return count < max;});
         ++count;
     }
+    /**
+     * Decrements the count.
+     */
     void operator--() {
         Guard guard{mutex};
         --count;

@@ -34,12 +34,18 @@ class SubNode;
 class McastPub
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<McastPub>;
 
     /// Runtime parameters
     struct RunPar {
         SockAddr  dstAddr;        ///< Socket address of multicast group
         InetAddr  srcAddr;        ///< Internet address of multicast source (i.e., which interface)
+        /**
+         * Constructs.
+         * @param[in] dstAddr  Socket address of the multicast group
+         * @param[in] srcAddr  IP address of the source of the multicast
+         */
         RunPar( const SockAddr dstAddr,
                 const InetAddr srcAddr)
             : dstAddr(dstAddr)
@@ -82,6 +88,7 @@ public:
 class McastSub
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<McastSub>;
 
     /**

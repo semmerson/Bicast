@@ -66,6 +66,11 @@ struct ProdEntry final
         , prodInfo()
     {}
 
+    /**
+     * Constructs.
+     * @param[in] prodFile  Product file
+     * @param[in] prodInfo  Product information
+     */
     explicit ProdEntry(
             ProdFile       prodFile,
             const ProdInfo prodInfo = ProdInfo{})
@@ -73,6 +78,11 @@ struct ProdEntry final
         , prodInfo(prodInfo)
     {}
 
+    /**
+     * Constructs.
+     * @param[in] prodFile  The product-file
+     * @param[in] prodInfo  The product information
+     */
     explicit ProdEntry(
             ProdFile&&       prodFile,
             const ProdInfo&& prodInfo = ProdInfo{})
@@ -80,9 +90,17 @@ struct ProdEntry final
         , prodInfo(prodInfo)
     {}
 
+    /**
+     * Destroys.
+     */
     ~ProdEntry() noexcept
     {}
 
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other, right-hand-side instance
+     * @return         A reference to this just-assigned instance
+     */
     inline ProdEntry& operator=(const ProdEntry& rhs) =default;
 
     /**
@@ -93,6 +111,10 @@ struct ProdEntry final
         return ProdInfo{};
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     inline std::string to_string() const
     {
         return prodFile.to_string();
@@ -113,8 +135,8 @@ class Repository::Impl
      * within a publisher and a subscriber during the initial scan of the repository.
      *
      * @param[in] absPathname  Absolute pathname of existing file
-     * @retval    `true`       Referenced product was added
-     * @retval    `false`      Referenced product was not added because it's a duplicate. This
+     * @retval    true         Referenced product was added
+     * @retval    false        Referenced product was not added because it's a duplicate. This
      *                         shouldn't happen.
      */
     inline bool addExisting(const String& absPathname) {
@@ -167,11 +189,17 @@ class Repository::Impl
     }
 
 protected:
+    /// An entry in a delete-queue
     struct DeleteEntry
     {
-        SysTimePoint deleteTime;
-        ProdId       prodId;
+        SysTimePoint deleteTime; ///< When the product should be deleted
+        ProdId       prodId;     ///< The product's ID
 
+        /**
+         * Constructs.
+         * @param[in] deleteTime  When the product should be deleted
+         * @param[in] prodId      The product's ID
+         */
         DeleteEntry(
                 const SysTimePoint& deleteTime,
                 const ProdId        prodId)
@@ -179,6 +207,11 @@ protected:
             , prodId(prodId)
         {}
 
+        /**
+         * Move Constructs.
+         * @param[in] deleteTime  When should the product be deleted?
+         * @param[in] prodId      The product's ID
+         */
         DeleteEntry(
                 const SysTimePoint&& deleteTime,
                 const ProdId         prodId)
@@ -186,15 +219,25 @@ protected:
             , prodId(prodId)
         {}
 
+        /**
+         * Indicates if this instance is less than another.
+         * @param[in] rhs      The other instance
+         * @retval    true     This instance is less than the other
+         * @retval    false    This instance is not less than the other
+         */
         bool operator<(const DeleteEntry& rhs) const {
             // `>` because `deleteQueue.top()` returns maximum entry
             return deleteTime > rhs.deleteTime;
         }
     };
 
+    /// Type of map from product IDs to product entries
     using ProdEntries = std::unordered_map<ProdId, ProdEntry>;
+    /// Type of container for product-files with open file descriptors
     using OpenProds   = HashSetQueue<ProdId>;
+    /// Type of container for product-files that should be deleted after a certain time
     using DeleteQueue = std::priority_queue<DeleteEntry, std::deque<DeleteEntry>>;
+    /// Type of container for information on data products
     using ProdQueue   = std::queue<ProdInfo>;
 
     mutable Mutex     mutex;          ///< To maintain consistency
@@ -212,6 +255,7 @@ protected:
     ProdQueue         prodQueue;      ///< Queue of product metadata for external processing
     bool              stop;           ///< Whether or not to stop
 
+    /// Stops the thread on which files are deleted
     void stopDeleteThread() {
         if (deleteThread.joinable()) {
             int status = ::pthread_cancel(deleteThread.native_handle());
@@ -226,9 +270,9 @@ protected:
      *
      * @param[in] absPathParent  Absolute pathname of directory to recursively scan
      * @throw InvalidArgument    File is not a directory or regular file
-     * @throw SystemError        `::stat()` failure on file
-     * @throw SystemError        `::chown()` failure on file
-     * @throw SystemError        `::chmod()` failure on file
+     * @throw SystemError        Couldn't get information on file
+     * @throw SystemError        Couldn't change owner of file
+     * @throw SystemError        Couldn't change mode of file
      */
     void scanRepo(const String& absPathParent) {
         LOG_ASSERT(FileUtil::isAbsolute(absPathParent));
@@ -282,6 +326,7 @@ protected:
         }
     }
 
+    /// Sets the exception thrown by an internal thread
     void setThreadEx(const std::exception& ex) {
         Guard guard{mutex};
         threadEx.set(ex);
@@ -320,9 +365,9 @@ protected:
      *
      * @param[in] absPathname  Absolute pathname of an existing file
      * @throw InvalidArgument  File is not a directory or regular file
-     * @throw SystemError      `::stat()` failure on file
-     * @throw SystemError      `::chown()` failure on file
-     * @throw SystemError      `::chmod()` failure on file
+     * @throw SystemError      Couldn't get information on file
+     * @throw SystemError      Couldn't change owner of file
+     * @throw SystemError      Couldn't change mode of file
      */
     void ensurePrivate(const String& absPathname) {
         struct ::stat statBuf;
@@ -483,6 +528,10 @@ public:
         }
     }
 
+    /**
+     * Returns the absolute pathname of the root directory of the repository.
+     * @return The absolute pathname of the root directory of the repository
+     */
     const std::string& getRootDir() const noexcept
     {
         return absPathRoot;
@@ -506,6 +555,12 @@ public:
         return prodInfo;
     }
 
+    /**
+     * Returns information on the data product given its ID.
+     * @param[in] prodId  The product's ID
+     * @return            Information on the corresponding product. Will be invalid if the product
+     *                    doesn't exist.
+     */
     ProdInfo getProdInfo(const ProdId prodId) {
         threadEx.throwIfSet();
 
@@ -716,6 +771,7 @@ class PubRepo::Impl final : public Repository::Impl
     }
 
 public:
+    /// Constructs
     Impl(   const String& rootPathname,
             const long    maxOpenFiles,
             const int     keepTime)
@@ -926,8 +982,8 @@ public:
      * becomes complete, then it will be eventually returned by `getNextProd()`.
      *
      * @param[in] prodInfo     Product information
-     * @retval    `true``      Product information was saved
-     * @retval    `false`      Product information was previously saved
+     * @retval    true         Product information was saved
+     * @retval    false        Product information was previously saved
      * @throw InvalidArgument  Known product has a different size
      * @throw LogicError       Metadata was previously saved
      * @throw SystemError      System failure
@@ -965,8 +1021,8 @@ public:
      * returned by `getNextProd()`.
      *
      * @param[in] dataSeg      Data segment
-     * @retval    `true`       This item was saved
-     * @retval    `false`      This item was not saved because it already exists
+     * @retval    true         This item was saved
+     * @retval    false        This item was not saved because it already exists
      * @throw InvalidArgument  Known product has a different size
      * @throw SystemError      System failure
      * @see `getNextProd()`
@@ -1002,8 +1058,8 @@ public:
      * Indicates if a data-product's metadata exists.
      *
      * @param[in] prodId     Product identifier
-     * @retval    `true`     Product metadata does exist
-     * @retval    `false`    Product metadata does not exist
+     * @retval    true       Product metadata does exist
+     * @retval    false      Product metadata does not exist
      */
     bool exists(const ProdId prodId)
     {
@@ -1019,8 +1075,8 @@ public:
      * Indicates if a data-segment exists.
      *
      * @param[in] segId      Data-segment identifier
-     * @retval    `true`     Data-segment does exist
-     * @retval    `false`    Data-segment does not exist
+     * @retval    true       Data-segment does exist
+     * @retval    false      Data-segment does not exist
      */
     bool exists(const DataSegId segId)
     {

@@ -80,7 +80,7 @@ usage(const char* const progname)
  *
  * @param[in]  argc        Number of command-line arguments
  * @param[in]  argv        Command-line arguments
- * @retval `true`  Success
+ * @retval true    Success
  * @retval `false` Failure
  */
 static bool
@@ -159,7 +159,7 @@ setRunPar(
  * Joins a socket to a source-specific multicast group on a network interface.
  *
  * @param[in] sock        UDP Socket descriptor
- * @retval `true`   Success
+ * @retval true     Success
  * @retval `false`  Failure
  */
 static bool
@@ -192,7 +192,7 @@ joinSsm(const int sock)
  * Configures a socket for receiving source-specific multicast.
  *
  * @param[in] sock        Socket descriptor
- * @retval    `true`      If and only if success
+ * @retval    true        If and only if success
  */
 static bool
 configSock(const int sock)

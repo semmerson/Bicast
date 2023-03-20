@@ -61,13 +61,17 @@ class HashSetQueue
     using Hash = std::function<size_t(const VALUE&)>;
     using Map = std::unordered_map<VALUE, Links, Hash>;
 
-    mutable Mutex mutex;
-    Hash          myHash;
-    Map           linksMap;
-    VALUE         head;
-    VALUE         tail;
+    mutable Mutex mutex;    ///< Mutex for maintaining consistency
+    Hash          myHash;   ///< Hash function
+    Map           linksMap; ///< Map of value to links
+    VALUE         head;     ///< First value
+    VALUE         tail;     ///< Last value
 
 public:
+    /**
+     * Constructs.
+     * @param[in] initialSize  Initial capacity of the queue
+     */
     explicit HashSetQueue(const size_t initialSize = 10)
         : mutex{}
         , myHash([](const VALUE& value){return value.hash();})
@@ -88,8 +92,8 @@ public:
      * Adds a value to the queue to the back of the queue.
      *
      * @param[in] value  Value
-     * @retval `true`    Value added
-     * @retval `false`   Value not added because it's already in the queue
+     * @retval true      Value added
+     * @retval false     Value not added because it's already in the queue
      * @throw            Exceptions related to construction of `Value`
      * @exceptionSafety  Strong guarantee
      * @threadsafety     Safe
@@ -153,8 +157,8 @@ public:
      * Deletes a value.
      *
      * @param[in] value   Value to be deleted
-     * @retval `true`     Value existed
-     * @retval `false`    Value did not exist
+     * @retval true       Value existed
+     * @retval false      Value did not exist
      * @exceptionSafety   Nothrow
      * @threadsafety      Safe
      */

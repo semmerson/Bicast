@@ -30,14 +30,20 @@
 
 namespace hycast {
 
+/// Socket
 class Socket
 {
 public:
     class Impl;
 
 protected:
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     Socket(Impl* impl);
 
 public:
@@ -48,17 +54,35 @@ public:
     /**
      * Indicates if this instance is valid (i.e., not default constructed).
      *
-     * @return `true`   Instance is valid
-     * @return `false`  Instance is not valid
+     * @return true     Instance is valid
+     * @return false    Instance is not valid
      */
     operator bool() const noexcept;
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept;
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is less than the other
+     * @retval    false    This instance is not less than the other
+     */
     bool operator<(const Socket& rhs) const noexcept;
 
+    /**
+     * Swaps this instance with another.
+     * @param[in,out] socket  The other instance
+     */
     void swap(Socket& socket) noexcept;
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const;
 
     /**
@@ -132,19 +156,62 @@ public:
      */
     Socket& connect(const SockAddr rmtAddr);
 
+    /**
+     * Writes bytes.
+     * @param[in] data         Bytes to be written
+     * @param[in] nbytes       Number of bytes to write
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const void*  data,
                const size_t nbytes) const;
+    /**
+     * Writes a boolean.
+     * @param[in] value        Value to be written
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const bool value) const;
+    /**
+     * Writes an unsigned, 8-bit integer.
+     * @param[in] value        Value to be written
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const uint8_t value) const;
+    /**
+     * Writes an unsigned, 16-bit integer.
+     * @param[in] value        Value to be written
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const uint16_t value) const;
+    /**
+     * Writes an unsigned, 32-bit integer.
+     * @param[in] value        Value to be written
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const uint32_t value) const;
+    /**
+     * Writes an unsigned, 64-bit integer.
+     * @param[in] value        Value to be written
+     * @retval    true         Success
+     * @retval    false        Lost connection
+     * @throw     SystemError  I/O failure
+     */
     bool write(const uint64_t value) const;
 
     /**
      * Flushes the output.
      *
-     * @retval `true`   Success but no guarantee that data was written
-     * @retval `false`  Connection lost
+     * @retval true     Success but no guarantee that data was written
+     * @retval false    Connection lost
      */
     bool flush();
 
@@ -153,13 +220,63 @@ public:
      */
     void clear();
 
+    /**
+     * Reads bytes.
+     * @param[out] data         Buffer to be set
+     * @param[in]  nbytes       Number of bytes to read
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(void*        data,
               const size_t nbytes) const;
+    /**
+     * Reads a boolean value.
+     * @param[out] value        Value to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(bool&     value) const;
+    /**
+     * Reads an unsigned, 8-bit value.
+     * @param[out] value        Value to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(uint8_t&  value) const;
+    /**
+     * Reads an unsigned, 16-bit value.
+     * @param[out] value        Value to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(uint16_t& value) const;
+    /**
+     * Reads an unsigned, 32-bit value.
+     * @param[out] value        Value to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(uint32_t& value) const;
+    /**
+     * Reads an unsigned, 64-bit value.
+     * @param[out] value        Value to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     bool read(uint64_t& value) const;
+    /**
+     * Reads a string.
+     * @param[out] string       String to be set
+     * @retval     true         Success
+     * @retval     false        Lost connection
+     * @throw      SystemError  I/O failure
+     */
     template<typename UINT>
     bool read(std::string& string) const;
 
@@ -168,11 +285,17 @@ public:
      */
     void shutdown(const int what = SHUT_RDWR) const;
 
+    /**
+     * Indictes if the connection is shut down.
+     * @retval true     The connection is shut down
+     * @retval false    The connection is not shut down
+     */
     bool isShutdown() const;
 };
 
 /******************************************************************************/
 
+/// A TCP socket
 class TcpSock : public Socket
 {
 public:
@@ -181,6 +304,10 @@ public:
 protected:
     friend class TcpSrvrSock;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     TcpSock(Impl* impl);
 
 public:
@@ -208,6 +335,7 @@ public:
 
 /******************************************************************************/
 
+/// A TCP server socket
 class TcpSrvrSock final : public TcpSock
 {
 public:
@@ -216,7 +344,7 @@ public:
     TcpSrvrSock() =default;
 
     /**
-     * Constructs. Calls `::listen()`.
+     * Constructs. Starts listening on the created socket.
      *
      * @param[in] sockAddr           Socket address
      * @param[in] queueSize          Size of listening queue or `0` to obtain
@@ -225,14 +353,14 @@ public:
      * @throws    std::system_error  Couldn't bind socket to `sockAddr`
      * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
      */
-    explicit TcpSrvrSock(const SockAddr sockaddr,
+    explicit TcpSrvrSock(const SockAddr sockAddr,
                          const int      queueSize = 0);
 
     /**
-     * Accepts an incoming connection. Calls `::accept()`.
+     * Accepts the next, incoming connection.
      *
      * @return               The accepted socket. Will test false if `shutdown()` has been called.
-     * @throws  SystemError  `::accept()` failure
+     * @throws  SystemError  Couldn't accept a connection on the socket
      * @cancellationpoint
      */
     TcpSock accept() const;
@@ -240,6 +368,7 @@ public:
 
 /******************************************************************************/
 
+/// A client-side TCP socket
 class TcpClntSock final : public TcpSock
 {
 public:
@@ -280,6 +409,7 @@ public:
 
 /******************************************************************************/
 
+/// A UDP socket
 class UdpSock final : public Socket
 {
 public:
@@ -311,7 +441,7 @@ public:
     /**
      * Constructs a source-specific multicast, receiving socket.
      *
-     * @param[in] mcastAddr        IP address of multicast group
+     * @param[in] ssmAddr          IP address of source-specific multicast group
      * @param[in] srcAddr          IP address of source
      * @param[in] iface            IP address of interface to use. If wildcard, then O/S chooses.
      * @throw     InvalidArgument  Multicast group IP address isn't source-specific

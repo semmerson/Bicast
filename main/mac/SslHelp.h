@@ -28,8 +28,8 @@
 
 namespace SslHelp {
 
-using OpenSslErrCode = unsigned long;
-using CodeQ          = std::queue<OpenSslErrCode>;
+using OpenSslErrCode = unsigned long; ///< Type of an OpenSSL error code
+using CodeQ          = std::queue<OpenSslErrCode>; ///< Queue of OpenSSL error codes
 
 /**
  * Initializes the OpenSSL pseudo-random number generator (PRNG).

@@ -42,7 +42,7 @@ template<typename Value, typename Dur>
 class FixedDelayQueue final
 {
 public:
-    typedef Dur                       Duration;
+    typedef Dur                       Duration; ///< The duration type
 
 private:
     typedef std::chrono::steady_clock Clock;

@@ -18,15 +18,15 @@
 namespace hycast {
 
 // Convenience types
-using Thread       = std::thread;
-using Mutex        = std::mutex;
-using Guard        = std::lock_guard<Mutex>;
-using Lock         = std::unique_lock<Mutex>;
-using Cond         = std::condition_variable;
-using String       = std::string;
-using SysClock     = std::chrono::system_clock;
-using SysTimePoint = SysClock::time_point;
-using SysDuration  = SysClock::duration;
+using Thread       = std::thread;                ///< Type of a thread
+using Mutex        = std::mutex;                 ///< Type of a mutex
+using Guard        = std::lock_guard<Mutex>;     ///< Type of a guard lock
+using Lock         = std::unique_lock<Mutex>;    ///< Type of a condition variable lock
+using Cond         = std::condition_variable;    ///< Type of a condition variable
+using String       = std::string;                ///< Type of a string
+using SysClock     = std::chrono::system_clock;  ///< Type of the system clock
+using SysTimePoint = SysClock::time_point;       ///< Type of a system time point
+using SysDuration  = SysClock::duration;         ///< Type of a system clock duration
 
 } // namespace
 

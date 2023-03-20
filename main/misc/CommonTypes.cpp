@@ -25,6 +25,7 @@
 
 namespace std {
 
+/// Returns the string representation of a system time-point
 String to_string(const SysTimePoint& timePoint) {
     auto        secs = SysClock::to_time_t(timePoint);
     struct tm   tmStruct;

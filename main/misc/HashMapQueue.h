@@ -74,13 +74,17 @@ class HashMapQueue
         LogicalEntry operator*() {return LogicalEntry{next->first, next->second.value};}
     };
 
-    Hash           myHash;
-    Equal          myEqual;
-    Map            map;
-    KEY            head;
-    KEY            tail;
+    Hash  myHash;  ///< Hash function
+    Equal myEqual; ///< Equality function
+    Map   map;     ///< Map from key to linked value
+    KEY   head;    ///< Key of first linked value
+    KEY   tail;    ///< Key of last linked value
 
 public:
+    /**
+     * Constructs.
+     * @param[in] initialSize  Initial capacity of the queue
+     */
     explicit HashMapQueue(const size_t initialSize = 10)
         : myHash([](const KEY& key){return key.hash();})
         , myEqual([](const KEY& key1, const KEY& key2){return key1 == key2;})
@@ -101,7 +105,7 @@ public:
      * @exceptionSafety      Strong guarantee
      * @threadsafety         Safe
      */
-    VALUE* push(
+    VALUE* pushBack(
             const KEY&   key,
             const VALUE& value) {
         //LOG_DEBUG("Inserting {key=" + key.to_string() + "}");
@@ -179,8 +183,8 @@ public:
      * Deletes an entry.
      *
      * @param[in]  key    Key
-     * @retval `true`     Entry existed
-     * @retval `false`    Entry did not exist
+     * @retval true       Entry existed
+     * @retval false      Entry did not exist
      * @exceptionSafety   Nothrow
      * @threadsafety      Safe
      */

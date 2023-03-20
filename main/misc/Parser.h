@@ -29,6 +29,7 @@
 
 namespace hycast {
 
+/// Class for parsing a scalar YAML value.
 class Parser
 {
 public:

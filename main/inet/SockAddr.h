@@ -32,6 +32,7 @@
 
 namespace hycast {
 
+/// A socket address. Socket address comprise an Internet address and a port number.
 class SockAddr : public XprtAble
 {
     class                 Impl;
@@ -50,14 +51,13 @@ public:
      * @param[in] port      Port number in host byte-order
      */
     SockAddr(const InetAddr& inetAddr,
-             in_port_t       port);
+             const in_port_t port);
 
     /**
      * Constructs from an IPv4 socket address.
      *
      * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order. `0` obtains a system-
-     *                  chosen port number.
+     * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
      */
     SockAddr(const in_addr_t addr,
              const in_port_t port);
@@ -66,8 +66,7 @@ public:
      * Constructs from an IPv4 socket address.
      *
      * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order. `0` obtains a system-
-     *                  chosen port number.
+     * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
      */
     SockAddr(const struct in_addr& addr,
              const in_port_t       port);
@@ -91,7 +90,7 @@ public:
     /**
      * Constructs from an IPv6 socket address.
      *
-     * @param[in] sockaddr  IPv6 socket address
+     * @param[in] addr  IPv6 socket address
      */
     SockAddr(const struct sockaddr_in6& addr);
 
@@ -138,6 +137,11 @@ public:
      */
     SockAddr clone(in_port_t port) const;
 
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     operator bool() const noexcept;
 
     /**
@@ -183,8 +187,8 @@ public:
      * Indicates if this instance is considered less than another.
      *
      * @param[in] rhs      The other instance
-     * @retval    `true`   This instance is less than `rhs`
-     * @retval    `false`  This instance is not less than `rhs`
+     * @retval    true     This instance is less than `rhs`
+     * @retval    false    This instance is not less than `rhs`
      */
     bool operator <(const SockAddr& rhs) const noexcept;
 
@@ -192,11 +196,18 @@ public:
      * Indicates if this instance is considered equal to another.
      *
      * @param[in] rhs      The other instance
-     * @retval    `true`   This instance is equal to `rhs`
-     * @retval    `false`  This instance is not equal to `rhs`
+     * @retval    true     This instance is equal to `rhs`
+     * @retval    false    This instance is not equal to `rhs`
      */
     bool operator ==(const SockAddr& rhs) const noexcept;
 
+    /**
+     * Indicates if this instance is not considered equal to another.
+     *
+     * @param[in] rhs      The other instance
+     * @retval    true     This instance is not equal to `rhs`
+     * @retval    false    This instance is equal to `rhs`
+     */
     bool operator !=(const SockAddr& rhs) const noexcept {
         return !(*this == rhs);
     }
@@ -205,7 +216,7 @@ public:
      * Binds a socket to a local socket address.
      *
      * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::bind()` failure
+     * @throws    std::system_error  Bind failure
      * @threadsafety                 Safe
      */
     void bind(const int sd) const;
@@ -214,8 +225,8 @@ public:
      * Writes to a transport.
      *
      * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     bool write(Xprt xprt) const;
 
@@ -223,8 +234,8 @@ public:
      * Reads from a transport.
      *
      * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     bool read(Xprt xprt);
 };
@@ -236,8 +247,16 @@ std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr);
 namespace std {
     std::string to_string(const hycast::SockAddr& sockAddr);
 
+    /// Less-than class function for a socket address
     template<>
     struct less<hycast::SockAddr> {
+        /**
+         * Indicates if one socket address is less than another.
+         * @param[in] lhs      The first socket address
+         * @param[in] rhs      The second socket address
+         * @retval    true     The first address is less than the second
+         * @retval    false    The first address is not less than the second
+         */
         inline bool operator()(
                 const hycast::SockAddr& lhs,
                 const hycast::SockAddr& rhs) {
@@ -245,8 +264,14 @@ namespace std {
         }
     };
 
+    /// Hash code class function for a socket address
     template<>
     struct hash<hycast::SockAddr> {
+        /**
+         * Returns the hash code of a socket address.
+         * @param[in] sockAddr  The socket address
+         * @return The hash code of the socket address
+         */
         inline bool operator()(const hycast::SockAddr& sockAddr) const {
             return sockAddr.hash();
         }

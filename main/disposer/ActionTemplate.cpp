@@ -2,7 +2,7 @@
  * This file defines a handle class for action templates. An action template converts a template
  * command line into a concrete one based on a set of regular expression substitutions.
  *
- *  @file:  ActionTemplate
+ *  @file:  ActionTemplate.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
@@ -26,6 +26,10 @@
 
 namespace hycast {
 
+/**
+ * A template for an action. Such a template is reified into an action by replacing its back-
+ * references with matches from the data product's name.
+ */
 class ActionTemplate::Impl
 {
 protected:
@@ -34,6 +38,11 @@ protected:
     const bool          persist;      ///< Should the reified action persist between products?
 
 public:
+    /**
+     * Constructs.
+     * @param[in] argTemplates  Program argument templates
+     * @param[in] persist       Should this entry persist?
+     */
     Impl(
             const std::vector<String> argTemplates,
             const bool                persist)
@@ -45,6 +54,11 @@ public:
     virtual ~Impl() {
     }
 
+    /**
+     * Returns a reified action.
+     * @param[in] match  Results of matching the product's name
+     * @return           A reified action
+     */
     virtual Action reify(std::smatch& match) =0;
 };
 
@@ -58,9 +72,15 @@ Action ActionTemplate::reify(std::smatch& match) {
 
 /******************************************************************************/
 
+/// An implementation of a template for the action of piping data products to a program
 class PipeTemplateImpl final : public ActionTemplate::Impl
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] argTemplates  Program argument templates
+     * @param[in] keepOpen      Should this action be persistent (i.e., keep the pipe open)?
+     */
     PipeTemplateImpl(
             const std::vector<String>& argTemplates,
             const bool                 keepOpen)
@@ -73,6 +93,11 @@ public:
     ~PipeTemplateImpl()
     {}
 
+    /**
+     * Returns the reified action.
+     * @param[in] matchResults  Results from matching the product's name
+     * @return                  The reified action
+     */
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
@@ -89,9 +114,15 @@ PipeTemplate::PipeTemplate(
 
 /******************************************************************************/
 
+/// Action template for filing data products.
 class FileTemplateImpl final : public ActionTemplate::Impl
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] argTemplates  File pathname template
+     * @param keepOpen          Should this entry persist (i.e., keep the file open)?
+     */
     FileTemplateImpl(
             const std::vector<String>& argTemplates,
             const bool                 keepOpen)
@@ -104,6 +135,11 @@ public:
     ~FileTemplateImpl()
     {}
 
+    /**
+     * Returns a reified action.
+     * @param[in] matchResults  File pathname from matching the product's name
+     * @return                  A reified action
+     */
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
@@ -120,9 +156,15 @@ FileTemplate::FileTemplate(
 
 /******************************************************************************/
 
+/// An implementation of a template for the action of appending data products to a file
 class AppendTemplateImpl final : public ActionTemplate::Impl
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] argTemplates  File pathname template
+     * @param[in] keepOpen      Should the file be kept open?
+     */
     AppendTemplateImpl(
             const std::vector<String>& argTemplates,
             const bool                 keepOpen)
@@ -135,6 +177,11 @@ public:
     ~AppendTemplateImpl()
     {}
 
+    /**
+     * Returns a reified action.
+     * @param[in] matchResults  Results from matching the product's name
+     * @return                  A reified action
+     */
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)

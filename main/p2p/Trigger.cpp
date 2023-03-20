@@ -31,12 +31,17 @@ namespace hycast {
 
 using namespace std::chrono;
 
+/// Class that triggers replacement of worst-performing peer periodically.
 class TimeTrigger : public Trigger
 {
 private:
     const Duration dur;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] duration  Amount of time to wait
+     */
     TimeTrigger(const Duration& duration)
         : dur(duration)
     {}
@@ -56,8 +61,9 @@ Trigger::Pimpl Trigger::create(const Duration& duration) {
     return Pimpl(new TimeTrigger(duration));
 }
 
-/******************************************************************************/
+/**************************************************************************************************/
 
+/// Class that triggers replacement of worst-performing peer when received data exceeds a threshold.
 class DataTrigger : public Trigger
 {
     mutable Mutex mutex;
@@ -66,6 +72,10 @@ class DataTrigger : public Trigger
     size_t        soFar;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] threshold  Number of bytes to wait for
+     */
     DataTrigger(const size_t threshold)
         : mutex()
         , cond()

@@ -42,7 +42,7 @@ namespace hycast {
 class BookkeeperImpl : public Bookkeeper
 {
 protected:
-    mutable Mutex mutex;
+    mutable Mutex mutex; ///< Mutex to protect consistency
 
 public:
     /**
@@ -55,10 +55,19 @@ public:
         : mutex()
     {}
 
+    /**
+     * Copy constructs.
+     * @param[in] other  The other instance
+     */
     BookkeeperImpl(const BookkeeperImpl& other) =delete;
 
     virtual ~BookkeeperImpl() {}
 
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other, right-hand-side instance
+     * @return         A reference to this just-assigned instance
+     */
     BookkeeperImpl& operator=(const BookkeeperImpl& rhs) =delete;
 };
 
@@ -75,6 +84,10 @@ class PubBookkeeper final : public BookkeeperImpl
     std::unordered_map<Peer::Pimpl, RequestCount> numRequests;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] maxPeers  Maximum number of peers
+     */
     PubBookkeeper(const int maxPeers)
         : BookkeeperImpl()
         , numRequests(maxPeers)
@@ -85,11 +98,21 @@ public:
         return numRequests.insert({peer, 0}).second;
     }
 
+    /**
+     * Removes a peer.
+     * @param[in] peer  The peer to be removed
+     * @retval    true     The peer existed
+     * @retval    false    The peer didn't exist
+     */
     bool erase(const Peer::Pimpl peer) override {
         Guard guard(mutex);
         return numRequests.erase(peer) == 1;
     }
 
+    /**
+     * Handles a peer requesting something.
+     * @param[in] peer  The peer that requested something
+     */
     void requested(const Peer::Pimpl peer) override {
         Guard guard(mutex);
         ++numRequests[peer];
@@ -125,27 +148,54 @@ public:
         return false;
     }
 
+    /**
+     * Handles a peer receiving a data segment from its remote counterpart.
+     * @param[in] peer     The peer that received the data segment
+     * @param[in] segId    The data segment identifier
+     * @retval    true     Success
+     * @retval    false    The data segment wasn't requested
+     */
     bool received(
             Peer::Pimpl     peer,
-            const DataSegId datasegId) override {
+            const DataSegId segId) override {
         return false;
     }
 
+    /**
+     * Deletes all knowledge of a data product.
+     * @param[in] prodId  The data product ID
+     */
     void erase(const ProdId prodId) override {
     }
 
-    void erase(const DataSegId dataSegId) override {
+    /**
+     * Deletes all knowledge of a data segment.
+     * @param[in] segId  The data segment ID
+     */
+    void erase(const DataSegId segId) override {
     }
 
+    /**
+     * Returns the next best peer from which to request product information.
+     * @param[in] peer    The previous peer that failed
+     * @param[in] prodId  The product identifier
+     * @return            The next best peer. Might be invalid.
+     */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
             const ProdId      prodId) override {
         return Peer::Pimpl{};
     }
 
+    /**
+     * Returns the next best peer from which to request a data segment.
+     * @param[in] peer    The previous peer that failed
+     * @param[in] segId   The data segment ID
+     * @return            The next best peer. Might be invalid.
+     */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const DataSegId   dataSegId) override {
+            const DataSegId   segId) override {
         return Peer::Pimpl{};
     }
 
@@ -166,6 +216,9 @@ public:
         return peer;
     }
 
+    /**
+     * Resets all metrics.
+     */
     void reset() noexcept override {
         Guard guard(mutex);
 
@@ -235,8 +288,8 @@ class SubBookkeeper final : public BookkeeperImpl
      *
      * @param[in] peer        Local peer connected to remote peer
      * @param[in] notice      Notice of available datum
-     * @return    `true`      Notice should be sent
-     * @return    `false`     Notice shouldn't be sent
+     * @return    true        Notice should be sent
+     * @return    false       Notice shouldn't be sent
      * @throws    LogicError  Peer is unknown
      * @threadsafety          Safe
      * @cancellationpoint     No
@@ -263,8 +316,8 @@ class SubBookkeeper final : public BookkeeperImpl
      *
      * @param[in] peer        Local peer
      * @param[in] notice      Notice of available data
-     * @return    `true`      Request should be made
-     * @return    `false`     Request shouldn't be made
+     * @return    true        Request should be made
+     * @return    false       Request shouldn't be made
      * @throws    LogicError  Peer is unknown
      * @threadsafety          Safe
      * @cancellationpoint     No
@@ -301,8 +354,8 @@ class SubBookkeeper final : public BookkeeperImpl
      *
      * @param[in] peer        Peer that received the datum
      * @param[in] noticed     Notice of available data
-     * @retval    `true`      Success
-     * @retval    `false`     Datum is unexpected
+     * @retval    true        Success
+     * @retval    false       Datum is unexpected
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
@@ -390,8 +443,8 @@ public:
      * Adds a peer.
      *
      * @param[in] peer            Peer
-     * @retval `true`             Success
-     * @retval `false`            Not added because already exists
+     * @retval true               Success
+     * @retval false              Not added because already exists
      * @throws std::system_error  Out of memory
      * @threadsafety              Safe
      * @exceptionsafety           Basic guarantee
@@ -406,8 +459,8 @@ public:
      * Removes a peer.
      *
      * @param[in] peer        The peer to be removed
-     * @retval    `true`      Success
-     * @retval    `false`     Peer is unknown
+     * @retval    true        Success
+     * @retval    false       Peer is unknown
      * @threadsafety          Safe
      * @exceptionsafety       Basic guarantee
      * @cancellationpoint     No
@@ -466,29 +519,53 @@ public:
         return received(peer, Notice{prodId});
     }
 
+    /**
+     * Process a peer having received a data segment. Nothing happens if it wasn't requested by the
+     * peer; otherwise, the corresponding request is removed from the peer's outstanding requests.
+     *
+     * @param[in] peer        Peer
+     * @param[in] segId       Data segment identifier
+     * @retval    true        Success
+     * @retval    false       Data segment wasn't requested
+     * @threadsafety          Safe
+     * @exceptionsafety       Strong guarantee
+     * @cancellationpoint     No
+     */
     bool received(Peer::Pimpl     peer,
-                  const DataSegId dataSegId) override {
-        return received(peer, Notice{dataSegId});
+                  const DataSegId segId) override {
+        return received(peer, Notice{segId});
     }
 
     void erase(const ProdId prodId) override {
         erase(Notice(prodId));
     }
 
-    void erase(const DataSegId dataSegId) override {
-        erase(Notice(dataSegId));
+    void erase(const DataSegId segId) override {
+        erase(Notice(segId));
     }
 
+    /**
+     * Returns the best alternative peer, besides a given one, for requesting product information.
+     * @param[in] peer    The peer that didn't receive the information
+     * @param[in] prodId  The product's ID
+     * @return
+     */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
             const ProdId      prodId) override {
         return getAltPeer(peer, Notice{prodId});
     }
 
+    /**
+     * Returns the best alternative peer, besides a given one, for requesting a data segment.
+     * @param[in] peer    The peer that didn't receive the segment
+     * @param[in] segId   The segment's ID
+     * @return
+     */
     Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const DataSegId   dataSegId) override {
-        return getAltPeer(peer, Notice{dataSegId});
+            const DataSegId   segId) override {
+        return getAltPeer(peer, Notice{segId});
     }
 
     /**

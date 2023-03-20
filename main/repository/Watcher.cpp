@@ -38,6 +38,7 @@
 
 namespace hycast {
 
+/// An implementation of a watcher
 class Watcher::Impl final
 {
     using PathMap   = std::unordered_map<int, std::string>;
@@ -63,8 +64,8 @@ class Watcher::Impl final
      * symbolic links. NB: both "." and ".." return true.
      *
      * @param[in] pathname  Pathname to examine
-     * @retval    `true`    Pathname references directory
-     * @retval    `false`   Pathname doesn't reference directory
+     * @retval    true      Pathname references directory
+     * @retval    false     Pathname doesn't reference directory
      * @threadsafety        Safe
      */
     bool isDir(const std::string& pathname)
@@ -81,8 +82,8 @@ class Watcher::Impl final
      * Indicates if a pathname is a symbolic link or hard link.
      *
      * @param[in] pathname  Pathname to examine
-     * @retval    `true`    Pathname is a symbolic or hard link
-     * @retval    `false`   Pathname is not a symbolic or hard link
+     * @retval    true      Pathname is a symbolic or hard link
+     * @retval    false     Pathname is not a symbolic or hard link
      * @threadsafety        Safe
      */
     bool isLink(const std::string& pathname)
@@ -198,8 +199,8 @@ class Watcher::Impl final
      *
      * @param wd        Associated watch descriptor
      * @param pathname  Pathname of the file
-     * @retval `true`   File was added because it was scanned
-     * @retval `false`  File was not added because it was scanned
+     * @retval true     File was added because it was scanned
+     * @retval false    File was not added because it was scanned
      * @see `watch()`
      */
     inline bool isScannedFile(

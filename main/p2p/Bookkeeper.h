@@ -37,18 +37,45 @@ namespace hycast {
 class Bookkeeper
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<Bookkeeper>;
 
+    /**
+     * Constructs.
+     * @param[in] maxPeers  Maximum number of P2P neighbors
+     * @return              Pointer to a new instance for a publisher
+     */
     static Pimpl createPub(const int maxPeers = 8);
 
+    /**
+     * Constructs.
+     * @param[in] maxPeers  Maximum number of P2P neighbors
+     * @return              Pointer to a new instance for a subscriber
+     */
     static Pimpl createSub(const int maxPeers = 8);
 
     virtual ~Bookkeeper() noexcept {}
 
+    /**
+     * Adds a peer.
+     * @param[in] peer     The peer to be added
+     * @retval    true     Success
+     * @retval    false    The peer was previously added
+     */
     virtual bool add(const Peer::Pimpl peer) =0;
 
+    /**
+     * Removes a peer.
+     * @param[in] peer     The peer to be removed
+     * @retval    true     The peer existed
+     * @retval    false    The peer didn't exist
+     */
     virtual bool erase(const Peer::Pimpl peer) =0;
 
+    /**
+     * Handles a peer requesting something from its remote counterpart.
+     * @param[in] peer  The peer that made the request
+     */
     virtual void requested(const Peer::Pimpl peer) =0;
 
     /**
@@ -58,8 +85,8 @@ public:
      *
      * @param[in] peer       Peer
      * @param[in] prodId     Identifier of the product
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
+     * @retval    true       Peer should be notified
+     * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
             Peer::Pimpl  peer,
@@ -72,8 +99,8 @@ public:
      *
      * @param[in] peer       Peer
      * @param[in] dataSegId  ID of the data segment
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
+     * @retval    true       Peer should be notified
+     * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
             Peer::Pimpl     peer,
@@ -87,8 +114,8 @@ public:
      *
      * @param[in] peer               Peer
      * @param[in] prodId             Product identifier
-     * @return    `true`             Request should be made
-     * @return    `false`            Request shouldn't be made
+     * @return    true               Request should be made
+     * @return    false              Request shouldn't be made
      * @throws    std::out_of_range  Peer is unknown
      * @throws    logicError         This request has already been made or the
      *                               peer is already alternative peer for the
@@ -107,8 +134,8 @@ public:
      *
      * @param[in] peer               Peer
      * @param[in] dataSegId          Data segment identifier
-     * @return    `true`             Request should be made
-     * @return    `false`            Request shouldn't be made
+     * @return    true               Request should be made
+     * @return    false              Request shouldn't be made
      * @throws    std::out_of_range  Peer is unknown
      * @throws    logicError         This request has already been made or the
      *                               peer is already alternative peer for the
@@ -128,8 +155,8 @@ public:
      *
      * @param[in] peer        Peer
      * @param[in] prodId      Product identifier
-     * @retval    `true`      Success
-     * @retval    `false`     Product information wasn't requested
+     * @retval    true        Success
+     * @retval    false       Product information wasn't requested
      * @throws    LogicError  Peer is unknown
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
@@ -145,16 +172,16 @@ public:
      * removed from the peer's outstanding requests.
      *
      * @param[in] peer        Peer
-     * @param[in] dataSegId   Data segment identifier
-     * @retval    `true`      Success
-     * @retval    `false`     Data segment wasn't requested
+     * @param[in] segId       Data segment identifier
+     * @retval    true        Success
+     * @retval    false       Data segment wasn't requested
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
     virtual bool received(
             Peer::Pimpl     peer,
-            const DataSegId datasegId) =0;
+            const DataSegId segId) =0;
 
     /**
      * Deletes the set of peers that have information on the given product.
@@ -166,9 +193,9 @@ public:
     /**
      * Deletes the set of peers that have the given data segment.
      *
-     * @param[in] dataSegId  ID of the data segment
+     * @param[in] segId  ID of the data segment
      */
-    virtual void erase(const DataSegId dataSegId) =0;
+    virtual void erase(const DataSegId segId) =0;
 
     /**
      * Returns the worst performing local peer. For a publisher, this will be the peer whose remote
@@ -179,14 +206,30 @@ public:
      */
     virtual Peer::Pimpl getWorstPeer() const =0;
 
+    /**
+     * Returns the best alternative peer, besides a given one, from which to request product
+     * information.
+     * @param[in] peer    The peer that didn't receive the information
+     * @param[in] prodId  The product's ID
+     * @return            The best alternative peer
+     */
     virtual Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
             const ProdId      prodId) =0;
 
+    /**
+     * Returns the best alternative peer, besides a given one, from which to request a data segment.
+     * @param[in] peer    The peer that didn't receive the segment
+     * @param[in] segId   The data-segment's ID
+     * @return            The best alternative peer
+     */
     virtual Peer::Pimpl getAltPeer(
             const Peer::Pimpl peer,
-            const DataSegId   dataSegId) =0;
+            const DataSegId   segId) =0;
 
+    /**
+     * Resets all metrics.
+     */
     virtual void reset() =0;
 };
 

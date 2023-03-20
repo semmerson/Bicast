@@ -27,6 +27,7 @@
 
 namespace hycast {
 
+/// A stopwatch class
 template<class DUR=std::chrono::steady_clock::duration>
 class Stopwatch
 {
@@ -39,11 +40,11 @@ public:
         : begin()
     {}
 
-    void start() {
+    void start() { ///< Starts this instance
         begin = Clock::now();
     }
 
-    DUR split() {
+    DUR split() { ///< Returns the split time
         return std::chrono::duration_cast<DUR>(Clock::now() - begin);
     }
 };

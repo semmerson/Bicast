@@ -29,10 +29,11 @@
 
 namespace hycast {
 
+/// A class used to transport objects
 class Xprt
 {
 public:
-    using PduId    = uint32_t;
+    using PduId    = uint32_t; ///< Type of product data unit identifier
 
     class Impl; // Implementation
 
@@ -49,42 +50,60 @@ public:
      */
     Xprt(Socket sock);
 
+#if 0
     /**
      * Copy constructs.
      *
      * @param[in] xprt  Other instance
-    Xprt(const Xprt& xprt);
      */
+    Xprt(const Xprt& xprt);
 
     /**
      * Destroys.
-    ~Xprt() noexcept;
      */
+    ~Xprt() noexcept;
 
     /**
      * Copy Assigns.
      *
      * @param[in] rhs  Other instance
      * @return         Reference to this instance
-    Xprt& operator=(const Xprt& rhs);
      */
+    Xprt& operator=(const Xprt& rhs);
+#endif
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
-     * @retval `true`   Valid
-     * @retval `false`  Invalid
+     * @retval true     Valid
+     * @retval false    Invalid
      */
     operator bool() {
         return static_cast<bool>(pImpl);
     }
 
+    /**
+     * Returns the underlying socket.
+     * @return The underlying socket
+     */
     Socket getSocket() const;
 
+    /**
+     * Returns the socket address of the remote endpoint.
+     * @return The socket address of the remote endpoint
+     */
     SockAddr getRmtAddr() const noexcept;
 
+    /**
+     * Returns the socket address of the local endpoint.
+     * @return The socket address of the local endpoint
+     */
     SockAddr getLclAddr() const;
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const;
 
     /**
@@ -95,13 +114,54 @@ public:
      */
     size_t hash() const;
 
+    /**
+     * Swaps this instance with another.
+     * @param[in,out] xprt  The other instance
+     */
     void swap(Xprt& xprt) noexcept; // Missing "&" closes socket
 
+    /**
+     * Writes bytes.
+     * @param[in] value    Bytes to write
+     * @param[in] nbytes   Number of bytes to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const void*        value, size_t nbytes) const;
+    /**
+     * Writes a boolean value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const bool         value) const;
+    /**
+     * Writes an unsigned, 8-bit value value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const uint8_t      value) const;
+    /**
+     * Writes an unsigned, 16-bit value value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const uint16_t     value) const;
+    /**
+     * Writes an unsigned, 32-bit value value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const uint32_t     value) const;
+    /**
+     * Writes an unsigned, 64-bit value value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(const uint64_t     value) const;
     /**
      * @tparam UINT  Type of serialized, unsigned integer to hold string length
@@ -112,15 +172,54 @@ public:
     /// Flushes the output if possible.
     bool flush() const;
 
+    /**
+     * Reads bytes.
+     * @param[out] value    The buffer to be set
+     * @param[in]  nbytes   The number of bytes to read into the buffer
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(void*        value, size_t nbytes) const;
+    /**
+     * Reads a boolean value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(bool&        value) const;
+    /**
+     * Reads an unsigned, 8-bit value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(uint8_t&     value) const;
+    /**
+     * Reads an unsigned, 16-bit value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(uint16_t&    value) const;
+    /**
+     * Reads an unsigned, 32-bit value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(uint32_t&    value) const;
+    /**
+     * Reads an unsigned, 64-bit value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
     bool read(uint64_t&    value) const;
     /**
      * @tparam UINT  Type of serialized, unsigned integer that holds string
      *               length
+     * @retval     true     Success
+     * @retval     false    Connection lost
      */
     template<typename UINT = uint32_t>
     bool read(std::string& string) const;
@@ -131,6 +230,9 @@ public:
      */
     void clear() const;
 
+    /**
+     * Shuts down the connection. Doesn't close the socket, however.
+     */
     void shutdown();
 
     /**

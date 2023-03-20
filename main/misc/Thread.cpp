@@ -39,6 +39,7 @@
 
 namespace hycast {
 
+/// An implementation of a class that blocks a thread until it's cued
 class Cue::Impl
 {
     typedef std::mutex              Mutex;
@@ -57,6 +58,9 @@ public:
         , cued{false}
     {}
 
+    /**
+     * Constructs.
+     */
     void cue()
     {
         LockGuard lock{mutex};
@@ -64,6 +68,9 @@ public:
         cond.notify_all();
     }
 
+    /**
+     * Waits until signaled.
+     */
     void wait()
     {
         UniqueLock lock(mutex);

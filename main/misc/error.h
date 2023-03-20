@@ -34,21 +34,38 @@
 
 namespace hycast {
 
+/// Invalid argument error
 class InvalidArgument : public std::invalid_argument
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  The name of the file
+     * @param[in] line  The line number in the file
+     * @param[in] func  The name of the function
+     * @param[in] msg   The log message
+     */
     InvalidArgument(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 
+/// Macro for creating an invalid argument error
 #define INVALID_ARGUMENT(msg) InvalidArgument(__FILE__, __LINE__, __func__, (msg))
 };
 
+/// Logic error
 class LogicError : public std::logic_error
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Pathname of the file
+     * @param[in] line  Line number in the file
+     * @param[in] func  Function in the file
+     * @param[in] msg   Log message
+     */
     LogicError(
             const char*       file,
             const int         line,
@@ -56,69 +73,124 @@ public:
             const std::string msg);
 
 };
+/// Macro for creating a logic error
 #define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
 
+/// Something wasn't found error
 class NotFoundError : public std::runtime_error
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Name of file
+     * @param[in] line  Line number in file
+     * @param[in] func  Name of function in file
+     * @param[in] msg   Log message
+     */
     NotFoundError(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 
+/// Macro for creating a not-found error
 #define NOT_FOUND_ERROR(msg) NotFoundError(__FILE__, __LINE__, __func__, msg)
 };
 
+/// Domain error
 class DomainError : public std::domain_error
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Name of file
+     * @param[in] line  Line number in file
+     * @param[in] func  Name of function in file
+     * @param[in] msg   Log message
+     */
     DomainError(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 
+/// Macro for using `DomainError`
 #define DOMAIN_ERROR(msg) DomainError(__FILE__, __LINE__, __func__, msg)
 };
 
+/// Out-of-range error.
 class OutOfRange : public std::out_of_range
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Name of file
+     * @param[in] line  Line number in file
+     * @param[in] func  Name of function in file
+     * @param[in] msg   Log message
+     */
     OutOfRange(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 
+/// Macro for creating an out-of-range error
 #define OUT_OF_RANGE(msg) OutOfRange(__FILE__, __LINE__, __func__, msg)
 };
 
+/// Runtime error
 class RuntimeError : public std::runtime_error
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Name of file
+     * @param[in] line  Line number in file
+     * @param[in] func  Name of function in file
+     * @param[in] msg   Log message
+     */
     RuntimeError(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 };
+/// Macro for creating a runtime error
 #define RUNTIME_ERROR(msg) RuntimeError(__FILE__, __LINE__, __func__, msg)
 
+/// End-of-file error
 class EofError : public RuntimeError
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file  Name of file
+     * @param[in] line  Line number in file
+     * @param[in] func  Name of function in file
+     * @param[in] msg   Log message
+     */
     EofError(
             const char*       file,
             const int         line,
             const char*       func,
             const std::string msg);
 };
+/// Macro for creating an end-of-file error
 #define EOF_ERROR(msg) EofError(__FILE__, __LINE__, __func__, msg)
 
+/// System error
 class SystemError : public std::system_error
 {
 public:
+    /**
+     * Constructs.
+     * @param[in] file    Name of file
+     * @param[in] line    Line number in file
+     * @param[in] func    Name of function in file
+     * @param[in] msg     Log message
+     * @param[in] errnum  Error number
+     */
     SystemError(
             const char*       file,
             const int         line,
@@ -126,9 +198,18 @@ public:
             const std::string msg,
             const int         errnum = errno);
 
+/// Macro for creating a system error
 #define SYSTEM_ERROR(...) SystemError(__FILE__, __LINE__, __func__, __VA_ARGS__)
 };
 
+/**
+ * Constructs a message for an exception.
+ * @param[in] file  Name of the file in which the exception occurred
+ * @param[in] line  Line number in the file in which the exception occurred
+ * @param[in] func  Name of the function in which the exception occurred
+ * @param[in] msg   Log message
+ * @return          String containg the above information
+ */
 std::string makeWhat(
         const char*        file,
         const int          line,
@@ -137,7 +218,7 @@ std::string makeWhat(
 
 /**
  * Replaces `std::terminate()` with one that ensures logging of the current
- * exception if it exists. Calls `::abort()`.
+ * exception if it exists. Calls `abort()`.
  */
 void terminate();
 

@@ -36,21 +36,36 @@ struct RunPar {
     LogLevel  logLevel;   ///< Logging level
     SockAddr  pubAddr;    ///< Address of publisher
     InetAddr  mcastIface; ///< Address of interface for multicast reception. May be wildcard.
-    struct P2pArgs {
+    /// Runtime parameters for a subscriber's P2P manager
+    struct P2pArgs {      ///< P2P runtime parameters
         struct SrvrArgs {
             SockAddr addr;        ///< P2P server's address. Must not be wildcard.
             int      acceptQSize; ///< Size of `RpcSrvr::accept()` queue. Don't use 0.
+            /**
+             * Constructs.
+             * @param[in] addr         Socket address for the local P2P server
+             * @param[in] acceptQSize  Size of the `listen()` queue
+             */
             SrvrArgs(
                     const SockAddr& addr,
                     const int       acceptQSize)
                 : addr(addr)
                 , acceptQSize(acceptQSize)
             {}
-        }        srvr;
+        }        srvr;        ///< P2P server runtime parameters
         int      timeout;     ///< Timeout in ms for connecting to remote P2P server
-        int      trackerSize; ///< Size of tracker object
+        int      trackerSize; ///< Capacity of tracker object
         int      maxPeers;    ///< Maximum number of peers to have
         int      evalTime;    ///< Time interval for evaluating peer performance in seconds
+        /**
+         * Constructs.
+         * @param[in] addr         Socket address for the local P2P server
+         * @param[in] acceptQSize  Size of the `listen()` queue
+         * @param[in] timeout      Timeout in ms for connecting to remote P2P server
+         * @param[in] trackerSize  Capacity of the tracker object
+         * @param[in] maxPeers     Maximum number of neighboring peers
+         * @param[in] evalTime     Duration over which to evaluate the peers
+         */
         P2pArgs(const SockAddr& addr,
                 const int       acceptQSize,
                 const int       timeout,
@@ -63,18 +78,27 @@ struct RunPar {
             , maxPeers(maxPeers)
             , evalTime(evalTime)
         {}
-    }         p2p;
-    struct RepoArgs {
+    }         p2p; ///< P2P runtime parameters
+    /// Runtime parameters for the repository
+    struct RepoArgs { ///< Repository runtime parameters
         String   rootDir;      ///< Pathname of the repository's root directory
         int      maxOpenFiles; ///< Maximum number of open files
+        /**
+         * Constructs.
+         * @param[in] rootDir       Pathname of the root of the repository
+         * @param[in] maxOpenFiles  Maximum number of open file descriptors
+         */
         RepoArgs(
                 const String&  rootDir,
                 const unsigned maxOpenFiles)
             : rootDir(rootDir)
             , maxOpenFiles(maxOpenFiles)
         {}
-    }         repo;
+    }         repo; ///< Repository runtime parameters
 
+    /**
+     * Default constructs.
+     */
     RunPar()
         : logLevel(LogLevel::NOTE)
         , pubAddr()

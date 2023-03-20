@@ -132,19 +132,37 @@ class ProdIdSet::Impl
     Set prodIds;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] n  Initial capacity
+     */
     Impl(const size_t n)
         : prodIds{n}
     {}
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const {
         return "{size=" + std::to_string(prodIds.size()) + "}";
     }
 
+    /**
+     * Removes the entries in another instance from this one.
+     * @param[in] rhs  The other, right-hand-side instance
+     */
     void subtract(const Impl& rhs) {
         for (auto iter = rhs.prodIds.begin(), end = rhs.prodIds.end(); iter != end; ++iter)
             prodIds.erase(*iter);
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(Xprt xprt) const {
         if (!xprt.write(static_cast<uint32_t>(prodIds.size())))
             return false;
@@ -154,6 +172,12 @@ public:
         return true;
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool read(Xprt xprt) {
         uint32_t size;
         if (!xprt.read(size))
@@ -169,26 +193,51 @@ public:
         return true;
     }
 
+    /**
+     * Returns the number of elements.
+     * @return The number of elements
+     */
     size_t size() const {
         return prodIds.size();
     }
 
+    /**
+     * Returns the number of times a product ID is in this instance.
+     * @param[in] prodId  The product ID
+     * @retval    0       The product ID isn't in this instance
+     * @retval    1       The product ID is in this instance
+     */
     size_t count(const ProdId prodId) const {
         return prodIds.count(prodId);
     }
 
+    /**
+     * Ensures that this instance contains a product ID.
+     * @param prodId  The product ID
+     */
     void insert(const ProdId prodId) {
         prodIds.insert(prodId);
     }
 
+    /**
+     * Returns an iterator over the product identifiers.
+     * @return An iterator over the product identifiers
+     */
     Set::iterator begin() {
         return prodIds.begin();
     }
 
+    /**
+     * Returns an iterator just outside the product identifiers.
+     * @return An iterator just outside the product identifiers
+     */
     Set::iterator end() {
         return prodIds.end();
     }
 
+    /**
+     * Clears this instance of all elements.
+     */
     void clear() {
         prodIds.clear();
     }
@@ -255,6 +304,13 @@ class ProdInfo::Impl
 public:
     Impl() =default;
 
+    /**
+     * Constructs.
+     * @param[in] prodId
+     * @param[in] name        The name of the product
+     * @param[in] size        The size of the product in bytes
+     * @param[in] createTime  When the product was created
+     */
     Impl(    const ProdId       prodId,
              const std::string& name,
              const ProdSize     size,
@@ -278,6 +334,11 @@ public:
                size == rhs.size;
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @param[in] withName  Should the name of this class be included?
+     * @return              The string representation of this instance
+     */
     String to_string(const bool withName) const
     {
         String string;
@@ -297,6 +358,12 @@ public:
                 "\", size=" + std::to_string(size) + ", created=" + iso8601 + "}";
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(Xprt xprt) const {
         //LOG_DEBUG("Writing product information to %s", xprt.to_string().data());
         auto success = prodId.write(xprt);
@@ -317,6 +384,12 @@ public:
         return success;
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         //LOG_DEBUG("Reading product information from %s", xprt.to_string().data());
         auto success = prodId.read(xprt);
@@ -412,9 +485,11 @@ bool ProdInfo::read(Xprt xprt) {
 } // namespace
 
 namespace std {
+    /// Returns the string representation of a data product's identifier
     string to_string(const hycast::ProdId prodId) {
         return prodId.to_string();
     }
+    /// Returns the string representation of information on a data product
     string to_string(const hycast::ProdInfo prodInfo) {
         return prodInfo.to_string();
     }

@@ -32,7 +32,8 @@ namespace hycast {
 class Trigger
 {
 public:
-    using Duration = std::chrono::milliseconds;
+    using Duration = std::chrono::milliseconds; ///< Type of duration
+    /// Smart pointer to the implementation
     using Pimpl    = std::shared_ptr<Trigger>;
 
     virtual ~Trigger() {};
@@ -60,7 +61,7 @@ public:
     virtual void received(const size_t numBytes) =0;
 
     /**
-     * Returns when the worst-performing peer should be replaced.
+     * Returns when the worst-performing peer should be replaced. Blocks until then.
      *
      * @see `reset()`
      */

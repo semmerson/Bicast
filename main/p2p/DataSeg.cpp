@@ -30,6 +30,7 @@
 
 namespace hycast {
 
+/// An implementation of a data segment
 class DataSeg::Impl
 {
     static std::atomic<SegSize> maxSegSize; ///< Maximum data-segment size in bytes
@@ -41,6 +42,12 @@ public:
     SegSize     bufSize;  ///< Size of buffer in bytes
     char*       buf;      ///< buffer for data
 
+    /**
+     * Sets the maximum size, in bytes, of a data segment. All segments except the last will be this
+     * size.
+     * @param[in] maxSegSize  Maximum size of a data segment
+     * @return                The previous maximum segment size
+     */
     static SegSize setMaxSegSize(const SegSize maxSegSize) {
         if (maxSegSize <= 0)
             throw INVALID_ARGUMENT("Argument is not positive: " + std::to_string(maxSegSize));
@@ -49,10 +56,20 @@ public:
         return prev;
     }
 
+    /**
+     * Returns the maximum size of a data segment.
+     * @return The maximum size of a data segment
+     */
     static SegSize getMaxSegSize() {
         return maxSegSize;
     }
 
+    /**
+     * Returns the expected size of a data segment.
+     * @param[in] prodSize  Size of the containing data product in bytes
+     * @param[in] offset    Offset to the start of this segment in the product in bytes
+     * @return              The expected size of the data segment
+     */
     static SegSize size(
             const ProdSize  prodSize,
             const SegOffset offset) noexcept {
@@ -62,10 +79,20 @@ public:
                 : static_cast<SegSize>(maxSegSize);
     }
 
+    /**
+     * Returns the number of data segments in a product.
+     * @param[in] prodSize  The size of the product in bytes
+     * @return              The number of data segments in the product
+     */
     static ProdSize numSegs(const ProdSize prodSize) noexcept {
         return (prodSize + (maxSegSize - 1)) / maxSegSize;
     }
 
+    /**
+     * Returns the origin-0 index of a data segment.
+     * @param[in] offset  Offset, in bytes, of the start of a segment
+     * @return            The origin-0 index of the data segment
+     */
     static ProdSize getSegIndex(const ProdSize offset) {
         return offset/maxSegSize;
     }
@@ -77,6 +104,12 @@ public:
         , buf(nullptr)
     {}
 
+    /**
+     * Constructs.
+     * @param[in] segId     The segment's ID
+     * @param[in] prodSize  The size of the containing product in bytes
+     * @param[in] data      The segment's data
+     */
     Impl(const DataSegId& segId,
          const ProdSize   prodSize,
          const char*      data)
@@ -92,14 +125,29 @@ public:
         delete[] buf;
     }
 
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     operator bool() const noexcept {
         return buf != nullptr;
     }
 
+    /**
+     * Returns this segments data.
+     * @return This segments data
+     */
     const char* data() const noexcept {
         return buf;
     }
 
+    /**
+     * Tests for equality with another instance.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @return    true     This instance is equal to the other instance
+     * @return    false    This instance is not equal to the other instance
+     */
     bool operator==(const Impl& rhs) {
         if (buf == nullptr && rhs.buf == nullptr)
             return true;
@@ -111,6 +159,11 @@ public:
                         == 0);
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @param[in] withName  Should the name of this class be included?
+     * @return              The string representation of this instance
+     */
     String to_string(const bool withName) const {
         String string;
         if (withName)
@@ -119,6 +172,12 @@ public:
                 std::to_string(prodSize) + "}";
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(Xprt xprt) {
         //LOG_DEBUG("Writing data-segment to %s", xprt.to_string().data());
         auto success = segId.write(xprt);
@@ -134,6 +193,12 @@ public:
         return success;
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         //LOG_DEBUG("Reading data-segment from %s", xprt.to_string().data());
         bool success = segId.read(xprt);

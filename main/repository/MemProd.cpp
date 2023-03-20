@@ -74,22 +74,36 @@ public:
         isSet = true;
     }
 
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     explicit operator bool() const noexcept
     {
         return isSet;
     }
 
+    /**
+     * Returns the product's name.
+     * @return The product's name
+     */
     const std::string& getName() const
     {
         return name;
     }
 
+    /**
+     * Returns the size of the product in bytes.
+     * @return The size of the product in bytes
+     */
     ProdSize getProdSize() const
     {
         return prodSize;
     }
 };
 
+/// An implementation of a data product that resides in memory
 class MemProd::Impl
 {
     ProdInfo          prodInfo;
@@ -107,8 +121,8 @@ class MemProd::Impl
      *
      * @param[in] chunk        Chunk containing product-information segment to
      *                         be incorporated
-     * @retval    `true`       Chunk was incorporated
-     * @retval    `false`      Chunk was previously incorporated.
+     * @retval    true         Chunk was incorporated
+     * @retval    false        Chunk was previously incorporated.
      *                         `chunk.write()` was not called.
      * @throw InvalidArgument  Chunk is too small to contain product information
      * @threadsafety           Safe
@@ -134,8 +148,8 @@ class MemProd::Impl
      * Accepts a data segment for incorporation.
      *
      * @param[in] chunk        Chunk containing data-segment to be incorporated
-     * @retval    `true`       Chunk was incorporated
-     * @retval    `false`      Chunk was previously incorporated.
+     * @retval    true         Chunk was incorporated
+     * @retval    false        Chunk was previously incorporated.
      *                         `chunk.write()` was not called.
      * @throw InvalidArgument  Segment index is too large. `chunk.write()` was
      *                         not called.
@@ -215,8 +229,8 @@ public:
      * Accepts a chunk for incorporation.
      *
      * @param[in] chunk     Chunk to be incorporated
-     * @retval    `true`    Chunk was incorporated
-     * @retval    `false`   Chunk was previously incorporated. `log()` called.
+     * @retval    true      Chunk was incorporated
+     * @retval    false     Chunk was previously incorporated. `log()` called.
      * @threadsafety        Safe
      * @exceptionsafety     Strong guarantee
      * @cancellationpoint   No
@@ -233,8 +247,8 @@ public:
      * Indicates if this instance is complete (i.e., `accept()` has been called
      * for all segments).
      *
-     * @retval `true`   Instance is complete
-     * @retval `false`  Instance is not complete
+     * @retval true     Instance is complete
+     * @retval false    Instance is not complete
      */
     bool isComplete() const noexcept
     {

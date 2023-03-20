@@ -34,8 +34,8 @@
 
 namespace hycast {
 
-typedef std::chrono::steady_clock Clock;
-typedef Clock::time_point         TimePoint;
+typedef std::chrono::steady_clock Clock;     ///< Type of clock used
+typedef Clock::time_point         TimePoint; ///< Type of time point used
 
 /**
  * Implementation of `DelayQueue`.
@@ -132,6 +132,10 @@ public:
         , isClosed{false}
     {}
 
+    /**
+     * Returns the number of elements in the queue.
+     * @return The number of elements in the queue
+     */
     size_t size() const {
         Guard guard{mutex};
         return queue.size();
@@ -224,6 +228,9 @@ public:
         cond.notify_all();
     }
 
+    /**
+     * Closes the queue. Upon return, no more elements will be added.
+     */
     void close() {
         Guard guard{mutex};
 

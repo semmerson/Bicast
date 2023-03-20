@@ -30,6 +30,7 @@
 
 namespace hycast {
 
+/// A pattern & action
 struct PatternAction
 {
     std::regex     include;        ///< Product names to be included
@@ -42,6 +43,12 @@ struct PatternAction
         , actionTemplate()  // Will test false
     {}
 
+    /**
+     * Constructs.
+     * @param[in] include         The pattern a product's name must match
+     * @param[in] exclude         The pattern a product's name must not match
+     * @param[in] actionTemplate  The template for acting on matching products
+     */
     PatternAction(
             std::regex&     include,
             std::regex&     exclude,

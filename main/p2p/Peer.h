@@ -40,6 +40,7 @@ namespace hycast {
 class Peer
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<Peer>;
 
     /**
@@ -57,7 +58,6 @@ public:
      *
      * @param[in] p2pMgr       Subscriber's P2P manager
      * @param[in] rpc          RPC instance
-     * @param[in] dataSock     Socket for data
      */
     static Pimpl create(
             SubP2pMgr& p2pMgr,
@@ -84,32 +84,32 @@ public:
     /**
      * Indicates if this instance was constructed as a client.
      *
-     * @retval `true`   Constructed as a client
-     * @retval `false`  Constructed by a server
+     * @retval true     Constructed as a client
+     * @retval false    Constructed by a server
      */
     virtual bool isClient() const noexcept =0;
 
     /**
      * Indicates if this instance is the publisher.
      *
-     * @retval `true`   Instance is publisher
-     * @retval `false`  Instance is not publisher
+     * @retval true     Instance is publisher
+     * @retval false    Instance is not publisher
      */
     virtual bool isPub() const noexcept =0;
 
     /**
      * Indicates if the remote peer is the publisher.
      *
-     * @retval `true`   Remote peer is publisher
-     * @retval `false`  Remote peer is not publisher
+     * @retval true     Remote peer is publisher
+     * @retval false    Remote peer is not publisher
      */
     virtual bool isRmtPub() const noexcept =0;
 
     /**
      * Indicates if the remote node is a path to the publisher.
      *
-     * @retval `true`   Remote node is a path to the publisher
-     * @retval `false`  Remote node isn't a path to the publisher
+     * @retval true     Remote node is a path to the publisher
+     * @retval false    Remote node isn't a path to the publisher
      */
     virtual bool isRmtPathToPub() const noexcept =0;
 
@@ -128,12 +128,34 @@ public:
      */
     virtual SockAddr getRmtAddr() const noexcept =0;
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     virtual size_t hash() const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is less than the other
+     * @retval    false    This instance is not less than the other
+     */
     virtual bool operator<(const Peer& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is equal to the other
+     * @retval    false    This instance is not equal to the other
+     */
     virtual bool operator==(const Peer& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is not equal to another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is not equal to the other
+     * @retval    false    This instance is equal to the other
+     */
     virtual bool operator!=(const Peer& rhs) const noexcept =0;
 
     /**
@@ -156,7 +178,7 @@ public:
     /**
      * Halts this instance. Causes `run()` to return.
      *
-     * @asyncsignalsafety  Safe
+     * @asyncsignalsafe  Safe
      */
     virtual void halt() =0;
 
@@ -201,6 +223,10 @@ public:
      * @see       `start()`
      */
     virtual void notify(const ProdId    prodId) =0;
+    /**
+     * Notifies the remote peer about an available data segment.
+     * @param[in] dataSegId  ID of the data segment
+     */
     virtual void notify(const DataSegId dataSegId) =0;
 
     /**
@@ -239,16 +265,16 @@ public:
      * Receives notification to add a potential peer-server.
      *
      * @param[in] p2pSrvr  Potential peer-server to add
-     * @retval    `true`   Success
-     * @retval    `false`  EOF
+     * @retval    true     Success
+     * @retval    false    EOF
      */
     virtual void recvAdd(const SockAddr p2pSrvr) =0;
     /**
      * Receives notification to add potential peer-servers.
      *
-     * @param[in] p2pSrvr  Potential peer-servers to add
-     * @retval    `true`   Success
-     * @retval    `false`  EOF
+     * @param[in] tracker  Potential peer-servers to add
+     * @retval    true     Success
+     * @retval    false    EOF
      */
     virtual void recvAdd(const Tracker tracker) =0;
 
@@ -256,16 +282,16 @@ public:
      * Receives notification to remove a potential peer-server.
      *
      * @param[in] p2pSrvr  Potential peer-server to remove
-     * @retval    `true`   Success
-     * @retval    `false`  EOF
+     * @retval    true     Success
+     * @retval    false    EOF
      */
     virtual void recvRemove(const SockAddr p2pSrvr) =0;
     /**
      * Receives notification to remove potential peer-servers.
      *
-     * @param[in] p2pSrvr  Potential peer-servers to remove
-     * @retval    `true`   Success
-     * @retval    `false`  EOF
+     * @param[in] tracker  Potential peer-servers to remove
+     * @retval    true     Success
+     * @retval    false    EOF
      */
     virtual void recvRemove(const Tracker tracker) =0;
 
@@ -273,16 +299,16 @@ public:
      * Receives notification of available product-information.
      *
      * @param[in] prodId   Identifier of the data-product
-     * @retval    `true`   Request the datum
-     * @retval    `false`  Don't request the datum
+     * @retval    true     Request the datum
+     * @retval    false    Don't request the datum
      */
     virtual bool recvNotice(const ProdId    prodId) =0;
     /**
      * Receives notification of an available data-segment.
      *
      * @param[in] dataSegId  Identifier of the data-segment
-     * @retval    `true`     Request the datum
-     * @retval    `false`    Don't request the datum
+     * @retval    true       Request the datum
+     * @retval    false      Don't request the datum
      */
     virtual bool recvNotice(const DataSegId dataSegId) =0;
 
@@ -303,16 +329,16 @@ public:
      * Receives information on a product.
      *
      * @param[in] prodInfo  Data-product information
-     * @retval    `true`    Success
-     * @retval    `false`   EOF
+     * @retval    true      Success
+     * @retval    false     EOF
      */
     virtual void recvData(const ProdInfo prodInfo) =0;
     /**
      * Receives a data-segment.
      *
      * @param[in] dataSeg  Data-segment
-     * @retval    `true`   Success
-     * @retval    `false`  EOF
+     * @retval    true     Success
+     * @retval    false    EOF
      */
     virtual void recvData(const DataSeg dataSeg) =0;
 
@@ -337,9 +363,11 @@ template<typename P2P_MGR>
 class P2pSrvr
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<P2pSrvr<P2P_MGR>>;
 
     /**
+     * Returns a smart pointer to an instance.
      * @throw InvalidArgument  Accept-queue size is zero
      */
     static Pimpl create(
@@ -347,6 +375,7 @@ public:
             const unsigned    acceptQSize);
 
     /**
+     * Returns a smart pointer to an instance.
      * @throw InvalidArgument  Accept-queue size is zero
      */
     static Pimpl create(
@@ -355,6 +384,10 @@ public:
 
     virtual ~P2pSrvr() {};
 
+    /**
+     * Returns the socket address of the P2P server.
+     * @return The socket address of the P2P server
+     */
     virtual SockAddr getSrvrAddr() const =0;
 
     /**
@@ -370,27 +403,41 @@ public:
     virtual void halt() =0;
 };
 
-using PubP2pSrvr = P2pSrvr<PubP2pMgr>;
-using SubP2pSrvr = P2pSrvr<SubP2pMgr>;
+using PubP2pSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P server
+using SubP2pSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P server
 
 } // namespace
 
 /******************************************************************************/
 
 namespace std {
+    /// Hash code class-function for an implementation of a peer
     template<>
     struct hash<hycast::Peer::Pimpl> {
+        /**
+         * Returns the hash code of a peer.
+         * @param[in] peer  The peer
+         * @return The hash code of the peer
+         */
         size_t operator()(const hycast::Peer::Pimpl peer) const noexcept {
             return peer->hash();
         }
     };
 
+    /// Less-than class function for an implementation of a peer
     template<>
     struct less<hycast::Peer::Pimpl> {
+        /**
+         * Indicates if one peer is less than another
+         * @param[in] rhs       The left-hand-side peer
+         * @param[in] lhs       The right-hand-side peer
+         * @retval    true      The first peer is less than the second
+         * @retval    false     The first peer is not less than the second
+         */
         bool operator()(
-                const hycast::Peer::Pimpl peer1,
-                const hycast::Peer::Pimpl peer2) const noexcept {
-            return *peer1 < *peer2;
+                const hycast::Peer::Pimpl lhs,
+                const hycast::Peer::Pimpl rhs) const noexcept {
+            return *lhs < *rhs;
         }
     };
 }

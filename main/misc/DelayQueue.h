@@ -44,17 +44,24 @@ class DelayQueue final
     std::shared_ptr<Impl> pImpl;
 
 public:
-    using  Duration = DUR;
+    using  Duration = DUR; ///< Duration type
 
+    /// Iterator for a delay-queue
     class Iterator : public std::iterator<std::input_iterator_tag, VALUE> {
     public:
+        /**
+         *  Constructs an iterator to the beginning of the queue.
+         */
         Iterator(VALUE* x);
+        /**
+         *  Constructs a constant iterator to the beginning of the queue.
+         */
         Iterator(const Iterator& mit);
-        Iterator& operator++();
-        Iterator operator++(int);
-        bool operator==(const Iterator& rhs) const;
-        bool operator!=(const Iterator& rhs) const;
-        VALUE& operator*();
+        Iterator& operator++(); ///< Pre-increments to point to the next element
+        Iterator operator++(int); ///< Post-increments to point to the next element
+        bool operator==(const Iterator& rhs) const; ///< Equality operator
+        bool operator!=(const Iterator& rhs) const; ///< Inequality operator
+        VALUE& operator*(); ///< Dereferences the pointed-to element
     };
 
     /**
@@ -101,16 +108,16 @@ public:
     /**
      * Indicates if `pop()` will immediately return.
      *
-     * @retval `true`     Yes
-     * @retval `false`    No
+     * @retval true       Yes
+     * @retval false      No
      * @cancellationpoint No
      */
     bool ready() const;
 
     /**
      * Indicates if the queue is empty.
-     * @return `true`     The queue is empty
-     * @return `false`    The queue is not empty
+     * @return true       The queue is empty
+     * @return false      The queue is not empty
      * @exceptionsafety   Nothrow
      * @threadsafety      Safe
      * @cancellationpoint No
@@ -131,12 +138,28 @@ public:
      */
     void close();
 
+    /**
+     * Returns an iterator to the beginning of the queue.
+     * @return An iterator to the beginning of the queue
+     */
     Iterator begin();
 
+    /**
+     * Returns a constant iterator to the beginning of the queue.
+     * @return A constant iterator to the beginning of the queue
+     */
     Iterator begin() const;
 
+    /**
+     * Returns an iterator to just beyond the end of the queue.
+     * @return An iterator to just beyond the end of the queue
+     */
     Iterator end();
 
+    /**
+     * Returns a constant iterator to just beyond the end of the queue.
+     * @return A constant iterator to just beyond the end of the queue
+     */
     Iterator end() const;
 };
 

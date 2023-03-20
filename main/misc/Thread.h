@@ -62,6 +62,10 @@ public:
     {
         mutex.unlock();
     }
+    /**
+     * Copy constructs
+     * @param[in] unlock  The other instance
+     */
     UnlockGuard(const UnlockGuard& unlock) =delete;
     /**
      * Destroys. Locks the mutex given to the constructor.
@@ -74,6 +78,7 @@ public:
 
 /******************************************************************************/
 
+/// A class for blocking a thread until cued
 class Cue
 {
     class                 Impl;
@@ -81,6 +86,9 @@ class Cue
 
 public:
     Cue();
+    /**
+     * Signals (i.e., "cues") this instance causing `wait()` to return.
+     */
     void cue() const;
     /**
      * NB: A cancellation point.
@@ -90,16 +98,39 @@ public:
 
 /******************************************************************************/
 
+/// A class for synchronizing the arrival of multiple threads
 class Barrier
 {
     pthread_barrier_t barrier;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] numThreads  Number of threads that will access this instance
+     */
     Barrier(const int numThreads);
 
+    /**
+     * Copy constructs.
+     * @param[in] that  The other instance
+     */
     Barrier(const Barrier& that) =delete;
+    /**
+     * Move constructs.
+     * @param[in] that  The other instance
+     */
     Barrier(Barrier&& that) =delete;
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other, right-hand-side instance
+     * @return         A reference to this, just-assigned instance
+     */
     Barrier& operator=(const Barrier& rhs) =delete;
+    /**
+     * Move assigns.
+     * @param[in,out] rhs  The other, right-hand-side instance
+     * @return             A reference to this, just-assigned instance
+     */
     Barrier& operator=(Barrier&& rhs) =delete;
 
     /**
@@ -114,6 +145,7 @@ public:
 
 /******************************************************************************/
 
+/// Thread
 class Thread final
 {
 public:
@@ -128,7 +160,7 @@ public:
     public:
         /**
          * Constructs.
-         * @throw SystemError  `::pthread_key_create()` failed
+         * @throw SystemError  Couldn't create thread
          */
         PtrKey()
             : key{}
@@ -176,7 +208,7 @@ public:
     public:
         /**
          * Constructs.
-         * @throw SystemError  `::pthread_key_create()` failed
+         * @throw SystemError  Couldn't create thread
          */
         ValueKey()
             : key{}
@@ -272,8 +304,8 @@ private:
          * because the negative can't be known a priori in a multi-threaded
          * environment.
          *
-         * @retval `true`   The mutex is locked
-         * @retval `false`  The mutex is not locked
+         * @retval true     The mutex is locked
+         * @retval false    The mutex is not locked
          */
         bool isLocked() const;
 
@@ -330,8 +362,8 @@ private:
         /**
          * Indicates if this instance is joinable or not. The mutex must be
          * locked.
-         * @return `true`   Instance is joinable
-         * @return `false`  Instance is not joinable
+         * @return true     Instance is joinable
+         * @return false    Instance is not joinable
          */
         bool lockedJoinable() const noexcept;
 
@@ -485,8 +517,8 @@ private:
 
         /**
          * Indicates if this instance is joinable or not.
-         * @return `true`   Instance is joinable
-         * @return `false`  Instance is not joinable
+         * @return true     Instance is joinable
+         * @return false    Instance is not joinable
          */
         bool joinable() const;
 
@@ -543,8 +575,6 @@ public:
      *                      `operator()` method
      * @param[in] args      Arguments of the `operator()` method
      * @see                 ~Thread
-     * @guarantee           The associated thread-of-execution will have been
-     *                      joined when the destructor returns
      */
     template<class Callable, class... Args>
     explicit Thread(Callable&& callable, Args&&... args)
@@ -608,8 +638,8 @@ public:
     /**
      * Sets the cancelability of the current thread.
      * @param[in] enable   Whether or not to enable cancelability
-     * @retval    `true`   Cancelability was enabled
-     * @retval    `false`  Cancelability was not enabled
+     * @retval    true     Cancelability was enabled
+     * @retval    false    Cancelability was not enabled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      */
@@ -617,8 +647,8 @@ public:
 
     /**
      * Disables cancelability of the current thread. Disables `testCancel()`.
-     * @retval    `true`   Cancelability was enabled
-     * @retval    `false`  Cancelability was not enabled
+     * @retval    true     Cancelability was enabled
+     * @retval    false    Cancelability was not enabled
      * @exceptionsafety    Strong guarantee
      * @threadsafety       Safe
      * @see testCancel()
@@ -656,7 +686,7 @@ public:
 
     /**
      * Indicates if this instance is joinable.
-     * @retval `true`  Iff this instance is joinable
+     * @retval true    Iff this instance is joinable
      */
     bool joinable() const noexcept;
 
@@ -684,21 +714,35 @@ public:
 /******************************************************************************/
 
 namespace std {
+    /// Class function for hashing a thread.
     template<> struct hash<hycast::Thread>
     {
+        /**
+         * Returns the hash code of a thread.
+         * @param[in] thread  The thread
+         * @return The hash code of a thread
+         */
         size_t operator()(hycast::Thread& thread) const noexcept
         {
             return hash<hycast::Thread::Id>()(thread.id());
         }
     };
 
+    /// The less-than class function for a thread
     template<> struct less<hycast::Thread>
     {
+        /**
+         * Indicates if one thread is less than another.
+         * @param[in] lhs      The left-hand-side thread
+         * @param[in] rhs      The right-hand-side thread
+         * @retval    true     The left-hand-side is less than the right-hand-side
+         * @retval    false    The left-hand-side is not less than the right-hand-side
+         */
         size_t operator()(
-                hycast::Thread& thread1,
-                hycast::Thread& thread2) const noexcept
+                hycast::Thread& lhs,
+                hycast::Thread& rhs) const noexcept
         {
-            return less<hycast::Thread::Id>()(thread1.id(), thread2.id());
+            return less<hycast::Thread::Id>()(lhs.id(), rhs.id());
         }
     };
 }

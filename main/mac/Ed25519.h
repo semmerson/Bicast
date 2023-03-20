@@ -43,14 +43,32 @@ public:
      */
     Ed25519(const std::string& pubKey);
 
+    /**
+     * Copy constructs.
+     * @param[in] other  The other instance
+     */
     Ed25519(Ed25519& other) =delete;
 
+    /**
+     * Move constructs.
+     * @param[in,out] other  The other instance
+     */
     Ed25519(Ed25519&& other) =delete;
 
     ~Ed25519();
 
+    /**
+     * Copy assigns from another instance.
+     * @param[in] rhs  The other instance
+     * @return         A reference to this just-assigned instance
+     */
     Ed25519& operator=(const Ed25519& rhs) =delete;
 
+    /**
+     * Move assigns from another instance.
+     * @param[in,out] rhs  The other instance
+     * @return             A reference to this just-assigned instance
+     */
     Ed25519& operator=(const Ed25519&& rhs) =delete;
 
     /**
@@ -83,7 +101,7 @@ public:
      * @return                    Message signature
      * @throw std::runtime_error  Failure
      */
-    std::string sign(const std::string& message);
+    std::string sign(const std::string& msg);
 
     /**
      * Verifies a signed message.

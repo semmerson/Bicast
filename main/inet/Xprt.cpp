@@ -29,6 +29,7 @@
 
 namespace hycast {
 
+/// An implementation of a transport
 class Xprt::Impl
 {
     Socket sock;
@@ -86,28 +87,52 @@ class Xprt::Impl
     }
 
 public:
+    /**
+     * Constructs from a socket.
+     * @param[in] sock  The socket
+     */
     Impl(Socket sock)
         : sock(sock)
     {}
 
     virtual ~Impl() {};
 
+    /**
+     * Returns the underlying socket.
+     * @return The underlying socket
+     */
     Socket getSocket() const noexcept {
         return sock;
     }
 
+    /**
+     * Returns the socket address of the remote endpoint.
+     * @return The socket address of the remote endpoint
+     */
     SockAddr getRmtAddr() const noexcept {
         return sock.getRmtAddr();
     }
 
+    /**
+     * Returns the socket address of the local endpoint.
+     * @return The socket address of the local endpoint
+     */
     SockAddr getLclAddr() const {
         return sock.getLclAddr();
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const {
         return sock.to_string();
     }
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const {
         return sock.hash();
     }
@@ -116,14 +141,33 @@ public:
      * Write functions:
      */
 
+    /**
+     * Writes a boolean value.
+     * @param[in] value    Value to be written
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(const bool         value) {
         //LOG_DEBUG("Writing boolean value to %s", to_string().data());
         return sock.write(value);
     }
+    /**
+     * Writes an unsigned, 8-bit value.
+     * @param[in] value    Value to be written
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(const uint8_t      value) {
         //LOG_DEBUG("Writing 1-byte value to %s", to_string().data());
         return sock.write(value);
     }
+    /**
+     * Writes bytes.
+     * @param[in] bytes    Bytes to be written
+     * @param[in] nbytes   Number of bytes to write
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(
             const void*  bytes,
             const size_t nbytes) {
@@ -145,8 +189,8 @@ public:
      * @tparam    UINT     Type of serialized, unsigned integer to hold string
      *                     length
      * @param[in] string   String to be written
-     * @retval    `true`   Success
-     * @retval    `false`  Lost connection
+     * @retval    true     Success
+     * @retval    false    Lost connection
      */
     template<typename UINT>
     bool write(const std::string& string) {
@@ -159,6 +203,11 @@ public:
         return sock.write(hton(size)) && sock.write(string.data(), size);
     }
 
+    /**
+     * Flushes the underlying socket.
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool flush() {
         return sock.flush();
     }
@@ -167,6 +216,12 @@ public:
      * Read functions:
      */
 
+    /**
+     * Reads a boolean value.
+     * @param[out] value    Value to be read
+     * @retval     true     Success
+     * @retval     false    Lost connection
+     */
     bool read(bool&        value) {
         if (sock.read(value)) {
             //LOG_DEBUG("Read boolean value from %s", to_string().data());
@@ -174,6 +229,12 @@ public:
         }
         return false;
     }
+    /**
+     * Reads an unsigned, 8-bit value.
+     * @param[out] value    Value to be read
+     * @retval     true     Success
+     * @retval     false    Lost connection
+     */
     bool read(uint8_t&     value) {
         if (sock.read(value)) {
             //LOG_DEBUG("Read 1-byte value from %s", to_string().data());
@@ -181,6 +242,13 @@ public:
         }
         return false;
     }
+    /**
+     * Reads bytes.
+     * @param[out] value    Bytes to be set
+     * @param[in]  nbytes   Number of bytes to read
+     * @retval     true     Success
+     * @retval     false    Lost connection
+     */
     bool read(void*        value,
               size_t       nbytes) {
         return sock.read(value, nbytes);
@@ -204,8 +272,8 @@ public:
      * @tparam    UINT     Type of serialized, unsigned integer that holds
      *                     string length
      * @param[in] string   String to be read
-     * @retval    `true`   Success
-     * @retval    `false`  Lost connection
+     * @retval    true     Success
+     * @retval    false    Lost connection
      */
     template<typename UINT>
     bool read(std::string& string) {
@@ -223,10 +291,16 @@ public:
         return false;
     }
 
+    /**
+     * Clears the underlying socket for the next read. Does nothing for TCP. Deletes the datagram for UDP.
+     */
     void clear() {
         sock.clear();
     }
 
+    /**
+     * Shuts down reading from the underlying socket.
+     */
     void shutdown() {
         sock.shutdown(SHUT_RD);
     }

@@ -31,6 +31,7 @@
 
 namespace hycast {
 
+/// A class with utility functions for files
 class FileUtil
 {
 public:
@@ -38,8 +39,8 @@ public:
      * Indicates if a pathname is absolute or not.
      *
      * @param[in] pathname  Pathname
-     * @return    `true`    Pathname is absolute
-     * @return    `false`   Pathname is relative
+     * @return    true      Pathname is absolute
+     * @return    false     Pathname is relative
      */
     static bool isAbsolute(const std::string& pathname);
 
@@ -55,12 +56,31 @@ public:
      */
     static std::string makeAbsolute(const std::string& pathname);
 
+    /**
+     * Returns the filename portion of a pathname.
+     * @param[in] pathname  The pathname
+     * @return The filename portion of the pathname
+     */
     static std::string filename(const std::string& pathname) noexcept;
 
+    /**
+     * Returns the directory portion of a pathname.
+     * @param[in] pathname  The pathname
+     * @return The directory portion of the pathname
+     */
     static std::string dirname(const std::string& pathname) noexcept;
 
+    /**
+     * Trims a pathname by removing any trailing slashes.
+     * @param[in,out] pathname  The pathname to be trimmed
+     */
     static void trimPathname(std::string& pathname) noexcept;
 
+    /**
+     * Returns the size of the regular file referenced by a pathname.
+     * @param[in] pathname  The pathname of the file
+     * @return The size, in bytes, of the regular file referenced by the pathname
+     */
     static size_t getSize(const std::string& pathname);
 
     /**
@@ -69,7 +89,7 @@ public:
      * @param[in]  pathname     Pathname of existing file
      * @param[out] statBuf      Metadata of the file
      * @return                  Reference to `statBuf`
-     * @throws     SystemError  `::stat()` failure
+     * @throws     SystemError  Couldn't get information on the file
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
@@ -82,10 +102,11 @@ public:
      * Returns the statistics of a file.
      *
      * @param[in] rootFd        File descriptor open on root-directory
-     * @param[in] pathname      Pathname of existing file
+     * @param[in] pathname      Pathname of existing file. May be absolute or relative to the
+     *                          root-directory.
      * @return                  Statistics of the file
-     * @throws    SYSTEM_ERROR  `::openat()` failure
-     * @throws    SYSTEM_ERROR  `::stat()` failure
+     * @throws    SYSTEM_ERROR  Couldn't open the file.
+     * @throws    SYSTEM_ERROR  Couldn't get information on the file
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
@@ -100,7 +121,7 @@ public:
      * @param[in] pathname     Pathname of file
      * @param[in] uid          User ID
      * @param[in] gid          Group ID
-     * @throw     SystemError  `::chown()` failure on file
+     * @throw     SystemError  Couldn't change ownership of file
      */
     static void setOwnership(
             const String& pathname,
@@ -112,7 +133,7 @@ public:
      *
      * @param[in] pathname     Pathname of file
      * @param[in] protMask     Protection mask (e.g., 0644)
-     * @throw     SystemError  `::chmod()` failure on file
+     * @throw     SystemError  Couldn't change mode of file
      */
     static void setProtection(
             const String& pathname,
@@ -122,7 +143,8 @@ public:
      * Returns the modification time of a file.
      *
      * @param[in] pathname      Pathname of existing file
-     * @return                  Modification time of the file
+     * @param[out] modTime      Modification time of the Tile
+     * @return                  Reference to `modtime`
      * @throws    SYSTEM_ERROR  `stat()` failure
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
@@ -136,10 +158,11 @@ public:
      * Returns the modification time of a file.
      *
      * @param[in] rootFd        File descriptor open on root-directory
-     * @param[in] pathname      Pathname of existing file
+     * @param[in] pathname      Pathname of existing file. May be absolute or relative to the
+     *                          root-directory.
      * @return                  Modification time of the file
-     * @throws    SYSTEM_ERROR  `::openat()` failure
-     * @throws    SYSTEM_ERROR  `stat()` failure
+     * @throws    SYSTEM_ERROR  Couldn't open the file
+     * @throws    SYSTEM_ERROR  Couldn't get information on the file
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
@@ -190,10 +213,11 @@ public:
      * Returns the size of a file in bytes.
      *
      * @param[in] rootFd        File descriptor open on root-directory
-     * @param[in] pathname      Pathname of existing file
+     * @param[in] pathname      Pathname of existing file. Couldn't be absolute or relative to the
+     *                          root-directory.
      * @return                  Size of file in bytes
-     * @throws    SYSTEM_ERROR  `::openat()` failure
-     * @throws    SYSTEM_ERROR  `stat()` failure
+     * @throws    SYSTEM_ERROR  Couldn't open file
+     * @throws    SYSTEM_ERROR  Couldn't obtain information on the file
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
@@ -208,7 +232,7 @@ public:
      * @param[in] rootFd       File descriptor open on root-directory
      * @param[in] oldPathname  Old pathname relative to root directory
      * @param[in] newPathname  New pathname relative to root directory
-     * @throw SystemError      `::renameat()` failure
+     * @throw SystemError      Couldn't rename the file
      */
     static void rename(
             const int          rootFd,
@@ -265,7 +289,7 @@ public:
      * files in the tree are removed, including the root directory. Symbolic links are removed but
      * not the file the link references.
      *
-     * @param[in] pathname  Root of directory hierarchy
+     * @param[in] dirPath  Root of directory hierarchy
      */
     static void rmDirTree(const std::string& dirPath);
 

@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Set the project name and version
-PROJECT(Hycast VERSION 1.0
-        DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
+PROJECT(Hycast VERSION 1.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
 
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
@@ -33,11 +32,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_LES
 endif()
 
 # Specify the Eclipse IDE version
-set(CMAKE_ECLIPSE_VERSION 4.17)
+set(CMAKE_ECLIPSE_VERSION 4.22)
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/.." CACHE PATH
-        "Installation root directory" FORCE)
+  set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/.." CACHE PATH "Installation root directory" FORCE)
 endif()
 
 # Configure a configuration header file
@@ -58,8 +56,7 @@ find_library(GTEST_LIBRARY gtest)
 if (GTEST_LIBRARY)
     find_path(GTEST_INCLUDE_DIR "gtest/gtest.h")
     if (NOT GTEST_INCLUDE_DIR)
-        message(STATUS "Gtest header-file wasn't found. "
-                "Unit-testing is disabled.")
+        message(STATUS "Gtest header-file wasn't found. Unit-testing is disabled.")
     else()
         # This must be done *before* adding the testing subdirectory
         include(CTest)
@@ -72,6 +69,14 @@ else()
     message(STATUS "Gtest library wasn't found. Unit-testing is disabled.")
 endif()
 
+# Specify the documentation
+set(DOXYGEN_ALIASES 
+    "exceptionsafety='@par Exception Safety:^^'" 
+    "threadsafety='@par Thread Safety:^^'" 
+    "asyncsignalsafe='@par Async-signal Safe:^^'" 
+    "cancellationpoint='@par Cancellation Point:^^'")
+doxygen_add_docs(doxydocs mainpage.md main ALL)
+
 # Install CHANGE_LOG and LICENSE
 SET(CMAKE_INSTALL_DOCDIR share/doc/hycast)
 install(FILES "${CMAKE_SOURCE_DIR}/CHANGE_LOG" DESTINATION
@@ -83,4 +88,5 @@ include(InstallRequiredSystemLibraries)
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGE_VERSION_MAJOR "${Hycast_VERSION_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${Hycast_VERSION_MINOR}")
+set(CPACK_GENERATOR "RPM")
 include(CPack)

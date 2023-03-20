@@ -30,10 +30,14 @@ namespace hycast {
 class McastImpl
 {
 protected:
-    UdpSock sock;
-    Xprt    xprt;
+    UdpSock sock; ///< Underlying UDP socket
+    Xprt    xprt; ///< Underlying transport
 
 public:
+    /**
+     * Constructs.
+     * @param[in] sock  Underlying UDP socket
+     */
     McastImpl(const UdpSock sock)
         : sock(sock)
         , xprt{sock}
@@ -52,6 +56,11 @@ class McastPubImpl final : public McastImpl, public McastPub
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] mcastAddr  Socket address of the multicast group
+     * @param[in] ifaceAddr  IP address of the interface to use
+     */
     McastPubImpl(
             const SockAddr mcastAddr,
             const InetAddr ifaceAddr)
@@ -98,19 +107,19 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] mcastAddr        Address of multicast group
+     * @param[in] ssmAddr          Address of source-specific multicast group
      * @param[in] srcAddr          IP address of publisher
-     * @param[in] iface            IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] ifaceAddr        IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] node             Subscribing node to call
      * @throw     InvalidArgument  Multicast group IP address isn't source-specific
      * @throw     LogicError       IP address families don't match
      */
     McastSubImpl(
-            const SockAddr& mcastAddr,
+            const SockAddr& ssmAddr,
             const InetAddr& srcAddr,
             const InetAddr& ifaceAddr,
             SubNode&        node)
-        : McastImpl{UdpSock{mcastAddr, srcAddr, ifaceAddr}}
+        : McastImpl{UdpSock{ssmAddr, srcAddr, ifaceAddr}}
         , node(node)
     {}
 

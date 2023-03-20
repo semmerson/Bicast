@@ -37,9 +37,14 @@ public:
     class Impl;
 
 private:
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
 protected:
+    /**
+     * Constructs.
+     * @param[in] pImpl  Pointer to an implementation
+     */
     Action(Impl* const pImpl);
 
 public:
@@ -48,18 +53,22 @@ public:
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
-     * @retval `true`  This instance is valid
-     * @retval `false` This instance is not valid
+     * @retval true    This instance is valid
+     * @retval false   This instance is not valid
      */
     operator bool() const noexcept;
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const;
 
     /**
      * Indicates whether or not this instance should persist between data-products.
      *
-     * @retval `true`   This instance should persist
-     * @retval `true`   This instance should not persist
+     * @retval true     This instance should persist
+     * @retval true     This instance should not persist
      */
     bool shouldPersist() const noexcept;
 
@@ -74,8 +83,8 @@ public:
      * Indicates if this instance is considered equal to another.
      *
      * @param[in] rhs      The other instance
-     * @retval    `true`   This instance is equal to the other
-     * @retval    `false`  This instance is not equal to the other
+     * @retval    true     This instance is equal to the other
+     * @retval    false    This instance is not equal to the other
      */
     bool operator==(const Action& rhs) const noexcept;
 
@@ -84,8 +93,8 @@ public:
      *
      * @param[in] data      The data to be processed
      * @param[in] nbytes    The amount of data in bytes
-     * @retval    `true`    Success
-     * @retval    `false`   Too many file descriptors are open
+     * @retval    true      Success
+     * @retval    false     Too many file descriptors are open
      * @throw SystemError   System failure
      */
     bool process(
@@ -152,8 +161,14 @@ public:
 } // namespace
 
 namespace std {
+    /// The hash code class for an action
     template<>
     struct hash<Action> {
+        /**
+         * Returns the hash code of an action.
+         * @param[in] action  The action
+         * @return The hash code of the action
+         */
         size_t operator()(const Action action) const {
             return action.hash();
         }

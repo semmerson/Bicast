@@ -60,8 +60,8 @@ class Tracker::Impl final : public XprtAble
      *
      * @pre                 Mutex is locked
      * @param[in] srvrAddr  Socket address to be added
-     * @retval    `true`    Address was added
-     * @retval    `false`   Address was not added because it already exists
+     * @retval    true      Address was added
+     * @retval    false     Address was not added because it already exists
      */
     bool add(const SockAddr& srvrAddr) {
         LOG_ASSERT(!mutex.try_lock());
@@ -107,6 +107,10 @@ class Tracker::Impl final : public XprtAble
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] capacity  Maximum number of entries
+     */
     Impl(const size_t capacity)
         : mutex()
         , cond()
@@ -118,21 +122,39 @@ public:
             throw INVALID_ARGUMENT("Capacity is zero");
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const {
         Guard guard(mutex);
         return "{size=" + std::to_string(map.size()) + "}";
     }
 
+    /**
+     * Returns the number of P2P server addresses.
+     * @return The number of P2P server addresses
+     */
     size_t size() const {
         Guard guard(mutex);
         return map.size();
     }
 
+    /**
+     * Adds a P2P server address.
+     * @param[in] srvrAddr  The P2P server address to be added
+     * @retval    true      Success
+     * @retval    false     The P2P server address was previously added
+     */
     bool insert(const SockAddr& srvrAddr) {
         Guard guard(mutex);
         return add(srvrAddr);
     }
 
+    /**
+     * Adds the P2P server addresses contained in another instance.
+     * @param[in] src  The other instance
+     */
     void insert(const Impl& src) {
         if (this != &src) { // No need if same object
             // Ensure that mutexes are always locked in the same order to prevent deadlock
@@ -154,16 +176,28 @@ public:
         }
     }
 
+    /**
+     * Deletes the socket address of a P2P server.
+     * @param[in] srvrAddr  The socket address of the P2P server to delete
+     */
     void erase(const SockAddr srvrAddr) {
         return remove(srvrAddr);
     }
 
+    /**
+     * Deletes all P2P server socket addresses contained in another instance.
+     * @param[in] src  The other instance
+     */
     void erase(const Impl& src) {
         Guard srcGuard(src.mutex);
         for (const auto& pair : src.map)
             remove(pair.first);
     }
 
+    /**
+     * Removes and returns the first P2P server's socket address.
+     * @return The first P2P server's socket address
+     */
     SockAddr removeHead() {
         Lock lock{mutex};
         cond.wait(lock, [&]{return !map.empty() || done;});
@@ -184,6 +218,9 @@ public:
         return oldHead;
     }
 
+    /**
+     * Causes `removeHead()` to always return an invalid value.
+     */
     void halt() {
         Guard guard{mutex};
         done = true;

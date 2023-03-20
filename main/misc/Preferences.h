@@ -32,6 +32,7 @@ using String = std::string;
 class Preferences
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<Preferences>;
 
     /**
@@ -49,10 +50,12 @@ public:
      *
      * @tparam    T         Type of value
      * @param[in] def       Default value if preference doesn't exist
+     * @param[in] filename  Name of the file for which the preference is wanted
+     * @param[in] function  Name of the function in the file for which the preference is wanted
      * @param[in] names     String components of preference's name from
      *                      outermost to innermost
      * @return              Pair whose first element is the value and whose
-     *                      second element is `false` if the default value
+     *                      second element is false   if the default value
      *                      was returned and `true` otherwise
      * @throw RuntimeError  Most likely the preference's value isn't convertible
      *                      to a `T`

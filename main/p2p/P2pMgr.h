@@ -45,7 +45,9 @@ class SubNode;
 class P2pMgr
 {
 public:
+    /// Type of this peer
     using PeerType = PubPeer;
+    /// Smart pointer to the implementation
     using Pimpl    = std::shared_ptr<P2pMgr>;
 
     /**
@@ -57,11 +59,17 @@ public:
         SUBSCRIBER  // Subscriber's P2P manager
     };
 
-    ///< Peer-to-peer runtime parameters
+    /// Peer-to-peer runtime parameters
     struct RunPar {
+        /// Runtime parameters for the P2P server
         struct Srvr {
             SockAddr addr;        ///< Socket address
-            int      acceptQSize; ///< Size of `::listen()` queue
+            int      acceptQSize; ///< Size of `listen()` queue
+            /**
+             * Constructs.
+             * @param[in] addr         Address for local P2P server
+             * @param[in] listenSize   Size of listen() queue
+             */
             Srvr(   const SockAddr addr,
                     const int      listenSize)
                 : addr(addr)
@@ -69,8 +77,16 @@ public:
             {}
         }         srvr;           ///< P2P server
         int       maxPeers;       ///< Maximum number of connected peers
-        int       trackerSize;    ///< Maximum size of pool of P2P server addresses
+        int       trackerSize;    ///< Maximum size of pool of potential P2P server addresses
         int       evalTime;       ///< Time interval for evaluating peer performance in seconds
+        /**
+         * Constructs.
+         * @param[in] addr         Address for local P2P server
+         * @param[in] listenSize   Size of listen() queue
+         * @param[in] maxPeers     Maximum number of neighboring peers to have
+         * @param[in] trackerSize  Maximum size of pool of potential P2P server addresses
+         * @param[in] evalTime     Time interval for evaluating peer performance in seconds
+         */
         RunPar( const SockAddr addr,
                 const int      listenSize,
                 const int      maxPeers,
@@ -92,7 +108,7 @@ public:
      *                          and not the wildcard. The port number may be 0, in which case the
      *                          operating system will choose the port.
      * @param[in] maxPeers      Maximum number of subscribing peers
-     * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
+     * @param[in] listenSize    Size of listening queue. 0 obtains the system default.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @throw InvalidArgument   `listenSize` is zero
      * @return                  Publisher's P2P manager
@@ -125,8 +141,8 @@ public:
     /**
      * Halts execution. Causes `run()` to return. Doesn't block.
      *
-     * @asyncsignalsafety  Safe
-     * @see                `run()`
+     * @asyncsignalsafe  Yes
+     * @see              `run()`
      */
     virtual void halt() =0;
 
@@ -156,37 +172,33 @@ public:
     /**
      * Receives the address of a potential peer-server from a remote peer.
      *
-     * @param[in] srvrAddr     Socket address of potential peer-server
-     * @param[in] rmtAddr      Socket address of remote peer
+     * @param[in] p2pSrvr     Socket address of potential peer-server
      */
     virtual void recvAdd(const SockAddr p2pSrvr) {}; // Default implemented so mocks don't have to
     /**
      * Receives a set of potential peer servers from a remote peer.
      *
      * @param[in] tracker      Set of potential peer-servers
-     * @param[in] rmtAddr      Socket address of remote peer
      */
     virtual void recvAdd(Tracker tracker) {};
 
     /**
      * Receives the address of a bad peer-server from a remote peer.
      *
-     * @param[in] srvrAddr     Socket address of potential peer-server
-     * @param[in] rmtAddr      Socket address of remote peer
+     * @param[in] p2pSrvr     Socket address of potential peer-server
      */
     virtual void recvRemove(const SockAddr p2pSrvr) {};
     /**
      * Receives a set of bad peer servers from a remote peer.
      *
      * @param[in] tracker      Set of bad peer-servers
-     * @param[in] rmtAddr      Socket address of remote peer
      */
     virtual void recvRemove(const Tracker tracker) {};
 
     /**
      * Notifies connected remote peers about the availability of product information.
      *
-     * @param[in] prodInfo  Product information
+     * @param[in] prodId  Product identifier
      */
     virtual void notify(const ProdId prodId) =0;
 
@@ -238,7 +250,7 @@ public:
             const SockAddr  rmtAddr) =0;
 };
 
-using PubP2pMgr = P2pMgr;
+using PubP2pMgr = P2pMgr; ///< Type of publisher's P2P manager
 
 /**************************************************************************************************/
 
@@ -246,7 +258,8 @@ using PubP2pMgr = P2pMgr;
 class SubP2pMgr : public P2pMgr
 {
 public:
-    using PeerType  = SubPeer;
+    using PeerType  = SubPeer; ///< Type of peer handled by this class
+    /// Smart pointer to the implementation
     using Pimpl     = std::shared_ptr<SubP2pMgr>;
 
     /**
@@ -307,8 +320,8 @@ public:
      *
      * @param[in] notice       Which product
      * @param[in] rmtAddr      Socket address of remote peer
-     * @retval    `false`      Local peer shouldn't request from remote peer
-     * @retval    `true`       Local peer should request from remote peer
+     * @retval    false        Local peer shouldn't request from remote peer
+     * @retval    true         Local peer should request from remote peer
      */
     virtual bool recvNotice(const ProdId   notice,
                             const SockAddr rmtAddr) =0;
@@ -317,8 +330,8 @@ public:
      *
      * @param[in] notice       Which data-segment
      * @param[in] rmtAddr      Socket address of remote peer
-     * @retval    `false`      Local peer shouldn't request from remote peer
-     * @retval    `true`       Local peer should request from remote peer
+     * @retval    false        Local peer shouldn't request from remote peer
+     * @retval    true         Local peer should request from remote peer
      */
     virtual bool recvNotice(const DataSegId notice,
                             const SockAddr  rmtAddr) =0;

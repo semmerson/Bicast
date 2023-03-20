@@ -31,6 +31,10 @@
 
 namespace hycast {
 
+/**
+ * Template for an action. The template is reified into an action by replacement of its back-
+ * references with matches from the data product's name.
+ */
 class ActionTemplate
 {
 public:
@@ -40,6 +44,10 @@ private:
     std::shared_ptr<Impl> pImpl;
 
 protected:
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     ActionTemplate(Impl* const impl);
 
 public:
@@ -58,8 +66,8 @@ public:
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
-     * @retval `true`  This instance is valid
-     * @retval `false` This instance is not valid
+     * @retval true    This instance is valid
+     * @retval false   This instance is not valid
      */
     operator bool() const noexcept;
 

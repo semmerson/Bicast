@@ -212,6 +212,7 @@ protected:
     ThreadEx       threadEx;     ///< Subtask exception
 
     /**
+     * Starts this instance (i.e., starts this instance's threads).
      */
     void startImpl() {
         startThreads();
@@ -406,7 +407,7 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] listenSize    Size of `::listen()` queue
+     * @param[in] listenSize    Size of listening queue
      * @param[in] repoRoot      Pathname of the root directory of the repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open, data-products files
@@ -553,6 +554,7 @@ protected:
     }
 
 public:
+#if 0
     /**
      * Constructs.
      *
@@ -566,6 +568,7 @@ public:
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open files in repository
+     */
     SubNodeImpl(
             SubInfo&          subInfo,
             const InetAddr    mcastIface,
@@ -584,7 +587,7 @@ public:
         , numP2pDup{0}
         , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
     {}
-     */
+# endif
 
     /**
      * Constructs.
@@ -595,10 +598,10 @@ public:
      *                          wildcard. If the port number is zero, then the O/S will choose an
      *                          ephemeral port number.
      * @param[in] acceptQSize   Size of `RpcSrvr::accept()` queue. Don't use 0.
+     * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] repoDir       Pathname of root directory of data-product repository
-     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open files in repository
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
@@ -668,8 +671,8 @@ public:
      * peer-to-peer component.
      *
      * @param[in] prodId     Identifier of product
-     * @retval    `false`    Information shouldn't be requested
-     * @retval    `true`     Information should be requested
+     * @retval    false      Information shouldn't be requested
+     * @retval    true       Information should be requested
      */
     bool shouldRequest(const ProdId prodId) override {
         //LOG_DEBUG("Determining if information on product %s should be requested",
@@ -682,8 +685,8 @@ public:
      * Called by the peer-to-peer component.
      *
      * @param[in] segId      Identifier of data-segment
-     * @retval    `false`    Data-segment shouldn't be requested
-     * @retval    `true`     Data-segment should be requested
+     * @retval    false      Data-segment shouldn't be requested
+     * @retval    true       Data-segment should be requested
      */
     bool shouldRequest(const DataSegId segId) override {
         //LOG_DEBUG("Determining if data-segment %s should be requested", segId.to_string().data());
@@ -746,7 +749,7 @@ public:
     /**
      * Processes receipt of a data-segment from the multicast.
      *
-     * @param[in] udpSeg   Multicast data-segment
+     * @param[in] dataSeg   Multicast data-segment
      */
     void recvMcastData(const DataSeg dataSeg) override {
         if (repo.save(dataSeg)) {
@@ -763,7 +766,7 @@ public:
     /**
      * Processes receipt of a data-segment from the P2P network.
      *
-     * @param[in] tcpSeg   Unicast data-segment
+     * @param[in] dataSeg   Unicast data-segment
      */
     void recvP2pData(const DataSeg dataSeg) override {
         if (repo.save(dataSeg)) {
@@ -776,10 +779,19 @@ public:
         }
     }
 
+    /**
+     * Returns information on the next product.
+     * @return Information on the next product
+     */
     ProdInfo getNextProd() override {
         return repo.getNextProd();
     }
 
+    /**
+     * Returns a data segment.
+     * @param[in] segId  Segment identifier
+     * @return           Corresponding data segment
+     */
     DataSeg getDataSeg(const DataSegId segId) override {
         return repo.getDataSeg(segId);
     }

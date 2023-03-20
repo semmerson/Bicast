@@ -60,7 +60,7 @@ public:
      * @param[in] pathname         Pathname of the file
      * @param[in] prodSize         Product size in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
-     * @throws    SystemError      `::open()` or `::ftruncate()` failure
+     * @throws    SystemError      Couldn't open or truncate the file
      */
     ProdFile(
             const String&    pathname,
@@ -69,15 +69,23 @@ public:
     /**
      * Indicates if this instance is valid.
      *
-     * @retval `false`     No
-     * @retval `true`      Yes
+     * @retval false       No
+     * @retval true        Yes
      * @threadsafety       Safe
      * @cancellationpoint  No
      */
     operator bool() const noexcept;
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const;
 
+    /**
+     * Returns the pathname of the underlying file.
+     * @return The pathname of the underlying file
+     */
     const std::string& getPathname() const noexcept;
 
     /**
@@ -110,7 +118,7 @@ public:
     /**
      * Sets the last modification time of the underlying file.
      *
-     * @param[in]  Modification time for the underlying file
+     * @param[in] modTime  Modification time for the underlying file
      */
     void setModTime(const SysTimePoint& modTime) const;
 
@@ -118,8 +126,8 @@ public:
      * Indicates if the file contains a particular data-segment.
      *
      * @param[in] offset           Offset of the data-segment in bytes
-     * @retval    `false`          No
-     * @retval    `true`           Yes
+     * @retval    false            No
+     * @retval    true             Yes
      * @throws    IllegalArgument  Offset is invalid
      * @threadsafety               Safe
      * @exceptionsafety            Strong guarantee
@@ -157,8 +165,8 @@ public:
      * Saves a data-segment. Opens the underlying file if necessary.
      *
      * @param[in] dataSeg      Data-segment to be saved
-     * @retval    `true`       This item is new and was saved
-     * @retval    `false`      This item is old and was not saved
+     * @retval    true         This item is new and was saved
+     * @retval    false        This item is old and was not saved
      * @throw InvalidArgument  Known product has a different size
      * @throw InvalidArgument  Segment's offset is invalid
      * @threadsafety           Safe
@@ -170,11 +178,15 @@ public:
     /**
      * Indicates if the product is complete.
      *
-     * @retval `true`   The product is complete
-     * @retval `false`  The product is not complete
+     * @retval true     The product is complete
+     * @retval false    The product is not complete
      */
     bool isComplete() const;
 
+    /**
+     * Renames the underlying file.
+     * @param[in] newPathname  The new pathname for the underlying file
+     */
     void rename(const String& newPathname) const;
 
     /**

@@ -1,7 +1,7 @@
 /**
  * This file defines a class for disposing of (i.e., locally processing) data-products.
  *
- *  @file:  Disposer
+ *  @file:  Disposer.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
@@ -34,6 +34,7 @@
 
 namespace hycast {
 
+/// An implementation of a class that locally disposes of data products
 class Disposer::Impl
 {
     std::list<PatternAction>   patActs;       ///< Pattern-actions to be matched
@@ -87,8 +88,8 @@ class Disposer::Impl
      * @param[in] action   Action to perform
      * @param[in] bytes    Product's data
      * @param[in] nbytes   Number of bytes
-     * @retval    `true`   Success
-     * @retval    `false`  Failure due to too many open file descriptors
+     * @retval    true     Success
+     * @retval    false    Failure due to too many open file descriptors
      */
     bool process(
             Action         action,
@@ -106,6 +107,10 @@ class Disposer::Impl
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] maxPersistent  Maximum number of persistent entries
+     */
     Impl(const int maxPersistent)
         : patActs()
         , actionSet(maxPersistent+1)
@@ -116,10 +121,19 @@ public:
     ~Impl() {
     }
 
+    /**
+     * Adds an entry.
+     * @param[in] patAct  The pattern and action to add
+     */
     void add(const PatternAction& patAct) {
         patActs.push_back(patAct);
     }
 
+    /**
+     * Disposes of a data product.
+     * @param[in] prodInfo  Information on the product
+     * @param[in] bytes     The product's data
+     */
     void disposeOf(
             const ProdInfo prodInfo,
             const char*    bytes) {

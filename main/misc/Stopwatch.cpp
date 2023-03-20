@@ -1,7 +1,7 @@
 /**
  * This file implements a template for a simple stopwatch.
  *
- *  @file:  stopwatch.cpp
+ *  @file:  Stopwatch.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
@@ -25,6 +25,7 @@
 
 namespace hycast {
 
+/// Implementation of a stopwatch
 template<class DUR>
 class Stopwatch<DUR>::Impl {
     using Clock = std::chrono::steady_clock;
@@ -36,11 +37,11 @@ public:
         : begin()
     {}
 
-    void start() {
+    void start() { ///< Starts this instance
         begin = Clock::now();
     }
 
-    DUR split() {
+    DUR split() { ///< Returns the split time
         return std::chrono::duration_cast<DUR>(Clock::now() - begin);
     }
 };

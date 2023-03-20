@@ -39,12 +39,13 @@
 
 namespace hycast {
 
+/// Implementation of a socket
 class SockAddr::Impl
 {
 protected:
-    InetAddr             inetAddr;
-    in_port_t            port;     // Port number in host byte-order
-    std::hash<in_port_t> portHash;
+    InetAddr             inetAddr; ///< IP address
+    in_port_t            port;     ///< Port number in host byte-order
+    std::hash<in_port_t> portHash; ///< Hash code of the port number
 
 public:
     Impl()
@@ -52,6 +53,11 @@ public:
         , port{0}
     {}
 
+    /**
+     * Constructs.
+     * @param[in] inetAddr  IP address
+     * @param[in] port      Port number
+     */
     Impl(   const InetAddr& inetAddr,
             const in_port_t port)
         : inetAddr{inetAddr}
@@ -62,16 +68,29 @@ public:
                     std::to_string(port));
     }
 
+    /**
+     * Returns the IP address component.
+     * @return The IP address component
+     */
     const InetAddr getInetAddr() const noexcept
     {
         return inetAddr;
     }
 
+    /**
+     * Returns the port number.
+     * @return The port number
+     */
     in_port_t getPort() const noexcept
     {
         return port;
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @param[in] withName  Should the name of this class be included?
+     * @return              The string representation of this instance
+     */
     std::string to_string(const bool withName = false) const noexcept
     {
         return (withName ? "SockAddr{" : "") +
@@ -81,6 +100,12 @@ public:
                (withName ? "}" : "");
     }
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is less than the other
+     * @retval    false    This instance is not less than the other
+     */
     inline bool operator<(const Impl& rhs) const noexcept {
         return (inetAddr < rhs.inetAddr)
                 ? true
@@ -89,10 +114,22 @@ public:
                   : (port < rhs.port);
     }
 
+    /**
+     * Indicates if this instance is not equal to another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is not equal to the other
+     * @retval    false    This instance is equal to the other
+     */
     inline bool operator!=(const Impl& rhs) const noexcept {
         return (*this < rhs) || (rhs < *this);
     }
 
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs      The other, right-hand-side instance
+     * @retval    true     This instance is equal to the other
+     * @retval    false    This instance is not equal to the other
+     */
     inline bool operator==(const Impl& rhs) const noexcept {
         return !(*this != rhs);
     }
@@ -106,6 +143,11 @@ public:
         return inetAddr.hash() ^ portHash(port);
     }
 
+    /**
+     * Sets and returns a socket address structure.
+     * @param[out] storage  Storage for the socket address
+     * @return              Pointer to `storage` as a socket address structure
+     */
     struct sockaddr* get_sockaddr(struct sockaddr_storage& storage) const
     {
         inetAddr.get_sockaddr(storage, port);
@@ -120,7 +162,7 @@ public:
      * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
      *                               obtain the default protocol.
      * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
+     * @throws    std::system_error  Couldn't create socket
      */
     int socket(
             const int type,
@@ -135,7 +177,7 @@ public:
      * destination address.
      *
      * @param[in] sd                 Socket descriptor
-     * @throws    std::system_error  `::bind()` failure
+     * @throws    std::system_error  Bind failure
      * @threadsafety                 Safe
      */
     void bind(const int sd) const
@@ -149,10 +191,22 @@ public:
             throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(Xprt xprt) const {
         return inetAddr.write(xprt) && xprt.write(port);
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         return inetAddr.read(xprt) && xprt.read(port);
     }
@@ -398,6 +452,12 @@ bool SockAddr::read(Xprt xprt) {
     return pImpl->read(xprt);
 }
 
+/**
+ * Writes a socket address to an output stream.
+ * @param[in] ostream  The output stream
+ * @param[in] addr
+ * @return
+ */
 std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr) {
     return ostream << addr.to_string();
 }

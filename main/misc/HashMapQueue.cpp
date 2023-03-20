@@ -1,7 +1,7 @@
 /**
  * This file defines a thread-safe, combined doubly-linked list and hash table.
  *
- *  @file:  LinkedHashMap.cpp
+ *  @file:  HashMapQueue.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
@@ -22,12 +22,14 @@
 #include "config.h"
 
 #include "error.h"
-#include "LinkedHashMap.h"
+#include "HashMapQueue.h"
 
 namespace hycast {
 
+#if 0
+/// Pushes a key/value pair onto the back of the queue
 template<class KEY, class VALUE>
-bool HashMapQueue<KEY, VALUE>::pushBack(
+VALUE* HashMapQueue<KEY, VALUE>::pushBack(
         const KEY&   key,
         const VALUE& value)
 {
@@ -35,7 +37,7 @@ bool HashMapQueue<KEY, VALUE>::pushBack(
     auto  pair = map.emplace(key, MapValue{tail, value});
     try {
         if (!pair.second)
-            return false;
+            return nullptr;
         tail = key;
         if (map.size() == 1)
             head = tail;
@@ -44,7 +46,7 @@ bool HashMapQueue<KEY, VALUE>::pushBack(
         map.erase(key);
         throw;
     }
-    return true;
+    return pair.first;
 }
 
 template<class KEY, class VALUE>
@@ -101,5 +103,6 @@ bool HashMapQueue<KEY, VALUE>::remove(KEY& key) noexcept
     map.erase(iter);
     return true;
 }
+#endif
 
 } // namespace

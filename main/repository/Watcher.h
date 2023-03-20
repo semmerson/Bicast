@@ -35,11 +35,17 @@ class Watcher final
 {
 protected:
     class                 Impl;
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     Watcher(Impl* const impl);
 
 public:
+    /// A watched-for event
     struct WatchEvent {
         /// Pathname of new file. Will have pathname of root-directory prefix.
         std::string pathname;
@@ -56,8 +62,8 @@ public:
     /**
      * Returns a watched-for event.
      *
-     * @param[out] watchEvent  The watched-for event
-     * @threadsafety           Compatible but unsafe
+     * @param[out] event  The watched-for event
+     * @threadsafety      Compatible but unsafe
      */
     void getEvent(WatchEvent& event);
 };

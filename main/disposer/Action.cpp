@@ -34,13 +34,16 @@
 
 namespace hycast {
 
+/// Implementation of an action
 class Action::Impl
 {
 public:
+    /// The type of action to be performed
     enum ActionType {
-        PIPE,
-        FILE,
-        APPEND,
+        PIPE,   ///, Pipe product to program
+        FILE,   ///< Write product to file
+        APPEND, ///< Append product to file
+        EXEC    ///< Execute external program
     };
 
 private:
@@ -72,7 +75,7 @@ private:
     }
 
 protected:
-    std::vector<String> args;
+    std::vector<String> args;    ///< Command-line arguments
     const bool          persist; ///< Instance should persist between calls to `process()`?
 
     /**
@@ -91,6 +94,12 @@ protected:
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] actionType  Type of action
+     * @param[in] args        Command-line arguments
+     * @param[in] persist     Should this instance keep the file descriptor open?
+     */
     Impl(   const ActionType           actionType,
             const std::vector<String>& args,
             const bool                 persist)
@@ -103,6 +112,10 @@ public:
     virtual ~Impl() {
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const {
         String cmd;
         switch (actionType) {
@@ -124,14 +137,29 @@ public:
         return "{cmd=" + cmd + ", args=" + cmdVec() + "}";
     }
 
+    /**
+     * Should the file descriptor be kept open?
+     * @retval true     Yes
+     * @retval false    No
+     */
     bool shouldPersist() const noexcept {
         return persist;
     }
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept {
         return hashValue;
     }
 
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs      The other instance
+     * @retval    true     This instance is equal to the other
+     * @retval    false    This instance is not equal to the other
+     */
     bool operator==(const Impl& rhs) const noexcept {
         if (actionType != rhs.actionType)
             return false;
@@ -147,6 +175,14 @@ public:
         return true;
     }
 
+    /**
+     * Performs the action.
+     * @param[in] data      The data to be processed
+     * @param[in] nbytes    The amount of data in bytes
+     * @retval    true      Success
+     * @retval    false     Too many file descriptors are open
+     * @throw SystemError   System failure
+     */
     virtual bool process(
             const char* data,
             size_t      nbytes) =0;
@@ -194,8 +230,8 @@ private:
     /**
      * Indicates if the pipe is open.
      *
-     * @retval `true`   The pipe is open
-     * @retval `false`  The pipe is not open
+     * @retval true     The pipe is open
+     * @retval false    The pipe is not open
      */
     inline bool pipeOpen() {
         return pipeFds[1] >= 0;
@@ -223,8 +259,8 @@ private:
     /**
      * Creates the pipe to the decoder.
      *
-     * @retval `true`      Success
-     * @retval `false`     Too many file descriptors are open
+     * @retval true        Success
+     * @retval false       Too many file descriptors are open
      * @throw SystemError  Couldn't create pipe
      * @throw SystemError  Couldn't get file descriptor flags
      * @throw SystemError  Couldn't set file descriptor to close-on-exec()
@@ -320,8 +356,8 @@ private:
     /**
      * Executes the decoder as a child process.
      *
-     * @retval `true`      Success
-     * @retval `false`     Too many child processes
+     * @retval true        Success
+     * @retval false       Too many child processes
      * @throw SystemError  Couldn't fork process
      * @throw SystemError  Couldn't make decoder a process-group leader
      * @throw SystemError  Couldn't redirect standard input to read-end of pipe
@@ -372,6 +408,11 @@ private:
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] args      Command-line argument templates
+     * @param[in] keepOpen  Reified instances should persist?
+     */
     PipeImpl(
             const std::vector<String>& args,
             const bool                 keepOpen)
@@ -452,8 +493,8 @@ private:
      * Opens the output file.
      *
      * @param[in] nbytes   Size of the data-product in bytes
-     * @retval    `true`   Success
-     * @retval    `false`  Too many file descriptors are open
+     * @retval    true     Success
+     * @retval    false    Too many file descriptors are open
      * @throw SystemError  Couldn't open file
      */
     bool openFile(const ProdSize nbytes) {
@@ -481,7 +522,7 @@ public:
      *
      * @param[in] actionType  The type of action (e.g., FILE, APPEND)
      * @param[in] args        Single pathname of output file
-     * @param[in] oflag       `::open()` flag (e.g., O_TRUNC, O_APPEND)
+     * @param[in] oflag       `open()` flag (e.g., O_TRUNC, O_APPEND)
      * @param[in] keepOpen    Should this action stay open on the output file between products?
      */
     WriteImpl(

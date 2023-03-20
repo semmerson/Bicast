@@ -26,6 +26,7 @@
 
 namespace hycast {
 
+/// A class for the local disposition of data products
 class Disposer
 {
 public:
@@ -38,7 +39,8 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] maxPersistent  Maximum number of actions that should persist between products
+     * @param[in] maxPersistent  Maximum number of actions that should persist (i.e., stay open)
+     *                           between products
      */
     Disposer(const int maxPersistent);
 

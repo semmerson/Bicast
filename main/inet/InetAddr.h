@@ -44,6 +44,12 @@ class WriteAble
 public:
     virtual ~WriteAble() {};
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     virtual bool write(Xprt xprt) const =0;
 };
 
@@ -53,6 +59,12 @@ class ReadAble
 public:
     virtual ~ReadAble() {};
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     virtual bool read(Xprt xprt) =0;
 };
 
@@ -69,14 +81,20 @@ public:
 
 class SockAddr;
 
+/// An Internet address
 class InetAddr : public XprtAble
 {
 public:
     class                 Impl;
 
 protected:
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     InetAddr(Impl* impl);
 
 public:
@@ -113,8 +131,17 @@ public:
      */
     InetAddr(const std::string& addr);
 
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
+     */
     operator bool() const noexcept;
 
+    /**
+     * Returns the address family: `AF_INET` or `AF_INET6`.
+     * @return The address family
+     */
     int getFamily() const;
 
     /**
@@ -140,10 +167,26 @@ public:
      */
     std::string to_string() const;
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs     The other instance
+     * @retval    true    This instance is less than the other
+     * @retval    true    This instance is not less than the other
+     */
     bool operator <(const InetAddr& rhs) const noexcept;
 
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs     The other instance
+     * @retval    true    This instance is equal to the other
+     * @retval    true    This instance is not equal to the other
+     */
     bool operator ==(const InetAddr& rhs) const noexcept;
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept;
 
     /**
@@ -155,7 +198,7 @@ public:
      * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
      *                               obtain the default protocol.
      * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
+     * @throws    std::system_error  `socket()` failur
      */
     int socket(
             const int type,
@@ -196,16 +239,16 @@ public:
     /**
      * Indicates if this instance specifies any interface (e.g., `INADDR_ANY`).
      *
-     * @retval `true`   Address does specify any interface
-     * @retval `false`  Address does not specify any interface
+     * @retval true     Address does specify any interface
+     * @retval false    Address does not specify any interface
      */
     bool isAny() const;
 
     /**
      * Indicates if this instance is a multicast address.
      *
-     * @retval `true`   Address is a multicast address
-     * @retval `false`  Address is not a multicast address
+     * @retval true     Address is a multicast address
+     * @retval false    Address is not a multicast address
      */
     bool isMulticast() const;
 
@@ -216,8 +259,8 @@ public:
      * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
      * FF3X::FFFF:FFFF (for IPv6).
      *
-     * @retval `true`   Address is valid and in appropriate range
-     * @retval `false`  Address is invalid or not in appropriate range
+     * @retval true     Address is valid and in appropriate range
+     * @retval false    Address is invalid or not in appropriate range
      */
     bool isSsm() const;
 
@@ -225,8 +268,8 @@ public:
      * Writes to a transport.
      *
      * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     bool write(Xprt xprt) const;
 
@@ -234,8 +277,8 @@ public:
      * Reads from a transport.
      *
      * @param[in] xprt     Transport
-     * @retval    `true`   Success
-     * @retval    `false`  Connection lost
+     * @retval    true     Success
+     * @retval    false    Connection lost
      */
     bool read(Xprt xprt);
 };

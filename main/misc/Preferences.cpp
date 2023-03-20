@@ -32,6 +32,7 @@ namespace hycast {
 
 using namespace std;
 
+/// An implementation of preferences
 class PrefImpl : public Preferences
 {
     YAML::Node root; ///< yaml-cpp root node
@@ -76,10 +77,24 @@ class PrefImpl : public Preferences
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] pathname  Pathname of the YAML file
+     */
     PrefImpl(const String& pathname)
         : root(YAML::LoadFile(pathname))
     {}
 
+    /**
+     * Returns the value of a preference.
+     * @tparam T            Type of the preference
+     * @param[in] def       Default value for the preference if it isn't found
+     * @param[in] filename  Filename for which the preference is wanted
+     * @param[in] function  Function in the file for which the preference is wanted
+     * @param[in] nameList  Preference's name components from outermost to innermost
+     * @return A pair whose first component is the value for the preference and whose second
+     *         component indicates whether or not the preference was found
+     */
     template<typename T>
     pair<T, bool> getAs(
             T&                       def,

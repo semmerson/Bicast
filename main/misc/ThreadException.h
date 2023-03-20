@@ -26,6 +26,7 @@
 
 namespace hycast {
 
+/// An exception thrown by a thread in a component with multiple threads
 class ThreadEx
 {
     using Mutex = std::mutex;
@@ -55,11 +56,19 @@ public:
             exPtr = std::make_exception_ptr(ex);
     }
 
+    /**
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
+     * @retval true    This instance is valid
+     * @retval false   This instance is not valid
+     */
     operator bool() {
         Guard guard(mutex);
         return isSet;
     }
 
+    /**
+     * Throws the exception if it exists.
+     */
     void throwIfSet() {
         Guard guard(mutex);
         if (isSet) {

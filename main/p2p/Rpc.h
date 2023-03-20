@@ -43,10 +43,11 @@ class DataSeg;
 class Rpc
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<Rpc>;
 
     /**
-     * Creates a new subscriber instance within a timeout. `isClient()` will return `true`.
+     * Creates a new subscriber instance within a timeout. `isClient()` will return true  .
      *
      * @param[in] srvrAddr Socket address of remote RPC server
      * @param[in] timeout  Timeout in ms. <=0 => System's default timeout.
@@ -63,8 +64,8 @@ public:
      * Indicates if this instance was constructed as a client (i.e., by
      * initiating a connection to a remote RPC-server).
      *
-     * @retval `true`   Constructed as a client
-     * @retval `false`  Constructed by a server
+     * @retval true     Constructed as a client
+     * @retval false    Constructed by a server
      */
     virtual bool isClient() const noexcept =0;
 
@@ -85,8 +86,8 @@ public:
     /**
      * Indicates if the remote peer is the publisher.
      *
-     * @retval `true`   Yes
-     * @retval `false`  No
+     * @retval true     Yes
+     * @retval false    No
      */
     virtual bool isRmtPub() const noexcept =0;
 
@@ -95,8 +96,8 @@ public:
      * Indicates whether or not sequential delivery of PDU-s is guaranteed. TCP
      * is sequential, for example, while SCTP doesn't have to be.
      *
-     * @retval `true`   Sequential delivery of PDU-s is guaranteed
-     * @retval `false`  Sequential delivery of PDU-s is not guaranteed
+     * @retval true     Sequential delivery of PDU-s is guaranteed
+     * @retval false    Sequential delivery of PDU-s is not guaranteed
     virtual bool isSequential() const noexcept =0;
      */
 
@@ -146,8 +147,8 @@ public:
      * Notifies the remote as to whether this local end is a path to the publisher.
      *
      * @param[in] amPubPath  Is this end a path to the publisher?
-     * @retval    `true`     Success
-     * @retval    `false`    Lost connection
+     * @retval    true       Success
+     * @retval    false      Lost connection
      */
     virtual bool notifyAmPubPath(const bool amPubPath) =0;
 
@@ -155,8 +156,8 @@ public:
      * Adds a P2P-server to the remote's pool.
      *
      * @param[in] srvrAddr  Socket address of peer-server
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool add(const SockAddr srvrAddr) =0;
 
@@ -164,8 +165,8 @@ public:
      * Adds P2P-servers to the remote's pool.
      *
      * @param[in] tracker   Socket addresses of peer-servers
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool add(const Tracker tracker) =0;
 
@@ -173,8 +174,8 @@ public:
      * Removes a P2P-server from the remote's pool.
      *
      * @param[in] srvrAddr  Socket address of peer-server
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool remove(const SockAddr srvrAddr) =0;
 
@@ -182,8 +183,8 @@ public:
      * Removes P2P-servers from the remote's pool.
      *
      * @param[in] tracker   Socket addresses of peer-servers
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool remove(const Tracker tracker) =0;
 
@@ -192,8 +193,8 @@ public:
      * block.
      *
      * @param[in] prodId      Product identifier
-     * @retval    `true`      Success
-     * @retval    `false`     Failure
+     * @retval    true        Success
+     * @retval    false       Failure
      * @throw     LogicError  Remote peer is publisher
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
@@ -204,8 +205,8 @@ public:
      * Notifies the remote peer about an available data segment. May block.
      *
      * @param[in] dataSegId   Identifier of the data segment
-     * @retval    `true`      Success
-     * @retval    `false`     Failure
+     * @retval    true        Success
+     * @retval    false       Failure
      * @throw     LogicError  Remote peer is publisher
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
@@ -216,8 +217,8 @@ public:
      * Requests information on a product from the remote peer. May block.
      *
      * @param[in] prodId    Product identifier
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool request(const ProdId prodId) =0;
 
@@ -225,26 +226,26 @@ public:
      * Requests a data segment from the remote peer. May block.
      *
      * @param[in] dataSegId  ID of the data segment
-     * @retval    `true`     Success
-     * @retval    `false`    Lost connection
+     * @retval    true       Success
+     * @retval    false      Lost connection
      */
     virtual bool request(const DataSegId dataSegId) =0;
 
     /**
      * Sends information on a product to the remote peer. May block.
      *
-     * @param[in] prodId    Product identifier
-     * @retval    `true`    Success
-     * @retval    `false`   Lost connection
+     * @param[in] prodInfo  Product information
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
     virtual bool send(const ProdInfo prodInfo) =0;
 
     /**
      * Sends a data segment to the remote peer. May block.
      *
-     * @param[in] dataSegId  ID of the data segment
-     * @retval    `true`     Success
-     * @retval    `false`    Lost connection
+     * @param[in] dataSeg    The data segment
+     * @retval    true       Success
+     * @retval    false      Lost connection
      */
     virtual bool send(const DataSeg dataSeg) =0;
 
@@ -265,6 +266,7 @@ public:
 class RpcSrvr
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<RpcSrvr>;
 
     /**

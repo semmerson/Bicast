@@ -61,19 +61,18 @@ private:
     }
 
 protected:
-    mutable Mutex     mutex;
-    const ProdSize    prodSize;
-    String            pathname;
-    char*             data; ///< For `get()`
-    const ProdSize    numSegs;
-    int               fd;
+    mutable Mutex     mutex;    ///< Mutex for maintaining consistency
+    const ProdSize    prodSize; ///< Size of the data-product in bytes
+    String            pathname; ///< Pathname of the product-file
+    char*             data;     ///< For `get()`
+    const ProdSize    numSegs;  ///< Number of data-segments
+    int               fd;       ///< Underlying file descriptor
 
     /**
      * Ensures access to the underlying file. Opens the file if necessary. Maps the file if
      * necessary. Idempotent.
      *
      * @pre                    Instance is locked
-     * @param[in] mode         File open mode
      * @throws    SystemError  Couldn't open file
      * @post                   Instance is locked
      */
@@ -157,38 +156,68 @@ public:
         disableAccess();
     }
 
+    /**
+     * Returns the pathname of the product-file.
+     * @return  The pathname of the product-file
+     */
     const std::string& getPathname() const noexcept {
         return pathname;
     }
 
+    /**
+     * Returns the size of the data product in bytes.
+     * @return The size of the data product in bytes
+     */
     ProdSize getProdSize() const noexcept {
         return prodSize;
     }
 
+    /**
+     * Returns the modification time of the underlying file.
+     * @return The modification time of the underlying file
+     */
     SysTimePoint getModTime() {
         SysTimePoint modTime;
         return FileUtil::getModTime(pathname, modTime);
     }
 
+    /**
+     * Returns the modification time of the underlying file.
+     * @param[out] modTime  The modification time of the underlying file
+     * @return              A reference to `modTime`
+     */
     SysTimePoint& getModTime(SysTimePoint& modTime) {
         return FileUtil::getModTime(pathname, modTime);
     }
 
+    /**
+     * Sets the modification time of the underlying file.
+     * @param[in] modTime  The modification time
+     */
     void setModTime(const SysTimePoint& modTime) {
         FileUtil::setModTime(pathname, modTime, false);
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     String to_string() const {
         return "{pathname=" + pathname + ", prodSize=" + std::to_string(prodSize) + ", fd=" +
                 std::to_string(fd) + "}";
     }
 
+    /**
+     * Closes the underlying file.
+     */
     void close() {
         Guard guard(mutex);
         disableAccess();
     }
 
     /**
+     * Deletes the underlying file.
+     *
      * NB: An open file can still be accessed until `close()` is called.
      */
     void deleteFile() {
@@ -197,6 +226,11 @@ public:
             throw SYSTEM_ERROR("::unlink() failure on file file \"" + pathname + "\"");
     }
 
+    /**
+     * Returns the data of a data segment from the underlying file.
+     * @param[in] offset  The offset, in bytes, to the data segment
+     * @return            A pointer to the data of the segment
+     */
     const char* getData(const ProdSize offset) {
         vet(offset);
         Guard guard{mutex};
@@ -206,6 +240,10 @@ public:
         return data + offset;
     }
 
+    /**
+     * Returns the data from the underlying file.
+     * @return A pointer to the data
+     */
     const char* getData() {
         Guard guard{mutex};
         ensureAccess();
@@ -224,14 +262,29 @@ public:
         return true;
     }
 
+    /**
+     * Indicates if the underlying file contains all the product's data.
+     * @retval true     The underlying file contains all the product's data
+     * @retval false    The underlying file does not contain all the product's data
+     */
     virtual bool isComplete() const {
         return true;
     }
 
+    /**
+     * Saves a data segment in the underlying file.
+     * @param[in] dataSeg  The segment to be saved
+     * @retval    true     Success
+     * @retval    false    The segment was previously saved
+     */
     virtual bool save(const DataSeg& dataSeg) {
         throw LOGIC_ERROR("Operation not supported by this instance");
     }
 
+    /**
+     * Renames the underlying file.
+     * @param[in] newPathname  New pathname for the underlying file
+     */
     virtual void rename(const String& newPathname) {
         throw LOGIC_ERROR("Operation not supported by this instance");
     }
@@ -346,7 +399,7 @@ public:
      * @param[in] pathname         Pathname of the file
      * @param[in] prodSize         Product size in bytes
      * @throws    InvalidArgument  `prodSize != 0 && segSize == 0`
-     * @throws    SystemError      `::open()` or `::ftruncate()` failure
+     * @throws    SystemError      Couldn't open or truncate the file
      */
     SubProdFile(
             const String&    pathname,
@@ -383,8 +436,8 @@ public:
      * Saves a data-segment.
      *
      * @param[in] seg              Data-segment to be saved
-     * @retval    `true`           This item is new and was saved
-     * @retval    `false`          This item is old and was not saved
+     * @retval    true             This item is new and was saved
+     * @retval    false            This item is old and was not saved
      * @throws    LogicError       Instance is not open
      * @throws    InvalidArgument  Segment's offset is greater than product's size or isn't an
      *                             integral multiple of maximum segment size
@@ -422,14 +475,18 @@ public:
      * Indicates if the product is complete.
      *
      * @pre             State is locked
-     * @retval `true`   Product is complete
-     * @retval `false`  Product is not complete
+     * @retval true     Product is complete
+     * @retval false    Product is not complete
      */
     bool isComplete() const override {
         Guard guard{mutex};
         return segCount == numSegs;
     }
 
+    /**
+     * Renames the underlying file.
+     * @param[in] newPathname  New pathname for the underlying file
+     */
     void rename(const String& newPathname) override {
         Guard guard{mutex};
         if (::rename(pathname.data(), newPathname.data()))

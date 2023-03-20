@@ -43,6 +43,7 @@ namespace hycast {
 class Node
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<Node>;
 
     /**
@@ -127,13 +128,22 @@ public:
 class PubNode : public Node
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<PubNode>;
 
+    /// Runtime parameters for a publishing node
     struct RunPar {
         SegSize           maxSegSize; ///< Maximum size of a data-segment
         McastPub::RunPar  mcast;      ///< Multicast component
         PubP2pMgr::RunPar p2p;        ///< Peer-to-peer component
         PubRepo::RunPar   repo;       ///< Data-product repository
+         /**
+          * Constructs.
+          * @param[in] maxSegSize  Maximum number of bytes in a data-segment
+          * @param[in] mcast       Multicast component
+          * @param[in] p2p         P2P component
+          * @param[in] repo        Repository component
+          */
         RunPar( const SegSize            maxSegSize,
                 const McastPub::RunPar&  mcast,
                 const PubP2pMgr::RunPar& p2p,
@@ -156,7 +166,7 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] listenSize    Size of `::listen()` queue. 0 obtains the system default.
+     * @param[in] listenSize    Size of listening queue. 0 obtains the system default.
      * @param[in] repoRoot      Pathname of the root directory of the repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open, data-products files
@@ -174,6 +184,14 @@ public:
             const SegSize  maxSegSize,
             const long     maxOpenFiles);
 
+    /**
+     * Creates a new instance.
+     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
+     * @param mcastRunPar       Runtime parameters for the multicast component
+     * @param p2pRunPar         Runtime parameters for the P2P component
+     * @param repoRunPar        Runtime parameters for the repository component
+     * @return                  A new instance
+     */
     static Pimpl create(
             const SegSize            maxSegSize,
             const McastPub::RunPar&  mcastRunPar,
@@ -193,8 +211,10 @@ public:
 class SubNode : public Node
 {
 public:
+    /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<SubNode>;
 
+#if 0
     /**
      * Constructs.
      *
@@ -208,6 +228,7 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxOpenFiles  Maximum number of open files in repository
+     */
     static Pimpl create(
             SubInfo&          subInfo,
             const InetAddr    mcastIface,
@@ -218,7 +239,7 @@ public:
             const unsigned    evalTime,
             const String&     repoDir,
             const long        maxOpenFiles);
-     */
+#endif
 
     /**
      * Constructs.
@@ -257,8 +278,8 @@ public:
      * Receives a notice about the availability of information on a product.
      *
      * @param[in] index    Index of available product
-     * @retval    `true`   Product information should be requested
-     * @retval    `false`  Product information should not be requested
+     * @retval    true     Product information should be requested
+     * @retval    false    Product information should not be requested
      */
     virtual bool shouldRequest(const ProdId index) =0;
 
@@ -266,8 +287,8 @@ public:
      * Receives a notice about the availability of a data-segment.
      *
      * @param[in] segId    Identifier of available data-segment
-     * @retval    `true`   Data-segment information should be requested
-     * @retval    `false`  Data-segment information should not be requested
+     * @retval    true     Data-segment information should be requested
+     * @retval    false    Data-segment information should not be requested
      */
     virtual bool shouldRequest(const DataSegId segId) =0;
 
@@ -303,10 +324,19 @@ public:
     virtual void recvP2pData(const DataSeg dataSeg) {
     }
 
+    /**
+     * Returns information on the next product.
+     * @return Information on the next product
+     */
     virtual ProdInfo getNextProd() {
         return ProdInfo{};
     }
 
+    /**
+     * Returns a data segment.
+     * @param[in] segId  Data segment identifier
+     * @return           Corresponding data segment (might be invalid)
+     */
     virtual DataSeg getDataSeg(const DataSegId segId) {
         return DataSeg{};
     }

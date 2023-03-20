@@ -40,10 +40,15 @@ class Repository
 protected:
     class Impl;
 
+    /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
     Repository() noexcept;
 
+    /**
+     * Constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     Repository(Impl* impl) noexcept;
 
 public:
@@ -53,6 +58,13 @@ public:
         int32_t   maxSegSize;     ///< Maximum size of a data-segment in bytes
         long      maxOpenFiles;   ///< Maximum number of open repository files
         int32_t   keepTime;       ///< Length of time to keep data-products in seconds
+        /**
+         * Constructs.
+         * @param[in] rootDir       Pathname of the root directory of the repository
+         * @param[in] maxSegSize    Maximum size of a data segment in bytes
+         * @param[in] maxOpenFiles  Maximum number of open files
+         * @param[in] keepTime      Duration to keep data products
+         */
         RunPar( const String& rootDir,
                 const int32_t maxSegSize,
                 const long    maxOpenFiles,
@@ -69,8 +81,8 @@ public:
     /**
      * Indicates if this instance is valid (i.e., not default constructed).
      *
-     * @retval `true`   This instance is valid
-     * @retval `false`  This instance is not valid
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
      */
     operator bool() const noexcept;
 
@@ -170,8 +182,8 @@ public:
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
-     * @retval `true`   This instance is valid
-     * @retval `false`  This instance is not valid
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
      */
     operator bool() const noexcept;
 };
@@ -205,8 +217,8 @@ public:
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      *
-     * @retval `true`   This instance is valid
-     * @retval `false`  This instance is not valid
+     * @retval true     This instance is valid
+     * @retval false    This instance is not valid
      */
     operator bool() const noexcept;
 
@@ -214,8 +226,8 @@ public:
      * Saves product-information in the corresponding product-file.
      *
      * @param[in] prodInfo     Product information
-     * @retval    `true`       This item was saved
-     * @retval    `false`      This item was not saved because it already exists
+     * @retval    true         This item was saved
+     * @retval    false        This item was not saved because it already exists
      * @throw InvalidArgument  Known product has a different size
      * @threadsafety           Safe
      * @exceptionsafety        Strong guarantee
@@ -227,8 +239,8 @@ public:
      * Saves a data-segment in the corresponding product-file.
      *
      * @param[in] dataSeg      Data-segment
-     * @retval    `true`       This item was saved
-     * @retval    `false`      This item was not saved because it already exists
+     * @retval    true         This item was saved
+     * @retval    false        This item was not saved because it already exists
      * @throw InvalidArgument  Known product has a different size
      * @threadsafety           Safe
      * @exceptionsafety        Strong guarantee
@@ -240,8 +252,8 @@ public:
      * Indicates if product-information exists.
      *
      * @param[in] prodId     Product identifier
-     * @retval    `false`    Product-information doesn't exist
-     * @retval    `true`     Product-information does exist
+     * @retval    false      Product-information doesn't exist
+     * @retval    true       Product-information does exist
      */
     bool exists(const ProdId prodId) const;
 
@@ -249,8 +261,8 @@ public:
      * Indicates if a data-segment exists.
      *
      * @param[in] segId      Segment identifier
-     * @retval    `false`    Data-segment doesn't exist
-     * @retval    `true`     Data-segment does exist
+     * @retval    false      Data-segment doesn't exist
+     * @retval    true       Data-segment does exist
      */
     bool exists(const DataSegId segId) const;
 };

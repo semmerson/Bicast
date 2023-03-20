@@ -46,8 +46,16 @@ public:
      */
     explicit Tracker(const size_t capacity = 100);
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const;
 
+    /**
+     * Returns the number of entries.
+     * @return The number of entries
+     */
     size_t size() const;
 
     /**
@@ -55,19 +63,35 @@ public:
      * If the capacity is exceeded, then the oldest entries are deleted.
      *
      * @param[in] peerSrvrAddr       Socket address of peer server
-     * @retval    `true`             Success
-     * @retval    `false`            Address already exists
+     * @retval    true               Success
+     * @retval    false              Address already exists
      * @exceptionsafety              Strong guarantee
      * @threadsafety                 Safe
      */
     bool insert(const SockAddr& peerSrvrAddr) const;
 
+    /**
+     * Inserts the entries from another instance.
+     * @param[in] tracker  The other instance
+     */
     void insert(const Tracker tracker) const;
 
-    void erase(const SockAddr sockAddr);
+    /**
+     * Removes a P2P server.
+     * @param p2pSrvrAddr  Socket address of the P2P server
+     */
+    void erase(const SockAddr p2pSrvrAddr);
 
+    /**
+     * Removes the P2P server addresses contained in another instance.
+     * @param tracker  The other instance
+     */
     void erase(const Tracker tracker);
 
+    /**
+     * Removes and returns the first P2P server address.
+     * @return
+     */
     SockAddr removeHead() const;
 
     /**
@@ -75,8 +99,20 @@ public:
      */
     void halt() const;
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(Xprt xprt) const;
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt);
 };
 

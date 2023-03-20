@@ -110,7 +110,7 @@ TEST_F(HashMapQueueTest, OneElement)
     //EXPECT_THROW(queue.front(), OutOfRange); // Calls `terminate()`. Shouldn't
     //EXPECT_THROW(queue.pop(), OutOfRange); // Calls `terminate()`. Shouldn't
     Key key{1};
-    queue.push(key, "one");
+    queue.pushBack(key, "one");
     EXPECT_EQ(1, queue.size());
     EXPECT_EQ(Key(1), queue.front().first);
     EXPECT_EQ("one", queue.front().second);
@@ -124,8 +124,8 @@ TEST_F(HashMapQueueTest, TwoElements)
     HashMapQueue<Key, std::string> queue{};
     //EXPECT_THROW(queue.front(), OutOfRange); // Calls `terminate()`. Shouldn't
     //EXPECT_THROW(queue.pop(), OutOfRange); // Calls `terminate()`. Shouldn't
-    queue.push(1, "one");
-    queue.push(2, "two");
+    queue.pushBack(1, "one");
+    queue.pushBack(2, "two");
     EXPECT_EQ(2, queue.size());
 
     EXPECT_EQ(Key(1), queue.front().first);
@@ -145,9 +145,9 @@ TEST_F(HashMapQueueTest, EraseHead)
     HashMapQueue<Key, std::string> queue{};
     //EXPECT_THROW(queue.front(), OutOfRange); // Calls `terminate()`. Shouldn't
     //EXPECT_THROW(queue.pop(), OutOfRange); // Calls `terminate()`. Shouldn't
-    queue.push(1, "one");
-    queue.push(2, "two");
-    queue.push(3, "three");
+    queue.pushBack(1, "one");
+    queue.pushBack(2, "two");
+    queue.pushBack(3, "three");
     EXPECT_EQ(3, queue.size());
 
     Key key{1};
@@ -170,9 +170,9 @@ TEST_F(HashMapQueueTest, EraseInterior)
     HashMapQueue<Key, std::string> queue{};
     //EXPECT_THROW(queue.front(), OutOfRange); // Calls `terminate()`. Shouldn't
     //EXPECT_THROW(queue.pop(), OutOfRange); // Calls `terminate()`. Shouldn't
-    queue.push(1, "one");
-    queue.push(2, "two");
-    queue.push(3, "three");
+    queue.pushBack(1, "one");
+    queue.pushBack(2, "two");
+    queue.pushBack(3, "three");
     EXPECT_EQ(3, queue.size());
 
     Key key{2};
@@ -195,9 +195,9 @@ TEST_F(HashMapQueueTest, EraseTail)
     HashMapQueue<Key, std::string> queue{};
     //EXPECT_THROW(queue.front(), OutOfRange); // Calls `terminate()`. Shouldn't
     //EXPECT_THROW(queue.pop(), OutOfRange); // Calls `terminate()`. Shouldn't
-    queue.push(1, "one");
-    queue.push(2, "two");
-    queue.push(3, "three");
+    queue.pushBack(1, "one");
+    queue.pushBack(2, "two");
+    queue.pushBack(3, "three");
     EXPECT_EQ(3, queue.size());
 
     Key key{3};

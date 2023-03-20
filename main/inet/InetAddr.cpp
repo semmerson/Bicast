@@ -59,9 +59,14 @@ static int getSockFamily(const int sd) {
     return storage.ss_family;
 }
 
+/// An implementation of an Internet address
 class InetAddr::Impl
 {
 protected:
+    /**
+     * Returns the low-level representation (e.g., `in_addr_t`, `in6_addr_t`) of this instance.
+     * @param[out] size  Size of the representation in bytes
+     */
     virtual const void* getAddr(socklen_t* size) const =0;
 
     /**
@@ -73,7 +78,7 @@ protected:
      * @param[in] protocol     Protocol. E.g., `IPPROTO_TCP`, `IPPROTO_UDP`. `0` obtains the
      *                         default protocol for the type.
      * @return                 Appropriate socket
-     * @throws    SystemError  `::socket()` failure
+     * @throws    SystemError  `socket()` failure
      */
     static int createSocket(
             const int family,
@@ -93,12 +98,20 @@ protected:
     }
 
 public:
+    /// Type of address
     enum AddrType : uint8_t {
         ADDR_IPV4,
         ADDR_IPV6,
         ADDR_NAME
-    } addrType;
+    } addrType; ///< Type of address
 
+    /**
+     * Creates by reading an address from a transport.
+     * @tparam TYPE        The type of address
+     * @param[in] xprt     The transport from which to read an address of the given type
+     * @return             A pointer to an implementation
+     * @retval    nullptr  Lost connection
+     */
     template<typename TYPE>
     static TYPE* create(Xprt xprt) {
         auto impl = new TYPE();
@@ -108,36 +121,96 @@ public:
         return nullptr;
     }
 
+    /**
+     * Constructs.
+     * @param[in] addrType  Type of address
+     */
     Impl(AddrType addrType)
         : addrType(addrType)
     {}
 
     virtual ~Impl() noexcept;
 
+    /**
+     * Returns the address family: `AF_INET` or `AF_INET6`.
+     * @return The address family
+     */
     virtual int getFamily() const =0;
 
+    /**
+     * Returns the address type.
+     * @return The address type
+     */
     AddrType getAddrType() const noexcept {
         return addrType;
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     virtual std::string to_string() const =0;
 
+    /**
+     * Indicates if this instance is less than an IP address.
+     * @param[in] rhs     The IP address
+     * @retval    true    This instance is less than the IP address
+     */
     virtual bool operator<(const Impl& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than an IPv4 address.
+     * @param[in] rhs     The IPv4 address
+     * @retval    true    This instance is less than the IPv4 address
+     */
     virtual bool operator<(const Inet4Addr& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than an IPv6 address.
+     * @param[in] rhs     The IPv6 address
+     * @retval    true    This instance is less than the IPv6 address
+     */
     virtual bool operator<(const Inet6Addr& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than a hostname.
+     * @param[in] rhs     The hostname
+     * @retval    true    This instance is less than the hostname
+     */
     virtual bool operator<(const NameAddr& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than an IP address.
+     * @param[in] rhs     The IP address
+     * @retval    true    This instance is less than the IP address
+     */
     virtual bool operator==(const Impl& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than an IPv4 address.
+     * @param[in] rhs     The IPv4 address
+     * @retval    true    This instance is less than the IPv4 address
+     */
     virtual bool operator==(const Inet4Addr& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than an IPv6 address.
+     * @param[in] rhs     The IPv6 address
+     * @retval    true    This instance is less than the IPv6 address
+     */
     virtual bool operator==(const Inet6Addr& rhs) const noexcept =0;
 
+    /**
+     * Indicates if this instance is less than a hostname.
+     * @param[in] rhs     The hostname
+     * @retval    true    This instance is less than the hostname
+     */
     virtual bool operator==(const NameAddr& rhs) const noexcept =0;
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     virtual size_t hash() const noexcept =0;
 
     /**
@@ -148,7 +221,7 @@ public:
      * @param[in] protocol           Protocol. E.g., `IPPROTO_TCP` or `0` to
      *                               obtain the default protocol.
      * @return                       Appropriate socket
-     * @throws    std::system_error  `::socket()` failure
+     * @throws    std::system_error  `socket()` failure
      */
     virtual int socket(
             const int type,
@@ -235,12 +308,33 @@ public:
         return index;
     }
 
+    /**
+     * Indicates if this instance is the wildcard.
+     * @retval true     Yes
+     * @retval false    No
+     */
     virtual bool isAny() const =0;
 
+    /**
+     * Indicates if this instance specifies a multicast address.
+     * @retval true     Yes
+     * @retval false    No
+     */
     virtual bool isMulticast() const =0;
 
+    /**
+     * Indicates if this instance specifies a source-specific multicast address.
+     * @retval true     Yes
+     * @retval false    No
+     */
     virtual bool isSsm() const =0;
 
+    /**
+     * Writes this instance to a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     virtual bool write(Xprt xprt) const =0;
 };
 
@@ -249,12 +343,17 @@ InetAddr::Impl::~Impl() noexcept
 
 /******************************************************************************/
 
+/// IPv4 address
 class Inet4Addr final : public InetAddr::Impl
 {
     struct in_addr       addr;
     std::hash<in_addr_t> myHash;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] addr  IPv4 address
+     */
     Inet4Addr(const in_addr_t addr) noexcept
         : Impl(ADDR_IPV4)
         , addr()
@@ -266,6 +365,10 @@ public:
         : Inet4Addr(htonl(INADDR_ANY))
     {}
 
+    /**
+     * Constructs.
+     * @param[in] xprt  Transport from which to read an IPv4 address
+     */
     Inet4Addr(Xprt xprt)
         : Inet4Addr()
     {
@@ -273,6 +376,10 @@ public:
             throw RUNTIME_ERROR("Constructor failure");
     }
 
+    /**
+     * Returns the address family.
+     * @retval AF_INET  Always
+     */
     int getFamily() const noexcept override {
         return AF_INET;
     }
@@ -282,6 +389,10 @@ public:
         return &addr;
     }
 
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
     std::string to_string() const override {
         char buf[INET_ADDRSTRLEN];
 
@@ -291,48 +402,112 @@ public:
         return std::string(buf);
     }
 
+    /**
+     * Indicates if this instance is less than an IP address.
+     * @param[in] rhs      The IP address
+     * @retval    true     This instance is less than the IP address
+     * @retval    false    This instance is not less than the IP address
+     */
     bool operator <(const InetAddr::Impl& rhs) const noexcept override {
         return !(rhs < *this) && !(rhs == *this);
     }
 
+    /**
+     * Indicates if this instance is less than an IPv4 address.
+     * @param[in] rhs      The IPv4 address
+     * @retval    true     This instance is less than the IPv4 address
+     * @retval    false    This instance is not less than the IPv4 address
+     */
     bool operator <(const Inet4Addr& rhs) const noexcept override {
         return ntohl(addr.s_addr) < ntohl(rhs.addr.s_addr);
     }
 
+    /**
+     * Indicates if this instance is less than an IPv6 address.
+     * @param[in] rhs      The IPv6 address
+     * @retval    true     This instance is less than the IPv6 address
+     * @retval    false    This instance is not less than the IPv6 address
+     */
     bool operator <(const Inet6Addr& rhs) const noexcept override {
         return true;
     }
 
+    /**
+     * Indicates if this instance is less than a hostname.
+     * @param[in] rhs      The hostname
+     * @retval    true     This instance is less than the hostname
+     * @retval    false    This instance is not less than the hostname
+     */
     bool operator <(const NameAddr& rhs) const noexcept override {
         return true;
     }
 
+    /**
+     * Indicates if this instance is equal to an IP address.
+     * @param[in] rhs      The IP address
+     * @retval    true     This instance is equal to the IP address
+     * @retval    false    This instance is not equal to the IP address
+     */
     bool operator ==(const InetAddr::Impl& rhs) const noexcept override {
         return rhs == *this;
     }
 
+    /**
+     * Indicates if this instance is equal to an IPv4 address.
+     * @param[in] rhs      The IPv4 address
+     * @retval    true     This instance is equal to the IPv4 address
+     * @retval    false    This instance is not equal to the IPv4 address
+     */
     bool operator ==(const Inet4Addr& rhs) const noexcept override {
         return addr.s_addr == rhs.addr.s_addr;
     }
 
+    /**
+     * Indicates if this instance is equal to an IPv6 address.
+     * @param[in] rhs      The IPv6 address
+     * @retval    true     This instance is equal to the IPv6 address
+     * @retval    false    This instance is not equal to the IPv6 address
+     */
     bool operator ==(const Inet6Addr& rhs) const noexcept override {
         return false;
     }
 
+    /**
+     * Indicates if this instance is equal to a hostname.
+     * @param[in] rhs      The hostname
+     * @retval    true     This instance is equal to the hostname
+     * @retval    false    This instance is not equal to the hostname
+     */
     bool operator ==(const NameAddr& rhs) const noexcept override {
         return false;
     }
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept override {
         return myHash(addr.s_addr);
     }
 
+    /**
+     * Returns a socket appropriate to this instance's address family.
+     * @param[in] type      The type of socket (e.g., SOCK_STREAM, SOCK_DGRAM)
+     * @param[in] protocol  The underlying protocol
+     * @return              A socket appropriate to this instance's address family
+     */
     int socket(
             const int type,
             const int protocol) const override {
         return createSocket(AF_INET, type, protocol);
     }
 
+    /**
+     * Returns a `sockaddr` structure corresponding to this instance.
+     * @param[out] storage  Place to store the output
+     * @param[in]  port     The port number to use
+     * @return              A `sockaddr` structure corresponding to this instance
+     */
     struct sockaddr* get_sockaddr(
             struct sockaddr_storage& storage,
             const in_port_t          port) const override {
@@ -344,6 +519,10 @@ public:
         return reinterpret_cast<struct sockaddr*>(sockaddr);
     }
 
+    /**
+     * Set a UDP socket descriptor to use the interface identified by this instance.
+     * @param[in] sd  The socket descriptor
+     */
     void makeIface(int sd) const override {
         //LOG_DEBUG("Setting multicast interface for IPv4 UDP socket %d to %s", sd,
                 //to_string().data());
@@ -352,24 +531,51 @@ public:
                     std::to_string(sd) + " to " + to_string());
     }
 
+    /**
+     * Indicate if this instance is the wildcard.
+     * @retval true   This instance is the wildcard
+     * @retval false  This instance is not the wildcard
+     */
     bool isAny() const override {
         return addr.s_addr == htonl(INADDR_ANY);
     }
 
+    /**
+     * Indicate if this instance is a multicast address.
+     * @retval true     This instance is a multicast address
+     * @retval false    This instance is not a multicast address
+     */
     bool isMulticast() const override {
         auto ip = ntohl(addr.s_addr);
         return ip >= 0XE0000000 && ip <= 0XEFFFFFFF;
     }
 
+    /**
+     * Indicate if this instance is a source-specific multicast address.
+     * @retval true     This instance is a source-specific multicast address
+     * @retval false    This instance is not a source-specific multicast address
+     */
     bool isSsm() const override {
         auto ip = ntohl(addr.s_addr);
         return ip >= 0XE8000100 && ip <= 0XE8FFFFFF;
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(Xprt xprt) const override {
         return xprt.write(addr.s_addr);
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         return xprt.read(addr.s_addr);
     }
@@ -377,6 +583,7 @@ public:
 
 /******************************************************************************/
 
+/// IPv6 address
 class Inet6Addr final : public InetAddr::Impl
 {
     struct in6_addr     addr;
@@ -458,6 +665,10 @@ class Inet6Addr final : public InetAddr::Impl
 #endif
 
 public:
+    /**
+     * Constructs.
+     * @param[in] addr  IPv6 address
+     */
     Inet6Addr(const struct in6_addr& addr) noexcept
         : Impl(ADDR_IPV6)
         , addr(addr)
@@ -467,6 +678,10 @@ public:
         : Inet6Addr(in6addr_any)
     {}
 
+    /**
+     * Constructs by reading a transport.
+     * @param[in] xprt  The transport
+     */
     Inet6Addr(Xprt xprt)
         : Inet6Addr()
     {
@@ -555,16 +770,29 @@ public:
                     std::to_string(sd) + " to " + std::to_string(ifaceIndex));
     }
 
+    /**
+     * Indicate if this instance is the wildcard.
+     * @retval true     This instance is the wildcard
+     * @retval false    This instance is not the wildcard
+     */
     bool isAny() const override {
         return ::memcmp(in6addr_any.s6_addr, addr.s6_addr, 16) == 0;
     }
 
+    /**
+     * Indicates if this instance specifies a multicast address.
+     * @retval true     Yes
+     * @retval false    No
+     */
     bool isMulticast() const override {
         return IN6_IS_ADDR_MULTICAST(&addr);
     }
 
-    /*
+    /**
+     * Indicates if this instance specifies a source-specific multicast address.
      * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through FF3X::FFFF:FFFF (for IPv6).
+     * @retval true     Yes
+     * @retval false    No
      */
     bool isSsm() const override {
         // Get address in host byte-order
@@ -587,10 +815,22 @@ public:
         return last4 <= 0X40000000 || last4 >= 0X80000000;
     }
 
+    /**
+     * Writes this instance to a transport.
+     * @param[in] xprt  The transport
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
     bool write(Xprt xprt) const override {
         return xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
     }
 
+    /**
+     * Sets this instance from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         return xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
     }
@@ -598,6 +838,7 @@ public:
 
 /******************************************************************************/
 
+/// Hostname address
 class NameAddr final : public InetAddr::Impl
 {
     using SizeType = uint8_t; ///< Type for holding length of hostname for transport
@@ -653,6 +894,10 @@ protected:
     }
 
 public:
+    /**
+     * Constructs.
+     * @param[in] name  The hostname
+     */
     NameAddr(const std::string& name)
         : Impl(ADDR_NAME)
         , name(name)
@@ -666,6 +911,10 @@ public:
         : NameAddr("")
     {}
 
+    /**
+     * Constructs by reading a transport.
+     * @param[in] xprt  The transport
+     */
     NameAddr(Xprt xprt)
         : NameAddr()
     {
@@ -745,14 +994,29 @@ public:
         getIpAddr().makeIface(sd);
     }
 
+    /**
+     * Indicate if this instance is the wildcard.
+     * @retval true     This instance is the wildcard
+     * @retval false    This instance is not the wildcard
+     */
     bool isAny() const override {
         return getIpAddr().isAny();
     }
 
+    /**
+     * Indicates if this instance specifies a multicast address.
+     * @retval true     Yes
+     * @retval false    No
+     */
     bool isMulticast() const override {
         return getIpAddr().isMulticast();
     }
 
+    /**
+     * Indicates if this instance specifies a source-specific multicast address.
+     * @retval true     Yes
+     * @retval false    No
+     */
     bool isSsm() const override {
         return getIpAddr().isSsm();
     }
@@ -761,6 +1025,12 @@ public:
         return xprt.write<SizeType>(name);
     }
 
+    /**
+     * Sets this instance from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         auto success = xprt.read<SizeType>(name);
         if (success && name.size() > _POSIX_HOST_NAME_MAX)
@@ -806,10 +1076,19 @@ InetAddr::InetAddr(const std::string& addr)
     }
 }
 
+/**
+ * Indicates if this instance is valid (i.e., wasn't default constructed).
+ * @retval true     This instance is valid
+ * @retval false    This instance is not valid
+ */
 InetAddr::operator bool() const noexcept {
     return static_cast<bool>(pImpl);
 }
 
+/**
+ * Returns the address family: `AF_INET` or `AF_INET6`.
+ * @return The address family
+ */
 int InetAddr::getFamily() const {
     return pImpl->getFamily();
 }
@@ -927,6 +1206,12 @@ bool InetAddr::read(Xprt xprt) {
     return true;
 }
 
+/**
+ * Writes an IP address to an output stream.
+ * @param[in] ostream  The output stream
+ * @param[in] addr     The IP address
+ * @return
+ */
 std::ostream& operator<<(std::ostream& ostream, const hycast::InetAddr& addr) {
     return ostream << addr.to_string();
 }

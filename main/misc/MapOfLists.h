@@ -48,7 +48,9 @@ class MapOfLists final {
     MapOfLists(const MapOfLists& map);
     MapOfLists& operator=(const MapOfLists& map);
 public:
+    /// Type of iterator over values in a list
     typedef typename Map::mapped_type::const_iterator ValueIterator;
+    /// Range of values in a list
     typedef std::pair<ValueIterator, ValueIterator>   ValueBounds;
     /**
      * Constructs from the initial number of keys.

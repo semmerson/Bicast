@@ -37,12 +37,17 @@ namespace hycast {
 
 static int LOC_WIDTH = 32;
 
+/// Synchronizes access to an I/O stream
 class StreamGuard
 {
     FILE*      stream;
     std::mutex mutex;
 
 public:
+    /**
+     * Constructs.
+     * @param[in] stream  Underlying stream to be guarded
+     */
     StreamGuard(FILE* stream)
         : stream{stream}
         , mutex()
@@ -56,8 +61,17 @@ public:
         ::flockfile(stream);
     }
 
+    /**
+     * Copy constructs.
+     * @param[in] guard  The other instance
+     */
     StreamGuard(const StreamGuard& guard) =delete;
 
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other instance
+     * @return         Reference to the assigned instance
+     */
     StreamGuard& operator=(const StreamGuard& rhs) =delete;
 
     ~StreamGuard() {
@@ -138,16 +152,28 @@ const LogLevel LogLevel::WARN{4};
 const LogLevel LogLevel::ERROR{5};
 const LogLevel LogLevel::FATAL{6};
 
-LogThreshold logThreshold(LogLevel::NOTE);
+LogThreshold logThreshold(LogLevel::NOTE); ///< The current logging threshold
 
+/**
+ * Sets the name of the program.
+ * @param[in] name The name of the program
+ */
 void log_setName(const std::string& name) {
     progName = name;
 }
 
+/**
+ * Returns the name of the program.
+ * @return The name of the program
+ */
 const std::string& log_getName() noexcept {
     return progName;
 }
 
+/**
+ * Signal handler for rotating the logging threshold
+ * @param[in] sig  The signal
+ */
 static void rollLevel(const int sig)
 {
     LogLevel level = static_cast<LogLevel>(logThreshold);
@@ -158,6 +184,10 @@ static void rollLevel(const int sig)
     logThreshold = level;
 }
 
+/**
+ * Sets the signal for rotating the logging threshold.
+ * @param[in] signal  The signal
+ */
 void log_setLevelSignal(const int signal) noexcept {
     struct sigaction sigact;
     (void) sigemptyset(&sigact.sa_mask);
@@ -172,6 +202,11 @@ void log_setLevelSignal(const int signal) noexcept {
     (void)sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
+/**
+ * Sets the logging threshold.
+ * @param[in] name  Name of the logging level: "TRACE", "DEBUG", "INFO", "NOTE", "WARN", "ERROR",
+ *                  "FATAL"
+ */
 void log_setLevel(const std::string& name)
 {
     // To prevent `entry->id.find(lowerName)` from returning 0
@@ -207,14 +242,30 @@ void log_setLevel(const std::string& name)
     throw INVALID_ARGUMENT("Invalid logging-level name: \"" + name + "\"");
 }
 
+/**
+ * Returns the logging level.
+ * @return The logging level
+ */
 LogLevel log_getLevel() noexcept {
     return static_cast<LogLevel>(logThreshold);
 }
 
+/**
+ * Sets the logging level.
+ * @param[in] level  The logging level
+ */
 void log_setLevel(const LogLevel level) noexcept {
     logThreshold.store(level);
 }
 
+/**
+ * Returns a constructed message for an exception.
+ * @param[in] file  The name of the file in which the exception occurred
+ * @param[in] line  The line number in the file in which the exception occurred
+ * @param[in] func  The name of the function in the file in which the exception occurred
+ * @param[in] msg   The log message
+ * @return          The message for the exception
+ */
 std::string makeWhat(
         const char*        file,
         const int          line,
@@ -233,6 +284,15 @@ std::string makeWhat(
     return what;
 }
 
+/**
+ * Logs a message.
+ * @param[in] level    The logging level to use
+ * @param[in] file     The name of the file in which the exception occurred
+ * @param[in] line     The line number in the file in which the exception occurred
+ * @param[in] func     The name of the function in the file in which the exception occurred
+ * @param[in] fmt      The format of the log message
+ * @param[in] argList  The argument list for `fmt`
+ */
 static void log(
         const LogLevel    level,
         const char* const file,
@@ -251,6 +311,11 @@ static void log(
     ::fflush(stderr);
 }
 
+/**
+ * Logs an exception.
+ * @param[in] level  The logging level to use
+ * @param[in] ex     The exception to log
+ */
 void log(
         const LogLevel        level,
         const std::exception& ex)
@@ -282,6 +347,13 @@ void log(
     ::fflush(stderr);
 }
 
+/**
+ * Logs a message
+ * @param[in] level  The logging level to use
+ * @param[in] file   The name of the file in which the exception occurred
+ * @param[in] line   The line number in the file in which the exception occurred
+ * @param[in] func   The name of the function in the file in which the exception occurred
+ */
 void log(
         const LogLevel    level,
         const char* const file,
@@ -296,6 +368,15 @@ void log(
     ::fflush(stderr);
 }
 
+/**
+ * Logs a message.
+ * @param[in] level  The logging level to use
+ * @param[in] file   The name of the file in which the exception occurred
+ * @param[in] line   The line number in the file in which the exception occurred
+ * @param[in] func   The name of the function in the file in which the exception occurred
+ * @param[in] fmt    The format of the log message
+ * @param[in] ...    The arguments for `fmt`
+ */
 void log(
         const LogLevel    level,
         const char* const file,
@@ -312,6 +393,14 @@ void log(
     va_end(argList);
 }
 
+/**
+ * Logs an exception.
+ * @param[in] level  The logging level to use
+ * @param[in] file   The name of the file in which the exception occurred
+ * @param[in] line   The line number in the file in which the exception occurred
+ * @param[in] func   The name of the function in the file in which the exception occurred
+ * @param[in] ex     The exception to log
+ */
 void log(
         const LogLevel        level,
         const char*           file,
@@ -323,6 +412,16 @@ void log(
     log(level, ex);
 }
 
+/**
+ * Logs an exception and a message.
+ * @param[in] level  The logging level to use
+ * @param[in] file   The name of the file in which the exception occurred
+ * @param[in] line   The line number in the file in which the exception occurred
+ * @param[in] func   The name of the function in the file in which the exception occurred
+ * @param[in] ex     The exception to log
+ * @param[in] fmt    The format of the log message
+ * @param[in] ...    The arguments for `fmt`
+ */
 void log(
         const LogLevel        level,
         const char*           file,
@@ -342,6 +441,14 @@ void log(
     va_end(argList);
 }
 
+/**
+ * Logs a message.
+ * @param[in] level  The logging level to use
+ * @param[in] file   The name of the file in which the exception occurred
+ * @param[in] line   The line number in the file in which the exception occurred
+ * @param[in] func   The name of the function in the file in which the exception occurred
+ * @param[in] msg    The log message
+ */
 void log(
         const LogLevel     level,
         const char*        file,
@@ -352,6 +459,12 @@ void log(
     log(level, file, line, func, "%s", msg.data());
 }
 
+/**
+ * Writes a logging level to an output stream.
+ * @param[in] ostream  The output stream
+ * @param[in] level    The logging level
+ * @return             A reference to the output stream
+ */
 std::ostream& operator<<(std::ostream& ostream, const LogLevel& level) {
     return ostream << level.to_string();
 }

@@ -87,9 +87,10 @@ class P2pMgrImpl : public P2pMgr
     }
 
 protected:
-    using PeerSet = std::set<Peer::Pimpl>;
-    using PeerMap = std::unordered_map<SockAddr, Peer::Pimpl>;
+    using PeerSet = std::set<Peer::Pimpl>; ///< Set of peers type
+    using PeerMap = std::unordered_map<SockAddr, Peer::Pimpl>; ///< Map of peers type
 
+    /// State of an instance
     enum class State {
         INIT,
         STARTED,
@@ -153,6 +154,10 @@ protected:
         state = State::STOPPED;
     }
 
+    /**
+     * Sets the exception to be thrown.
+     * @param[in] ex  The exception to be thrown
+     */
     void setException(const std::exception& ex) {
         threadEx.set(ex);
         ::sem_post(&stopSem);
@@ -177,6 +182,10 @@ protected:
     virtual void reassignRequests(Peer::Pimpl peer) {
     }
 
+    /**
+     * Executes a peer.
+     * @param[in] peer  The peer to execute
+     */
     void runPeer(Peer::Pimpl peer) {
         try {
             peer->run();
@@ -208,8 +217,8 @@ protected:
      *
      * @pre                   Mutex is unlocked
      * @param[in] peer        Peer to be added
-     * @retval    `true`      Peer added
-     * @retval    `false`     Peer was previously added
+     * @retval    true        Peer added
+     * @retval    false       Peer was previously added
      * @post                  Mutex is unlocked
      */
     bool add(Peer::Pimpl peer) {
@@ -228,6 +237,10 @@ protected:
      */
     virtual Peer::Pimpl accept() =0;
 
+    /**
+     * Cancels a thread and joins it.
+     * @param[in] thread  The thread to cancel
+     */
     void cancelAndJoin(Thread& thread) {
         if (thread.joinable()) {
             auto status = ::pthread_cancel(thread.native_handle());
@@ -280,8 +293,8 @@ protected:
      * @pre                  Peer-set mutex is locked
      * @param[in] peer       Peer
      * @param[in] prodId     Product identifier
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
+     * @retval    true       Peer should be notified
+     * @retval    false      Peer should not be notified
      * @post                 Peer-set mutex is locked
      */
     virtual bool shouldNotify(
@@ -295,8 +308,8 @@ protected:
      * @pre                  Peer-set mutex is locked
      * @param[in] peer       Peer
      * @param[in] dataSegId  ID of the data segment
-     * @retval    `true`     Peer should be notified
-     * @retval    `false`    Peer should not be notified
+     * @retval    true       Peer should be notified
+     * @retval    false      Peer should not be notified
      * @post                 Peer-set mutex is locked
      */
     virtual bool shouldNotify(
@@ -471,10 +484,20 @@ public:
         return node.getProdIds();
     }
 
+    /**
+     * Returns information on a product.
+     * @param[in] prodId  Product identifier
+     * @return            Information on the given product
+     */
     ProdInfo getDatum(const ProdId prodId) {
         return node.recvRequest(prodId);
     }
 
+    /**
+     * Returns a data segment.
+     * @param[in] segId  The data segment identifier
+     * @return           The corresponding data segment. Will be invalid if it doesn't exist.
+     */
     DataSeg getDatum(const DataSegId segId) {
         return node.recvRequest(segId);
     }
@@ -616,8 +639,17 @@ public:
         bookkeeper = Bookkeeper::createPub(maxPeers);
     }
 
+    /**
+     * Copy constructs.
+     * @param[in] impl  Pointer to an implementation
+     */
     PubP2pMgrImpl(const PubP2pMgrImpl& impl) =delete;
 
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other instance
+     * @return         A reference to this just-assigned instance
+     */
     PubP2pMgrImpl& operator=(const PubP2pMgrImpl& rhs) =delete;
 
     SockAddr getSrvrAddr() const override {
@@ -799,8 +831,8 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
      * Indicates whether or not this P2P node is a path to the publisher for a remote P2P node.
      *
      * @param[in] forPeer  Peer whose remote counterpart is to be ignored in the determination
-     * @retval    `true`   Yes, this P2P node is a path to the publisher for the remote node
-     * @retval    `false`  No, this P2P node is not a path to the publisher for the remote node
+     * @retval    true     Yes, this P2P node is a path to the publisher for the remote node
+     * @retval    false    No, this P2P node is not a path to the publisher for the remote node
      */
     bool isPathToPubFor(Peer::Pimpl forPeer) {
         Guard guard{peerSetMutex};
@@ -1021,6 +1053,22 @@ protected:
     }
 
 public:
+    /**
+     * Creates an implementation of a subscribing P2P manager. Creates a P2P server listening on a
+     * socket but doesn't do anything with it until `run()` is called.
+     *
+     * @param[in] subNode      Subscriber's node
+     * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] p2pSrvr      Socket address for subscriber's P2P server. IP address *must not* be
+     *                         wildcard. If the port number is zero, then the O/S will choose an
+     *                         ephemeral port number.
+     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
+     *                         timeout; 0 => immediate return.
+     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
+     * @return                 Subscribing P2P manager
+     * @see `getPeerSrvrAddr()`
+     */
     SubP2pMgrImpl(SubNode&           subNode,
                   Tracker            tracker,
                   SubP2pSrvr::Pimpl  p2pSrvr,
@@ -1042,8 +1090,10 @@ public:
         tracker.erase(p2pSrvr->getSrvrAddr());
     }
 
+    /// Copy constructs
     SubP2pMgrImpl(const SubP2pMgrImpl& impl) =delete;
 
+    /// Copy assignment operator
     SubP2pMgrImpl& operator=(const SubP2pMgrImpl& rhs) =delete;
 
     void run() {
@@ -1128,6 +1178,12 @@ public:
         }
     }
 
+    /**
+     * Receives product information from a remote peer.
+     *
+     * @param[in] datum     Product information
+     * @param[in] rmtAddr   Socket address of remote peer
+     */
     template<class DATUM>
     void recvData(const DATUM datum,
                   SockAddr    rmtAddr) {

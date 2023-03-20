@@ -104,6 +104,9 @@ protected:
     std::atomic<bool>  connected;   ///< Connected to remote peer?
 
 
+    /**
+     * Runs the writer of notices to the remote peer.
+     */
     void runNoticeWriter() {
         LOG_TRACE("Executing notice writer");
         try {
@@ -166,6 +169,9 @@ protected:
         LOG_TRACE("Terminating");
     }
 
+    /**
+     * Starts the writer of notices to the remote peer on a separate thread.
+     */
     void startNoticeWriter() {
         //LOG_DEBUG("Starting notice-writer thread");
         noticeThread = Thread(&PeerImpl::runNoticeWriter, this);
@@ -181,6 +187,9 @@ protected:
         }
     }
 
+    /**
+     * Executes the RPC component.
+     */
     void runRpc() {
         try {
             rpc->run(*this);
@@ -239,6 +248,12 @@ protected:
         state = State::STOPPED;
     }
 
+    /**
+     * Adds a notice to be sent.
+     * @param[in] notice   The notice to be sent
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool addNotice(const Notice& notice) {
         threadEx.throwIfSet();
 
@@ -287,14 +302,26 @@ public:
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
     }
 
+    /**
+     * Copy constructs. Deleted because of "rule of three".
+     * @param[in] impl  Instance to copy
+     */
     PeerImpl(const PeerImpl& impl) =delete; // Rule of three
 
+    /**
+     * Destroys.
+     */
     virtual ~PeerImpl() noexcept {
         Guard guard{stateMutex};
         LOG_ASSERT(state == State::INIT || state == State::STOPPED);
         ::sem_destroy(&stopSem);
     }
 
+    /**
+     * Assigns. Deleted because of "rule of three".
+     * @param[in] rhs  Right hand side of assignment
+     * @return Reference to assigned value
+     */
     PeerImpl& operator=(const PeerImpl& rhs) noexcept =delete; // Rule of three
 
     /**
@@ -315,11 +342,21 @@ public:
         return rmtSockAddr;
     }
 
+    /**
+     * Returns the hash code of this instance.
+     * @return The hash code of this instance
+     */
     size_t hash() const noexcept override {
         // Keep consistent with `operator<()`
         return rmtSockAddr.hash() ^ lclSockAddr.hash();
     }
 
+    /**
+     * Indicates if this instance is less than another.
+     * @param[in] rhs      The right-hand-side other instance
+     * @retval    true     This instance is less than the other
+     * @retval    false    This instance is not less than the other
+     */
     bool operator<(const Peer& rhs) const noexcept override {
         // Keep consistent with `hash()`
         return rmtSockAddr < rhs.getRmtAddr()
@@ -329,10 +366,22 @@ public:
                       : lclSockAddr < rhs.getLclAddr();
     }
 
+    /**
+     * Indicates if this instance is not equal to another.
+     * @param[in] rhs      The right-hand-side other instance
+     * @retval    true     This instance is not equal to the other
+     * @retval    false    This instance is equal to the other
+     */
     bool operator!=(const Peer& rhs) const noexcept override {
         return *this < rhs || rhs < *this;
     }
 
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs      The right-hand-side other instance
+     * @retval    true     This instance is equal to the other
+     * @retval    false    This instance is not equal to the other
+     */
     bool operator==(const Peer& rhs) const noexcept override {
         return !(*this == rhs);
     }
@@ -395,6 +444,10 @@ public:
     void notify(const ProdId prodId) override {
         addNotice(Notice{prodId});
     }
+    /**
+     * Notifies the remote counterpart about an available data segment.
+     * @param[in] segId  ID of the data segment
+     */
     void notify(const DataSegId segId) override {
         addNotice(Notice{segId});
     }
@@ -579,23 +632,37 @@ class SubPeerImpl final : public PeerImpl
         }
 
     public:
+        /// Iterator for a request-queue
         class Iter : public std::iterator<std::input_iterator_tag, Notice>
         {
             RequestQ& queue;
             Notice    request;
 
         public:
+            /**
+             * Constructs.
+             * @param[in] queue    Queue of requests
+             * @param[in] request  First request to return
+             */
             Iter(RequestQ& queue, const Notice& request)
                 : queue(queue)
                 , request(request) {}
+            /**
+             * Copy constructs.
+             * @param[in] iter  The other instance
+             */
             Iter(const Iter& iter)
                 : queue(iter.queue)
                 , request(iter.request) {}
+            /// Inequality operator
             bool operator!=(const Iter& rhs) const {
                 return request ? (request != rhs.request) : false;
             }
+            /// Dereference operator
             Notice& operator*()  {return request;}
+            /// Dereference operator
             Notice* operator->() {return &request;}
+            /// Increment operator
             Iter& operator++() {
                 Guard guard{queue.mutex};
                 request = queue.requests[request]; // Value component references next entry
@@ -645,8 +712,8 @@ class SubPeerImpl final : public PeerImpl
         /**
          * Indicates if the queue is empty.
          *
-         * @retval `true`   Queue is empty
-         * @retval `false`  Queue is not empty
+         * @retval true     Queue is empty
+         * @retval false    Queue is not empty
          */
         bool empty() const {
             Guard guard{mutex};
@@ -876,8 +943,8 @@ public:
      * it has.
      *
      * @param[in] prodId     Product index
-     * @retval    `false`    Connection lost
-     * @retval    `true`     Success
+     * @retval    false      Connection lost
+     * @retval    true       Success
      */
     bool recvNotice(const ProdId prodId) {
         //LOG_TRACE("Peer %s received notice about product %s", to_string().data(),
@@ -903,8 +970,8 @@ public:
      * it has.
      *
      * @param[in] dataSegId  Data segment ID
-     * @retval    `false`    Connection lost
-     * @retval    `true`     Success
+     * @retval    false      Connection lost
+     * @retval    true       Success
      */
     bool recvNotice(const DataSegId dataSegId) {
         //LOG_TRACE("Peer %s received notice about data segment %s", to_string().data(),
@@ -963,12 +1030,14 @@ Peer::Pimpl Peer::create(
 
 /******************************************************************************/
 
+/// An implementation of a P2P server
 template<typename P2P_MGR>
 class P2pSrvrImpl : public P2pSrvr<P2P_MGR>
 {
     typename RpcSrvr::Pimpl rpcSrvr;
 
 public:
+    /// Constructs
     P2pSrvrImpl(
             const TcpSrvrSock p2pSrvr,
             const bool        iAmPub,
@@ -976,6 +1045,7 @@ public:
         : rpcSrvr(RpcSrvr::create(p2pSrvr, iAmPub, acceptQSize))
     {}
 
+    /// Constructs
     P2pSrvrImpl(
             const SockAddr srvrAddr,
             const bool     iAmPub,
@@ -999,6 +1069,7 @@ public:
     }
 };
 
+/// Returns a smart pointer to an implementation.
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
@@ -1006,6 +1077,7 @@ P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
     return Pimpl{new P2pSrvrImpl<PubP2pMgr>(srvrSock, true, acceptQSize)};
 }
 
+/// Returns a smart pointer to an implementation.
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const SockAddr  srvrAddr,
@@ -1014,6 +1086,7 @@ P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
     return create(srvrSock, acceptQSize);
 }
 
+/// Returns a smart pointer to an implementation.
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
@@ -1021,6 +1094,7 @@ P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
     return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrSock, false, acceptQSize)};
 }
 
+/// Returns a smart pointer to an implementation.
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,

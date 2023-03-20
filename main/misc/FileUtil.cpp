@@ -93,10 +93,11 @@ struct ::stat& FileUtil::statNoFollow(
  * Returns the statistics of a file.
  *
  * @param[in] rootFd        File descriptor open on root-directory
- * @param[in] pathname      Pathname of existing file
+ * @param[in] pathname      Pathname of existing file. May be absolute or relative to the root-
+ *                          directory.
  * @return                  Statistics of the file
- * @throws    SYSTEM_ERROR  `::openat()` failure
- * @throws    SYSTEM_ERROR  `::stat()` failure
+ * @throws    SYSTEM_ERROR  Couldn't open file
+ * @throws    SYSTEM_ERROR  Couldn't get information on the file
  * @threadsafety            Safe
  * @exceptionsafety         Strong guarantee
  * @cancellationpoint       No
