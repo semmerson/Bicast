@@ -81,18 +81,18 @@ TEST_F(DisposerTest, SimpleUsage)
         Disposer            disposer(0);
         std::regex          incl("(one|two)"); // gcc 4.8.5 doesn't support brackets!!! 4.9 does.
         std::regex          excl("two");
-        std::vector<String> argTemplates{"sh", "-c", "cat >" + rootDir + "/$1"};
+        std::vector<String> cmdTemplate{"sh", "-c", "cat >" + rootDir + "/$1"};
         // `true` to see how this works with no persistent actions allowed
-        PipeTemplate        actionTemplate(argTemplates, true);
+        PipeTemplate        actionTemplate(cmdTemplate, true);
         PatternAction       patAct(incl, excl, actionTemplate);
 
         disposer.add(patAct);
 
         ProdInfo prodInfo1("one", 1);
-        disposer.disposeOf(prodInfo1, "1");
+        disposer.dispose(prodInfo1, "1");
 
         ProdInfo prodInfo2("two", 1);
-        disposer.disposeOf(prodInfo2, "2");
+        disposer.dispose(prodInfo2, "2");
     }
     catch (const std::regex_error& e) {
         std::cout << "regex_error caught: " << e.what() << '\n';
