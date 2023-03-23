@@ -465,7 +465,7 @@ public:
     /// The type of product data unit for this class
     static constexpr PduId::Type pduId = PduId::PROD_INFO;
 
-    ProdInfo();
+    ProdInfo() =default;
 
     /**
      * Constructs.
@@ -483,8 +483,8 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] name    Name of product
-     * @param[in] size    Size of product in bytes
+     * @param[in] name        Name of product
+     * @param[in] size        Size of product in bytes
      * @param[in] createTime  When the product was created
      */
     ProdInfo(const std::string&  name,
@@ -492,7 +492,7 @@ public:
              const SysTimePoint& createTime = SysClock::now());
 
     /**
-     * Indicates if this instance is valid.
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
      * @retval true     This instance is valid
      * @retval false    This instance is not valid
      */
@@ -615,7 +615,7 @@ public:
      * @retval true     This instance is valid
      * @retval false    This instance is not valid
      */
-    operator bool() const;
+    operator bool() const noexcept;
 
     /**
      * Returns the ID of this instance.
@@ -824,7 +824,7 @@ public:
      * @retval    false    This instance is not about the given data segment
      */
     bool equals(const DataSegId segId) {
-        return id == Id::DATA_SEG_ID && this->dataSegId == dataSegId;
+        return id == Id::DATA_SEG_ID && dataSegId == segId;
     }
 
     /**

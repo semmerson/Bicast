@@ -190,7 +190,7 @@ TEST_F(NodeTest, Sending)
 
         // Verify reception
         try {
-            auto prodInfo = subNode->getNextProd();
+            auto prodInfo = subNode->getNextProd().getProdInfo();
 
             EXPECT_FALSE(threadEx);
             /*

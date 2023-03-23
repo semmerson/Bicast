@@ -325,11 +325,11 @@ public:
     }
 
     /**
-     * Returns information on the next product.
-     * @return Information on the next product
+     * Returns the next product to process locally.
+     * @return The next product to process locally
      */
-    virtual ProdInfo getNextProd() {
-        return ProdInfo{};
+    virtual ProdEntry getNextProd() {
+        return ProdEntry{};
     }
 
     /**

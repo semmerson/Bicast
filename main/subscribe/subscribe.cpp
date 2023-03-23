@@ -1,7 +1,7 @@
 /**
  * Program to subscribe to data-products via Hycast.
  *
- *        File: subscriber.cpp
+ *        File: subscribe.cpp
  *  Created on: Aug 13, 2020
  *      Author: Steven R. Emmerson
  *

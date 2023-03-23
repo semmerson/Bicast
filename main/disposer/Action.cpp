@@ -564,7 +564,7 @@ public:
 
         const auto nwritten = ::write(fd, bytes, nbytes);
         if (nwritten != nbytes)
-            throw RUNTIME_ERROR("Wrote only " + std::to_string(nwritten) + " bytes out of " +
+            throw SYSTEM_ERROR("Wrote only " + std::to_string(nwritten) + " bytes out of " +
                     std::to_string(nbytes) + " to file \"" + args[0] + "\"");
 
         if (!persist) {

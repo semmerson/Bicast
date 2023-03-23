@@ -158,11 +158,12 @@ public:
     // Publisher-side
     ProdInfo getDatum(const ProdId request, const SockAddr rmtAddr) override
     {
-        LOG_TRACE("Entered");
+        //LOG_DEBUG("prodId=%s", request.to_string().data());
         EXPECT_EQ(prodIds[prodRequestCount], request);
         orState(PROD_REQUEST_RCVD);
-        auto prodInfo = (skipping && prodRequestCount == 0)
-                ? ProdInfo{}
+        static const ProdInfo invalid{};
+        auto& prodInfo = (skipping && prodRequestCount == 0)
+                ? invalid
                 : prodInfos[prodRequestCount];
         ++prodRequestCount;
         return prodInfo;
@@ -171,11 +172,12 @@ public:
     // Publisher-side
     DataSeg getDatum(const DataSegId request, const SockAddr rmtAddr) override
     {
-        LOG_TRACE("Entered");
+        //LOG_DEBUG("segId=%s", request.to_string().data());
         EXPECT_EQ(segIds[segRequestCount], request);
         orState(SEG_REQUEST_RCVD);
-        auto dataSeg = (skipping && segRequestCount == 0)
-                ? DataSeg{}
+        static const DataSeg invalid{};
+        auto& dataSeg = (skipping && segRequestCount == 0)
+                ? invalid
                 : dataSegs[segRequestCount];
         ++segRequestCount;
         return dataSeg;
@@ -202,14 +204,14 @@ public:
 
     void missed(const ProdId prodId, SockAddr rmtAddr) override {
         static int i = 0;
-        LOG_DEBUG("i=%d, prodId=%s", i, prodId.to_string().data());
+        //LOG_DEBUG("i=%d, prodId=%s", i, prodId.to_string().data());
         ASSERT_EQ(prodIds[i++], prodId);
         orState(PROD_INFO_MISSED);
     }
 
     void missed(const DataSegId dataSegId, SockAddr rmtAddr) override {
         static int i = 0;
-        LOG_DEBUG("i=%d, dataSegId=%s", i, dataSegId.to_string().data());
+        //LOG_DEBUG("i=%d, dataSegId=%s", i, dataSegId.to_string().data());
         ASSERT_EQ(segIds[i++], dataSegId);
         orState(DATA_SEG_MISSED);
     }

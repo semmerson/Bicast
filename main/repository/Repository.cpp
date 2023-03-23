@@ -54,76 +54,6 @@ namespace hycast {
 using namespace std::chrono;
 
 /**
- * @tparam PF  Product-file type
- */
-struct ProdEntry final
-{
-    ProdFile  prodFile;  ///< Product file
-    ProdInfo  prodInfo;  ///< Product information
-
-    ProdEntry()
-        : prodFile{}
-        , prodInfo()
-    {}
-
-    /**
-     * Constructs.
-     * @param[in] prodFile  Product file
-     * @param[in] prodInfo  Product information
-     */
-    explicit ProdEntry(
-            ProdFile       prodFile,
-            const ProdInfo prodInfo = ProdInfo{})
-        : prodFile(prodFile)
-        , prodInfo(prodInfo)
-    {}
-
-    /**
-     * Constructs.
-     * @param[in] prodFile  The product-file
-     * @param[in] prodInfo  The product information
-     */
-    explicit ProdEntry(
-            ProdFile&&       prodFile,
-            const ProdInfo&& prodInfo = ProdInfo{})
-        : prodFile(prodFile)
-        , prodInfo(prodInfo)
-    {}
-
-    /**
-     * Destroys.
-     */
-    ~ProdEntry() noexcept
-    {}
-
-    /**
-     * Copy assigns.
-     * @param[in] rhs  The other, right-hand-side instance
-     * @return         A reference to this just-assigned instance
-     */
-    inline ProdEntry& operator=(const ProdEntry& rhs) =default;
-
-    /**
-     * @return  Product metadata. Will test false if it hasn't been set by `set(const ProdInfo)`.
-     * @see `set(const ProdInfo)`
-     */
-    inline ProdInfo getProdInfo() const {
-        return ProdInfo{};
-    }
-
-    /**
-     * Returns the string representation of this instance.
-     * @return The string representation of this instance
-     */
-    inline std::string to_string() const
-    {
-        return prodFile.to_string();
-    }
-};
-
-/**************************************************************************************************/
-
-/**
  * Abstract, base implementation of a repository of transient data-products.
  */
 class Repository::Impl
@@ -150,6 +80,8 @@ class Repository::Impl
 
     /**
      * Deletes products that are at least as old as the keep-time.
+     * @throws SystemError  Couldn't delete file
+     * @throws SystemError  Couldn't delete empty directory
      */
     void deleteProds() {
         LOG_DEBUG("Deleting too-old products");
@@ -452,19 +384,20 @@ protected:
      * @pre                  Mutex is locked
      * @param[in] prodId     Product-identifier
      * @return               Pointer to the product-entry
-     * @retval    `nullptr`  Entry doesn't exist
+     * @retval    nullptr    No such entry
      * @post                 Mutex is locked
      */
     ProdEntry* findProdEntry(const ProdId prodId) {
         LOG_ASSERT(!mutex.try_lock());
 
+        static ProdEntry invalid;
         if (prodEntries.count(prodId) == 0)
             return nullptr;
 
-        auto prodEntry = &prodEntries.at(prodId);
-        activate(prodId, *prodEntry);
+        ProdEntry& prodEntry = prodEntries[prodId];
+        activate(prodId, prodEntry);
 
-        return prodEntry;
+        return &prodEntry;
     }
 
 public:
@@ -538,21 +471,25 @@ public:
     }
 
     /**
-     * Returns information on the next data-product to be processed (either sent or locally
-     * processed). Blocks until one is available.
-     *
-     * @return Next data-product
+     * Returns the next product to process, either for transmission or local processing. Blocks
+     * until one is available.
+     * @return The next product to process. The product's metadata and data shall be complete.
+     * @throws SystemError   System failure
+     * @throws RuntimeError  inotify(7) failure
      */
-    ProdInfo getNextProd() {
-        Lock lock(mutex);
+    ProdEntry getNextProd() {
+        ProdEntry prodEntry;
+        Lock      lock(mutex);
+
         cond.wait(lock, [&]{return !prodQueue.empty() || threadEx;});
 
         threadEx.throwIfSet();
 
-        auto prodInfo = prodQueue.front();
+        prodEntry = *findProdEntry(prodQueue.front().getId());
+
         prodQueue.pop();
 
-        return prodInfo;
+        return prodEntry;
     }
 
     /**
@@ -566,11 +503,9 @@ public:
 
         static const ProdInfo empty{};
         Guard                 guard{mutex};
-        auto                  prodEntry = findProdEntry(prodId);
+        ProdEntry*            prodEntry = findProdEntry(prodId);
 
-        return (prodEntry == nullptr)
-                ? empty
-                : prodEntry->prodInfo;
+        return prodEntry ? prodEntry->prodInfo : empty;
     }
 
     /**
@@ -589,12 +524,12 @@ public:
 
         static const DataSeg empty{};
         Guard                guard{mutex};
-        auto                 prodEntry = findProdEntry(segId.prodId);
+        ProdEntry*           prodEntry = findProdEntry(segId.prodId);
 
-        return (prodEntry == nullptr)
-                ?  empty
-                :  DataSeg{segId, prodEntry->prodFile.getProdSize(),
-                        prodEntry->prodFile.getData(segId.offset)};
+        return prodEntry
+                ?  DataSeg{segId, prodEntry->prodFile.getProdSize(),
+                        prodEntry->prodFile.getData(segId.offset)}
+                :  empty;
     }
 
     /**
@@ -673,7 +608,7 @@ const std::string& Repository::getRootDir() const noexcept {
     return pImpl->getRootDir();
 }
 
-ProdInfo Repository::getNextProd() const {
+ProdEntry Repository::getNextProd() const {
     return pImpl->getNextProd();
 }
 
@@ -869,33 +804,34 @@ class SubRepo::Impl final : public Repository::Impl
     }
 
     /**
-     * Adds a product-entry. Upon return, the entry is open, at the back of the open-products list,
+     * Adds a product-entry. Upon success, the entry is open, at the back of the open-products list,
      * and in the delete-queue. The creation-time in the delete-queue is that of the product-
      * information in the product-entry if it's valid and the modification time of the product-file
      * otherwise.
      *
      * @param[in] prodId     Product-ID
-     * @param[in] prodEntry  Product-entry. Product-information may be valid or invalid.
-     * @return               Pointer to the added entry
+     * @param[in] prodEntry  Valid product-entry. Product-information may be valid or invalid..
+     * @return               The corresponding entry
      */
-    ProdEntry* add(
+    ProdEntry& add(
             const ProdId prodId,
             ProdEntry&&  prodEntry) {
         LOG_ASSERT(!mutex.try_lock());
+        LOG_ASSERT(prodEntry.prodFile || prodEntry.prodInfo);
 
-        auto pair = prodEntries.emplace(prodId, prodEntry);
-        auto entryPtr = &pair.first->second;
+        auto       pair = prodEntries.emplace(prodId, prodEntry);
+        ProdEntry& entry = pair.first->second;
 
         if (pair.second) {
             SysTimePoint createTime = prodEntry.prodInfo
                     ? prodEntry.prodInfo.getCreateTime()
                     : prodEntry.prodFile.getModTime();
             deleteQueue.push(DeleteEntry{createTime+keepTime, prodId});
-            activate(prodId, prodEntry);
+            activate(prodId, entry);
             cond.notify_all(); // State changed
         }
 
-        return entryPtr;
+        return entry;
     }
 
     /**
@@ -916,14 +852,14 @@ class SubRepo::Impl final : public Repository::Impl
     {
         LOG_ASSERT(!mutex.try_lock());
 
-        auto prodEntry = findProdEntry(prodId);
+        ProdEntry* prodEntry = findProdEntry(prodId);
 
-        if (prodEntry == nullptr) {
-            ProdFile  prodFile{tempAbsPathname(prodId), prodSize};
-            prodEntry = add(prodId, ProdEntry{prodFile});
-        }
+        if (prodEntry)
+            return *prodEntry;
 
-        return *prodEntry;
+        ProdFile  prodFile{tempAbsPathname(prodId), prodSize};
+
+        return add(prodId, ProdEntry{prodFile});
     }
 
     /**
@@ -995,7 +931,7 @@ public:
         bool       wasSaved = false;
         const auto prodId = prodInfo.getId();
         Guard      guard{mutex};
-        auto       prodEntry = findProdEntry(prodId);
+        ProdEntry* prodEntry = findProdEntry(prodId);
 
         if (prodEntry) {
             // Entry is open and appended to open-list
@@ -1008,8 +944,8 @@ public:
         else {
             String   pathname = tempAbsPathname(prodId);
             ProdFile prodFile(pathname, prodInfo.getSize()); // Is open
-            prodEntry = add(prodId, ProdEntry{prodFile, prodInfo});
-            finishIfComplete(prodId, *prodEntry); // Supports products with no data
+            ProdEntry& prodEntry = add(prodId, ProdEntry{prodFile, prodInfo});
+            finishIfComplete(prodId, prodEntry); // Supports products with no data
             wasSaved = true;
         }
 
@@ -1034,7 +970,7 @@ public:
         bool       wasSaved = false;
         const auto prodId = dataSeg.getId().prodId;
         Guard      guard{mutex};
-        auto       prodEntry = findProdEntry(prodId);
+        ProdEntry* prodEntry = findProdEntry(prodId);
 
         if (prodEntry) {
             if (prodEntry->prodFile.save(dataSeg)) {
@@ -1047,7 +983,7 @@ public:
             String   pathname = tempAbsPathname(prodId);
             ProdFile prodFile{pathname, dataSeg.getProdSize()}; // Is open
             prodFile.save(dataSeg);
-            prodEntry = add(prodId, ProdEntry{prodFile});
+            add(prodId, ProdEntry{prodFile});
             wasSaved = true;
         }
 
@@ -1065,8 +1001,8 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard guard{mutex};
-        auto  prodEntry = findProdEntry(prodId);
+        Guard      guard{mutex};
+        ProdEntry* prodEntry = findProdEntry(prodId);
 
         return prodEntry && prodEntry->prodInfo;
     }
@@ -1082,8 +1018,8 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard guard{mutex};
-        auto  prodEntry = findProdEntry(segId.prodId);
+        Guard      guard{mutex};
+        ProdEntry* prodEntry = findProdEntry(segId.prodId);
 
         return prodEntry && prodEntry->prodFile.exists(segId.offset);
     }

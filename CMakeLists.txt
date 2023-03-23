@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Set the project name and version
-PROJECT(Hycast VERSION 1.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
+PROJECT(hycast VERSION 1.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
 
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
@@ -85,8 +85,17 @@ install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" DESTINATION
             ${CMAKE_INSTALL_DOCDIR})
 
 include(InstallRequiredSystemLibraries)
+
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGE_VERSION_MAJOR "${Hycast_VERSION_MAJOR}")
-set(CPACK_PACKAGE_VERSION_MINOR "${Hycast_VERSION_MINOR}")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/${PROJECT_NAME}-${PROJECT_VERSION}/")
+set(CPACK_PACKAGE_VENDOR "University Corporation for Atmospheric Research")
+
+SET(CPACK_DEBIAN_PACKAGE_DEPENDS "yaml-cpp-dev openssl11-dev")
+SET(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+
+SET(CPACK_RPM_PACKAGE_LICENSE "Apache 2.0")
+SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp-devel openssl11-devel")
+SET(CPACK_RPM_PACKAGE_PROVIDES "publish(1), subscribe(1)")
+
 set(CPACK_GENERATOR "RPM")
 include(CPack)

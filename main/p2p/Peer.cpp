@@ -827,12 +827,14 @@ class SubPeerImpl final : public PeerImpl
      */
     template<typename DATUM>
     void processData(const DATUM datum) {
+        //LOG_DEBUG("Processing datum %s", datum.to_string().data());
         const auto& id = datum.getId();
         if (requested.count(Notice{id}) == 0)
             throw LOGIC_ERROR("Peer " + to_string() + " received unrequested datum " +
                     datum.to_string());
 
         for (auto iter =  requested.begin(), end = requested.end(); iter != end; ) {
+            //LOG_DEBUG("Comparing against request %s", iter->to_string().data());
             if (iter->equals(id)) {
                 subP2pMgr.recvData(datum, rmtSockAddr);
                 requested.pop();

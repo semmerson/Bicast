@@ -33,6 +33,89 @@
 namespace hycast {
 
 /**
+ * Class that contains both information on a product and access to its data.
+ */
+struct ProdEntry final
+{
+    ProdFile  prodFile;  ///< Product file
+    ProdInfo  prodInfo;  ///< Product information
+
+    ProdEntry()
+        : prodFile{}
+        , prodInfo()
+    {}
+
+    /**
+     * Constructs.
+     * @param[in] prodFile  Product file
+     * @param[in] prodInfo  Product information
+     */
+    explicit ProdEntry(
+            ProdFile       prodFile,
+            const ProdInfo prodInfo = ProdInfo{})
+        : prodFile(prodFile)
+        , prodInfo(prodInfo)
+    {}
+
+    /**
+     * Constructs.
+     * @param[in] prodFile  The product-file
+     * @param[in] prodInfo  The product information
+     */
+    explicit ProdEntry(
+            ProdFile&&       prodFile,
+            const ProdInfo&& prodInfo = ProdInfo{})
+        : prodFile(prodFile)
+        , prodInfo(prodInfo)
+    {}
+
+    /**
+     * Destroys.
+     */
+    ~ProdEntry() noexcept
+    {}
+
+    /// Indicates if this instance is valid.
+    operator bool() const {
+        return static_cast<bool>(prodInfo) && static_cast<bool>(prodFile);
+    }
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  The other, right-hand-side instance
+     * @return         A reference to this just-assigned instance
+     */
+    inline ProdEntry& operator=(const ProdEntry& rhs) =default;
+
+    /**
+     * @return  Product metadata. Will test false if it hasn't been set by `set(const ProdInfo)`.
+     * @see `set(const ProdInfo)`
+     */
+    inline ProdInfo getProdInfo() const {
+        return prodInfo;
+    }
+
+    /**
+     * Returns a data segment.
+     * @param[in] offset  Offset to the segment in bytes
+     */
+    inline DataSeg getDataSeg(const ProdSize offset) const {
+        return DataSeg(DataSegId(prodInfo.getId(), offset), prodInfo.getSize(),
+                prodFile.getData(offset));
+    }
+
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
+    inline std::string to_string() const {
+        return prodFile.to_string();
+    }
+};
+
+/**************************************************************************************************/
+
+/**
  * Handle class for the base class of a repository for temporary data-products.
  */
 class Repository
@@ -104,11 +187,13 @@ public:
     const std::string& getRootDir() const noexcept;
 
     /**
-     * Returns the next product to process (i.e., either transmitted or locally processed).
-     *
-     * @return  Metadata of the next product to process
+     * Returns the next product to process, either for transmission or local processing. Blocks
+     * until one is available.
+     * @return The next product to transmit or process locally
+     * @throws SystemError   System failure
+     * @throws RuntimeError  inotify(7) failure
      */
-    ProdInfo getNextProd() const;
+    ProdEntry getNextProd() const;
 
     /**
      * Returns information on a product.

@@ -168,8 +168,10 @@ public:
         String string;
         if (withName)
             string += "DataSeg";
-        return string + "{segId=" + segId.to_string() + ", prodSize=" +
-                std::to_string(prodSize) + "}";
+        return operator bool()
+                ? string + "{segId=" + segId.to_string() + ", prodSize=" +
+                    std::to_string(prodSize) + "}"
+                : "{invalid}";
     }
 
     /**
@@ -265,8 +267,8 @@ DataSeg::DataSeg(const DataSegId segId,
     : pImpl(new Impl(segId, prodSize, data))
 {}
 
-DataSeg::operator bool() const {
-    return pImpl ? pImpl->operator bool() : false;
+DataSeg::operator bool() const noexcept {
+    return pImpl && pImpl->operator bool();
 }
 
 const DataSegId& DataSeg::getId() const noexcept {

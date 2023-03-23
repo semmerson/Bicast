@@ -8,7 +8,7 @@ numBlocks=1
 numFiles=1
 
 # Start publisher
-../main/publisher/publisher -l TRACE -P 127.0.0.1:38800 -p 127.0.0.1 -r pubrepo -S 127.0.0.1  &
+../main/publish/publish -l TRACE -P 127.0.0.1:38800 -p 127.0.0.1 -r pubrepo -S 127.0.0.1  &
 pubPid=$!
 
 sleep 1
@@ -16,7 +16,7 @@ sleep 1
 # Start subscribers
 declare -a subPids
 iSub=0; while test $((iSub++)) -lt $numSubs; do
-    ../main/subscriber/subscriber -l TRACE -r subrepo_$iSub 127.0.0.1:38800 127.0.0.1 &
+    ../main/subscribe/subscribe -l TRACE -r subrepo_$iSub 127.0.0.1:38800 127.0.0.1 &
     subPids[$iSub]=$!
 done
 

@@ -114,7 +114,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
 
-    auto prodInfo = repo.getNextProd();
+    auto prodInfo = repo.getNextProd().getProdInfo();
     ASSERT_EQ(true, prodInfo);
     EXPECT_EQ(this->prodInfo, prodInfo);
 
@@ -157,7 +157,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
 
     // Verify repository access
     try {
-        auto repoProdInfo = repo.getNextProd();
+        auto repoProdInfo = repo.getNextProd().getProdInfo();
         ASSERT_TRUE(prodInfo.getId() == repoProdInfo.getId());
         ASSERT_TRUE(prodInfo.getName() == repoProdInfo.getName());
         ASSERT_TRUE(prodInfo.getSize() == repoProdInfo.getSize());

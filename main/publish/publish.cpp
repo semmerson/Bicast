@@ -1,7 +1,7 @@
 /**
  * Program to publish data-products via Hycast.
  *
- *        File: publisher.cpp
+ *        File: publish.cpp
  *  Created on: Aug 13, 2020
  *      Author: Steven R. Emmerson
  *

@@ -420,10 +420,6 @@ public:
     }
 };
 
-ProdInfo::ProdInfo()
-    : pImpl(nullptr)
-{}
-
 ProdInfo::ProdInfo(const ProdId        index,
                    const std::string&  name,
                    const ProdSize      size,

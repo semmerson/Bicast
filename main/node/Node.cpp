@@ -345,7 +345,8 @@ protected:
         // TODO: Make the priority of this thread less than the handling of missed-data requests
         try {
             for (;;) {
-                auto prodInfo = repo.getNextProd();
+                auto  prodEntry = repo.getNextProd();
+                auto& prodInfo = prodEntry.prodInfo;
 
 #if 1
                 // Send product-information
@@ -355,11 +356,9 @@ protected:
                  * Data-segment multicasting is interleaved with peer notification order to reduce
                  * the chance of losing a multicast data-segment by reducing the multicast rate.
                  */
-                auto prodId = prodInfo.getId();
                 auto prodSize = prodInfo.getSize();
                 for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
-                    // TODO: Test for valid segment
-                    send(repo.getDataSeg(DataSegId(prodId, offset)));
+                    send(prodEntry.getDataSeg(offset));
 #else
                 /*
                  * This code multicasts the entire product and only then notifies the peers. This
@@ -780,10 +779,10 @@ public:
     }
 
     /**
-     * Returns information on the next product.
-     * @return Information on the next product
+     * Returns the next product to process locally.
+     * @return The next product to process
      */
-    ProdInfo getNextProd() override {
+    ProdEntry getNextProd() override {
         return repo.getNextProd();
     }
 

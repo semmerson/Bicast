@@ -43,7 +43,11 @@ private:
     ProdFile(Impl* pImpl) noexcept;
 
 public:
+     /// Default constructs.
     ProdFile() =default;
+
+    /// Destroys
+    virtual ~ProdFile() =default;
 
     /**
      * Constructs a product-file from an existing file. The instance is not open.
