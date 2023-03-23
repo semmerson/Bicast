@@ -89,11 +89,11 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] argTemplates  Command-line argument templates
+     * @param[in] cmdTemplate   Command-line template
      * @param[in] keepOpen      Should the pipe to the decoder be kept open between products?
      */
     PipeTemplate(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& cmdTemplate,
             const bool                 keepOpen);
 };
 

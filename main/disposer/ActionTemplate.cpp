@@ -33,21 +33,21 @@ namespace hycast {
 class ActionTemplate::Impl
 {
 protected:
-    std::vector<String> argTemplates; ///< Command-line argument templates
-    const size_t        nargs;        ///< Number of command-line arguments
-    const bool          persist;      ///< Should the reified action persist between products?
+    std::vector<String> argTemplate; ///< Argument template
+    const size_t        nargs;       ///< Number of command-line arguments
+    const bool          persist;     ///< Should the reified action persist between products?
 
 public:
     /**
      * Constructs.
-     * @param[in] argTemplates  Program argument templates
+     * @param[in] argTemplate   Argument template
      * @param[in] persist       Should this entry persist?
      */
     Impl(
-            const std::vector<String> argTemplates,
+            const std::vector<String> argTemplate,
             const bool                persist)
-        : argTemplates(argTemplates)
-        , nargs(argTemplates.size())
+        : argTemplate(argTemplate)
+        , nargs(argTemplate.size())
         , persist(persist)
     {}
 
@@ -78,16 +78,16 @@ class PipeTemplateImpl final : public ActionTemplate::Impl
 public:
     /**
      * Constructs.
-     * @param[in] argTemplates  Program argument templates
+     * @param[in] cmdTemplate   Command template
      * @param[in] keepOpen      Should this action be persistent (i.e., keep the pipe open)?
      */
     PipeTemplateImpl(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& cmdTemplate,
             const bool                 keepOpen)
-        : Impl{argTemplates, keepOpen}
+        : Impl{cmdTemplate, keepOpen}
     {
-        if (argTemplates.size() < 1)
-            throw INVALID_ARGUMENT("No decoder arguments");
+        if (nargs < 1)
+            throw INVALID_ARGUMENT("No decoder specified");
     }
 
     ~PipeTemplateImpl()
@@ -101,15 +101,15 @@ public:
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
-            args[i] = matchResults.format(argTemplates[i]);
+            args[i] = matchResults.format(argTemplate[i]);
         return PipeAction{args, persist};
     }
 };
 
 PipeTemplate::PipeTemplate(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& cmdTemplate,
             const bool                 keepOpen)
-    : ActionTemplate{new PipeTemplateImpl(argTemplates, keepOpen)}
+    : ActionTemplate{new PipeTemplateImpl(cmdTemplate, keepOpen)}
 {}
 
 /******************************************************************************/
@@ -120,16 +120,16 @@ class FileTemplateImpl final : public ActionTemplate::Impl
 public:
     /**
      * Constructs.
-     * @param[in] argTemplates  File pathname template
+     * @param[in] pathTemplate  Pathname template
      * @param keepOpen          Should this entry persist (i.e., keep the file open)?
      */
     FileTemplateImpl(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& pathTemplate,
             const bool                 keepOpen)
-        : Impl{argTemplates, keepOpen}
+        : Impl{pathTemplate, keepOpen}
     {
-        if (argTemplates.size() < 1)
-            throw INVALID_ARGUMENT("No decoder arguments");
+        if (nargs != 1)
+            throw INVALID_ARGUMENT("Single pathname wasn't specified");
     }
 
     ~FileTemplateImpl()
@@ -143,7 +143,7 @@ public:
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
-            args[i] = matchResults.format(argTemplates[i]);
+            args[i] = matchResults.format(argTemplate[i]);
         return FileAction{args, persist};
     }
 };
@@ -162,16 +162,16 @@ class AppendTemplateImpl final : public ActionTemplate::Impl
 public:
     /**
      * Constructs.
-     * @param[in] argTemplates  File pathname template
+     * @param[in] pathTemplate  Pathname template
      * @param[in] keepOpen      Should the file be kept open?
      */
     AppendTemplateImpl(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& pathTemplate,
             const bool                 keepOpen)
-        : Impl{argTemplates, keepOpen}
+        : Impl{pathTemplate, keepOpen}
     {
-        if (argTemplates.size() < 1)
-            throw INVALID_ARGUMENT("No decoder arguments");
+        if (nargs != 1)
+            throw INVALID_ARGUMENT("Single pathname wasn't specified");
     }
 
     ~AppendTemplateImpl()
@@ -185,15 +185,15 @@ public:
     Action reify(std::smatch& matchResults) override {
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
-            args[i] = matchResults.format(argTemplates[i]);
+            args[i] = matchResults.format(argTemplate[i]);
         return AppendAction{args, persist};
     }
 };
 
 AppendTemplate::AppendTemplate(
-            const std::vector<String>& argTemplates,
+            const std::vector<String>& pathTemplate,
             const bool                 keepOpen)
-    : ActionTemplate{new AppendTemplateImpl(argTemplates, keepOpen)}
+    : ActionTemplate{new AppendTemplateImpl(pathTemplate, keepOpen)}
 {}
 
 } // namespace
