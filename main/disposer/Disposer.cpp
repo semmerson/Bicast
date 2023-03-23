@@ -89,7 +89,7 @@ class Disposer::Impl
      * @param[in] bytes    Product's data
      * @param[in] nbytes   Number of bytes
      * @retval    true     Success
-     * @retval    false    Failure due to too many open file descriptors
+     * @retval    false    Failure due to too many open file descriptors or too many user processes
      */
     bool process(
             Action         action,
@@ -97,10 +97,13 @@ class Disposer::Impl
             const ProdSize nbytes) {
         bool success;
         LOG_DEBUG("Executing action " + action.to_string());
-        for (success = action.process(bytes, nbytes);
-                !success && actionQueue.size() > 1;
-                success = action.process(bytes, nbytes)) {
-            // Product couldn't be processed because of too many open file descriptors
+        while (!(success = action.process(bytes, nbytes)) && actionQueue.size() > 1) {
+            /*
+             * Product couldn't be processed because of too many open file descriptors or too many
+             * user processes.
+             * TODO: Make this more discerning: depending on why `action.process()` failed, close
+             * only the associated file-descriptor.
+             */
             eraseLru();
         }
         return success;
@@ -134,7 +137,7 @@ public:
      * @param[in] prodInfo  Information on the product
      * @param[in] bytes     The product's data
      */
-    void disposeOf(
+    void dispose(
             const ProdInfo prodInfo,
             const char*    bytes) {
         // TODO: Erase persistent actions that haven't been used for some time
@@ -149,7 +152,7 @@ public:
                     LOG_INFO("Processed product " + prodInfo.to_string());
                 else
                     LOG_WARNING("Couldn't process product " + prodInfo.to_string() + " because of "
-                            "too many open file descriptors");
+                            "too many open file descriptors or user processes");
             } // Product should be processed
         } // Pattern-action loop
     }
@@ -163,10 +166,10 @@ void Disposer::add(const PatternAction& patAct) {
     pImpl->add(patAct);
 }
 
-void Disposer::disposeOf(
+void Disposer::dispose(
         const ProdInfo prodInfo,
         const char*    bytes) {
-    pImpl->disposeOf(prodInfo, bytes);
+    pImpl->dispose(prodInfo, bytes);
 }
 
 Disposer Disposer::create(const String& configFile) {

@@ -57,7 +57,7 @@ public:
      * @param[in] prodInfo  Product metadata
      * @param[in] bytes     Product data. There shall be `prodInfo.getSize()` bytes.
      */
-    void disposeOf(
+    void dispose(
             const ProdInfo prodInfo,
             const char*    bytes);
 
