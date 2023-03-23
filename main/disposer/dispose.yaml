@@ -2,15 +2,15 @@ MaxKeepOpen: 20 # Maximum number of file-descriptors to keep-open
 PatternActions:
   # Append US Metars the hard way
   - Include: ^SAUS(..) (....) 
-    Action: PIPE
-    Command: [sh, -c, cat >>data/surface/US/$2/$1]
+    Pipe: [sh, -c, cat >>data/surface/US/$2/$1]
     KeepOpen: true
 
   # Keep only the most recent SIGMET. Exclude Russia's. Closes output file.
   - Include: ^WS
     Exclude: ^WSRU
-    Action: PIPE
-    Command: [sh, -c, cat >data/WWA/lastSIGMET]
+    Actions:
+      - Pipe: [sh, -c, cat >data/WWA/lastSIGMET]
+      - Exec: [mailx, -s, New SIGMET, WeatherWeenies@host.domain]
     
   # APPEND example. Doesn't close output file.
   #   $1: Type of observation
@@ -18,8 +18,7 @@ PatternActions:
   #   $3: Day of month
   #   $4: Minute of hour
   - Include: ^(..)(..).. .... (..)(..)
-  - Action: APPEND
-  - Path: IDS_DDPLUS/$1/$2/($3:yyyy)($3:mm)($3:dd)T$4.txt
+  - Append: IDS_DDPLUS/$1/$2/($3:yyyy)($3:mm)($3:dd)T$4.txt
   - KeepOpen: true
     
   # PIPE example. Like the above but data-agnostic. Doesn't close output file.
@@ -28,12 +27,10 @@ PatternActions:
   #   $3: Day of month
   #   $4: Minute of hour
   - Include: ^(..)(..).. .... (..)(..)
-  - Action: PIPE
-  - Command: [ids_ddplus_decoder, IDS_DDPLUS, $1, $2, $3, $4]
+  - Pipe: [ids_ddplus_decoder, IDS_DDPLUS, $1, $2, $3, $4]
   - KeepOpen: true
 
   # FILE example. Closes output file.
   - Include: ^(20........)/(model_center.dat)
-  - Action: FILE
-  - Path: data/pub/wseta/$1_$2
+  - File: data/pub/wseta/$1_$2
   
