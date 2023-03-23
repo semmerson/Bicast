@@ -11,7 +11,7 @@ PatternActions:
     Exclude: ^WSRU
     Actions:
       - Pipe: [sh, -c, cat >WWA/lastSIGMET]
-      - Exec: [mailx, -s, New SIGMET, WeatherWeenies@host.domain]
+      - Exec: [mailx, -s, New SIGMET, WeatherNerds@host.domain]
     
   # APPEND example. Doesn't close output file.
   #   $1: Type of observation
@@ -32,6 +32,6 @@ PatternActions:
   - KeepOpen: true
 
   # FILE example. Closes output file.
-  - Include: ^(20........)/(model_center.dat)
+  - Include: ^(20........)/(\w+\.dat)
   - File: pub/wseta/$1_$2
   
