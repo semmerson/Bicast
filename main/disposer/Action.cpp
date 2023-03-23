@@ -181,6 +181,7 @@ public:
      * @param[in] nbytes    The amount of data in bytes
      * @retval    true      Success
      * @retval    false     Too many file descriptors are open
+     * @retval    false     Too many child processes exist
      * @throw SystemError   System failure
      */
     virtual bool process(
@@ -261,7 +262,7 @@ private:
      *
      * @retval true        Success
      * @retval false       Too many file descriptors are open
-     * @throw SystemError  Couldn't create pipe
+     * @throw SystemError  Couldn't create pipe for a reason other than too many open files
      * @throw SystemError  Couldn't get file descriptor flags
      * @throw SystemError  Couldn't set file descriptor to close-on-exec()
      */
@@ -286,6 +287,8 @@ private:
     /**
      * Forks this process.
      *
+     * @retval true        Success
+     * @retval false       Failure. Too many user processes.
      * @throw SystemError  Couldn't fork process
      */
     bool fork() {
@@ -357,7 +360,7 @@ private:
      * Executes the decoder as a child process.
      *
      * @retval true        Success
-     * @retval false       Too many child processes
+     * @retval false       Failure. Too many user processes.
      * @throw SystemError  Couldn't fork process
      * @throw SystemError  Couldn't make decoder a process-group leader
      * @throw SystemError  Couldn't redirect standard input to read-end of pipe
@@ -437,7 +440,10 @@ public:
     }
 
     /**
-     * @throw SystemError  Couldn't create pipe
+     * @retval true        Success
+     * @retval false       Failure. Couldn't obtain a new file descriptor.
+     * @retval false       Failure. Too many user process.
+     * @throw SystemError  Couldn't create pipe for a reason other than too many open files
      * @throw SystemError  Couldn't get file descriptor flags
      * @throw SystemError  Couldn't set file descriptor to close-on-exec()
      * @throw SystemError  Couldn't fork process
@@ -445,6 +451,7 @@ public:
      * @throw SystemError  Couldn't redirect standard input to read-end of pipe
      * @throw SystemError  Couldn't execute decoder
      * @throw SystemError  Couldn't write product to decoder
+     * @throw SystemError  Couldn't flush product to decoder
      * @throw SystemError  Couldn't wait on decoder
      */
     bool process(
@@ -462,7 +469,11 @@ public:
             data += nwritten;
         }
 
-        if (!persist) {
+        if (persist) {
+            if (::fsync(pipeFds[1]))
+                throw SYSTEM_ERROR("Couldn't flush to decoder " + cmdVec());
+        }
+        else {
             ::close(pipeFds[1]);
             pipeFds[1] = -1;
 
@@ -550,6 +561,7 @@ public:
      * @throw SystemError  Couldn't open file
      * @throw SystemError  Couldn't truncate file
      * @throw SystemError  Couldn't write product to file
+     * @throw SystemError  Couldn't flush product to file
      */
     bool process(
             const char* bytes,
@@ -567,7 +579,11 @@ public:
             throw SYSTEM_ERROR("Wrote only " + std::to_string(nwritten) + " bytes out of " +
                     std::to_string(nbytes) + " to file \"" + args[0] + "\"");
 
-        if (!persist) {
+        if (persist) {
+            if (::fsync(fd))
+                throw SYSTEM_ERROR("Couldn't flush to file \"" + args[0] + "\"");
+        }
+        else {
             ::close(fd);
             fd = -1;
         }
