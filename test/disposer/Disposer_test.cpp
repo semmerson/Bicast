@@ -26,6 +26,8 @@
 #include "logging.h"
 
 #include <gtest/gtest.h>
+#include <fstream>
+#include <iostream>
 #include <unistd.h>
 
 static std::string configFile;
@@ -44,7 +46,7 @@ protected:
     // is empty.
 
     DisposerTest()
-        : rootDir("/tmp/Disposer_test")
+        : rootDir("/tmp/Disposer_test/")
     {
         FileUtil::rmDirTree(rootDir);
         FileUtil::ensureDir(rootDir);
@@ -74,38 +76,191 @@ TEST_F(DisposerTest, Construction)
     Disposer disposer(0);
 }
 
-// Tests simple usage
-TEST_F(DisposerTest, SimpleUsage)
+// Tests filing
+TEST_F(DisposerTest, Filing)
 {
     try {
-        Disposer            disposer(0);
-        std::regex          incl("(one|two)"); // gcc 4.8.5 doesn't support brackets!!! 4.9 does.
-        std::regex          excl("two");
-        std::vector<String> cmdTemplate{"sh", "-c", "cat >" + rootDir + "/$1"};
-        // `true` to see how this works with no persistent actions allowed
-        PipeTemplate        actionTemplate(cmdTemplate, true);
-        PatternAction       patAct(incl, excl, actionTemplate);
+        struct Entry {
+            const char* prodName;
+            const char* pattern;
+            const char* filePat;
+            const char* pathname;
+            Entry(const char* prodName, const char* pattern, const char* filePat,
+                    const char* pathname)
+                : prodName(prodName)
+                , pattern(pattern)
+                , filePat(filePat)
+                , pathname(pathname)
+            {}
+        };
+        Entry entries[] = {
+                // gcc 4.8.5 std::regex doesn't support brackets!!! 4.9 does.
+                Entry{"prod1",         "prod1",               "$&",          "prod1"},
+                Entry{"foo/prod2",     "\\w+/prod2$",         "$&",          "foo/prod2"},
+                Entry{"foo/bar/prod3", "((\\w+/){2})(prod3)", "$1/$3",       "foo/bar/prod3"},
+                Entry{"bar/prod4/foo", "(\\w+)/prod4/(\\w+)", "$2/$1/prod4", "foo/bar/prod4"},
+        };
+        Pattern  excl{};  // Exclude nothing
+        Disposer disposer(0);
 
-        disposer.add(patAct);
+        for (auto& entry : entries) {
+            Pattern       incl(entry.pattern);
+            String        pathTemplate(rootDir + entry.filePat);
+            FileTemplate  fileTemplate(pathTemplate, true);
+            PatternAction patAct(incl, excl, fileTemplate);
 
-        ProdInfo prodInfo1("one", 1);
-        disposer.dispose(prodInfo1, "1");
+            disposer.add(patAct);
+        }
 
-        ProdInfo prodInfo2("two", 1);
-        disposer.dispose(prodInfo2, "2");
+        for (ProdSize i = 0; i < sizeof(entries)/sizeof(Entry); ++i) {
+            String contents(std::to_string(i));
+            ProdInfo prodInfo(entries[i].prodName, contents.size());
+            disposer.dispose(prodInfo, contents.data());
+        }
+
+        for (ProdSize i = 0; i < sizeof(entries)/sizeof(Entry); ++i) {
+            std::ifstream input(rootDir+entries[i].pathname);
+            char contents[80];
+            input >> contents;
+            EXPECT_STREQ(contents, std::to_string(i).data());
+        }
     }
     catch (const std::regex_error& e) {
         std::cout << "regex_error caught: " << e.what() << '\n';
         if (e.code() == std::regex_constants::error_brack)
             std::cout << "The code was error_brack\n";
+        throw;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        throw;
+    }
+}
+
+// Tests appending
+TEST_F(DisposerTest, Appending)
+{
+    try {
+        Pattern    excl{};      // Exclude nothing
+        Disposer   disposer(0); // No persistent actions
+
+        Pattern        incl("prod");
+        String         pathTemplate(rootDir + "$&");
+        AppendTemplate appendTemplate(pathTemplate, true);
+        PatternAction  patAct(incl, excl, appendTemplate);
+        disposer.add(patAct);
+
+        String contents("1");
+        ProdInfo prodInfo("prod", contents.size());
+        disposer.dispose(prodInfo, contents.data());
+
+        contents = String("2");
+        disposer.dispose(prodInfo, contents.data());
+
+        std::ifstream input(rootDir+"prod");
+        char buf[80];
+        input >> buf;
+        EXPECT_STREQ(buf, "12");
+    }
+    catch (const std::regex_error& e) {
+        std::cout << "regex_error caught: " << e.what() << '\n';
+        if (e.code() == std::regex_constants::error_brack)
+            std::cout << "The code was error_brack\n";
+        throw;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        throw;
+    }
+}
+
+// Tests piping
+TEST_F(DisposerTest, Piping)
+{
+    try {
+        Pattern    excl{};      // Exclude nothing
+        Disposer   disposer(0); // No persistent actions
+
+        Pattern             incl("prod");
+        std::vector<String> cmdTemplate{"sh", "-c", String("cat >") + rootDir + "$&"};
+        PipeTemplate        pipeTemplate(cmdTemplate, true);
+        PatternAction       patAct(incl, excl, pipeTemplate);
+        disposer.add(patAct);
+
+        String contents("1");
+        ProdInfo prodInfo("prod", contents.size());
+        disposer.dispose(prodInfo, contents.data());
+
+        std::ifstream input(rootDir+"prod");
+        char buf[80];
+        input >> buf;
+        EXPECT_STREQ(buf, "1");
+    }
+    catch (const std::regex_error& e) {
+        std::cout << "regex_error caught: " << e.what() << '\n';
+        if (e.code() == std::regex_constants::error_brack)
+            std::cout << "The code was error_brack\n";
+        throw;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        throw;
+    }
+}
+
+// Tests excluding
+TEST_F(DisposerTest, Excluding)
+{
+    try {
+        Disposer   disposer(0); // No persistent actions
+
+        Pattern        incl("prod");
+        Pattern        excl{"prod"};
+        String         pathTemplate(rootDir + "$&");
+        FileTemplate   fileTemplate(pathTemplate, true);
+        PatternAction  patAct(incl, excl, fileTemplate);
+        disposer.add(patAct);
+
+        String   contents("1");
+        ProdInfo prodInfo("prod", contents.size());
+        disposer.dispose(prodInfo, contents.data());
+
+        std::ifstream input(rootDir+"prod");
+        EXPECT_EQ(input.rdstate(), std::ios_base::failbit);
+    }
+    catch (const std::regex_error& e) {
+        std::cout << "regex_error caught: " << e.what() << '\n';
+        if (e.code() == std::regex_constants::error_brack)
+            std::cout << "The code was error_brack\n";
+        throw;
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        throw;
     }
 }
 
 // Tests YAML config-file
-#if 0
+#if 1
 TEST_F(DisposerTest, ConfigFile)
 {
-    auto disposer = Disposer::create(configFile);
+    try {
+        auto disposer = Disposer::create(configFile);
+        //std::cout << disposer.getYaml();
+        const String expect(
+            "MaxKeepOpen: 20\n"
+            "PatternActions:\n"
+            "  - Include: ^SAUS(..) (....)\n"
+            "    Pipe: [sh, -c, cat >>surface/US/$2/$1]\n"
+            "    KeepOpen: true\n"
+            "  - Include: ^WS\n"
+            "    File: WWA/lastSIGMET");
+        EXPECT_STREQ(disposer.getYaml().data(), expect.data());
+    }
+    catch (const std::exception& ex) {
+        LOG_ERROR(ex);
+        throw;
+    }
 }
 #endif
 
@@ -114,10 +269,10 @@ TEST_F(DisposerTest, ConfigFile)
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   log_setName(FileUtil::filename(argv[0]));
-  log_setLevel(LogLevel::DEBUG);
+  log_setLevel(LogLevel::INFO);
   std::cout << "argc=" << argc <<'\n';
   std::cout << "argv[0]=" << std::string(argv[0]) << '\n';
-  //std::cout << "argv[1]=" << std::string(argv[1]) << '\n';
+  std::cout << "argv[1]=" << std::string(argv[1]) << '\n';
   configFile = std::string(argv[1]);
   return RUN_ALL_TESTS();
 }

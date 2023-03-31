@@ -28,8 +28,11 @@
 #include "Parser.h"
 #include "PatternAction.h"
 
+#include <fcntl.h>
+#include <limits.h>
 #include <list>
 #include <queue>
+#include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
 namespace hycast {
@@ -53,7 +56,7 @@ class Disposer::Impl
     }
 
     /**
-     * Returns the concrete action corresponding to an action template with regular expression
+     * Returns the concrete action corresponding to a action template with regular expression
      * substitutions. If the action should persist, then, on return, it will be in the set of
      * persistent actions.
      *
@@ -96,7 +99,6 @@ class Disposer::Impl
             const char*    bytes,
             const ProdSize nbytes) {
         bool success;
-        LOG_DEBUG("Executing action " + action.to_string());
         while (!(success = action.process(bytes, nbytes)) && actionQueue.size() > 1) {
             /*
              * Product couldn't be processed because of too many open file descriptors or too many
@@ -111,10 +113,20 @@ class Disposer::Impl
 
 public:
     /**
+     * Default constructs.
+     */
+    Impl()
+        : patActs()
+        , actionSet(0)
+        , actionQueue(0)
+        , maxPersistent(0)
+    {}
+
+    /**
      * Constructs.
      * @param[in] maxPersistent  Maximum number of persistent entries
      */
-    Impl(const int maxPersistent)
+    Impl(   const int maxPersistent)
         : patActs()
         , actionSet(maxPersistent+1)
         , actionQueue(maxPersistent+1)
@@ -145,18 +157,306 @@ public:
             const auto& prodName = prodInfo.getName();
             std::smatch match;
 
-            if (std::regex_search(prodName, match, patAct.include) &&
-                    !std::regex_search(prodName, patAct.exclude)) {
+            if (std::regex_search(prodName, match, patAct.include.getRegex()) &&
+                    !std::regex_search(prodName, patAct.exclude.getRegex())) {
                 auto action = getAction(patAct.actionTemplate, match);
-                if (process(action, bytes, prodInfo.getSize()))
-                    LOG_INFO("Processed product " + prodInfo.to_string());
-                else
+                if (process(action, bytes, prodInfo.getSize())) {
+                    LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string());
+                    //LOG_INFO("Processed product " + prodInfo.to_string());
+                }
+                else {
                     LOG_WARNING("Couldn't process product " + prodInfo.to_string() + " because of "
                             "too many open file descriptors or user processes");
+                }
             } // Product should be processed
         } // Pattern-action loop
     }
+
+    String getYaml() {
+        YAML::Emitter yaml;
+
+        yaml << YAML::BeginMap;
+
+        yaml << YAML::Key << "MaxKeepOpen";
+        yaml << YAML::Value << std::to_string(maxPersistent);
+
+        yaml << YAML::Key << "PatternActions";
+        yaml << YAML::BeginSeq;
+
+        for (auto& patAct : patActs) {
+            yaml << YAML::BeginMap;
+                yaml << YAML::Key << "Include";
+                yaml << YAML::Value << patAct.include.to_string();
+
+                const String& string = patAct.exclude.to_string();
+                if (string.size()) {
+                    yaml << YAML::Key << "Exclude";
+                    yaml << YAML::Value << string;
+                }
+
+                yaml << YAML::Key;
+                switch (patAct.actionTemplate.getType()) {
+                case ActionTemplate::Type::FILE:   yaml << "File";   break;
+                case ActionTemplate::Type::APPEND: yaml << "Append"; break;
+                case ActionTemplate::Type::PIPE:   yaml << "Pipe";   break;
+                }
+                const std::vector<String>& args = patAct.actionTemplate.getArgs();
+                const bool needsDelimiters = args.size() > 1;
+                yaml << YAML::Flow;
+                if (needsDelimiters)
+                    yaml << YAML::BeginSeq;
+                    for (auto& arg : args)
+                        yaml << arg;
+                if (needsDelimiters)
+                    yaml << YAML::EndSeq;
+
+                if (patAct.actionTemplate.getKeepOpen())
+                    yaml << YAML::Key << "KeepOpen" << YAML::Value << "true";
+            yaml << YAML::EndMap;
+        }
+
+        yaml << YAML::EndSeq;
+        yaml << YAML::EndMap;
+
+        return yaml.c_str();
+    }
 };
+
+/**
+ * Decodes the action in a map node into a pattern-action template and adds it to a disposer.
+ * @tparam VALUE           Value type (e.g., string, command vector)
+ * @tparam TEMPLATE        Pattern-action template type
+ * @param[in] mapNode      Map node
+ * @param[in] actionName   Action name
+ * @param[in] include      What products to process
+ * @param[in] exclude      What products to ignore
+ * @param[in] persist      Keep the output-file open?
+ * @param[in] disposer     Disposer
+ * @retval true            Value was found
+ * @retval false           Value was not found
+ * @throw InvalidArgument  Node isn't a map
+ * @throw InvalidArgument  A subnode isn't the expected type
+ * @throw InvalidArgument  A scalar value isn't the expected type
+ */
+template<class VALUE, class TEMPLATE>
+static bool parseAction(
+        YAML::Node&    mapNode,
+        const String&  actionName,
+        const Pattern& include,
+        const Pattern& exclude,
+        const bool     persist,
+        Disposer&      disposer)
+{
+    bool  exists = false;
+    VALUE value;
+
+    if (Parser::tryDecode(mapNode, actionName, value)) {
+        TEMPLATE      actTemplate(value, persist);
+        PatternAction patAct(include, exclude, actTemplate);
+
+        disposer.add(patAct);
+        exists = true;
+    }
+
+    return exists;
+}
+
+/**
+ * Decodes the action in a map node into an pattern-action template and adds it to a disposer.
+ * @param[in] node         Map node
+ * @param[in] actionName   Action name
+ * @param[in] include      What products to process
+ * @param[in] exclude      What products to ignore
+ * @param[in] persist      Keep the output-file open?
+ * @param[in] disposer     Disposer
+ * @retval true            An action was found
+ * @retval false           An action was not found
+ * @throw InvalidArgument  Node isn't a map
+ * @throw InvalidArgument  A subnode isn't the expected type
+ * @throw InvalidArgument  A scalar value isn't the expected type
+ * @throw LogicError       More than one action was found
+ */
+static bool parseAction(
+        YAML::Node&    mapNode,
+        const Pattern& include,
+        const Pattern& exclude,
+        Disposer&      disposer)
+{
+    bool persist = false;
+    Parser::tryDecode(mapNode, "KeepOpen", persist);
+
+    int numActions = 0;
+
+    if (parseAction<std::vector<String>, PipeTemplate>(mapNode, "Pipe", include, exclude, persist,
+            disposer))
+        ++numActions;
+    if (parseAction<String, FileTemplate>(mapNode, "File", include, exclude, persist,
+            disposer))
+        ++numActions;
+    if (parseAction<String, AppendTemplate>(mapNode, "Append", include, exclude, persist,
+            disposer))
+        ++numActions;
+
+    if (numActions > 1)
+        throw LOGIC_ERROR("Node has multiple actions");
+
+    return numActions == 1;
+}
+
+/**
+ * Decodes the sequence of actions in a subnode of a map node into pattern-action templates and adds
+ * them to a disposer.
+ * @param[in] node         Map node containing a sequence of actions in a subnode
+ * @param[in] include      Products to process
+ * @param[in] exclude      Products to ignore
+ * @param[in] disposer     Disposer
+ * @retval true            An action was found.
+ * @retval false           An action was not found.
+ * @throw InvalidArgument  Node isn't a map
+ * @throw InvalidArgument  A subnode isn't the expected type
+ * @throw InvalidArgument  A scalar value isn't the expected type
+ */
+static bool parseActions(
+        YAML::Node&    mapNode,
+        const Pattern& include,
+        const Pattern& exclude,
+        Disposer&      disposer)
+{
+    bool haveAction = false;
+
+    if (!mapNode.IsMap())
+        throw INVALID_ARGUMENT("Node isn't a map");
+
+    if (mapNode["Actions"]) {
+        auto seqNode = mapNode["Actions"];
+        if (!seqNode.IsSequence())
+            throw INVALID_ARGUMENT("Node isn't a sequence");
+
+        for (size_t i = 0, n = seqNode.size(); i < n; ++i) {
+            auto actionNode = seqNode[i];
+            if (!parseAction(actionNode, include, exclude, disposer)) {
+                LOG_WARNING("Node has no action");
+            }
+            else {
+                haveAction = true;
+            }
+        }
+    }
+
+    return haveAction;
+}
+
+/**
+ * Decodes the pattern and one or more actions in a map node into one or more pattern-action
+ * templates and adds them to a disposer.
+ * @param[in] mapNodeode   Map node containing a pattern and one or more actions
+ * @param[in] disposer     Disposer
+ * @retval true            A pattern-action was found.
+ * @retval false           A pattern-action was not found.
+ * @throw InvalidArgument  Node isn't a map
+ * @throw InvalidArgument  A subnode isn't the expected type
+ * @throw InvalidArgument  A scalar value isn't the expected type
+ * @throw InvalidArgument  The node has both a single action and a subnode with actions
+ */
+static bool parsePatActNode(
+        YAML::Node& mapNode,
+        Disposer&   disposer)
+{
+    bool havePatAct = false;
+
+    String  string(".*"); // Matches everything
+    Parser::tryDecode(mapNode, "Include", string);
+    Pattern include(string);
+
+    string.clear(); // Matches nothing
+    Parser::tryDecode(mapNode, "Exclude", string);
+    Pattern exclude(string);
+
+    if (parseActions(mapNode, include, exclude, disposer)) {
+        if (parseAction(mapNode, include, exclude, disposer))
+            throw INVALID_ARGUMENT("Node has a single action and a subnode with actions");
+        havePatAct = true;
+    }
+    else if (!parseAction(mapNode, include, exclude, disposer)) {
+        LOG_WARNING("Node has no action");
+    }
+
+    return havePatAct;
+}
+
+
+/**
+ * Decodes the patterns and actions in a sequence subnode of a map node into pattern-action
+ * templates and adds them to a disposer.
+ * @param[in] mapNode      Map node
+ * @param[in] disposer     Disposer
+ * @throw InvalidArgument  Node isn't a map
+ * @throw InvalidArgument  Expected subnode isn't a sequence
+ * @throw InvalidArgument  A subnode isn't the expected type
+ * @throw InvalidArgument  A scalar value isn't the expected type
+ */
+static bool parsePatternActions(
+        YAML::Node& mapNode,
+        Disposer&   disposer)
+{
+    if (!mapNode.IsMap())
+        throw INVALID_ARGUMENT("Node isn't a map");
+
+    bool havePatAct = false;
+
+    if (mapNode["PatternActions"]) {
+        auto seqNode = mapNode["PatternActions"];
+        if (!seqNode.IsSequence())
+            throw INVALID_ARGUMENT("\"PatternActions\" node isn't a sequence");
+
+        for (size_t i = 0, n = seqNode.size(); i < n; ++i) {
+            auto patActNode = seqNode[i];
+
+            try {
+                havePatAct = havePatAct || parsePatActNode(patActNode, disposer);
+            }
+            catch (const std::exception& ex) {
+                std::throw_with_nested(INVALID_ARGUMENT("Couldn't parse pattern-action node #" +
+                        std::to_string(i+1)));
+            }
+        } // Sequence loop
+    } // Pattern-actions subnode exists
+
+    return havePatAct;
+}
+
+Disposer Disposer::create(const String& configFile)
+{
+    YAML::Node node0;
+    try {
+        node0 = YAML::LoadFile(configFile);
+    }
+    catch (const std::exception& ex) {
+        std::throw_with_nested(INVALID_ARGUMENT("Couldn't load configuration-file \"" + configFile +
+                "\""));
+    }
+
+    try {
+        // Set the maximum number of file descriptors to keep open
+        int maxKeepOpen = 20;
+        Parser::tryDecode(node0, "MaxKeepOpen", maxKeepOpen);
+        if (maxKeepOpen < 0)
+            throw INVALID_ARGUMENT("Invalid \"MaxKeepOpen\" value: " + std::to_string(maxKeepOpen));
+
+        // Construct the Disposer
+        Disposer disposer(maxKeepOpen);
+
+        // Add pattern-actions to the Disposer
+        if (!parsePatternActions(node0, disposer))
+            LOG_WARNING("No pattern-action found in configuration-file \"" + configFile + "\"");
+
+        return disposer;
+    } // YAML file loaded
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Couldn't parse configuration-file \"" + configFile +
+                "\""));
+    }
+}
 
 Disposer::Disposer(const int maxPersistent)
     : pImpl(new Impl{maxPersistent})
@@ -166,135 +466,15 @@ void Disposer::add(const PatternAction& patAct) {
     pImpl->add(patAct);
 }
 
+String Disposer::getYaml() const {
+    return pImpl->getYaml();
+}
+
 void Disposer::dispose(
         const ProdInfo prodInfo,
-        const char*    bytes) {
+        const char*    bytes) const {
     pImpl->dispose(prodInfo, bytes);
 }
 
-Disposer Disposer::create(const String& configFile) {
-    YAML::Node node0;
-    try {
-        node0 = YAML::LoadFile(configFile);
-    }
-    catch (const std::exception& ex) {
-        std::throw_with_nested(RUNTIME_ERROR("Couldn't load YAML file \"" + configFile + "\""));
-    }
-
-    try {
-        int maxPersistent = 20;
-        if (node0["MaxKeepOpen"]) {
-            try {
-                maxPersistent = node0["MaxKeepOpen"].as<int>();
-            }
-            catch (const std::exception& ex) {
-                std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"MaxKeepOpen\" value: \"" +
-                        node0["MaxKeepOpen"].as<String>() + "\""));
-            }
-        }
-
-        Disposer disposer(maxPersistent);
-
-        if (!node0["PatternActions"] || node0["PatternActions"].size() == 0) {
-            LOG_WARNING("No pattern-actions in configuration-file \"" + configFile + "\"");
-        }
-        else {
-            auto patActsNode = node0["PatternActions"];
-            for (size_t iPatAct = 0; iPatAct < patActsNode.size(); ++iPatAct) {
-                auto patActNode = patActsNode[iPatAct];
-
-                std::regex include(".*"); // Default matches anything
-                if (patActNode["Include"]) {
-                    try {
-                        include = std::regex(patActNode["Include"].as<String>());
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"Include\" in "
-                                "pattern-action " + std::to_string(iPatAct)));
-                    }
-                }
-
-                std::regex exclude; // Default matches nothing
-                if (patActNode["Exclude"]) {
-                    try {
-                        exclude = std::regex(patActNode["Exclude"].as<String>());
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"Exclude\" in "
-                                "pattern-action " + std::to_string(iPatAct)));
-                    }
-                }
-
-                bool persist = false;
-                try {
-                    Parser::tryDecode<bool>(patActNode, "KeepOpen", persist);
-                }
-                catch (const std::exception& ex) {
-                    std::throw_with_nested(RUNTIME_ERROR("Couldn't decode \"KeepOpen\" value in "
-                            "pattern-action " + std::to_string(iPatAct)));
-                }
-
-                if (!patActNode["Action"])
-                    throw RUNTIME_ERROR("No action in pattern-action " + std::to_string(iPatAct));
-
-                auto action = patActNode["Action"].as<String>();
-
-                PatternAction patAct;
-                if (::strcasecmp(action.data(), "PIPE") == 0) {
-                    if (!patActNode["Command"])
-                        throw RUNTIME_ERROR("No \"Command\" node specified in pattern-action " +
-                                std::to_string(iPatAct));
-
-                    auto                argsNode = patActNode["Command"];
-                    std::vector<String> args(argsNode.size());
-                    for (size_t iarg = 0; iarg < argsNode.size(); ++iarg)
-                        args[iarg] = argsNode[iarg].as<String>();
-                    try {
-                        PipeTemplate actTempl(args, persist);
-                        patAct = PatternAction(include, exclude, actTempl);
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(RUNTIME_ERROR("Couldn't create decoder template "
-                                "from \"Command\" node in pattern-action " +
-                                std::to_string(iPatAct)));
-                    }
-                } // PIPE action
-                else if ((::strcasecmp(action.data(), "FILE") == 0 ||
-                        (::strcasecmp(action.data(), "APPEND") == 0))) {
-                    if (!patActNode["Path"])
-                        throw RUNTIME_ERROR("No \"Path\" node specified in pattern-action " +
-                                std::to_string(iPatAct));
-
-                    auto                pathNode = patActNode["Path"];
-                    std::vector<String> pathname(1);
-                    pathname[0] = pathNode.as<String>();
-
-                    try {
-                        ActionTemplate actTempl;
-                        if (::strcasecmp(action.data(), "FILE") == 0) {
-                            actTempl = FileTemplate(pathname, persist);
-                        }
-                        else {
-                            actTempl = AppendTemplate(pathname, persist);
-                        }
-                        patAct = PatternAction(include, exclude, actTempl);
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(RUNTIME_ERROR("Couldn't create pathname template "
-                                "from \"Path\" node in pattern-action " + std::to_string(iPatAct)));
-                    }
-                }
-
-                disposer.add(patAct);
-            } // Pattern-action loop
-        } // Pattern-actions exist
-
-        return disposer;
-    } // YAML file loaded
-    catch (const std::exception& ex) {
-        LOG_ERROR(ex.what());
-        std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" + configFile + "\""));
-    }
-}
 
 } // namespace

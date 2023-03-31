@@ -1,0 +1,10 @@
+MaxKeepOpen: 20  # Maximum number of file descriptors to keep open between data-products
+PatternActions:
+  # Append Metars
+  - Include: ^SAUS(..) (....) 
+    Pipe: [sh, -c, cat >>surface/US/$2/$1]
+    KeepOpen: true
+
+  # Keep only the most recent SIGMET.
+  - Include: ^WS
+    File: WWA/lastSIGMET

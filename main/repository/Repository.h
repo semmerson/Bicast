@@ -37,8 +37,8 @@ namespace hycast {
  */
 struct ProdEntry final
 {
-    ProdFile  prodFile;  ///< Product file
-    ProdInfo  prodInfo;  ///< Product information
+    ProdInfo  prodInfo;   ///< Product information
+    ProdFile  prodFile;   ///< Product file
 
     ProdEntry()
         : prodFile{}
@@ -47,24 +47,36 @@ struct ProdEntry final
 
     /**
      * Constructs.
+     * @param[in] prodId    Product ID
      * @param[in] prodFile  Product file
-     * @param[in] prodInfo  Product information
      */
     explicit ProdEntry(
-            ProdFile       prodFile,
-            const ProdInfo prodInfo = ProdInfo{})
-        : prodFile(prodFile)
-        , prodInfo(prodInfo)
+            const ProdId   prodId,
+            ProdFile       prodFile = ProdFile())
+        : prodInfo(prodId)
+        , prodFile(prodFile)
     {}
 
     /**
      * Constructs.
-     * @param[in] prodFile  The product-file
      * @param[in] prodInfo  The product information
+     * @param[in] prodFile  The product-file
      */
-    explicit ProdEntry(
-            ProdFile&&       prodFile,
-            const ProdInfo&& prodInfo = ProdInfo{})
+    ProdEntry(
+            const ProdInfo& prodInfo,
+            ProdFile&       prodFile)
+        : prodInfo(prodInfo)
+        , prodFile(prodFile)
+    {}
+
+    /**
+     * Constructs.
+     * @param[in] prodInfo  The product information
+     * @param[in] prodFile  The product-file
+     */
+    ProdEntry(
+            const ProdInfo&& prodInfo,
+            ProdFile&&       prodFile)
         : prodFile(prodFile)
         , prodInfo(prodInfo)
     {}
@@ -110,6 +122,16 @@ struct ProdEntry final
      */
     inline std::string to_string() const {
         return prodFile.to_string();
+    }
+
+    /// Returns the hash value of this instance.
+    inline size_t hash() const noexcept {
+        return prodInfo.getId().hash();
+    }
+
+    /// Indicates if this instance is considered the same as another.
+    inline bool operator==(const ProdEntry& rhs) const noexcept {
+        return prodInfo.getId() == rhs.prodInfo.getId();
     }
 };
 

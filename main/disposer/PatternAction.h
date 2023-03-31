@@ -30,11 +30,40 @@
 
 namespace hycast {
 
+/// A regular expression pattern
+class Pattern {
+    String     string;  ///< String representation of the pattern
+    std::regex regex;   ///< Compiled pattern
+
+public:
+    /// Default constructs
+    Pattern()
+        : string()
+        , regex()
+    {}
+
+    /// Constructs
+    Pattern(const String& string)
+        : string(string)
+        , regex(string)
+    {}
+
+    /// Returns the string representation.
+    const String& to_string() {
+        return string;
+    }
+
+    /// Returns the compiled pattern
+    const std::regex& getRegex() {
+        return regex;
+    }
+};
+
 /// A pattern & action
 struct PatternAction
 {
-    std::regex     include;        ///< Product names to be included
-    std::regex     exclude;        ///< Product names to be excluded
+    Pattern        include;        ///< Product names to be included
+    Pattern        exclude;        ///< Product names to be excluded
     ActionTemplate actionTemplate; ///< Command-line template to be reified
 
     PatternAction()
@@ -50,9 +79,9 @@ struct PatternAction
      * @param[in] actionTemplate  The template for acting on matching products
      */
     PatternAction(
-            std::regex&     include,
-            std::regex&     exclude,
-            ActionTemplate& actionTemplate)
+            const Pattern&        include,
+            const Pattern&        exclude,
+            const ActionTemplate& actionTemplate)
         : include(include)
         , exclude(exclude)
         , actionTemplate(actionTemplate)

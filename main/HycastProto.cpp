@@ -324,10 +324,16 @@ public:
             throw INVALID_ARGUMENT("Name is longer than " + std::to_string(PATH_MAX-1) + " bytes");
     }
 
+    /// Indicates if this instance is valid (i.e., wasn't default constructed)
+    operator bool() const noexcept {
+        return name.size(); // => valid `prodId`, `size`, & `createTime`
+    }
+
+    /// Equality operator
     bool operator==(const Impl& rhs) const {
         /**
          * The creation-time is not compared because timestamps created by different computers
-         * that should be equal can be different.
+         * can be different for the same product.
          */
         return prodId == rhs.prodId &&
                name == rhs.name &&
@@ -434,7 +440,7 @@ ProdInfo::ProdInfo(const std::string&  name,
 {}
 
 ProdInfo::operator bool() const noexcept {
-    return static_cast<bool>(pImpl);
+    return pImpl && pImpl->operator bool();
 }
 
 const ProdId& ProdInfo::getId() const {

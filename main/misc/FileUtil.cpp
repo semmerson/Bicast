@@ -384,4 +384,15 @@ void FileUtil::removeFileAndPrune(
     pruneEmptyDirPath(fd, dirname(pathname));
 }
 
+void FileUtil::closeOnExec(const int fd)
+{
+    int flags = ::fcntl(fd, F_GETFD);
+
+    if (-1 == flags)
+        throw SYSTEM_ERROR("Couldn't get flags for file descriptor %d", fd);
+
+    if (!(flags & FD_CLOEXEC) && (-1 == ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC)))
+        throw SYSTEM_ERROR("Couldn't set file descriptor %d to close-on-exec()", fd);
+}
+
 } // namespace

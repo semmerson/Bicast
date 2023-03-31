@@ -297,6 +297,12 @@ public:
      */
     ProdId(const ProdId& prodId) =default;
     ~ProdId() =default;
+
+    /// Indicates if this instance is complete (i.e., wan't default constructed)
+    operator bool() const noexcept {
+        return id != 0;
+    }
+
     /**
      * Copy assigns.
      * @param[in] rhs  The other instance
@@ -492,6 +498,15 @@ public:
              const SysTimePoint& createTime = SysClock::now());
 
     /**
+     * Constructs.
+     *
+     * @param[in] prodId      Product ID
+     */
+    explicit ProdInfo(const ProdId prodId)
+        : ProdInfo(prodId, "", 0)
+    {}
+
+    /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      * @retval true     This instance is valid
      * @retval false    This instance is not valid
@@ -520,7 +535,7 @@ public:
     const SysTimePoint& getCreateTime() const;
 
     /**
-     * Indicates if this instance is equal to another.
+     * Indicates if this instance is considered the same as another.
      * @param[in] rhs      The other instance
      * @retval    true     This instance is equal to the other
      * @retval    false    This instance is not equal to the other

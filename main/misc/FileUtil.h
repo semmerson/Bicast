@@ -350,6 +350,14 @@ public:
     static void removeFileAndPrune(
             const int          fd,
             const std::string& pathname);
+
+    /**
+     * Set a file descriptor to close-on-exec.
+     * @param[in] fd       File descriptor
+     * @throw SystemError  Couldn't get file descriptor flags
+     * @throw SystemError  Couldn't set file descriptor to close-on-exec
+     */
+    static void closeOnExec(const int fd);
 };
 
 } // namespace

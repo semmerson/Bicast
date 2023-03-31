@@ -239,25 +239,6 @@ private:
     }
 
     /**
-     * Ensures that a given file descriptor will be closed upon execution of an exec(2) family
-     * function.
-     *
-     * @param[in] fd      The file descriptor to be set to close-on-exec().
-     * @throw SystemError  Couldn't get file descriptor flags
-     * @throw SystemError  Couldn't set file descriptor to close-on-exec()
-     */
-    static void ensureCloseOnExec(const int fd)
-    {
-        int flags = ::fcntl(fd, F_GETFD);
-
-        if (-1 == flags)
-            throw SYSTEM_ERROR("Couldn't get flags for file descriptor %d", fd);
-
-        if (!(flags & FD_CLOEXEC) && (-1 == ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC)))
-            throw SYSTEM_ERROR("Couldn't set file descriptor %d to close-on-exec()", fd);
-    }
-
-    /**
      * Creates the pipe to the decoder.
      *
      * @retval true        Success
@@ -275,11 +256,9 @@ private:
             throw SYSTEM_ERROR("::pipe() failure");
         }
         /*
-         * Ensure that the write-end of the pipe will close upon execution
-         * of an exec(2) family function because no child processes should
-         * inherit it.
+         * Ensure that the write-end of the pipe is closed in the decoder.
          */
-        ensureCloseOnExec(pipeFds[1]);
+        FileUtil::closeOnExec(pipeFds[1]);
 
         return true;
     }
@@ -470,8 +449,7 @@ public:
         }
 
         if (persist) {
-            if (::fsync(pipeFds[1]))
-                throw SYSTEM_ERROR("Couldn't flush to decoder " + cmdVec());
+            // `fsync()` can't flush to a pipe
         }
         else {
             ::close(pipeFds[1]);
@@ -498,7 +476,6 @@ class WriteImpl final : public Action::Impl
 private:
     int      fd;       ///< File descriptor for output file
     int      oflags;   ///< `::open()` flags
-    ProdSize prodSize; ///< Product size in bytes
 
     /**
      * Opens the output file.
@@ -519,8 +496,6 @@ private:
                 return false;
             throw SYSTEM_ERROR("::open() failure on file \"" + args[0] + "\"");
         }
-
-        prodSize = nbytes;
 
         return true;
     }
@@ -544,7 +519,6 @@ public:
         : Impl(actionType, args, keepOpen)
         , fd{-1}
         , oflags(O_WRONLY|O_CREAT|O_CLOEXEC|O_SYNC|oflag)
-        , prodSize(0)
     {
         if (args.size() != 1)
             throw INVALID_ARGUMENT("Only a single pathname argument allowed: " + cmdVec());

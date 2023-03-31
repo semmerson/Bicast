@@ -79,9 +79,8 @@ class Repository::Impl
     }
 
     /**
-     * Deletes products that are at least as old as the keep-time.
-     * @throws SystemError  Couldn't delete file
-     * @throws SystemError  Couldn't delete empty directory
+     * Deletes products that are at least as old as the keep-time. Executed on separate thread.
+     * Calls `setThreadEx()` on exception.
      */
     void deleteProds() {
         LOG_DEBUG("Deleting too-old products");
@@ -98,24 +97,31 @@ class Repository::Impl
 
             for (; ; deleteTime = deleteQueue.empty() ? endOfTime : deleteQueue.top().deleteTime) {
                 if (cond.wait_until(lock, deleteTime, [&] {return (!deleteQueue.empty() &&
-                        deleteQueue.top().deleteTime <= SysClock::now()) || stop;})) {
-                    if (stop)
-                        break;
-
+                        deleteQueue.top().deleteTime <= SysClock::now());})) {
                     // Temporarily disable thread cancellation to protect the following state change
                     Shield     shield{};
                     const auto prodId = deleteQueue.top().prodId;
-                    auto       prodFile = prodEntries.at(prodId).prodFile;
+                    auto       iter = prodEntries.find(ProdEntry{prodId});
 
-                    prodFile.close(); // Idempotent
-                    FileUtil::removeFileAndPrune(absPathRoot, prodFile.getPathname());
-                    openProds.erase(prodId);
-                    prodEntries.erase(prodId);
-                    deleteQueue.pop();
+                    if (iter != prodEntries.end()) {
+                        auto& prodFile = iter->prodFile;
+                        /*
+                         * The product-file isn't closed in order to allow concurrent access to the
+                         * data-product by the node for transmission or local processing.
+                         */
+                        FileUtil::removeFileAndPrune(absPathRoot, prodFile.getPathname());
+                        openProds.erase(prodId);
+                        prodEntries.erase(iter);
+                        deleteQueue.pop();
+                    }
                 }
             }
         }
         catch (const std::exception& ex) {
+           /*
+            * SystemError  Couldn't delete file
+            * SystemError  Couldn't delete empty directory
+            */
             setThreadEx(ex);
         }
     }
@@ -163,29 +169,39 @@ protected:
         }
     };
 
-    /// Type of map from product IDs to product entries
-    using ProdEntries = std::unordered_map<ProdId, ProdEntry>;
-    /// Type of container for product-files with open file descriptors
-    using OpenProds   = HashSetQueue<ProdId>;
-    /// Type of container for product-files that should be deleted after a certain time
+    /// Class function to return the hash value of a product-entry
+    struct HashProdEntry {
+        /**
+         * Returns the hash value of a product-entry.
+         * @param[in] prodEntry  Product-entry
+         * @return               Corresponding hash value
+         */
+        size_t operator()(const ProdEntry& prodEntry) const noexcept {
+            return prodEntry.hash();
+        }
+    };
+
+    /// Set of product entries
+    using ProdEntries = std::unordered_set<ProdEntry, HashProdEntry>;
+    /// Container for product-files with open file descriptors
+    using ProdIdQueue = HashSetQueue<ProdId>;
+    /// Container for product-files that should be deleted after a certain time
     using DeleteQueue = std::priority_queue<DeleteEntry, std::deque<DeleteEntry>>;
-    /// Type of container for information on data products
-    using ProdQueue   = std::queue<ProdInfo>;
+    /// Container for information on data products
+    using ProcQueue   = std::queue<ProdInfo>;
 
     mutable Mutex     mutex;          ///< To maintain consistency
     mutable Cond      cond;           ///< For inter-thread communication
     const SysDuration keepTime;       ///< Length of time to keep products
     ProdEntries       prodEntries;    ///< Product entries
     DeleteQueue       deleteQueue;    ///< Queue of products to delete and when to delete them
-    OpenProds         openProds;      ///< Products whose files are open
+    ProdIdQueue       openProds;      ///< Products whose files are open
     const size_t      maxOpenProds;   ///< Maximum number of open products
     const String      absPathRoot;    ///< Absolute pathname of root directory of repository
     size_t            rootPrefixLen;  ///< Length in bytes of root pathname prefix
     int               rootFd;         ///< File descriptor open on root-directory of repository
-    size_t            maxOpenFiles;   ///< Max number open files
     ThreadEx          threadEx;       ///< Subtask exception
-    ProdQueue         prodQueue;      ///< Queue of product metadata for external processing
-    bool              stop;           ///< Whether or not to stop
+    ProcQueue         procQueue;      ///< Queue of product metadata for external processing
 
     /// Stops the thread on which files are deleted
     void stopDeleteThread() {
@@ -322,13 +338,13 @@ protected:
      *
      * @pre                    Mutex is locked
      * @param[in] absPathname  Absolute pathname of existing file
-     * @return                 A pair whose first component is a reference to the relevant
-     *                         product-entry and whose second component is a boolean indicating if
-     *                         the product was added (true) or rejected because it already existed
+     * @return                 A pair whose first component is an iterator to the added or existing
+     *                         element and whose second component is a boolean indicating if the
+     *                         product was added (true) or rejected because it already existed
      *                         (false)
      * @post                   Mutex is locked
      */
-    std::pair<ProdEntry&, bool> addExistingLocked(const String& absPathname) {
+    std::pair<ProdEntries::iterator, bool> addExistingLocked(const String& absPathname) {
         LOG_ASSERT(!mutex.try_lock());
         LOG_ASSERT(FileUtil::isAbsolute(absPathname));
         LOG_ASSERT(absPathname.find(absPathRoot) == 0);
@@ -337,8 +353,8 @@ protected:
         const auto modTime = prodFile.getModTime();
         const auto prodName = absPathname.substr(rootPrefixLen);
         ProdInfo   prodInfo(prodName, prodFile.getProdSize(), modTime);
-        ProdEntry  prodEntry{prodFile, prodInfo};
-        auto       pair = prodEntries.emplace(prodInfo.getId(), prodEntry);
+        ProdEntry  prodEntry{prodInfo, prodFile};
+        auto       pair = prodEntries.emplace(prodInfo, prodFile);
         const auto wasAdded = pair.second;
 
         if (pair.second) {
@@ -350,7 +366,7 @@ protected:
             deleteQueue.push(DeleteEntry(deleteTime, prodInfo.getId()));
         }
 
-        return {pair.first->second, pair.second};
+        return pair;
     }
 
     /**
@@ -360,18 +376,20 @@ protected:
      *   - The size of the open-products queue is no more than `maxOpenProds`
      *
      * @pre                    Mutex is locked
-     * @param[in] prodId       Product ID
      * @param[in] prodEntry    Product entry
      * @post                   Mutex is locked
      */
-    void activate(const ProdId prodId, ProdEntry& prodEntry) {
+    void activate(const ProdEntry& prodEntry) {
         LOG_ASSERT(!mutex.try_lock());
-        auto& prodFile = prodEntry.prodFile;
+
+        prodEntry.prodFile.getData(); // Ensures that the product-file is open
+
+        const auto  prodId = prodEntry.prodInfo.getId();
         openProds.erase(prodId); // Idempotent
         openProds.push(prodId);  // Idempotent
 
         while (openProds.size() > maxOpenProds) {
-            prodEntries.at(openProds.front()).prodFile.close();
+            prodEntries.find(ProdEntry{openProds.front()})->prodFile.close();
             openProds.pop();
         }
     }
@@ -383,21 +401,17 @@ protected:
      *
      * @pre                  Mutex is locked
      * @param[in] prodId     Product-identifier
-     * @return               Pointer to the product-entry
-     * @retval    nullptr    No such entry
+     * @return               Iterator to the product-entry or `prodEntries.end()`
      * @post                 Mutex is locked
      */
-    ProdEntry* findProdEntry(const ProdId prodId) {
+    ProdEntries::iterator getProdEntry(const ProdId prodId) {
         LOG_ASSERT(!mutex.try_lock());
 
-        static ProdEntry invalid;
-        if (prodEntries.count(prodId) == 0)
-            return nullptr;
+        auto iter = prodEntries.find(ProdEntry{prodId});
+        if (iter != prodEntries.end())
+            activate(*iter);
 
-        ProdEntry& prodEntry = prodEntries[prodId];
-        activate(prodId, prodEntry);
-
-        return &prodEntry;
+        return iter;
     }
 
 public:
@@ -418,7 +432,7 @@ public:
         , mutex()
         , cond()
         , keepTime(duration_cast<SysDuration>(seconds(keepTime)))
-        , prodEntries()
+        , prodEntries(1000)
         , deleteQueue()
         , openProds()
         , maxOpenProds{maxOpenProds}
@@ -426,8 +440,7 @@ public:
         , rootPrefixLen{absPathRoot.size() + 1}
         , rootFd(::open(FileUtil::ensureDir(absPathRoot).data(), O_DIRECTORY | O_RDONLY))
         , threadEx()
-        , prodQueue()
-        , stop(false)
+        , procQueue()
     {
         if (maxOpenProds <= 0)
             throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
@@ -472,7 +485,7 @@ public:
 
     /**
      * Returns the next product to process, either for transmission or local processing. Blocks
-     * until one is available.
+     * until one is available. The returned product is active.
      * @return The next product to process. The product's metadata and data shall be complete.
      * @throws SystemError   System failure
      * @throws RuntimeError  inotify(7) failure
@@ -481,31 +494,38 @@ public:
         ProdEntry prodEntry;
         Lock      lock(mutex);
 
-        cond.wait(lock, [&]{return !prodQueue.empty() || threadEx;});
+        for (;;) {
+            cond.wait(lock, [&]{return !procQueue.empty() || threadEx;});
 
-        threadEx.throwIfSet();
+            threadEx.throwIfSet();
 
-        prodEntry = *findProdEntry(prodQueue.front().getId());
+            auto iter = getProdEntry(procQueue.front().getId());
 
-        prodQueue.pop();
+            if (iter != prodEntries.end()) {
+                prodEntry = *iter;
+                openProds.erase(iter->prodInfo.getId());
+                procQueue.pop();
+                break;
+            }
+        }
 
         return prodEntry;
     }
 
     /**
-     * Returns information on the data product given its ID.
+     * Returns information on a data product given its ID.
      * @param[in] prodId  The product's ID
-     * @return            Information on the corresponding product. Will be invalid if the product
+     * @return            Information on the corresponding product. Will test false if the product
      *                    doesn't exist.
      */
     ProdInfo getProdInfo(const ProdId prodId) {
         threadEx.throwIfSet();
 
-        static const ProdInfo empty{};
+        static const ProdInfo invalid{};
         Guard                 guard{mutex};
-        ProdEntry*            prodEntry = findProdEntry(prodId);
+        auto                  iter = getProdEntry(prodId);
 
-        return prodEntry ? prodEntry->prodInfo : empty;
+        return iter == prodEntries.end() ? invalid : iter->prodInfo;
     }
 
     /**
@@ -518,18 +538,17 @@ public:
      * @post             State is unlocked
      * @see `DataSeg::operator bool()`
      */
-    DataSeg getDataSeg(const DataSegId segId)
-    {
+    DataSeg getDataSeg(const DataSegId segId) {
         threadEx.throwIfSet();
 
-        static const DataSeg empty{};
+        static const DataSeg invalid{};
         Guard                guard{mutex};
-        ProdEntry*           prodEntry = findProdEntry(segId.prodId);
+        auto                 iter = getProdEntry(segId.prodId);
 
-        return prodEntry
-                ?  DataSeg{segId, prodEntry->prodFile.getProdSize(),
-                        prodEntry->prodFile.getData(segId.offset)}
-                :  empty;
+        return iter != prodEntries.end()
+                ?  DataSeg{segId, iter->prodFile.getProdSize(),
+                        iter->prodFile.getData(segId.offset)}
+                :  invalid;
     }
 
     /**
@@ -544,9 +563,11 @@ public:
                 ? 0
                 : prodEntries.size() - rhs.size());
 
-        for (auto pair : prodEntries)
-            if (rhs.count(pair.first) == 0)
-                result.insert(pair.first);
+        for (auto prodEntry : prodEntries) {
+            const auto prodId = prodEntry.prodInfo.getId();
+            if (rhs.count(prodId) == 0)
+                result.insert(prodId);
+        }
 
         return result;
     }
@@ -559,8 +580,8 @@ public:
     ProdIdSet getProdIds() {
         Guard     guard{mutex};
         ProdIdSet prodIds(prodEntries.size());
-        for (auto pair : prodEntries)
-            prodIds.insert(pair.first);
+        for (auto prodEntry : prodEntries)
+            prodIds.insert(prodEntry.prodInfo.getId());
         return prodIds;
     }
 
@@ -693,8 +714,7 @@ class PubRepo::Impl final : public Repository::Impl
 
                     auto pair = addExistingLocked(absPathname);
                     if (pair.second) {
-                        auto& prodInfo = pair.first.prodInfo;
-                        prodQueue.push(prodInfo);
+                        procQueue.push(pair.first->prodInfo);
                         cond.notify_all();
                     } // New product was added
                 } // Mutex and shield are released
@@ -809,76 +829,44 @@ class SubRepo::Impl final : public Repository::Impl
      * information in the product-entry if it's valid and the modification time of the product-file
      * otherwise.
      *
-     * @param[in] prodId     Product-ID
-     * @param[in] prodEntry  Valid product-entry. Product-information may be valid or invalid..
+     * @param[in] prodEntry  Product-entry
      * @return               The corresponding entry
      */
-    ProdEntry& add(
-            const ProdId prodId,
-            ProdEntry&&  prodEntry) {
+    const ProdEntry& add(ProdEntry&& prodEntry) {
         LOG_ASSERT(!mutex.try_lock());
-        LOG_ASSERT(prodEntry.prodFile || prodEntry.prodInfo);
 
-        auto       pair = prodEntries.emplace(prodId, prodEntry);
-        ProdEntry& entry = pair.first->second;
+        auto pair = prodEntries.emplace(prodEntry);
+        auto iter = pair.first;
 
         if (pair.second) {
-            SysTimePoint createTime = prodEntry.prodInfo
-                    ? prodEntry.prodInfo.getCreateTime()
-                    : prodEntry.prodFile.getModTime();
-            deleteQueue.push(DeleteEntry{createTime+keepTime, prodId});
-            activate(prodId, entry);
+            auto& prodInfo = iter->prodInfo;
+            SysTimePoint createTime = prodInfo
+                    ? prodInfo.getCreateTime()
+                    : iter->prodFile.getModTime();
+            deleteQueue.push(DeleteEntry{createTime+keepTime, prodInfo.getId()});
+            activate(*iter);
             cond.notify_all(); // State changed
         }
 
-        return entry;
+        return *iter;
     }
 
     /**
-     * Returns the product-entry corresponding to a product-ID. The product-entry is created if it
-     * doesn't exist. Upon return, the corresponding product is open, at the back of the
-     * open-products list, and in the delete-queue.
-     *
-     * @pre                 State is locked
-     * @param[in] prodId    Product identifier
-     * @param[in] prodSize  Size of product in bytes
-     * @return              Corresponding product-entry. The product is open.
-     * @post                State is locked
-     * @exceptionsafety     Basic guarantee
-     */
-    ProdEntry& getProdEntry(
-            const ProdId   prodId,
-            const ProdSize prodSize)
-    {
-        LOG_ASSERT(!mutex.try_lock());
-
-        ProdEntry* prodEntry = findProdEntry(prodId);
-
-        if (prodEntry)
-            return *prodEntry;
-
-        ProdFile  prodFile{tempAbsPathname(prodId), prodSize};
-
-        return add(prodId, ProdEntry{prodFile});
-    }
-
-    /**
-     * Finishes processing a data-product if it's complete. The product is closed and its  metadata
-     * is added to the outgoing-product queue.
+     * Finishes processing a data-product if it's complete. The product is closed and its metadata
+     * is added to the product-queue for local processing.
      *
      * @pre                  State is locked
      * @param[in] prodEntry  Product entry
      * @post                 State is locked
      */
-    void finishIfComplete(
-            const ProdId prodId,
-            ProdEntry&   prodEntry) {
+    void finishIfComplete(const ProdEntry& prodEntry) {
         LOG_ASSERT(!mutex.try_lock());
 
         if (prodEntry.prodInfo) {
             auto& prodFile = prodEntry.prodFile;
             if (prodFile.isComplete()) {
                 const auto& prodInfo = prodEntry.prodInfo;
+                const auto  prodId = prodInfo.getId();
                 const auto& modTime = prodInfo.getCreateTime();
                 prodFile.setModTime(modTime);
 
@@ -886,9 +874,9 @@ class SubRepo::Impl final : public Repository::Impl
                 FileUtil::ensureDir(FileUtil::dirname(newPathname), 0755);
                 prodFile.rename(newPathname);
 
-                prodFile.close();
+                prodFile.close(); // Removal from product-queue for processing will re-enable access
                 openProds.erase(prodId);
-                prodQueue.push(prodEntry.prodInfo);
+                procQueue.push(prodInfo);
                 cond.notify_all();
             }
         }
@@ -931,21 +919,22 @@ public:
         bool       wasSaved = false;
         const auto prodId = prodInfo.getId();
         Guard      guard{mutex};
-        ProdEntry* prodEntry = findProdEntry(prodId);
+        auto       iter = getProdEntry(prodId);
 
-        if (prodEntry) {
+        if (iter != prodEntries.end()) {
             // Entry is open and appended to open-list
-            if (!prodEntry->prodInfo) {
-                prodEntry->prodInfo = prodInfo;
-                finishIfComplete(prodId, *prodEntry);
+            if (!iter->prodInfo) {
+                *const_cast<ProdInfo*>(&iter->prodInfo) = prodInfo; // Ok because same ProdId
+                finishIfComplete(*iter);
                 wasSaved = true;
             }
         }
         else {
-            String   pathname = tempAbsPathname(prodId);
-            ProdFile prodFile(pathname, prodInfo.getSize()); // Is open
-            ProdEntry& prodEntry = add(prodId, ProdEntry{prodFile, prodInfo});
-            finishIfComplete(prodId, prodEntry); // Supports products with no data
+            String           pathname = tempAbsPathname(prodId);
+            ProdFile         prodFile(pathname, prodInfo.getSize());
+            const ProdEntry& prodEntry = add(ProdEntry{prodInfo, prodFile});
+
+            finishIfComplete(prodEntry); // Supports products with no data
             wasSaved = true;
         }
 
@@ -970,11 +959,11 @@ public:
         bool       wasSaved = false;
         const auto prodId = dataSeg.getId().prodId;
         Guard      guard{mutex};
-        ProdEntry* prodEntry = findProdEntry(prodId);
+        auto       iter = getProdEntry(prodId);
 
-        if (prodEntry) {
-            if (prodEntry->prodFile.save(dataSeg)) {
-                finishIfComplete(prodId, *prodEntry);
+        if (iter != prodEntries.end()) {
+            if (iter->prodFile.save(dataSeg)) {
+                finishIfComplete(*iter);
                 wasSaved = true;
             }
         }
@@ -983,7 +972,7 @@ public:
             String   pathname = tempAbsPathname(prodId);
             ProdFile prodFile{pathname, dataSeg.getProdSize()}; // Is open
             prodFile.save(dataSeg);
-            add(prodId, ProdEntry{prodFile});
+            add(ProdEntry{prodId, prodFile});
             wasSaved = true;
         }
 
@@ -1001,10 +990,10 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
-        ProdEntry* prodEntry = findProdEntry(prodId);
+        Guard  guard{mutex};
+        auto   iter = getProdEntry(prodId);
 
-        return prodEntry && prodEntry->prodInfo;
+        return iter != prodEntries.end() && iter->prodInfo;
     }
 
     /**
@@ -1018,10 +1007,10 @@ public:
     {
         threadEx.throwIfSet();
 
-        Guard      guard{mutex};
-        ProdEntry* prodEntry = findProdEntry(segId.prodId);
+        Guard guard{mutex};
+        auto  iter = getProdEntry(segId.prodId);
 
-        return prodEntry && prodEntry->prodFile.exists(segId.offset);
+        return iter != prodEntries.end() && iter->prodFile.exists(segId.offset);
     }
 };
 

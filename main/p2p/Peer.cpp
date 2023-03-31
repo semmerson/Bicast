@@ -596,7 +596,7 @@ class SubPeerImpl final : public PeerImpl
      * A thread-safe, linked-map of datum requests.
      */
     class RequestQ {
-        struct hashRequest
+        struct HashRequest
         {
             size_t operator()(const Notice& request) const noexcept {
                 return request.hash();
@@ -604,7 +604,7 @@ class SubPeerImpl final : public PeerImpl
         };
 
         /// The value component references the next entry in a linked list
-        using Requests = std::unordered_map<Notice, Notice, hashRequest>;
+        using Requests = std::unordered_map<Notice, Notice, HashRequest>;
 
         mutable Mutex mutex;
         mutable Cond  cond;
@@ -1071,7 +1071,11 @@ public:
     }
 };
 
-/// Returns a smart pointer to an implementation.
+/**
+ * Returns a smart pointer to an implementation.
+ * @param[in] srvrSock     Socket to be used by the server
+ * @param[in] acceptQSize  Size of the server's listening queue
+ */
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
@@ -1079,7 +1083,11 @@ P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
     return Pimpl{new P2pSrvrImpl<PubP2pMgr>(srvrSock, true, acceptQSize)};
 }
 
-/// Returns a smart pointer to an implementation.
+/**
+ * Returns a smart pointer to an implementation.
+ * @param[in] srvrAddr     Socket address to be used by the server
+ * @param[in] acceptQSize  Size of the server's listening queue
+ */
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const SockAddr  srvrAddr,
@@ -1088,7 +1096,11 @@ P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
     return create(srvrSock, acceptQSize);
 }
 
-/// Returns a smart pointer to an implementation.
+/**
+ * Returns a smart pointer to an implementation.
+ * @param[in] srvrSock     Socket to be used by the server
+ * @param[in] acceptQSize  Size of the server's listening queue
+ */
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
@@ -1096,7 +1108,11 @@ P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
     return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrSock, false, acceptQSize)};
 }
 
-/// Returns a smart pointer to an implementation.
+/**
+ * Returns a smart pointer to an implementation.
+ * @param[in] srvrAddr     Socket address to be used by the server
+ * @param[in] acceptQSize  Size of the server's listening queue
+ */
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,

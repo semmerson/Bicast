@@ -33,7 +33,7 @@ namespace hycast {
 class ActionTemplate::Impl
 {
 protected:
-    std::vector<String> argTemplate; ///< Argument template
+    std::vector<String> argTemplate; ///< Arguments template
     const size_t        nargs;       ///< Number of command-line arguments
     const bool          persist;     ///< Should the reified action persist between products?
 
@@ -55,6 +55,28 @@ public:
     }
 
     /**
+     * Returns the type of action.
+     */
+    virtual Type getType() const noexcept =0;
+
+    /**
+     * Returns the action arguments template.
+     * @return The action arguments template
+     */
+    const std::vector<String>& getArgs() const noexcept {
+        return argTemplate;
+    }
+
+    /**
+     * Returns whether or not this instance should keep its file-descriptor open.
+     * @retval true   Yes
+     * @retval false  No
+     */
+    bool getKeepOpen() const noexcept {
+        return persist;
+    }
+
+    /**
      * Returns a reified action.
      * @param[in] match  Results of matching the product's name
      * @return           A reified action
@@ -65,6 +87,18 @@ public:
 ActionTemplate::ActionTemplate(Impl* const impl)
     : pImpl{impl}
 {}
+
+ActionTemplate::Type ActionTemplate::getType() const noexcept {
+    return pImpl->getType();
+}
+
+const std::vector<String>& ActionTemplate::getArgs() const noexcept {
+    return pImpl->getArgs();
+}
+
+bool ActionTemplate::getKeepOpen() const noexcept {
+    return pImpl->getKeepOpen();
+}
 
 Action ActionTemplate::reify(std::smatch& match) {
     return pImpl->reify(match);
@@ -94,6 +128,14 @@ public:
     {}
 
     /**
+     * Returns the type of action.
+     * @return  The type of action
+     */
+    ActionTemplate::Type getType() const noexcept override {
+        return ActionTemplate::Type::PIPE;
+    }
+
+    /**
      * Returns the reified action.
      * @param[in] matchResults  Results from matching the product's name
      * @return                  The reified action
@@ -121,12 +163,12 @@ public:
     /**
      * Constructs.
      * @param[in] pathTemplate  Pathname template
-     * @param keepOpen          Should this entry persist (i.e., keep the file open)?
+     * @param[in] keepOpen      Should this entry persist (i.e., keep the file open)?
      */
     FileTemplateImpl(
-            const std::vector<String>& pathTemplate,
-            const bool                 keepOpen)
-        : Impl{pathTemplate, keepOpen}
+            const String& pathTemplate,
+            const bool    keepOpen)
+        : Impl{std::vector<String>{pathTemplate}, keepOpen}
     {
         if (nargs != 1)
             throw INVALID_ARGUMENT("Single pathname wasn't specified");
@@ -134,6 +176,14 @@ public:
 
     ~FileTemplateImpl()
     {}
+
+    /**
+     * Returns the type of action.
+     * @return  The type of action
+     */
+    ActionTemplate::Type getType() const noexcept override {
+        return ActionTemplate::Type::FILE;
+    }
 
     /**
      * Returns a reified action.
@@ -149,9 +199,9 @@ public:
 };
 
 FileTemplate::FileTemplate(
-            const std::vector<String>& argTemplates,
-            const bool                 keepOpen)
-    : ActionTemplate{new FileTemplateImpl(argTemplates, keepOpen)}
+            const String& pathTemplate,
+            const bool    keepOpen)
+    : ActionTemplate{new FileTemplateImpl(pathTemplate, keepOpen)}
 {}
 
 /******************************************************************************/
@@ -166,9 +216,9 @@ public:
      * @param[in] keepOpen      Should the file be kept open?
      */
     AppendTemplateImpl(
-            const std::vector<String>& pathTemplate,
-            const bool                 keepOpen)
-        : Impl{pathTemplate, keepOpen}
+            const String& pathTemplate,
+            const bool    keepOpen)
+        : Impl{std::vector<String>{pathTemplate}, keepOpen}
     {
         if (nargs != 1)
             throw INVALID_ARGUMENT("Single pathname wasn't specified");
@@ -176,6 +226,14 @@ public:
 
     ~AppendTemplateImpl()
     {}
+
+    /**
+     * Returns the type of action.
+     * @return  The type of action
+     */
+    ActionTemplate::Type getType() const noexcept override {
+        return ActionTemplate::Type::APPEND;
+    }
 
     /**
      * Returns a reified action.
@@ -191,8 +249,8 @@ public:
 };
 
 AppendTemplate::AppendTemplate(
-            const std::vector<String>& pathTemplate,
-            const bool                 keepOpen)
+            const String& pathTemplate,
+            const bool    keepOpen)
     : ActionTemplate{new AppendTemplateImpl(pathTemplate, keepOpen)}
 {}
 

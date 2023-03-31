@@ -51,6 +51,9 @@ protected:
     ActionTemplate(Impl* const impl);
 
 public:
+    /// Type of action
+    enum class Type {FILE, APPEND, PIPE};
+
     /**
      * Default constructs. Will test false.
      */
@@ -70,6 +73,23 @@ public:
      * @retval false   This instance is not valid
      */
     operator bool() const noexcept;
+
+    /**
+     * Returns the type of action.
+     */
+    Type getType() const noexcept;
+
+    /**
+     * Returns the action arguments template.
+     */
+    const std::vector<String>& getArgs() const noexcept;
+
+    /**
+     * Returns whether or not this instance should keep its file-descriptor open.
+     * @retval true   Yes
+     * @retval false  No
+     */
+    bool getKeepOpen() const noexcept;
 
     /**
      * Returns a concrete action resulting from substituting values in the argument templates.
@@ -106,12 +126,12 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] argTemplates  Command-line argument templates
+     * @param[in] pathname      Pathname template of output-file
      * @param[in] keepOpen      Should the file be kept open between products?
      */
     FileTemplate(
-            const std::vector<String>& argTemplates,
-            const bool                 keepOpen);
+            const String& pathname,
+            const bool    keepOpen);
 };
 
 /**
@@ -123,12 +143,12 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] argTemplates  Command-line argument templates
+     * @param[in] pathname      Pathname of output-file
      * @param[in] keepOpen      Should the file be kept open between products?
      */
     AppendTemplate(
-            const std::vector<String>& argTemplates,
-            const bool                 keepOpen);
+            const String& pathname,
+            const bool    keepOpen);
 };
 
 } // namespace
