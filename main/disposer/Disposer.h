@@ -45,17 +45,17 @@ public:
     Disposer(const int maxPersistent);
 
     /**
+     * Returns the maximum number of file descriptors to keep open between products.
+     * @return Maximum number of file descriptors to keep open
+     */
+    int getMaxKeepOpen() const noexcept;
+
+    /**
      * Adds a pattern-action.
      *
      * @param[in] patternAction  Pattern-action to be added
      */
     void add(const PatternAction& patternAction);
-
-    /**
-     * Returns the YAML representation.
-     * @return The YAML representation
-     */
-    String getYaml() const;
 
     /**
      * Disposes of a product.
@@ -68,9 +68,9 @@ public:
             const char*    bytes) const;
 
     /**
-     * Creates a Disposer instance. This factory method exists in addition to the constructor in
-     * order to enable unit-testing of the Disposer class without the need for a configuration-file
-     * parser.
+     * Creates a Disposer instance from a YAML file. This factory method exists
+     * in addition to the constructor in order to unit-test the Disposer class
+     * independent of a configuration-file parser.
      *
      * @param[in] configFile   Pathname of the configuration-file
      * @return                 A Disposer corresponding to the configuration-file
@@ -78,7 +78,13 @@ public:
      * @throw SystemError      Couldn't get pathname of current working directory
      * @throw RuntimeError     Couldn't parse configuration-file
      */
-    static Disposer create(const String& configFile);
+    static Disposer createFromYaml(const String& configFile);
+
+    /**
+     * Returns the YAML representation.
+     * @return The YAML representation
+     */
+    static String getYaml(const Disposer& disposer);
 };
 
 } // namespace

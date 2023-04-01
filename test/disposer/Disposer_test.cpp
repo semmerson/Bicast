@@ -245,7 +245,7 @@ TEST_F(DisposerTest, Excluding)
 TEST_F(DisposerTest, ConfigFile)
 {
     try {
-        auto disposer = Disposer::create(configFile);
+        auto disposer = Disposer::createFromYaml(configFile);
         //std::cout << disposer.getYaml();
         const String expect(
             "MaxKeepOpen: 20\n"
@@ -255,7 +255,7 @@ TEST_F(DisposerTest, ConfigFile)
             "    KeepOpen: true\n"
             "  - Include: ^WS\n"
             "    File: WWA/lastSIGMET");
-        EXPECT_STREQ(disposer.getYaml().data(), expect.data());
+        EXPECT_STREQ(Disposer::getYaml(disposer).data(), expect.data());
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex);

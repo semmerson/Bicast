@@ -8,10 +8,10 @@ PatternActions:
   # Keep only the most recent SIGMET. Exclude Russia's. Closes output file.
   - Include: ^WS
     Exclude: ^WSRU
-    Actions:
-      - Pipe: [sh, -c, cat >WWA/lastSIGMET]
+    Actions: # Only way to ensure sequential execution of actions by a pattern-action
+      - Pipe: [sh, -c, cat >WWA/lastSIGMET] # Executed first
         KeepOpen: true
-      - Exec: [mailx, -s, New SIGMET, WeatherNerds@host.domain]
+      - Exec: [mailx, -s, New SIGMET, WeatherNerds@host.domain] # Executed second
 
   # APPEND example. Doesn't close output file.
   #   $1: Type of observation

@@ -49,12 +49,12 @@ public:
     {}
 
     /// Returns the string representation.
-    const String& to_string() {
+    const String& to_string() const {
         return string;
     }
 
     /// Returns the compiled pattern
-    const std::regex& getRegex() {
+    const std::regex& getRegex() const {
         return regex;
     }
 };

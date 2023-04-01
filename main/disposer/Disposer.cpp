@@ -40,7 +40,9 @@ namespace hycast {
 /// An implementation of a class that locally disposes of data products
 class Disposer::Impl
 {
-    std::list<PatternAction>   patActs;       ///< Pattern-actions to be matched
+    using PatActs = std::list<PatternAction>;
+
+    PatActs                    patActs;       ///< Pattern-actions to be matched
     std::unordered_set<Action> actionSet;     ///< Persistent (e.g., open) actions
     HashSetQueue<Action>       actionQueue;   ///< Persistent actions sorted by last use
     const int                  maxPersistent; ///< Maximum number of persistent actions
@@ -112,6 +114,8 @@ class Disposer::Impl
     }
 
 public:
+    using Iterator = PatActs::iterator;
+
     /**
      * Default constructs.
      */
@@ -142,6 +146,30 @@ public:
      */
     void add(const PatternAction& patAct) {
         patActs.push_back(patAct);
+    }
+
+    /**
+     * Returns the maximum number of file descriptors to keep open between products.
+     * @return Maximum number of file descriptors to keep open
+     */
+    int getMaxKeepOpen() const {
+        return maxPersistent;
+    }
+
+    /**
+     * Returns an iterator over this instance's pattern-actions.
+     * @return Iterator over pattern-actions
+     */
+    Iterator begin() {
+        return patActs.begin();
+    }
+
+    /**
+     * Returns an iterator beyond this instance's pattern-actions.
+     * @return Iterator beyond pattern-actions
+     */
+    Iterator end() {
+        return patActs.end();
     }
 
     /**
@@ -201,13 +229,13 @@ public:
                 case ActionTemplate::Type::PIPE:   yaml << "Pipe";   break;
                 }
                 const std::vector<String>& args = patAct.actionTemplate.getArgs();
-                const bool needsDelimiters = args.size() > 1;
+                const bool needsSeq = args.size() > 1;
                 yaml << YAML::Flow;
-                if (needsDelimiters)
+                if (needsSeq)
                     yaml << YAML::BeginSeq;
                     for (auto& arg : args)
                         yaml << arg;
-                if (needsDelimiters)
+                if (needsSeq)
                     yaml << YAML::EndSeq;
 
                 if (patAct.actionTemplate.getKeepOpen())
@@ -347,6 +375,22 @@ static bool parseActions(
 }
 
 /**
+ * Returns the string representation of the include and exclude patterns of a pattern-action.
+ * @param[in] incl  Include pattern
+ * @param[in] excl  Exclude pattern
+ * @return          String representation of the include and exclude patterns
+ */
+static String to_string(
+        const Pattern& incl,
+        const Pattern& excl)
+{
+    const String& exclStr = excl.to_string();
+    return exclStr.size() == 0
+            ? '"' + incl.to_string() + '"'
+            : "{incl=\"" + incl.to_string() + "\", excl=\"" + excl.to_string() + "\"}";
+}
+
+/**
  * Decodes the pattern and one or more actions in a map node into one or more pattern-action
  * templates and adds them to a disposer.
  * @param[in] mapNodeode   Map node containing a pattern and one or more actions
@@ -374,11 +418,12 @@ static bool parsePatActNode(
 
     if (parseActions(mapNode, include, exclude, disposer)) {
         if (parseAction(mapNode, include, exclude, disposer))
-            throw INVALID_ARGUMENT("Node has a single action and a subnode with actions");
+            throw INVALID_ARGUMENT("Pattern " + to_string(include, exclude) + " has a single "
+                    "action and a subnode with actions");
         havePatAct = true;
     }
     else if (!parseAction(mapNode, include, exclude, disposer)) {
-        LOG_WARNING("Node has no action");
+        LOG_WARNING("Pattern " + to_string(include, exclude) + " has no action");
     }
 
     return havePatAct;
@@ -416,7 +461,7 @@ static bool parsePatternActions(
                 havePatAct = havePatAct || parsePatActNode(patActNode, disposer);
             }
             catch (const std::exception& ex) {
-                std::throw_with_nested(INVALID_ARGUMENT("Couldn't parse pattern-action node #" +
+                std::throw_with_nested(INVALID_ARGUMENT("Couldn't parse pattern-action #" +
                         std::to_string(i+1)));
             }
         } // Sequence loop
@@ -425,7 +470,25 @@ static bool parsePatternActions(
     return havePatAct;
 }
 
-Disposer Disposer::create(const String& configFile)
+Disposer::Disposer(const int maxPersistent)
+    : pImpl(new Impl{maxPersistent})
+{}
+
+int Disposer::getMaxKeepOpen() const noexcept {
+    return pImpl->getMaxKeepOpen();
+}
+
+void Disposer::add(const PatternAction& patAct) {
+    pImpl->add(patAct);
+}
+
+void Disposer::dispose(
+        const ProdInfo prodInfo,
+        const char*    bytes) const {
+    pImpl->dispose(prodInfo, bytes);
+}
+
+Disposer Disposer::createFromYaml(const String& configFile)
 {
     YAML::Node node0;
     try {
@@ -458,23 +521,54 @@ Disposer Disposer::create(const String& configFile)
     }
 }
 
-Disposer::Disposer(const int maxPersistent)
-    : pImpl(new Impl{maxPersistent})
-{}
+String Disposer::getYaml(const Disposer& disposer) {
+    auto          pImpl = disposer.pImpl;
+    YAML::Emitter yaml;
 
-void Disposer::add(const PatternAction& patAct) {
-    pImpl->add(patAct);
+    yaml << YAML::BeginMap;
+
+    yaml << YAML::Key << "MaxKeepOpen";
+    yaml << YAML::Value << pImpl->getMaxKeepOpen();
+
+    yaml << YAML::Key << "PatternActions";
+    yaml << YAML::BeginSeq;
+
+    for (auto patAct = pImpl->begin(), end = pImpl->end(); patAct != end; ++patAct) {
+        yaml << YAML::BeginMap;
+            yaml << YAML::Key << "Include";
+            yaml << YAML::Value << patAct->include.to_string();
+
+            const String& string = patAct->exclude.to_string();
+            if (string.size()) {
+                yaml << YAML::Key << "Exclude";
+                yaml << YAML::Value << string;
+            }
+
+            yaml << YAML::Key;
+            switch (patAct->actionTemplate.getType()) {
+            case ActionTemplate::Type::FILE:   yaml << "File";   break;
+            case ActionTemplate::Type::APPEND: yaml << "Append"; break;
+            case ActionTemplate::Type::PIPE:   yaml << "Pipe";   break;
+            }
+            const std::vector<String>& args = patAct->actionTemplate.getArgs();
+            const bool needsSeq = args.size() > 1;
+            yaml << YAML::Flow;
+            if (needsSeq)
+                yaml << YAML::BeginSeq;
+                for (auto& arg : args)
+                    yaml << arg;
+            if (needsSeq)
+                yaml << YAML::EndSeq;
+
+            if (patAct->actionTemplate.getKeepOpen())
+                yaml << YAML::Key << "KeepOpen" << YAML::Value << "true";
+        yaml << YAML::EndMap;
+    }
+
+    yaml << YAML::EndSeq;
+    yaml << YAML::EndMap;
+
+    return yaml.c_str();
 }
-
-String Disposer::getYaml() const {
-    return pImpl->getYaml();
-}
-
-void Disposer::dispose(
-        const ProdInfo prodInfo,
-        const char*    bytes) const {
-    pImpl->dispose(prodInfo, bytes);
-}
-
 
 } // namespace
