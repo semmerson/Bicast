@@ -156,8 +156,8 @@ public:
     };
 
     /**
-     * Creates and returns an instance. The instance is immediately ready to accept connections from
-     * remote peers and query the repository for products to send.
+     * Returns a new instance. The instance is immediately ready to accept connections from remote
+     * peers and query the repository for products to send.
      *
      * @param[in] p2pAddr       Socket address ffor local P2P server. It shall specify a specific
      *                          interface and not the wildcard. The port number may be 0, in which
@@ -185,7 +185,7 @@ public:
             const long     maxOpenFiles);
 
     /**
-     * Creates a new instance.
+     * Returns a new instance.
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param mcastRunPar       Runtime parameters for the multicast component
      * @param p2pRunPar         Runtime parameters for the P2P component
@@ -242,7 +242,7 @@ public:
 #endif
 
     /**
-     * Constructs.
+     * Returns a new instance.
      *
      * @param[in] subInfo       Subscription information
      * @param[in] mcastIface    IP address of interface to receive multicast on

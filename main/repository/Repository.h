@@ -117,11 +117,19 @@ struct ProdEntry final
     }
 
     /**
+     * Returns all the data.
+     * @return  All the data
+     */
+    inline const char* getData() const {
+        return prodFile.getData();
+    }
+
+    /**
      * Returns the string representation of this instance.
      * @return The string representation of this instance
      */
     inline std::string to_string() const {
-        return prodFile.to_string();
+        return prodInfo.to_string();
     }
 
     /// Returns the hash value of this instance.

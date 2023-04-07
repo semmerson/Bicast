@@ -197,10 +197,9 @@ public:
             const char*       func,
             const std::string msg,
             const int         errnum = errno);
-
+};
 /// Macro for creating a system error
 #define SYSTEM_ERROR(...) SystemError(__FILE__, __LINE__, __func__, __VA_ARGS__)
-};
 
 /**
  * Constructs a message for an exception.

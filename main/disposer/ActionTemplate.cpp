@@ -106,6 +106,53 @@ Action ActionTemplate::reify(std::smatch& match) {
 
 /******************************************************************************/
 
+/// An implementation of a template for executing an arbitrary command
+class ExecTemplateImpl final : public ActionTemplate::Impl
+{
+public:
+    /**
+     * Constructs.
+     * @param[in] cmdTemplate   Command template
+     */
+    ExecTemplateImpl(const std::vector<String>& cmdTemplate)
+        : Impl{cmdTemplate, false}
+    {
+        if (nargs < 1)
+            throw INVALID_ARGUMENT("No program specified");
+    }
+
+    ~ExecTemplateImpl()
+    {}
+
+    /**
+     * Returns the type of action.
+     * @return  The type of action
+     */
+    ActionTemplate::Type getType() const noexcept override {
+        return ActionTemplate::Type::EXEC;
+    }
+
+    /**
+     * Returns the reified action.
+     * @param[in] matchResults  Results from matching the product's name
+     * @return                  The reified action
+     */
+    Action reify(std::smatch& matchResults) override {
+        std::vector<String> args(nargs);
+        for (auto i = 0; i < nargs; ++i)
+            args[i] = matchResults.format(argTemplate[i]);
+        return ExecAction{args};
+    }
+};
+
+ExecTemplate::ExecTemplate(
+        const std::vector<String>& cmdTemplate,
+        const bool                 keepOpen)
+    : ActionTemplate{new ExecTemplateImpl(cmdTemplate)}
+{}
+
+/******************************************************************************/
+
 /// An implementation of a template for the action of piping data products to a program
 class PipeTemplateImpl final : public ActionTemplate::Impl
 {

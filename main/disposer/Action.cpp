@@ -117,24 +117,24 @@ public:
      * @return The string representation of this instance
      */
     String to_string() const {
-        String cmd;
+        String action;
         switch (actionType) {
         case ActionType::PIPE: {
-            cmd = "PIPE";
+            action = "PIPE";
             break;
         }
         case ActionType::FILE: {
-            cmd = "FILE";
+            action = "FILE";
             break;
         }
         case ActionType::APPEND: {
-            cmd = "APPEND";
+            action = "APPEND";
             break;
         }
         default:
             throw LOGIC_ERROR("Unknown action type");
         }
-        return "{cmd=" + cmd + ", args=" + cmdVec() + "}";
+        return "{act=" + action + ", args=" + cmdVec() + "}";
     }
 
     /**
@@ -177,16 +177,20 @@ public:
 
     /**
      * Performs the action.
-     * @param[in] data      The data to be processed
-     * @param[in] nbytes    The amount of data in bytes
-     * @retval    true      Success
-     * @retval    false     Too many file descriptors are open
-     * @retval    false     Too many child processes exist
-     * @throw SystemError   System failure
+     * @param[in]  data    The data to process
+     * @param[in]  nbytes  The amount of data in bytes
+     * @param[out] pid     The PID of the child process
+     * @param[out] id      The command string
+     * @retval    true     Success. `pid` and `cmd` are set. `pid < 0` if no child process.
+     * @retval    false    Too many file descriptors are open
+     * @retval    false    Too many child processes exist
+     * @throw SystemError  System failure
      */
     virtual bool process(
             const char* data,
-            size_t      nbytes) =0;
+            size_t      nbytes,
+            pid_t&      pid,
+            String&     cmd) =0;
 };
 
 Action::Action(Impl* const pImpl)
@@ -215,9 +219,167 @@ bool Action::operator==(const Action& rhs) const noexcept {
 
 bool Action::process(
         const char* data,
-        size_t      nbytes) {
-    return pImpl->process(data, nbytes);
+        size_t      nbytes,
+        pid_t&      pid,
+        String&     childStr) {
+    return pImpl->process(data, nbytes, pid, childStr);
 }
+
+/******************************************************************************/
+
+/// Action to execute a command
+class ExecImpl final : public Action::Impl
+{
+private:
+    pid_t childPid;
+
+    /**
+     * Forks this process.
+     *
+     * @retval true        Success
+     * @retval false       Failure. Too many user processes.
+     * @throw SystemError  Couldn't fork process
+     */
+    bool fork() {
+        childPid = ::fork();
+
+        if (childPid == -1) {
+            if (errno == EAGAIN)
+                return false;
+            throw SYSTEM_ERROR("fork() failure");
+        }
+
+        return true;
+    }
+
+    /**
+     * Executes the command as a child process.
+     *
+     * @retval true        Success
+     * @retval false       Failure. Too many user processes.
+     * @throw SystemError  Couldn't fork process
+     * @throw SystemError  Couldn't make child process a process-group leader
+     * @throw SystemError  Couldn't execute command
+     */
+    bool execCmd() {
+        if (!fork())
+            return false;
+
+        if (childPid == 0) {
+            (void)::signal(SIGTERM, SIG_DFL);
+
+            /*
+             * This process is made its own process-group leader to isolate it from signals sent to the
+             * parent process.
+             */
+            if (::setpgid(0, 0) == -1)
+                throw SYSTEM_ERROR("Couldn't make child process a process-group leader");
+
+            /*
+             * It is assumed that the standard output and error streams are correctly established and
+             * should not be modified.
+             */
+
+            // Construct the argument vector
+            const auto nargs = args.size();
+            char*      argv[nargs+1];
+            for (int i = 0; i < nargs; ++i)
+                argv[i] = const_cast<char*>(args[i].data());
+            argv[nargs] = nullptr;
+
+            (void)::execvp(argv[0], argv);
+            throw SYSTEM_ERROR("Couldn't execute command \"" + args[0] + "\": PATH=" +
+                    ::getenv("PATH"));
+        }
+
+        return true;
+    }
+
+    /**
+     * @throws SystemError  Couldn't wait on child process
+     */
+    void waitOnChild() {
+#if 0
+        int exitStatus;
+        for (;;) {
+            if (::waitpid(childPid, &exitStatus, 0) == -1)
+                throw SYSTEM_ERROR("waitpid() failure for command " + cmdVec());
+
+            if (WIFEXITED(exitStatus)) {
+                if (WIFSIGNALED(exitStatus)) {
+                    LOG_WARNING("Command %s terminated due to uncaught signal %d",
+                            cmdVec().data(), WTERMSIG(exitStatus));
+                }
+                else {
+                    exitStatus = WEXITSTATUS(exitStatus);
+                    if (exitStatus) {
+                        LOG_WARNING("Command %s exited with status %d", cmdVec().data(),
+                                exitStatus);
+                    }
+                    else {
+                        LOG_DEBUG("Command %s exited successfully", cmdVec().data());
+                    }
+                }
+                childPid = 0;
+                break;
+            }
+        }
+#endif
+    }
+
+public:
+    /**
+     * Constructs.
+     * @param[in] args      Command-line argument templates
+     * @param[in] keepOpen  Reified instances should persist?
+     */
+    ExecImpl(const std::vector<String>& args)
+        : Impl(ActionType::EXEC, args, false)
+        , childPid{0}
+    {}
+
+    ~ExecImpl() {
+        if (childPid) {
+            try {
+                //waitOnChild();
+            }
+            catch (const std::exception& ex) {
+                LOG_ERROR(ex);
+            }
+        }
+    }
+
+    /**
+     * @param[in]  data    The data to process
+     * @param[in]  nbytes  The amount of data in bytes
+     * @param[out] pid     The PID of the child process
+     * @param[out] id      The command string
+     * @retval true        Success. `pid` and `cmd` are set.
+     * @retval false       Failure. Too many user process.
+     * @throw SystemError  Couldn't fork process
+     * @throw SystemError  Couldn't make child process a process-group leader
+     * @throw SystemError  Couldn't execute command
+     */
+    bool process(
+            const char* data,
+            size_t      nbytes,
+            pid_t&      pid,
+            String&     cmd) override {
+        if (!execCmd())
+            return false;
+
+        //waitOnChild();
+        pid = childPid;
+        cmd = to_string();
+
+        return true;
+    }
+};
+
+ExecAction::ExecAction(const std::vector<String>& args)
+    : Action{new ExecImpl(args)}
+{}
+
 
 /******************************************************************************/
 
@@ -364,29 +526,23 @@ private:
      */
     void waitForDecoder() {
         int exitStatus;
-        for (;;) {
-            if (::waitpid(decoderPid, &exitStatus, 0) == -1)
-                throw SYSTEM_ERROR("waitpid() failure for decoder " + cmdVec());
+        if (::waitpid(decoderPid, &exitStatus, 0) == -1)
+            throw SYSTEM_ERROR("::waitpid() failure for decoder " + cmdVec());
 
-            if (WIFEXITED(exitStatus)) {
-                if (WIFSIGNALED(exitStatus)) {
-                    LOG_WARNING("Decoder %s terminated due to uncaught signal %d",
-                            cmdVec().data(), WTERMSIG(exitStatus));
-                }
-                else {
-                    exitStatus = WEXITSTATUS(exitStatus);
-                    if (exitStatus) {
-                        LOG_WARNING("Decoder %s exited with status %d", cmdVec().data(),
-                                exitStatus);
-                    }
-                    else {
-                        LOG_DEBUG("Decoder %s exited successfully", cmdVec().data());
-                    }
-                }
-                decoderPid = 0;
-                break;
+        if (WIFSIGNALED(exitStatus)) {
+            LOG_WARNING("Decoder %s terminated due to uncaught signal %d",
+                    cmdVec().data(), WTERMSIG(exitStatus));
+        }
+        else {
+            exitStatus = WEXITSTATUS(exitStatus);
+            if (exitStatus) {
+                LOG_WARNING("Decoder %s exited with status %d", cmdVec().data(), exitStatus);
+            }
+            else {
+                LOG_DEBUG("Decoder %s exited successfully", cmdVec().data());
             }
         }
+        decoderPid = 0;
     }
 
 public:
@@ -419,23 +575,29 @@ public:
     }
 
     /**
-     * @retval true        Success
-     * @retval false       Failure. Couldn't obtain a new file descriptor.
-     * @retval false       Failure. Too many user process.
-     * @throw SystemError  Couldn't create pipe for a reason other than too many open files
-     * @throw SystemError  Couldn't get file descriptor flags
-     * @throw SystemError  Couldn't set file descriptor to close-on-exec()
-     * @throw SystemError  Couldn't fork process
-     * @throw SystemError  Couldn't make decoder a process-group leader
-     * @throw SystemError  Couldn't redirect standard input to read-end of pipe
-     * @throw SystemError  Couldn't execute decoder
-     * @throw SystemError  Couldn't write product to decoder
-     * @throw SystemError  Couldn't flush product to decoder
-     * @throw SystemError  Couldn't wait on decoder
+     * @param[in]  data      The data to process
+     * @param[in]  nbytes    The amount of data in bytes
+     * @param[out] pid       The PID of the child process
+     * @param[out] childStr  The child process string
+     * @retval true          Success. `pid` and `cmd` are set.
+     * @retval false         Failure. Couldn't obtain a new file descriptor.
+     * @retval false         Failure. Too many user process.
+     * @throw SystemError    Couldn't create pipe for a reason other than too many open files
+     * @throw SystemError    Couldn't get file descriptor flags
+     * @throw SystemError    Couldn't set file descriptor to close-on-exec()
+     * @throw SystemError    Couldn't fork process
+     * @throw SystemError    Couldn't make decoder a process-group leader
+     * @throw SystemError    Couldn't redirect standard input to read-end of pipe
+     * @throw SystemError    Couldn't execute decoder
+     * @throw SystemError    Couldn't write product to decoder
+     * @throw SystemError    Couldn't flush product to decoder
+     * @throw SystemError    Couldn't wait on decoder
      */
     bool process(
             const char* data,
-            size_t      nbytes) override {
+            size_t      nbytes,
+            pid_t&      pid,
+            String&     childStr) override {
         if (!pipeOpen() && (!createPipe() || !execDecoder()))
             return false;
 
@@ -450,12 +612,16 @@ public:
 
         if (persist) {
             // `fsync()` can't flush to a pipe
+            pid = decoderPid; // Disposer needs to wait on this
+            childStr = to_string();
         }
         else {
             ::close(pipeFds[1]);
             pipeFds[1] = -1;
 
             waitForDecoder();
+            pid = -1; // Disposer doesn't need to wait on this
+            childStr.clear();
         }
 
         return true;
@@ -530,8 +696,11 @@ public:
     }
 
     /**
-     * @param[in] bytes    Data-product bytes
-     * @param[in] nbytes   Number of data-product bytes
+     * @param[in]  data    The data to process
+     * @param[in]  nbytes  The amount of data in bytes
+     * @param[out] pid     The PID of the child process
+     * @param[out] id      The command string
+     * @retval true        Success. `pid` and `cmd` are set.
      * @throw SystemError  Couldn't open file
      * @throw SystemError  Couldn't truncate file
      * @throw SystemError  Couldn't write product to file
@@ -539,7 +708,9 @@ public:
      */
     bool process(
             const char* bytes,
-            size_t      nbytes) override {
+            size_t      nbytes,
+            pid_t&      pid,
+            String&     cmd) override {
         if (fd < 0) {
             if (!openFile(nbytes))
                 return false;
@@ -561,6 +732,9 @@ public:
             ::close(fd);
             fd = -1;
         }
+
+        pid = -1; // Disposer doesn't need to wait on this
+        cmd.clear();
 
         return true;
     }

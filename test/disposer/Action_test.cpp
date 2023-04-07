@@ -135,7 +135,9 @@ TEST_F(ActionTest, TransientAction)
 
     std::vector<String> args{"sh", "-c", "cat >/tmp/Action_test"};
     PipeAction                action(args, false);
-    EXPECT_TRUE(action.process(expectedData, sizeof(expectedData)));
+    pid_t               pid;
+    String              childStr;
+    EXPECT_TRUE(action.process(expectedData, sizeof(expectedData), pid, childStr));
 
     char actualData[sizeof(expectedData)];
     auto fd = ::open("/tmp/Action_test", O_RDONLY);
@@ -156,7 +158,9 @@ TEST_F(ActionTest, PersistentAction)
     std::vector<String> args{"sh", "-c", "cat >/tmp/Action_test"};
     {
         PipeAction action(args, true);
-        EXPECT_TRUE(action.process(expectedData, sizeof(expectedData)));
+        pid_t pid;
+        String childStr;
+        EXPECT_TRUE(action.process(expectedData, sizeof(expectedData), pid, childStr));
     } // Destruction of `action` should wait on decoder
 
     char actualData[sizeof(expectedData)];

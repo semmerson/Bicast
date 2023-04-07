@@ -52,7 +52,7 @@ protected:
 
 public:
     /// Type of action
-    enum class Type {FILE, APPEND, PIPE};
+    enum class Type {FILE, APPEND, PIPE, EXEC};
 
     /**
      * Default constructs. Will test false.
@@ -98,6 +98,23 @@ public:
      * @return           Corresponding concrete action
      */
     Action reify(std::smatch& match);
+};
+
+/**
+ * An action template for the exec action.
+ */
+class ExecTemplate final : public ActionTemplate
+{
+public:
+    /**
+     * Constructs.
+     *
+     * @param[in] cmdTemplate   Command-line template
+     * @param[in] keepOpen      Ignored
+     */
+    ExecTemplate(
+            const std::vector<String>& cmdTemplate,
+            const bool                 keepOpen);
 };
 
 /**

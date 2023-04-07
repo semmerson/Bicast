@@ -20,8 +20,13 @@
 
 #include "config.h"
 
+#include "CommonTypes.h"
+#include "Disposer.h"
+#include "FileUtil.h"
 #include "Node.h"
 #include "Parser.h"
+#include "Shield.h"
+#include "Thread.h"
 #include "ThreadException.h"
 
 #include <semaphore.h>
@@ -95,6 +100,7 @@ struct RunPar {
             , maxOpenFiles(maxOpenFiles)
         {}
     }         repo; ///< Repository runtime parameters
+    String disposePath;
 
     /**
      * Default constructs.
@@ -105,13 +111,14 @@ struct RunPar {
         , mcastIface("0.0.0.0") // Might get changed to match family of multicast group
         , p2p(SockAddr(), 8, 15000, 100, 8, 300)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
+        , disposePath()
     {}
 };
 
-static sem_t             stopSem;   ///< Semaphore for async-signal-safe stopping
-static ThreadEx          threadEx;  ///< Exception thrown by a thread
-static RunPar            runPar;    ///< Runtime parameters:
-static const RunPar      defRunPar; ///< Default runtime parameters
+static sem_t               stopSem;    ///< Semaphore for async-signal-safe stopping
+static ThreadEx            threadEx;   ///< Exception thrown by a thread
+static RunPar              runPar;     ///< Runtime parameters:
+static const RunPar        defRunPar;  ///< Default runtime parameters
 
 static void usage()
 {
@@ -126,6 +133,8 @@ static void usage()
 "\n"
 "    -c <configFile>   Pathname of configuration-file. Overrides previous\n"
 "                      arguments; overridden by subsequent ones.\n"
+"    -d <configFile>   Pathname of configuration-file for disposition of products.\n"
+"                      No local processing if empty string (default)\n"
 "    -e <evalTime>     Peer evaluation duration, in seconds, before replacing\n"
 "                      poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
 "    -l <level>        Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
@@ -197,6 +206,12 @@ static void setFromConfig(const String& pathname)
             Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
                     runPar.repo.maxOpenFiles);
         }
+
+        node1 = node0["Disposition"];
+        if (node1) {
+            Parser::tryDecode<decltype(runPar.disposePath)>(node1, "Disposition",
+                    runPar.disposePath);
+        }
     } // YAML file loaded
     catch (const std::exception& ex) {
         std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" + pathname + "\""));
@@ -233,6 +248,10 @@ static void vetRunPars()
     if (runPar.repo.maxOpenFiles > ::sysconf(_SC_OPEN_MAX))
         throw INVALID_ARGUMENT("Maximum number of open repository files is "
                 "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
+
+    if (runPar.disposePath.size() && !FileUtil::exists(runPar.disposePath))
+        throw INVALID_ARGUMENT("Configuration-file for disposition of products, \"" +
+                runPar.disposePath + "\", doesn't exist");
 }
 
 /**
@@ -264,6 +283,10 @@ static void getCmdPars(
                 std::throw_with_nested(INVALID_ARGUMENT(
                         String("Couldn't initialize using configuration-file \"") + optarg + "\""));
             }
+            break;
+        }
+        case 'd': {
+            runPar.disposePath = String(optarg);
             break;
         }
         case 'e': {
@@ -359,6 +382,53 @@ static void getCmdPars(
     vetRunPars();
 }
 
+/// Sets the exception thrown on an internal thread.
+static void setException(const std::exception& ex)
+{
+    threadEx.set(ex);
+    ::sem_post(&stopSem);
+}
+
+/**
+ * Performs local processing of complete data-products.
+ */
+static void runProdProc(
+        SubNode::Pimpl subNode,
+        Disposer       disposer) {
+    try {
+        for (;;) {
+            auto prodEntry = subNode->getNextProd();
+            Shield shield{}; // Protects product disposition from cancellation
+            LOG_DEBUG("Disposing of " + prodEntry.to_string());
+            disposer.dispose(prodEntry.getProdInfo(), prodEntry.getData());
+        }
+    }
+    catch (const std::exception& ex) {
+        setException(ex);
+    }
+}
+
+static std::thread startProdProc(
+        SubNode::Pimpl subNode,
+        Disposer       disposer) {
+    try {
+        return std::thread(&runProdProc, subNode, disposer);
+    }
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to process products"));
+    }
+}
+
+/**
+ * Stops product processing. Shouldn't block for long.
+ */
+static void stopProdProc(std::thread& procThread) {
+    if (procThread.joinable()) {
+        ::pthread_cancel(procThread.native_handle());
+        procThread.join();
+    }
+}
+
 /// Creates the subscriber node.
 static SubNode::Pimpl createSubNode()
 {
@@ -429,13 +499,6 @@ static void setSigHand()
     (void)sigaction(SIGTERM, &sigact, NULL);
 }
 
-/// Sets the exception thrown on an internal thread.
-static void setException(const std::exception& ex)
-{
-    threadEx.set(ex);
-    ::sem_post(&stopSem);
-}
-
 /// Executes the subscribing node.
 static void runNode(SubNode::Pimpl subNode)
 {
@@ -444,6 +507,26 @@ static void runNode(SubNode::Pimpl subNode)
     }
     catch (const std::exception& ex) {
         setException(ex);
+    }
+}
+
+std::thread startSubNode(SubNode::Pimpl subNode)
+{
+    try {
+        return std::thread(&runNode, subNode);
+    }
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Couldn't start subscription node"));
+    }
+}
+
+void stopSubNode(
+        SubNode::Pimpl subNode,
+        std::thread&   nodeThread)
+{
+    if (nodeThread.joinable()) {
+        subNode->halt(); // Idempotent
+        nodeThread.join();
     }
 }
 
@@ -470,17 +553,21 @@ int main(
         if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-        //LOG_DEBUG("Creating subnode");
-        auto subNode = createSubNode();
-        setSigHand(); // Catches termination signals
+        Disposer disposer{};
+        if (runPar.disposePath.size())
+            disposer = Disposer::createFromYaml(runPar.disposePath);
 
-        auto nodeThread = Thread(&runNode, subNode);
+        auto subNode = createSubNode();
+        auto procThread = startProdProc(subNode, disposer);
+        auto nodeThread = std::thread(&runNode, subNode);
+
+        setSigHand(); // Catches termination signals
 
         ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
         ::sem_destroy(&stopSem);
 
-        subNode->halt(); // Idempotent
-        nodeThread.join();
+        stopSubNode(subNode, std::ref(nodeThread));
+        stopProdProc(std::ref(procThread));
 
         threadEx.throwIfSet(); // Throws if failure on a thread
         status = 0;

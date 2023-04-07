@@ -25,6 +25,7 @@
 #include "FileUtil.h"
 #include "logging.h"
 
+#include <exception>
 #include <gtest/gtest.h>
 #include <fstream>
 #include <iostream>
@@ -73,7 +74,7 @@ protected:
 // Tests construction
 TEST_F(DisposerTest, Construction)
 {
-    Disposer disposer(0);
+    Disposer disposer{};
 }
 
 // Tests filing
@@ -101,7 +102,9 @@ TEST_F(DisposerTest, Filing)
                 Entry{"bar/prod4/foo", "(\\w+)/prod4/(\\w+)", "$2/$1/prod4", "foo/bar/prod4"},
         };
         Pattern  excl{};  // Exclude nothing
-        Disposer disposer(0);
+        Disposer disposer{};
+
+        disposer.setMaxKeepOpen(0); // No persistent actions
 
         for (auto& entry : entries) {
             Pattern       incl(entry.pattern);
@@ -122,7 +125,7 @@ TEST_F(DisposerTest, Filing)
             std::ifstream input(rootDir+entries[i].pathname);
             char contents[80];
             input >> contents;
-            EXPECT_STREQ(contents, std::to_string(i).data());
+            EXPECT_STREQ(std::to_string(i).data(), contents);
         }
     }
     catch (const std::regex_error& e) {
@@ -141,13 +144,14 @@ TEST_F(DisposerTest, Filing)
 TEST_F(DisposerTest, Appending)
 {
     try {
-        Pattern    excl{};      // Exclude nothing
-        Disposer   disposer(0); // No persistent actions
-
+        Pattern        excl{};      // Exclude nothing
+        Disposer       disposer{};
         Pattern        incl("prod");
         String         pathTemplate(rootDir + "$&");
         AppendTemplate appendTemplate(pathTemplate, true);
         PatternAction  patAct(incl, excl, appendTemplate);
+
+        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String contents("1");
@@ -160,7 +164,7 @@ TEST_F(DisposerTest, Appending)
         std::ifstream input(rootDir+"prod");
         char buf[80];
         input >> buf;
-        EXPECT_STREQ(buf, "12");
+        EXPECT_STREQ("12", buf);
     }
     catch (const std::regex_error& e) {
         std::cout << "regex_error caught: " << e.what() << '\n';
@@ -178,13 +182,14 @@ TEST_F(DisposerTest, Appending)
 TEST_F(DisposerTest, Piping)
 {
     try {
-        Pattern    excl{};      // Exclude nothing
-        Disposer   disposer(0); // No persistent actions
-
+        Pattern             excl{};      // Exclude nothing
+        Disposer            disposer{};
         Pattern             incl("prod");
         std::vector<String> cmdTemplate{"sh", "-c", String("cat >") + rootDir + "$&"};
         PipeTemplate        pipeTemplate(cmdTemplate, true);
         PatternAction       patAct(incl, excl, pipeTemplate);
+
+        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String contents("1");
@@ -194,7 +199,7 @@ TEST_F(DisposerTest, Piping)
         std::ifstream input(rootDir+"prod");
         char buf[80];
         input >> buf;
-        EXPECT_STREQ(buf, "1");
+        EXPECT_STREQ("1", buf);
     }
     catch (const std::regex_error& e) {
         std::cout << "regex_error caught: " << e.what() << '\n';
@@ -212,13 +217,14 @@ TEST_F(DisposerTest, Piping)
 TEST_F(DisposerTest, Excluding)
 {
     try {
-        Disposer   disposer(0); // No persistent actions
-
+        Disposer       disposer{};
         Pattern        incl("prod");
         Pattern        excl{"prod"};
         String         pathTemplate(rootDir + "$&");
         FileTemplate   fileTemplate(pathTemplate, true);
         PatternAction  patAct(incl, excl, fileTemplate);
+
+        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String   contents("1");
@@ -226,7 +232,7 @@ TEST_F(DisposerTest, Excluding)
         disposer.dispose(prodInfo, contents.data());
 
         std::ifstream input(rootDir+"prod");
-        EXPECT_EQ(input.rdstate(), std::ios_base::failbit);
+        EXPECT_EQ(std::ios_base::failbit, input.rdstate());
     }
     catch (const std::regex_error& e) {
         std::cout << "regex_error caught: " << e.what() << '\n';
@@ -241,28 +247,40 @@ TEST_F(DisposerTest, Excluding)
 }
 
 // Tests YAML config-file
-#if 1
 TEST_F(DisposerTest, ConfigFile)
 {
     try {
         auto disposer = Disposer::createFromYaml(configFile);
         //std::cout << disposer.getYaml();
         const String expect(
-            "MaxKeepOpen: 20\n"
-            "PatternActions:\n"
-            "  - Include: ^SAUS(..) (....)\n"
-            "    Pipe: [sh, -c, cat >>surface/US/$2/$1]\n"
-            "    KeepOpen: true\n"
-            "  - Include: ^WS\n"
-            "    File: WWA/lastSIGMET");
-        EXPECT_STREQ(Disposer::getYaml(disposer).data(), expect.data());
+                "MaxKeepOpen: 20\n"
+                "PatternActions:\n"
+                "  - Include: ^SAUS(..) (....)\n"
+                "    Pipe: [sh, -c, cat >>surface/US/$2/$1]\n"
+                "    KeepOpen: true\n"
+                "  - Include: ^WS\n"
+                "    Exclude: ^WSRU\n"
+                "    Pipe: [sh, -c, cat >WWA/lastSIGMET]\n"
+                "    KeepOpen: true\n"
+                "  - Include: ^WS\n"
+                "    Exclude: ^WSRU\n"
+                "    Exec: [mailx, -s, New SIGMET, WeatherNerds@host.domain]\n"
+                "  - Include: ^(..)(..).. .... (..)(..)\n"
+                "    Append: IDS_DDPLUS/$1/$2/($3:yyyy)($3:mm)($3:dd)T$4.txt\n"
+                "    KeepOpen: true\n"
+                "  - Include: ^(..)(..).. .... (..)(..)\n"
+                "    Pipe: [ids_ddplus_decoder, IDS_DDPLUS, $1, $2, $3, $4]\n"
+                "    KeepOpen: true\n"
+                "  - Include: ^(20........)/(\\w+\\.dat)\n"
+                "    File: pub/wseta/$1_$2"
+                );
+        EXPECT_STREQ(expect.data(), Disposer::getYaml(disposer).data());
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex);
         throw;
     }
 }
-#endif
 
 }  // namespace
 
@@ -274,5 +292,6 @@ int main(int argc, char **argv) {
   std::cout << "argv[0]=" << std::string(argv[0]) << '\n';
   std::cout << "argv[1]=" << std::string(argv[1]) << '\n';
   configFile = std::string(argv[1]);
+  std::set_terminate(&hycast::terminate);
   return RUN_ALL_TESTS();
 }

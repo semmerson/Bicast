@@ -70,6 +70,13 @@ void FileUtil::trimPathname(std::string& pathname) noexcept
     pathname = dirname(pathname) + '/' +  filename(pathname);
 }
 
+bool FileUtil::exists(const String& pathname) noexcept
+{
+    struct ::stat    statBuf;
+
+    return ::stat(pathname.data(), &statBuf) == 0;
+}
+
 size_t FileUtil::getSize(const std::string& pathname)
 {
     struct ::stat    statBuf;

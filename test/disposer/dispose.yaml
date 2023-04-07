@@ -1,10 +1,37 @@
-MaxKeepOpen: 20  # Maximum number of file descriptors to keep open between data-products
+MaxKeepOpen: 20 # Maximum number of file-descriptors to keep-open
 PatternActions:
-  # Append Metars
+  # Append US Metars the hard way
   - Include: ^SAUS(..) (....) 
     Pipe: [sh, -c, cat >>surface/US/$2/$1]
     KeepOpen: true
 
-  # Keep only the most recent SIGMET.
+  # Keep only the most recent SIGMET. Exclude Russia's. Closes output file.
   - Include: ^WS
-    File: WWA/lastSIGMET
+    Exclude: ^WSRU
+    Actions: # Only way to ensure sequential execution of actions by a pattern-action
+      - Pipe: [sh, -c, cat >WWA/lastSIGMET] # Executed first
+        KeepOpen: true
+      - Exec: [mailx, -s, New SIGMET, WeatherNerds@host.domain] # Executed second
+
+  # APPEND example. Doesn't close output file.
+  #   $1: Type of observation
+  #   $2: Country
+  #   $3: Day of month
+  #   $4: Minute of hour
+  - Include: ^(..)(..).. .... (..)(..)
+    Append: IDS_DDPLUS/$1/$2/($3:yyyy)($3:mm)($3:dd)T$4.txt
+    KeepOpen: true
+    
+  # PIPE example. Like the above but data-agnostic. Doesn't close output file.
+  #   $1: Type of observation
+  #   $2: Country
+  #   $3: Day of month
+  #   $4: Minute of hour
+  - Include: ^(..)(..).. .... (..)(..)
+    Pipe: [ids_ddplus_decoder, IDS_DDPLUS, $1, $2, $3, $4]
+    KeepOpen: true
+
+  # FILE example. Closes output file.
+  - Include: ^(20........)/(\w+\.dat)
+    File: pub/wseta/$1_$2
+  

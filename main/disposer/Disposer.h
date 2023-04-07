@@ -37,12 +37,16 @@ private:
 
 public:
     /**
-     * Constructs.
-     *
-     * @param[in] maxPersistent  Maximum number of actions that should persist (i.e., stay open)
-     *                           between products
+     * Default constructs. The `dispose()` method will do nothing until `add()` is called.
+     * @see `add()`
      */
-    Disposer(const int maxPersistent);
+    Disposer();
+
+    /**
+     * Sets the maximum number of file descriptors to keep open between products.
+     * @param[in] maxKeepOpen  Maximum number of file descriptors to keep open
+     */
+    void setMaxKeepOpen(const int maxKeepOpen) noexcept;
 
     /**
      * Returns the maximum number of file descriptors to keep open between products.

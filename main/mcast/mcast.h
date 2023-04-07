@@ -113,7 +113,7 @@ public:
      *
      * @see `halt()`
      */
-   ~McastSub() noexcept {};
+   virtual ~McastSub() noexcept {};
 
     /**
      * Executes this instance. Starts reading the multicast and calling the subscribing node.

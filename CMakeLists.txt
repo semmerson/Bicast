@@ -86,6 +86,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" DESTINATION
 
 include(InstallRequiredSystemLibraries)
 
+set(CPACK_PACKAGE_CONTACT "Steven Emmerson <emmerson@ucar.edu>")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/${PROJECT_NAME}-${PROJECT_VERSION}/")
 set(CPACK_PACKAGE_VENDOR "University Corporation for Atmospheric Research")
@@ -97,5 +98,5 @@ SET(CPACK_RPM_PACKAGE_LICENSE "Apache 2.0")
 SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp-devel openssl11-devel")
 SET(CPACK_RPM_PACKAGE_PROVIDES "publish(1), subscribe(1)")
 
-set(CPACK_GENERATOR "RPM")
+set(CPACK_GENERATOR RPM DEB STGZ)
 include(CPack)

@@ -188,7 +188,7 @@ protected:
     /// Container for product-files that should be deleted after a certain time
     using DeleteQueue = std::priority_queue<DeleteEntry, std::deque<DeleteEntry>>;
     /// Container for information on data products
-    using ProcQueue   = std::queue<ProdInfo>;
+    using ProcQueue   = std::queue<ProdId>;
 
     mutable Mutex     mutex;          ///< To maintain consistency
     mutable Cond      cond;           ///< For inter-thread communication
@@ -201,7 +201,7 @@ protected:
     size_t            rootPrefixLen;  ///< Length in bytes of root pathname prefix
     int               rootFd;         ///< File descriptor open on root-directory of repository
     ThreadEx          threadEx;       ///< Subtask exception
-    ProcQueue         procQueue;      ///< Queue of product metadata for external processing
+    ProcQueue         procQueue;      ///< Queue of identifiers of products ready for processing
 
     /// Stops the thread on which files are deleted
     void stopDeleteThread() {
@@ -499,7 +499,7 @@ public:
 
             threadEx.throwIfSet();
 
-            auto iter = getProdEntry(procQueue.front().getId());
+            auto iter = getProdEntry(procQueue.front());
 
             if (iter != prodEntries.end()) {
                 prodEntry = *iter;
@@ -714,7 +714,7 @@ class PubRepo::Impl final : public Repository::Impl
 
                     auto pair = addExistingLocked(absPathname);
                     if (pair.second) {
-                        procQueue.push(pair.first->prodInfo);
+                        procQueue.push(pair.first->prodInfo.getId());
                         cond.notify_all();
                     } // New product was added
                 } // Mutex and shield are released
@@ -876,7 +876,7 @@ class SubRepo::Impl final : public Repository::Impl
 
                 prodFile.close(); // Removal from product-queue for processing will re-enable access
                 openProds.erase(prodId);
-                procQueue.push(prodInfo);
+                procQueue.push(prodInfo.getId());
                 cond.notify_all();
             }
         }

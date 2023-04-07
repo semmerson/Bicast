@@ -91,15 +91,34 @@ public:
     /**
      * Processes data.
      *
-     * @param[in] data      The data to be processed
-     * @param[in] nbytes    The amount of data in bytes
-     * @retval    true      Success
-     * @retval    false     Too many file descriptors are open
-     * @throw SystemError   System failure
+     * @param[in]  data    The data to process
+     * @param[in]  nbytes  The amount of data in bytes
+     * @param[out] pid     The PID of the child process
+     * @param[out] id      The command string
+     * @retval     true    Success. `pid` and `cmd` are set. `pid < 0` if no child process.
+     * @retval     false   Too many file descriptors are open
+     * @throw SystemError  System failure
      */
     bool process(
             const char* data,
-            size_t      nbytes);
+            size_t      nbytes,
+            pid_t&      pid,
+            String&     cmd);
+};
+
+/**
+ * Derived handle class for executing a command.
+ */
+class ExecAction final : public Action
+{
+public:
+    /**
+     * Constructs.
+     *
+     * @param[in] args      Command-line arguments. The first argument is the pathname of the
+     *                      program.
+     */
+    ExecAction(const std::vector<String>& args);
 };
 
 /**

@@ -80,7 +80,7 @@ public:
 };
 
 hycast::Cue::Cue()
-    : pImpl{new Impl()}
+    : pImpl{new Impl{}}
 {}
 
 void hycast::Cue::cue() const
@@ -94,7 +94,7 @@ void hycast::Cue::wait() const
 }
 
 /******************************************************************************/
-
+#if 0
 Thread::Impl::ThreadMap::ThreadMap()
     : mutex{}
     , threads{}
@@ -160,6 +160,7 @@ Thread::Impl::ThreadMap::Map::size_type Thread::Impl::ThreadMap::size()
     LockGuard lock{mutex};
     return threads.size();
 }
+#endif
 
 /******************************************************************************/
 
@@ -189,6 +190,7 @@ Barrier::~Barrier() noexcept
 
 /******************************************************************************/
 
+#if 0
 Thread::Impl::ThreadMap Thread::Impl::threads;
 
 bool Thread::Impl::isLocked() const
@@ -500,5 +502,6 @@ size_t Thread::size()
 {
     return Impl::size();
 }
+#endif
 
 } // namespace

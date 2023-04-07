@@ -24,8 +24,11 @@
 
 #include "Node.h"
 
+#include "Disposer.h"
+#include "Shield.h"
 #include "ThreadException.h"
 
+#include <pthread.h>
 #include <semaphore.h>
 #include <semaphore.h>
 #include <thread>
@@ -125,9 +128,9 @@ namespace hycast {
 class NodeImpl : public Node
 {
     /**
-     * Executes the peer-to-peer component. Blocks until `P2pMgr::run()` returns.
+     * Runs the peer-to-peer component. Blocks until `P2pMgr::run()` returns.
      */
-    void runP2pMgr()
+    void runP2p()
     {
         try {
             p2pMgr->run();
@@ -137,94 +140,21 @@ class NodeImpl : public Node
         }
     }
 
-    /**
-     * Executes the peer-to-peer component on a separate thread. Doesn't block.
-     */
-    void startP2pMgr() {
-        try {
-            p2pThread = Thread(&NodeImpl::runP2pMgr, this);
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run P2P component"));
-        }
-    }
-
-    /**
-     * Stops the peer-to-peer component. Shouldn't block for long.
-     */
-    void stopP2pMgr() {
-        if (p2pThread.joinable()) {
-            p2pMgr->halt();
-            p2pThread.join();
-        }
-    }
-
-    /**
-     * Executes the multicast component on a separate thread. Doesn't block.
-     */
-    void startSending() {
-        try {
-            mcastThread = Thread(&NodeImpl::runSending, this);
-        }
-        catch (const std::exception& ex) {
-            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run multicast "
-                    "component"));
-        }
-    }
-
-    /**
-     * Stops the multicast component. Shouldn't block for long.
-     */
-    void stopSending() {
-        if (mcastThread.joinable()) {
-            haltSending();
-            mcastThread.join();
-        }
-    }
+protected:
+    mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
+    mutable sem_t  stopSem;      ///< For async-signal-safe stopping
+    P2pMgr::Pimpl  p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
+    ThreadEx       threadEx;     ///< Thread exception
 
     /**
      * Executes the P2P and multicast components on separate threads. Doesn't block.
      */
-    void startThreads() {
-        try {
-            startP2pMgr();
-            startSending();
-        }
-        catch (const std::exception& ex) {
-            stopThreads();
-            throw;
-        }
-    }
+    virtual void startThreads() =0;
 
     /**
      * Stops all sub-threads. Doesn't block.
      */
-    void stopThreads() {
-        stopSending();
-        stopP2pMgr();
-    }
-
-protected:
-    mutable Thread mcastThread;  ///< Multicast thread (either sending or receiving)
-    mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
-    mutable sem_t  stopSem;      ///< For async-signal-safe stopping
-    P2pMgr::Pimpl  p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
-    ThreadEx       threadEx;     ///< Subtask exception
-
-    /**
-     * Starts this instance (i.e., starts this instance's threads).
-     */
-    void startImpl() {
-        startThreads();
-    }
-
-    /**
-     * Idempotent.
-     */
-    void stopImpl() {
-        stopThreads();
-        threadEx.throwIfSet();
-    }
+    virtual void stopThreads() =0;
 
     /**
      * Sets the first exception thrown by a sub-thread.
@@ -237,14 +167,26 @@ protected:
     }
 
     /**
-     * Executes the multicast component. Blocks until it returns.
+     * Starts the peer-to-peer component on a separate thread. Doesn't block.
      */
-    virtual void runSending() =0;
+    void startP2p() {
+        try {
+            p2pThread = Thread(&NodeImpl::runP2p, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run P2P component"));
+        }
+    }
 
     /**
-     * Halts the multicast component. Doesn't block.
+     * Stops the peer-to-peer component. Shouldn't block for long.
      */
-    virtual void haltSending() =0;
+    void stopP2p() {
+        if (p2pThread.joinable()) {
+            p2pMgr->halt();
+            p2pThread.join();
+        }
+    }
 
 public:
     /**
@@ -254,8 +196,7 @@ public:
      * @throws    std::system_error  Couldn't initialize semaphore
      */
     NodeImpl(P2pMgr::Pimpl p2pMgr)
-        : mcastThread()
-        , p2pThread()
+        : p2pThread()
         , stopSem()
         , p2pMgr(p2pMgr)
         , threadEx()
@@ -269,9 +210,9 @@ public:
     }
 
     void run() override {
-        startImpl();
+        startThreads();
         ::sem_wait(&stopSem);
-        stopImpl();
+        stopThreads();
         threadEx.throwIfSet();
     }
 
@@ -294,9 +235,10 @@ public:
  */
 class PubNodeImpl final : public PubNode, public NodeImpl
 {
-    McastPub::Pimpl    mcastPub;
-    PubRepo            repo;
-    SegSize            maxSegSize;
+    McastPub::Pimpl    mcastPub;     ///< Publisher's multicast component
+    PubRepo            repo;         ///< Publisher's data-product repository
+    SegSize            maxSegSize;   ///< Maximum size of a data-segment in bytes
+    mutable Thread     senderThread; ///< Thread on which products are sent via multicast and P2P
 
     /**
      * Sends information on a product.
@@ -336,12 +278,10 @@ class PubNodeImpl final : public PubNode, public NodeImpl
         }
     }
 
-protected:
     /**
-     * Multicasts new data-products in the repository and notifies peers.
+     * Sends new data-products in the repository via the multicast and P2P components.
      */
-    void runSending()
-    {
+    void runSender() {
         // TODO: Make the priority of this thread less than the handling of missed-data requests
         try {
             for (;;) {
@@ -391,8 +331,54 @@ protected:
         }
     }
 
-    void haltSending() {
-        ::pthread_cancel(mcastThread.native_handle());
+    void haltSender() {
+        ::pthread_cancel(senderThread.native_handle());
+    }
+
+    /**
+     * Starts the sending component on a separate thread. Doesn't block.
+     */
+    void startSender() {
+        try {
+            senderThread = Thread(&PubNodeImpl::runSender, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run multicast "
+                    "component"));
+        }
+    }
+
+    /**
+     * Stops the sending component. Shouldn't block for long.
+     */
+    void stopSender() {
+        if (senderThread.joinable()) {
+            haltSender();
+            senderThread.join();
+        }
+    }
+
+protected:
+    /**
+     * Executes the P2P and multicast components on separate threads. Doesn't block.
+     */
+    void startThreads() override {
+        try {
+            startP2p();
+            startSender();
+        }
+        catch (const std::exception& ex) {
+            stopThreads();
+            throw;
+        }
+    }
+
+    /**
+     * Stops all sub-threads. Doesn't block.
+     */
+    void stopThreads() override {
+        stopSender();
+        stopP2p();
     }
 
 public:
@@ -427,11 +413,12 @@ public:
         , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
         , repo(PubRepo(repoRoot, maxOpenFiles))
         , maxSegSize{maxSegSize}
+        , senderThread()
     {}
 
     ~PubNodeImpl() noexcept {
         try {
-            stopImpl();
+            stopThreads();
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "Couldn't stop execution");
@@ -519,7 +506,8 @@ class SubNodeImpl final : public NodeImpl, public SubNode
     std::atomic<unsigned long> numP2pOrig;   ///< Number of original P2P PDUs
     std::atomic<unsigned long> numMcastDup;  ///< Number of duplicate multicast PDUs
     std::atomic<unsigned long> numP2pDup;    ///< Number of duplicate P2P PDUs
-    McastSub::Pimpl            mcastSub;     ///< Multicast subscriber
+    McastSub::Pimpl            mcastSub;     ///< Subscriber's multicast component
+    mutable Thread             mcastThread;  ///< Multicast receiving thread
 
     /**
      * Handles the publisher: Connects to it, reads the subscription information, sends the socket
@@ -537,9 +525,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
         p2pMgr->getSrvrAddr().write(xprt);
     }
 
-protected:
-    void runSending()
-    {
+    void runMcast() {
         try {
             mcastSub->run();
         }
@@ -548,8 +534,50 @@ protected:
         }
     }
 
-    void haltSending() {
-        mcastSub->halt();
+    /**
+     * Starts the multicast component on a separate thread. Doesn't block.
+     */
+    void startMcast() {
+        try {
+            mcastThread = Thread(&SubNodeImpl::runMcast, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to run multicast "
+                    "component"));
+        }
+    }
+
+    /**
+     * Stops the multicast component. Shouldn't block for long.
+     */
+    void stopMcast() {
+        if (mcastThread.joinable()) {
+            mcastSub->halt();
+            mcastThread.join();
+        }
+    }
+
+protected:
+    /**
+     * Executes the P2P and multicast components on separate threads. Doesn't block.
+     */
+    void startThreads() override {
+        try {
+            startP2p();
+            startMcast();
+        }
+        catch (const std::exception& ex) {
+            stopThreads();
+            throw;
+        }
+    }
+
+    /**
+     * Stops all sub-threads. Doesn't block.
+     */
+    void stopThreads() override {
+        stopMcast();
+        stopP2p();
     }
 
 public:
@@ -623,11 +651,12 @@ public:
         , numMcastDup{0}
         , numP2pDup{0}
         , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
+        , mcastThread()
     {}
 
     ~SubNodeImpl() noexcept {
         try {
-            stopImpl();
+            stopThreads();
             LOG_NOTE("Metrics:");
             LOG_NOTE("  Number of multicast PDUs:");
             LOG_NOTE("      Original:  " + std::to_string(numMcastOrig));
@@ -779,7 +808,8 @@ public:
     }
 
     /**
-     * Returns the next product to process locally.
+     * Returns the next product to process locally. Blocks until one is available. The returned
+     * product is complete and open.
      * @return The next product to process
      */
     ProdEntry getNextProd() override {

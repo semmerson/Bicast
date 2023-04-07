@@ -77,6 +77,14 @@ public:
     static void trimPathname(std::string& pathname) noexcept;
 
     /**
+     * Indicates if a file exists.
+     * @param[in] pathname  Pathname of the file
+     * @retval    true      File exists
+     * @retval    false     File doesn't exist
+     */
+    static bool exists(const String& pathname) noexcept;
+
+    /**
      * Returns the size of the regular file referenced by a pathname.
      * @param[in] pathname  The pathname of the file
      * @return The size, in bytes, of the regular file referenced by the pathname

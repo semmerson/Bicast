@@ -145,6 +145,7 @@ public:
 
 /******************************************************************************/
 
+#if 0
 /// Thread
 class Thread final
 {
@@ -708,12 +709,14 @@ public:
      */
     static size_t size();
 };
+#endif
 
 } // namespace
 
 /******************************************************************************/
 
 namespace std {
+#if 0
     /// Class function for hashing a thread.
     template<> struct hash<hycast::Thread>
     {
@@ -745,6 +748,39 @@ namespace std {
             return less<hycast::Thread::Id>()(lhs.id(), rhs.id());
         }
     };
+#else
+    /// Class function for hashing a thread.
+    template<> struct hash<thread>
+    {
+        /**
+         * Returns the hash code of a thread.
+         * @param[in] thread  The thread
+         * @return The hash code of a thread
+         */
+        size_t operator()(thread& thread) const noexcept
+        {
+            return hash<thread::id>()(thread.get_id());
+        }
+    };
+
+    /// The less-than class function for a thread
+    template<> struct less<thread>
+    {
+        /**
+         * Indicates if one thread is less than another.
+         * @param[in] lhs      The left-hand-side thread
+         * @param[in] rhs      The right-hand-side thread
+         * @retval    true     The left-hand-side is less than the right-hand-side
+         * @retval    false    The left-hand-side is not less than the right-hand-side
+         */
+        size_t operator()(
+                thread& lhs,
+                thread& rhs) const noexcept
+        {
+            return less<thread::id>()(lhs.get_id(), rhs.get_id());
+        }
+    };
+#endif
 }
 
 #endif /* MAIN_MISC_THREAD_H_ */
