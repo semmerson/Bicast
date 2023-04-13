@@ -70,6 +70,8 @@ else()
 endif()
 
 # Specify the documentation
+find_package(Doxygen)
+set(DOXYGEN_JAVADOC_AUTOBRIEF YES)
 set(DOXYGEN_ALIASES 
     "exceptionsafety='@par Exception Safety:^^'" 
     "threadsafety='@par Thread Safety:^^'" 
@@ -77,8 +79,10 @@ set(DOXYGEN_ALIASES
     "cancellationpoint='@par Cancellation Point:^^'")
 doxygen_add_docs(doxydocs mainpage.md main ALL)
 
-# Install CHANGE_LOG and LICENSE
-SET(CMAKE_INSTALL_DOCDIR share/doc/hycast)
+# Install documentation
+SET(CMAKE_INSTALL_DOCDIR share/doc)
+install(DIRECTORY "${CMAKE_BINARY_DIR}/html" DESTINATION
+            ${CMAKE_INSTALL_DOCDIR})
 install(FILES "${CMAKE_SOURCE_DIR}/CHANGE_LOG" DESTINATION
             ${CMAKE_INSTALL_DOCDIR})
 install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" DESTINATION
@@ -88,7 +92,7 @@ include(InstallRequiredSystemLibraries)
 
 set(CPACK_PACKAGE_CONTACT "Steven Emmerson <emmerson@ucar.edu>")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGING_INSTALL_PREFIX "/opt/${PROJECT_NAME}-${PROJECT_VERSION}/")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/${PROJECT_NAME}-${PROJECT_VERSION}/")
 set(CPACK_PACKAGE_VENDOR "University Corporation for Atmospheric Research")
 
 SET(CPACK_DEBIAN_PACKAGE_DEPENDS "yaml-cpp-dev openssl11-dev")

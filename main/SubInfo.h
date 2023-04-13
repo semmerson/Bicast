@@ -75,6 +75,7 @@ struct SubInfo : public XprtAble {
      * @retval    false    Connection lost
      */
     bool write(Xprt xprt) const {
+#if 0
         return
                 xprt.write(version) &&
                 xprt.write<uint8_t>(feedName) &&
@@ -83,6 +84,35 @@ struct SubInfo : public XprtAble {
                 mcast.srcAddr.write(xprt) &&
                 tracker.write(xprt) &&
                 xprt.write(keepTime);
+#else
+        LOG_DEBUG("Writing version");
+        auto success = xprt.write(version);
+        if (success) {
+            LOG_DEBUG("Writing feedName");
+            success = success && xprt.write<uint8_t>(feedName);
+        }
+        if (success) {
+            LOG_DEBUG("Writing maxSegSize");
+            success = success && xprt.write(maxSegSize);
+        }
+        if (success) {
+            LOG_DEBUG("Writing dstAddr");
+            success = success && mcast.dstAddr.write(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Writing srcAddr");
+            success = success && mcast.srcAddr.write(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Writing tracker");
+            success = success && tracker.write(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Writing keepTime");
+            success = success && xprt.write(keepTime);
+        }
+        return success;
+#endif
     }
     /**
      * Reads itself from a transport.
@@ -91,6 +121,7 @@ struct SubInfo : public XprtAble {
      * @retval    false    Lost connection
      */
     bool read(Xprt xprt) {
+#if 0
         auto success =
                 xprt.read(version) &&
                 xprt.read<uint8_t>(feedName) &&
@@ -99,6 +130,34 @@ struct SubInfo : public XprtAble {
                 mcast.srcAddr.read(xprt) &&
                 tracker.read(xprt) &&
                 xprt.read(keepTime);
+#else
+        LOG_DEBUG("Reading version");
+        bool success = xprt.read(version);
+        if (success) {
+            LOG_DEBUG("Reading feedName");
+            success = success && xprt.read<uint8_t>(feedName);
+        }
+        if (success) {
+            LOG_DEBUG("Reading maxSegSize");
+            success = success && xprt.read(maxSegSize);
+        }
+        if (success) {
+            LOG_DEBUG("Reading dstAddr");
+            success = success && mcast.dstAddr.read(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Reading srcAddr");
+            success = success && mcast.srcAddr.read(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Reading tracker");
+            success = success && tracker.read(xprt);
+        }
+        if (success) {
+            LOG_DEBUG("Reading keepTime");
+            success = success && xprt.read(keepTime);
+        }
+#endif
         if (success && mcast.dstAddr.getInetAddr().getFamily() != mcast.srcAddr.getFamily())
             throw LOGIC_ERROR("Family of multicast address " + mcast.dstAddr.to_string() +
                     " != family of source address " + mcast.srcAddr.to_string());

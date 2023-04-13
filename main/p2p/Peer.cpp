@@ -1043,16 +1043,16 @@ public:
     P2pSrvrImpl(
             const TcpSrvrSock p2pSrvr,
             const bool        iAmPub,
-            const unsigned    acceptQSize)
-        : rpcSrvr(RpcSrvr::create(p2pSrvr, iAmPub, acceptQSize))
+            const unsigned    maxPendConn)
+        : rpcSrvr(RpcSrvr::create(p2pSrvr, iAmPub, maxPendConn))
     {}
 
     /// Constructs
     P2pSrvrImpl(
             const SockAddr srvrAddr,
             const bool     iAmPub,
-            const unsigned acceptQSize)
-        : rpcSrvr(RpcSrvr::create(srvrAddr, iAmPub, acceptQSize))
+            const unsigned maxPendConn)
+        : rpcSrvr(RpcSrvr::create(srvrAddr, iAmPub, maxPendConn))
     {}
 
     SockAddr getSrvrAddr() const override {
@@ -1074,50 +1074,50 @@ public:
 /**
  * Returns a smart pointer to an implementation.
  * @param[in] srvrSock     Socket to be used by the server
- * @param[in] acceptQSize  Size of the server's listening queue
+ * @param[in] maxPendConn  Maximum number of pending connections
  */
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
-        const unsigned    acceptQSize) {
-    return Pimpl{new P2pSrvrImpl<PubP2pMgr>(srvrSock, true, acceptQSize)};
+        const unsigned    maxPendConn) {
+    return Pimpl{new P2pSrvrImpl<PubP2pMgr>(srvrSock, true, maxPendConn)};
 }
 
 /**
  * Returns a smart pointer to an implementation.
  * @param[in] srvrAddr     Socket address to be used by the server
- * @param[in] acceptQSize  Size of the server's listening queue
+ * @param[in] maxPendConn  Maximum number of pending connections
  */
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const SockAddr  srvrAddr,
-        const unsigned  acceptQSize) {
-    auto srvrSock = TcpSrvrSock(srvrAddr, 3*acceptQSize); // Connection comprises 3 separate sockets
-    return create(srvrSock, acceptQSize);
+        const unsigned  maxPendConn) {
+    auto srvrSock = TcpSrvrSock(srvrAddr, 3*maxPendConn); // Connection comprises 3 separate sockets
+    return create(srvrSock, maxPendConn);
 }
 
 /**
  * Returns a smart pointer to an implementation.
  * @param[in] srvrSock     Socket to be used by the server
- * @param[in] acceptQSize  Size of the server's listening queue
+ * @param[in] maxPendConn  Maximum number of pending connections
  */
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const TcpSrvrSock srvrSock,
-        const unsigned    acceptQSize) {
-    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrSock, false, acceptQSize)};
+        const unsigned    maxPendConn) {
+    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrSock, false, maxPendConn)};
 }
 
 /**
  * Returns a smart pointer to an implementation.
  * @param[in] srvrAddr     Socket address to be used by the server
- * @param[in] acceptQSize  Size of the server's listening queue
+ * @param[in] maxPendConn  Maximum number of pending connections
  */
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,
-        const unsigned acceptQSize) {
-    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrAddr, false, acceptQSize)};
+        const unsigned maxPendConn) {
+    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrAddr, false, maxPendConn)};
 }
 
 } // namespace

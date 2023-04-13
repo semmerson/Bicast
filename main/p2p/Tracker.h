@@ -59,8 +59,8 @@ public:
     size_t size() const;
 
     /**
-     * Inserts the address of a peer server if it doesn't already exist.
-     * If the capacity is exceeded, then the oldest entries are deleted.
+     * Inserts the address of a peer server at the back if it doesn't already exist. If the capacity
+     * is exceeded, then the front entry is deleted.
      *
      * @param[in] peerSrvrAddr       Socket address of peer server
      * @retval    true               Success
@@ -68,39 +68,40 @@ public:
      * @exceptionsafety              Strong guarantee
      * @threadsafety                 Safe
      */
-    bool insert(const SockAddr& peerSrvrAddr) const;
+    bool insertBack(const SockAddr& peerSrvrAddr) const;
 
     /**
-     * Inserts the entries from another instance.
+     * Inserts the entries from another instance at the front. The order of entries from the other
+     * instance is maintained.
      * @param[in] tracker  The other instance
      */
-    void insert(const Tracker tracker) const;
+    void insertFront(const Tracker tracker) const;
 
     /**
-     * Removes a P2P server.
+     * Removes a P2P server's address.
      * @param p2pSrvrAddr  Socket address of the P2P server
      */
     void erase(const SockAddr p2pSrvrAddr);
 
     /**
-     * Removes the P2P server addresses contained in another instance.
+     * Removes the addresses of P2P servers contained in another instance.
      * @param tracker  The other instance
      */
     void erase(const Tracker tracker);
 
     /**
-     * Removes and returns the first P2P server address.
+     * Removes and returns the front P2P server address.
      * @return
      */
-    SockAddr removeHead() const;
+    SockAddr removeFront() const;
 
     /**
-     * Causes `removeHead()` to always return a socket address that tests false. Idempotent.
+     * Causes `removeFront()` to always return a socket address that tests false. Idempotent.
      */
     void halt() const;
 
     /**
-     * Writes itself to a transport.
+     * Writes itself to a transport starting at the front.
      * @param[in] xprt     The transport
      * @retval    true     Success
      * @retval    false    Lost connection
@@ -108,7 +109,7 @@ public:
     bool write(Xprt xprt) const;
 
     /**
-     * Reads itself from a transport.
+     * Reads itself from a transport starting at the front.
      * @param[in] xprt     The transport
      * @retval    true     Success
      * @retval    false    Lost connection

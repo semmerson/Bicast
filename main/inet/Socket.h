@@ -357,6 +357,12 @@ public:
                          const int      queueSize = 0);
 
     /**
+     * Calls listen() on the underlying socket.
+     * @param[in] size  Size of the listening queue
+     */
+    void listen(const int size) const;
+
+    /**
      * Accepts the next, incoming connection.
      *
      * @return               The accepted socket. Will test false if `shutdown()` has been called.

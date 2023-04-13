@@ -368,11 +368,13 @@ public:
 
     /**
      * Returns a smart pointer to an instance.
+     * @param[in] srvrSock     Server socket
+     * @param[in] maxPendConn  Maximum number of pending connections
      * @throw InvalidArgument  Accept-queue size is zero
      */
     static Pimpl create(
             const TcpSrvrSock srvrSock,
-            const unsigned    acceptQSize);
+            const unsigned    maxPendConn);
 
     /**
      * Returns a smart pointer to an instance.

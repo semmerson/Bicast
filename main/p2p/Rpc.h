@@ -275,7 +275,7 @@ public:
      * @param[in] srvrSock     Server socket. Local address must not be the wildcard (i.e., specify
      *                         any interface).
      * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] acceptQSize  Maximum number of outstanding RPC connections
+     * @param[in] maxPendConn  Maximum number of pending connections
      * @return                 New instance
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Backlog argument is zero
@@ -283,7 +283,7 @@ public:
     static Pimpl create(
             const TcpSrvrSock srvrSock,
             const bool        iAmPub,
-            const unsigned    acceptQSize = 8);
+            const unsigned    maxPendConn = 8);
 
     /**
      * Creates a new instance.
@@ -291,7 +291,7 @@ public:
      * @param[in] srvrAddr     Address of server socket. IP address must not be the wildcard (i.e.,
      *                         specify any interface).
      * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] acceptQSize  Maximum number of outstanding RPC connections
+     * @param[in] maxPendConn  Maximum number of pending connections
      * @return                 New instance
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Backlog argument is zero
@@ -299,7 +299,7 @@ public:
     static Pimpl create(
             const SockAddr srvrAddr,
             const bool     iAmPub,
-            const unsigned acceptQSize = 8);
+            const unsigned maxPendConn = 8);
 
     virtual ~RpcSrvr() {};
 

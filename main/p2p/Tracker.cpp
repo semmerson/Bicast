@@ -39,9 +39,10 @@ class Tracker::Impl final : public XprtAble
     struct Links {
         SockAddr prev;
         SockAddr next;
-        Links(const SockAddr tail)
-            : prev(tail)
-            , next()
+        Links(  const SockAddr prev,
+                const SockAddr next)
+            : prev(prev)
+            , next(next)
         {}
     };
     using Map  = std::unordered_map<SockAddr, Links>;
@@ -56,38 +57,29 @@ class Tracker::Impl final : public XprtAble
     bool          done;
 
     /**
-     * Adds a socket address.
-     *
-     * @pre                 Mutex is locked
-     * @param[in] srvrAddr  Socket address to be added
-     * @retval    true      Address was added
-     * @retval    false     Address was not added because it already exists
+     * Ensures that mutexes are always locked in the same order to prevent deadlock.
      */
-    bool add(const SockAddr& srvrAddr) {
-        LOG_ASSERT(!mutex.try_lock());
-
-        auto pair = map.emplace(srvrAddr, Links(tail));
-        if (!pair.second)
-            return false;
-
-        tail = srvrAddr;
-        if (!head) {
-            head = srvrAddr;
+    void orderMutexes(
+            const Impl& that,
+            Mutex**     mutex1,
+            Mutex**     mutex2) {
+        if (this < &that) {
+            *mutex1 = &mutex;
+            *mutex2 = &that.mutex;
         }
-        else if (map.size() > capacity) {
-            // `capacity >= 1` => there must be at least two entries
-            auto newHead = map.at(head).next;
-            map.erase(head);
-            head = newHead;
-            map.at(newHead).prev = SockAddr();
+        else {
+            *mutex2 = &mutex;
+            *mutex1 = &that.mutex;
         }
-
-        cond.notify_all();
-        return true;
     }
 
+    /**
+     * Removes an element.
+     * @param[in] srvrAddr  Socket address of the element to be removed
+     */
     void remove(const SockAddr& srvrAddr) {
-        Guard guard(mutex);
+        LOG_ASSERT(!mutex.try_lock());
+
         auto iter = map.find(srvrAddr);
         if (iter != map.end()) {
             const auto& links = iter->second;
@@ -104,6 +96,72 @@ class Tracker::Impl final : public XprtAble
 
             map.erase(iter);
         }
+    }
+
+    /**
+     * Adds a socket address to the back. If the capacity is exceeded, then the front entry is
+     * deleted.
+     *
+     * @pre                    Mutex is locked
+     * @param[in] srvrAddr     Socket address to be added
+     * @retval    true         Address was added
+     * @retval    false        Address was not added because it already exists
+     * @throw InvalidArgument  Socket address is invalid
+     */
+    bool addBack(const SockAddr& srvrAddr) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (!srvrAddr)
+            throw INVALID_ARGUMENT("Socket address is invalid");
+
+        if (!map.emplace(srvrAddr, Links(tail, SockAddr{})).second)
+            return false;
+
+        if (tail)
+            map.at(tail).next = srvrAddr;
+
+        tail = srvrAddr;
+        if (!head)
+            head = srvrAddr;
+
+        if (map.size() > capacity)
+            remove(head);
+
+        cond.notify_all();
+        return true;
+    }
+
+    /**
+     * Adds a socket address to the front. If the capacity is exceeded, then the back entry is
+     * deleted.
+     *
+     * @pre                    Mutex is locked
+     * @param[in] srvrAddr     Socket address to be added
+     * @retval    true         Address was added
+     * @retval    false        Address was not added because it already exists
+     * @throw InvalidArgument  Socket address is invalid
+     */
+    bool addFront(const SockAddr& srvrAddr) {
+        LOG_ASSERT(!mutex.try_lock());
+
+        if (!srvrAddr)
+            throw INVALID_ARGUMENT("Socket address is invalid");
+
+        if (!map.emplace(srvrAddr, Links(SockAddr{}, head)).second)
+            return false;
+
+        if (head)
+            map.at(head).prev = srvrAddr;
+
+        head = srvrAddr;
+        if (!tail)
+            tail = srvrAddr;
+
+        if (map.size() > capacity)
+            remove(tail);
+
+        cond.notify_all();
+        return true;
     }
 
 public:
@@ -141,38 +199,32 @@ public:
     }
 
     /**
-     * Adds a P2P server address.
-     * @param[in] srvrAddr  The P2P server address to be added
+     * Adds the socket address of a P2P server to the back.
+     * @param[in] srvrAddr  The P2P server's address to be added
      * @retval    true      Success
-     * @retval    false     The P2P server address was previously added
+     * @retval    false     The P2P server's address already exists
      */
-    bool insert(const SockAddr& srvrAddr) {
+    bool insertBack(const SockAddr& srvrAddr) {
         Guard guard(mutex);
-        return add(srvrAddr);
+        return addBack(srvrAddr);
     }
 
     /**
-     * Adds the P2P server addresses contained in another instance.
+     * Adds the socket addresses of P2P servers contained in another instance to the front. The
+     * order of entries in the other instance is maintained. If the capacity is exceeded, then
+     * entries at the back are deleted.
      * @param[in] src  The other instance
      */
-    void insert(const Impl& src) {
+    void insertFront(const Impl& src) {
         if (this != &src) { // No need if same object
-            // Ensure that mutexes are always locked in the same order to prevent deadlock
             Mutex* mutex1;
             Mutex* mutex2;
-            if (this < &src) {
-                mutex1 = &mutex;
-                mutex2 = &src.mutex;
-            }
-            else {
-                mutex2 = &mutex;
-                mutex1 = &src.mutex;
-            }
+            orderMutexes(src, &mutex1, &mutex2);
             Guard guard1(*mutex1);
             Guard guard2(*mutex2);
 
-            for (const auto& pair : src.map)
-                add(pair.first);
+            for (auto srvrAddr = src.tail; srvrAddr; srvrAddr = src.map.at(srvrAddr).prev)
+                addFront(srvrAddr);
         }
     }
 
@@ -181,24 +233,36 @@ public:
      * @param[in] srvrAddr  The socket address of the P2P server to delete
      */
     void erase(const SockAddr srvrAddr) {
+        Guard guard(mutex);
         return remove(srvrAddr);
     }
 
     /**
-     * Deletes all P2P server socket addresses contained in another instance.
-     * @param[in] src  The other instance
+     * Deletes all P2P server socket addresses contained in an instance.
+     * @param[in] src  The instance
      */
     void erase(const Impl& src) {
-        Guard srcGuard(src.mutex);
-        for (const auto& pair : src.map)
-            remove(pair.first);
+        if (this == &src) {
+            map.clear();
+        }
+        else {
+            Mutex* mutex1;
+            Mutex* mutex2;
+            orderMutexes(src, &mutex1, &mutex2);
+            Guard guard1(*mutex1);
+            Guard guard2(*mutex2);
+            for (const auto& pair : src.map)
+                remove(pair.first);
+        }
     }
 
     /**
-     * Removes and returns the first P2P server's socket address.
-     * @return The first P2P server's socket address
+     * Removes and returns the first P2P server's socket address. Blocks until one is available or
+     * `halt()` is called.
+     * @return The first P2P server's socket address. Will test false if `halt()` has been called.
+     * @see halt()
      */
-    SockAddr removeHead() {
+    SockAddr removeFront() {
         Lock lock{mutex};
         cond.wait(lock, [&]{return !map.empty() || done;});
 
@@ -229,12 +293,12 @@ public:
 
     bool write(Xprt xprt) const {
         Guard guard{mutex};
-        auto size = (Size)map.size();
-        //LOG_DEBUG("Writing size=%s", std::to_string(size).data());
-        if (!xprt.write((Size)map.size()))
+        auto size = static_cast<Size>(map.size());
+        LOG_DEBUG("Writing size=%s", std::to_string(size).data());
+        if (!xprt.write(size))
             return false;
-        for (SockAddr srvrAddr = head; srvrAddr; srvrAddr = map.at(srvrAddr).next) {
-            //LOG_DEBUG("Writing socket address %s", srvrAddr.to_string().data());
+        for (auto srvrAddr = head; srvrAddr; srvrAddr = map.at(srvrAddr).next) {
+            LOG_DEBUG("Writing socket address %s", srvrAddr.to_string().data());
             if (!srvrAddr.write(xprt))
                 return false;
         }
@@ -246,14 +310,14 @@ public:
         Size size;
         if (!xprt.read(size))
             return false;
-        //LOG_DEBUG("Read size=%s", std::to_string(size).data());
+        LOG_DEBUG("Read size=%s", std::to_string(size).data());
         map.clear();
         for (Size i = 0; i < size; ++i) {
             SockAddr srvrAddr;
             if (!srvrAddr.read(xprt))
                 return false;
-            //LOG_DEBUG("Read socket address %s", srvrAddr.to_string().data());
-            add(srvrAddr);
+            LOG_DEBUG("Read socket address %s", srvrAddr.to_string().data());
+            addBack(srvrAddr);
         }
         cond.notify_all();
         return true;
@@ -273,12 +337,12 @@ size_t Tracker::size() const {
     return pImpl->size();
 }
 
-bool Tracker::insert(const SockAddr& peerSrvrAddr) const {
-    return pImpl->insert(peerSrvrAddr);
+bool Tracker::insertBack(const SockAddr& peerSrvrAddr) const {
+    return pImpl->insertBack(peerSrvrAddr);
 }
 
-void Tracker::insert(const Tracker tracker) const {
-    pImpl->insert(*tracker.pImpl);
+void Tracker::insertFront(const Tracker tracker) const {
+    pImpl->insertFront(*tracker.pImpl);
 }
 
 void Tracker::erase(const SockAddr srvrAddr) {
@@ -289,8 +353,8 @@ void Tracker::erase(const Tracker tracker) {
     pImpl->erase(*tracker.pImpl);
 }
 
-SockAddr Tracker::removeHead() const {
-    return pImpl->removeHead();
+SockAddr Tracker::removeFront() const {
+    return pImpl->removeFront();
 }
 
 void Tracker::halt() const {

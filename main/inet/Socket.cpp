@@ -852,7 +852,7 @@ class TcpSrvrSock::Impl final : public TcpSock::Impl
 {
 public:
     /**
-     * Constructs. Starts listening on the created socket.
+     * Constructs. Calls listen() on the created socket.
      *
      * @param[in] lclSockAddr        Server's local socket address. The IP address may be the
      *                               wildcard, in which case the server will listen on all
@@ -893,6 +893,18 @@ public:
     }
 
     /**
+     * Calls listen() on the underlying socket.
+     * @param[in] size       Size of the listening queue
+     * @throws  SystemError  System failure
+     * @cancellationpoint    Yes
+     */
+    void listen(const int size) {
+        if (::listen(sd, size))
+            throw SYSTEM_ERROR("Couldn't set socket " + to_string() + " listen-queue size to " +
+                    std::to_string(size));
+    }
+
+    /**
      * Accepts the next, incoming connection.
      *
      * @retval  `nullptr`    Socket was closed
@@ -900,8 +912,7 @@ public:
      * @throws  SystemError  Couldn't accept the connection
      * @cancellationpoint    Yes
      */
-    TcpSock::Impl* accept()
-    {
+    TcpSock::Impl* accept() {
         const int fd = ::accept(sd, nullptr, nullptr);
         Shield    shield{};
 
@@ -923,6 +934,10 @@ TcpSrvrSock::TcpSrvrSock(
         const SockAddr sockAddr,
         const int      queueSize)
     : TcpSock(new Impl(sockAddr, queueSize)) {
+}
+
+void TcpSrvrSock::listen(const int size) const {
+    static_cast<TcpSrvrSock::Impl*>(pImpl.get())->listen(size);
 }
 
 TcpSock TcpSrvrSock::accept() const {

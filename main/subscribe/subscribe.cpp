@@ -45,17 +45,17 @@ struct RunPar {
     struct P2pArgs {      ///< P2P runtime parameters
         struct SrvrArgs {
             SockAddr addr;        ///< P2P server's address. Must not be wildcard.
-            int      acceptQSize; ///< Size of `RpcSrvr::accept()` queue. Don't use 0.
+            int      maxPendConn; ///< Maximum number of pending P2P connections
             /**
              * Constructs.
              * @param[in] addr         Socket address for the local P2P server
-             * @param[in] acceptQSize  Size of the `listen()` queue
+             * @param[in] maxPendConn  Maximum number of pending connections
              */
             SrvrArgs(
                     const SockAddr& addr,
-                    const int       acceptQSize)
+                    const int       maxPendConn)
                 : addr(addr)
-                , acceptQSize(acceptQSize)
+                , maxPendConn(maxPendConn)
             {}
         }        srvr;        ///< P2P server runtime parameters
         int      timeout;     ///< Timeout in ms for connecting to remote P2P server
@@ -100,7 +100,7 @@ struct RunPar {
             , maxOpenFiles(maxOpenFiles)
         {}
     }         repo; ///< Repository runtime parameters
-    String disposePath;
+    String dispositionFile; ///< Pathname of YAML file indicating how products should be processed
 
     /**
      * Default constructs.
@@ -111,7 +111,7 @@ struct RunPar {
         , mcastIface("0.0.0.0") // Might get changed to match family of multicast group
         , p2p(SockAddr(), 8, 15000, 100, 8, 300)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
-        , disposePath()
+        , dispositionFile()
     {}
 };
 
@@ -148,7 +148,7 @@ static void usage()
 "    -p <timeout>      Timeout, in ms, for connecting to remote P2P server. Default is " <<
                        defRunPar.p2p.timeout << ".\n"
 "    -q <maxPending>   Maximum number of pending connections to P2P server. Default is " <<
-                       defRunPar.p2p.srvr.acceptQSize << ".\n"
+                       defRunPar.p2p.srvr.maxPendConn << ".\n"
 "    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
 "    -t <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
@@ -186,8 +186,8 @@ static void setFromConfig(const String& pathname)
                 auto node2 = node1["IfaceAddr"];
                 if (node2)
                     runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
-                Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
-                        runPar.p2p.srvr.acceptQSize);
+                Parser::tryDecode<decltype(runPar.p2p.srvr.maxPendConn)>(node2, "QueueSize",
+                        runPar.p2p.srvr.maxPendConn);
             }
 
             Parser::tryDecode<decltype(runPar.p2p.timeout)>(node1, "Timeout", runPar.p2p.timeout);
@@ -209,8 +209,8 @@ static void setFromConfig(const String& pathname)
 
         node1 = node0["Disposition"];
         if (node1) {
-            Parser::tryDecode<decltype(runPar.disposePath)>(node1, "Disposition",
-                    runPar.disposePath);
+            Parser::tryDecode<decltype(runPar.dispositionFile)>(node1, "Disposition",
+                    runPar.dispositionFile);
         }
     } // YAML file loaded
     catch (const std::exception& ex) {
@@ -230,7 +230,7 @@ static void vetRunPars()
 
     if (!runPar.p2p.srvr.addr)
         throw INVALID_ARGUMENT("IP address for local P2P server wasn't specified");
-    if (runPar.p2p.srvr.acceptQSize <= 0)
+    if (runPar.p2p.srvr.maxPendConn <= 0)
         throw INVALID_ARGUMENT("Size of local P2P server's listen() queue is not positive");
     if (runPar.p2p.timeout < -1)
         throw INVALID_ARGUMENT("P2p connection timeout is less than -1");
@@ -249,9 +249,9 @@ static void vetRunPars()
         throw INVALID_ARGUMENT("Maximum number of open repository files is "
                 "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
 
-    if (runPar.disposePath.size() && !FileUtil::exists(runPar.disposePath))
+    if (runPar.dispositionFile.size() && !FileUtil::exists(runPar.dispositionFile))
         throw INVALID_ARGUMENT("Configuration-file for disposition of products, \"" +
-                runPar.disposePath + "\", doesn't exist");
+                runPar.dispositionFile + "\", doesn't exist");
 }
 
 /**
@@ -263,7 +263,6 @@ static void getCmdPars(
         const int    argc, ///< Number of command-line arguments
         char* const* argv) ///< Command-line arguments
 {
-    log_setName(::basename(argv[0]));
     runPar = defRunPar;
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
@@ -286,7 +285,7 @@ static void getCmdPars(
             break;
         }
         case 'd': {
-            runPar.disposePath = String(optarg);
+            runPar.dispositionFile = String(optarg);
             break;
         }
         case 'e': {
@@ -334,10 +333,10 @@ static void getCmdPars(
             break;
         }
         case 'q': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.acceptQSize) != 1)
+            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.maxPendConn) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            if (runPar.p2p.srvr.acceptQSize <= 0)
+            if (runPar.p2p.srvr.maxPendConn <= 0)
                 throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
             break;
         }
@@ -432,18 +431,30 @@ static void stopProdProc(std::thread& procThread) {
 /// Creates the subscriber node.
 static SubNode::Pimpl createSubNode()
 {
-    // Keep consonant with `Publisher::servSubscriber()`
+    // Keep consonant with `publish.cpp:servSubscriber()`
+
+    LOG_DEBUG("Creating P2P server's socket");
+    TcpSrvrSock p2pSrvrSock{runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn};
 
     LOG_NOTE("Connecting to publisher " + runPar.pubAddr.to_string());
     Xprt    xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
-    SubInfo subInfo;
 
-    LOG_INFO("Receiving subscription information from publisher \"" +
-            runPar.pubAddr.to_string() + "\"");
-    if (!subInfo.read(xprt)) {
-        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher \"" +
-                runPar.pubAddr.to_string() + "\"");
-    }
+    /*
+     * Send the P2P server's socket address to the publisher before creating the subscriber node so
+     * that the socket address can be immediately included in the tracker information sent to
+     * subsequent subscribers.
+     */
+    LOG_DEBUG("Sending P2P server's address, " + p2pSrvrSock.getLclAddr().to_string() +
+            ", to publisher " + runPar.pubAddr.to_string());
+    p2pSrvrSock.getLclAddr().write(xprt);
+
+    SubInfo subInfo;
+    if (!subInfo.read(xprt))
+        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
+                runPar.pubAddr.to_string());
+    subInfo.tracker.erase(p2pSrvrSock.getLclAddr()); // Ensure absence of our P2P server
+    LOG_INFO("Received subscription information from publisher " +
+            runPar.pubAddr.to_string() + ": #peers=" + std::to_string(subInfo.tracker.size()));
 
     DataSeg::setMaxSegSize(subInfo.maxSegSize);
 
@@ -457,15 +468,9 @@ static SubNode::Pimpl createSubNode()
     }
 
     //LOG_DEBUG("Creating subnode");
-    auto subNode = SubNode::create(subInfo, runPar.mcastIface, runPar.p2p.srvr.addr,
-            runPar.p2p.srvr.acceptQSize, runPar.p2p.timeout, runPar.p2p.maxPeers,
+    auto subNode = SubNode::create(subInfo, runPar.mcastIface, p2pSrvrSock,
+            runPar.p2p.srvr.maxPendConn, runPar.p2p.timeout, runPar.p2p.maxPeers,
             runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
-
-    LOG_DEBUG("Sending P2P server's address, " + subNode->getP2pSrvrAddr().to_string() +
-            ", to publisher " + runPar.pubAddr.to_string());
-    if (!subNode->getP2pSrvrAddr().write(xprt))
-        throw RUNTIME_ERROR("Couldn't send P2P server's address to publisher " +
-                runPar.pubAddr.to_string());
 
     return subNode;
 }
@@ -548,14 +553,17 @@ int main(
     std::set_terminate(&terminate); // NB: Hycast version
 
     try {
+        log_setName(::basename(argv[0]));
+        LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
+
         getCmdPars(argc, argv);
 
         if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
         Disposer disposer{};
-        if (runPar.disposePath.size())
-            disposer = Disposer::createFromYaml(runPar.disposePath);
+        if (runPar.dispositionFile.size())
+            disposer = Disposer::createFromYaml(runPar.dispositionFile);
 
         auto subNode = createSubNode();
         auto procThread = startProdProc(subNode, disposer);

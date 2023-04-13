@@ -93,6 +93,16 @@ public:
 
 std::ostream& operator<<(std::ostream& ostream, const LogLevel& level);
 
+/**
+ * Returns a single-string representation of the arguments of a command line.
+ * @param[in] argc  Number of arguments
+ * @param[in] argv  Arguments
+ * @return          Single string representation
+ */
+std::string getCmdLine(
+        int                argc,
+        const char* const* argv);
+
 typedef std::atomic<LogLevel> LogThreshold; ///< Type of the logging threshold
 extern LogThreshold           logThreshold; ///< The logging threshold
 

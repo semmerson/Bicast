@@ -392,7 +392,7 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] listenSize    Size of listening queue
+     * @param[in] maxPendConn   Maximum number of pending connections
      * @param[in] repoRoot      Pathname of the root directory of the repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open, data-products files
@@ -405,11 +405,11 @@ public:
             const unsigned evalTime,
             const SockAddr mcastAddr,
             const InetAddr ifaceAddr,
-            const unsigned listenSize,
+            const unsigned maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
-        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, listenSize, evalTime))
+        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
         , repo(PubRepo(repoRoot, maxOpenFiles))
         , maxSegSize{maxSegSize}
@@ -476,12 +476,12 @@ PubNode::Pimpl PubNode::create(
         const unsigned evalTime,
         const SockAddr mcastAddr,
         const InetAddr ifaceAddr,
-        const unsigned listenSize,
+        const unsigned maxPendConn,
         const String&  repoRoot,
         const SegSize  maxSegSize,
         const long     maxOpenFiles) {
     return Pimpl{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
-            listenSize, repoRoot, maxSegSize, maxOpenFiles)};
+            maxPendConn, repoRoot, maxSegSize, maxOpenFiles)};
 }
 
 PubNode::Pimpl PubNode::create(
@@ -624,7 +624,7 @@ public:
      * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
      *                          wildcard. If the port number is zero, then the O/S will choose an
      *                          ephemeral port number.
-     * @param[in] acceptQSize   Size of `RpcSrvr::accept()` queue. Don't use 0.
+     * @param[in] maxPendConn   Maximum number of pending connections
      * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
@@ -637,13 +637,49 @@ public:
             SubInfo&          subInfo,
             const InetAddr    mcastIface,
             const SockAddr    p2pSrvrAddr,
-            const int         acceptQSize,
+            const int         maxPendConn,
             const int         timeout,
             const unsigned    maxPeers,
             const unsigned    evalTime,
             const String&     repoDir,
             const long        maxOpenFiles)
-        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, p2pSrvrAddr, acceptQSize, timeout,
+        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, p2pSrvrAddr, maxPendConn, timeout,
+                maxPeers, evalTime))
+        , repo(SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles))
+        , numMcastOrig{0}
+        , numP2pOrig{0}
+        , numMcastDup{0}
+        , numP2pDup{0}
+        , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
+        , mcastThread()
+    {}
+
+    /**
+     * Constructs.
+     *
+     * @param[in] subInfo       Subscription information
+     * @param[in] mcastIface    IP address of interface to receive multicast on
+     * @param[in] p2pSrvrSock   Socket for local P2P server
+     * @param[in] maxPendConn   Maximum number of pending connections
+     * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @throw     LogicError    IP address families of multicast group address and multicast
+     *                          interface don't match
+     */
+    SubNodeImpl(
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const TcpSrvrSock p2pSrvrSock,
+            const int         maxPendConn,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles)
+        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, p2pSrvrSock, maxPendConn, timeout,
                 maxPeers, evalTime))
         , repo(SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles))
         , numMcastOrig{0}
@@ -853,6 +889,20 @@ SubNode::Pimpl SubNode::create(
             const String&     repoDir,
             const long        maxOpenFiles) {
     return Pimpl{new SubNodeImpl(subInfo, mcastIface, p2pSrvrAddr, acceptQSize, timeout, maxPeers,
+            evalTime, repoDir, maxOpenFiles)};
+}
+
+SubNode::Pimpl SubNode::create(
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const TcpSrvrSock p2pSrvrSock,
+            const int         maxPendConn,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles) {
+    return Pimpl{new SubNodeImpl(subInfo, mcastIface, p2pSrvrSock, maxPendConn, timeout, maxPeers,
             evalTime, repoDir, maxOpenFiles)};
 }
 

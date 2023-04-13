@@ -1,11 +1,12 @@
 /**
- * Socket address. Can be IPv4, IPv6, or UNIX domain.
+ * @file: SockAddr.h
+ * Socket address module.
+ * IPv4, IPv6, and hostname-based socket addresses.
  *
- *        File: SockAddr.h
  *  Created on: May 12, 2019
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *  Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,8 +36,8 @@ namespace hycast {
 /// A socket address. Socket address comprise an Internet address and a port number.
 class SockAddr : public XprtAble
 {
-    class                 Impl;
-    std::shared_ptr<Impl> pImpl;
+    class                 Impl;  ///< An implementation
+    std::shared_ptr<Impl> pImpl; ///< Smart pointer to an implementation
 
 public:
     /**
@@ -77,6 +78,7 @@ public:
      * @param[in] sockaddr  IPv4 socket address
      */
     SockAddr(const struct sockaddr_in& sockaddr);
+
     /**
      * Constructs from an IPv6 socket address. `0` obtains a system-chosen port
      * number.

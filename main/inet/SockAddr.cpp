@@ -465,6 +465,12 @@ std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr) {
 } // namespace
 
 namespace std {
+    /**
+     * Returns the string representation of a socket address.
+     * @param[in] sockAddr  Socket address
+     * @return              String representation of socket address
+     * @see SockAddr::to_string()
+     */
     string to_string(const hycast::SockAddr& sockAddr) {
         return sockAddr.to_string();
     }

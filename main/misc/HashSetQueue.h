@@ -1,7 +1,7 @@
 /**
+ * @file: HashSetQueue.h
  * This file declares a thread-safe, hybrid, unordered set and queue.
  *
- *        File: HashSetQueue.h
  *  Created on: July 6, 2022
  *      Author: Steven R. Emmerson
  *
@@ -33,6 +33,7 @@
 namespace hycast {
 
 /**
+ * A combination of hash table and queue.
  * @tparam VALUE  Value to be stored. Must have default constructor, copy assignment,  `hash()`, and
  *                `operator==()`. Smaller values are better.
  */
@@ -58,8 +59,8 @@ class HashSetQueue
         {}
     };
 
-    using Hash = std::function<size_t(const VALUE&)>;
-    using Map = std::unordered_map<VALUE, Links, Hash>;
+    using Hash = std::function<size_t(const VALUE&)>; ///< Hash function
+    using Map = std::unordered_map<VALUE, Links, Hash>; ///< Hash table from values to links
 
     mutable Mutex mutex;    ///< Mutex for maintaining consistency
     Hash          myHash;   ///< Hash function

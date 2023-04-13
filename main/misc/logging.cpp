@@ -469,4 +469,23 @@ std::ostream& operator<<(std::ostream& ostream, const LogLevel& level) {
     return ostream << level.to_string();
 }
 
+std::string getCmdLine(
+        int                argc,
+        const char* const* argv)
+{
+    std::string cmdLine = "[";
+    bool        needComma = false;
+
+    while (argc-- > 0) {
+        if (needComma)
+            cmdLine.append(", ");
+        cmdLine.append(*argv++);
+        needComma = true;
+    }
+
+    cmdLine.append("]");
+
+    return cmdLine;
+}
+
 } // namespace

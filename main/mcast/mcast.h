@@ -40,7 +40,7 @@ public:
     /// Runtime parameters
     struct RunPar {
         SockAddr  dstAddr;        ///< Socket address of multicast group
-        InetAddr  srcAddr;        ///< Internet address of multicast source (i.e., which interface)
+        InetAddr  srcAddr;        ///< Internet address of multicast interface
         /**
          * Constructs.
          * @param[in] dstAddr  Socket address of the multicast group

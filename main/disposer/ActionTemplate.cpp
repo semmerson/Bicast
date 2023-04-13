@@ -1,8 +1,9 @@
 /**
- * This file defines a handle class for action templates. An action template converts a template
- * command line into a concrete one based on a set of regular expression substitutions.
+ * @file:  ActionTemplate.cpp
+ * A handle class for action templates.
+ * An action template converts a template command line into a concrete one based on a set of regular
+ * expression substitutions.
  *
- *  @file:  ActionTemplate.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
@@ -27,28 +28,30 @@
 namespace hycast {
 
 /**
- * A template for an action. Such a template is reified into an action by replacing its back-
- * references with matches from the data product's name.
+ * A template for an action. Such a template is reified into an action by replacing its regular
+ * expression back-references with matches from the data product's name.
  */
 class ActionTemplate::Impl
 {
 protected:
     std::vector<String> argTemplate; ///< Arguments template
     const size_t        nargs;       ///< Number of command-line arguments
-    const bool          persist;     ///< Should the reified action persist between products?
+    const bool          keepOpen;    ///< If the action uses a file descriptor, should it be kept
+                                     ///< open between products?
 
 public:
     /**
      * Constructs.
+     *
      * @param[in] argTemplate   Argument template
-     * @param[in] persist       Should this entry persist?
+     * @param[in] keepOpen      Should the file descriptor be kept open?
      */
     Impl(
             const std::vector<String> argTemplate,
-            const bool                persist)
+            const bool                keepOpen)
         : argTemplate(argTemplate)
         , nargs(argTemplate.size())
-        , persist(persist)
+        , keepOpen(keepOpen)
     {}
 
     virtual ~Impl() {
@@ -73,7 +76,7 @@ public:
      * @retval false  No
      */
     bool getKeepOpen() const noexcept {
-        return persist;
+        return keepOpen;
     }
 
     /**
@@ -106,7 +109,9 @@ Action ActionTemplate::reify(std::smatch& match) {
 
 /******************************************************************************/
 
-/// An implementation of a template for executing an arbitrary command
+/**
+ * Action template for executing an arbitrary command.
+ */
 class ExecTemplateImpl final : public ActionTemplate::Impl
 {
 public:
@@ -153,7 +158,9 @@ ExecTemplate::ExecTemplate(
 
 /******************************************************************************/
 
-/// An implementation of a template for the action of piping data products to a program
+/**
+ * Action template for piping a data product to a program.
+ */
 class PipeTemplateImpl final : public ActionTemplate::Impl
 {
 public:
@@ -191,7 +198,7 @@ public:
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
             args[i] = matchResults.format(argTemplate[i]);
-        return PipeAction{args, persist};
+        return PipeAction{args, keepOpen};
     }
 };
 
@@ -203,14 +210,17 @@ PipeTemplate::PipeTemplate(
 
 /******************************************************************************/
 
-/// Action template for filing data products.
+/**
+ * Action template for writing a data product to a file.
+ */
 class FileTemplateImpl final : public ActionTemplate::Impl
 {
 public:
     /**
      * Constructs.
+     *
      * @param[in] pathTemplate  Pathname template
-     * @param[in] keepOpen      Should this entry persist (i.e., keep the file open)?
+     * @param[in] keepOpen      Should the file descriptor be kept open between products?
      */
     FileTemplateImpl(
             const String& pathTemplate,
@@ -241,7 +251,7 @@ public:
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
             args[i] = matchResults.format(argTemplate[i]);
-        return FileAction{args, persist};
+        return FileAction{args, keepOpen};
     }
 };
 
@@ -253,14 +263,16 @@ FileTemplate::FileTemplate(
 
 /******************************************************************************/
 
-/// An implementation of a template for the action of appending data products to a file
+/**
+ * Action template for appending a data product to a file.
+ */
 class AppendTemplateImpl final : public ActionTemplate::Impl
 {
 public:
     /**
      * Constructs.
      * @param[in] pathTemplate  Pathname template
-     * @param[in] keepOpen      Should the file be kept open?
+     * @param[in] keepOpen      Should the file descriptor be kept open between products?
      */
     AppendTemplateImpl(
             const String& pathTemplate,
@@ -291,7 +303,7 @@ public:
         std::vector<String> args(nargs);
         for (auto i = 0; i < nargs; ++i)
             args[i] = matchResults.format(argTemplate[i]);
-        return AppendAction{args, persist};
+        return AppendAction{args, keepOpen};
     }
 };
 

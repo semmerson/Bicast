@@ -166,7 +166,7 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr     Socket address of multicast group
      * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] listenSize    Size of listening queue. 0 obtains the system default.
+     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
      * @param[in] repoRoot      Pathname of the root directory of the repository
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles  Maximum number of open, data-products files
@@ -179,7 +179,7 @@ public:
             const unsigned evalTime,
             const SockAddr mcastAddr,
             const InetAddr ifaceAddr,
-            const unsigned listenSize,
+            const unsigned maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles);
@@ -263,6 +263,32 @@ public:
             const InetAddr    mcastIface,
             const SockAddr    p2pSrvrAddr,
             const int         acceptQSize,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles);
+
+    /**
+     * Returns a new instance.
+     *
+     * @param[in] subInfo       Subscription information
+     * @param[in] mcastIface    IP address of interface to receive multicast on
+     * @param[in] p2pSrvrSock   Socket for local P2P server
+     * @param[in] maxPendConn   Maximum number of pending connections
+     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @throw     LogicError    IP address families of multicast group address and multicast
+     *                          interface don't match
+     */
+    static Pimpl create(
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const TcpSrvrSock p2pSrvrSock,
+            const int         maxPendConn,
             const int         timeout,
             const unsigned    maxPeers,
             const unsigned    evalTime,

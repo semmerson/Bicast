@@ -180,7 +180,7 @@ public:
      * @param[in]  data    The data to process
      * @param[in]  nbytes  The amount of data in bytes
      * @param[out] pid     The PID of the child process
-     * @param[out] id      The command string
+     * @param[out] args    The argument string
      * @retval    true     Success. `pid` and `cmd` are set. `pid < 0` if no child process.
      * @retval    false    Too many file descriptors are open
      * @retval    false    Too many child processes exist
@@ -190,7 +190,7 @@ public:
             const char* data,
             size_t      nbytes,
             pid_t&      pid,
-            String&     cmd) =0;
+            String&     args) =0;
 };
 
 Action::Action(Impl* const pImpl)
@@ -331,7 +331,6 @@ public:
     /**
      * Constructs.
      * @param[in] args      Command-line argument templates
-     * @param[in] keepOpen  Reified instances should persist?
      */
     ExecImpl(const std::vector<String>& args)
         : Impl(ActionType::EXEC, args, false)
@@ -350,10 +349,11 @@ public:
     }
 
     /**
+     * Processes the data of a data-product.
      * @param[in]  data    The data to process
      * @param[in]  nbytes  The amount of data in bytes
      * @param[out] pid     The PID of the child process
-     * @param[out] id      The command string
+     * @param[out] cmd     The command string
      * @retval true        Success. `pid` and `cmd` are set.
      * @retval false       Failure. Too many user process.
      * @throw SystemError  Couldn't fork process
@@ -696,11 +696,12 @@ public:
     }
 
     /**
-     * @param[in]  data    The data to process
+     * Writes the data of a data-product into a file.
+     * @param[in]  bytes   The data to process
      * @param[in]  nbytes  The amount of data in bytes
-     * @param[out] pid     The PID of the child process
-     * @param[out] id      The command string
-     * @retval true        Success. `pid` and `cmd` are set.
+     * @param[out] pid     Set to -1
+     * @param[out] path    Cleared
+     * @retval true        Success
      * @throw SystemError  Couldn't open file
      * @throw SystemError  Couldn't truncate file
      * @throw SystemError  Couldn't write product to file
@@ -710,7 +711,7 @@ public:
             const char* bytes,
             size_t      nbytes,
             pid_t&      pid,
-            String&     cmd) override {
+            String&     path) override {
         if (fd < 0) {
             if (!openFile(nbytes))
                 return false;
@@ -734,7 +735,7 @@ public:
         }
 
         pid = -1; // Disposer doesn't need to wait on this
-        cmd.clear();
+        path.clear();
 
         return true;
     }

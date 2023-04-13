@@ -1054,7 +1054,7 @@ private:
     TcpSrvrSock   srvrSock;     ///< Socket on which this instance listens
     RpcQ          acceptQ;      ///< Queue of accepted RPC transports
     const bool    iAmPub;       ///< Is this instance the publisher's?
-    size_t        acceptQSize;  ///< Maximum size of the RPC queue
+    size_t        maxPendConn;  ///< Maximum number of pending connections
     Thread        acceptThread; ///< Accepts incoming sockets
 
     /**
@@ -1073,7 +1073,7 @@ private:
 
             // TODO: Remove old, stale entries from accept-queue
 
-            if (acceptQ.size() < acceptQSize) {
+            if (acceptQ.size() < maxPendConn) {
                 LOG_TRACE("Adding transport to factory");
                 if (rpcFactory.add(xprt, noticePort)) {
                     LOG_TRACE("Emplacing RPC implementation in queue");
@@ -1115,27 +1115,30 @@ public:
      *
      * @param[in] srvrSock     Server socket
      * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] acceptQSize  Maximum number of outstanding RPC connections
+     * @param[in] maxPendConn  Maximum number of pending connections
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Backlog argument is zero
      */
     RpcSrvrImpl(
             const TcpSrvrSock srvrSock,
             const bool        iAmPub,
-            const unsigned    acceptQSize)
+            const unsigned    maxPendConn)
         : mutex()
         , cond()
         , rpcFactory()
         , srvrSock(srvrSock)
         , acceptQ()
         , iAmPub(iAmPub)
-        , acceptQSize(acceptQSize)
+        , maxPendConn(maxPendConn)
         , acceptThread()
     {
         if (srvrSock.getLclAddr().getInetAddr().isAny())
             throw INVALID_ARGUMENT("Server's IP address is wildcard");
-        if (acceptQSize == 0)
+        if (maxPendConn == 0)
             throw INVALID_ARGUMENT("Size of accept-queue is zero");
+
+        srvrSock.listen(3*maxPendConn); // Because 3 TCP connections per P2P connection
+
         /*
          * Connections are accepted on a separate thread so that a slow connection attempt won't
          * hinder faster attempts.
@@ -1197,16 +1200,16 @@ public:
 RpcSrvr::Pimpl RpcSrvr::create(
         const TcpSrvrSock p2pSrvr,
         const bool        iAmPub,
-        const unsigned    acceptQSize) {
-    return Pimpl{new RpcSrvrImpl{p2pSrvr, iAmPub, acceptQSize}};
+        const unsigned    maxPendConn) {
+    return Pimpl{new RpcSrvrImpl{p2pSrvr, iAmPub, maxPendConn}};
 }
 
 RpcSrvr::Pimpl RpcSrvr::create(
         const SockAddr srvrAddr,
         const bool     iAmPub,
-        const unsigned acceptQSize) {
-    auto srvrSock = TcpSrvrSock(srvrAddr, acceptQSize);
-    return create(srvrSock, iAmPub, acceptQSize);
+        const unsigned maxPendConn) {
+    auto srvrSock = TcpSrvrSock(srvrAddr, maxPendConn);
+    return create(srvrSock, iAmPub, maxPendConn);
 }
 
 } // namespace

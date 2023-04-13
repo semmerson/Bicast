@@ -87,8 +87,8 @@ class P2pMgrImpl : public P2pMgr
     }
 
 protected:
-    using PeerSet = std::set<Peer::Pimpl>; ///< Set of peers type
-    using PeerMap = std::unordered_map<SockAddr, Peer::Pimpl>; ///< Map of peers type
+    using PeerSet = std::set<Peer::Pimpl>;                     ///< Set of active peers
+    using PeerMap = std::unordered_map<SockAddr, Peer::Pimpl>; ///< Lookup table of active peers
 
     /// State of an instance
     enum class State {
@@ -105,7 +105,7 @@ protected:
     ThreadEx             threadEx;      ///< Exception thrown by internal threads
     const unsigned       maxSrvrPeers;  ///< Maximum number of server-side peers
     unsigned             numSrvrPeers;  ///< Number of server-side peers
-    PeerSet              peerSet;       ///< Set of peers
+    PeerSet              peerSet;       ///< Set of active peers
     PeerMap              peerMap;       ///< Map from remote address to peer
     Bookkeeper::Pimpl    bookkeeper;    ///< Monitors peer performance
     Thread               acceptThread;  ///< Creates server-side peers
@@ -183,7 +183,7 @@ protected:
     }
 
     /**
-     * Executes a peer.
+     * Executes a peer. Meant to be the start routine of a separate thread.
      * @param[in] peer  The peer to execute
      */
     void runPeer(Peer::Pimpl peer) {
@@ -196,7 +196,7 @@ protected:
             LOG_ERROR("Peer %s failed", peer->to_string().data());
         }
 
-        // Must occur before `removePeer()` because `missed()` requires that `peerMap` contain `peer`
+        // Must occur before removePeer() because missed() requires that `peerMap` contain `peer`
         reassignRequests(peer);
         removePeer(peer);
         peerRemoved(peer);
@@ -204,7 +204,7 @@ protected:
 
     /**
      * Handles a peer being added to the set of active peers. Sends to the remote peer
-     *   - An indicator of whether or not the local P2P node has a path to the publisher; and
+     *   - An indicator of whether or not the local P2P node is a path to the publisher; and
      *   - The addresses of known, potential P2P servers.
      *
      * @param[in] peer     Peer whose remote counterpart is to be notified.
@@ -451,7 +451,7 @@ public:
                     auto worstPeer = bookkeeper->getWorstPeer();
                     if (worstPeer) {
                         LOG_DEBUG("Halting peer %s", worstPeer->to_string().data());
-                        worstPeer->halt();
+                        worstPeer->halt(); // Causes runPeer() to remove peer and notify observers
                     }
                 }
             }
@@ -502,21 +502,26 @@ public:
         return node.recvRequest(segId);
     }
 
+    /**
+     * Receives from a remote peer, an indication of whether or not it's a path to the publisher.
+     * @param[in] rmtIsPubPath  Is the remote peer a path to the publisher?
+     * @param[in] rmtAddr       Socket address of remote peer
+     */
     void recvHavePubPath(
-            const bool     amPubPath,
+            const bool     rmtIsPubPath,
             const SockAddr rmtAddr) override {
         /*
          * To prevent an orphan network, terminate client-side peers whose remote counterpart
          * doesn't provide a path to the publisher.
          */
-        if (!amPubPath) {
+        if (!rmtIsPubPath) {
             Guard guard{peerSetMutex};
             if (peerMap.count(rmtAddr)) {
                 auto& peer = peerMap[rmtAddr];
                 if (peer->isClient()) {
-                    LOG_DEBUG("Disconnecting from P2P node " + peer->getRmtAddr().to_string() +
+                    LOG_DEBUG("Disconnecting from peer " + peer->getRmtAddr().to_string() +
                             " because it isn't a path to the publisher");
-                    peer->halt();
+                    peer->halt(); // Causes runPeer() to remove peer and notify observers
                 }
             }
         }
@@ -524,12 +529,12 @@ public:
 
     void recvAdd(const SockAddr p2pSrvrAddr) override {
         if (p2pSrvrAddr != getSrvrAddr()) // Connecting to oneself is useless
-            this->tracker.insert(p2pSrvrAddr);
+            this->tracker.insertBack(p2pSrvrAddr);
     }
 
     void recvAdd(Tracker tracker) override {
         tracker.erase(getSrvrAddr()); // Connecting to oneself is useless
-        this->tracker.insert(tracker);
+        this->tracker.insertFront(tracker);
     }
 
     void recvRemove(const SockAddr p2pSrvrAddr) override {
@@ -693,9 +698,9 @@ P2pMgr::Pimpl P2pMgr::create(
         PubNode&       pubNode,
         const SockAddr peerSrvrAddr,
         const unsigned maxPeers,
-        const unsigned listenSize,
+        const unsigned maxPendConn,
         const unsigned evalTime) {
-    auto peerSrvr = PubP2pSrvr::create(peerSrvrAddr, listenSize);
+    auto peerSrvr = PubP2pSrvr::create(peerSrvrAddr, maxPendConn);
     return Pimpl{new PubP2pMgrImpl(pubNode, peerSrvr, maxPeers, evalTime)};
 }
 
@@ -819,7 +824,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                     LOG_ASSERT(state == State::STOPPING);
                     break;
                 }
-                tracker.insert(sockAddr);
+                tracker.insertBack(sockAddr);
             }
         }
         catch (const std::exception& ex) {
@@ -851,6 +856,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
     }
 
     /**
+     * Creates client-side peers. Meant to be the start routine of a separate thread.
      * NB: `noexcept` is incompatible with thread cancellation.
      */
     void connectPeers() {
@@ -872,7 +878,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                 }
 
                 LOG_TRACE("Removing tracker head");
-                auto rmtSrvrAddr = tracker.removeHead(); // Blocks if empty. Cancellation point.
+                auto rmtSrvrAddr = tracker.removeFront(); // Blocks if empty. Cancellation point.
                 if (!rmtSrvrAddr) {
                     // tracker.halt() called
                     LOG_ASSERT(state == State::STOPPING);
@@ -894,7 +900,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                         } // Peer is active and in peer-set
                         catch (...) {
                             LOG_DEBUG("Halting peer");
-                            peer->halt();
+                            peer->halt(); // Causes runPeer() to remove peer and notify observers
                             throw;
                         }
                     } // `peer` is connected
@@ -918,7 +924,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                 } // `rmtSrvrAddr` removed from tracker
                 catch (const std::exception& ex) {
                     // The exception is unrelated to peer availability
-                    tracker.insert(rmtSrvrAddr); // Put it back
+                    tracker.insertBack(rmtSrvrAddr); // Put it back
                 }
             } // New client-side peer loop
         }
@@ -941,7 +947,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
              * Getting that address is handled by client-side peer calling `add(p2pSrvrAddr)`.
              */
             if (peer->isClient())
-                tracker.insert(peer->getRmtAddr());
+                tracker.insertBack(peer->getRmtAddr());
         }
         return tracker;
     }
@@ -1020,6 +1026,12 @@ protected:
             peer->add(p2pSrvr->getSrvrAddr());
     }
 
+    /**
+     * Handles a peer being removed from the set of active peers. If the peer was constructed
+     * client-side, then the address of the remote P2P server is added to the delay queue so that it
+     * might be tried again later.
+     * @param[in] peer  The peer that was removed from the set of active peers
+     */
     void peerRemoved(Peer::Pimpl peer) override {
         // Remote socket address is remote P2P server's only for a peer constructed client-side
         if (peer->isClient())
@@ -1082,6 +1094,43 @@ public:
         , numClntPeers(0)
         , timeout(timeout)
         , p2pSrvr(p2pSrvr)
+        , retryThread()
+        , connectThread()
+    {
+        bookkeeper = Bookkeeper::createSub(maxPeers);
+        // Ensure that this instance doesn't try to connect to itself
+        tracker.erase(p2pSrvr->getSrvrAddr());
+    }
+
+    /**
+     * Creates an implementation of a subscribing P2P manager. Creates a P2P server listening on a
+     * socket but doesn't do anything with it until `run()` is called.
+     *
+     * @param[in] subNode      Subscriber's node
+     * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] p2pSrvrSock  Server socket for P2P server.
+     * @param[in] maxPendConn  Maximum number of pending connections
+     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
+     *                         timeout; 0 => immediate return.
+     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
+     * @return                 Subscribing P2P manager
+     * @see `getPeerSrvrAddr()`
+     */
+    SubP2pMgrImpl(SubNode&           subNode,
+                  Tracker            tracker,
+                  TcpSrvrSock        p2pSrvrSock,
+                  const int          maxPendConn,
+                  const int          timeout,
+                  const unsigned     maxPeers,
+                  const unsigned     evalTime)
+        : P2pMgrImpl(subNode, tracker, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
+        , delayFifo()
+        , subNode(subNode)
+        , maxClntPeers(maxSrvrPeers)
+        , numClntPeers(0)
+        , timeout(timeout)
+        , p2pSrvr(SubP2pSrvr::create(p2pSrvrSock, maxPendConn))
         , retryThread()
         , connectThread()
     {
@@ -1252,6 +1301,18 @@ SubP2pMgr::Pimpl SubP2pMgr::create(
         const unsigned    evalTime) {
     auto p2pSrvr = SubP2pSrvr::create(p2pSrvrAddr, acceptQSize);
     return Pimpl{new SubP2pMgrImpl(subNode, tracker, p2pSrvr, timeout, maxPeers, evalTime)};
+}
+
+SubP2pMgr::Pimpl SubP2pMgr::create(
+        SubNode&          subNode,
+        Tracker           tracker,
+        TcpSrvrSock       p2pSrvrSock,
+        const int         maxPendConn,
+        const int         timeout,
+        const unsigned    maxPeers,
+        const unsigned    evalTime) {
+    return Pimpl{new SubP2pMgrImpl(subNode, tracker, p2pSrvrSock, maxPendConn, timeout, maxPeers,
+            evalTime)};
 }
 
 } // namespace

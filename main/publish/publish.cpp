@@ -161,8 +161,8 @@ static void usage()
                        ".\n"
 "    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
-"    -S <srcAddr>      Internet address of multicast source (i.e., multicast\n"
-"                      interface). Default is \"" << defRunPar.mcast.srcAddr << "\".\n"
+"    -S <srcAddr>      Internet address of multicast interface. Default is\n"
+"                      \"" << defRunPar.mcast.srcAddr << "\".\n"
 "    -s <maxSegSize>   Maximum size of a data-segment in bytes. Default is " <<
                        defRunPar.maxSegSize << ".\n"
 "    -t <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
@@ -313,7 +313,6 @@ static void getCmdPars(
         const int    argc,
         char* const* argv)
 {
-    log_setName(::basename(argv[0]));
     runPar = defRunPar;
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
@@ -486,25 +485,25 @@ static void runNode()
 }
 
 /**
- * Handles a subscription request.
+ * Handles a subscription request. Meant to be the start routine for a thread.
  *
  * @param[in] xprt  Transport connected to the subscriber
  */
 static void servSubscriber(Xprt xprt)
 {
     try {
-        // Keep consonant with `Subscriber::createSubNode()`
+        // Keep consonant with `subscribe.cpp:createSubNode()`
+
+        SockAddr rmtP2pSrvrAddr;
+        if (rmtP2pSrvrAddr.read(xprt)) {
+            LOG_DEBUG("Received P2P server's address, " + rmtP2pSrvrAddr.to_string() +
+                    ", from subscriber " + xprt.getRmtAddr().to_string());
+            subInfo.tracker.insertBack(rmtP2pSrvrAddr);
+        }
+
         LOG_INFO("Sending subscription information to subscriber %s",
                 xprt.getRmtAddr().to_string().data());
-        if (subInfo.write(xprt)) {
-            SockAddr p2pSrvrAddr;
-            if (p2pSrvrAddr.read(xprt)) {
-                LOG_DEBUG("Received P2P server's address, " + p2pSrvrAddr.to_string() +
-                        ", from subscriber " + xprt.getRmtAddr().to_string());
-                subInfo.tracker.insert(p2pSrvrAddr);
-            }
-        }
-        else {
+        if (!subInfo.write(xprt)) {
             LOG_DEBUG("Couldn't write subscription information to subscriber %s",
                     xprt.getRmtAddr().to_string().data());
         }
@@ -528,7 +527,7 @@ static void runServer()
         //LOG_DEBUG("Creating listening server");
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
 
-        subInfo.tracker.insert(pubNode->getP2pSrvrAddr());
+        subInfo.tracker.insertBack(pubNode->getP2pSrvrAddr());
 
         for (;;) {
             numSubThreads.waitToInc();
@@ -559,6 +558,9 @@ int main(const int    argc,
     std::set_terminate(&terminate); // NB: Hycast version
 
     try {
+        log_setName(::basename(argv[0]));
+        LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
+
         getCmdPars(argc, argv);
         init();
 

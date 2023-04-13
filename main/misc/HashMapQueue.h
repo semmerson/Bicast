@@ -31,6 +31,7 @@
 namespace hycast {
 
 /**
+ * A combination of queue and hash table.
  * @tparam KEY    Key that references the stored values. Must have default constructor, assignment
  *                operator, `hash()`, and `operator==()`. Smaller types are better.
  * @tparam VALUE  Value to be stored in the queue. Must have default constructor and assignment
@@ -39,6 +40,7 @@ namespace hycast {
 template<class KEY, class VALUE>
 class HashMapQueue
 {
+    /// Value of the hash table with links to previous and subsequent values
     struct LinkedValue
     {
         VALUE  value;
@@ -54,10 +56,10 @@ class HashMapQueue
         {}
     };
 
-    using Hash         = std::function<size_t(const KEY&)>;
-    using Equal        = std::function<bool(const KEY&, const KEY&)>;
-    using Map          = std::unordered_map<KEY, LinkedValue, Hash, Equal>;
-    using LogicalEntry = std::pair<const KEY&, VALUE&>;
+    using Hash         = std::function<size_t(const KEY&)>; ///< Hash function
+    using Equal        = std::function<bool(const KEY&, const KEY&)>; ///< Equality function
+    using Map          = std::unordered_map<KEY, LinkedValue, Hash, Equal>; ///< Hash table
+    using LogicalEntry = std::pair<const KEY&, VALUE&>; ///< Logical representation of an entry
 
     class Iterator : public std::iterator<std::input_iterator_tag, LogicalEntry>
     {

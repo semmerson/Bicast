@@ -108,7 +108,7 @@ public:
      *                          and not the wildcard. The port number may be 0, in which case the
      *                          operating system will choose the port.
      * @param[in] maxPeers      Maximum number of subscribing peers
-     * @param[in] listenSize    Size of listening queue. 0 obtains the system default.
+     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @throw InvalidArgument   `listenSize` is zero
      * @return                  Publisher's P2P manager
@@ -118,7 +118,7 @@ public:
             PubNode&       pubNode,
             const SockAddr peerSrvrAddr,
             unsigned       maxPeers,
-            const unsigned listenSize,
+            const unsigned maxPendConn,
             const unsigned evalTime);
 
     /**
@@ -268,32 +268,10 @@ public:
      *
      * @param[in] subNode      Subscriber's node
      * @param[in] tracker      Pool of addresses of P2P servers
-     * @param[in] p2pSrvr      Server socket for subscriber's P2P server. IP address *must not* be
-     *                         wildcard.
-     * @param[in] acceptQSize  Maximum number of outstanding, incoming, Hycast connections
-     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
-     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
-     * @return                 Subscribing P2P manager
-     * @see `getPeerSrvrAddr()`
-    static Pimpl create(
-            SubNode&          subNode,
-            Tracker           tracker,
-            const TcpSrvrSock p2pSrvr,
-            const int         acceptQSize,
-            const unsigned    maxPeers,
-            const unsigned    evalTime);
-     */
-
-    /**
-     * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
-     * anything with it until `run()` is called.
-     *
-     * @param[in] subNode      Subscriber's node
-     * @param[in] tracker      Pool of addresses of P2P servers
-     * @param[in] p2pSrvr      Socket address for subscriber's P2P server. IP address *must not* be
+     * @param[in] p2pSrvrAddr  Socket address for subscriber's P2P server. IP address *must not* be
      *                         wildcard. If the port number is zero, then the O/S will choose an
      *                         ephemeral port number.
-     * @param[in] acceptQSize  Maximum number of outstanding, incoming, Hycast connections
+     * @param[in] maxPendConn  Maximum number of pending connections
      * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
      *                         timeout; 0 => immediate return.
      * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
@@ -304,8 +282,32 @@ public:
     static Pimpl create(
             SubNode&          subNode,
             Tracker           tracker,
-            const SockAddr    p2pSrvr,
-            const int         acceptQSize,
+            const SockAddr    p2pSrvrAddr,
+            const int         maxPendConn,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime);
+
+    /**
+     * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
+     * anything with it until `run()` is called.
+     *
+     * @param[in] subNode      Subscriber's node
+     * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] p2pSrvrSock  Socket for the P2P server
+     * @param[in] maxPendConn  Maximum number of pending connections
+     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
+     *                         timeout; 0 => immediate return.
+     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
+     * @return                 Subscribing P2P manager
+     * @see `getPeerSrvrAddr()`
+     */
+    static Pimpl create(
+            SubNode&          subNode,
+            Tracker           tracker,
+            TcpSrvrSock       p2pSrvrSock,
+            const int         maxPendConn,
             const int         timeout,
             const unsigned    maxPeers,
             const unsigned    evalTime);

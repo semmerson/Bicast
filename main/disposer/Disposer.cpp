@@ -223,6 +223,7 @@ class Disposer::Impl
     }
 
 public:
+    /// Iterator over the patten-action entries
     using Iterator = PatActs::iterator;
 
     /**
@@ -324,6 +325,10 @@ public:
         } // Pattern-action loop
     }
 
+    /**
+     * Returns the YAML representation of this instance.
+     * @return YAML representation of this instance
+     */
     String getYaml() {
         YAML::Emitter yaml;
 
