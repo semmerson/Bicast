@@ -1,11 +1,12 @@
 /**
+ * @file Tracker.h
+ *
  * Thread-safe list of addresses of peer servers.
  *
- *        File: Tracker.h
  *  Created on: Jun 29, 2019
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2022 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +24,7 @@
 #ifndef MAIN_P2P_TRACKER_H_
 #define MAIN_P2P_TRACKER_H_
 
+#include "HycastProto.h"
 #include "SockAddr.h"
 #include "Xprt.h"
 
@@ -31,7 +33,7 @@
 namespace hycast {
 
 /**
- * Tracks available P2P servers.
+ * Tracks available P2P-servers.
  */
 class Tracker final : public XprtAble
 {
@@ -44,7 +46,7 @@ public:
      *
      * @param[in] capacity  Capacity in socket addresses.
      */
-    explicit Tracker(const size_t capacity = 100);
+    explicit Tracker(const size_t capacity = 1000);
 
     /**
      * Returns the string representation of this instance.
@@ -59,49 +61,76 @@ public:
     size_t size() const;
 
     /**
-     * Inserts the address of a peer server at the back if it doesn't already exist. If the capacity
-     * is exceeded, then the front entry is deleted.
+     * Tries to insert information on a P2P-server. If the server's address doesn't exist, then the
+     * information is inserted; otherwise, the existing information is updated if the given
+     * information is better. If the capacity is exceeded, then the worst entry is deleted.
      *
-     * @param[in] peerSrvrAddr       Socket address of peer server
-     * @retval    true               Success
-     * @retval    false              Address already exists
-     * @exceptionsafety              Strong guarantee
-     * @threadsafety                 Safe
+     * @param[in] srvrInfo  Information on a P2P-server
+     * @retval    true      Success. New information inserted or updated.
+     * @retval    false     More recent server information exists. No insertion.
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
      */
-    bool insertBack(const SockAddr& peerSrvrAddr) const;
+    bool insert(const P2pSrvrInfo& srvrInfo) const;
 
     /**
-     * Inserts the entries from another instance at the front. The order of entries from the other
-     * instance is maintained.
+     * Inserts the entries from another instance.
      * @param[in] tracker  The other instance
      */
-    void insertFront(const Tracker tracker) const;
+    void insert(const Tracker tracker) const;
 
     /**
-     * Removes a P2P server's address.
-     * @param p2pSrvrAddr  Socket address of the P2P server
+     * Removes the entry associated with a P2P-server's address.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
      */
-    void erase(const SockAddr p2pSrvrAddr);
+    void erase(const SockAddr peerSrvrAddr);
 
     /**
-     * Removes the addresses of P2P servers contained in another instance.
+     * Removes the information associated with the P2P-servers contained in another instance.
      * @param tracker  The other instance
      */
     void erase(const Tracker tracker);
 
     /**
-     * Removes and returns the front P2P server address.
-     * @return
+     * Removes and returns the address of the next P2P-server to try. Blocks until one is available
+     * or `halt()` has been called.
+     * @return The address of the next P2P-server to try. Will test false if `halt()` has been
+     *         called.
+     * @see halt()
      */
-    SockAddr removeFront() const;
+    SockAddr getNext() const;
 
     /**
-     * Causes `removeFront()` to always return a socket address that tests false. Idempotent.
+     * Handles a P2P-server that's offline.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void offline(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Handles a transaction with a peer or P2P-server timing-out.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void timedOut(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Handles a P2P-server being at capacity and unable to accept new connections.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void full(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Handles a peer disconnecting.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void disconnected(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Causes `remove()` to always return a socket address that tests false. Idempotent.
      */
     void halt() const;
 
     /**
-     * Writes itself to a transport starting at the front.
+     * Writes itself to a transport.
      * @param[in] xprt     The transport
      * @retval    true     Success
      * @retval    false    Lost connection
@@ -109,7 +138,7 @@ public:
     bool write(Xprt xprt) const;
 
     /**
-     * Reads itself from a transport starting at the front.
+     * Reads itself from a transport.
      * @param[in] xprt     The transport
      * @retval    true     Success
      * @retval    false    Lost connection

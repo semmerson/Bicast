@@ -295,49 +295,31 @@ SockAddr::SockAddr(
     }
 }
 
-static bool parseSpec(
-        const char* const  spec,
-        const char* const  pattern,
-        char*&             ident,
-        in_port_t&         portNum)
+static void splitSpec(
+        const String& spec,
+        String&       inet,
+        String&       port)
 {
-    char*          id = NULL;
-    unsigned long  port; // Doesn't work under gcc 4.8.5 if `short`
-    int            numAssign;
-    bool           success = false;
-    int            nbytes = -1;
+    auto pos = spec.rfind(':');
 
-    // The following doesn't work under gcc 4.8.5
-    //if (::sscanf(spec, "%m[0-9.]:%hu%n", &id, &port, &nbytes) == 2)
-    // `SCNu16` succeeds on "99999" :-(
-    numAssign = ::sscanf(spec, pattern, &id, &port, &nbytes);
-
-    if (numAssign != 2) {
-        free(id);
+    if (pos == spec.npos) {
+        // No port specification
+        inet = spec;
+        port = "0"; // Default port number
     }
-    else if (nbytes < 0) {
-        free(id);
-        throw INVALID_ARGUMENT("Format pattern doesn't contain \"%n\"");
+    else if (pos >= 3 && spec[pos-1] == ']') {
+        // "[" <IPv6 addr> "]:" <port>
+        inet = spec.substr(1, pos-2);
+        port = spec.substr(pos+1);
+    }
+    else if (pos >= 1) {
+        // (<IPv4 addr>|<hostname>) ":" <port>
+        inet = spec.substr(0, pos);
+        port = spec.substr(pos+1);
     }
     else {
-        if (spec[nbytes]) {
-            free(id);
-            throw INVALID_ARGUMENT(std::string("Excess characters: \"") + spec
-                    + "\"");
-        }
-
-        if (port > USHRT_MAX) {
-            free(id);
-            throw INVALID_ARGUMENT("Port number is too large: " +
-                    std::to_string(port));
-        }
-
-        ident = id;
-        portNum = static_cast<in_port_t>(port);
-        success = true;
+        throw INVALID_ARGUMENT("Not a socket specification: \"" + spec + "\"");
     }
-
-    return success;
 }
 
 SockAddr::SockAddr(const std::string& spec)
@@ -345,42 +327,19 @@ SockAddr::SockAddr(const std::string& spec)
 {
     // std::regex in gcc 4.8 doesn't work; hence, the following
 
-    const char*    cstr = spec.data();
-    char*          id = NULL;
-    in_port_t      port; // Doesn't work under gcc 4.8.5 if `short`
+    String inetSpec, portSpec;
 
-    try {
-        if (parseSpec(cstr, "%m[0-9.]:%5lu%n", id, port)) {
-            in_addr_t addr;
+    splitSpec(spec, inetSpec, portSpec);
 
-            if (::inet_pton(AF_INET, id, &addr) != 1)
-                throw INVALID_ARGUMENT(std::string(
-                        "Invalid IPv4 specification: \"") + id + "\"");
+    InetAddr      inet{inetSpec};
+    unsigned long port;
 
-            pImpl.reset(new Impl(InetAddr(addr), port));
-        }
-        else if (parseSpec(cstr, "[%m[0-9a-fA-F:]]:%5lu%n", id, port)) {
-            struct in6_addr addr;
+    if (::sscanf(portSpec.data(), "%lu", port) != 1)
+        throw INVALID_ARGUMENT("Invalid port specification: \"" + portSpec + "\"");
+    if (port > USHRT_MAX)
+        throw INVALID_ARGUMENT("Port number is too large: " + std::to_string(port));
 
-            if (::inet_pton(AF_INET6, id, &addr) != 1)
-                throw INVALID_ARGUMENT(std::string(
-                        "Invalid IPv6 specification: \"") + id + "\"");
-
-            pImpl.reset(new Impl(addr, port));
-        }
-        else if (parseSpec(cstr, "%m[0-9a-zA-Z._-]:%5lu%n", id, port)) {
-            pImpl.reset(new Impl(InetAddr(id), port));
-        }
-        else {
-            throw INVALID_ARGUMENT("Invalid socket address: \"" + spec + "\"");
-        }
-
-        free(id);
-    }
-    catch (const std::exception& ex) {
-        free(id);
-        throw;
-    }
+    pImpl.reset(new Impl(inet, static_cast<in_port_t>(port)));
 }
 
 SockAddr SockAddr::clone(const in_port_t port) const

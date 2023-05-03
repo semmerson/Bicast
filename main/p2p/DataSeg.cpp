@@ -21,8 +21,8 @@
 
 #include "config.h"
 
-#include "error.h"
 #include "HycastProto.h"
+#include "error.h"
 #include "Socket.h"
 
 #include <atomic>

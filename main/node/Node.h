@@ -36,6 +36,9 @@
 
 namespace hycast {
 
+class PeerConnSrvr;
+using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
+
 /**
  * Interface for a Hycast node. Implementations manage incoming P2P requests. This interface is
  * implemented by both a publishing node and a subscribing node.
@@ -43,7 +46,7 @@ namespace hycast {
 class Node
 {
 public:
-    /// Smart pointer to the implementation
+    /// Smart pointer to an implementation
     using Pimpl = std::shared_ptr<Node>;
 
     /**
@@ -73,6 +76,12 @@ public:
      * @asyncsignalsafe  No
      */
     virtual void halt() =0;
+
+    /**
+     * Returns information on the P2P-server.
+     * @return Information on the P2P-server
+     */
+    virtual P2pSrvrInfo getP2pSrvrInfo() const =0;
 
     /**
      * Returns the socket address of the peer-to-peer server. May be called immediately after
@@ -159,26 +168,26 @@ public:
      * Returns a new instance. The instance is immediately ready to accept connections from remote
      * peers and query the repository for products to send.
      *
-     * @param[in] p2pAddr       Socket address ffor local P2P server. It shall specify a specific
-     *                          interface and not the wildcard. The port number may be 0, in which
-     *                          case the operating system will choose the port.
-     * @param[in] maxPeers      Maximum number of P2P peers. It shall not be 0.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] mcastAddr     Socket address of multicast group
-     * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
-     * @param[in] repoRoot      Pathname of the root directory of the repository
-     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles  Maximum number of open, data-products files
-     * @throw InvalidArgument   `listenSize` is zero
-     * @return                  New instance
+     * @param[in] p2pAddr         Socket address for local P2P server. It shall specify a specific
+     *                            interface and not the wildcard. The port number may be 0, in which
+     *                            case the operating system will choose the port.
+     * @param[in] maxPeers        Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime        Evaluation interval for poorest-performing peer in seconds
+     * @param[in] mcastAddr       Socket address of multicast group
+     * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] maxPendConn     Maximum number of pending connections. 0 obtains the system default.
+     * @param[in] repoRoot        Pathname of the root directory of the repository
+     * @param[in] maxSegSize      Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @throw InvalidArgument     `listenSize` is zero
+     * @return                    New instance
      */
     static Pimpl create(
             const SockAddr p2pAddr,
             const unsigned maxPeers,
             const unsigned evalTime,
             const SockAddr mcastAddr,
-            const InetAddr ifaceAddr,
+            const InetAddr mcastIfaceAddr,
             const unsigned maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
@@ -274,8 +283,7 @@ public:
      *
      * @param[in] subInfo       Subscription information
      * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] p2pSrvrSock   Socket for local P2P server
-     * @param[in] maxPendConn   Maximum number of pending connections
+     * @param[in] peerConnSrvr  Peer-connection server
      * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
@@ -285,15 +293,14 @@ public:
      *                          interface don't match
      */
     static Pimpl create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const TcpSrvrSock p2pSrvrSock,
-            const int         maxPendConn,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles);
+            SubInfo&                subInfo,
+            const InetAddr          mcastIface,
+            const PeerConnSrvrPimpl peerConnSrvr,
+            const int               timeout,
+            const unsigned          maxPeers,
+            const unsigned          evalTime,
+            const String&           repoDir,
+            const long              maxOpenFiles);
 
     /**
      * Destroys.

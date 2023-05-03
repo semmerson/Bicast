@@ -103,16 +103,7 @@ class DelayQueue<Value,Dur>::Impl final
         }
     };
 
-    struct Compare final {
-        /**
-         * @cancellationpoint No
-         */
-        bool operator()(const Element& lhs, const Element& rhs) const noexcept {
-            return lhs.getTime() > rhs.getTime();
-        }
-    };
-
-    using Queue = std::priority_queue<Element, std::vector<Element>, Compare>;
+    using Queue = std::priority_queue<Element, std::vector<Element>>;
 
     mutable Mutex mutex;    ///< For concurrent access
     mutable Cond  cond;     ///< For signaling when the queue has been modified
@@ -177,16 +168,13 @@ public:
      */
     Value pop()
     {
-        Lock  lock{mutex};
+        static auto pred = [&]{return isClosed || queue.top().getTime() >= Clock::now();};
+        Lock        lock{mutex};
 
-        while (!isClosed) {
-            if (queue.empty()) {
-                cond.wait(lock);
-            }
-            else if (cond.wait_until(lock, queue.top().getTime()) ==
-                    std::cv_status::timeout) {
-                break;
-            }
+        if (queue.empty())
+            cond.wait(lock, [&]{return isClosed || !queue.empty();});
+        if (cond.wait_until(lock, queue.top().getTime(), pred) {
+            break;
         }
 
         if (isClosed)

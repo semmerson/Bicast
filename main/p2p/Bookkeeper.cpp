@@ -242,7 +242,7 @@ class SubBookkeeper final : public BookkeeperImpl
     using NoticeSet = std::set<Notice>;
 
     struct PeerInfo {
-        Rating    rating;   ///< Peer rating
+        Rating    rating;  ///< Peer rating
         NoticeSet notices; ///< Data available from remote peer
         PeerInfo()
             : rating(0)

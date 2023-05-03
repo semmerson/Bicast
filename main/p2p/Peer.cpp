@@ -31,7 +31,7 @@
 namespace hycast {
 
 /**
- * Abstract base implementation of the `Peer` class.
+ * Abstract base implementation of the `Peer` interface.
  */
 class PeerImpl : public Peer
 {
@@ -46,14 +46,13 @@ class PeerImpl : public Peer
     mutable Mutex      noticeMutex;   ///< For accessing notice queue
     mutable Cond       noticeCond;    ///< For accessing notice queue
     Thread             noticeThread;  ///< For sending notices
-    Thread             rpcThread;     ///< Thread for running the RPC instance
+    Thread             connThread;     ///< Thread for running the RPC instance
     std::once_flag     backlogFlag;   ///< Ensures that a backlog is sent only once
     P2pMgr&            p2pMgr;        ///< Associated P2P manager
     NoticeQ            noticeQ;       ///< Notice queue
     ThreadEx           threadEx;      ///< Internal thread exception
     SockAddr           lclSockAddr;   ///< Local (notice) socket address
-    bool               rmtIsPub;      ///< Remote peer is publisher's
-    std::atomic<bool>  rmtIsPubPath;  ///< Remote node has a path to the publisher?
+    P2pSrvrInfo        rmtSrvrInfo;   ///< Information on the associated remote P2P server
 
     void setThreadEx(const std::exception& ex) {
         threadEx.set(ex);
@@ -99,7 +98,7 @@ class PeerImpl : public Peer
 
 protected:
     mutable sem_t      stopSem;     ///< For async-signal-safe stopping
-    Rpc::Pimpl         rpc;         ///< Remote procedure call module
+    PeerConn::Pimpl    peerConn;    ///< Connection with remote peer
     SockAddr           rmtSockAddr; ///< Remote socket address
     std::atomic<bool>  connected;   ///< Connected to remote peer?
 
@@ -121,38 +120,23 @@ protected:
                 }
 
                 if (notice.id == Notice::Id::DATA_SEG_ID) {
-                    connected = rpc->notify(notice.dataSegId);
+                    connected = peerConn->notify(notice.dataSegId);
                         //LOG_TRACE("Peer %s notified remote about data-segment %s",
                                 //to_string().data(), notice.to_string().data());
                 }
                 else if (notice.id == Notice::Id::PROD_INDEX) {
-                    connected = rpc->notify(notice.prodId);
+                    connected = peerConn->notify(notice.prodId);
                         //LOG_TRACE("Peer %s notified remote about product %s",
                                 //to_string().data(), notice.to_string().data());
                 }
-                else if (notice.id == Notice::Id::AM_PUB_PATH) {
-                    connected = rpc->notifyAmPubPath(notice.amPubPath);
-                        //LOG_TRACE("Peer %s notified remote that it %s a path to the publisher",
-                                //to_string().data(), notice.amPubPath ? "is" : "is not");
-                }
-                else if (notice.id == Notice::Id::GOOD_P2P_SRVR) {
-                    connected = rpc->add(notice.srvrAddr);
+                else if (notice.id == Notice::Id::PEER_SRVR_INFO) {
+                    connected = peerConn->add(notice.srvrInfo);
                         //LOG_TRACE("Peer %s notified remote about good P2P server %s",
                                 //to_string().data(), notice.to_string().data());
                 }
-                else if (notice.id == Notice::Id::GOOD_P2P_SRVRS) {
-                    connected = rpc->add(notice.tracker);
+                else if (notice.id == Notice::Id::PEER_SRVR_INFOS) {
+                    connected = peerConn->add(notice.tracker);
                         //LOG_TRACE("Peer %s notified remote about good P2P servers %s",
-                                //to_string().data(), notice.to_string().data());
-                }
-                else if (notice.id == Notice::Id::BAD_P2P_SRVR) {
-                    connected = rpc->remove(notice.srvrAddr);
-                        //LOG_TRACE("Peer %s notified remote about bad P2P server %s",
-                                //to_string().data(), notice.to_string().data());
-                }
-                else if (notice.id == Notice::Id::BAD_P2P_SRVRS) {
-                    connected = rpc->remove(notice.tracker);
-                        //LOG_TRACE("Peer %s notified remote about bad P2P servers %s",
                                 //to_string().data(), notice.to_string().data());
                 }
                 else {
@@ -188,11 +172,11 @@ protected:
     }
 
     /**
-     * Executes the RPC component.
+     * Executes the connection.
      */
-    void runRpc() {
+    void runConn() {
         try {
-            rpc->run(*this);
+            peerConn->run(*this);
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
@@ -200,13 +184,13 @@ protected:
     }
 
     /**
-     * Idempotent.
+     * Stops the connection. Idempotent.
      */
-    void stopRpc() {
+    void stopConn() {
         LOG_ASSERT(!stateMutex.try_lock());
-        if (rpcThread.joinable()) {
-            rpc->halt();
-            rpcThread.join();
+        if (connThread.joinable()) {
+            peerConn->halt();
+            connThread.join();
         }
     }
 
@@ -223,7 +207,7 @@ protected:
 
         noticeThread = Thread(&PeerImpl::runNoticeWriter, this);
         try {
-            rpcThread = Thread(&PeerImpl::runRpc, this);
+            connThread = Thread(&PeerImpl::runConn, this);
         }
         catch (const std::exception& ex) {
             stopNoticeWriter();
@@ -243,7 +227,7 @@ protected:
      */
     void stopImpl() {
         Guard guard{stateMutex};
-        stopRpc();          // Idempotent
+        stopConn();          // Idempotent
         stopNoticeWriter(); // Idempotent
         state = State::STOPPED;
     }
@@ -257,7 +241,7 @@ protected:
     bool addNotice(const Notice& notice) {
         threadEx.throwIfSet();
 
-        if (connected && !rmtIsPub) {
+        if (connected && rmtSrvrInfo.tier != 0) { // Publisher's don't receive notices
             //LOG_TRACE("Peer %s is adding notice %s", to_string().data(),
                     //notice.to_string().data());
             Guard guard{noticeMutex};
@@ -273,29 +257,26 @@ public:
      * Constructs.
      *
      * @param[in] p2pMgr          P2P manager
-     * @param[in] rpc             Pointer to RPC module
-     * @param[in] rmtIsPathToPub  Remote counterpart is a path to the publisher?
+     * @param[in] conn            Connection with remote peer
      */
     PeerImpl(
-            P2pMgr&    p2pMgr,
-            Rpc::Pimpl rpc,
-            const bool rmtIsPathToPub)
+            P2pMgr&         p2pMgr,
+            PeerConn::Pimpl conn)
         : state(State::INIT)
         , stateMutex()
         , noticeMutex()
         , noticeCond()
         , noticeThread()
-        , rpcThread()
+        , connThread()
         , backlogFlag()
         , p2pMgr(p2pMgr)
         , noticeQ()
         , threadEx()
-        , lclSockAddr(rpc->getLclAddr())
-        , rmtIsPub(rpc->isRmtPub())
-        , rmtIsPubPath(rmtIsPathToPub)
+        , lclSockAddr(conn->getLclAddr())
+        , rmtSrvrInfo()
         , stopSem()
-        , rpc(rpc)
-        , rmtSockAddr(rpc->getRmtAddr())
+        , peerConn(conn)
+        , rmtSockAddr(conn->getRmtAddr())
         , connected{true}
     {
         if (::sem_init(&stopSem, 0, 0) == -1)
@@ -341,6 +322,10 @@ public:
     SockAddr getRmtAddr() const noexcept override {
         return rmtSockAddr;
     }
+
+    virtual bool isClient() const noexcept;
+
+    virtual bool isRmtPub() const noexcept;
 
     /**
      * Returns the hash code of this instance.
@@ -419,26 +404,11 @@ public:
         addNotice(Notice{havePubPath});
     }
 
-    void add(const SockAddr p2pSrvr) override {
-        addNotice(Notice{p2pSrvr});
+    void add(const P2pSrvrInfo& srvrInfo) override {
+        addNotice(Notice{srvrInfo});
     }
-    void add(const Tracker  tracker) override {
+    void add(const Tracker& tracker) override {
         addNotice(Notice{tracker});
-    }
-
-    void remove(const SockAddr p2pSrvr) override {
-        addNotice(Notice{p2pSrvr, false});
-    }
-    void remove(const Tracker tracker) override {
-        addNotice(Notice{tracker, false});
-    }
-
-    void recvHavePubPath(const bool havePubPath) override {
-        rmtIsPubPath = havePubPath;
-    }
-
-    bool isRmtPathToPub() const noexcept override {
-        return rmtIsPubPath;
     }
 
     void notify(const ProdId prodId) override {
@@ -453,9 +423,6 @@ public:
     }
 
     void recvHaveProds(ProdIdSet prodIds) override {
-        if (isRmtPub())
-            throw LOGIC_ERROR("Remote peer is publisher yet sent a backlog request");
-
         std:call_once(backlogFlag, [&]{
                 Thread(&PeerImpl::runBacklog, this, prodIds).detach();});
     }
@@ -472,7 +439,7 @@ public:
         if (prodInfo) {
             //LOG_TRACE("Peer %s is sending information on product %s", to_string().data(),
              //       prodId.to_string().data());
-            if (!(connected = rpc->send(prodInfo)))
+            if (!(connected = peerConn->send(prodInfo)))
                 ::sem_post(&stopSem);
         }
     }
@@ -489,7 +456,7 @@ public:
         if (dataSeg) {
             //LOG_TRACE("Peer %s is sending data segment %s", to_string().data(),
                     //dataSegId.to_string().data());
-            if (!(connected = rpc->send(dataSeg)))
+            if (!(connected = peerConn->send(dataSeg)))
                 ::sem_post(&stopSem);
         }
     }
@@ -507,13 +474,13 @@ public:
      * Constructs.
      *
      * @param[in] p2pMgr        Publisher's P2P manager
-     * @param[in] rpc           RPC module
+     * @param[in] conn          Connection with remote peer
      * @throw     RuntimeError  Lost connection
      */
     PubPeerImpl(
-            PubP2pMgr& p2pMgr,
-            Rpc::Pimpl rpc)
-        : PeerImpl(p2pMgr, rpc, true) // Remote peer is, obviously, a path to this end
+            PubP2pMgr&      p2pMgr,
+            PeerConn::Pimpl conn)
+        : PeerImpl(p2pMgr, conn)
     {}
 
     ~PubPeerImpl() noexcept {
@@ -525,12 +492,8 @@ public:
         }
     }
 
-    bool isPub() const noexcept override {
-        return true;
-    }
-
     bool isRmtPub() const noexcept override {
-        return false;
+        return false; // Can't be unless I'm connected to myself, which shouldn't happen
     }
 
     bool isClient() const noexcept override {
@@ -544,17 +507,10 @@ public:
         throw LOGIC_ERROR("Shouldn't have been called");
     }
 
-    void recvAdd(const SockAddr p2pSrvr) override {
+    void recvAdd(const P2pSrvrInfo& p2pSrvr) override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
     void recvAdd(const Tracker tracker) override {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
-
-    void recvRemove(const SockAddr p2pSrvr) override {
-        throw LOGIC_ERROR("Shouldn't have been called");
-    }
-    void recvRemove(const Tracker tracker) override {
         throw LOGIC_ERROR("Shouldn't have been called");
     }
 
@@ -580,9 +536,9 @@ public:
 };
 
 Peer::Pimpl Peer::create(
-        PubP2pMgr& p2pMgr,
-        Rpc::Pimpl rpc) {
-    return Pimpl(new PubPeerImpl(p2pMgr, rpc));
+        PubP2pMgr&      p2pMgr,
+        PeerConn::Pimpl conn) {
+    return Pimpl(new PubPeerImpl(p2pMgr, conn));
 }
 
 /**************************************************************************************************/
@@ -796,6 +752,7 @@ class SubPeerImpl final : public PeerImpl
     SubP2pMgr&     subP2pMgr;   ///< Subscriber's P2P manager
     RequestQ       requested;   ///< Requests sent to remote peer
     std::once_flag backlogFlag; ///< Ensures that the backlog is requested only once
+    P2pSrvrInfo    rmtSrvrInfo; ///< Information on the remote P2P server
 
     /**
      * Requests the backlog of data that's already been transmitted but that this instance doesn't
@@ -807,9 +764,10 @@ class SubPeerImpl final : public PeerImpl
             /**
              * Informing the remote peer of data this instance doesn't know about is impossible;
              * therefore, the remote peer is informed of data that this instance has, which will
-             * cause it to notify this instance of data that it has but this instance doesn't.
+             * cause the remote peer to notify this instance of data that it has but that this
+             * instance doesn't.
              */
-            if (!(connected = rpc->send(prodIds)))
+            if (!(connected = peerConn->request(prodIds)))
                 ::sem_post(&stopSem);
     }
 
@@ -863,15 +821,15 @@ public:
      * Constructs -- both client- and server-side.
      *
      * @param[in] p2pMgr        Subscriber's P2P manager
-     * @param[in] rpc           Pointer to RPC module
+     * @param[in] conn          Pointer to peer-connection
      * @throw     LogicError    Destination port number is zero
      * @throw     SystemError   Couldn't connect. Bad failure.
      * @throw     RuntimeError  Couldn't connect. Might be temporary.
      */
     SubPeerImpl(
-            SubP2pMgr& p2pMgr,
-            Rpc::Pimpl rpc)
-        : PeerImpl(p2pMgr, rpc, rpc->isRmtPub())
+            SubP2pMgr&      p2pMgr,
+            PeerConn::Pimpl conn)
+        : PeerImpl(p2pMgr, conn)
         , subP2pMgr(p2pMgr)
         , requested()
         , backlogFlag()
@@ -891,20 +849,16 @@ public:
     }
 
     bool isClient() const noexcept override {
-        return rpc->isClient();
-    }
-
-    bool isPub() const noexcept override {
-        return false;
+        return peerConn->isClient();
     }
 
     bool isRmtPub() const noexcept override {
-        return rpc->isRmtPub();
+        return rmtSrvrInfo.tier == 0;
     }
 
     void request(const ProdId prodId) override {
         requested.push(Notice{prodId});
-        if ((connected = rpc->request(prodId))) {
+        if ((connected = peerConn->request(prodId))) {
             //LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
                     //prodId.to_string().data());
         }
@@ -914,7 +868,7 @@ public:
     }
     void request(const DataSegId& segId) override {
         requested.push(Notice{segId});
-        if ((connected = rpc->request(segId))) {
+        if ((connected = peerConn->request(segId))) {
             //LOG_TRACE("Peer %s requested information on data-segment %s", to_string().data(),
                     //segId.to_string().data());
         }
@@ -923,18 +877,11 @@ public:
         }
     }
 
-    void recvAdd(const SockAddr p2pSrvr) override {
-        subP2pMgr.recvAdd(p2pSrvr);
+    void recvAdd(const P2pSrvrInfo& srvrInfo) override {
+        subP2pMgr.recvAdd(srvrInfo);
     }
     void recvAdd(const Tracker tracker) override {
         subP2pMgr.recvAdd(tracker);
-    }
-
-    void recvRemove(const SockAddr p2pSrvr) override {
-        subP2pMgr.recvRemove(p2pSrvr);
-    }
-    void recvRemove(const Tracker tracker) override {
-        subP2pMgr.recvRemove(tracker);
     }
 
     /**
@@ -1018,106 +965,88 @@ public:
     }
 };
 
+#if 0
 Peer::Pimpl Peer::create(
-        SubP2pMgr& p2pMgr,
-        Rpc::Pimpl rpc) {
-    return Pimpl(new SubPeerImpl(p2pMgr, rpc));
+        SubP2pMgr&      p2pMgr,
+        PeerConn::Pimpl conn) {
+    return Pimpl{new SubPeerImpl{p2pMgr, conn}};
 }
+#endif
 
 Peer::Pimpl Peer::create(
         SubP2pMgr&     p2pMgr,
         const SockAddr srvrAddr) {
-    return create(p2pMgr, Rpc::create(srvrAddr));
+    auto conn = PeerConn::create(srvrAddr);
+    auto pImpl = Pimpl{new SubPeerImpl{p2pMgr, conn}};
+    conn->setPeer(pImpl);
+    return pImpl;
+    //return create(p2pMgr, PeerConn::create(srvrAddr));
 }
 
 /******************************************************************************/
 
-/// An implementation of a P2P server
+/// An implementation of a P2P-server
 template<typename P2P_MGR>
-class P2pSrvrImpl : public P2pSrvr<P2P_MGR>
+class PeerSrvrImpl : public P2pSrvr<P2P_MGR>
 {
-    typename RpcSrvr::Pimpl rpcSrvr;
+    PeerConnSrvr::Pimpl peerConnSrvr;
 
 public:
     /// Constructs
-    P2pSrvrImpl(
-            const TcpSrvrSock p2pSrvr,
-            const bool        iAmPub,
-            const unsigned    maxPendConn)
-        : rpcSrvr(RpcSrvr::create(p2pSrvr, iAmPub, maxPendConn))
+    PeerSrvrImpl(
+            const SockAddr srvrAddr,
+            const unsigned maxPendConn)
+        : peerConnSrvr(PeerConnSrvr::create(srvrAddr, maxPendConn))
     {}
 
     /// Constructs
-    P2pSrvrImpl(
-            const SockAddr srvrAddr,
-            const bool     iAmPub,
-            const unsigned maxPendConn)
-        : rpcSrvr(RpcSrvr::create(srvrAddr, iAmPub, maxPendConn))
+    PeerSrvrImpl(PeerConnSrvr::Pimpl peerConnSrvr)
+        : peerConnSrvr(peerConnSrvr)
     {}
 
     SockAddr getSrvrAddr() const override {
-        return rpcSrvr->getSrvrAddr();
+        return peerConnSrvr->getSrvrAddr();
     }
 
     Peer::Pimpl accept(P2P_MGR& p2pMgr) override {
-        auto rpc = rpcSrvr->accept();
-        return rpc
-                ? Peer::create(p2pMgr, rpc)
+        auto peerConn = peerConnSrvr->accept();
+        return peerConn
+                ? Peer::create(p2pMgr, peerConn)
                 : Peer::Pimpl{};
     }
 
-    void halt() {
-        rpcSrvr->halt();
+    /**
+     * Causes `accept()` to return a false object.
+     * @see accept()
+     */
+    void halt() override {
+        peerConnSrvr->halt();
     }
 };
 
-/**
- * Returns a smart pointer to an implementation.
- * @param[in] srvrSock     Socket to be used by the server
- * @param[in] maxPendConn  Maximum number of pending connections
- */
-template<>
-P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
-        const TcpSrvrSock srvrSock,
-        const unsigned    maxPendConn) {
-    return Pimpl{new P2pSrvrImpl<PubP2pMgr>(srvrSock, true, maxPendConn)};
-}
-
-/**
- * Returns a smart pointer to an implementation.
- * @param[in] srvrAddr     Socket address to be used by the server
- * @param[in] maxPendConn  Maximum number of pending connections
- */
 template<>
 P2pSrvr<PubP2pMgr>::Pimpl P2pSrvr<PubP2pMgr>::create(
         const SockAddr  srvrAddr,
         const unsigned  maxPendConn) {
-    auto srvrSock = TcpSrvrSock(srvrAddr, 3*maxPendConn); // Connection comprises 3 separate sockets
-    return create(srvrSock, maxPendConn);
+    return Pimpl{new PeerSrvrImpl<PubP2pMgr>(srvrAddr, maxPendConn)};
 }
 
 /**
  * Returns a smart pointer to an implementation.
- * @param[in] srvrSock     Socket to be used by the server
- * @param[in] maxPendConn  Maximum number of pending connections
- */
-template<>
-P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
-        const TcpSrvrSock srvrSock,
-        const unsigned    maxPendConn) {
-    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrSock, false, maxPendConn)};
-}
-
-/**
- * Returns a smart pointer to an implementation.
- * @param[in] srvrAddr     Socket address to be used by the server
+ * @param[in] srvrAddr     Socket address to be used by the server. Must not be wildcard. A port
+ *                         number of zero obtains a system chosen one.
  * @param[in] maxPendConn  Maximum number of pending connections
  */
 template<>
 P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(
         const SockAddr srvrAddr,
         const unsigned maxPendConn) {
-    return Pimpl{new P2pSrvrImpl<SubP2pMgr>(srvrAddr, false, maxPendConn)};
+    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(srvrAddr, maxPendConn)};
+}
+
+template<>
+P2pSrvr<SubP2pMgr>::Pimpl P2pSrvr<SubP2pMgr>::create(const PeerConnSrvr::Pimpl peerConnSrvr) {
+    return Pimpl{new PeerSrvrImpl<SubP2pMgr>(peerConnSrvr)};
 }
 
 } // namespace

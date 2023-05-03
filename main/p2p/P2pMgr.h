@@ -23,7 +23,6 @@
 
 #include "error.h"
 #include "HycastProto.h"
-#include "Tracker.h"
 
 #include <cstdint>
 #include <memory>
@@ -31,9 +30,11 @@
 
 namespace hycast {
 
-class Peer;    // Forward declaration
-class PubPeer; // Forward declaration
-class SubPeer; // Forward declaration
+class Peer;         // Forward declaration
+class PubPeer;      // Forward declaration
+class SubPeer;      // Forward declaration
+class PeerConnSrvr; // Forward declaration
+using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
 
 class PubNode;
 class SubNode;
@@ -147,14 +148,14 @@ public:
     virtual void halt() =0;
 
     /**
-     * Returns the address of this instance's P2P-server.
+     * Returns information on this instance's P2P-server.
      *
-     * @return  Address of the P2P-server
+     * @return  Information on this instance's P2P-server
      */
-    virtual SockAddr getSrvrAddr() const =0;
+    virtual P2pSrvrInfo getSrvrInfo() =0;
 
     /**
-     * Blocks until at least one remote peer has established a connection via the local peer-server.
+     * Blocks until at least one remote peer has established a connection via the local P2P-server.
      * Useful for unit-testing.
      */
     virtual void waitForSrvrPeer() =0;
@@ -170,28 +171,28 @@ public:
             const SockAddr rmtAddr) {};
 
     /**
-     * Receives the address of a potential peer-server from a remote peer.
+     * Receives the address of a potential P2P-server from a remote peer.
      *
-     * @param[in] p2pSrvr     Socket address of potential peer-server
+     * @param[in] info  Information on the P2P server
      */
-    virtual void recvAdd(const SockAddr p2pSrvr) {}; // Default implemented so mocks don't have to
+    virtual void recvAdd(const P2pSrvrInfo& info) {}; // Default implemented so mocks don't have to
     /**
      * Receives a set of potential peer servers from a remote peer.
      *
-     * @param[in] tracker      Set of potential peer-servers
+     * @param[in] tracker      Set of potential P2P-servers
      */
     virtual void recvAdd(Tracker tracker) {};
 
     /**
-     * Receives the address of a bad peer-server from a remote peer.
+     * Receives the address of a bad P2P-server from a remote peer.
      *
-     * @param[in] p2pSrvr     Socket address of potential peer-server
+     * @param[in] p2pSrvr     Socket address of potential P2P-server
      */
     virtual void recvRemove(const SockAddr p2pSrvr) {};
     /**
      * Receives a set of bad peer servers from a remote peer.
      *
-     * @param[in] tracker      Set of bad peer-servers
+     * @param[in] tracker      Set of bad P2P-servers
      */
     virtual void recvRemove(const Tracker tracker) {};
 
@@ -292,22 +293,20 @@ public:
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] subNode      Subscriber's node
-     * @param[in] tracker      Pool of addresses of P2P servers
-     * @param[in] p2pSrvrSock  Socket for the P2P server
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
-     *                         timeout; 0 => immediate return.
-     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
-     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
-     * @return                 Subscribing P2P manager
+     * @param[in] subNode       Subscriber's node
+     * @param[in] tracker       Pool of addresses of P2P servers
+     * @param[in] PeerConnSrvr  Peer-connection server
+     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P servers. -1 => default
+     *                          timeout; 0 => immediate return.
+     * @param[in] maxPeers      Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @return                  Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static Pimpl create(
             SubNode&          subNode,
             Tracker           tracker,
-            TcpSrvrSock       p2pSrvrSock,
-            const int         maxPendConn,
+            PeerConnSrvrPimpl peerConnSrvr,
             const int         timeout,
             const unsigned    maxPeers,
             const unsigned    evalTime);

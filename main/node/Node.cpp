@@ -35,6 +35,9 @@
 
 namespace hycast {
 
+class PeerConnSrvr; ///< Forward declaration
+using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-dependency
+
 #if 0
     FeedInfo    feedInfo;   ///< Information on data-product feed
     TcpSrvrSock srvrSock;   ///< Subscriber-server's socket
@@ -385,32 +388,32 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] p2pAddr       Socket address of local P2P server. It shall specify a specific
-     *                          interface and not the wildcard. The port number may be 0, in which case
-     *                          the operating system will choose the port.
-     * @param[in] maxPeers      Maximum number of P2P peers. It shall not be 0.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] mcastAddr     Socket address of multicast group
-     * @param[in] ifaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] maxPendConn   Maximum number of pending connections
-     * @param[in] repoRoot      Pathname of the root directory of the repository
-     * @param[in] maxSegSize    Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles  Maximum number of open, data-products files
-     * @throw InvalidArgument   `listenSize` is zero
-     * @return                  New instance
+     * @param[in] p2pAddr         Socket address of local P2P server. It shall specify a specific
+     *                            interface and not the wildcard. The port number may be 0, in which
+     *                            case the operating system will choose the port.
+     * @param[in] maxPeers        Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime        Evaluation interval for poorest-performing peer in seconds
+     * @param[in] mcastAddr       Socket address of multicast group
+     * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] maxPendConn     Maximum number of pending connections
+     * @param[in] repoRoot        Pathname of the root directory of the repository
+     * @param[in] maxSegSize      Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @throw InvalidArgument     `listenSize` is zero
+     * @return                    New instance
      */
     PubNodeImpl(
             SockAddr       p2pAddr,
             const unsigned maxPeers,
             const unsigned evalTime,
             const SockAddr mcastAddr,
-            const InetAddr ifaceAddr,
+            const InetAddr mcastIfaceAddr,
             const unsigned maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
         : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
-        , mcastPub(McastPub::create(mcastAddr, ifaceAddr))
+        , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
         , repo(PubRepo(repoRoot, maxOpenFiles))
         , maxSegSize{maxSegSize}
         , senderThread()
@@ -425,16 +428,20 @@ public:
         }
     }
 
-    SockAddr getP2pSrvrAddr() const override {
-        return p2pMgr->getSrvrAddr();
-    }
-
     void run() override {
         NodeImpl::run();
     }
 
     void halt() override {
         NodeImpl::halt();
+    }
+
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return p2pMgr->getSrvrInfo();
+    }
+
+    SockAddr getP2pSrvrAddr() const override {
+        return p2pMgr->getSrvrInfo().srvrAddr;
     }
 
     void waitForPeer() override {
@@ -522,7 +529,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
         // Keep consonant with `Publisher::handleSubscriber()`
         Xprt xprt{TcpClntSock(pubAddr)}; // Default timeout
         subInfo.read(xprt);
-        p2pMgr->getSrvrAddr().write(xprt);
+        p2pMgr->getSrvrInfo().write(xprt);
     }
 
     void runMcast() {
@@ -621,10 +628,7 @@ public:
      *
      * @param[in] subInfo       Subscription information
      * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
-     *                          wildcard. If the port number is zero, then the O/S will choose an
-     *                          ephemeral port number.
-     * @param[in] maxPendConn   Maximum number of pending connections
+     * @param[in] peerConnSrvr  Peer-connection server
      * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
@@ -634,53 +638,16 @@ public:
      *                          interface don't match
      */
     SubNodeImpl(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const SockAddr    p2pSrvrAddr,
-            const int         maxPendConn,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles)
-        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, p2pSrvrAddr, maxPendConn, timeout,
-                maxPeers, evalTime))
-        , repo(SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles))
-        , numMcastOrig{0}
-        , numP2pOrig{0}
-        , numMcastDup{0}
-        , numP2pDup{0}
-        , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
-        , mcastThread()
-    {}
-
-    /**
-     * Constructs.
-     *
-     * @param[in] subInfo       Subscription information
-     * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] p2pSrvrSock   Socket for local P2P server
-     * @param[in] maxPendConn   Maximum number of pending connections
-     * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
-     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] repoDir       Pathname of root directory of data-product repository
-     * @param[in] maxOpenFiles  Maximum number of open files in repository
-     * @throw     LogicError    IP address families of multicast group address and multicast
-     *                          interface don't match
-     */
-    SubNodeImpl(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const TcpSrvrSock p2pSrvrSock,
-            const int         maxPendConn,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles)
-        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, p2pSrvrSock, maxPendConn, timeout,
-                maxPeers, evalTime))
+            SubInfo&                subInfo,
+            const InetAddr          mcastIface,
+            const PeerConnSrvrPimpl peerConnSrvr,
+            const int               timeout,
+            const unsigned          maxPeers,
+            const unsigned          evalTime,
+            const String&           repoDir,
+            const long              maxOpenFiles)
+        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, peerConnSrvr, timeout, maxPeers,
+                evalTime))
         , repo(SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles))
         , numMcastOrig{0}
         , numP2pOrig{0}
@@ -706,6 +673,14 @@ public:
         }
     }
 
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return p2pMgr->getSrvrInfo();
+    }
+
+    SockAddr getP2pSrvrAddr() const override {
+        return p2pMgr->getSrvrInfo().srvrAddr;
+    }
+
     void run() override {
         NodeImpl::run();
     }
@@ -724,10 +699,6 @@ public:
 
     ProdIdSet getProdIds() const override {
         return repo.getProdIds();
-    }
-
-    SockAddr getP2pSrvrAddr() const override {
-        return p2pMgr->getSrvrAddr();
     }
 
     /**
@@ -879,31 +850,16 @@ SubNode::Pimpl SubNode::create(
 */
 
 SubNode::Pimpl SubNode::create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const SockAddr    p2pSrvrAddr,
-            const int         acceptQSize,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles) {
-    return Pimpl{new SubNodeImpl(subInfo, mcastIface, p2pSrvrAddr, acceptQSize, timeout, maxPeers,
-            evalTime, repoDir, maxOpenFiles)};
-}
-
-SubNode::Pimpl SubNode::create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const TcpSrvrSock p2pSrvrSock,
-            const int         maxPendConn,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles) {
-    return Pimpl{new SubNodeImpl(subInfo, mcastIface, p2pSrvrSock, maxPendConn, timeout, maxPeers,
-            evalTime, repoDir, maxOpenFiles)};
+            SubInfo&                subInfo,
+            const InetAddr          mcastIface,
+            const PeerConnSrvrPimpl peerConnSrvr,
+            const int               timeout,
+            const unsigned          maxPeers,
+            const unsigned          evalTime,
+            const String&           repoDir,
+            const long              maxOpenFiles) {
+    return Pimpl{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers, evalTime,
+            repoDir, maxOpenFiles)};
 }
 
 } // namespace

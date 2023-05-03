@@ -26,15 +26,11 @@
 #include "error.h"
 #include "HycastProto.h"
 #include "Peer.h"
-#include "ThreadException.h"
 
-#include <array>
 #include <list>
 #include <memory>
 #include <poll.h>
 #include <queue>
-#include <semaphore.h>
-#include <sstream>
 #include <unordered_map>
 
 namespace hycast {
@@ -46,194 +42,7 @@ using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connec
  */
 class RpcImpl final : public Rpc
 {
-    enum class State {
-        INIT,
-        STARTED,
-        STOPPED
-    }                  state;         ///< State of this instance
-    ThreadEx           threadEx;      ///< Internal thread exception
-    mutable Mutex      stateMutex;    ///< Protects state changes
-    mutable sem_t      stopSem;       ///< For async-signal-safe stopping
-    const bool         iAmClient;     ///< This instance initiated the connection?
-    const bool         iAmPub;        ///< This instance is publisher?
-    bool               rmtIsPub;      ///< Remote peer is publisher?
-    bool               started;       ///< This instance has been started?
-    /*
-     * If a single transport is used for asynchronous communication and reading
-     * and writing occur on the same thread, then deadlock will occur if both
-     * receive buffers are full and each end is trying to write. To prevent
-     * this, three transports are used and a thread that reads from one
-     * transport will write to another. The pipeline might block for a while as
-     * messages are processed, but it won't deadlock.
-     */
-    Xprt               noticeXprt;    ///< Notice transport
-    Xprt               requestXprt;   ///< Request and tracker information transport
-    Xprt               dataXprt;      ///< Data transport
-    SockAddr           rmtSockAddr;   ///< Remote (notice) socket address
-    SockAddr           lclSockAddr;   ///< Local (notice) socket address
-    Thread             requestReader; ///< For receiving requests
-    Thread             noticeReader;  ///< For receiving notices
-    Thread             dataReader;    ///< For receiving data
-
 #if 0
-    /**
-     * Connects this client-side instance to its remote peer. Called by constructor.
-     *
-     * @param[in] srvrAddr      Address of remote RPC server
-     * @param[in] timeout       Timeout, in ms, for connecting with remote peer. <=0 => system's
-     *                          default timeout;
-     * @throw     LogicError    Destination port number is zero
-     * @throw     SystemError   Couldn't connect
-     */
-    void connect(const SockAddr srvrAddr, int timeout) {
-        if (timeout <= 0)
-            timeout = -1;
-
-        /*
-         * Keep consonant with `setXprts()`.
-         */
-        noticeXprt      = Xprt{TcpClntSock{srvrAddr, timeout}};
-
-        const auto port = noticeXprt.getLclAddr().getPort();
-        uint8_t    xprtId = 0;
-        bool       success = noticeXprt.write(port) && noticeXprt.write(xprtId++);
-
-        if (success) {
-            requestXprt = Xprt{TcpClntSock{srvrAddr}};
-            success = requestXprt.write(port) && requestXprt.write(xprtId++);
-
-            if (success) {
-                dataXprt = Xprt{TcpClntSock{srvrAddr}};
-                success = dataXprt.write(port) && dataXprt.write(xprtId++);
-            }
-        }
-
-        if (!success)
-            throw RUNTIME_ERROR("Couldn't connect to " + srvrAddr.to_string());
-    }
-#else
-    static void asyncConnectXprt(
-            const SockAddr srvrAddr,
-            Xprt&          xprt,
-            const int      timeout) {
-        try {
-            const auto  srvrInetAddr = srvrAddr.getInetAddr();
-            TcpClntSock sock{srvrInetAddr.getFamily()}; // Unbound & unconnected socket
-
-            sock.bind(SockAddr(srvrInetAddr.getWildcard(), 0));
-            sock.makeNonBlocking();
-            sock.connect(srvrAddr); // Immediately sets local socket address
-
-            struct pollfd pfd;
-            pfd.fd = sock.getSockDesc();
-            pfd.events = POLLOUT;
-            int status = ::poll(&pfd, 1, (timeout < 0) ? -1 : timeout);
-
-            if (status == -1)
-                throw SYSTEM_ERROR("poll() failure");
-            if (status == 0)
-                throw RUNTIME_ERROR("Couldn't connect to " + srvrAddr.to_string() + " in " +
-                        std::to_string(timeout) + " ms");
-
-            if (pfd.revents & (POLLHUP | POLLERR))
-                throw SYSTEM_ERROR("Couldn't connect to " + srvrAddr.to_string());
-            if (pfd.revents & POLLOUT)
-                sock.makeBlocking();
-
-            xprt = Xprt{sock};
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-    }
-
-    /**
-     * Connects transports asynchronously to a remote counterpart.
-     *
-     * @param[in]  srvrAddr  Socket address of remote server
-     * @param[out] xprts     Transports to be set
-     * @param[in]  timeout   Timeout, in ms, to connect all transports
-     */
-    void asyncConnect(
-            const SockAddr srvrAddr,
-            XprtArray&     xprts,
-            const int      timeout) {
-        const int numXprts = xprts.size();
-        Thread    threads[numXprts];
-
-        for (int i = 0; i < numXprts; ++i)
-            threads[i] = Thread(RpcImpl::asyncConnectXprt, srvrAddr, std::ref(xprts[i]), timeout);
-
-        for (int i = 0; i < numXprts; ++i) {
-            threads[i].join();
-            if (!xprts[i])
-                throw RUNTIME_ERROR("Couldn't connect transports to " + srvrAddr.to_string());
-        }
-    }
-
-    /**
-     * Sends transport information to remote counterpart.
-     *
-     * @param[in] xprts  Transports
-     * @param[in] port   Port number of notice transport
-     */
-    void sendXprtInfo(
-            XprtArray&      xprts,
-            const in_port_t port) {
-        for (uint8_t xprtId = 0; xprtId < xprts.size(); ++xprtId)
-            if (!xprts[xprtId].write(port) || !xprts[xprtId].write(xprtId))
-                throw RUNTIME_ERROR("Couldn't send transport information");
-    }
-
-    /**
-     * Connects this client-side instance to a remote counterpart. Called by constructor.
-     *
-     * @param[in] srvrAddr         Address of remote RPC server
-     * @param[in] timeout          Timeout, in ms, for connecting with remote peer. <=0 => system's
-     *                             default timeout;
-     * @throw     InvalidArgument  Destination port number is zero
-     * @throw     RuntimeError     Couldn't connect to remote within timeout
-     * @throw     SystemError      System failure
-     */
-    void connect(
-            const SockAddr srvrAddr,
-            int            timeout) {
-        /*
-         * Keep consonant with `setXprts()`.
-         */
-
-        XprtArray xprts;
-
-        asyncConnect(srvrAddr, xprts, timeout);
-
-        const auto port = xprts[0].getLclAddr().getPort();
-
-        sendXprtInfo(xprts, port);
-
-        noticeXprt = xprts[0];
-        requestXprt = xprts[1];
-        dataXprt = xprts[2];
-    }
-#endif
-
-    /**
-     * Set the server-side constructed transports. Called by constructor.
-     */
-    void setXprts(XprtArray xprts) {
-        std::array<int, 3> xprtIndexes;
-
-        for (uint8_t index = 0; index < 3; ++index) {
-            uint8_t xprtId;
-            if (!xprts[index].read(xprtId))
-                throw RUNTIME_ERROR("Couldn't read from " + xprts[index].to_string());
-            xprtIndexes[xprtId] = index;
-        }
-
-        noticeXprt  = xprts[xprtIndexes[0]];
-        requestXprt = xprts[xprtIndexes[1]];
-        dataXprt    = xprts[xprtIndexes[2]];
-    }
-
     /**
      * Vets the protocol version used by the remote RPC layer. Called by constructor.
      *
@@ -293,12 +102,14 @@ class RpcImpl final : public Rpc
             throw RUNTIME_ERROR("Couldn't read from " + noticeXprt.to_string());
         noticeXprt.clear();
     }
+#endif
 
     /**
      * Receives a request for a datum from the remote peer. Passes the request
      * to the associated local peer.
      *
      * @tparam    ID       Identifier of requested data
+     * @param[in] xprt     Transport
      * @param[in] peer     Associated local peer
      * @param[in] desc     Description of datum
      * @retval    true     Success
@@ -306,369 +117,63 @@ class RpcImpl final : public Rpc
      */
     template<class ID>
     inline bool processRequest(
+            Xprt&             xprt,
             Peer&             peer,
             const char* const desc) {
         ID   id;
-        bool success = id.read(requestXprt);
+        bool success = id.read(xprt);
         if (success) {
             LOG_TRACE("RPC %s received request for %s %s",
-                    to_string().data(), desc, id.to_string().data());
+                    xprt.to_string().data(), desc, id.to_string().data());
             peer.recvRequest(id);
         }
         return success;
     }
 
     /**
-     * Dispatch function for processing requests from the remote peer.
-     *
-     * @param[in] pduId         PDU ID
-     * @param[in] peer          Associated local peer
-     * @retval    false         Connection lost
-     * @retval    true          Success
-     * @throw     LogicError    Message is unknown or unsupported
-     */
-    bool processRequest(
-            PduId pduId,
-            Peer& peer) {
-        bool success = false;
-
-        switch (static_cast<PduId::Type>(pduId)) {
-            case PduId::DATA_SEG_REQUEST: {
-                success = processRequest<DataSegId>(peer, "data-segment");
-                break;
-            }
-            case PduId::PROD_INFO_REQUEST: {
-                success = processRequest<ProdId>(peer, "information on product");
-                break;
-            }
-            case PduId::GOOD_P2P_SRVR: {
-                SockAddr p2pSrvrAddr;
-                auto success = p2pSrvrAddr.read(requestXprt);
-                if (success)
-                    peer.recvAdd(p2pSrvrAddr);
-                break;
-            }
-            case PduId::GOOD_P2P_SRVRS: {
-                Tracker tracker;
-                auto success = tracker.read(requestXprt);
-                if (success)
-                    peer.recvAdd(tracker);
-                break;
-            }
-            case PduId::BAD_P2P_SRVR: {
-                SockAddr p2pSrvrAddr;
-                auto success = p2pSrvrAddr.read(requestXprt);
-                if (success)
-                    peer.recvRemove(p2pSrvrAddr);
-                break;
-            }
-            case PduId::BAD_P2P_SRVRS: {
-                Tracker tracker;
-                auto success = tracker.read(requestXprt);
-                if (success)
-                    peer.recvRemove(tracker);
-                break;
-            }
-            case PduId::BACKLOG_REQUEST: {
-                ProdIdSet prodIds{0};
-                auto success = prodIds.read(requestXprt);
-                if (success)
-                    peer.recvHaveProds(prodIds);
-                break;
-            }
-            default :
-                throw LOGIC_ERROR("RPC layer " + to_string() + ": invalid PDU type: " +
-                    pduId.to_string());
-        }
-
-        return success;
-    }
-
-    /**
-     * Reads and processes messages from the remote peer. Doesn't return until
-     * either EOF is encountered or an error occurs.
-     *
-     * @param[in] xprt      Transport
-     * @param[in] process   Function for processing incoming PDU-s
-     * @throw LogicError    Message type is unknown or unsupported
-     */
-    void runReader(Xprt xprt, std::function<void(PduId)> process) {
-        // TODO: Make the priority of this thread greater than the multicast sending thread
-        try {
-            LOG_TRACE("Executing reader");
-#if 1
-            // This works
-            for (PduId pduId{}; pduId.read(xprt); process(pduId))
-                ;
-            LOG_NOTE("Connection %s closed", xprt.to_string().data());
-#else
-            // This also works. It tests `xprt.read<>()`. Seems to be equally efficient.
-            for (;;) {
-                try {
-                    process(xprt.read<PduId>());
-                }
-                catch (const EofError& ex) {
-                    LOG_NOTE("Connection %s closed", xprt.to_string().data());
-                    break;
-                }
-            }
-#endif
-        }
-        catch (const std::exception& ex) {
-            log_error(ex);
-            setExPtr(ex);
-        }
-    }
-
-    void startRequestReader(Peer& peer) {
-        LOG_TRACE("Starting thread to read requests");
-        requestReader = Thread(&RpcImpl::runReader, this, requestXprt,
-                [&](PduId pduId) {return processRequest(pduId, peer);});
-        if (log_enabled(LogLevel::DEBUG)) {
-            std::ostringstream threadId;
-            threadId << requestReader.get_id();
-            LOG_TRACE("Request reader thread is %s", threadId.str().data());
-        }
-    }
-    /**
-     * Idempotent.
-     */
-    void stopRequestReader() {
-        if (requestXprt) {
-            LOG_TRACE("Shutting down request transport");
-            requestXprt.shutdown();
-        }
-        if (requestReader.joinable())
-            requestReader.join();
-    }
-
-    /**
      * Processes notices of an available datum. Calls the associated peer.
      *
      * @tparam    NOTICE  Type of notice
+     * @param[in] xprt    Transport
      * @param[in] peer    Associated peer
      * @param[in] desc    Description of associated datum
      */
     template<class NOTICE>
     inline void processNotice(
+            Xprt&             xprt,
             Peer&             peer,
             const char* const desc) {
         NOTICE notice;
-        if (notice.read(noticeXprt)) {
+        if (notice.read(xprt)) {
             LOG_TRACE("RPC %s received notice about %s %s",
-                    to_string().data(), desc, notice.to_string().data());
+                    xprt.to_string().data(), desc, notice.to_string().data());
             peer.recvNotice(notice);
         }
     }
-    /**
-     * Receives a notice about an available datum.
-     *
-     * @param[in] pduId  PDU identifier (e.g., `PROD_INFO_NOTICE`)
-     * @param[in] peer   Associated peer
-     */
-    void processNotice(
-            PduId pduId,
-            Peer& peer) {
-        switch (pduId) {
-        case PduId::DATA_SEG_NOTICE: {
-            processNotice<DataSegId>(peer, "data-segment");
-            break;
-        }
-        case PduId::PROD_INFO_NOTICE: {
-            processNotice<ProdId>(peer, "product");
-            break;
-        }
-        case PduId::AM_PUB_PATH: {
-            peer.recvHavePubPath(true);
-            break;
-        }
-        case PduId::AM_NOT_PUB_PATH: {
-            peer.recvHavePubPath(false);
-            break;
-        }
-        case PduId::GOOD_P2P_SRVR: {
-            SockAddr p2pSrvrAddr;
-            if (p2pSrvrAddr.read(noticeXprt)) {
-                LOG_TRACE("RPC %s received notice about good P2P server %s",
-                        to_string().data(), p2pSrvrAddr.to_string().data());
-                peer.recvAdd(p2pSrvrAddr);
-            }
-            break;
-        }
-        case PduId::GOOD_P2P_SRVRS: {
-            Tracker tracker;
-            if (tracker.read(noticeXprt)) {
-                LOG_TRACE("RPC %s received notice about good P2P servers %s",
-                        to_string().data(), tracker.to_string().data());
-                peer.recvAdd(tracker);
-            }
-            break;
-        }
-        case PduId::BAD_P2P_SRVR: {
-            SockAddr p2pSrvrAddr;
-            if (p2pSrvrAddr.read(noticeXprt)) {
-                LOG_TRACE("RPC %s received notice about bad P2P server %s",
-                        to_string().data(), p2pSrvrAddr.to_string().data());
-                peer.recvRemove(p2pSrvrAddr);
-            }
-            break;
-        }
-        case PduId::BAD_P2P_SRVRS: {
-            Tracker tracker;
-            if (tracker.read(noticeXprt)) {
-                LOG_TRACE("RPC %s received notice about bad P2P servers %s",
-                        to_string().data(), tracker.to_string().data());
-                peer.recvRemove(tracker);
-            }
-            break;
-        }
-        default: {
-            throw RUNTIME_ERROR("Invalid PDU type: " + pduId.to_string());
-        }
-        }
-    }
-
-    void startNoticeReader(Peer& peer) {
-        LOG_TRACE("Starting thread to read notices");
-        noticeReader = Thread(&RpcImpl::runReader, this, noticeXprt, [&](PduId pduId) {
-                return processNotice(pduId, peer);});
-    }
-    /**
-     * Idempotent.
-     */
-    void stopNoticeReader() {
-        //LOG_DEBUG("Entered");
-        if (noticeXprt) {
-            noticeXprt.shutdown();
-        }
-        if (noticeReader.joinable())
-            noticeReader.join();
-        //LOG_DEBUG("Returning");
-    }
 
     /**
-     * Processes a datum from the remote peer. Passes the datum to the
-     * associated peer.
+     * Processes a datum from the remote peer. Passes the datum to the associated peer.
      *
      * @tparam    DATUM       Type of datum (`ProdInfo`, `DataSeg`)
-     * @param[in] desc        Description of datum
+     * @param[in] xprt        Transport
      * @param[in] peer        Associated peer
+     * @param[in] desc        Description of datum
      * @throw     LogicError  Datum wasn't requested
      * @see `Request::missed()`
      */
     template<class DATUM>
     inline bool processData(
-            const char* const desc,
-            Peer&             peer) {
+            Xprt&             xprt,
+            Peer&             peer,
+            const char* const desc) {
         DATUM datum{};
-        auto  success = datum.read(dataXprt);
+        auto  success = datum.read(xprt);
         if (success) {
             LOG_TRACE("RPC %s received %s %s",
-                    to_string().data(), desc, datum.to_string().data());
+                    xprt.to_string().data(), desc, datum.to_string().data());
             peer.recvData(datum);
         }
         return success;
-    }
-
-    /**
-     * Processes an incoming datum from the remote peer.
-     *
-     * @param[in] pduId    Protocol data unit identifier
-     * @param[in] peer     Associated local peer
-     * @retval    true     Success
-     * @retval    false    Connection lost
-     */
-    bool processData(
-            PduId pduId,
-            Peer& peer) {
-        bool success;
-
-        if (pduId == PduId::DATA_SEG) {
-            success = processData<DataSeg>("data segment", peer);
-        }
-        else if (pduId == PduId::PROD_INFO) {
-            success = processData<ProdInfo>("product information", peer);
-        }
-        else {
-            LOG_TRACE("Unknown PDU ID: %s", pduId.to_string().data());
-            throw LOGIC_ERROR("Invalid PDU ID: " + pduId.to_string());
-        }
-
-        return success;
-    }
-
-    void startDataReader(Peer& peer) {
-        LOG_TRACE("Starting thread to read data");
-        dataReader = Thread(&RpcImpl::runReader, this, dataXprt,
-            [&](PduId pduId) {return processData(pduId, peer);});
-    }
-    /**
-     * Idempotent.
-     */
-    void stopDataReader() {
-        if (dataXprt) {
-            LOG_TRACE("Shutting down data transport");
-            dataXprt.shutdown();
-        }
-        if (dataReader.joinable())
-            dataReader.join();
-    }
-
-    void startThreads(Peer& peer) {
-        if (!iAmPub) {
-            startDataReader(peer);
-            startNoticeReader(peer);
-        }
-        if (!rmtIsPub) // Publisher's don't make requests
-            startRequestReader(peer);
-    }
-
-    /**
-     * Idempotent.
-     */
-    void stopThreads() {
-        stopRequestReader(); // Idempotent
-        stopNoticeReader();  // Idempotent
-        stopDataReader();   // Idempotent
-    }
-
-    /**
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state isn't INIT
-     * @post              The state is STARTED
-     * @post              The state mutex is unlocked
-     */
-    void startImpl(Peer& peer) {
-        Guard guard{stateMutex};
-        if (state != State::INIT)
-            throw LOGIC_ERROR("Instance can't be re-executed");
-        startThreads(peer);
-        state = State::STARTED;
-    }
-
-    /**
-     * Idempotent.
-     *
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state is not STARTED
-     * @post              The state is STOPPED
-     * @post              The state mutex is unlocked
-     */
-    void stopImpl() {
-        Guard guard{stateMutex};
-        if (state != State::STARTED)
-            throw LOGIC_ERROR("Instance has not been started");
-
-        stopThreads();
-        state = State::STOPPED;
-    }
-
-    /**
-     * Sets the internal thread exception.
-     */
-    void setExPtr(const std::exception& ex) {
-        threadEx.set(ex);
-        ::sem_post(&stopSem);
     }
 
     /**
@@ -701,515 +206,186 @@ class RpcImpl final : public Rpc
         return pduId.write(xprt) && obj.write(xprt) && xprt.flush();
     }
 
+    /**
+     * Dispatches incoming RPC messages by reading the payload and calling a peer.
+     * @param[in] pduId  Protocol data unit identifier
+     * @param[in] xprt   Transport
+     * @param[in] peer   Associated peer
+     * @retval    true   Success
+     * @retval    false  Connection lost
+     * @threadsafety     Safe
+     */
+    bool dispatch(
+            const PduId pduId,
+            Xprt&       xprt,
+            Peer&       peer) {
+        bool connected;
+
+        switch (pduId) {
+            // Notices:
+
+            case PduId::DATA_SEG_NOTICE: {
+                processNotice<DataSegId>(xprt, peer, "data-segment");
+                break;
+            }
+            case PduId::PROD_INFO_NOTICE: {
+                processNotice<ProdId>(xprt, peer, "product");
+                break;
+            }
+            case PduId::PEER_SRVR_INFO: {
+                P2pSrvrInfo srvrInfo;
+                if (srvrInfo.read(xprt)) {
+                    LOG_TRACE("RPC %s received notice about P2P server %s",
+                            xprt.to_string().data(), srvrInfo.to_string().data());
+                    peer.recvAdd(srvrInfo);
+                }
+                break;
+            }
+            case PduId::PEER_SRVR_INFOS: {
+                Tracker tracker;
+                if (tracker.read(xprt)) {
+                    LOG_TRACE("RPC %s received notice about P2P servers %s",
+                            xprt.to_string().data(), tracker.to_string().data());
+                    peer.recvAdd(tracker);
+                }
+                break;
+            }
+            case PduId::PREVIOUSLY_RECEIVED: {
+                ProdIdSet prodIds{0};
+                auto connected = prodIds.read(xprt);
+                if (connected)
+                    peer.recvHaveProds(prodIds);
+                break;
+            }
+
+            // Requests:
+
+            case PduId::DATA_SEG_REQUEST: {
+                connected = processRequest<DataSegId>(xprt, peer, "data-segment");
+                break;
+            }
+            case PduId::PROD_INFO_REQUEST: {
+                connected = processRequest<ProdId>(xprt, peer, "information on product");
+                break;
+            }
+
+            // Data:
+
+            case PduId::DATA_SEG: {
+                connected = processData<DataSeg>(xprt, peer, "data segment");
+                break;
+            }
+            case PduId::PROD_INFO: {
+                connected = processData<ProdInfo>(xprt, peer, "product information");
+                break;
+            }
+
+            default:
+                LOG_WARNING("Unknown PDU ID: " + std::to_string(pduId));
+                connected = true;
+        }
+
+        return connected;
+    }
+
 public:
-    /**
-     * Constructs.
-     *
-     * @param[in] iAmClient   This instance initiated the connection?
-     * @param[in] iAmPub      This instance is publisher?
-     * @throw     LogicError  `iAmClient && iAmPub` is true
-     */
-    RpcImpl(const bool iAmClient,
-            const bool iAmPub)
-        : state(State::INIT)
-        , threadEx()
-        , stateMutex()
-        , stopSem()
-        , iAmClient(iAmClient)
-        , iAmPub(iAmPub)
-        , rmtIsPub(false)
-        , started(false)
-        , noticeXprt()
-        , requestXprt()
-        , dataXprt()
-        , rmtSockAddr()
-        , lclSockAddr()
-        , requestReader()
-        , noticeReader()
-        , dataReader()
-    {
-        if (iAmClient && iAmPub)
-            throw LOGIC_ERROR("Can't be both client and publisher");
+    // Notices:
 
-        if (::sem_init(&stopSem, 0, 0) == -1)
-            throw SYSTEM_ERROR("Couldn't initialize semaphore");
-    }
-
-    /**
-     * Default constructs. Will test false.
-     *
-     */
-    RpcImpl()
-        : RpcImpl(true, false)
-    {}
-
-    /**
-     * Constructs client-side.
-     *
-     * @param[in] srvrAddr     Socket address of remote peer-server
-     * @param[in] timeout      Timeout, in ms, for connecting. <=0 => system's default timeout.
-     * @throw InvalidArgument  Invalid timeout
-     */
-    RpcImpl(const SockAddr srvrAddr,
-            const int      timeout)
-        : RpcImpl(true, false)
-    {
-        LOG_TRACE("Connecting");
-        connect(srvrAddr, timeout); // Sets transports
-        rmtSockAddr = noticeXprt.getRmtAddr();
-        lclSockAddr = noticeXprt.getLclAddr();
-
-        LOG_TRACE("Exchanging protocol version with server");
-        sendAndVetProtoVers();
-        LOG_TRACE("Receiving isPub from server");
-        recvIsPub();
-    }
-
-    /**
-     * Constructs server-side.
-     *
-     * @param[in,out] xprts   Transports comprising connection to remote peer
-     * @param[in]     iAmPub  Is this for the publisher?
-     */
-    RpcImpl(XprtArray  xprts,
-            const bool iAmPub)
-        : RpcImpl(false, iAmPub)
-    {
-        setXprts(xprts);
-        rmtSockAddr = noticeXprt.getRmtAddr();
-        lclSockAddr = noticeXprt.getLclAddr();
-
-        LOG_TRACE("Exchanging protocol version with client");
-        recvAndVetProtoVers();
-        LOG_TRACE("Sending isPub to client");
-        sendIsPub();
-    }
-
-    ~RpcImpl() noexcept {
-        Guard guard{stateMutex};
-        LOG_ASSERT(state == State::INIT || state == State::STOPPED);
-        ::sem_destroy(&stopSem);
-    }
-
-    /**
-     * Indicates if this instance is valid.
-     * @retval true     This instance is valid
-     * @retval false    This instance is not valid
-     */
-    operator bool() {
-        return rmtSockAddr && lclSockAddr;
-    }
-
-    bool isClient() const noexcept {
-        return iAmClient;
-    }
-
-    SockAddr getLclAddr() const noexcept {
-        return lclSockAddr;
-    }
-
-    SockAddr getRmtAddr() const noexcept {
-        return rmtSockAddr;
-    }
-
-    bool isRmtPub() const noexcept {
-        return rmtIsPub;
-    }
-
-    /**
-     * Returns the string representation of this instance.
-     * @return The string representation of this instance
-     */
-    String to_string() const {
-        return "{lcl=" + noticeXprt.getLclAddr().to_string() + ", rmt=" +
-                noticeXprt.getRmtAddr().to_string() + "}";
-    }
-
-    void start(Peer& peer) override {
-        Guard guard{stateMutex};
-
-        if (started)
-            throw LOGIC_ERROR("start() already called");
-
-        try {
-            startThreads(peer);
-            started = true; // `stop()` is now effective
-        }
-        catch (const std::exception& ex) {
-            stopThreads();
-            throw;
-        }
-    }
-
-    void stop() override {
-        Guard guard{stateMutex};
-        stopThreads();
-        started = false;
-    }
-
-    void run(Peer& peer) override {
-        startImpl(peer);
-        ::sem_wait(&stopSem); // Blocks until `halt()` called or `threadEx` is true
-        stopImpl();
-        threadEx.throwIfSet();
-    }
-
-    void halt() override {
-        int semval = 0;
-        ::sem_getvalue(&stopSem, &semval);
-        if (semval < 1)
-            ::sem_post(&stopSem);
-    }
-
-    bool notifyAmPubPath(const bool amPubPath) override {
-        return amPubPath
-                ? send(noticeXprt, PduId::AM_PUB_PATH)
-                : send(noticeXprt, PduId::AM_NOT_PUB_PATH);
-    }
-
-    bool add(const SockAddr srvrAddr) override {
-        const auto success = send(requestXprt, PduId::GOOD_P2P_SRVR, srvrAddr);
+    bool add(
+            Xprt&              xprt,
+            const P2pSrvrInfo& srvrInfo) override {
+        const auto success = send(xprt, PduId::PEER_SRVR_INFO, srvrInfo);
         if (success)
-            LOG_TRACE("RPC %s sent available peer-server address %s",
-                    to_string().data(), srvrAddr.to_string().data());
-        return success;
-    }
-    bool add(const Tracker srvrAddrs) override {
-        const auto success = send(requestXprt, PduId::GOOD_P2P_SRVRS, srvrAddrs);
-        if (success)
-            LOG_TRACE("RPC %s sent available peer-server addresses %s",
-                    to_string().data(), srvrAddrs.to_string().data());
-        return success;
-    }
-    bool remove(const SockAddr srvrAddr) override {
-        const auto success = send(requestXprt, PduId::BAD_P2P_SRVR, srvrAddr);
-        if (success)
-            LOG_TRACE("RPC %s sent unavailable peer-server address %s",
-                    to_string().data(), srvrAddr.to_string().data());
-        return success;
-    }
-    bool remove(const Tracker srvrAddrs) override {
-        const auto success = send(requestXprt, PduId::BAD_P2P_SRVRS, srvrAddrs);
-        if (success)
-            LOG_TRACE("RPC %s sent unavailable peer-server addresses %s",
-                    to_string().data(), srvrAddrs.to_string().data());
+            LOG_TRACE("RPC sent P2P-server info %s", srvrInfo.to_string().data());
         return success;
     }
 
-    bool notify(const ProdId prodId) override {
-        const auto success = send(noticeXprt, PduId::PROD_INFO_NOTICE, prodId);
+    bool add(
+            Xprt&          xprt,
+            const Tracker& tracker) override {
+        const auto success = send(xprt, PduId::PEER_SRVR_INFOS, tracker);
         if (success)
-            LOG_TRACE("RPC %s sent product index %s",
-                    to_string().data(), prodId.to_string().data());
-        return success;
-    }
-    bool notify(const DataSegId dataSegId) override {
-        const auto success = send(noticeXprt, PduId::DATA_SEG_NOTICE, dataSegId);
-        if (success)
-            LOG_TRACE("RPC %s sent data segment ID %s",
-                    to_string().data(), dataSegId.to_string().data());
+            LOG_TRACE("RPC sent tracker %s", tracker.to_string().data());
         return success;
     }
 
-    bool request(const ProdId prodId) override {
-        const auto success = send(requestXprt, PduId::PROD_INFO_REQUEST, prodId);
+    bool notify(
+            Xprt&        xprt,
+            const ProdId prodId) override {
+        const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
         if (success)
-            LOG_TRACE("RPC %s requested information on product %s",
-                    to_string().data(), prodId.to_string().data());
+            LOG_TRACE("RPC sent product index %s", prodId.to_string().data());
         return success;
     }
-    bool request(const DataSegId dataSegId) override {
-        const auto success = send(requestXprt, PduId::DATA_SEG_REQUEST, dataSegId);
+    bool notify(
+            Xprt&           xprt,
+            const DataSegId dataSegId) override {
+        const auto success = send(xprt, PduId::DATA_SEG_NOTICE, dataSegId);
         if (success)
-            LOG_TRACE("RPC %s requested data segment %s",
-                    to_string().data(), dataSegId.to_string().data());
+            LOG_TRACE("RPC sent data segment ID %s", dataSegId.to_string().data());
         return success;
     }
 
-    /**
-     * Sends information on a product to the remote.
-     * @param[in] prodInfo  Product information to send
-     * @retval    true      Success
-     * @retval    false     Lost connection
-     */
-    bool send(const ProdInfo prodInfo) override {
-        const auto success = send(dataXprt, PduId::PROD_INFO, prodInfo);
+    // Requests:
+
+    bool request(
+            Xprt&        xprt,
+            const ProdId prodId) override {
+        const auto success = send(xprt, PduId::PROD_INFO_REQUEST, prodId);
         if (success)
-            LOG_TRACE("RPC %s sent product information %s",
-                    to_string().data(), prodInfo.to_string().data());
+            LOG_TRACE("RPC requested information on product %s", prodId.to_string().data());
         return success;
     }
-    /**
-     * Sends a data segment to the remote.
-     * @param[in] dataSeg   Data Segment to send
-     * @retval    true      Success
-     * @retval    false     Lost connection
-     */
-    bool send(const DataSeg dataSeg) override {
-        const auto success = send(dataXprt, PduId::DATA_SEG, dataSeg);
+    bool request(
+            Xprt&           xprt,
+            const DataSegId dataSegId) override {
+        const auto success = send(xprt, PduId::DATA_SEG_REQUEST, dataSegId);
         if (success)
-            LOG_TRACE("RPC %s sent data segment %s", to_string().data(),
-                    dataSeg.to_string().data());
+            LOG_TRACE("RPC requested data segment %s",  dataSegId.to_string().data());
         return success;
     }
-    /**
-     * Sends a backlog request to the remote.
-     * @param[in] prodIds   Set of identifiers of previously-received products
-     * @retval    true      Success
-     * @retval    false     Lost connection
-     */
-    bool send(const ProdIdSet prodIds) override {
-        const auto success = send(requestXprt, PduId::BACKLOG_REQUEST, prodIds);
+
+    bool request(
+            Xprt&            xprt,
+            const ProdIdSet& prodIds) override {
+        const auto success = send(xprt, PduId::PREVIOUSLY_RECEIVED, prodIds);
         if (success)
-            LOG_TRACE("RPC %s sent product IDs %s", to_string().data(),
-                    prodIds.to_string().data());
+            LOG_TRACE("RPC sent product IDs %s",  prodIds.to_string().data());
         return success;
+    }
+
+    // Data:
+
+    bool send(
+            Xprt&          xprt,
+            const ProdInfo prodInfo) override {
+        const auto success = send(xprt, PduId::PROD_INFO, prodInfo);
+        if (success)
+            LOG_TRACE("RPC sent product information %s", prodInfo.to_string().data());
+        return success;
+    }
+
+    bool send(
+            Xprt&         xprt,
+            const DataSeg dataSeg) override {
+        const auto success = send(xprt, PduId::DATA_SEG, dataSeg);
+        if (success)
+            LOG_TRACE("RPC sent data segment %s",  dataSeg.to_string().data());
+        return success;
+    }
+
+    bool process(
+            Xprt& xprt,
+            Peer& peer) override {
+        PduId pduId{};
+        return pduId.read(xprt) && dispatch(pduId, xprt, peer);
     }
 };
 
 Rpc::Pimpl Rpc::create(
         const SockAddr srvrAddr,
         const int      timeout) {
-    return Pimpl{new RpcImpl(srvrAddr, timeout)};
-}
-
-/******************************************************************************/
-
-/**
- * RPC-server implementation.
- */
-class RpcSrvrImpl : public RpcSrvr
-{
-private:
-    using Pimpl = std::shared_ptr<RpcSrvrImpl>;
-
-    /**
-     * Queue of accepted RPC instances.
-     */
-    using RpcQ = std::queue<Rpc::Pimpl>;
-
-    /**
-     * Factory for creating RPC instances from transports.
-     */
-    class RpcFactory
-    {
-        struct Entry {
-            int n;
-            XprtArray xprts;
-            Entry()
-                : n(0)
-                , xprts()
-            {}
-        };
-        using Map   = std::unordered_map<SockAddr, Entry>;
-
-        Map rpcs;
-
-        inline SockAddr getKey(
-                const Xprt      xprt,
-                const in_port_t port) {
-            return xprt.getRmtAddr().clone(port);
-        }
-
-    public:
-        /**
-         * Constructs.
-         */
-        RpcFactory()
-            : rpcs()
-        {}
-
-        /**
-         * Adds an individual transport to a server-side RPC instance. If the
-         * addition completes the connection, then it removed from this
-         * instance.
-         *
-         * @param[in]  xprt        Individual transport
-         * @param[in]  noticePort  Port number of the notification transport
-         * @retval     false       Connection is not complete
-         * @retval     true        Connection is complete
-         * @threadsafety           Unsafe
-         */
-        bool add(Xprt xprt, in_port_t noticePort) {
-            // TODO: Limit number of outstanding connections
-            // TODO: Purge old entries
-            auto& entry = rpcs[getKey(xprt, noticePort)];
-            entry.xprts[entry.n++] = xprt;
-            return entry.n == 3;
-        }
-
-        XprtArray get(
-                const Xprt      xprt,
-                const in_port_t noticePort) {
-            const auto key = getKey(xprt, noticePort);
-            auto       xprts = rpcs.at(key).xprts;
-            rpcs.erase(key);
-            return xprts;
-        }
-    };
-
-    mutable Mutex mutex;        ///< State-protecting mutex
-    mutable Cond  cond;         ///< To support inter-thread communication
-    RpcFactory    rpcFactory;   ///< Combines 3 unicast connections into one RPC connection
-    TcpSrvrSock   srvrSock;     ///< Socket on which this instance listens
-    RpcQ          acceptQ;      ///< Queue of accepted RPC transports
-    const bool    iAmPub;       ///< Is this instance the publisher's?
-    size_t        maxPendConn;  ///< Maximum number of pending connections
-    Thread        acceptThread; ///< Accepts incoming sockets
-
-    /**
-     * Executes on a separate thread.
-     *
-     * @param[in] sock  Newly-accepted socket
-     */
-    void processSock(TcpSock sock) {
-        LOG_TRACE("Starting to process a socket");
-        in_port_t noticePort;
-        Xprt      xprt{sock}; // Might take a while depending on `Xprt`
-
-        if (xprt.read(noticePort)) { // Might take a while
-            // The rest is fast
-            Guard guard{mutex};
-
-            // TODO: Remove old, stale entries from accept-queue
-
-            if (acceptQ.size() < maxPendConn) {
-                LOG_TRACE("Adding transport to factory");
-                if (rpcFactory.add(xprt, noticePort)) {
-                    LOG_TRACE("Emplacing RPC implementation in queue");
-                    acceptQ.emplace(new RpcImpl(rpcFactory.get(xprt, noticePort), iAmPub));
-                    cond.notify_one();
-                }
-            }
-        } // Read port number of notice transport
-    }
-
-    void acceptSocks() {
-        try {
-            LOG_TRACE("Starting to accept sockets");
-            for (;;) {
-                LOG_TRACE("Accepting a socket");
-                auto sock = srvrSock.accept();
-                if (!sock) {
-                    // The server's listening socket has been shut down
-                    Guard guard{mutex};
-                    RpcQ  emptyQ;
-                    acceptQ.swap(emptyQ); // Empties accept-queue
-                    acceptQ.push(Rpc::Pimpl{}); // Will test false
-                    cond.notify_one();
-                    break;
-                }
-
-                processSock(sock);
-                LOG_TRACE("Processed socket %s", sock.to_string().data());
-            }
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-    }
-
-public:
-    /**
-     * Constructs from the local address for the RPC-server.
-     *
-     * @param[in] srvrSock     Server socket
-     * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @throw InvalidArgument  Server's IP address is wildcard
-     * @throw InvalidArgument  Backlog argument is zero
-     */
-    RpcSrvrImpl(
-            const TcpSrvrSock srvrSock,
-            const bool        iAmPub,
-            const unsigned    maxPendConn)
-        : mutex()
-        , cond()
-        , rpcFactory()
-        , srvrSock(srvrSock)
-        , acceptQ()
-        , iAmPub(iAmPub)
-        , maxPendConn(maxPendConn)
-        , acceptThread()
-    {
-        if (srvrSock.getLclAddr().getInetAddr().isAny())
-            throw INVALID_ARGUMENT("Server's IP address is wildcard");
-        if (maxPendConn == 0)
-            throw INVALID_ARGUMENT("Size of accept-queue is zero");
-
-        srvrSock.listen(3*maxPendConn); // Because 3 TCP connections per P2P connection
-
-        /*
-         * Connections are accepted on a separate thread so that a slow connection attempt won't
-         * hinder faster attempts.
-         */
-        LOG_TRACE("Starting thread to accept incoming connections");
-        acceptThread = Thread(&RpcSrvrImpl::acceptSocks, this);
-        // TODO: Lower priority of thread to favor data transmission
-    }
-
-    /// Implement when needed
-    RpcSrvrImpl(const RpcSrvrImpl& other) =delete;
-    /**
-     * Copy assigns.
-     * @param[in] rhs  The other instance
-     * @return         A reference to this just-assigned instance
-     */
-    RpcSrvrImpl& operator=(const RpcSrvrImpl& rhs) =delete;
-
-    ~RpcSrvrImpl() noexcept {
-        if (acceptThread.joinable()) {
-            ::pthread_cancel(acceptThread.native_handle()); // Failsafe
-            acceptThread.join();
-        }
-    }
-
-    /**
-     * Returns the socket address of the RPC-server.
-     *
-     * @return Socket address of RPC-server
-     */
-    SockAddr getSrvrAddr() const override {
-        return srvrSock.getLclAddr();
-    }
-
-    /**
-     * Returns the next RPC instance.
-     *
-     * @return              Next RPC instance. Will test false if `halt()` has been called.
-     * @throws SystemError  Couldn't accept connection
-     */
-    Rpc::Pimpl accept() override {
-        Lock lock{mutex};
-        cond.wait(lock, [&]{return !acceptQ.empty();});
-
-        auto pImpl = acceptQ.front();
-
-        // Leave "done" sentinel in queue
-        if (pImpl)
-            acceptQ.pop();
-
-        return pImpl;
-    }
-
-    void halt() {
-        srvrSock.shutdown();
-    }
-};
-
-RpcSrvr::Pimpl RpcSrvr::create(
-        const TcpSrvrSock p2pSrvr,
-        const bool        iAmPub,
-        const unsigned    maxPendConn) {
-    return Pimpl{new RpcSrvrImpl{p2pSrvr, iAmPub, maxPendConn}};
-}
-
-RpcSrvr::Pimpl RpcSrvr::create(
-        const SockAddr srvrAddr,
-        const bool     iAmPub,
-        const unsigned maxPendConn) {
-    auto srvrSock = TcpSrvrSock(srvrAddr, maxPendConn);
-    return create(srvrSock, iAmPub, maxPendConn);
+    return Pimpl{new RpcImpl};
 }
 
 } // namespace

@@ -23,6 +23,7 @@
 #define MAIN_P2P_RPC_H_
 
 #include "HycastProto.h"
+#include "Peer.h"
 #include "SockAddr.h"
 
 #include <memory>
@@ -43,8 +44,14 @@ class DataSeg;
 class Rpc
 {
 public:
-    /// Smart pointer to the implementation
+    /// Smart pointer to an implementation
     using Pimpl = std::shared_ptr<Rpc>;
+
+    /**
+     * Creates a new instance.
+     * @return             New instance
+     */
+    static Pimpl create();
 
     /**
      * Creates a new subscriber instance within a timeout. `isClient()` will return true  .
@@ -61,137 +68,32 @@ public:
     virtual ~Rpc() {}
 
     /**
-     * Indicates if this instance was constructed as a client (i.e., by
-     * initiating a connection to a remote RPC-server).
-     *
-     * @retval true     Constructed as a client
-     * @retval false    Constructed by a server
-     */
-    virtual bool isClient() const noexcept =0;
-
-    /**
-     * Returns the identifying local socket address.
-     *
-     * @return Identifying local socket address
-     */
-    virtual SockAddr getLclAddr() const noexcept =0;
-
-    /**
-     * Returns the identifying remote socket address.
-     *
-     * @return  Identifying remote socket address
-     */
-    virtual SockAddr getRmtAddr() const noexcept =0;
-
-    /**
-     * Indicates if the remote peer is the publisher.
-     *
-     * @retval true     Yes
-     * @retval false    No
-     */
-    virtual bool isRmtPub() const noexcept =0;
-
-    /**
-     * TODO
-     * Indicates whether or not sequential delivery of PDU-s is guaranteed. TCP
-     * is sequential, for example, while SCTP doesn't have to be.
-     *
-     * @retval true     Sequential delivery of PDU-s is guaranteed
-     * @retval false    Sequential delivery of PDU-s is not guaranteed
-    virtual bool isSequential() const noexcept =0;
-     */
-
-    /**
-     * Starts this instance. Creates threads on which
-     *   - The sockets are read; and
-     *   - The peer is called.
-     *
-     * @param[in] peer     Peer to be called
-     * @throw LogicError   Already called
-     * @throw LogicError   Remote peer uses unsupported protocol
-     * @throw SystemError  Thread couldn't be created
-     * @see `stop()`
-     */
-    virtual void start(Peer& peer) =0;
-
-    /**
-     * Stops this instance from serving its remote counterpart. Stops calling
-     * the `receive()` functions of the associated peer.
-     *
-     * Idempotent.
-     *
-     * @throw LogicError  Hasn't been started
-     * @see   `start()`
-     */
-    virtual void stop() =0;
-
-    /**
-     * Runs this instance. Doesn't return until `halt()` is called or an internal thread throws an
-     * exception.
-     *
-     * @param[in] peer        Containing peer
-     * @throw LogicException  Instance was previously started
-     * @see `halt()`
-     */
-    virtual void run(Peer& peer) =0;
-
-    /**
-     * Halts this instance. Causes `run()` to return. Doesn't block.
-     *
-     * @throw LogicException  Instance was not started
-     * @see `run()`
-     */
-    virtual void halt() =0;
-
-    /**
-     * Notifies the remote as to whether this local end is a path to the publisher.
-     *
-     * @param[in] amPubPath  Is this end a path to the publisher?
-     * @retval    true       Success
-     * @retval    false      Lost connection
-     */
-    virtual bool notifyAmPubPath(const bool amPubPath) =0;
-
-    /**
-     * Adds a P2P-server to the remote's pool.
-     *
-     * @param[in] srvrAddr  Socket address of peer-server
+     * Adds information on a P2P-server.
+     * @param[in] xprt      Transport on which to send the information
+     * @param[in] srvrInfo  Information on a P2P-server
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool add(const SockAddr srvrAddr) =0;
+    virtual bool add(
+            Xprt&               xprt,
+            const P2pSrvrInfo& srvrInfo) =0;
 
     /**
-     * Adds P2P-servers to the remote's pool.
-     *
-     * @param[in] tracker   Socket addresses of peer-servers
+     * Adds information on P2P-servers.
+     * @param[in] xprt      Transport on which to send the information
+     * @param[in] tracker   Information on P2P-servers
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool add(const Tracker tracker) =0;
-
-    /**
-     * Removes a P2P-server from the remote's pool.
-     *
-     * @param[in] srvrAddr  Socket address of peer-server
-     * @retval    true      Success
-     * @retval    false     Lost connection
-     */
-    virtual bool remove(const SockAddr srvrAddr) =0;
-
-    /**
-     * Removes P2P-servers from the remote's pool.
-     *
-     * @param[in] tracker   Socket addresses of peer-servers
-     * @retval    true      Success
-     * @retval    false     Lost connection
-     */
-    virtual bool remove(const Tracker tracker) =0;
+    virtual bool add(
+            Xprt&          xprt,
+            const Tracker& tracker) =0;
 
     /**
      * Notifies the remote peer about available product information. May
      * block.
      *
+     * @param[in] xprt        Transport on which the notice will be sent
      * @param[in] prodId      Product identifier
      * @retval    true        Success
      * @retval    false       Failure
@@ -199,11 +101,14 @@ public:
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    virtual bool notify(const ProdId prodId) =0;
+    virtual bool notify(
+            Xprt&        xprt,
+            const ProdId prodId) =0;
 
     /**
      * Notifies the remote peer about an available data segment. May block.
      *
+     * @param[in] xprt        Transport on which the notice will be sent
      * @param[in] dataSegId   Identifier of the data segment
      * @retval    true        Success
      * @retval    false       Failure
@@ -211,118 +116,79 @@ public:
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    virtual bool notify(const DataSegId dataSegId) =0;
+    virtual bool notify(
+            Xprt&           xprt,
+            const DataSegId dataSegId) =0;
 
     /**
      * Requests information on a product from the remote peer. May block.
      *
+     * @param[in] xprt      Transport on which the request will be sent
      * @param[in] prodId    Product identifier
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool request(const ProdId prodId) =0;
+    virtual bool request(
+            Xprt&        xprt,
+            const ProdId prodId) =0;
 
     /**
      * Requests a data segment from the remote peer. May block.
      *
+     * @param[in] xprt       Transport on which the request will be sent
      * @param[in] dataSegId  ID of the data segment
      * @retval    true       Success
      * @retval    false      Lost connection
      */
-    virtual bool request(const DataSegId dataSegId) =0;
+    virtual bool request(
+            Xprt&           xprt,
+            const DataSegId dataSegId) =0;
+
+    /**
+     * Requests available but not previously-received products.
+     * @param[in] xprt     Transport on which the set will be sent
+     * @param[in] prodIds  Set of identifiers of previously-received products.
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    virtual bool request(
+            Xprt&            xprt,
+            const ProdIdSet& prodIds) =0;
 
     /**
      * Sends information on a product to the remote peer. May block.
      *
+     * @param[in] xprt      Transport on which the information will be sent
      * @param[in] prodInfo  Product information
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool send(const ProdInfo prodInfo) =0;
+    virtual bool send(
+            Xprt&          xprt,
+            const ProdInfo prodInfo) =0;
 
     /**
      * Sends a data segment to the remote peer. May block.
      *
+     * @param[in] xprt       Transport on which the data-segment will be sent
      * @param[in] dataSeg    The data segment
      * @retval    true       Success
      * @retval    false      Lost connection
      */
-    virtual bool send(const DataSeg dataSeg) =0;
+    virtual bool send(
+            Xprt&         xprt,
+            const DataSeg dataSeg) =0;
 
     /**
-     * Sends identifiers of products to the remote peer.
-     *
-     * @param[in] prodIds  Product identifiers
-     * @return
+     * Processes the next, incoming RPC message.
+     * @param[in] xprt   Transport from which the RPC message will be read
+     * @param[in] peer   Associated peer
+     * @retval    true   Success
+     * @retval    false  Connection lost
      */
-    virtual bool send(const ProdIdSet prodIds) =0;
-};
-
-/******************************************************************************/
-
-/**
- * Interface for an RPC-server.
- */
-class RpcSrvr
-{
-public:
-    /// Smart pointer to the implementation
-    using Pimpl = std::shared_ptr<RpcSrvr>;
-
-    /**
-     * Creates a new instance.
-     *
-     * @param[in] srvrSock     Server socket. Local address must not be the wildcard (i.e., specify
-     *                         any interface).
-     * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @return                 New instance
-     * @throw InvalidArgument  Server's IP address is wildcard
-     * @throw InvalidArgument  Backlog argument is zero
-     */
-    static Pimpl create(
-            const TcpSrvrSock srvrSock,
-            const bool        iAmPub,
-            const unsigned    maxPendConn = 8);
-
-    /**
-     * Creates a new instance.
-     *
-     * @param[in] srvrAddr     Address of server socket. IP address must not be the wildcard (i.e.,
-     *                         specify any interface).
-     * @param[in] iAmPub       Is this instance the publisher?
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @return                 New instance
-     * @throw InvalidArgument  Server's IP address is wildcard
-     * @throw InvalidArgument  Backlog argument is zero
-     */
-    static Pimpl create(
-            const SockAddr srvrAddr,
-            const bool     iAmPub,
-            const unsigned maxPendConn = 8);
-
-    virtual ~RpcSrvr() {};
-
-    /**
-     * Returns the socket address of the RPC server.
-     *
-     * @return Socket address of RPC server
-     */
-    virtual SockAddr getSrvrAddr() const =0;
-
-    /**
-     * Returns a new RPC instance that's connected to a remote RPC client. Blocks until one is
-     * ready.
-     *
-     * @return RPC layer connected to remote RPC client. Will test false if `halt()` has been
-     * called.
-     */
-    virtual Rpc::Pimpl accept() =0;
-
-    /**
-     * Halts the RPC-server.
-     */
-    virtual void halt() =0;
+    virtual bool process(
+            Xprt& xprt,
+            Peer& peer) =0;
 };
 
 } // namespace

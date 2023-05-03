@@ -1,7 +1,15 @@
 @mainpage Hycast Package
 
 @section contents Table of Contents
+- \ref platform
 - \ref sysconfig
+
+<hr>
+
+@section platform Platform Requirements
+
+- An accurate and monotonic system clock( e.g., one that synchronized by ntpd(8) or chronyd(8)).
+- A X/Open (i.e., POSIX) compliant operating system. Linux and MacOS are fine.
 
 <hr>
 

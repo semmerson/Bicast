@@ -215,7 +215,7 @@ public:
 
     void startPublisher(hycast::PeerSet pubPeerSet)
     {
-        PubP2pSrvr peerSrvr{*this, pubAddr};
+        PubPeerSrvr peerSrvr{*this, pubAddr};
         orState(LISTENING);
 
         for (int i = 0; i < NUM_SUBSCRIBERS; ++i) {

@@ -21,6 +21,7 @@
 #include "config.h"
 
 #include "FixedDelayQueue.h"
+#include "Shield.h"
 #include "Thread.h"
 
 #include <chrono>
@@ -126,11 +127,10 @@ public:
     }
 
     /**
-     * Returns the value whose reveal-time is the earliest and not later than
-     * the current time and removes it from the queue. Blocks until such a value
-     * is available.
-     * @return  The value with the earliest reveal-time that's not later than
-     *          the current time.
+     * Returns the value whose reveal-time is the earliest and not later than the current time and
+     * removes it from the queue. Blocks until such a value is available.
+     * @return          The value with the earliest reveal-time that's not later than the current
+     *                  time.
      * @exceptionsafety Basic guarantee
      * @threadsafety    Safe
      */

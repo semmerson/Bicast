@@ -21,6 +21,8 @@
  */
 #include "config.h"
 
+#include "CommonTypes.h"
+
 #include <error.h>
 #include <inttypes.h>
 #include <Socket.h>
@@ -176,12 +178,11 @@ public:
     /**
      * Performs byte-order translation.
      *
-     * @tparam  Type of primitive value to be written
+     * @tparam  Type of unsigned integer to be written
      */
-    template<class TYPE>
-    bool write(TYPE value) {
-        //LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value),
-                //to_string().data());
+    template<class UINT>
+    bool write(UINT value) {
+        //LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value), to_string().data());
         value = hton(value);
         return sock.write(value);
     }
@@ -197,11 +198,71 @@ public:
         static const UINT max = ~static_cast<UINT>(0);
         //LOG_DEBUG("Writing \"%s\" to %s", string.data(), to_string().data());
         if (string.size() > max)
-            throw INVALID_ARGUMENT("String is longer than " +
-                    std::to_string(max) + " bytes");
+            throw INVALID_ARGUMENT("String is longer than " + std::to_string(max) + " bytes");
         const UINT size = static_cast<UINT>(string.size());
         return sock.write(hton(size)) && sock.write(string.data(), size);
     }
+
+    /**
+     * Writes a system time-point.
+     * @param[in] time     The system time-point to be written
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const SysTimePoint& time) {
+        uint64_t secs = SysTimePoint::clock::to_time_t(time);
+        int32_t  usecs = std::chrono::duration_cast<std::chrono::microseconds>(
+            time - SysClock::from_time_t(secs)).count();
+        if (usecs < 0) {
+            --secs;
+            usecs += 1000000;
+        }
+        return write(secs) && write<uint32_t>(*reinterpret_cast<uint32_t*>(&usecs));
+    }
+
+#if 0
+    inline bool operator<<(const uint32_t value) {
+        return sock.write(hton(value));
+    }
+
+    bool operator<<(const int32_t value) {
+        // Using a pointer is necessary to ensure the bit-pattern is unchanged
+        return  *this << *reinterpret_cast<uint32_t*>(&value);
+    }
+
+    inline bool operator>>(uint32_t& value) {
+        if (!sock.read(value))
+            return false;
+        value = ntoh(value);
+        return true;
+    }
+
+    bool operator>>(int32_t& value) {
+        // Using a pointer is necessary to ensure the bit-pattern is unchanged
+        return *this >> *reinterpret_cast<uint32_t*>(&value);
+    }
+
+    inline bool operator<<(const uint64_t value) {
+        return sock.write(hton(value));
+    }
+
+    bool operator<<(const int64_t value) {
+        // Using a pointer is necessary to ensure the bit-pattern is unchanged
+        return  *this << *reinterpret_cast<uint64_t*>(&value);
+    }
+
+    inline bool operator>>(uint64_t& value) {
+        if (!sock.read(value))
+            return false;
+        value = ntoh(value);
+        return true;
+    }
+
+    bool operator>>(int64_t& value) {
+        // Using a pointer is necessary to ensure the bit-pattern is unchanged
+        return *this >> *reinterpret_cast<uint64_t*>(&value);
+    }
+#endif
 
     /**
      * Flushes the underlying socket.
@@ -292,6 +353,24 @@ public:
     }
 
     /**
+     * Reads a system time-point.
+     * @param[in] time     The system time-point to be set
+     * @retval    true     Success. `time` is set.
+     * @retval    false    Lost connection
+     */
+    bool read(SysTimePoint& time) {
+        uint64_t secs;
+        uint32_t usecs;
+
+        const auto success = read(secs) && read(usecs);
+
+        if (success)
+            time = SysTimePoint::clock::from_time_t(secs) + std::chrono::microseconds(usecs);
+
+        return success;
+    }
+
+    /**
      * Clears the underlying socket for the next read. Does nothing for TCP. Deletes the datagram for UDP.
      */
     void clear() {
@@ -359,14 +438,26 @@ bool Xprt::write(const bool         value) const {
 bool Xprt::write(const uint8_t      value) const {
     return pImpl->write(value);
 }
+bool Xprt::write(const int8_t       value) const {
+    return pImpl->write<uint8_t>(*reinterpret_cast<const uint8_t*>(&value));
+}
 bool Xprt::write(const uint16_t     value) const {
     return pImpl->write<uint16_t>(value);
+}
+bool Xprt::write(const int16_t      value) const {
+    return pImpl->write<uint16_t>(*reinterpret_cast<const uint16_t*>(&value));
 }
 bool Xprt::write(const uint32_t     value) const {
     return pImpl->write<uint32_t>(value);
 }
+bool Xprt::write(const int32_t      value) const {
+    return pImpl->write<uint32_t>(*reinterpret_cast<const uint32_t*>(&value));
+}
 bool Xprt::write(const uint64_t     value) const {
     return pImpl->write<uint64_t>(value);
+}
+bool Xprt::write(const int64_t      value) const {
+    return pImpl->write<uint64_t>(*reinterpret_cast<const uint64_t*>(&value));
 }
 template<typename UINT>
 bool Xprt::write(const std::string& string) const {
@@ -376,6 +467,9 @@ template bool Xprt::write<uint8_t >(const std::string& string) const;
 template bool Xprt::write<uint16_t>(const std::string& string) const;
 template bool Xprt::write<uint32_t>(const std::string& string) const;
 template bool Xprt::write<uint64_t>(const std::string& string) const;
+bool Xprt::write(const SysTimePoint& time) const {
+    return pImpl->write(time);
+}
 
 bool Xprt::flush() const {
     return pImpl->flush();
@@ -408,6 +502,9 @@ template bool Xprt::read<uint8_t>(std::string& string) const;
 template bool Xprt::read<uint16_t>(std::string& string) const;
 template bool Xprt::read<uint32_t>(std::string& string) const;
 template bool Xprt::read<uint64_t>(std::string& string) const;
+bool Xprt::read(SysTimePoint& time) const {
+    return pImpl->read(time);
+}
 
 void Xprt::clear() const {
     return pImpl->clear();

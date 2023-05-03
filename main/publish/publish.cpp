@@ -494,24 +494,35 @@ static void servSubscriber(Xprt xprt)
     try {
         // Keep consonant with `subscribe.cpp:createSubNode()`
 
-        SockAddr rmtP2pSrvrAddr;
-        if (rmtP2pSrvrAddr.read(xprt)) {
-            LOG_DEBUG("Received P2P server's address, " + rmtP2pSrvrAddr.to_string() +
-                    ", from subscriber " + xprt.getRmtAddr().to_string());
-            subInfo.tracker.insertBack(rmtP2pSrvrAddr);
-        }
+        bool        lostConnection = true;
+        P2pSrvrInfo subP2pSrvrInfo;
 
-        LOG_INFO("Sending subscription information to subscriber %s",
-                xprt.getRmtAddr().to_string().data());
-        if (!subInfo.write(xprt)) {
-            LOG_DEBUG("Couldn't write subscription information to subscriber %s",
-                    xprt.getRmtAddr().to_string().data());
+        if (subP2pSrvrInfo.read(xprt)) {
+            LOG_DEBUG("Received P2P-server information " + subP2pSrvrInfo.to_string() +
+                    " from subscriber " + xprt.getRmtAddr().to_string());
+
+            LOG_DEBUG("Sending information on P2P-server to subscriber " +
+                    xprt.getRmtAddr().to_string());
+            if (pubNode->getP2pSrvrInfo().write(xprt)) {
+                LOG_INFO("Sending subscription information to subscriber " +
+                        xprt.getRmtAddr().to_string());
+                if (subInfo.write(xprt)) {
+                    lostConnection = false;
+                    /*
+                     * No sense sending information on the subscriber's P2P-server to the
+                     * subscriber
+                     */
+                    subInfo.tracker.insert(subP2pSrvrInfo);
+                }
+            }
         }
+        if (!lostConnection)
+            LOG_WARNING("Lost connection to subscriber " + xprt.getRmtAddr().to_string());
+
         --numSubThreads;
     }
     catch (const std::exception& ex) {
-        LOG_ERROR("Couldn't serve subscriber %s: %s", xprt.getRmtAddr().to_string().data(),
-                ex.what());
+        LOG_ERROR("Couldn't serve subscriber " + xprt.getRmtAddr().to_string() + ": " + ex.what());
         --numSubThreads;
     }
     catch (...) {
@@ -526,8 +537,6 @@ static void runServer()
     try {
         //LOG_DEBUG("Creating listening server");
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
-
-        subInfo.tracker.insertBack(pubNode->getP2pSrvrAddr());
 
         for (;;) {
             numSubThreads.waitToInc();

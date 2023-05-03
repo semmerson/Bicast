@@ -23,6 +23,7 @@
 #ifndef MAIN_INET_XPRT_H_
 #define MAIN_INET_XPRT_H_
 
+#include "CommonTypes.h"
 #include "Socket.h"
 
 #include <memory>
@@ -127,47 +128,83 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const void*        value, size_t nbytes) const;
+    bool write(const void*       value, size_t nbytes) const;
     /**
      * Writes a boolean value.
      * @param[in] value    Value to write
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const bool         value) const;
+    bool write(const bool        value) const;
     /**
      * Writes an unsigned, 8-bit value value.
      * @param[in] value    Value to write
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const uint8_t      value) const;
+    bool write(const uint8_t     value) const;
     /**
-     * Writes an unsigned, 16-bit value value.
+     * Writes an signed, 8-bit value value.
      * @param[in] value    Value to write
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const uint16_t     value) const;
+    bool write(const int8_t      value) const;
     /**
-     * Writes an unsigned, 32-bit value value.
+     * Writes an unsigned, 16-bit value.
      * @param[in] value    Value to write
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const uint32_t     value) const;
+    bool write(const uint16_t    value) const;
+    /**
+     * Writes an signed, 16-bit value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const int16_t     value) const;
+    /**
+     * Writes an unsigned, 32-bit value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const uint32_t    value) const;
+    /**
+     * Writes an signed, 32-bit value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const int32_t     value) const;
     /**
      * Writes an unsigned, 64-bit value value.
      * @param[in] value    Value to write
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(const uint64_t     value) const;
+    bool write(const uint64_t    value) const;
+    /**
+     * Writes an signed, 64-bit value value.
+     * @param[in] value    Value to write
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const int64_t     value) const;
     /**
      * @tparam UINT  Type of serialized, unsigned integer to hold string length
      */
     template<typename UINT = uint32_t> // Default size type
     bool write(const std::string& string) const;
+
+    /**
+     * Writes a system time-point.
+     * @param[in] time     The system time-point to be written
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(const SysTimePoint& time) const;
 
     /// Flushes the output if possible.
     bool flush() const;
@@ -223,6 +260,14 @@ public:
      */
     template<typename UINT = uint32_t>
     bool read(std::string& string) const;
+
+    /**
+     * Reads a system time-point.
+     * @param[in] time     The system time-point to be set
+     * @retval    true     Success. `time` is set.
+     * @retval    false    Lost connection
+     */
+    bool read(SysTimePoint& time) const;
 
     /**
      * Prepares the transport for further input in case the underlying socket

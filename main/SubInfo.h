@@ -41,7 +41,7 @@ struct SubInfo : public XprtAble {
             , srcAddr()
         {}
     }         mcast;       ///< Multicast parameters
-    Tracker   tracker;     ///< Pool of P2P server addresses
+    Tracker   tracker;     ///< Information on potential P2P-servers
     uint32_t  keepTime;    ///< Duration to keep data-products in seconds
      /**
       * Constructs.

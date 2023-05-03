@@ -25,6 +25,7 @@
 #include "FileUtil.h"
 #include "Node.h"
 #include "Parser.h"
+#include "PeerConn.h"
 #include "Shield.h"
 #include "Thread.h"
 #include "ThreadException.h"
@@ -60,7 +61,7 @@ struct RunPar {
         }        srvr;        ///< P2P server runtime parameters
         int      timeout;     ///< Timeout in ms for connecting to remote P2P server
         int      trackerSize; ///< Capacity of tracker object
-        int      maxPeers;    ///< Maximum number of peers to have
+        unsigned maxPeers;    ///< Maximum number of peers to have
         int      evalTime;    ///< Time interval for evaluating peer performance in seconds
         /**
          * Constructs.
@@ -75,7 +76,7 @@ struct RunPar {
                 const int       acceptQSize,
                 const int       timeout,
                 const int       trackerSize,
-                const int       maxPeers,
+                const unsigned  maxPeers,
                 const int       evalTime)
             : srvr(addr, acceptQSize)
             , timeout(timeout)
@@ -127,35 +128,35 @@ static void usage()
 "    " << log_getName() << " -h\n"
 "    " << log_getName() << " [-c <configFile>] [-e <evalTime>] [-l <level>] [-m <maxPeers>]\n"
 "        [-o <maxOpenFiles>] [-q <maxPending>] [-r <repoRoot>] [-t <trackerSize>]\n"
-"        <pubAddr> <p2pAddr>\n"
+"        <pubAddr>:<port> <p2pAddr>[:<port>]\n"
 "where:\n"
-"    -h                Print this help message on standard error, then exit.\n"
+"    -h                 Print this help message on standard error, then exit.\n"
 "\n"
-"    -c <configFile>   Pathname of configuration-file. Overrides previous\n"
-"                      arguments; overridden by subsequent ones.\n"
-"    -d <configFile>   Pathname of configuration-file for disposition of products.\n"
-"                      No local processing if empty string (default)\n"
-"    -e <evalTime>     Peer evaluation duration, in seconds, before replacing\n"
-"                      poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
-"    -l <level>        Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
-"                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
-"                      insensitive and takes effect immediately. Default is\n" <<
-"                      \"" << defRunPar.logLevel << "\".\n"
-"    -m <maxPeers>     Maximum number of connected peers. Default is " << defRunPar.p2p.maxPeers <<
-                       ".\n"
-"    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
-                       defRunPar.repo.maxOpenFiles << ".\n"
-"    -p <timeout>      Timeout, in ms, for connecting to remote P2P server. Default is " <<
-                       defRunPar.p2p.timeout << ".\n"
-"    -q <maxPending>   Maximum number of pending connections to P2P server. Default is " <<
-                       defRunPar.p2p.srvr.maxPendConn << ".\n"
-"    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
-"                      \"" << defRunPar.repo.rootDir << "\".\n"
-"    -t <trackerSize>  Maximum size of the list of remote P2P servers. Default is\n" <<
-"                      " << defRunPar.p2p.trackerSize << ".\n"
+"    -c <configFile>    Pathname of configuration-file. Overrides previous\n"
+"                       arguments; overridden by subsequent ones.\n"
+"    -d <configFile>    Pathname of configuration-file for disposition of products.\n"
+"                       No local processing if empty string (default)\n"
+"    -e <evalTime>      Peer evaluation duration, in seconds, before replacing\n"
+"                       poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
+"    -l <level>         Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
+"                       \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
+"                       insensitive and takes effect immediately. Default is\n" <<
+"                       \"" << defRunPar.logLevel << "\".\n"
+"    -m <maxPeers>      Maximum number of connected peers. Default is " << defRunPar.p2p.maxPeers <<
+                        ".\n"
+"    -o <maxOpenFiles>  Maximum number of open repository files. Default is " <<
+                        defRunPar.repo.maxOpenFiles << ".\n"
+"    -p <timeout>       Timeout, in ms, for connecting to remote P2P server. Default is " <<
+                        defRunPar.p2p.timeout << ".\n"
+"    -q <maxPending>    Maximum number of pending connections to P2P server. Default is " <<
+                        defRunPar.p2p.srvr.maxPendConn << ".\n"
+"    -r <repoRoot>      Pathname of root of publisher's repository. Default is\n"
+"                       \"" << defRunPar.repo.rootDir << "\".\n"
+"    -t <trackerSize>   Maximum size of the list of remote P2P servers. Default is\n" <<
+"                       " << defRunPar.p2p.trackerSize << ".\n"
 "\n"
-"    <pubAddr>         Socket address of the publisher\n"
-"    <p2pAddr>         Internet address for local P2P server\n"
+"    <pubAddr>:<port>   Socket address of the publisher\n"
+"    <p2pAddr>:[<port>] Socket address for local P2P server. Default port chosen by system.\n"
 "\n"
 "SIGUSR2 rotates the logging level.\n";
 }
@@ -183,9 +184,9 @@ static void setFromConfig(const String& pathname)
         if (node1) {
             auto node2 = node1["Server"];
             if (node2) {
-                auto node2 = node1["IfaceAddr"];
+                auto node2 = node1["SockAddr"];
                 if (node2)
-                    runPar.p2p.srvr.addr = SockAddr(node2.as<String>(), 0);
+                    runPar.p2p.srvr.addr = SockAddr(node2.as<String>());
                 Parser::tryDecode<decltype(runPar.p2p.srvr.maxPendConn)>(node2, "QueueSize",
                         runPar.p2p.srvr.maxPendConn);
             }
@@ -372,8 +373,8 @@ static void getCmdPars(
     runPar.pubAddr = SockAddr(argv[optind++]);
 
     if (argv[optind] == nullptr)
-        throw INVALID_ARGUMENT("IP address for local P2P server wasn't specified");
-    runPar.p2p.srvr.addr = SockAddr(argv[optind++], 0);
+        throw INVALID_ARGUMENT("Socket address for local P2P server wasn't specified");
+    runPar.p2p.srvr.addr = SockAddr(argv[optind++]);
 
     if (optind != argc)
         throw INVALID_ARGUMENT("Excess arguments were specified");
@@ -433,46 +434,54 @@ static SubNode::Pimpl createSubNode()
 {
     // Keep consonant with `publish.cpp:servSubscriber()`
 
-    LOG_DEBUG("Creating P2P server's socket");
-    TcpSrvrSock p2pSrvrSock{runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn};
+    LOG_DEBUG("Creating peer-connection server");
+    auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
 
     LOG_NOTE("Connecting to publisher " + runPar.pubAddr.to_string());
     Xprt    xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
 
-    /*
-     * Send the P2P server's socket address to the publisher before creating the subscriber node so
-     * that the socket address can be immediately included in the tracker information sent to
-     * subsequent subscribers.
-     */
-    LOG_DEBUG("Sending P2P server's address, " + p2pSrvrSock.getLclAddr().to_string() +
-            ", to publisher " + runPar.pubAddr.to_string());
-    p2pSrvrSock.getLclAddr().write(xprt);
+    P2pSrvrInfo p2pSrvrInfo{peerConnSrvr->getSrvrAddr(), static_cast<P2pSrvrInfo::Tier>(-1),
+            (runPar.p2p.maxPeers+1)/2, SysClock::now()};
+    LOG_DEBUG("Sending information on P2P server " + peerConnSrvr->getSrvrAddr().to_string() +
+            " to publisher " + runPar.pubAddr.to_string());
 
-    SubInfo subInfo;
-    if (!subInfo.read(xprt))
-        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
-                runPar.pubAddr.to_string());
-    subInfo.tracker.erase(p2pSrvrSock.getLclAddr()); // Ensure absence of our P2P server
-    LOG_INFO("Received subscription information from publisher " +
-            runPar.pubAddr.to_string() + ": #peers=" + std::to_string(subInfo.tracker.size()));
+    bool lostConnection = true;
+    if (p2pSrvrInfo.write(xprt)) {
+        P2pSrvrInfo pubP2pSrvrInfo;
+        if (pubP2pSrvrInfo.read(xprt)) {
+            LOG_INFO("Received information on publisher's P2P server: " +
+                    pubP2pSrvrInfo.to_string());
 
-    DataSeg::setMaxSegSize(subInfo.maxSegSize);
+            SubInfo subInfo;
+            if (subInfo.read(xprt)) {
+                LOG_INFO("Received subscription information from publisher " +
+                        runPar.pubAddr.to_string() + ": #peers=" +
+                        std::to_string(subInfo.tracker.size()));
 
-    // Address family of receiving interface should match that of multicast group
-    if (runPar.mcastIface.isAny()) {
-        // The following doesn't work if the outgoing multicast interface is localhost
-        //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
-        // The following works in that context
-        runPar.mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
-        //LOG_DEBUG("Set interface for multicast reception to " + runPar.mcastIface.to_string());
-    }
+                subInfo.tracker.insert(pubP2pSrvrInfo);
+                DataSeg::setMaxSegSize(subInfo.maxSegSize);
 
-    //LOG_DEBUG("Creating subnode");
-    auto subNode = SubNode::create(subInfo, runPar.mcastIface, p2pSrvrSock,
-            runPar.p2p.srvr.maxPendConn, runPar.p2p.timeout, runPar.p2p.maxPeers,
-            runPar.p2p.evalTime, runPar.repo.rootDir, runPar.repo.maxOpenFiles);
+                // Address family of receiving interface should match that of multicast group
+                if (runPar.mcastIface.isAny()) {
+                    // The following doesn't work if the outgoing multicast interface is localhost
+                    //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
+                    // The following works in that context
+                    runPar.mcastIface =
+                            UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
+                    //LOG_DEBUG("Set interface for multicast reception to " +
+                            //runPar.mcastIface.to_string());
+                }
 
-    return subNode;
+                //LOG_DEBUG("Creating subscribing node");
+                return SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
+                        runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
+                        runPar.repo.maxOpenFiles);
+            } // Received subscription information from publisher
+        } // Received information on publisher's P2P-server
+    } // Sent information on subscriber's P2P-server to publisher
+
+    if (lostConnection)
+        throw RUNTIME_ERROR("Lost connection with publisher " + runPar.pubAddr.to_string());
 }
 
 /**
@@ -515,16 +524,6 @@ static void runNode(SubNode::Pimpl subNode)
     }
 }
 
-std::thread startSubNode(SubNode::Pimpl subNode)
-{
-    try {
-        return std::thread(&runNode, subNode);
-    }
-    catch (const std::exception& ex) {
-        std::throw_with_nested(RUNTIME_ERROR("Couldn't start subscription node"));
-    }
-}
-
 void stopSubNode(
         SubNode::Pimpl subNode,
         std::thread&   nodeThread)
@@ -561,24 +560,44 @@ int main(
         if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-        Disposer disposer{};
-        if (runPar.dispositionFile.size())
-            disposer = Disposer::createFromYaml(runPar.dispositionFile);
+        try {
+            Disposer disposer{};
+            if (runPar.dispositionFile.size())
+                disposer = Disposer::createFromYaml(runPar.dispositionFile);
 
-        auto subNode = createSubNode();
-        auto procThread = startProdProc(subNode, disposer);
-        auto nodeThread = std::thread(&runNode, subNode);
+            auto subNode = createSubNode();
+            auto procThread = startProdProc(subNode, disposer);
 
-        setSigHand(); // Catches termination signals
+            try {
+                auto nodeThread = std::thread(&runNode, subNode);
 
-        ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
-        ::sem_destroy(&stopSem);
+                try {
+                    setSigHand(); // Catches termination signals
 
-        stopSubNode(subNode, std::ref(nodeThread));
-        stopProdProc(std::ref(procThread));
+                    ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
 
-        threadEx.throwIfSet(); // Throws if failure on a thread
-        status = 0;
+                    threadEx.throwIfSet(); // Throws if failure on a thread
+
+                    stopSubNode(subNode, std::ref(nodeThread));
+                    stopProdProc(std::ref(procThread));
+                    ::sem_destroy(&stopSem);
+
+                    status = 0;
+                }
+                catch (const std::exception& ex) {
+                    stopSubNode(subNode, std::ref(nodeThread));
+                    throw;
+                }
+            }
+            catch (const std::exception& ex) {
+                stopProdProc(std::ref(procThread));
+                throw;
+            }
+        }
+        catch (const std::exception& ex) {
+            ::sem_destroy(&stopSem);
+            throw;
+        }
     }
     catch (const std::invalid_argument& ex) {
         LOG_FATAL(ex);

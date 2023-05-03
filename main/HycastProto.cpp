@@ -92,13 +92,13 @@ String Notice::to_string() const {
         return dataSegId.to_string();
     case Id::PROD_INDEX:
         return prodId.to_string();
-    case Id::GOOD_P2P_SRVR:
+    case Id::GOOD_PEER_SRVR:
         return srvrAddr.to_string();
-    case Id::BAD_P2P_SRVR:
+    case Id::BAD_PEER_SRVR:
         return srvrAddr.to_string();
-    case Id::GOOD_P2P_SRVRS:
+    case Id::GOOD_PEER_SRVRS:
         return tracker.to_string();
-    case Id::BAD_P2P_SRVRS:
+    case Id::BAD_PEER_SRVRS:
         return tracker.to_string();
     default:
         return "<unset>";
@@ -287,7 +287,7 @@ void ProdIdSet::clear() const {
     pImpl->clear();
 }
 
-/******************************************************************************/
+/**************************************************************************************************/
 
 /// Product information
 class ProdInfo::Impl
@@ -482,7 +482,27 @@ bool ProdInfo::read(Xprt xprt) {
     return pImpl->read(xprt);
 }
 
+/**************************************************************************************************/
+// P2P server information
 
+String P2pSrvrInfo::to_string() const {
+    return "{addr=" + srvrAddr.to_string() + ", tier=" + std::to_string(tier) +
+            ", unused=" + std::to_string(numAvail) + ", valid=" + std::to_string(valid) + "}";
+}
+
+bool P2pSrvrInfo::write(Xprt xprt) const {
+    return srvrAddr.write(xprt) &&
+            xprt.write(tier) &&
+            xprt.write(numAvail) &&
+            xprt.write(valid);
+}
+
+bool P2pSrvrInfo::read(Xprt xprt) {
+    return srvrAddr.read(xprt) &&
+            xprt.read(tier) &&
+            xprt.read(numAvail) &&
+            xprt.read(valid);
+}
 
 } // namespace
 

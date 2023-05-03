@@ -134,26 +134,26 @@ private:
         }
 
         /**
-         * Returns the value whose reveal-time is the earliest and not later than
-         * the current time and removes it from the queue. Blocks until such a value
-         * is available.
-         * @return  The value with the earliest reveal-time that's not later than
-         *          the current time.
+         * Returns the value whose reveal-time is the earliest and not later than the current time
+         * and removes it from the queue. Blocks until such a value is available.
+         * @return          The value with the earliest reveal-time that's not later than the
+         *                  current time.
          * @exceptionsafety Basic guarantee
          * @threadsafety    Safe
          */
         Value pop()
         {
             std::unique_lock<std::mutex> lock(mutex);
-            while (queue.size() == 0) {
-                Canceler canceler{};
-                cond.wait(lock);
-            }
-            for (const TimePoint time = queue.front().getTime();
-                    time > Clock::now(); ) {
-                Canceler canceler{};
-                cond.wait_until(lock, time);
-            }
+
+            /*
+             * The following appears necessary to ensure that the `wait_until()` always returns at
+             * the correct time.
+             */
+            if (queue.empty())
+                cond.wait(lock, [&]{return !queue.empty();});
+            auto pred = [&] {return queue.front().getTime() > Clock::now();};
+            cond.wait_until(lock, queue.front().getTime(), pred);
+
             Value value = queue.front().getValue();
             queue.pop();
             cond.notify_one();

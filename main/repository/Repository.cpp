@@ -79,8 +79,8 @@ class Repository::Impl
     }
 
     /**
-     * Deletes products that are at least as old as the keep-time. Executed on separate thread.
-     * Calls `setThreadEx()` on exception.
+     * Deletes products that are at least as old as the keep-time. Implemented as a start routine
+     * for a separate thread that's expected to be cancelled. Calls `setThreadEx()` on exception.
      */
     void deleteProds() {
         LOG_DEBUG("Deleting too-old products");
@@ -88,32 +88,35 @@ class Repository::Impl
             /**
              * The following code deletes products on-time regardless of their arrival rate.
              */
-            static const auto endOfTime = SysTimePoint::max();
-            Lock              lock{mutex};
+            auto pred = [&] {
+                return (deleteQueue.top().deleteTime <= SysClock::now());
+            };
+            Lock lock{mutex};
 
-            auto deleteTime = SysTimePoint{deleteQueue.empty()
-                    ? endOfTime
-                    : deleteQueue.top().deleteTime};
+            for (;;) {
+                /*
+                 * The following appears necessary to ensure that processing proceeds as soon as it
+                 * can.
+                 */
+                if (deleteQueue.empty())
+                    cond.wait(lock, [&]{return !deleteQueue.empty();});
+                cond.wait_until(lock, deleteQueue.top().deleteTime, pred);
 
-            for (; ; deleteTime = deleteQueue.empty() ? endOfTime : deleteQueue.top().deleteTime) {
-                if (cond.wait_until(lock, deleteTime, [&] {return (!deleteQueue.empty() &&
-                        deleteQueue.top().deleteTime <= SysClock::now());})) {
-                    // Temporarily disable thread cancellation to protect the following state change
-                    Shield     shield{};
-                    const auto prodId = deleteQueue.top().prodId;
-                    auto       iter = prodEntries.find(ProdEntry{prodId});
+                // Temporarily disable thread cancellation to protect the following state change
+                Shield     shield{};
+                const auto prodId = deleteQueue.top().prodId;
+                auto       iter = prodEntries.find(ProdEntry{prodId});
 
-                    if (iter != prodEntries.end()) {
-                        auto& prodFile = iter->prodFile;
-                        /*
-                         * The product-file isn't closed in order to allow concurrent access to the
-                         * data-product by the node for transmission or local processing.
-                         */
-                        FileUtil::removeFileAndPrune(absPathRoot, prodFile.getPathname());
-                        openProds.erase(prodId);
-                        prodEntries.erase(iter);
-                        deleteQueue.pop();
-                    }
+                if (iter != prodEntries.end()) {
+                    auto& prodFile = iter->prodFile;
+                    /*
+                     * The product-file isn't closed in order to allow concurrent access to the
+                     * data-product by the node for transmission or local processing.
+                     */
+                    FileUtil::removeFileAndPrune(absPathRoot, prodFile.getPathname());
+                    openProds.erase(prodId);
+                    prodEntries.erase(iter);
+                    deleteQueue.pop();
                 }
             }
         }

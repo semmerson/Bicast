@@ -19,13 +19,12 @@
  * limitations under the License.
  */
 
-#ifndef MAIN_PROTO_HYCASTPROTO_H_
-#define MAIN_PROTO_HYCASTPROTO_H_
+#ifndef MAIN_HYCASTPROTO_H_
+#define MAIN_HYCASTPROTO_H_
 
 #include "CommonTypes.h"
 #include "error.h"
 #include "Socket.h"
-#include "Tracker.h"
 #include "Xprt.h"
 
 #include <cstdint>
@@ -59,22 +58,24 @@ public:
     /// Types of protocol data units
     enum id : Type {
         UNSET,
-        PROTOCOL_VERSION,  ///< Protocol version
-        IS_PUBLISHER,      ///< Is the peer the publisher?
-        AM_PUB_PATH,       ///< The peer has a path to the publisher
-        AM_NOT_PUB_PATH,   ///< The peer does not have a path to the publisher
-        GOOD_P2P_SRVR,     ///< Here's a good P2P server
-        GOOD_P2P_SRVRS,    ///< Here are good P2P servers
-        BAD_P2P_SRVR,      ///< Here's a bad P2P server
-        BAD_P2P_SRVRS,     ///< Here are bad P2P servers
-        PUB_PATH_NOTICE,   ///< Does the peer have a path to the publisher?
-        PROD_INFO_NOTICE,  ///< Here's a notice about available information on a data product
-        DATA_SEG_NOTICE,   ///< Here's a notice about an available data segment
-        BACKLOG_REQUEST,   ///< Request for anything missed since the end of the previous session
-        PROD_INFO_REQUEST, ///< Request for product information
-        DATA_SEG_REQUEST,  ///< Request for a data segment
-        PROD_INFO,         ///< Product information
-        DATA_SEG,          ///< Data segment
+        PROTOCOL_VERSION,    ///< Protocol version
+        PEER_SRVR_INFO,      ///< Information on a P2P-server
+        PEER_SRVR_INFOS,     ///< Information on P2P-servers
+        IS_PUBLISHER,        ///< Is the peer the publisher?
+        AM_PUB_PATH,         ///< The peer has a path to the publisher
+        AM_NOT_PUB_PATH,     ///< The peer does not have a path to the publisher
+        GOOD_PEER_SRVR,      ///< Here's a good P2P-server
+        GOOD_PEER_SRVRS,     ///< Here are good P2P-servers
+        BAD_PEER_SRVR,       ///< Here's a bad P2P-server
+        BAD_PEER_SRVRS,      ///< Here are bad P2P-servers
+        PUB_PATH_NOTICE,     ///< Does the peer have a path to the publisher?
+        PROD_INFO_NOTICE,    ///< Here's a notice about available information on a data product
+        DATA_SEG_NOTICE,     ///< Here's a notice about an available data segment
+        PREVIOUSLY_RECEIVED, ///< Prevously-received products
+        PROD_INFO_REQUEST,   ///< Request for product information
+        DATA_SEG_REQUEST,    ///< Request for a data segment
+        PROD_INFO,           ///< Product information
+        DATA_SEG,            ///< Data segment
         MAX_PDU_ID = DATA_SEG
     };
 
@@ -725,6 +726,177 @@ public:
 
 /******************************************************************************/
 
+/// Tracking information on a peer-to-peer server
+struct P2pSrvrInfo final : public XprtAble {
+    using Tier     = uint16_t; ///< Number of hops to the publisher
+    using NumAvail = uint16_t; ///< Number of server-side peers available
+
+    SysTimePoint valid;    ///< When this information was valid
+    SockAddr     srvrAddr; ///< Socket address of the server
+    Tier         tier;     ///< Minimum number of hops to the publisher (publisher is 0)
+    NumAvail     numAvail; ///< Number of unused, server-side connections available
+
+    /**
+     * Constructs.
+     * @param[in] srvrAddr  Socket address of the P2P-server
+     * @param[in] tier      Minimum number of hops in the P2P network to the publisher
+     * @param[in] numAvail  Number of available server-side connections
+     * @param[in] valid     Time when this information was valid
+     */
+    P2pSrvrInfo(
+            const SockAddr      srvrAddr,
+            const unsigned      tier,
+            const unsigned      numAvail,
+            const SysTimePoint& valid)
+        : valid(valid)
+        , srvrAddr(srvrAddr)
+        , tier(static_cast<Tier>(tier))
+        , numAvail(static_cast<NumAvail>(numAvail))
+    {
+        LOG_ASSERT(tier >= 0 && tier <= ~static_cast<Tier>(0));
+        LOG_ASSERT(numAvail >= 0 && numAvail <= ~static_cast<NumAvail>(0));
+    }
+
+    /**
+     * Default constructs.
+     */
+    P2pSrvrInfo()
+        : valid(SysClock::now())
+        , srvrAddr()
+        , tier(-1)
+        , numAvail(0)
+    {}
+
+    /**
+     * Returns a string representation of this instance.
+     * @return String representation of this instance
+     */
+    String to_string() const;
+
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(Xprt xprt) const;
+
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool read(Xprt xprt);
+};
+
+/******************************************************************************/
+
+/**
+ * Tracks available P2P-servers.
+ */
+class Tracker final : public XprtAble
+{
+    class                 Impl;
+    std::shared_ptr<Impl> pImpl;
+
+public:
+    /**
+     * Constructs. The list will be empty.
+     *
+     * @param[in] capacity  Capacity in socket addresses.
+     * @param[in] delay     Minimum delay before re-making available the P2P-server associated with
+     *                      a peer
+     */
+    explicit Tracker(
+            const size_t       capacity = 1000,
+            const SysDuration& delay = std::chrono::minutes(5));
+
+    /**
+     * Returns the string representation of this instance.
+     * @return The string representation of this instance
+     */
+    std::string to_string() const;
+
+    /**
+     * Returns the number of entries.
+     * @return The number of entries
+     */
+    size_t size() const;
+
+    /**
+     * Tries to insert information on a P2P-server. If the server's address doesn't exist, then the
+     * information is inserted; otherwise, the existing information is updated if the given
+     * information is better. If the capacity is exceeded, then the worst entry is deleted.
+     *
+     * @param[in] srvrInfo  Information on a P2P-server
+     * @retval    true      Success. New information inserted or updated.
+     * @retval    false     More recent server information exists. No insertion.
+     * @exceptionsafety     Strong guarantee
+     * @threadsafety        Safe
+     */
+    bool insert(const P2pSrvrInfo& srvrInfo) const;
+
+    /**
+     * Inserts the entries from another instance.
+     * @param[in] tracker  The other instance
+     */
+    void insert(const Tracker tracker) const;
+
+    /**
+     * Removes the entry associated with a P2P-server's address.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void erase(const SockAddr peerSrvrAddr);
+
+    /**
+     * Removes the information associated with the P2P-servers contained in another instance.
+     * @param tracker  The other instance
+     */
+    void erase(const Tracker tracker);
+
+    /**
+     * Removes and returns the address of the next P2P-server to try.
+     * @return The address of the next P2P-server to try.
+     */
+    SockAddr getNext() const;
+
+    /**
+     * Handles a P2P-server that's offline.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void offline(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Handles a peer disconnecting.
+     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     */
+    void disconnected(const SockAddr peerSrvrAddr) const;
+
+    /**
+     * Causes `remove()` to always return a socket address that tests false. Idempotent.
+     */
+    void halt() const;
+
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool write(Xprt xprt) const;
+
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
+    bool read(Xprt xprt);
+};
+
+/******************************************************************************/
+
 /**
  * Class for both notices and requests sent to a remote peer. It exists so that such entities can be
  * handled as a single object for the purpose of argument passing and container element.
@@ -736,19 +908,22 @@ public:
     enum class Id {
         UNSET,
         AM_PUB_PATH,
-        GOOD_P2P_SRVR,
-        GOOD_P2P_SRVRS,
-        BAD_P2P_SRVR,
-        BAD_P2P_SRVRS,
+        PEER_SRVR_INFO,
+        PEER_SRVR_INFOS,
+        GOOD_PEER_SRVR,
+        GOOD_PEER_SRVRS,
+        BAD_PEER_SRVR,
+        BAD_PEER_SRVRS,
         PROD_INDEX,
         DATA_SEG_ID
     } id; ///< Identifier of the type of notice
     union {
-        bool      amPubPath;
-        SockAddr  srvrAddr;
-        Tracker   tracker;
-        ProdId    prodId;
-        DataSegId dataSegId;
+        bool         amPubPath;
+        P2pSrvrInfo srvrInfo;
+        SockAddr     srvrAddr;
+        Tracker      tracker;
+        ProdId       prodId;
+        DataSegId    dataSegId;
     };
 
     Notice() noexcept
@@ -766,22 +941,31 @@ public:
     {}
 
     /**
-     * Constructs a notice about a P2P server address.
-     * @param[in] srvrAddr  The P2P server address
+     * Constructs a notice about a P2P-server.
+     * @param[in] srvrInfo  The P2P-server's information
+     */
+    explicit Notice(const P2pSrvrInfo& srvrInfo) noexcept
+        : id(Id::PEER_SRVR_INFO)
+        , srvrInfo(srvrInfo)
+    {}
+
+    /**
+     * Constructs a notice about a P2P-server address.
+     * @param[in] srvrAddr  The P2P-server address
      * @param[in] isGood    Is the address a good one?
      */
     explicit Notice(const SockAddr srvrAddr, const bool isGood = true) noexcept
-        : id(isGood ? Id::GOOD_P2P_SRVR : Id::BAD_P2P_SRVR)
+        : id(isGood ? Id::GOOD_PEER_SRVR : Id::BAD_PEER_SRVR)
         , srvrAddr(srvrAddr)
     {}
 
     /**
      * Constructs.
      * @param[in] tracker  The tracker to be in the notice
-     * @param[in] isGood   Are the P2P server socket addresses good?
+     * @param[in] isGood   Are the P2P-server socket addresses good?
      */
     explicit Notice(const Tracker tracker, const bool isGood = true) noexcept
-        : id(isGood ? Id::GOOD_P2P_SRVRS : Id::BAD_P2P_SRVRS)
+        : id(isGood ? Id::GOOD_PEER_SRVRS : Id::BAD_PEER_SRVRS)
         , tracker(tracker)
     {}
 
@@ -981,8 +1165,6 @@ public:
     virtual void recvMcast(const DataSeg dataSeg) =0;
 };
 
-class Peer;
-
 } // namespace
 
 namespace std {
@@ -996,4 +1178,4 @@ namespace std {
     };
 }
 
-#endif /* MAIN_PROTO_HYCASTPROTO_H_ */
+#endif /* MAIN_HYCASTPROTO_H_ */

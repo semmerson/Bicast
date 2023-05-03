@@ -4,6 +4,7 @@ add_library(p2p OBJECT
         Tracker.cpp       Tracker.h
         Rpc.cpp           Rpc.h
         Peer.cpp          Peer.h
+        PeerConn.cpp      PeerConn.h
         Bookkeeper.cpp    Bookkeeper.h
         P2pMgr.cpp        P2pMgr.h
 )

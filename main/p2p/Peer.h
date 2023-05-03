@@ -25,9 +25,8 @@
 
 #include "HycastProto.h"
 #include "P2pMgr.h"
-#include "Rpc.h"
+#include "PeerConn.h"
 #include "Socket.h"
-#include "Tracker.h"
 
 #include <memory>
 
@@ -47,28 +46,28 @@ public:
      * Publisher's server-side construction.
      *
      * @param[in] p2pMgr  Publisher's P2P manager
-     * @param[in] rpc     RPC instance
+     * @param[in] conn    Connection with remote peer
      */
     static Pimpl create(
-            PubP2pMgr& p2pMgr,
-            Rpc::Pimpl rpc);
+            PubP2pMgr&      p2pMgr,
+            PeerConn::Pimpl conn);
 
     /**
      * Subscriber's client- & server-side construction.
      *
-     * @param[in] p2pMgr       Subscriber's P2P manager
-     * @param[in] rpc          RPC instance
-     */
+     * @param[in] p2pMgr  Subscriber's P2P manager
+     * @param[in] conn    Connection with remote peer
     static Pimpl create(
-            SubP2pMgr& p2pMgr,
-            Rpc::Pimpl rpc);
+            SubP2pMgr&      p2pMgr,
+            PeerConn::Pimpl conn);
+     */
 
     /**
      * Subscriber's client-side construction. The resulting peer is fully connected and ready for
      * `start()` to be called.
      *
      * @param[in] p2pMgr        Subscriber's P2P manager
-     * @param[in] srvrAddr      Address of remote peer-server
+     * @param[in] srvrAddr      Address of remote P2P-server
      * @throw     LogicError    Destination port number is zero
      * @throw     SystemError   Couldn't connect. Bad failure.
      * @throw     RuntimeError  Couldn't connect. Might be temporary.
@@ -82,36 +81,12 @@ public:
     {}
 
     /**
-     * Indicates if this instance was constructed as a client.
+     * Indicates if this instance was constructed as a client (i.e., it initiated the connection).
      *
      * @retval true     Constructed as a client
      * @retval false    Constructed by a server
      */
     virtual bool isClient() const noexcept =0;
-
-    /**
-     * Indicates if this instance is the publisher.
-     *
-     * @retval true     Instance is publisher
-     * @retval false    Instance is not publisher
-     */
-    virtual bool isPub() const noexcept =0;
-
-    /**
-     * Indicates if the remote peer is the publisher.
-     *
-     * @retval true     Remote peer is publisher
-     * @retval false    Remote peer is not publisher
-     */
-    virtual bool isRmtPub() const noexcept =0;
-
-    /**
-     * Indicates if the remote node is a path to the publisher.
-     *
-     * @retval true     Remote node is a path to the publisher
-     * @retval false    Remote node isn't a path to the publisher
-     */
-    virtual bool isRmtPathToPub() const noexcept =0;
 
     /**
      * Returns the socket address of the local peer.
@@ -122,11 +97,18 @@ public:
 
     /**
      * Returns the socket address of the remote peer. This will be the socket address of the remote
-     * P2P server iff this peer was constructed client-side (i.e., initiated the connection).
+     * P2P-server iff this peer was constructed client-side (i.e., initiated the connection).
      *
      * @return Socket address of remote peer
      */
     virtual SockAddr getRmtAddr() const noexcept =0;
+
+    /**
+     * Indicates if the remote peer is a publisher (and not a subscriber).
+     * @retval true   The remote peer is a publisher
+     * @retval false  The remote peer is not a publisher
+     */
+    virtual bool isRmtPub() const noexcept =0;
 
     /**
      * Returns the hash code of this instance.
@@ -190,30 +172,17 @@ public:
     virtual void notifyHavePubPath(const bool havePubPath) =0;
 
     /**
-     * Tells the remote peer to add a potential peer-server.
+     * Tells the remote peer to add a potential P2P-server.
      *
-     * @param[in] p2pSrvr  Peer-server to add
+     * @param[in] srvrInfo  Information on the P2P-server to be added
      */
-    virtual void add(const SockAddr p2pSrvr) =0;
+    virtual void add(const P2pSrvrInfo& srvrInfo) =0;
     /**
-     * Tells the remote peer to add some potential peer-servers.
+     * Tells the remote peer to add some potential P2P-servers.
      *
-     * @param[in] tracker  Peer-servers to add
+     * @param[in] tracker  P2P-servers to add
      */
-    virtual void add(const Tracker  tracker) =0;
-
-    /**
-     * Tells the remote peer to remove a potential peer-server.
-     *
-     * @param[in] p2pSrvr  Peer-server to remove
-     */
-    virtual void remove(const SockAddr p2pSrvr) =0;
-    /**
-     * Tells the remote peer to remove some potential peer-servers.
-     *
-     * @param[in] tracker  Peer-servers to remove
-     */
-    virtual void remove(const Tracker tracker) =0;
+    virtual void add(const Tracker& tracker) =0;
 
     /**
      * Notifies the remote peer about available data.
@@ -228,13 +197,6 @@ public:
      * @param[in] dataSegId  ID of the data segment
      */
     virtual void notify(const DataSegId dataSegId) =0;
-
-    /**
-     * Receives notification as to whether the remote node has a path to the publisher.
-     *
-     * @param[in] hasPubPath  Does the remote node have a path to the publisher?
-     */
-    virtual void recvHavePubPath(const bool hasPubPath) =0;
 
     /**
      * Receives the set of product-identifiers that the remote peer has for determination of the
@@ -262,38 +224,21 @@ public:
     virtual void request(const DataSegId& segId) =0;
 
     /**
-     * Receives notification to add a potential peer-server.
+     * Receives notification to add a potential P2P-server.
      *
-     * @param[in] p2pSrvr  Potential peer-server to add
-     * @retval    true     Success
-     * @retval    false    EOF
+     * @param[in] srvrInfo  Potential P2P-server to add
+     * @retval    true      Success
+     * @retval    false     EOF
      */
-    virtual void recvAdd(const SockAddr p2pSrvr) =0;
+    virtual void recvAdd(const P2pSrvrInfo& srvrInfo) =0;
     /**
-     * Receives notification to add potential peer-servers.
+     * Receives notification to add potential P2P-servers.
      *
-     * @param[in] tracker  Potential peer-servers to add
+     * @param[in] tracker  Potential P2P-servers to add
      * @retval    true     Success
      * @retval    false    EOF
      */
     virtual void recvAdd(const Tracker tracker) =0;
-
-    /**
-     * Receives notification to remove a potential peer-server.
-     *
-     * @param[in] p2pSrvr  Potential peer-server to remove
-     * @retval    true     Success
-     * @retval    false    EOF
-     */
-    virtual void recvRemove(const SockAddr p2pSrvr) =0;
-    /**
-     * Receives notification to remove potential peer-servers.
-     *
-     * @param[in] tracker  Potential peer-servers to remove
-     * @retval    true     Success
-     * @retval    false    EOF
-     */
-    virtual void recvRemove(const Tracker tracker) =0;
 
     /**
      * Receives notification of available product-information.
@@ -368,27 +313,26 @@ public:
 
     /**
      * Returns a smart pointer to an instance.
-     * @param[in] srvrSock     Server socket
+     * @param[in] srvrAddr     Socket address for the server to use. Must not be the wildcard. A
+     *                         port number of 0 obtains a system chosen one.
      * @param[in] maxPendConn  Maximum number of pending connections
      * @throw InvalidArgument  Accept-queue size is zero
      */
     static Pimpl create(
-            const TcpSrvrSock srvrSock,
-            const unsigned    maxPendConn);
+            const SockAddr srvrAddr,
+            const unsigned maxPendConn);
 
     /**
      * Returns a smart pointer to an instance.
-     * @throw InvalidArgument  Accept-queue size is zero
+     * @param[in] peerConnSrvr  Peer-connection server
      */
-    static Pimpl create(
-            const SockAddr srvrAddr,
-            const unsigned acceptQSize);
+    static Pimpl create(const PeerConnSrvr::Pimpl peerConnSrvr);
 
     virtual ~P2pSrvr() {};
 
     /**
-     * Returns the socket address of the P2P server.
-     * @return The socket address of the P2P server
+     * Returns the socket address of the P2P-server.
+     * @return The socket address of the P2P-server
      */
     virtual SockAddr getSrvrAddr() const =0;
 
@@ -400,13 +344,14 @@ public:
     virtual Peer::Pimpl accept(P2P_MGR& p2pMgr) =0;
 
     /**
-     * Halts the peer-server.
+     * Causes `accept()` to return a false object.
+     * @see accept()
      */
     virtual void halt() =0;
 };
 
-using PubP2pSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P server
-using SubP2pSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P server
+using PubPeerSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P-server
+using SubPeerSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P-server
 
 } // namespace
 
