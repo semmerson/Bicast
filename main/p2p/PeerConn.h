@@ -32,7 +32,8 @@
 
 namespace hycast {
 
-class Peer;
+class Peer;                              ///< Forward declaration
+using PeerPimpl = std::shared_ptr<Peer>; ///< Smart pointer to a peer
 
 /// Interface for the connection between a local and remote peer.
 class PeerConn
@@ -84,16 +85,21 @@ public:
     virtual String to_string() const =0;
 
     /**
+     * Sets the peer to be associated with this instance.
+     * @param[in] peer  The associated peer
+     */
+    virtual void setPeer(PeerPimpl& peer) noexcept =0;
+
+    /**
      * Runs this instance. Doesn't return until
      *   - The connection is lost;
      *   - An error occurs; or
      *   - `halt()` * is called.
-     * @param[in] peer         The peer to be associated with this instance
      * @throw InvalidArgument  Null pointer
      * @throw LogicError       This function already called
      * @see halt()
      */
-    virtual void run(Peer& peer) =0;
+    virtual void run() =0;
 
     /**
      * Causes `run()` to return. Doesn't block.

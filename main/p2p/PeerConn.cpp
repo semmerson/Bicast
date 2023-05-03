@@ -62,6 +62,7 @@ class PeerConnImpl : public PeerConn
     Thread             noticeReader;  ///< For receiving notices
     Thread             dataReader;    ///< For receiving data
     Rpc::Pimpl         rpc;           ///< Remote procedure call object
+    Peer::Pimpl        peer;          ///< Associated peer
 
     static void asyncConnectXprt(
             const SockAddr& srvrAddr,
@@ -203,15 +204,12 @@ class PeerConnImpl : public PeerConn
      * thread.
      *
      * @param[in] xprt   Transport
-     * @param[in] peer   Associated peer
      */
-    void runReader(
-            Xprt& xprt,
-            Peer& peer) {
+    void runReader(Xprt& xprt) {
         // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
-            while (rpc->process(xprt, peer))
+            while (rpc->process(xprt, *peer.get()))
                 ;
             // Connection lost
             ::sem_post(&stopSem);
@@ -225,14 +223,13 @@ class PeerConnImpl : public PeerConn
 
     /**
      * Starts the internal threads.
-     * @param[in] peer  Associated peer
      */
-    void startThreads(Peer& peer) {
-        noticeReader = Thread(&PeerConnImpl::runReader, this, noticeXprt, peer);
+    void startThreads() {
+        noticeReader = Thread(&PeerConnImpl::runReader, this, std::ref(noticeXprt));
         try {
-            requestReader = Thread(&PeerConnImpl::runReader, this, requestXprt, peer);
+            requestReader = Thread(&PeerConnImpl::runReader, this, std::ref(requestXprt));
             try {
-                dataReader = Thread(&PeerConnImpl::runReader, this, dataXprt, peer);
+                dataReader = Thread(&PeerConnImpl::runReader, this, std::ref(dataXprt));
             }
             catch (const std::exception& ex) {
                 requestXprt.shutdown();
@@ -276,6 +273,7 @@ class PeerConnImpl : public PeerConn
         , noticeReader()
         , dataReader()
         , rpc(Rpc::create())
+        , peer()
     {}
 
 public:
@@ -331,13 +329,17 @@ public:
         return "{lcl=" + lclSockAddr.to_string() + ", rmt=" + rmtSockAddr.to_string() + "}";
     }
 
-    void run(Peer& peer) override {
-        if (!peer.getLclAddr())
-            throw INVALID_ARGUMENT("Null peer");
+    void setPeer(Peer::Pimpl& peer) noexcept override {
+        LOG_ASSERT(!this->peer);
+
+        this->peer = peer;
+    }
+
+    void run() override {
         if (dataReader.joinable() || requestReader.joinable() || noticeReader.joinable())
             throw LOGIC_ERROR("Peer-connection already started");
 
-        startThreads(peer);
+        startThreads();
         ::sem_wait(&stopSem); // Blocks until connection lost, `halt()` called or `threadEx` set
         stopThreads();
         threadEx.throwIfSet();
@@ -397,8 +399,7 @@ PeerConn::Pimpl PeerConn::create(
         const SockAddr& srvrAddr,
         const int       timeout)
 {
-    auto conn = new PeerConnImpl(srvrAddr, timeout);
-    return PeerConn::Pimpl(conn);
+    return PeerConn::Pimpl{new PeerConnImpl(srvrAddr, timeout)};
 }
 
 /**************************************************************************************************/

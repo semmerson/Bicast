@@ -176,7 +176,7 @@ protected:
      */
     void runConn() {
         try {
-            peerConn->run(*this);
+            peerConn->run();
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
@@ -965,14 +965,6 @@ public:
     }
 };
 
-#if 0
-Peer::Pimpl Peer::create(
-        SubP2pMgr&      p2pMgr,
-        PeerConn::Pimpl conn) {
-    return Pimpl{new SubPeerImpl{p2pMgr, conn}};
-}
-#endif
-
 Peer::Pimpl Peer::create(
         SubP2pMgr&     p2pMgr,
         const SockAddr srvrAddr) {
@@ -980,7 +972,6 @@ Peer::Pimpl Peer::create(
     auto pImpl = Pimpl{new SubPeerImpl{p2pMgr, conn}};
     conn->setPeer(pImpl);
     return pImpl;
-    //return create(p2pMgr, PeerConn::create(srvrAddr));
 }
 
 /******************************************************************************/

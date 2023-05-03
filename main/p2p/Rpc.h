@@ -48,13 +48,13 @@ public:
     using Pimpl = std::shared_ptr<Rpc>;
 
     /**
-     * Creates a new instance.
-     * @return             New instance
+     * Creates a default instance.
+     * @return A default instance
      */
     static Pimpl create();
 
     /**
-     * Creates a new subscriber instance within a timeout. `isClient()` will return true  .
+     * Creates a new subscriber instance within a timeout. `isClient()` will return true.
      *
      * @param[in] srvrAddr Socket address of remote RPC server
      * @param[in] timeout  Timeout in ms. <=0 => System's default timeout.
@@ -65,6 +65,7 @@ public:
             const SockAddr srvrAddr,
             const int      timeout = -1);
 
+    /// Destroys.
     virtual ~Rpc() {}
 
     /**

@@ -382,6 +382,10 @@ public:
     }
 };
 
+Rpc::Pimpl Rpc::create() {
+    return Pimpl{};
+}
+
 Rpc::Pimpl Rpc::create(
         const SockAddr srvrAddr,
         const int      timeout) {

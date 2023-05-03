@@ -53,16 +53,6 @@ public:
             PeerConn::Pimpl conn);
 
     /**
-     * Subscriber's client- & server-side construction.
-     *
-     * @param[in] p2pMgr  Subscriber's P2P manager
-     * @param[in] conn    Connection with remote peer
-    static Pimpl create(
-            SubP2pMgr&      p2pMgr,
-            PeerConn::Pimpl conn);
-     */
-
-    /**
      * Subscriber's client-side construction. The resulting peer is fully connected and ready for
      * `start()` to be called.
      *
