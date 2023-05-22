@@ -85,21 +85,25 @@ public:
     virtual String to_string() const =0;
 
     /**
-     * Sets the peer to be associated with this instance.
-     * @param[in] peer  The associated peer
+     * Sends information on the local P2P-server to the remote peer.
+     *
+     * @param[in] srvrInfo  Information on the local P2P-server
+     * @retval    true      Success
+     * @retval    false     Lost connection
      */
-    virtual void setPeer(PeerPimpl& peer) noexcept =0;
+    virtual bool setRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
 
     /**
      * Runs this instance. Doesn't return until
      *   - The connection is lost;
      *   - An error occurs; or
      *   - `halt()` * is called.
+     * @param[in] peer         Peer to call for incoming messages
      * @throw InvalidArgument  Null pointer
      * @throw LogicError       This function already called
      * @see halt()
      */
-    virtual void run() =0;
+    virtual void run(Peer& peer) =0;
 
     /**
      * Causes `run()` to return. Doesn't block.
@@ -109,13 +113,13 @@ public:
     virtual void halt() =0;
 
     /**
-     * Adds information about a P2P-server to the remote's tracker.
-     *
-     * @param[in] srvrInfo  Information on the P2P-server
-     * @retval    true      Success
-     * @retval    false     Lost connection
+     * Processes the next incoming message by using RPC dispatching. Should not execute in
+     * conjunction with `run()`.
+     * @param[in] peer  Peer to call for incoming messages
+     * @retval true     Success
+     * @retval false    Lost connection
      */
-    virtual bool add(const P2pSrvrInfo& srvrInfo) =0;
+    virtual bool processMsg(Peer& peer) =0;
 
     /**
      * Adds P2P-servers to the remote's tracker.
@@ -197,8 +201,8 @@ public:
 
 /**
  * Interface for a peer-connection server. Such a server returns server-side peer-connections (i.e.,
- * connections resulting from a remote, client-side peer-connection). Such connections may be for
- * both the publisher and subscribers.
+ * connections resulting from remote, client-side peer-connections). Both the publisher and
+ * subscribers use such connections.
  */
 class PeerConnSrvr
 {

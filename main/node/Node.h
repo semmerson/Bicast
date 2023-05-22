@@ -255,34 +255,6 @@ public:
      *
      * @param[in] subInfo       Subscription information
      * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
-     *                          wildcard. If the port number is zero, then then O/S will choose an
-     *                          ephemeral port number.
-     * @param[in] acceptQSize   Size of `RpcSrvr::accept()` queue. Don't use 0.
-     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
-     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] repoDir       Pathname of root directory of data-product repository
-     * @param[in] maxOpenFiles  Maximum number of open files in repository
-     * @throw     LogicError    IP address families of multicast group address and multicast
-     *                          interface don't match
-     */
-    static Pimpl create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const SockAddr    p2pSrvrAddr,
-            const int         acceptQSize,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles);
-
-    /**
-     * Returns a new instance.
-     *
-     * @param[in] subInfo       Subscription information
-     * @param[in] mcastIface    IP address of interface to receive multicast on
      * @param[in] peerConnSrvr  Peer-connection server
      * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
@@ -301,6 +273,34 @@ public:
             const unsigned          evalTime,
             const String&           repoDir,
             const long              maxOpenFiles);
+
+    /**
+     * Returns a new instance.
+     *
+     * @param[in] subInfo       Subscription information
+     * @param[in] mcastIface    IP address of interface to receive multicast on
+     * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
+     *                          wildcard. If the port number is zero, then then O/S will choose an
+     *                          ephemeral port number.
+     * @param[in] maxPendConn   Maximum number of pending peer connections. Don't use 0.
+     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
+     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @throw     LogicError    IP address families of multicast group address and multicast
+     *                          interface don't match
+     */
+    static Pimpl create(
+            SubInfo&          subInfo,
+            const InetAddr    mcastIface,
+            const SockAddr    p2pSrvrAddr,
+            const int         maxPendConn,
+            const int         timeout,
+            const unsigned    maxPeers,
+            const unsigned    evalTime,
+            const String&     repoDir,
+            const long        maxOpenFiles);
 
     /**
      * Destroys.

@@ -1,6 +1,6 @@
 /**
- * This file declares the Peer class. The Peer class handles low-level,
- * bidirectional messaging with its remote counterpart.
+ * This file declares the Peer class. A peer handles low-level, asynchronous, bidirectional
+ * messaging with its remote counterpart.
  *
  *  @file:  Peer.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -33,8 +33,7 @@
 namespace hycast {
 
 /**
- * Interface for handling low-level, asynchronous, bidirectional messaging with a remote
- * counterpart.
+ * Interface for a peer.
  */
 class Peer
 {
@@ -45,8 +44,10 @@ public:
     /**
      * Publisher's server-side construction.
      *
-     * @param[in] p2pMgr  Publisher's P2P manager
-     * @param[in] conn    Connection with remote peer
+     * @param[in] p2pMgr           Publisher's P2P manager
+     * @param[in] conn             Connection with remote peer
+     * @throw     InvalidArgument  Information on remote peer's P2P-server is invalid
+     * @throw     InvalidArgument  Remote peer says it's a publisher but it can't be
      */
     static Pimpl create(
             PubP2pMgr&      p2pMgr,
@@ -56,11 +57,12 @@ public:
      * Subscriber's client-side construction. The resulting peer is fully connected and ready for
      * `start()` to be called.
      *
-     * @param[in] p2pMgr        Subscriber's P2P manager
-     * @param[in] srvrAddr      Address of remote P2P-server
-     * @throw     LogicError    Destination port number is zero
-     * @throw     SystemError   Couldn't connect. Bad failure.
-     * @throw     RuntimeError  Couldn't connect. Might be temporary.
+     * @param[in] p2pMgr           Subscriber's P2P manager
+     * @param[in] srvrAddr         Address of remote P2P-server
+     * @throw     LogicError       Destination port number is zero
+     * @throw     SystemError      Couldn't connect. Bad failure.
+     * @throw     RuntimeError     Couldn't connect. Might be temporary.
+     * @throw     InvalidArgument  Information on remote peer's P2P-server is invalid
      * @see       `start()`
      */
     static Pimpl create(
@@ -69,6 +71,22 @@ public:
 
     virtual ~Peer()
     {}
+
+    /**
+     * Sets information on the remote peer's P2P-server. Called by the RPC object.
+     * @param[in] srvrInfo  Information on the remote peer's P2P-server
+     * @throw InvalidArgument  Remote peer's P2p-server information is invalid
+     * @throw InvalidArgument  Remote peer's tier number is invalid
+     */
+    virtual void setRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
+
+    /**
+     * Returns information on the remote P2P-server. This function may be called immediately after
+     * construction.
+     * @return        Information on the remote P2P-server
+     * @threadsafety  Compatible but unsafe
+     */
+    virtual P2pSrvrInfo& getRmtSrvrInfo() noexcept =0;
 
     /**
      * Indicates if this instance was constructed as a client (i.e., it initiated the connection).
@@ -99,6 +117,13 @@ public:
      * @retval false  The remote peer is not a publisher
      */
     virtual bool isRmtPub() const noexcept =0;
+
+    /**
+     * Returns the number of hops to the publisher from this instance.
+     * @return     The number of hops to the publisher from this instance
+     * @retval -1  The number of hops is unknown
+     */
+    virtual P2pSrvrInfo::Tier getTier() const noexcept =0;
 
     /**
      * Returns the hash code of this instance.
@@ -139,7 +164,7 @@ public:
     virtual String to_string() const =0;
 
     /**
-     * Executes this instance. Doesn't return until
+     * Starts receiving messages from the remote peer. Doesn't return until
      *   - The connection with the remote peer is lost; or
      *   - `halt()` is called.
      *
@@ -154,19 +179,6 @@ public:
      */
     virtual void halt() =0;
 
-    /**
-     * Notifies the remote peer as to whether the local node has a path to the publisher.
-     *
-     * @param[in] havePubPath  Does the local node have a path to the publisher?
-     */
-    virtual void notifyHavePubPath(const bool havePubPath) =0;
-
-    /**
-     * Tells the remote peer to add a potential P2P-server.
-     *
-     * @param[in] srvrInfo  Information on the P2P-server to be added
-     */
-    virtual void add(const P2pSrvrInfo& srvrInfo) =0;
     /**
      * Tells the remote peer to add some potential P2P-servers.
      *
@@ -213,14 +225,6 @@ public:
      */
     virtual void request(const DataSegId& segId) =0;
 
-    /**
-     * Receives notification to add a potential P2P-server.
-     *
-     * @param[in] srvrInfo  Potential P2P-server to add
-     * @retval    true      Success
-     * @retval    false     EOF
-     */
-    virtual void recvAdd(const P2pSrvrInfo& srvrInfo) =0;
     /**
      * Receives notification to add potential P2P-servers.
      *
@@ -290,7 +294,8 @@ public:
 /******************************************************************************/
 
 /**
- * Interface for a P2P-server.
+ * Interface for a P2P-server. A P2P-server creates server-side peers by accepting connections
+ * initiated remotely.
  *
  * @tparam P2P_MGR  Type of P2P manager: `PubP2pMgr` or `SubP2pMgr`
  */
@@ -302,11 +307,11 @@ public:
     using Pimpl = std::shared_ptr<P2pSrvr<P2P_MGR>>;
 
     /**
-     * Returns a smart pointer to an instance.
+     * Returns a smart pointer to a new instance.
      * @param[in] srvrAddr     Socket address for the server to use. Must not be the wildcard. A
      *                         port number of 0 obtains a system chosen one.
      * @param[in] maxPendConn  Maximum number of pending connections
-     * @throw InvalidArgument  Accept-queue size is zero
+     * @throw InvalidArgument  Maximum number of pending connections size is zero
      */
     static Pimpl create(
             const SockAddr srvrAddr,
@@ -340,8 +345,8 @@ public:
     virtual void halt() =0;
 };
 
-using PubPeerSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P-server
-using SubPeerSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P-server
+using PubP2pSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P-server
+using SubP2pSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P-server
 
 } // namespace
 

@@ -1,7 +1,7 @@
 # Add the library
 add_library(p2p OBJECT
         DataSeg.cpp
-        Tracker.cpp       Tracker.h
+        Tracker.cpp
         Rpc.cpp           Rpc.h
         Peer.cpp          Peer.h
         PeerConn.cpp      PeerConn.h

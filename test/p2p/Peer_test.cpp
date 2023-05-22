@@ -32,6 +32,12 @@ protected:
     } State;
     State             state;
     SockAddr          pubAddr;
+    SockAddr          subAddr;
+    Tracker           pubTracker;
+    Tracker           subTracker;
+    P2pSrvrInfo       pubSrvrInfo;
+    P2pSrvrInfo       subSrvrInfo;
+    Thread::id        subThreadId; // ID of thread on which subscribing peer is created
     std::mutex        mutex;
     Cond              cond;
     ProdId            prodIds[2];
@@ -57,6 +63,11 @@ protected:
     PeerTest()
         : state(INIT)
         , pubAddr("localhost:38800")
+        , subAddr("localhost:38801")
+        , pubTracker()
+        , subTracker()
+        , pubSrvrInfo(pubAddr, 1, 0)
+        , subSrvrInfo(subAddr, 1, 1)
         , mutex()
         , cond()
         , prodIds()
@@ -103,26 +114,36 @@ public:
         cond.notify_one();
     }
 
-    void orState(const State state)
-    {
+    void orState(const State state) {
         std::lock_guard<decltype(mutex)> guard{mutex};
         this->state = static_cast<State>(this->state | state);
         cond.notify_all();
     }
 
-    void waitForState(const State nextState)
-    {
+    void waitForState(const State nextState) {
         std::unique_lock<decltype(mutex)> lock{mutex};
         while (state != nextState)
             cond.wait(lock);
     }
 
+    P2pSrvrInfo getSrvrInfo() override {
+        return (std::this_thread::get_id() == subThreadId)
+            ? subSrvrInfo
+            : pubSrvrInfo;
+    }
+
+    Tracker& getTracker() override {
+        return (std::this_thread::get_id() == subThreadId)
+            ? subTracker
+            : pubTracker;
+    }
+
+    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) {
+        EXPECT_TRUE(srvrInfo == pubSrvrInfo || srvrInfo == subSrvrInfo);
+    }
+
     // Both sides
     void waitForSrvrPeer() override {}
-
-    SockAddr getSrvrAddr() const override {
-        return SockAddr();
-    }
 
     void start() {};
     void stop() {};
@@ -224,16 +245,21 @@ public:
 
     void startPubPeer(Peer::Pimpl& pubPeer)
     {
-        auto rpcSrvr = RpcSrvr::create(pubAddr, true);
-        orState(LISTENING);
+        try {
+            auto pubPeerConnSrvr = PeerConnSrvr::create(pubAddr, 8);
+            orState(LISTENING);
 
-        pubPeer = Peer::create(*static_cast<PubP2pMgr*>(this), rpcSrvr->accept());
+            pubPeer = Peer::create(*static_cast<PubP2pMgr*>(this), pubPeerConnSrvr->accept());
 
-        auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
-        EXPECT_EQ(pubAddr, rmtAddr);
+            auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
+            EXPECT_EQ(pubAddr, rmtAddr);
 
-        LOG_DEBUG("Starting publishing peer");
-        pubPeerThread = Thread(&Peer::run, pubPeer.get());
+            LOG_DEBUG("Starting publishing peer");
+            pubPeerThread = Thread(&Peer::run, pubPeer.get());
+        }
+        catch (const std::exception& ex) {
+            LOG_WARNING(ex);
+        }
     }
 
     void notify(Peer::Pimpl pubPeer) {
@@ -260,6 +286,7 @@ TEST_F(PeerTest, PrematureStop)
     try {
         waitForState(LISTENING);
 
+        subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
         Thread subPeerThread(&Peer::run, subPeer.get());
 
@@ -318,6 +345,7 @@ TEST_F(PeerTest, DataExchange)
         waitForState(LISTENING);
 
         // Create and execute a subscribing-peer on a separate thread
+        subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
         /*
          * If this program is executed in a "while" loop, then the following
@@ -334,8 +362,6 @@ TEST_F(PeerTest, DataExchange)
         ASSERT_TRUE(srvrThread.joinable());
         srvrThread.join();
         // `pubPeer` is running
-
-        pubPeer->add(pubAddr);
 
         // Start an exchange
         notify(pubPeer);
@@ -378,6 +404,7 @@ TEST_F(PeerTest, BrokenConnection)
 
         {
             // Create and execute reception by subscribing peer on separate thread
+            subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
             LOG_DEBUG("Starting subscribing peer");
             Thread subPeerThread(&Peer::run, subPeer.get());
@@ -420,6 +447,7 @@ TEST_F(PeerTest, UnsatisfiedRequests)
 
         {
             // Create and execute reception by subscribing peer on separate thread
+            subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
             LOG_DEBUG("Starting subscribing peer");
             Thread subPeerThread(&Peer::run, subPeer.get());

@@ -48,41 +48,48 @@ class P2pMgrImpl : public P2pMgr
 
     template<typename ID>
     void notify(const ID id) {
-        Guard guard{peerSetMutex};
-        for (auto iter = peerSet.begin(), stop = peerSet.end(); iter != stop; ) {
-            auto peer = *(iter++); // Increment prevents becoming invalid
-            if (shouldNotify(peer, id))
-                peer->notify(id);
+        Guard guard{stateMutex};
+
+        if (state != State::STOPPING) {
+            for (auto iter = peerSet.begin(), stop = peerSet.end(); iter != stop; ) {
+                auto peer = *(iter++); // Increment prevents becoming invalid
+                if (shouldNotify(peer, id))
+                    peer->notify(id);
+            }
         }
     }
 
     bool addPeer(Peer::Pimpl peer) {
-        Guard guard{peerSetMutex};
+        Guard guard{stateMutex};
 
-        if (!peerSet.insert(peer).second)
-            return false;
+        if (state != State::STOPPING) {
+            if (!peerSet.insert(peer).second)
+                return false;
 
-        peerMap[peer->getRmtAddr()] = peer;
-        const auto added = bookkeeper->add(peer);
-        LOG_ASSERT(added);
-        incPeerCount(peer);
-        peersChanged = true;
-        peerSetCond.notify_all();
+            peerMap[peer->getRmtAddr()] = peer;
+            const auto added = bookkeeper->add(peer);
+            LOG_ASSERT(added);
+            incPeerCount(peer);
+            peersChanged = true;
+            stateCond.notify_all();
+        }
 
         return true;
     }
 
     void removePeer(Peer::Pimpl peer) {
-        Guard guard{peerSetMutex};
+        Guard guard{stateMutex};
 
-        if (peerSet.erase(peer)) {
-            const auto n = peerMap.erase(peer->getRmtAddr());
-            LOG_ASSERT(n);
-            const auto existed = bookkeeper->erase(peer);
-            LOG_ASSERT(existed);
-            decPeerCount(peer);
-            peersChanged = true;
-            peerSetCond.notify_all();
+        if (state != State::STOPPING) {
+            if (peerSet.erase(peer)) {
+                const auto n = peerMap.erase(peer->getRmtAddr());
+                LOG_ASSERT(n);
+                const auto existed = bookkeeper->erase(peer);
+                LOG_ASSERT(existed);
+                decPeerCount(peer);
+                peersChanged = true;
+                stateCond.notify_all();
+            }
         }
     }
 
@@ -99,62 +106,19 @@ protected:
         STOPPED
     }                    state;         ///< State of this instance
     mutable Mutex        stateMutex;    ///< Guards state
-    mutable Mutex        peerSetMutex;  ///< Guards set of active peers
-    mutable Cond         peerSetCond;   ///< For changing set of active peers
+    mutable Cond         stateCond;     ///< For notifying observers of state on other threads
     mutable sem_t        stopSem;       ///< For async-signal-safe stopping
-    Tracker              tracker;       ///< Socket addresses of available but unused P2P-servers
+    Tracker              tracker;       ///< Information on P2P-servers
     ThreadEx             threadEx;      ///< Exception thrown by internal threads
-    const unsigned       maxSrvrPeers;  ///< Maximum number of server-side peers
-    unsigned             numSrvrPeers;  ///< Number of server-side peers
+    const int            maxSrvrPeers;  ///< Maximum number of server-side peers
+    int                  numSrvrPeers;  ///< Number of server-side peers
     PeerSet              peerSet;       ///< Set of active peers
     PeerMap              peerMap;       ///< Map from remote address to peer
     Bookkeeper::Pimpl    bookkeeper;    ///< Monitors peer performance
     Thread               acceptThread;  ///< Creates server-side peers
-    Thread               improveThread; ///< Improves the set of peers
+    Thread               improveThread; ///< Improves the set of active peers
     std::chrono::seconds evalTime;      ///< Evaluation interval for poorest-performing peer
-    P2pSrvrInfo         peerSrvrInfo;  ///< Information on the P2P-server
-
-    /**
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state isn't INIT
-     * @post              The state is STARTED
-     * @post              The state mutex is unlocked
-     */
-    void startImpl() {
-        Guard guard{stateMutex};
-        if (state != State::INIT)
-            throw LOGIC_ERROR("Instance can't be re-executed");
-        startThreads();
-        state = State::STARTED;
-    }
-
-    /**
-     * Idempotent.
-     *
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state is stopping
-     * @post              The state is STOPPED
-     * @post              The state mutex is unlocked
-     */
-    void stopImpl() {
-        Lock lock{stateMutex};
-        LOG_ASSERT(state == State::STARTED);
-
-        state = State::STOPPING;
-
-        /*
-         * Ensure that the set of active peers will no longer change so that it can be iterated
-         * through without locking it, which can deadlock with `SubP2pMgr::recvData()`.
-         */
-        stopThreads();
-
-        for (auto peer : peerSet) {
-            peer->halt();
-        }
-        peerSetCond.wait(lock, [&]{return peerSet.empty();});
-
-        state = State::STOPPED;
-    }
+    P2pSrvrInfo          srvrInfo;      ///< Information on the local P2P-server
 
     /**
      * Sets the exception to be thrown.
@@ -166,13 +130,68 @@ protected:
     }
 
     /**
-     * Handles a peer being removed from the set of active peers. Does nothing by default because a
-     * publisher's P2P manager doesn't have client-side peers -- so there's nothing to be done.
+     * @pre               The state mutex is unlocked
+     * @pre               The state is INIT
+     * @throw LogicError  The state isn't INIT
+     * @post              The state is STARTED
+     * @post              The state mutex is unlocked
+     */
+    void startImpl() {
+        Guard guard{stateMutex};
+        if (state != State::INIT)
+            throw LOGIC_ERROR("Instance can't be re-executed");
+        try {
+            startThreads();
+        }
+        catch (const std::exception& ex) {
+            state = State::STOPPING;
+            stateCond.notify_all();
+            throw;
+        }
+        state = State::STARTED;
+    }
+
+    /**
+     * Idempotent.
+     *
+     * @pre               The state mutex is unlocked
+     * @pre               The state is STARTED
+     * @throw LogicError  The state is not STARTED
+     * @post              The state is STOPPED
+     * @post              The state mutex is unlocked
+     */
+    void stopImpl() {
+        // Stop modifying the set of active peers
+        stopThreads();
+
+        // Stop the active peers
+        Lock lock{stateMutex};
+        for (auto peer : peerSet)
+            peer->halt();
+        stateCond.wait(lock, [&]{return peerSet.empty();});
+
+        state = State::STOPPED;
+    }
+
+    /**
+     * Ensures that the information on the local P2P-server is up-to-date.
+     * @return Current information on the local P2P-server -- updated if necessary
+     */
+    virtual P2pSrvrInfo& updateSrvrInfo() =0;
+
+    /**
+     * Updates the tier number. Updates the minimum number of hops to the publisher if the given
+     * number is less that the current number.
+     * @param[in] tier  The tier number to consider
+     */
+    virtual void updateTier(const P2pSrvrInfo::Tier tier) =0;
+
+    /**
+     * Handles a peer being removed from the set of active peers.
      *
      * @param[in] peer  The peer that was removed from the set of active peers
      */
-    virtual void peerRemoved(Peer::Pimpl peer) {
-    }
+    virtual void peerRemoved(Peer::Pimpl peer) =0;
 
     /**
      * Reassigns unsatisfied requests for data from a peer to other peers. Should be executed only
@@ -205,15 +224,6 @@ protected:
     }
 
     /**
-     * Handles a peer being added to the set of active peers. Sends to the remote peer
-     *   - An indicator of whether or not the local P2P node is a path to the publisher; and
-     *   - The addresses of known, potential P2P-servers.
-     *
-     * @param[in] peer     Peer whose remote counterpart is to be notified.
-     */
-    virtual void peerAdded(Peer::Pimpl peer) =0;
-
-    /**
      * Adds a peer. Adds the peer to the set of active peers and the bookkeeper; then starts the
      * peer. Notifies waiting threads about the change to the set of active peers.
      *
@@ -227,17 +237,113 @@ protected:
         if (!addPeer(peer))
             return false;
         Thread(&P2pMgrImpl::runPeer, this, peer).detach();
-        peerAdded(peer);
         return true;
     }
 
     /**
      * Returns the server-side peer corresponding to an accepted connection from a client-side peer.
-     * The returned peer is connected to its remote counterpart but not yet receiving from it.
+     * The returned peer is connected to its remote counterpart but not yet enabled/active.
      *
      * @return  Server-side peer. Will test false if the P2P-server has been halted.
      */
     virtual Peer::Pimpl accept() =0;
+
+    /**
+     * Runs the P2P-server. Accepts connections from remote peers and adds them to the set of active
+     * server-side peers. Intended to be a start function for a separate thread.
+     *
+     * NB: `noexcept` is incompatible with exception-based thread cancellation.
+     */
+    void acceptPeers() {
+        try {
+            auto doSomething = [&]{return numSrvrPeers < maxSrvrPeers || state == State::STOPPING;};
+            for (;;) {
+                {
+                    Lock lock{stateMutex};
+                    stateCond.wait(lock, doSomething);
+                    if (state == State::STOPPING)
+                        break;
+                    /*
+                     * The mutex is released immediately because  a server-side peer is only added
+                     * by the current thread and the mutex is locked on other threads that access
+                     * the peer-set.
+                     */
+                }
+
+                try {
+                    auto peer = accept(); // Construction causes exchange of P2P-server information
+
+                    if (!peer)
+                        break; // `p2pSrvr->halt()` was called
+
+                    // The tracker now contains information on the remote peer's P2P server
+
+                    if (!add(peer)) { // Locks the peer-set mutex
+                        LOG_WARNING("Peer %s was previously accepted", peer->to_string().data());
+                    }
+                    else {
+                        LOG_NOTE("Accepted connection from peer %s", peer->to_string().data());
+                        updateTier(peer->getTier());
+                    }
+                }
+                catch (const InvalidArgument& ex) {
+                    // The remote peer sent bad information
+                    LOG_WARNING(ex);
+                    continue;
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            try {
+                std::throw_with_nested(RUNTIME_ERROR("P2pSrvr::accept() failure"));
+            }
+            catch (const std::exception& ex) {
+                setException(ex);
+            }
+        }
+    }
+
+    /**
+     * Improves the set of peers by periodically removing the worst-performing peer. The
+     * peer-adding threads will be notified and a replacement peer will be added. Intended to be the
+     * start function for a separate thread.
+     *
+     * @param[in] numPeers    Number of relevant peers
+     * @param[in] maxPeers    Maximum number of relevant peers
+     */
+    void improvePeers(
+            int&      numPeers,
+            const int maxPeers) {
+        try {
+            Lock lock{stateMutex};
+            auto pred = [&]{return peersChanged || state == State::STOPPING;};
+
+            for (;;) {
+                bookkeeper->reset();
+                peersChanged = false;
+
+                // Wait until the set of relevant peers is unchanged for the evaluation duration
+                if (stateCond.wait_for(lock, evalTime, pred)) {
+                    // Either the set of active peers changed or this instance is stopping
+                    if (state == State::STOPPING)
+                        break;
+                }
+                else {
+                    // The set of active peers has been unchanged for the evaluation duration
+                    if (numPeers >= maxPeers) {
+                        auto worstPeer = bookkeeper->getWorstPeer();
+                        if (worstPeer) {
+                            LOG_DEBUG("Halting peer %s", worstPeer->to_string().data());
+                            worstPeer->halt(); // `runPeer()` will remove peer and notify observers
+                        }
+                    }
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            setException(ex);
+        }
+    }
 
     /**
      * Cancels a thread and joins it.
@@ -331,15 +437,14 @@ public:
     P2pMgrImpl(
             Node&          node,
             Tracker        tracker,
-            const unsigned maxPeers,
-            const unsigned maxSrvrPeers,
-            const unsigned evalTime)
+            const int      maxPeers,
+            const int      maxSrvrPeers,
+            const int      evalTime)
         : state(State::INIT)
         , stateMutex()
         , node(node)
         , peersChanged(false)
-        , peerSetMutex()
-        , peerSetCond()
+        , stateCond()
         , stopSem()
         , tracker(tracker)
         , threadEx()
@@ -351,7 +456,7 @@ public:
         , acceptThread()
         , improveThread()
         , evalTime(evalTime)
-        , peerSrvrInfo()
+        , srvrInfo()
     {
         if (maxSrvrPeers <= 0)
             throw INVALID_ARGUMENT("Invalid maximum number of server-side peers: " +
@@ -367,10 +472,19 @@ public:
         ::sem_destroy(&stopSem);
     }
 
+    Tracker& getTracker() override {
+        return tracker;
+    }
+
+    P2pSrvrInfo getSrvrInfo() override {
+        return updateSrvrInfo();
+    }
+
+    virtual void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
+
     void run() override {
         startImpl();
         ::sem_wait(&stopSem); // Blocks until `halt()` called or `threadEx` is true
-        //stateCond.wait(lock, [&]{return state == State::STOPPING;});
         stopImpl();
         threadEx.throwIfSet();
     }
@@ -382,91 +496,9 @@ public:
             ::sem_post(&stopSem);
     }
 
-    /**
-     * Runs the P2P-server. Accepts connections from remote peers and adds them to the set of active
-     * server-side peers. Must be public because it's the start function for a thread.
-     *
-     * NB: `noexcept` is incompatible with thread cancellation.
-     */
-    void acceptPeers() {
-        try {
-            auto doSomething = [&]{return numSrvrPeers < maxSrvrPeers || state == State::STOPPING;};
-            for (;;) {
-                {
-                    Lock lock{peerSetMutex};
-                    peerSetCond.wait(lock, doSomething);
-                    if (state == State::STOPPING)
-                        break;
-                    /*
-                     * The mutex is released immediately because  a server-side peer is only added
-                     * by the current thread.
-                     */
-                }
-
-                auto peer = accept();
-                if (!peer)
-                    break; // `peerSrvr->halt()` was called
-
-                if (!add(peer)) {
-                    LOG_WARNING("Peer %s was previously accepted", peer->to_string().data());
-                }
-                else {
-                    LOG_NOTE("Accepted connection from peer %s", peer->to_string().data());
-                }
-            }
-        }
-        catch (const std::exception& ex) {
-            try {
-                std::throw_with_nested(RUNTIME_ERROR("PeerSrvr::accept() failure"));
-            }
-            catch (const std::exception& ex) {
-                setException(ex);
-            }
-        }
-    }
-
-    /**
-     * Improves the set of peers by periodically removing the worst-performing peer and notifying
-     * the peer-adding threads.
-     *
-     * Must be public so that it's visible to the associated thread object.
-     *
-     * @param[in] numPeers    Number of relevant peers
-     * @param[in] maxPeers    Maximum number of relevant peers
-     */
-    void improvePeers(
-            unsigned&      numPeers,
-            const unsigned maxPeers) {
-        try {
-            Lock lock{peerSetMutex};
-            auto doSomething = [&]{return peersChanged || state == State::STOPPING;};
-
-            for (;;) {
-                bookkeeper->reset();
-                peersChanged = false;
-
-                // Wait until the set of relevant peers is unchanged for the evaluation duration
-                if (peerSetCond.wait_for(lock, evalTime, doSomething)) {
-                    if (state == State::STOPPING)
-                        break;
-                }
-                else if (numPeers >= maxPeers) {
-                    auto worstPeer = bookkeeper->getWorstPeer();
-                    if (worstPeer) {
-                        LOG_DEBUG("Halting peer %s", worstPeer->to_string().data());
-                        worstPeer->halt(); // Causes runPeer() to remove peer and notify observers
-                    }
-                }
-            }
-        }
-        catch (const std::exception& ex) {
-            setException(ex);
-        }
-    }
-
     void waitForSrvrPeer() override {
-        Lock lock{peerSetMutex};
-        peerSetCond.wait(lock, [&]{return numSrvrPeers > 0;});
+        Lock lock{stateMutex};
+        stateCond.wait(lock, [&]{return numSrvrPeers > 0 || state == State::STOPPING;});
     }
 
     void notify(const ProdId prodId) override {
@@ -505,46 +537,9 @@ public:
         return node.recvRequest(segId);
     }
 
-    /**
-     * Receives from a remote peer, an indication of whether or not it's a path to the publisher.
-     * @param[in] rmtIsPubPath  Is the remote peer a path to the publisher?
-     * @param[in] rmtAddr       Socket address of remote peer
-     */
-    void recvHavePubPath(
-            const bool     rmtIsPubPath,
-            const SockAddr rmtAddr) override {
-        /*
-         * To prevent an orphan network, terminate client-side peers whose remote counterpart
-         * doesn't provide a path to the publisher.
-         */
-        if (!rmtIsPubPath) {
-            Guard guard{peerSetMutex};
-            if (peerMap.count(rmtAddr)) {
-                auto& peer = peerMap[rmtAddr];
-                if (peer->isClient()) {
-                    LOG_DEBUG("Disconnecting from peer " + peer->getRmtAddr().to_string() +
-                            " because it isn't a path to the publisher");
-                    peer->halt(); // Causes runPeer() to remove peer and notify observers
-                }
-            }
-        }
-    }
-
-    void recvAdd(const P2pSrvrInfo& info) override {
-        if (info.srvrAddr != peerSrvrInfo.srvrAddr) // Connecting to oneself is useless
-            this->tracker.insert(info);
-    }
-
     void recvAdd(Tracker tracker) override {
-        tracker.erase(peerSrvrInfo.srvrAddr); // Connecting to oneself is useless
+        tracker.erase(srvrInfo.srvrAddr); // Connecting to oneself is useless
         this->tracker.insert(tracker);
-    }
-
-    void recvRemove(const SockAddr peerSrvrAddr) override {
-        this->tracker.erase(peerSrvrAddr);
-    }
-    void recvRemove(const Tracker tracker) override {
-        this->tracker.erase(tracker);
     }
 };
 
@@ -553,66 +548,65 @@ public:
 /// Publisher's P2P manager implementation
 class PubP2pMgrImpl final : public P2pMgrImpl
 {
-    PubPeerSrvr::Pimpl peerSrvr;   ///< Peer-server
+    PubP2pSrvr::Pimpl p2pSrvr;   ///< P2p-server
 
 protected:
     Peer::Pimpl accept() override {
-        return peerSrvr->accept(*this);
+        return p2pSrvr->accept(*this);
     }
 
     void startThreads() override {
+        LOG_ASSERT(!stateMutex.try_lock());
         LOG_ASSERT(state == State::INIT);
 
-        try {
-            acceptThread = Thread(&P2pMgrImpl::acceptPeers, this);
-            improveThread = Thread(&P2pMgrImpl::improvePeers, this,
-                    std::ref(numSrvrPeers), maxSrvrPeers);
-        }
-        catch (const std::exception& ex) {
-            stopThreads();
-            throw;
-        }
+        acceptThread  = Thread(&PubP2pMgrImpl::acceptPeers, this);
+        improveThread = Thread(&PubP2pMgrImpl::improvePeers, this, std::ref(numSrvrPeers),
+                maxSrvrPeers);
     }
 
     void stopThreads() override {
-        LOG_ASSERT(!stateMutex.try_lock());
-        LOG_ASSERT(state == State::STOPPING);
-
-        peerSrvr->halt(); // Causes `accept()` to return a false peer
         {
-            Guard guard{peerSetMutex};
-            peerSetCond.notify_all(); // Signals improvement and accept threads to terminate
-        } // `peerSetMutex` must be unlocked for the threads to terminate
+            Guard guard{stateMutex};
 
-        improveThread.join();
-        acceptThread.join();
+            p2pSrvr->halt();        // Causes `accept()` to return a false peer
+
+            state = State::STOPPING;
+            stateCond.notify_all();
+        }
+
+        if (improveThread.joinable())
+            improveThread.join();
+        if (acceptThread.joinable())
+            acceptThread.join();
     }
 
-    void peerAdded(Peer::Pimpl peer) override {
-        /*
-         * The remote peer knows that this instance is a publisher; therefore, there's no need to
-         * inform it that this instance is a path to the publisher.
-         *
-         * `getPeerSetTracker()` is useless because all those peers were constructed server-side,
-         * which means that their remote addresses aren't those of their P2P-servers'.
-         */
-        peer->add(tracker);
+    P2pSrvrInfo& updateSrvrInfo() override {
+        Guard guard{stateMutex};
+
+        srvrInfo.numAvail = maxSrvrPeers - numSrvrPeers;
+        srvrInfo.valid = SysClock::now();
+
+        return srvrInfo;
+    }
+
+    void updateTier(const P2pSrvrInfo::Tier tier) override {
+        // Does nothing because the number of hops to the publisher is always zero
     }
 
     void incPeerCount(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         ++numSrvrPeers;
     }
 
     void decPeerCount(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         --numSrvrPeers;
     }
 
     bool shouldNotify(
             Peer::Pimpl peer,
             ProdId      prodId) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         // Publisher's peer should always notify the remote peer
         return true;
     }
@@ -620,7 +614,7 @@ protected:
     bool shouldNotify(
             Peer::Pimpl      peer,
             DataSegId dataSegId) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         // Publisher's peer should always notify the remote peer
         return true;
     }
@@ -633,19 +627,19 @@ public:
      * Constructs.
      *
      * @param[in] pubNode       Publisher's node
-     * @param[in] peerSrvr      P2P-server
+     * @param[in] p2pSrvr       P2P-server
      * @param[in] maxPeers      Maximum number of peers
      * @param[in] evalTime      Evaluation time for poorest-performing peer in seconds
      */
     PubP2pMgrImpl(PubNode&                 pubNode,
-                  const PubPeerSrvr::Pimpl peerSrvr,
-                  const unsigned           maxPeers,
-                  const unsigned           evalTime)
+                  const PubP2pSrvr::Pimpl  p2pSrvr,
+                  const int                maxPeers,
+                  const int                evalTime)
         : P2pMgrImpl(pubNode, Tracker{}, maxPeers, maxPeers, evalTime)
-        , peerSrvr(peerSrvr)
+        , p2pSrvr(p2pSrvr)
     {
         bookkeeper = Bookkeeper::createPub(maxPeers);
-        peerSrvrInfo = P2pSrvrInfo{peerSrvr->getSrvrAddr(), 0, maxPeers, SysClock::now()};
+        srvrInfo = P2pSrvrInfo{p2pSrvr->getSrvrAddr(), maxPeers, 0};
     }
 
     /**
@@ -661,11 +655,8 @@ public:
      */
     PubP2pMgrImpl& operator=(const PubP2pMgrImpl& rhs) =delete;
 
-    P2pSrvrInfo getSrvrInfo() override {
-        Guard guard{peerSetMutex};
-        peerSrvrInfo.numAvail = maxSrvrPeers - numSrvrPeers;
-        peerSrvrInfo.valid = SysClock::now();
-        return peerSrvrInfo;
+    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) override {
+        tracker.insert(srvrInfo);
     }
 
     void notify(const ProdId prodId) override {
@@ -680,7 +671,7 @@ public:
             const ProdId   prodId,
             const SockAddr rmtAddr) override {
         {
-            Guard guard{peerSetMutex};
+            Guard guard{stateMutex};
             if (peerMap.count(rmtAddr) == 0)
                 return ProdInfo{};
             bookkeeper->requested(peerMap.at(rmtAddr));
@@ -692,37 +683,41 @@ public:
             const DataSegId segId,
             const SockAddr  rmtAddr) override {
         {
-            Guard guard{peerSetMutex};
+            Guard guard{stateMutex};
             if (peerMap.count(rmtAddr) == 0)
                 return DataSeg{};
             bookkeeper->requested(peerMap.at(rmtAddr));
         }
         return getDatum(segId);
     }
+
+    void peerRemoved(Peer::Pimpl peer) override {
+        LOG_ASSERT(srvrInfo.numAvail > 0);
+        --srvrInfo.numAvail;
+    }
 };
 
 P2pMgr::Pimpl P2pMgr::create(
         PubNode&       pubNode,
-        const SockAddr peerSrvrAddr,
+        const SockAddr p2pSrvrAddr,
         const unsigned maxPeers,
         const unsigned maxPendConn,
         const unsigned evalTime) {
-    auto peerSrvr = PubPeerSrvr::create(peerSrvrAddr, maxPendConn);
-    return Pimpl{new PubP2pMgrImpl(pubNode, peerSrvr, maxPeers, evalTime)};
+    auto p2pSrvr = PubP2pSrvr::create(p2pSrvrAddr, maxPendConn);
+    return Pimpl{new PubP2pMgrImpl(pubNode, p2pSrvr, maxPeers, evalTime)};
 }
 
 /**************************************************************************************************/
 
 /// Subscribing P2P manager implementation
-class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
+class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
 {
-    SubNode&            subNode;       ///< Subscriber's node
-    const unsigned      maxClntPeers;  ///< Maximum number of client-side peers
-    unsigned            numClntPeers;  ///< Number of client-side peers
-    int                 timeout;       ///< Timeout, in ms, for connecting to remote P2P-server
-    SubPeerSrvr::Pimpl  peerSrvr;      ///< Subscriber's P2P-server
-    Thread              connectThread; ///< Thread for creating client-side peers
-    P2pSrvrInfo::Tier  tier;          ///< Number of hops to the publisher
+    SubNode&           subNode;       ///< Subscriber's node
+    const int          maxClntPeers;  ///< Maximum number of client-side peers
+    int                numClntPeers;  ///< Number of client-side peers
+    int                timeout;       ///< Timeout, in ms, for connecting to remote P2P-server
+    SubP2pSrvr::Pimpl  p2pSrvr;       ///< Subscriber's P2P-server
+    Thread             connectThread; ///< Thread for creating client-side peers
 
     /**
      * Creates client-side peers. Meant to be the start routine of a separate thread.
@@ -730,13 +725,13 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
      */
     void connectPeers() {
         try {
-            auto needPeer = [&]{return numClntPeers < maxClntPeers || state == State::STOPPING;};
+            auto pred = [&]{return numClntPeers < maxClntPeers || state == State::STOPPING;};
             for (;;) {
                 {
                     LOG_TRACE("Locking the peer-set mutex");
-                    Lock lock{peerSetMutex};
-                    LOG_TRACE("Waiting for the need for a peer");
-                    peerSetCond.wait(lock, needPeer);
+                    Lock lock{stateMutex};
+                    LOG_TRACE("Waiting for the need for a peer or stopping");
+                    stateCond.wait(lock, pred);
 
                     if (state == State::STOPPING)
                         break;
@@ -747,7 +742,7 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
                 }
 
                 LOG_TRACE("Removing tracker head");
-                auto rmtSrvrAddr = tracker.getNext(); // Blocks if empty. Cancellation point.
+                auto rmtSrvrAddr = tracker.getNextAddr(); // Blocks if empty. Cancellation point.
                 if (!rmtSrvrAddr) {
                     // tracker.halt() called
                     LOG_ASSERT(state == State::STOPPING);
@@ -756,46 +751,81 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
 
                 try {
                     LOG_TRACE("Creating peer");
+                    /*
+                     * P2P-server information is exchanged during peer construction but
+                     * `saveRmtSrvrInfo()` is not called.
+                     */
                     auto peer = Peer::create(*this, rmtSrvrAddr);
-                    try {
-                        LOG_TRACE("Adding peer to peer-set");
-                        if (!add(peer)) {
-                            LOG_DEBUG("Throwing logic error");
-                            throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
-                        }
 
-                        try {
-                            LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
-                        } // Peer is active and in peer-set
-                        catch (...) {
-                            LOG_DEBUG("Halting peer");
-                            peer->halt(); // Causes runPeer() to remove peer and notify observers
-                            throw;
-                        }
-                    } // `peer` is connected
-                    catch (const SystemError& ex) {
-                        auto errnum = ex.code().value();
-                        if (    errnum == ENETUNREACH  ||
-                                errnum == ETIMEDOUT    ||
-                                errnum == ECONNRESET   ||
-                                errnum == EHOSTUNREACH ||
-                                errnum == ENETDOWN     ||
-                                errnum == EPIPE) {
-                            // Peer is unavailable
-                            LOG_NOTE(ex);
-                            tracker.offline(rmtSrvrAddr);
-                        }
-                        else {
-                            LOG_DEBUG("Throwing exception %s", ex.what());
-                            throw;
-                        }
+                    /*
+                     * Consequently, information on the remote peer's P2P server is explicitly
+                     * saved. This procedure prevents this instance's tier number from being
+                     * modified by a peer whose `run()` function won't be called while still
+                     * allowing the information on the remote P2P-server to be saved.
+                     */
+                    auto rmtSrvrInfo = peer->getRmtSrvrInfo(); // NB: A copy is made
+                    tracker.insert(rmtSrvrInfo);
+
+                    /*
+                     * To prevent an orphan network, use only a client-side peer whose remote peer
+                     * provides a path to the publisher and can accept a new client.
+                     */
+                    if (!rmtSrvrInfo.validTier()) {
+                        LOG_DEBUG("Remote P2P-server " + rmtSrvrInfo.srvrAddr.to_string() +
+                                " has no path to publisher");
                     }
-                } // `rmtSrvrAddr` removed from tracker
+                    else if (rmtSrvrInfo.numAvail == 0) {
+                        LOG_DEBUG("Remote P2P-server " + rmtSrvrInfo.srvrAddr.to_string() +
+                                " can't accept a new client");
+                    }
+                    else {
+                        try {
+                            LOG_TRACE("Adding peer to peer-set");
+                            if (!add(peer)) {
+                                LOG_DEBUG("Throwing logic error");
+                                throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
+                            }
+
+                            try {
+                                LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
+
+                                updateTier(peer->getTier()); // Now the tier number can be modified
+                            } // Peer is in peer-set and active
+                            catch (...) {
+                                LOG_DEBUG("Halting peer");
+                                peer->halt(); // runPeer() removes peer and notifies observers
+                                throw;
+                            }
+                        } // `peer` is connected
+                        catch (const SystemError& ex) {
+                            auto errnum = ex.code().value();
+                            if (    errnum == ENETUNREACH  ||
+                                    errnum == ETIMEDOUT    ||
+                                    errnum == ECONNRESET   ||
+                                    errnum == EHOSTUNREACH ||
+                                    errnum == ENETDOWN     ||
+                                    errnum == EPIPE) {
+                                // Peer is unavailable
+                                LOG_NOTE(ex);
+                                tracker.offline(rmtSrvrAddr);
+                            }
+                            else {
+                                LOG_DEBUG("Throwing exception %s", ex.what());
+                                throw;
+                            }
+                        }
+                    } // Remote P2P-server is available
+                } // `rmtSrvrAddr` obtained from tracker
+                catch (const InvalidArgument& ex) {
+                    // The remote peer sent bad information
+                    LOG_WARNING(ex);
+                    tracker.offline(rmtSrvrAddr);
+                }
                 catch (const std::exception& ex) {
                     // The exception is unrelated to peer availability
-                    tracker.disconnected(rmtSrvrAddr); // Put it back
+                    tracker.disconnected(rmtSrvrAddr); // Makes it available after a delay
                 }
-            } // New client-side peer loop
+            } // New, client-side peer loop
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Setting exception %s", ex.what());
@@ -805,24 +835,6 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
             LOG_DEBUG("Caught cancellation exception?");
             throw; // A thread cancellation "exception" *must* be rethrown
         }
-    }
-
-    Tracker getPeerSetTracker() {
-        Guard   guard{peerSetMutex};
-        Tracker tracker{peerSet.size()};
-        for (auto peer : peerSet) {
-            /*
-             * A server-side peer's remote socket address isn't the remote P2P-server's address.
-             * Getting that address is handled by client-side peer calling `add(peerSrvrAddr)`.
-             */
-            if (peer->isClient()) {
-                LOG_ASSERT(maxClntPeers >= numClntPeers);
-                unsigned numAvail = maxClntPeers - numClntPeers;
-                P2pSrvrInfo info{peer->getRmtAddr(), tier, numAvail, SysClock::now()};
-                tracker.insert(info);
-            }
-        }
-        return tracker;
     }
 
     /**
@@ -843,67 +855,66 @@ class SubP2pMgrImpl final : public SubP2pMgr, public P2pMgrImpl
 
 protected:
     Peer::Pimpl accept() override {
-        return peerSrvr->accept(*this);
+        return p2pSrvr->accept(*this);
     }
 
     void startThreads() override {
         LOG_ASSERT(!stateMutex.try_lock());
         LOG_ASSERT(state == State::INIT);
 
-        try {
-            connectThread = Thread(&SubP2pMgrImpl::connectPeers, this);
-            acceptThread = Thread(&P2pMgrImpl::acceptPeers, this);
-            improveThread = Thread(&SubP2pMgrImpl::improvePeers, this, std::ref(numClntPeers),
-                    maxClntPeers);
-        }
-        catch (const std::exception& ex) {
-            stopThreads();
-            throw;
-        }
+        connectThread = Thread(&SubP2pMgrImpl::connectPeers, this);
+        acceptThread  = Thread(&SubP2pMgrImpl::acceptPeers, this);
+        improveThread = Thread(&SubP2pMgrImpl::improvePeers, this, std::ref(numClntPeers),
+                maxClntPeers);
     }
 
     void stopThreads() override {
-        LOG_ASSERT(!stateMutex.try_lock());
-        LOG_ASSERT(state == State::STOPPING);
-
-        peerSrvr->halt(); // Causes `accept()` to return a false peer
         {
-            Guard guard{peerSetMutex};
-            tracker.halt();           // Causes connect thread to terminate
-            peerSetCond.notify_all(); // Causes improve and connect threads to terminate
-        } // `peerSetMutex` must be unlocked for some threads to terminate
+            Guard guard{stateMutex};
 
-        improveThread.join();
-        acceptThread.join();
-        connectThread.join();
+            p2pSrvr->halt();        // Causes `accept()` to return a false peer
+            tracker.halt();         // Causes `tracker.getNext()` to return a false object
+
+            state = State::STOPPING;
+            stateCond.notify_all();
+        }
+
+        if (improveThread.joinable())
+            improveThread.join();
+        if (acceptThread.joinable())
+            acceptThread.join();
+        if (connectThread.joinable())
+            connectThread.join();
+    }
+
+    P2pSrvrInfo& updateSrvrInfo() override {
+        Guard guard{stateMutex};
+
+        srvrInfo.numAvail = maxSrvrPeers - numSrvrPeers;
+        srvrInfo.valid = SysClock::now();
+
+        return srvrInfo;
+    }
+
+    /**
+     * Updates the tier number of the local P2P-server if appropriate.
+     * @param[in] tier  A candidate tier number for the local P2P-server
+     */
+    void updateTier(const P2pSrvrInfo::Tier tier) override {
+        Guard guard{stateMutex};
+        // A subscriber's P2P-server can't be tier 0
+        if (tier > 0 && (!srvrInfo.validTier() || tier < srvrInfo.tier))
+            srvrInfo.tier = tier;
     }
 
     void incPeerCount(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         peer->isClient() ? ++numClntPeers : ++numSrvrPeers;
     }
 
     void decPeerCount(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         peer->isClient() ? --numClntPeers : --numSrvrPeers;
-    }
-
-    void peerAdded(Peer::Pimpl peer) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
-
-        if (!peer->isClient()) {
-            // Update the remote peer-manager about the local P2P-server
-            P2pSrvrInfo srvrInfo;
-            {
-                Lock lock{peerSetMutex};
-                srvrInfo.srvrAddr = peerSrvr->getSrvrAddr(),
-                srvrInfo.numAvail = maxClntPeers - numClntPeers;
-                srvrInfo.tier = tier;
-            }
-            peer->add(srvrInfo);
-        }
-
-        peer->add(tracker);
     }
 
     /**
@@ -931,7 +942,7 @@ protected:
     bool shouldNotify(
             Peer::Pimpl  peer,
             const ProdId prodId) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         // Remote peer is subscriber & doesn't have the datum => notify
         return !peer->isRmtPub() && bookkeeper->shouldNotify(peer, prodId);
     }
@@ -939,7 +950,7 @@ protected:
     bool shouldNotify(
             Peer::Pimpl     peer,
             const DataSegId dataSegId) override {
-        LOG_ASSERT(!peerSetMutex.try_lock());
+        LOG_ASSERT(!stateMutex.try_lock());
         // Remote peer is subscriber & doesn't have the datum => notify
         return !peer->isRmtPub() && bookkeeper->shouldNotify(peer, dataSegId);
     }
@@ -963,21 +974,20 @@ public:
                   Tracker             tracker,
                   PeerConnSrvr::Pimpl peerConnSrvr,
                   const int           timeout,
-                  const unsigned      maxPeers,
-                  const unsigned      evalTime)
+                  const int           maxPeers,
+                  const int           evalTime)
         : P2pMgrImpl(subNode, tracker, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
         , subNode(subNode)
         , maxClntPeers(maxSrvrPeers)
         , numClntPeers(0)
         , timeout(timeout)
-        , peerSrvr(SubPeerSrvr::create(peerConnSrvr))
+        , p2pSrvr(SubP2pSrvr::create(peerConnSrvr))
         , connectThread()
-        , tier(-1)
     {
         bookkeeper = Bookkeeper::createSub(maxPeers);
-        peerSrvrInfo = P2pSrvrInfo{peerSrvr->getSrvrAddr(), tier, maxPeers, SysClock::now()};
+        srvrInfo = P2pSrvrInfo{p2pSrvr->getSrvrAddr(), maxSrvrPeers};
         // Ensure that this instance doesn't try to connect to itself
-        tracker.erase(peerSrvr->getSrvrAddr());
+        tracker.erase(p2pSrvr->getSrvrAddr());
     }
 
     /// Copy constructs
@@ -985,6 +995,14 @@ public:
 
     /// Copy assignment operator
     SubP2pMgrImpl& operator=(const SubP2pMgrImpl& rhs) =delete;
+
+    Tracker& getTracker() {
+        return P2pMgrImpl::getTracker();
+    }
+
+    P2pSrvrInfo getSrvrInfo() {
+        return P2pMgrImpl::getSrvrInfo();
+    }
 
     void run() {
         P2pMgrImpl::run();
@@ -994,16 +1012,9 @@ public:
         P2pMgrImpl::halt();
     }
 
-    /**
-     * Returns current information on the P2P-server.
-     * @return Current information on the P2P-server
-     */
-    P2pSrvrInfo getSrvrInfo() override {
-        Guard guard{peerSetMutex};
-        peerSrvrInfo.tier = tier;
-        peerSrvrInfo.numAvail = maxSrvrPeers - numSrvrPeers;
-        peerSrvrInfo.valid = SysClock::now();
-        return peerSrvrInfo;
+    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) override {
+        tracker.insert(srvrInfo);
+        updateTier(srvrInfo.getClntTier());
     }
 
     void waitForSrvrPeer() override {
@@ -1030,7 +1041,7 @@ public:
                     const SockAddr rmtAddr) {
         // Must not exist and not been previously requested
         if (subNode.shouldRequest(prodId)) {
-            Guard guard{peerSetMutex};
+            Guard guard{stateMutex};
             if (peerMap.count(rmtAddr))
                 return bookkeeper->shouldRequest(peerMap[rmtAddr], prodId);
         }
@@ -1040,7 +1051,7 @@ public:
                     SockAddr        rmtAddr) {
         // Must not exist and not been previously requested
         if (subNode.shouldRequest(segId)) {
-            Guard guard{peerSetMutex};
+            Guard guard{stateMutex};
             if (peerMap.count(rmtAddr))
                 return bookkeeper->shouldRequest(peerMap[rmtAddr], segId);
         }
@@ -1061,18 +1072,22 @@ public:
 
     void missed(const ProdId prodId,
                 SockAddr     rmtAddr) {
-        Guard guard{peerSetMutex};
-        if (peerMap.count(rmtAddr)) {
-            auto& peer = peerMap[rmtAddr];
-            reassign(peerMap[rmtAddr], prodId);
+        Guard guard{stateMutex};
+        if (state != State::STOPPING) {
+            if (peerMap.count(rmtAddr)) {
+                auto& peer = peerMap[rmtAddr];
+                reassign(peerMap[rmtAddr], prodId);
+            }
         }
     }
     void missed(const DataSegId dataSegId,
                 SockAddr        rmtAddr) {
-        Guard guard{peerSetMutex};
-        if (peerMap.count(rmtAddr)) {
-            auto& peer = peerMap[rmtAddr];
-            reassign(peerMap[rmtAddr], dataSegId);
+        Guard guard{stateMutex};
+        if (state != State::STOPPING) {
+            if (peerMap.count(rmtAddr)) {
+                auto& peer = peerMap[rmtAddr];
+                reassign(peerMap[rmtAddr], dataSegId);
+            }
         }
     }
 
@@ -1085,36 +1100,39 @@ public:
     template<class DATUM>
     void recvData(const DATUM datum,
                   SockAddr    rmtAddr) {
-        const auto id = datum.getId();
-        Guard      guard{peerSetMutex};
+        Guard      guard{stateMutex};
 
-        if (peerMap.count(rmtAddr)) {
-            auto& peer = peerMap[rmtAddr];
-            /*
-             * The bookkeeper is accessed in 3 phases:
-             *   1) The given peer's rating is increased if the reception is valid;
-             *   2) The bookkeeper is queried as to whether a peer should notify its remote
-             *      counterpart about the received datum before the relevant information is deleted
-             *      from the bookkeeper; and
-             *   3) The relevant bookkeeper entries are deleted.
-             */
-            if (bookkeeper->received(peer, id)) {
-                subNode.recvP2pData(datum);
+        if (state != State::STOPPING) {
+            const auto id = datum.getId();
 
-                LOG_DEBUG("Notifying peers about datum %s", id.to_string().data());
-                for (auto p : peerSet) {
-                    if (shouldNotify(p, datum.getId()))
-                        p->notify(id);
+            if (peerMap.count(rmtAddr)) {
+                auto& peer = peerMap[rmtAddr];
+                /*
+                 * The bookkeeper is accessed in 3 phases:
+                 *   1) The given peer's rating is increased if the reception is valid;
+                 *   2) The bookkeeper is queried as to whether a peer should notify its remote
+                 *      counterpart about the received datum before the relevant information is deleted
+                 *      from the bookkeeper; and
+                 *   3) The relevant bookkeeper entries are deleted.
+                 */
+                if (bookkeeper->received(peer, id)) {
+                    subNode.recvP2pData(datum);
+
+                    LOG_DEBUG("Notifying peers about datum %s", id.to_string().data());
+                    for (auto p : peerSet) {
+                        if (shouldNotify(p, datum.getId()))
+                            p->notify(id);
+                    }
+                    LOG_TRACE("Erasing bookkeeper entry");
+                    bookkeeper->erase(id); // No longer relevant
                 }
-                LOG_TRACE("Erasing bookkeeper entry");
-                bookkeeper->erase(id); // No longer relevant
+                else {
+                    LOG_WARNING("Datum " + id.to_string() + " was unexpected");
+                }
             }
             else {
-                LOG_WARNING("Datum " + id.to_string() + " was unexpected");
+                LOG_DEBUG("Remote P2P-server " + rmtAddr.to_string() + " not found");
             }
-        }
-        else {
-            LOG_DEBUG("Remote P2P-server " + rmtAddr.to_string() + " not found");
         }
     }
     void recvData(const ProdInfo prodInfo,
@@ -1132,10 +1150,22 @@ SubP2pMgr::Pimpl SubP2pMgr::create(
         Tracker                   tracker,
         const PeerConnSrvr::Pimpl peerConnSrvr,
         const int                 timeout,
-        const unsigned            maxPeers,
-        const unsigned            evalTime) {
+        const int                 maxPeers,
+        const int                 evalTime) {
     return Pimpl{new SubP2pMgrImpl{subNode, tracker, peerConnSrvr, timeout, maxPeers,
             evalTime}};
+}
+
+SubP2pMgr::Pimpl SubP2pMgr::create(
+        SubNode&          subNode,
+        Tracker           tracker,
+        const SockAddr    p2pSrvrAddr,
+        const int         maxPendConn,
+        const int         timeout,
+        const int         maxPeers,
+        const int         evalTime) {
+    auto peerConnSrvr = PeerConnSrvr::create(p2pSrvrAddr, maxPendConn);
+    return create(subNode, tracker, peerConnSrvr, timeout, maxPeers, evalTime);
 }
 
 } // namespace

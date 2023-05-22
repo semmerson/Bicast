@@ -25,6 +25,7 @@
 #include "Node.h"
 
 #include "Disposer.h"
+#include "PeerConn.h"
 #include "Shield.h"
 #include "ThreadException.h"
 
@@ -210,6 +211,14 @@ public:
 
     virtual ~NodeImpl() noexcept {
         ::sem_destroy(&stopSem);
+    }
+
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return p2pMgr->getSrvrInfo();
+    }
+
+    SockAddr getP2pSrvrAddr() const override {
+        return p2pMgr->getSrvrInfo().srvrAddr;
     }
 
     void run() override {
@@ -428,20 +437,20 @@ public:
         }
     }
 
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return NodeImpl::getP2pSrvrInfo();
+    }
+
+    SockAddr getP2pSrvrAddr() const override {
+        return NodeImpl::getP2pSrvrAddr();
+    }
+
     void run() override {
         NodeImpl::run();
     }
 
     void halt() override {
         NodeImpl::halt();
-    }
-
-    P2pSrvrInfo getP2pSrvrInfo() const override {
-        return p2pMgr->getSrvrInfo();
-    }
-
-    SockAddr getP2pSrvrAddr() const override {
-        return p2pMgr->getSrvrInfo().srvrAddr;
     }
 
     void waitForPeer() override {
@@ -674,11 +683,11 @@ public:
     }
 
     P2pSrvrInfo getP2pSrvrInfo() const override {
-        return p2pMgr->getSrvrInfo();
+        return NodeImpl::getP2pSrvrInfo();
     }
 
     SockAddr getP2pSrvrAddr() const override {
-        return p2pMgr->getSrvrInfo().srvrAddr;
+        return NodeImpl::getP2pSrvrAddr();
     }
 
     void run() override {
@@ -833,22 +842,6 @@ public:
     }
 };
 
-/*
-SubNode::Pimpl SubNode::create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const TcpSrvrSock srvrSock,
-            const int         acceptQSize,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles) {
-    return Pimpl{new SubNodeImpl(subInfo, mcastIface, srvrSock, acceptQSize, timeout, maxPeers,
-            evalTime, repoDir, maxOpenFiles)};
-}
-*/
-
 SubNode::Pimpl SubNode::create(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
@@ -860,6 +853,20 @@ SubNode::Pimpl SubNode::create(
             const long              maxOpenFiles) {
     return Pimpl{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers, evalTime,
             repoDir, maxOpenFiles)};
+}
+SubNode::Pimpl SubNode::create(
+        SubInfo&          subInfo,
+        const InetAddr    mcastIface,
+        const SockAddr    p2pSrvrAddr,
+        const int         maxPendConn,
+        const int         timeout,
+        const unsigned    maxPeers,
+        const unsigned    evalTime,
+        const String&     repoDir,
+        const long        maxOpenFiles) {
+    auto peerConnSrvr = PeerConnSrvr::create(p2pSrvrAddr, maxPendConn);
+    return create(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers, evalTime, repoDir,
+            maxOpenFiles);
 }
 
 } // namespace

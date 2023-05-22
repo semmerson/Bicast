@@ -76,9 +76,10 @@ class Tracker::Impl final : public XprtAble
             const auto& info1 = trackerImpl.srvrInfos.at(srvr1);
             const auto& info2 = trackerImpl.srvrInfos.at(srvr2);
 
-            // Unavailable server is greatest
-            if ((info1.numAvail == 0 || info2.numAvail == 0) && info1.numAvail != info2.numAvail)
-                return info1.numAvail > info2.numAvail;
+            // Server for which no metrics exist is greatest
+            if ((!info1.validMetrics() || !info2.validMetrics()) &&
+                    info1.validMetrics() != info2.validMetrics())
+                return info1.validMetrics();
 
             if (info1.tier != info2.tier) {
                 return info1.tier < info2.tier; // Closer to source is less
@@ -90,7 +91,7 @@ class Tracker::Impl final : public XprtAble
                 return info1.valid > info2.valid; // Newer information is less
             }
             else {
-                return srvr1 < srvr2; // Intrinsic sort-order
+                return srvr1 < srvr2; // Intrinsic sort-order of server's socket address
             }
         }
     };
@@ -160,15 +161,17 @@ class Tracker::Impl final : public XprtAble
 
             for (;;) {
                 // Wait until the delay-queue is not empty
-                if (delayQueue.empty())
+                if (delayQueue.empty()) {
                     delayCond.wait(lock, [&]{return !delayQueue.empty() || done;});
+                    if (done)
+                        break;
+                }
                 /*
                  * and
                  *   - The reveal-time for the top entry has expired; or
                  *   - `halt()` has been called.
                  */
                 delayCond.wait_until(lock, delayQueue.top().revealTime, pred);
-
                 if (done)
                     break;
 
@@ -538,7 +541,7 @@ void Tracker::erase(const Tracker tracker) {
     pImpl->erase(*tracker.pImpl);
 }
 
-SockAddr Tracker::getNext() const {
+SockAddr Tracker::getNextAddr() const {
     return pImpl->getNext();
 }
 

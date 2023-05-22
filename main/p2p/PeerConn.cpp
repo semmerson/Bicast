@@ -62,7 +62,6 @@ class PeerConnImpl : public PeerConn
     Thread             noticeReader;  ///< For receiving notices
     Thread             dataReader;    ///< For receiving data
     Rpc::Pimpl         rpc;           ///< Remote procedure call object
-    Peer::Pimpl        peer;          ///< Associated peer
 
     static void asyncConnectXprt(
             const SockAddr& srvrAddr,
@@ -204,12 +203,15 @@ class PeerConnImpl : public PeerConn
      * thread.
      *
      * @param[in] xprt   Transport
+     * @param[in] peer   Peer to call for incoming messages
      */
-    void runReader(Xprt& xprt) {
+    void runReader(
+            Xprt& xprt,
+            Peer& peer) {
         // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
-            while (rpc->process(xprt, *peer.get()))
+            while (rpc->process(xprt, peer))
                 ;
             // Connection lost
             ::sem_post(&stopSem);
@@ -224,12 +226,14 @@ class PeerConnImpl : public PeerConn
     /**
      * Starts the internal threads.
      */
-    void startThreads() {
-        noticeReader = Thread(&PeerConnImpl::runReader, this, std::ref(noticeXprt));
+    void startThreads(Peer& peer) {
+        noticeReader = Thread(&PeerConnImpl::runReader, this, std::ref(noticeXprt), std::ref(peer));
         try {
-            requestReader = Thread(&PeerConnImpl::runReader, this, std::ref(requestXprt));
+            requestReader = Thread(&PeerConnImpl::runReader, this, std::ref(requestXprt),
+                    std::ref(peer));
             try {
-                dataReader = Thread(&PeerConnImpl::runReader, this, std::ref(dataXprt));
+                dataReader = Thread(&PeerConnImpl::runReader, this, std::ref(dataXprt),
+                        std::ref(peer));
             }
             catch (const std::exception& ex) {
                 requestXprt.shutdown();
@@ -273,7 +277,6 @@ class PeerConnImpl : public PeerConn
         , noticeReader()
         , dataReader()
         , rpc(Rpc::create())
-        , peer()
     {}
 
 public:
@@ -329,17 +332,15 @@ public:
         return "{lcl=" + lclSockAddr.to_string() + ", rmt=" + rmtSockAddr.to_string() + "}";
     }
 
-    void setPeer(Peer::Pimpl& peer) noexcept override {
-        LOG_ASSERT(!this->peer);
-
-        this->peer = peer;
+    bool setRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) override {
+        return rpc->setRmtSrvrInfo(noticeXprt, srvrInfo);
     }
 
-    void run() override {
+    void run(Peer& peer) override {
         if (dataReader.joinable() || requestReader.joinable() || noticeReader.joinable())
             throw LOGIC_ERROR("Peer-connection already started");
 
-        startThreads();
+        startThreads(peer);
         ::sem_wait(&stopSem); // Blocks until connection lost, `halt()` called or `threadEx` set
         stopThreads();
         threadEx.throwIfSet();
@@ -352,11 +353,11 @@ public:
             ::sem_post(&stopSem);
     }
 
-    // Notices:
-
-    bool add(const P2pSrvrInfo& srvrInfo) override {
-        return rpc->add(noticeXprt, srvrInfo);
+    bool processMsg(Peer& peer) override {
+        return rpc->process(noticeXprt, peer);
     }
+
+    // Notices:
 
     bool add(const Tracker& tracker) override {
         return rpc->add(noticeXprt, tracker);
@@ -595,9 +596,9 @@ public:
     }
 
     /**
-     * Returns the next RPC instance.
+     * Returns the next instance.
      *
-     * @return              Next RPC instance. Will test false if `halt()` has been called.
+     * @return              Next instance. Will test false if `halt()` has been called.
      * @throws SystemError  Couldn't accept connection
      */
     PeerConn::Pimpl accept() override {

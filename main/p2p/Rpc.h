@@ -53,34 +53,22 @@ public:
      */
     static Pimpl create();
 
-    /**
-     * Creates a new subscriber instance within a timeout. `isClient()` will return true.
-     *
-     * @param[in] srvrAddr Socket address of remote RPC server
-     * @param[in] timeout  Timeout in ms. <=0 => System's default timeout.
-     * @return             New instance
-     * @see `isClient()`
-     */
-    static Pimpl create(
-            const SockAddr srvrAddr,
-            const int      timeout = -1);
-
     /// Destroys.
     virtual ~Rpc() {}
 
     /**
-     * Adds information on a P2P-server.
+     * Sends information on the local P2P-server to the remote peer.
      * @param[in] xprt      Transport on which to send the information
-     * @param[in] srvrInfo  Information on a P2P-server
+     * @param[in] srvrInfo  Information on the local P2P-server
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool add(
+    virtual bool setRmtSrvrInfo(
             Xprt&               xprt,
             const P2pSrvrInfo& srvrInfo) =0;
 
     /**
-     * Adds information on P2P-servers.
+     * Sends information on known P2P-servers to the remote peer.
      * @param[in] xprt      Transport on which to send the information
      * @param[in] tracker   Information on P2P-servers
      * @retval    true      Success
@@ -91,8 +79,7 @@ public:
             const Tracker& tracker) =0;
 
     /**
-     * Notifies the remote peer about available product information. May
-     * block.
+     * Notifies the remote peer about available product information. May block.
      *
      * @param[in] xprt        Transport on which the notice will be sent
      * @param[in] prodId      Product identifier

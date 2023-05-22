@@ -21,24 +21,24 @@ class BookkeeperTest : public ::testing::Test, public SubP2pMgr
     void runPubPeerSrvr() {
         std::list<Peer::Pimpl> peers;
         for (;;) {
-            peers.push_back(pubPeerSrvr->accept(*this));
+            peers.push_back(pubP2pSrvr->accept(*this));
         }
     }
 
 protected:
-    SockAddr           pubAddr;
-    PubPeerSrvr::Pimpl pubPeerSrvr;
-    std::thread        pubPeerSrvrThrd;
-    ProdId             prodId;
-    DataSegId          segId;
-    Peer::Pimpl        subPeer1;
-    Peer::Pimpl        subPeer2;
-    const SegSize      maxSegSize = 1400;
+    SockAddr          pubAddr;
+    PubP2pSrvr::Pimpl pubP2pSrvr;
+    std::thread       pubP2pSrvrThrd;
+    ProdId            prodId;
+    DataSegId         segId;
+    Peer::Pimpl       subPeer1;
+    Peer::Pimpl       subPeer2;
+    const SegSize     maxSegSize = 1400;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
-        , pubPeerSrvr(PubPeerSrvr::create(pubAddr, 5))
-        , pubPeerSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
+        , pubP2pSrvr(PubP2pSrvr::create(pubAddr, 5))
+        , pubP2pSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodId{"product"}
         , segId(prodId, maxSegSize) // Second data-segment
         , subPeer1(Peer::create(*this, pubAddr))
@@ -48,8 +48,8 @@ protected:
     }
 
     ~BookkeeperTest() {
-        ::pthread_cancel(pubPeerSrvrThrd.native_handle());
-        pubPeerSrvrThrd.join();
+        ::pthread_cancel(pubP2pSrvrThrd.native_handle());
+        pubP2pSrvrThrd.join();
     }
 
 public:
@@ -61,8 +61,16 @@ public:
     // Both sides
     void waitForSrvrPeer() override {}
 
-    SockAddr getSrvrAddr() const override {
-        return SockAddr();
+    P2pSrvrInfo getSrvrInfo() override {
+        return P2pSrvrInfo(pubP2pSrvr->getSrvrAddr(), 2, 0);
+    }
+
+    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) {
+    }
+
+    Tracker& getTracker() override {
+        static Tracker tracker{};
+        return tracker;
     }
 
     ProdIdSet subtract(ProdIdSet rhs) const override {

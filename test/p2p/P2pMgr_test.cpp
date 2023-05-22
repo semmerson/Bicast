@@ -148,6 +148,10 @@ public:
         }
     }
 
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return P2pSrvrInfo{};
+    }
+
     SockAddr getP2pSrvrAddr() const override {
         return SockAddr{};
     }
@@ -232,9 +236,9 @@ TEST_F(P2pMgrTest, SingleSubscriber)
 
     Tracker    tracker{};
     LOG_NOTE("Getting socket address of publishing P2P manager");
-    const auto addr = pubP2pMgr->getSrvrAddr();
+    const auto srvrInfo = pubP2pMgr->getSrvrInfo();
     LOG_NOTE("Adding socket address of publishing P2P manager to tracker");
-    tracker.insertBack(addr);
+    tracker.insert(srvrInfo);
 
     LOG_NOTE("Creating subscribing P2P manager");
     auto       subP2pMgr = SubP2pMgr::create(*this, tracker, localSrvrAddr, 5, -1, 8, 60);
@@ -272,25 +276,26 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     subscriberCount = 2;
 
     //LOG_DEBUG("Creating publishing P2P manager");
-    auto       pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 1, 1, 60);
-    Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
+    auto    pubP2pMgr = P2pMgr::create(*this, pubP2pSrvrAddr, 2, 1, 60);
+    Thread  pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
-    Tracker    tracker1{};
-    //LOG_DEBUG("Inserting address of publishing P2P server");
-    tracker1.insertBack(pubP2pSrvrAddr);
+    P2pSrvrInfo pubP2pSrvrInfo{pubP2pSrvrAddr, 2, 0};
+    Tracker     tracker1{};
+    tracker1.insert(pubP2pSrvrInfo);
+
     //LOG_DEBUG("Creating first subscribing P2P manager");
-    auto       subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr, 5, -1, 2, 60);
-    Thread     subThread1(&P2pMgrTest::runP2pMgr, this, subP2pMgr1);
+    auto    subP2pMgr1 = SubP2pMgr::create(*this, tracker1, localSrvrAddr, 5, -1, 2, 60);
+    Thread  subThread1(&P2pMgrTest::runP2pMgr, this, subP2pMgr1);
 
     //LOG_DEBUG("Waiting for first subscriber to connect");
     pubP2pMgr->waitForSrvrPeer();
 
     Tracker tracker2{};
-    //LOG_DEBUG("Inserting address of subscribing P2P server");
-    tracker2.insertBack(subP2pMgr1->getSrvrAddr());
+    tracker2.insert(pubP2pSrvrInfo);
+
     //LOG_DEBUG("Creating second subscribing P2P manager");
     auto    subP2pMgr2 = SubP2pMgr::create(*this, tracker2, localSrvrAddr, 5, -1, 1, 60);
-    Thread     subThread2(&P2pMgrTest::runP2pMgr, this, subP2pMgr2);
+    Thread  subThread2(&P2pMgrTest::runP2pMgr, this, subP2pMgr2);
 
     //LOG_DEBUG("Waiting for second subscriber to connect");
     subP2pMgr1->waitForSrvrPeer();

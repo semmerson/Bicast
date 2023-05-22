@@ -84,7 +84,7 @@ class HashMapQueue
 
 public:
     /**
-     * Constructs.
+     * Constructs. The queue will be empty.
      * @param[in] initialSize  Initial capacity of the queue
      */
     explicit HashMapQueue(const size_t initialSize = 10)

@@ -142,7 +142,7 @@ TEST_F(NodeTest, Construction)
     EXPECT_NE(0, pubPort);
 
     LOG_NOTE("Creating subscribing node");
-    subInfo.tracker.insertBack(pubP2pSrvrAddr);
+    subInfo.tracker.insert(pubP2pSrvrAddr);
     auto subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60, subRepoRoot,
             maxOpenFiles);
 
@@ -175,7 +175,7 @@ TEST_F(NodeTest, Sending)
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
         // Create subscriber
-        subInfo.tracker.insertBack(pubP2pSrvrAddr);
+        subInfo.tracker.insert(pubP2pSrvrAddr);
         auto   subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60,
                 subRepoRoot, maxOpenFiles);
         Thread subThread(&NodeTest::runNode, this, subNode);

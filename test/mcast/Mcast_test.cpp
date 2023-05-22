@@ -40,19 +40,20 @@ protected:
         PROD_INFO_RCVD        =  0x1,
         DATA_SEG_RCVD         =  0x2,
     };
-    Mutex      mutex;
-    Cond       cond;
-    unsigned   state;
-    SockAddr   ssmAddr;
-    InetAddr   srcAddr;
-    InetAddr   subIface;
-    String     prodName;
-    ProdId     prodId;
-    ProdSize   prodSize;
-    ProdInfo   prodInfo;
-    DataSegId  segId;
-    char       memData[1000];
-    DataSeg    dataSeg;
+    Mutex       mutex;
+    Cond        cond;
+    unsigned    state;
+    SockAddr    ssmAddr;
+    InetAddr    srcAddr;
+    InetAddr    subIface;
+    P2pSrvrInfo p2pSrvrInfo;
+    String      prodName;
+    ProdId      prodId;
+    ProdSize    prodSize;
+    ProdInfo    prodInfo;
+    DataSegId   segId;
+    char        memData[1000];
+    DataSeg     dataSeg;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -64,6 +65,7 @@ protected:
         , ssmAddr{"232.1.1.1:38800"}
         , srcAddr{"127.0.0.1"}
         , subIface{srcAddr}
+        , p2pSrvrInfo{}
         , prodName{"product"}
         , prodId{prodName}
         , prodSize{100000}
@@ -115,6 +117,11 @@ protected:
     {
         std::unique_lock<decltype(mutex)> lock{mutex};
         cond.wait(lock, [&,nextState]{return state == nextState;});
+    }
+
+public:
+    P2pSrvrInfo getP2pSrvrInfo() const override {
+        return p2pSrvrInfo;
     }
 
     void start() {};

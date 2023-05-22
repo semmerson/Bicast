@@ -36,18 +36,16 @@ class ActionTemplate::Impl
 protected:
     std::vector<String> argTemplate; ///< Arguments template
     const size_t        nargs;       ///< Number of command-line arguments
-    const bool          keepOpen;    ///< If the action uses a file descriptor, should it be kept
-                                     ///< open between products?
+    const bool          keepOpen;    ///< Should a file descriptor be kept open between products?
 
 public:
     /**
      * Constructs.
      *
      * @param[in] argTemplate   Argument template
-     * @param[in] keepOpen      Should the file descriptor be kept open?
+     * @param[in] keepOpen      Should a file descriptor be kept open?
      */
-    Impl(
-            const std::vector<String> argTemplate,
+    Impl(   const std::vector<String> argTemplate,
             const bool                keepOpen)
         : argTemplate(argTemplate)
         , nargs(argTemplate.size())
@@ -218,9 +216,8 @@ class FileTemplateImpl final : public ActionTemplate::Impl
 public:
     /**
      * Constructs.
-     *
-     * @param[in] pathTemplate  Pathname template
-     * @param[in] keepOpen      Should the file descriptor be kept open between products?
+     * @param[in] pathTemplate  Pathname template for file
+     * @param[in] keepOpen      Keep file open between products?
      */
     FileTemplateImpl(
             const String& pathTemplate,
@@ -271,8 +268,9 @@ class AppendTemplateImpl final : public ActionTemplate::Impl
 public:
     /**
      * Constructs.
+     *
      * @param[in] pathTemplate  Pathname template
-     * @param[in] keepOpen      Should the file descriptor be kept open between products?
+     * @param[in] keepOpen      Should the file be kept open between products?
      */
     AppendTemplateImpl(
             const String& pathTemplate,

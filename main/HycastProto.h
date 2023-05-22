@@ -59,7 +59,7 @@ public:
     enum id : Type {
         UNSET,
         PROTOCOL_VERSION,    ///< Protocol version
-        PEER_SRVR_INFO,      ///< Information on a P2P-server
+        SET_RMT_SRVR_INFO,   ///< Set information on the remote peer's P2P server
         PEER_SRVR_INFOS,     ///< Information on P2P-servers
         IS_PUBLISHER,        ///< Is the peer the publisher?
         AM_PUB_PATH,         ///< The peer has a path to the publisher
@@ -728,8 +728,8 @@ public:
 
 /// Tracking information on a peer-to-peer server
 struct P2pSrvrInfo final : public XprtAble {
-    using Tier     = uint16_t; ///< Number of hops to the publisher
-    using NumAvail = uint16_t; ///< Number of server-side peers available
+    using Tier     = int16_t; ///< Number of hops to the publisher
+    using NumAvail = int16_t; ///< Number of server-side peers available
 
     SysTimePoint valid;    ///< When this information was valid
     SockAddr     srvrAddr; ///< Socket address of the server
@@ -738,40 +738,65 @@ struct P2pSrvrInfo final : public XprtAble {
 
     /**
      * Constructs.
-     * @param[in] srvrAddr  Socket address of the P2P-server
-     * @param[in] tier      Minimum number of hops in the P2P network to the publisher
-     * @param[in] numAvail  Number of available server-side connections
-     * @param[in] valid     Time when this information was valid
+     * @param[in] srvrAddr     Socket address of the P2P-server
+     * @param[in] tier         Minimum number of hops in the P2P network to the publisher
+     * @param[in] numAvail     Number of available server-side connections
+     * @param[in] valid        Time when this information was valid
+     * @throw InvalidArgument  `tier` or `numAvail` can't be represented
      */
     P2pSrvrInfo(
-            const SockAddr      srvrAddr,
-            const unsigned      tier,
-            const unsigned      numAvail,
-            const SysTimePoint& valid)
+            const SockAddr      srvrAddr = SockAddr(),
+            const int           numAvail = -1,
+            const int           tier = -1,
+            const SysTimePoint& valid = SysClock::now())
         : valid(valid)
         , srvrAddr(srvrAddr)
         , tier(static_cast<Tier>(tier))
         , numAvail(static_cast<NumAvail>(numAvail))
     {
-        LOG_ASSERT(tier >= 0 && tier <= ~static_cast<Tier>(0));
-        LOG_ASSERT(numAvail >= 0 && numAvail <= ~static_cast<NumAvail>(0));
+        LOG_ASSERT(tier >= -1 && tier <= std::numeric_limits<Tier>::max());
+        LOG_ASSERT(numAvail >= -1 && numAvail <= std::numeric_limits<NumAvail>::max());
     }
 
     /**
-     * Default constructs.
+     * Indicates if this instance is valid (i.e., wasn't default constructed).
      */
-    P2pSrvrInfo()
-        : valid(SysClock::now())
-        , srvrAddr()
-        , tier(-1)
-        , numAvail(0)
-    {}
+    inline operator bool() const {
+        return static_cast<bool>(srvrAddr);
+    }
+
+    /**
+     * Indicates if the tier number and number of available server-side connections are valid.
+     * @retval true   They are valid
+     * @retval false  The are not valid
+     */
+    inline bool validMetrics() const noexcept {
+        return tier >= 0 && numAvail >= 0;
+    }
+
+    /**
+     * Indicates if the tier number in this instance is valid.
+     * @retval true   The tier number is valid
+     * @retval false  The tier number is not valid
+     */
+    inline bool validTier() const noexcept {
+        return tier >= 0;
+    }
 
     /**
      * Returns a string representation of this instance.
      * @return String representation of this instance
      */
     String to_string() const;
+
+    /**
+     * Returns the local tier number for a client-side peer assuming this instance is for a remote
+     * P2P-server.
+     * @return Local tier number for a client-side peer
+     */
+    inline P2pSrvrInfo::Tier getClntTier() const noexcept {
+        return validTier() ? tier + 1 : -1;
+    }
 
     /**
      * Writes itself to a transport.
@@ -788,6 +813,17 @@ struct P2pSrvrInfo final : public XprtAble {
      * @retval    false    Lost connection
      */
     bool read(Xprt xprt);
+
+    /**
+     * Indicates if this instance is equal to another.
+     * @param[in] rhs  The other instance
+     * @retval true    This instance is equal to the other
+     * @retval false   This instance is not equal to the other
+     */
+    bool operator==(const P2pSrvrInfo& rhs) {
+        return valid == valid ||
+                (srvrAddr == rhs.srvrAddr && tier == rhs.tier && numAvail == rhs.numAvail);
+    }
 };
 
 /******************************************************************************/
@@ -856,10 +892,13 @@ public:
     void erase(const Tracker tracker);
 
     /**
-     * Removes and returns the address of the next P2P-server to try.
-     * @return The address of the next P2P-server to try.
+     * Removes and returns the address of the next P2P-server to try. Blocks until one is available
+     * or `halt()` has been called.
+     * @return The address of the next P2P-server to try. Will test false if `halt()` has been
+     *         called.
+     * @see halt()
      */
-    SockAddr getNext() const;
+    SockAddr getNextAddr() const;
 
     /**
      * Handles a P2P-server that's offline.
@@ -907,8 +946,6 @@ public:
     /// Identifier of the type of notice
     enum class Id {
         UNSET,
-        AM_PUB_PATH,
-        PEER_SRVR_INFO,
         PEER_SRVR_INFOS,
         GOOD_PEER_SRVR,
         GOOD_PEER_SRVRS,
@@ -918,8 +955,7 @@ public:
         DATA_SEG_ID
     } id; ///< Identifier of the type of notice
     union {
-        bool         amPubPath;
-        P2pSrvrInfo srvrInfo;
+        P2pSrvrInfo  srvrInfo;
         SockAddr     srvrAddr;
         Tracker      tracker;
         ProdId       prodId;
@@ -929,24 +965,6 @@ public:
     Notice() noexcept
         : prodId()
         , id(Id::UNSET)
-    {}
-
-    /**
-     * Constructs a notice about being a path to the publisher.
-     * @param[in] amPubPath  Does this instance have a path to the publisher?
-     */
-    explicit Notice(const bool amPubPath) noexcept
-        : id(Id::AM_PUB_PATH)
-        , amPubPath(amPubPath)
-    {}
-
-    /**
-     * Constructs a notice about a P2P-server.
-     * @param[in] srvrInfo  The P2P-server's information
-     */
-    explicit Notice(const P2pSrvrInfo& srvrInfo) noexcept
-        : id(Id::PEER_SRVR_INFO)
-        , srvrInfo(srvrInfo)
     {}
 
     /**

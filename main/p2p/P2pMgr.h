@@ -1,6 +1,8 @@
 /**
- * This file declares the interface for a peer-to-peer manager. Such a manager is called by peers to
- * handle received PDU-s.
+ * This file declares the interface for a peer-to-peer manager. A P2P manager is called by local
+ * peers to handle received PDU-s and by publishing nodes to notify remote peers about new data and
+ * send it if necessary.It also manages the set of local peers, periodically replacing the poorest
+ * performing one and exchanges information on potential peer-servers with its remote counterpart.
  * 
  * @file:   P2pMgr.h
  * @author: Steven R. Emmerson
@@ -128,6 +130,19 @@ public:
     virtual ~P2pMgr() noexcept {};
 
     /**
+     * Returns a reference to the tracker used by this instance.
+     * @return A reference to the tracker used by this instance
+     */
+    virtual Tracker& getTracker() =0;
+
+    /**
+     * Returns information on this instance's P2P-server.
+     *
+     * @return  Information on this instance's P2P-server
+     */
+    virtual P2pSrvrInfo getSrvrInfo() =0;
+
+    /**
      * Executes this instance. Starts internal threads that create, accept, and execute peers.
      * Doesn't return until `halt()` is called or an internal thread throws an  exception. Rethrows
      * the first exception thrown by an internal thread if it exists.
@@ -148,11 +163,11 @@ public:
     virtual void halt() =0;
 
     /**
-     * Returns information on this instance's P2P-server.
-     *
-     * @return  Information on this instance's P2P-server
+     * Saves information on a remote peer's P2P-server. Should only be called by *running* peers
+     * (i.e., peers whose `run()` function has been called).
+     * @param[in] srvrInfo  Information on a remote peer's P2P-server
      */
-    virtual P2pSrvrInfo getSrvrInfo() =0;
+    virtual void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
 
     /**
      * Blocks until at least one remote peer has established a connection via the local P2P-server.
@@ -161,40 +176,11 @@ public:
     virtual void waitForSrvrPeer() =0;
 
     /**
-     * Receives notification as to whether a remote P2P node provides a path to the publisher.
-     *
-     * @param[in] havePubPath  Does the remote P2P node provide a path to the publisher?
-     * @param[in] rmtAddr      Socket address of associated remote peer
-     */
-    virtual void recvHavePubPath(
-            const bool     havePubPath,
-            const SockAddr rmtAddr) {};
-
-    /**
-     * Receives the address of a potential P2P-server from a remote peer.
-     *
-     * @param[in] info  Information on the P2P server
-     */
-    virtual void recvAdd(const P2pSrvrInfo& info) {}; // Default implemented so mocks don't have to
-    /**
      * Receives a set of potential peer servers from a remote peer.
      *
      * @param[in] tracker      Set of potential P2P-servers
      */
     virtual void recvAdd(Tracker tracker) {};
-
-    /**
-     * Receives the address of a bad P2P-server from a remote peer.
-     *
-     * @param[in] p2pSrvr     Socket address of potential P2P-server
-     */
-    virtual void recvRemove(const SockAddr p2pSrvr) {};
-    /**
-     * Receives a set of bad peer servers from a remote peer.
-     *
-     * @param[in] tracker      Set of bad P2P-servers
-     */
-    virtual void recvRemove(const Tracker tracker) {};
 
     /**
      * Notifies connected remote peers about the availability of product information.
@@ -286,8 +272,8 @@ public:
             const SockAddr    p2pSrvrAddr,
             const int         maxPendConn,
             const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime);
+            const int         maxPeers,
+            const int         evalTime);
 
     /**
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
@@ -295,7 +281,7 @@ public:
      *
      * @param[in] subNode       Subscriber's node
      * @param[in] tracker       Pool of addresses of P2P servers
-     * @param[in] PeerConnSrvr  Peer-connection server
+     * @param[in] peerConnSrvr  Peer-connection server
      * @param[in] timeout       Timeout, in ms, for connecting to remote P2P servers. -1 => default
      *                          timeout; 0 => immediate return.
      * @param[in] maxPeers      Maximum number of peers. Might be adjusted upwards.
@@ -308,8 +294,8 @@ public:
             Tracker           tracker,
             PeerConnSrvrPimpl peerConnSrvr,
             const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime);
+            const int         maxPeers,
+            const int         evalTime);
 
     /**
      * Destroys.

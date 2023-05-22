@@ -905,10 +905,20 @@ public:
         if (name.size() > _POSIX_HOST_NAME_MAX)
             throw INVALID_ARGUMENT("Name is longer than " + std::to_string(_POSIX_HOST_NAME_MAX) +
                     " bytes");
+        try {
+            getIpAddr(); // Throws if the name can't be resolved
+        }
+        catch (const std::SystemError& ex) {
+            std::throw_with_nested(INVALID_ARGUMENT("Invalid hostname: \"" + name + "\""));
+        }
+        catch (...) {
+            throw;
+        }
     }
 
     NameAddr()
-        : NameAddr("")
+        : Impl(ADDR_NAME)
+        , name()
     {}
 
     /**

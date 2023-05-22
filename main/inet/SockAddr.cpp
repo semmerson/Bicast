@@ -224,15 +224,27 @@ SockAddr::SockAddr(
     : pImpl{new Impl(inetAddr, port)}
 {}
 
+/**
+ * Constructs from an IPv4 socket address.
+ *
+ * @param[in] addr  IPv4 address
+ * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
+ */
 SockAddr::SockAddr(
         const in_addr_t addr,
-        const in_port_t port) ///< Port number in host byte-order
+        const in_port_t port)
      : SockAddr(InetAddr(addr), port)
 {}
 
+/**
+ * Constructs from an IPv4 socket address.
+ *
+ * @param[in] addr  IPv4 address
+ * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
+ */
 SockAddr::SockAddr(
         const struct in_addr& addr,
-        const in_port_t       port) ///< Port number in host byte-order
+        const in_port_t       port)
      : SockAddr(InetAddr(addr.s_addr), port)
 {}
 
@@ -242,7 +254,7 @@ SockAddr::SockAddr(const struct sockaddr_in& sockaddr)
 
 SockAddr::SockAddr(
         const struct in6_addr& addr,
-        const in_port_t        port) ///< Port number in host byte-order
+        const in_port_t        port)
     : SockAddr(InetAddr(addr), port)
 {}
 
@@ -295,6 +307,13 @@ SockAddr::SockAddr(
     }
 }
 
+/**
+ * Splits a socket specification into Internet and port number specifications
+ * @param[in]  spec        Socket specification
+ * @param[out] inet        Internet specification
+ * @param[out] port        Port number specification
+ * @throw InvalidArgument  Not a socket specification
+ */
 static void splitSpec(
         const String& spec,
         String&       inet,
@@ -302,12 +321,10 @@ static void splitSpec(
 {
     auto pos = spec.rfind(':');
 
-    if (pos == spec.npos) {
-        // No port specification
-        inet = spec;
-        port = "0"; // Default port number
-    }
-    else if (pos >= 3 && spec[pos-1] == ']') {
+    if (pos == spec.npos)
+        throw INVALID_ARGUMENT("No port specified in \"" + spec + "\"");
+
+    if (pos >= 3 && spec[pos-1] == ']') {
         // "[" <IPv6 addr> "]:" <port>
         inet = spec.substr(1, pos-2);
         port = spec.substr(pos+1);
@@ -327,14 +344,14 @@ SockAddr::SockAddr(const std::string& spec)
 {
     // std::regex in gcc 4.8 doesn't work; hence, the following
 
-    String inetSpec, portSpec;
+    String inetSpec = "", portSpec = "";
 
     splitSpec(spec, inetSpec, portSpec);
 
     InetAddr      inet{inetSpec};
     unsigned long port;
 
-    if (::sscanf(portSpec.data(), "%lu", port) != 1)
+    if (::sscanf(portSpec.data(), "%lu", &port) != 1)
         throw INVALID_ARGUMENT("Invalid port specification: \"" + portSpec + "\"");
     if (port > USHRT_MAX)
         throw INVALID_ARGUMENT("Port number is too large: " + std::to_string(port));

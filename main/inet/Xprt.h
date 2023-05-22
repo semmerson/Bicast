@@ -239,6 +239,13 @@ public:
      */
     bool read(uint16_t&    value) const;
     /**
+     * Reads an signed, 16-bit value.
+     * @param[out] value    The value to be set
+     * @retval     true     Success
+     * @retval     false    Connection lost
+     */
+    bool read(int16_t&     value) const;
+    /**
      * Reads an unsigned, 32-bit value.
      * @param[out] value    The value to be set
      * @retval     true     Success

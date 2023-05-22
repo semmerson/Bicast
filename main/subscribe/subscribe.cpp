@@ -58,11 +58,11 @@ struct RunPar {
                 : addr(addr)
                 , maxPendConn(maxPendConn)
             {}
-        }        srvr;        ///< P2P server runtime parameters
-        int      timeout;     ///< Timeout in ms for connecting to remote P2P server
-        int      trackerSize; ///< Capacity of tracker object
-        unsigned maxPeers;    ///< Maximum number of peers to have
-        int      evalTime;    ///< Time interval for evaluating peer performance in seconds
+        }   srvr;        ///< P2P server runtime parameters
+        int timeout;     ///< Timeout in ms for connecting to remote P2P server
+        int trackerSize; ///< Capacity of tracker object
+        int maxPeers;    ///< Maximum number of peers to have
+        int evalTime;    ///< Time interval for evaluating peer performance in seconds
         /**
          * Constructs.
          * @param[in] addr         Socket address for the local P2P server
@@ -76,7 +76,7 @@ struct RunPar {
                 const int       acceptQSize,
                 const int       timeout,
                 const int       trackerSize,
-                const unsigned  maxPeers,
+                const int       maxPeers,
                 const int       evalTime)
             : srvr(addr, acceptQSize)
             , timeout(timeout)
@@ -440,20 +440,31 @@ static SubNode::Pimpl createSubNode()
     LOG_NOTE("Connecting to publisher " + runPar.pubAddr.to_string());
     Xprt    xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
 
-    P2pSrvrInfo p2pSrvrInfo{peerConnSrvr->getSrvrAddr(), static_cast<P2pSrvrInfo::Tier>(-1),
-            (runPar.p2p.maxPeers+1)/2, SysClock::now()};
+    P2pSrvrInfo p2pSrvrInfo{peerConnSrvr->getSrvrAddr(), (runPar.p2p.maxPeers+1)/2};
     LOG_DEBUG("Sending information on P2P server " + peerConnSrvr->getSrvrAddr().to_string() +
             " to publisher " + runPar.pubAddr.to_string());
 
     bool lostConnection = true;
-    if (p2pSrvrInfo.write(xprt)) {
+    if (!p2pSrvrInfo.write(xprt)) {
+        throw RUNTIME_ERROR("Couldn't send P2P-server info to publisher " +
+                runPar.pubAddr.to_string());
+    }
+    else {
         P2pSrvrInfo pubP2pSrvrInfo;
-        if (pubP2pSrvrInfo.read(xprt)) {
+        if (!pubP2pSrvrInfo.read(xprt)) {
+            throw RUNTIME_ERROR("Couldn't receive P2P-server info from publisher " +
+                    runPar.pubAddr.to_string());
+        }
+        else {
             LOG_INFO("Received information on publisher's P2P server: " +
                     pubP2pSrvrInfo.to_string());
 
             SubInfo subInfo;
-            if (subInfo.read(xprt)) {
+            if (!subInfo.read(xprt)) {
+                throw RUNTIME_ERROR("Couldn't receive subscription info from publisher " +
+                        runPar.pubAddr.to_string());
+            }
+            else {
                 LOG_INFO("Received subscription information from publisher " +
                         runPar.pubAddr.to_string() + ": #peers=" +
                         std::to_string(subInfo.tracker.size()));
@@ -479,9 +490,6 @@ static SubNode::Pimpl createSubNode()
             } // Received subscription information from publisher
         } // Received information on publisher's P2P-server
     } // Sent information on subscriber's P2P-server to publisher
-
-    if (lostConnection)
-        throw RUNTIME_ERROR("Lost connection with publisher " + runPar.pubAddr.to_string());
 }
 
 /**

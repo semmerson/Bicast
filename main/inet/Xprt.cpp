@@ -488,6 +488,9 @@ bool Xprt::read(uint8_t&     value) const {
 bool Xprt::read(uint16_t&    value) const {
     return pImpl->read<uint16_t>(value);
 }
+bool Xprt::read(int16_t&     value) const {
+    return pImpl->read<uint16_t>(*reinterpret_cast<uint16_t*>(&value));
+}
 bool Xprt::read(uint32_t&    value) const {
     return pImpl->read<uint32_t>(value);
 }

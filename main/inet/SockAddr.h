@@ -54,21 +54,9 @@ public:
     SockAddr(const InetAddr& inetAddr,
              const in_port_t port);
 
-    /**
-     * Constructs from an IPv4 socket address.
-     *
-     * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
-     */
     SockAddr(const in_addr_t addr,
              const in_port_t port);
 
-    /**
-     * Constructs from an IPv4 socket address.
-     *
-     * @param[in] addr  IPv4 address
-     * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
-     */
     SockAddr(const struct in_addr& addr,
              const in_port_t       port);
 
@@ -77,7 +65,7 @@ public:
      *
      * @param[in] sockaddr  IPv4 socket address
      */
-    SockAddr(const struct sockaddr_in& sockaddr);
+    explicit SockAddr(const struct sockaddr_in& sockaddr);
 
     /**
      * Constructs from an IPv6 socket address. `0` obtains a system-chosen port
@@ -94,7 +82,7 @@ public:
      *
      * @param[in] addr  IPv6 socket address
      */
-    SockAddr(const struct sockaddr_in6& addr);
+    explicit SockAddr(const struct sockaddr_in6& addr);
 
     /**
      * Constructs from a generic socket address.
@@ -102,7 +90,7 @@ public:
      * @param[in] sockaddr               Generic socket address
      * @throws    std::invalid_argument  Address family isn't supported
      */
-    SockAddr(const struct sockaddr& sockaddr);
+    explicit SockAddr(const struct sockaddr& sockaddr);
 
     /**
      * Constructs from a generic socket address.
@@ -110,7 +98,7 @@ public:
      * @param[in] storage                Generic socket address
      * @throws    std::invalid_argument  Address family isn't supported
      */
-    SockAddr(const struct sockaddr_storage& storage);
+    explicit SockAddr(const struct sockaddr_storage& storage);
 
     /**
      * Constructs from a hostname and port number.
@@ -130,7 +118,7 @@ public:
      *                    - 192.168.0.1:2400
      *                    - [fe80::20c:29ff:fe6b:3bda]:34084
      */
-    SockAddr(const std::string& spec);
+    explicit SockAddr(const std::string& spec);
 
     /**
      * Clones this instance and changes the port number.
