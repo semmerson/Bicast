@@ -147,7 +147,7 @@ class NodeImpl : public Node
 protected:
     mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
     mutable sem_t  stopSem;      ///< For async-signal-safe stopping
-    P2pMgr::Pimpl  p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
+    P2pMgrPtr      p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
     ThreadEx       threadEx;     ///< Thread exception
 
     /**
@@ -199,7 +199,7 @@ public:
      * @param[in] p2pMgr             Peer-to-peer manager
      * @throws    std::system_error  Couldn't initialize semaphore
      */
-    NodeImpl(P2pMgr::Pimpl p2pMgr)
+    NodeImpl(P2pMgrPtr p2pMgr)
         : p2pThread()
         , stopSem()
         , p2pMgr(p2pMgr)
@@ -413,15 +413,15 @@ public:
      */
     PubNodeImpl(
             SockAddr       p2pAddr,
-            const unsigned maxPeers,
-            const unsigned evalTime,
+            const int      maxPeers,
+            const int      evalTime,
             const SockAddr mcastAddr,
             const InetAddr mcastIfaceAddr,
-            const unsigned maxPendConn,
+            const int      maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
             const long     maxOpenFiles)
-        : NodeImpl(P2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
+        : NodeImpl(PubP2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
         , repo(PubRepo(repoRoot, maxOpenFiles))
         , maxSegSize{maxSegSize}
@@ -486,7 +486,7 @@ public:
     }
 };
 
-PubNode::Pimpl PubNode::create(
+PubNodePtr PubNode::create(
         SockAddr       p2pAddr,
         unsigned       maxPeers,
         const unsigned evalTime,
@@ -496,11 +496,11 @@ PubNode::Pimpl PubNode::create(
         const String&  repoRoot,
         const SegSize  maxSegSize,
         const long     maxOpenFiles) {
-    return Pimpl{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
+    return PubNodePtr{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
             maxPendConn, repoRoot, maxSegSize, maxOpenFiles)};
 }
 
-PubNode::Pimpl PubNode::create(
+PubNodePtr PubNode::create(
         const SegSize            maxSegSize,
         const McastPub::RunPar&  mcastRunPar,
         const PubP2pMgr::RunPar& p2pRunPar,
@@ -842,7 +842,7 @@ public:
     }
 };
 
-SubNode::Pimpl SubNode::create(
+SubNodePtr SubNode::create(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
             const PeerConnSrvrPimpl peerConnSrvr,
@@ -851,10 +851,10 @@ SubNode::Pimpl SubNode::create(
             const unsigned          evalTime,
             const String&           repoDir,
             const long              maxOpenFiles) {
-    return Pimpl{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers, evalTime,
-            repoDir, maxOpenFiles)};
+    return SubNodePtr{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers,
+            evalTime, repoDir, maxOpenFiles)};
 }
-SubNode::Pimpl SubNode::create(
+SubNodePtr SubNode::create(
         SubInfo&          subInfo,
         const InetAddr    mcastIface,
         const SockAddr    p2pSrvrAddr,

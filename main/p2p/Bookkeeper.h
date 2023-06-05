@@ -31,28 +31,28 @@
 
 namespace hycast {
 
+class Bookkeeper;                                  ///< Forward declaration
+using BookkeeperPtr = std::shared_ptr<Bookkeeper>; ///< Smart pointer to an implementation
+
 /**
  * Interface for monitoring of peers.
  */
 class Bookkeeper
 {
 public:
-    /// Smart pointer to the implementation
-    using Pimpl = std::shared_ptr<Bookkeeper>;
-
     /**
      * Constructs.
      * @param[in] maxPeers  Maximum number of P2P neighbors
      * @return              Pointer to a new instance for a publisher
      */
-    static Pimpl createPub(const int maxPeers = 8);
+    static BookkeeperPtr createPub(const int maxPeers = 8);
 
     /**
      * Constructs.
      * @param[in] maxPeers  Maximum number of P2P neighbors
      * @return              Pointer to a new instance for a subscriber
      */
-    static Pimpl createSub(const int maxPeers = 8);
+    static BookkeeperPtr createSub(const int maxPeers = 8);
 
     virtual ~Bookkeeper() noexcept {}
 
@@ -62,7 +62,7 @@ public:
      * @retval    true     Success
      * @retval    false    The peer was previously added
      */
-    virtual bool add(const Peer::Pimpl peer) =0;
+    virtual bool add(const PeerPtr peer) =0;
 
     /**
      * Removes a peer.
@@ -70,13 +70,13 @@ public:
      * @retval    true     The peer existed
      * @retval    false    The peer didn't exist
      */
-    virtual bool erase(const Peer::Pimpl peer) =0;
+    virtual bool erase(const PeerPtr peer) =0;
 
     /**
      * Handles a peer requesting something from its remote counterpart.
      * @param[in] peer  The peer that made the request
      */
-    virtual void requested(const Peer::Pimpl peer) =0;
+    virtual void requested(const PeerPtr peer) =0;
 
     /**
      * Indicates if a remote peer should be notified about available information
@@ -89,7 +89,7 @@ public:
      * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) const =0;
 
     /**
@@ -103,7 +103,7 @@ public:
      * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) const =0;
 
     /**
@@ -124,7 +124,7 @@ public:
      * @cancellationpoint            No
      */
     virtual bool shouldRequest(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) =0;
 
     /**
@@ -144,7 +144,7 @@ public:
      * @cancellationpoint            No
      */
     virtual bool shouldRequest(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) =0;
 
     /**
@@ -163,7 +163,7 @@ public:
      * @cancellationpoint     No
      */
     virtual bool received(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) =0;
 
     /**
@@ -180,7 +180,7 @@ public:
      * @cancellationpoint     No
      */
     virtual bool received(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId segId) =0;
 
     /**
@@ -204,7 +204,7 @@ public:
      *
      * @return Worst performing peer. Will test false if no such peer exists.
      */
-    virtual Peer::Pimpl getWorstPeer() const =0;
+    virtual PeerPtr getWorstPeer() const =0;
 
     /**
      * Returns the best alternative peer, besides a given one, from which to request product
@@ -213,9 +213,9 @@ public:
      * @param[in] prodId  The product's ID
      * @return            The best alternative peer
      */
-    virtual Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const ProdId      prodId) =0;
+    virtual PeerPtr getAltPeer(
+            const PeerPtr peer,
+            const ProdId  prodId) =0;
 
     /**
      * Returns the best alternative peer, besides a given one, from which to request a data segment.
@@ -223,9 +223,9 @@ public:
      * @param[in] segId   The data-segment's ID
      * @return            The best alternative peer
      */
-    virtual Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const DataSegId   segId) =0;
+    virtual PeerPtr getAltPeer(
+            const PeerPtr   peer,
+            const DataSegId segId) =0;
 
     /**
      * Resets all metrics.

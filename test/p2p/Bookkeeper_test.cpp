@@ -16,24 +16,24 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Bookkeeper`
-class BookkeeperTest : public ::testing::Test, public SubP2pMgr
+class BookkeeperTest : public ::testing::Test, public PubP2pMgr, public SubP2pMgr
 {
     void runPubPeerSrvr() {
-        std::list<Peer::Pimpl> peers;
+        std::list<PeerPtr> peers;
         for (;;) {
             peers.push_back(pubP2pSrvr->accept(*this));
         }
     }
 
 protected:
-    SockAddr          pubAddr;
-    PubP2pSrvr::Pimpl pubP2pSrvr;
-    std::thread       pubP2pSrvrThrd;
-    ProdId            prodId;
-    DataSegId         segId;
-    Peer::Pimpl       subPeer1;
-    Peer::Pimpl       subPeer2;
-    const SegSize     maxSegSize = 1400;
+    SockAddr      pubAddr;
+    PubP2pSrvrPtr pubP2pSrvr;
+    std::thread   pubP2pSrvrThrd;
+    ProdId        prodId;
+    DataSegId     segId;
+    PeerPtr       subPeer1;
+    PeerPtr       subPeer2;
+    const SegSize maxSegSize = 1400;
 
     BookkeeperTest()
         : pubAddr{"localhost:38800"}
@@ -41,8 +41,8 @@ protected:
         , pubP2pSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
         , prodId{"product"}
         , segId(prodId, maxSegSize) // Second data-segment
-        , subPeer1(Peer::create(*this, pubAddr))
-        , subPeer2(Peer::create(*this, pubAddr))
+        , subPeer1(Peer::create(*static_cast<SubP2pMgr*>(this), pubAddr))
+        , subPeer2(Peer::create(*static_cast<SubP2pMgr*>(this), pubAddr))
     {
         DataSeg::setMaxSegSize(maxSegSize);
     }
@@ -59,13 +59,19 @@ public:
     void halt() {};
 
     // Both sides
+    void waitForClntPeer() override {}
+
+    // Both sides
     void waitForSrvrPeer() override {}
 
     P2pSrvrInfo getSrvrInfo() override {
         return P2pSrvrInfo(pubP2pSrvr->getSrvrAddr(), 2, 0);
     }
 
-    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) {
+    void recv(const P2pSrvrInfo& srvrInfo) {
+    }
+
+    void recv(const Tracker& tracker) {
     }
 
     Tracker& getTracker() override {
@@ -80,6 +86,10 @@ public:
     ProdIdSet getProdIds() const override {
         return ProdIdSet{};
     }
+
+    // Subscriber-side
+    void recvNotice(const P2pSrvrInfo& srvrInfo) override
+    {}
 
     // Subscriber-side
     bool recvNotice(
@@ -145,7 +155,7 @@ TEST_F(BookkeeperTest, DefaultConstruction)
     Bookkeeper::createSub();
 }
 
-// Tests adding a peerSubP2pNode
+// Tests adding a subscribing peer
 TEST_F(BookkeeperTest, PeerAddition)
 {
     auto bookkeeper = Bookkeeper::createSub();

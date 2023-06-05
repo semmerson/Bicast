@@ -393,8 +393,8 @@ static void setException(const std::exception& ex)
  * Performs local processing of complete data-products.
  */
 static void runProdProc(
-        SubNode::Pimpl subNode,
-        Disposer       disposer) {
+        SubNodePtr subNode,
+        Disposer   disposer) {
     try {
         for (;;) {
             auto prodEntry = subNode->getNextProd();
@@ -409,8 +409,8 @@ static void runProdProc(
 }
 
 static std::thread startProdProc(
-        SubNode::Pimpl subNode,
-        Disposer       disposer) {
+        SubNodePtr subNode,
+        Disposer   disposer) {
     try {
         return std::thread(&runProdProc, subNode, disposer);
     }
@@ -430,7 +430,7 @@ static void stopProdProc(std::thread& procThread) {
 }
 
 /// Creates the subscriber node.
-static SubNode::Pimpl createSubNode()
+static SubNodePtr createSubNode()
 {
     // Keep consonant with `publish.cpp:servSubscriber()`
 
@@ -522,7 +522,7 @@ static void setSigHand()
 }
 
 /// Executes the subscribing node.
-static void runNode(SubNode::Pimpl subNode)
+static void runNode(SubNodePtr subNode)
 {
     try {
         subNode->run();
@@ -533,8 +533,8 @@ static void runNode(SubNode::Pimpl subNode)
 }
 
 void stopSubNode(
-        SubNode::Pimpl subNode,
-        std::thread&   nodeThread)
+        SubNodePtr   subNode,
+        std::thread& nodeThread)
 {
     if (nodeThread.joinable()) {
         subNode->halt(); // Idempotent

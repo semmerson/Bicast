@@ -41,6 +41,9 @@ using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
 class PubNode;
 class SubNode;
 
+class P2pMgr;                              ///< Forward declaration
+using P2pMgrPtr = std::shared_ptr<P2pMgr>; ///< Smart pointer to an implementation
+
 /**
  * Interface for a peer-to-peer manager. A publisher's P2P manager will only implement this
  * interface.
@@ -48,11 +51,6 @@ class SubNode;
 class P2pMgr
 {
 public:
-    /// Type of this peer
-    using PeerType = PubPeer;
-    /// Smart pointer to the implementation
-    using Pimpl    = std::shared_ptr<P2pMgr>;
-
     /**
      * Relationship to the data-products:
      */
@@ -103,28 +101,6 @@ public:
     };
 
     /**
-     * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
-     * anything with it until `run()` is called.
-     *
-     * @param[in] pubNode       Hycast publishing node
-     * @param[in] peerSrvrAddr  P2P server's socket address. It shall specify a specific interface
-     *                          and not the wildcard. The port number may be 0, in which case the
-     *                          operating system will choose the port.
-     * @param[in] maxPeers      Maximum number of subscribing peers
-     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @throw InvalidArgument   `listenSize` is zero
-     * @return                  Publisher's P2P manager
-     * @see `run()`
-     */
-    static Pimpl create(
-            PubNode&       pubNode,
-            const SockAddr peerSrvrAddr,
-            unsigned       maxPeers,
-            const unsigned maxPendConn,
-            const unsigned evalTime);
-
-    /**
      * Destroys.
      */
     virtual ~P2pMgr() noexcept {};
@@ -163,11 +139,11 @@ public:
     virtual void halt() =0;
 
     /**
-     * Saves information on a remote peer's P2P-server. Should only be called by *running* peers
-     * (i.e., peers whose `run()` function has been called).
-     * @param[in] srvrInfo  Information on a remote peer's P2P-server
+     * Receives information on P2P-servers from a remote. Updates the internal tracker. Called by a
+     * peer.
+     * @param[in] tracker  Information on P2P-servers
      */
-    virtual void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
+    virtual void recv(const Tracker& tracker) =0;
 
     /**
      * Blocks until at least one remote peer has established a connection via the local P2P-server.
@@ -176,11 +152,11 @@ public:
     virtual void waitForSrvrPeer() =0;
 
     /**
-     * Receives a set of potential peer servers from a remote peer.
-     *
-     * @param[in] tracker      Set of potential P2P-servers
+     * Receives a notice about a remote P2P-server. Saves the information in the tracker. Called by
+     * a peer.
+     * @param[in] srvrInfo  Information on the remote P2P-server
      */
-    virtual void recvAdd(Tracker tracker) {};
+    virtual void recvNotice(const P2pSrvrInfo& srvrInfo) =0;
 
     /**
      * Notifies connected remote peers about the availability of product information.
@@ -190,8 +166,7 @@ public:
     virtual void notify(const ProdId prodId) =0;
 
     /**
-     * Notifies connected remote peers about the availability of a data
-     * segment.
+     * Notifies connected remote peers about the availability of a data segment.
      *
      * @param[in] dataSegId  Data segment ID
      */
@@ -237,18 +212,52 @@ public:
             const SockAddr  rmtAddr) =0;
 };
 
-using PubP2pMgr = P2pMgr; ///< Type of publisher's P2P manager
+/**************************************************************************************************/
+
+class PubP2pMgr;                                 ///< Forward declaration
+using PubP2pMgrPtr = std::shared_ptr<PubP2pMgr>; ///< Smart pointer to an implementation
+
+/// Interface for a publisher's P2P manager
+class PubP2pMgr : public P2pMgr
+{
+public:
+    /**
+     * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
+     * anything with it until `run()` is called.
+     *
+     * @param[in] pubNode       Hycast publishing node
+     * @param[in] p2pSrvrAddr   P2P server's socket address. It shall specify a specific interface
+     *                          and not the wildcard. The port number may be 0, in which case the
+     *                          operating system will choose the port.
+     * @param[in] maxPeers      Maximum number of subscribing peers
+     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
+     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
+     * @throw InvalidArgument   `listenSize` is zero
+     * @return                  Publisher's P2P manager
+     * @see `run()`
+     */
+    static PubP2pMgrPtr create(
+            PubNode&       pubNode,
+            const SockAddr p2pSrvrAddr,
+            const int      maxPeers,
+            const int      maxPendConn,
+            const int      evalTime);
+
+    /**
+     * Destroys.
+     */
+    virtual ~PubP2pMgr() noexcept =default;
+};
 
 /**************************************************************************************************/
+
+class SubP2pMgr;                                 ///< Forward declaration
+using SubP2pMgrPtr = std::shared_ptr<SubP2pMgr>; ///< Smart pointer to an implementation
 
 /// Interface for a subscriber's P2P manager.
 class SubP2pMgr : public P2pMgr
 {
 public:
-    using PeerType  = SubPeer; ///< Type of peer handled by this class
-    /// Smart pointer to the implementation
-    using Pimpl     = std::shared_ptr<SubP2pMgr>;
-
     /**
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
@@ -266,7 +275,7 @@ public:
      * @return                 Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
-    static Pimpl create(
+    static SubP2pMgrPtr create(
             SubNode&          subNode,
             Tracker           tracker,
             const SockAddr    p2pSrvrAddr,
@@ -289,7 +298,7 @@ public:
      * @return                  Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
-    static Pimpl create(
+    static SubP2pMgrPtr create(
             SubNode&          subNode,
             Tracker           tracker,
             PeerConnSrvrPimpl peerConnSrvr,
@@ -301,6 +310,12 @@ public:
      * Destroys.
      */
     virtual ~SubP2pMgr() noexcept =default;
+
+    /**
+     * Blocks until at least one local peer has established a connection with a remote peer.
+     * Useful for unit-testing.
+     */
+    virtual void waitForClntPeer() =0;
 
     /**
      * Receives a notice of available product information from a remote peer.

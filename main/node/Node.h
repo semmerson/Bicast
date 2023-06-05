@@ -39,6 +39,9 @@ namespace hycast {
 class PeerConnSrvr;
 using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
 
+class Node;                            ///< Forward declaration
+using NodePtr = std::shared_ptr<Node>; ///< Smart pointer to an implementation
+
 /**
  * Interface for a Hycast node. Implementations manage incoming P2P requests. This interface is
  * implemented by both a publishing node and a subscribing node.
@@ -46,9 +49,6 @@ using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
 class Node
 {
 public:
-    /// Smart pointer to an implementation
-    using Pimpl = std::shared_ptr<Node>;
-
     /**
      * Destroys.
      */
@@ -130,6 +130,11 @@ public:
     virtual DataSeg recvRequest(const DataSegId request) =0;
 };
 
+/**************************************************************************************************/
+
+class PubNode;                               ///< Forward declaration
+using PubNodePtr = std::shared_ptr<PubNode>; ///< Smart pointer to an implementation
+
 /**
  * Interface for a Hycast publishing node. In addition to managing incoming P2P requests,
  * implementations also multicast data-products and notify subscribing nodes.
@@ -137,9 +142,6 @@ public:
 class PubNode : public Node
 {
 public:
-    /// Smart pointer to the implementation
-    using Pimpl = std::shared_ptr<PubNode>;
-
     /// Runtime parameters for a publishing node
     struct RunPar {
         SegSize           maxSegSize; ///< Maximum size of a data-segment
@@ -182,7 +184,7 @@ public:
      * @throw InvalidArgument     `listenSize` is zero
      * @return                    New instance
      */
-    static Pimpl create(
+    static PubNodePtr create(
             const SockAddr p2pAddr,
             const unsigned maxPeers,
             const unsigned evalTime,
@@ -201,7 +203,7 @@ public:
      * @param repoRunPar        Runtime parameters for the repository component
      * @return                  A new instance
      */
-    static Pimpl create(
+    static PubNodePtr create(
             const SegSize            maxSegSize,
             const McastPub::RunPar&  mcastRunPar,
             const PubP2pMgr::RunPar& p2pRunPar,
@@ -213,6 +215,11 @@ public:
     virtual ~PubNode() noexcept {}
 };
 
+/**************************************************************************************************/
+
+class SubNode;                               ///< Forward declaration
+using SubNodePtr = std::shared_ptr<SubNode>; ///< Smart pointer to an implementation
+
 /**
  * Interface for a subscribing Hycast node. Implementations manage incoming multicast transmissions
  * and incoming and outgoing P2P transmissions.
@@ -220,9 +227,6 @@ public:
 class SubNode : public Node
 {
 public:
-    /// Smart pointer to the implementation
-    using Pimpl = std::shared_ptr<SubNode>;
-
 #if 0
     /**
      * Constructs.
@@ -264,7 +268,7 @@ public:
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
      */
-    static Pimpl create(
+    static SubNodePtr create(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
             const PeerConnSrvrPimpl peerConnSrvr,
@@ -291,7 +295,7 @@ public:
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
      */
-    static Pimpl create(
+    static SubNodePtr create(
             SubInfo&          subInfo,
             const InetAddr    mcastIface,
             const SockAddr    p2pSrvrAddr,

@@ -32,16 +32,16 @@
 
 namespace hycast {
 
-class Peer;                              ///< Forward declaration
-using PeerPimpl = std::shared_ptr<Peer>; ///< Smart pointer to a peer
+class Peer;                            ///< Forward declaration
+using PeerPtr = std::shared_ptr<Peer>; ///< Smart pointer to a peer
+
+class PeerConn;                                ///< Forward declaration
+using PeerConnPtr = std::shared_ptr<PeerConn>; ///< Smart pointer to a peer
 
 /// Interface for the connection between a local and remote peer.
 class PeerConn
 {
 public:
-    /// Smart pointer to an implementation
-    using Pimpl = std::shared_ptr<PeerConn>;
-
     /**
      * Returns a new, client-side instance (i.e., one that initiated the connection). Such instances
      * are always for subscribing peers.
@@ -49,7 +49,7 @@ public:
      * @param[in] timeout  Timeout in ms. <=0 => System's default timeout.
      * @return             A new, client-side instance
      */
-    static Pimpl create(
+    static PeerConnPtr create(
             const SockAddr& srvrAddr,
             const int       timeout = -1);
 
@@ -85,19 +85,38 @@ public:
     virtual String to_string() const =0;
 
     /**
-     * Sends information on the local P2P-server to the remote peer.
+     * Sends information on the local P2P-server to the remote. Should execute before `run()`.
+     * Called by a peer.
      *
      * @param[in] srvrInfo  Information on the local P2P-server
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool setRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) =0;
+    virtual bool send(const P2pSrvrInfo& srvrInfo) =0;
+
+    /**
+     * Sends information on P2P-servers to the remote. Should execute before `run()`. Called by a
+     * peer.
+     *
+     * @param[in] tracker   Information on P2P-servers
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
+    virtual bool send(const Tracker& tracker) =0;
+
+    /**
+     * Processes the next, incoming RPC message. Should execute before `run()`. Called by a peer.
+     * @param[in] peer  Peer to call for incoming messages
+     * @retval true     Success
+     * @retval false    Lost connection
+     */
+    virtual bool recv(Peer& peer) =0;
 
     /**
      * Runs this instance. Doesn't return until
      *   - The connection is lost;
      *   - An error occurs; or
-     *   - `halt()` * is called.
+     *   - `halt()` is called.
      * @param[in] peer         Peer to call for incoming messages
      * @throw InvalidArgument  Null pointer
      * @throw LogicError       This function already called
@@ -113,22 +132,12 @@ public:
     virtual void halt() =0;
 
     /**
-     * Processes the next incoming message by using RPC dispatching. Should not execute in
-     * conjunction with `run()`.
-     * @param[in] peer  Peer to call for incoming messages
-     * @retval true     Success
-     * @retval false    Lost connection
-     */
-    virtual bool processMsg(Peer& peer) =0;
-
-    /**
-     * Adds P2P-servers to the remote's tracker.
-     *
-     * @param[in] tracker   Socket addresses of P2P-servers
+     * Notifies the remote about the local P2P-server.
+     * @param[in] srvrInfo  Information about the local P2P-server
      * @retval    true      Success
-     * @retval    false     Lost connection
+     * @retval    false     Failure
      */
-    virtual bool add(const Tracker& tracker) =0;
+    virtual bool notify(const P2pSrvrInfo& srvrInfo) =0;
 
     /**
      * Notifies the remote peer about available product information. Might block.
@@ -199,6 +208,9 @@ public:
     virtual bool send(const DataSeg dataSeg) =0;
 };
 
+class PeerConnSrvr;                                    ///< Forward declaration
+using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>; ///< Smart pointer to an implementation
+
 /**
  * Interface for a peer-connection server. Such a server returns server-side peer-connections (i.e.,
  * connections resulting from remote, client-side peer-connections). Both the publisher and
@@ -207,8 +219,6 @@ public:
 class PeerConnSrvr
 {
 public:
-    using Pimpl = std::shared_ptr<PeerConnSrvr>; ///< Smart pointer to an instance
-
     /**
      * Returns a new instance.
      * @param[in] srvrAddr     Socket address for the server. Must not be the wildcard (i.e.,
@@ -219,7 +229,7 @@ public:
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Maximum number of pending connections is zero
      */
-    static Pimpl create(
+    static PeerConnSrvrPtr create(
             const SockAddr& srvrAddr,
             const int       maxPendConn = 8);
 
@@ -237,7 +247,7 @@ public:
      * @return A new, server-side peer-connection. Will test false if `halt()` has been called
      * @see halt()
      */
-    virtual PeerConn::Pimpl accept() =0;
+    virtual PeerConnPtr accept() =0;
 
     /**
      * Causes `accept()` to return a false object.

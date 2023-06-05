@@ -38,7 +38,7 @@ namespace hycast {
 using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connection to a peer
 
 /**
- * Implements a P2P RPC layer.
+ * Implementation of a P2P RPC layer.
  */
 class RpcImpl final : public Rpc
 {
@@ -131,7 +131,7 @@ class RpcImpl final : public Rpc
     }
 
     /**
-     * Processes notices of an available datum. Calls the associated peer.
+     * Processes notices. Calls the associated peer.
      *
      * @tparam    NOTICE  Type of notice
      * @param[in] xprt    Transport
@@ -227,16 +227,6 @@ class RpcImpl final : public Rpc
         switch (pduId) {
             // Notices:
 
-            case PduId::SET_RMT_SRVR_INFO: {
-                P2pSrvrInfo srvrInfo;
-                if (srvrInfo.read(xprt)) {
-                    connected = true;
-                    LOG_DEBUG("RPC " + xprt.to_string() + " received P2P-server information " +
-                            srvrInfo.to_string());
-                    peer.setRmtSrvrInfo(srvrInfo);
-                }
-                break;
-            }
             case PduId::DATA_SEG_NOTICE: {
                 connected = processNotice<DataSegId>(xprt, peer, "data-segment");
                 break;
@@ -245,14 +235,28 @@ class RpcImpl final : public Rpc
                 connected = processNotice<ProdId>(xprt, peer, "product");
                 break;
             }
-            case PduId::PEER_SRVR_INFOS: {
-                Tracker tracker;
+            case PduId::SRVR_INFO: { // NB: Processed differently than SRVR_INFO_NOTICE
+                P2pSrvrInfo srvrInfo;
+                if (srvrInfo.read(xprt)) {
+                    connected = true;
+                    LOG_DEBUG("RPC " + xprt.to_string() + " received P2P-server information " +
+                            srvrInfo.to_string());
+                    peer.recv(srvrInfo);
+                }
+                break;
+            }
+            case PduId::TRACKER: {
+                Tracker tracker{};
                 if (tracker.read(xprt)) {
                     connected = true;
                     LOG_DEBUG("RPC " + xprt.to_string() + " received tracker " +
                             tracker.to_string());
-                    peer.recvAdd(tracker);
+                    peer.recv(tracker);
                 }
+                break;
+            }
+            case PduId::SRVR_INFO_NOTICE: { // NB: Processed differently than SRVR_INFO
+                connected = processNotice<P2pSrvrInfo>(xprt, peer, "P2P-server");
                 break;
             }
             case PduId::PREVIOUSLY_RECEIVED: {
@@ -286,7 +290,8 @@ class RpcImpl final : public Rpc
             }
 
             default:
-                LOG_WARNING("Unknown PDU ID: " + std::to_string(pduId));
+                LOG_WARNING("RPC " + xprt.to_string() + " unknown PDU ID: " +
+                        std::to_string(pduId));
                 connected = true;
         }
 
@@ -294,24 +299,39 @@ class RpcImpl final : public Rpc
     }
 
 public:
-    // Notices:
-
-    bool setRmtSrvrInfo(
+    bool send(
             Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) override {
-        const auto success = send(xprt, PduId::SET_RMT_SRVR_INFO, srvrInfo);
+        const auto success = send(xprt, PduId::SRVR_INFO, srvrInfo);
         if (success)
-            LOG_DEBUG("RPC " + xprt.to_string() + " sent local P2P-server info " +
-                    srvrInfo.to_string());
+            LOG_DEBUG("RPC " + xprt.to_string() + " sent P2P-server " + srvrInfo.to_string());
         return success;
     }
 
-    bool add(
+    bool send(
             Xprt&          xprt,
             const Tracker& tracker) override {
-        const auto success = send(xprt, PduId::PEER_SRVR_INFOS, tracker);
+        const auto success = send(xprt, PduId::TRACKER, tracker);
         if (success)
             LOG_DEBUG("RPC " + xprt.to_string() + " sent tracker " + tracker.to_string());
+        return success;
+    }
+
+    bool recv(
+            Xprt& xprt,
+            Peer& peer) override {
+        PduId pduId{};
+        return pduId.read(xprt) && dispatch(pduId, xprt, peer);
+    }
+
+    // Notices:
+
+    bool notify(
+            Xprt&              xprt,
+            const P2pSrvrInfo& srvrInfo) override {
+        const auto success = send(xprt, PduId::SRVR_INFO_NOTICE, srvrInfo);
+        if (success)
+            LOG_DEBUG("RPC " + xprt.to_string() + " sent P2P-server notice " + srvrInfo.to_string());
         return success;
     }
 
@@ -320,7 +340,7 @@ public:
             const ProdId prodId) override {
         const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
         if (success)
-            LOG_TRACE("RPC sent product index " + prodId.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent product-ID notice " + prodId.to_string());
         return success;
     }
     bool notify(
@@ -328,7 +348,7 @@ public:
             const DataSegId dataSegId) override {
         const auto success = send(xprt, PduId::DATA_SEG_NOTICE, dataSegId);
         if (success)
-            LOG_TRACE("RPC sent data segment ID " + dataSegId.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent segment-ID notice " + dataSegId.to_string());
         return success;
     }
 
@@ -339,7 +359,7 @@ public:
             const ProdId prodId) override {
         const auto success = send(xprt, PduId::PROD_INFO_REQUEST, prodId);
         if (success)
-            LOG_TRACE("RPC requested information on product " + prodId.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent product-ID request " + prodId.to_string());
         return success;
     }
     bool request(
@@ -347,7 +367,7 @@ public:
             const DataSegId dataSegId) override {
         const auto success = send(xprt, PduId::DATA_SEG_REQUEST, dataSegId);
         if (success)
-            LOG_TRACE("RPC requested data segment " +  dataSegId.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent segment request " +  dataSegId.to_string());
         return success;
     }
 
@@ -356,7 +376,8 @@ public:
             const ProdIdSet& prodIds) override {
         const auto success = send(xprt, PduId::PREVIOUSLY_RECEIVED, prodIds);
         if (success)
-            LOG_TRACE("RPC sent product IDs " +  prodIds.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent product-IDs request " +
+                    prodIds.to_string());
         return success;
     }
 
@@ -367,7 +388,7 @@ public:
             const ProdInfo prodInfo) override {
         const auto success = send(xprt, PduId::PROD_INFO, prodInfo);
         if (success)
-            LOG_TRACE("RPC sent product information " + prodInfo.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent product-info " + prodInfo.to_string());
         return success;
     }
 
@@ -376,20 +397,13 @@ public:
             const DataSeg dataSeg) override {
         const auto success = send(xprt, PduId::DATA_SEG, dataSeg);
         if (success)
-            LOG_TRACE("RPC sent data segment " +  dataSeg.to_string());
+            LOG_TRACE("RPC " + xprt.to_string() + " sent segment " +  dataSeg.to_string());
         return success;
-    }
-
-    bool process(
-            Xprt& xprt,
-            Peer& peer) override {
-        PduId pduId{};
-        return pduId.read(xprt) && dispatch(pduId, xprt, peer);
     }
 };
 
-Rpc::Pimpl Rpc::create() {
-    return Pimpl{new RpcImpl{}};
+RpcPtr Rpc::create() {
+    return RpcPtr{new RpcImpl{}};
 }
 
 } // namespace

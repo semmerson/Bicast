@@ -61,7 +61,7 @@ class PeerConnImpl : public PeerConn
     Thread             requestReader; ///< For receiving requests
     Thread             noticeReader;  ///< For receiving notices
     Thread             dataReader;    ///< For receiving data
-    Rpc::Pimpl         rpc;           ///< Remote procedure call object
+    RpcPtr             rpcPtr;           ///< Remote procedure call object
 
     static void asyncConnectXprt(
             const SockAddr& srvrAddr,
@@ -211,7 +211,7 @@ class PeerConnImpl : public PeerConn
         // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
-            while (rpc->process(xprt, peer))
+            while (rpcPtr->recv(xprt, peer))
                 ;
             // Connection lost
             ::sem_post(&stopSem);
@@ -276,7 +276,7 @@ class PeerConnImpl : public PeerConn
         , requestReader()
         , noticeReader()
         , dataReader()
-        , rpc(Rpc::create())
+        , rpcPtr(Rpc::create())
     {}
 
 public:
@@ -311,11 +311,6 @@ public:
         ::sem_destroy(&stopSem);
     }
 
-    /**
-     * Indicates if instance initiated the connection.
-     * @retval true   This instance initiated the connection
-     * @retval false  This instance did not initiate the connection
-     */
     bool isClient() const noexcept override {
         return iAmClient;
     }
@@ -332,8 +327,16 @@ public:
         return "{lcl=" + lclSockAddr.to_string() + ", rmt=" + rmtSockAddr.to_string() + "}";
     }
 
-    bool setRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) override {
-        return rpc->setRmtSrvrInfo(noticeXprt, srvrInfo);
+    bool send(const P2pSrvrInfo& srvrInfo) override {
+        return rpcPtr->send(noticeXprt, srvrInfo);
+    }
+
+    bool send(const Tracker& tracker) override {
+        return rpcPtr->send(noticeXprt, tracker);
+    }
+
+    bool recv(Peer& peer) override {
+        return rpcPtr->recv(noticeXprt, peer);
     }
 
     void run(Peer& peer) override {
@@ -353,54 +356,50 @@ public:
             ::sem_post(&stopSem);
     }
 
-    bool processMsg(Peer& peer) override {
-        return rpc->process(noticeXprt, peer);
-    }
-
     // Notices:
 
-    bool add(const Tracker& tracker) override {
-        return rpc->add(noticeXprt, tracker);
+    bool notify(const P2pSrvrInfo& srvrInfo) override {
+        return rpcPtr->notify(noticeXprt, srvrInfo);
     }
 
     bool notify(const ProdId prodId) override {
-        return rpc->notify(noticeXprt, prodId);
+        return rpcPtr->notify(noticeXprt, prodId);
     }
 
     bool notify(const DataSegId dataSegId) override {
-        return rpc->notify(noticeXprt, dataSegId);
+        return rpcPtr->notify(noticeXprt, dataSegId);
     }
 
     // Requests:
 
     bool request(const ProdId prodId) override {
-        return rpc->request(requestXprt, prodId);
+        return rpcPtr->request(requestXprt, prodId);
     }
 
     bool request(const DataSegId dataSegId) override {
-        return rpc->request(requestXprt, dataSegId);
+        return rpcPtr->request(requestXprt, dataSegId);
     }
 
     bool request(const ProdIdSet& prodIds) override {
-        return rpc->request(requestXprt, prodIds);
+        return rpcPtr->request(requestXprt, prodIds);
     }
 
     // Data:
 
     bool send(const ProdInfo prodInfo) override {
-        return rpc->send(dataXprt, prodInfo);
+        return rpcPtr->send(dataXprt, prodInfo);
     }
 
     bool send(const DataSeg dataSeg) override {
-        return rpc->send(dataXprt, dataSeg);
+        return rpcPtr->send(dataXprt, dataSeg);
     }
 };
 
-PeerConn::Pimpl PeerConn::create(
+PeerConnPtr PeerConn::create(
         const SockAddr& srvrAddr,
         const int       timeout)
 {
-    return PeerConn::Pimpl{new PeerConnImpl(srvrAddr, timeout)};
+    return PeerConnPtr{new PeerConnImpl(srvrAddr, timeout)};
 }
 
 /**************************************************************************************************/
@@ -474,7 +473,7 @@ private:
     PeerConnFactory peerConnFactory; ///< Combines 3 unicast connections into one peer-connection
     TcpSrvrSock     srvrSock;        ///< Socket on which this instance listens
 
-    using PeerConnQ = std::queue<PeerConn::Pimpl>;
+    using PeerConnQ = std::queue<PeerConnPtr>;
     PeerConnQ       acceptQ;         ///< Queue of accepted peer-connections
 
     int             maxPendConn;     ///< Maximum number of pending connections
@@ -518,7 +517,7 @@ private:
                     Guard guard{mutex};
                     PeerConnQ  emptyQ;
                     acceptQ.swap(emptyQ); // Empties accept-queue
-                    acceptQ.push(PeerConn::Pimpl{}); // Will test false
+                    acceptQ.push(PeerConnPtr{}); // Will test false
                     cond.notify_one();
                     break;
                 }
@@ -601,7 +600,7 @@ public:
      * @return              Next instance. Will test false if `halt()` has been called.
      * @throws SystemError  Couldn't accept connection
      */
-    PeerConn::Pimpl accept() override {
+    PeerConnPtr accept() override {
         Lock lock{mutex};
         cond.wait(lock, [&]{return !acceptQ.empty();});
 
@@ -622,10 +621,10 @@ public:
     }
 };
 
-PeerConnSrvr::Pimpl PeerConnSrvr::create(
+PeerConnSrvrPtr PeerConnSrvr::create(
         const SockAddr& srvrAddr,
         const int       maxPendConn) {
-    return Pimpl{new PeerConnSrvrImpl{srvrAddr, maxPendConn}};
+    return PeerConnSrvrPtr{new PeerConnSrvrImpl{srvrAddr, maxPendConn}};
 }
 
 } // namespace

@@ -118,7 +118,7 @@ protected:
     }
 
 public:
-    void runNode(Node::Pimpl node) {
+    void runNode(NodePtr node) {
         try {
             node->run();
         }

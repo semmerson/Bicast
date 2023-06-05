@@ -117,7 +117,7 @@ static std::atomic<bool> stop;          ///< Should the program stop?
 static ThreadEx          threadEx;      ///< Exception thrown by a thread
 static RunPar            runPar;        ///< Runtime parameters:
 static const RunPar      defRunPar;     ///< Default runtime parameters
-static PubNode::Pimpl    pubNode;       ///< Data-product publishing node
+static PubNodePtr        pubNode;       ///< Data-product publishing node
 static SubInfo           subInfo;       ///< Subscription information passed to subscribers
 
 static void usage()

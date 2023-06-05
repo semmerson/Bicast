@@ -81,7 +81,7 @@ class PubBookkeeper final : public BookkeeperImpl
     using RequestCount = int_fast32_t;
 
     /// Map of peer -> number of requests by remote peer
-    std::unordered_map<Peer::Pimpl, RequestCount> numRequests;
+    std::unordered_map<PeerPtr, RequestCount> numRequests;
 
 public:
     /**
@@ -93,7 +93,7 @@ public:
         , numRequests(maxPeers)
     {}
 
-    bool add(const Peer::Pimpl peer) override {
+    bool add(const PeerPtr peer) override {
         Guard guard(mutex);
         return numRequests.insert({peer, 0}).second;
     }
@@ -104,7 +104,7 @@ public:
      * @retval    true     The peer existed
      * @retval    false    The peer didn't exist
      */
-    bool erase(const Peer::Pimpl peer) override {
+    bool erase(const PeerPtr peer) override {
         Guard guard(mutex);
         return numRequests.erase(peer) == 1;
     }
@@ -113,37 +113,37 @@ public:
      * Handles a peer requesting something.
      * @param[in] peer  The peer that requested something
      */
-    void requested(const Peer::Pimpl peer) override {
+    void requested(const PeerPtr peer) override {
         Guard guard(mutex);
         ++numRequests[peer];
     }
 
     bool shouldNotify(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) const override {
         return false;
     }
 
     bool shouldNotify(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) const override {
         return false;
     }
 
     bool shouldRequest(
-            Peer::Pimpl     peer,
+            PeerPtr      peer,
             const ProdId prodindex) override {
         return false;
     }
 
     bool shouldRequest(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) override {
         return false;
     }
 
     bool received(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) override {
         return false;
     }
@@ -156,7 +156,7 @@ public:
      * @retval    false    The data segment wasn't requested
      */
     bool received(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId segId) override {
         return false;
     }
@@ -181,10 +181,10 @@ public:
      * @param[in] prodId  The product identifier
      * @return            The next best peer. Might be invalid.
      */
-    Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const ProdId      prodId) override {
-        return Peer::Pimpl{};
+    PeerPtr getAltPeer(
+            const PeerPtr peer,
+            const ProdId  prodId) override {
+        return PeerPtr{};
     }
 
     /**
@@ -193,16 +193,16 @@ public:
      * @param[in] segId   The data segment ID
      * @return            The next best peer. Might be invalid.
      */
-    Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const DataSegId   segId) override {
-        return Peer::Pimpl{};
+    PeerPtr getAltPeer(
+            const PeerPtr   peer,
+            const DataSegId segId) override {
+        return PeerPtr{};
     }
 
-    Peer::Pimpl getWorstPeer() const override {
-        Peer::Pimpl   peer{};
-        RequestCount  maxCount = -1;
-        Guard         guard(mutex);
+    PeerPtr getWorstPeer() const override {
+        PeerPtr      peer{};
+        RequestCount maxCount = -1;
+        Guard        guard(mutex);
 
         for (auto iter = numRequests.begin(), stop = numRequests.end(); iter != stop; ++iter) {
             const auto count = iter->second;
@@ -227,8 +227,8 @@ public:
     }
 };
 
-Bookkeeper::Pimpl Bookkeeper::createPub(const int maxPeers) {
-    return Pimpl{new PubBookkeeper(maxPeers)};
+BookkeeperPtr Bookkeeper::createPub(const int maxPeers) {
+    return BookkeeperPtr{new PubBookkeeper(maxPeers)};
 }
 
 /******************************************************************************/
@@ -257,10 +257,10 @@ class SubBookkeeper final : public BookkeeperImpl
      *   - A peer with a given datum to be in the datum's list of peers at most
      *     once.
      */
-    using PeerToInfo = std::unordered_map<Peer::Pimpl, PeerInfo>;
+    using PeerToInfo = std::unordered_map<PeerPtr, PeerInfo>;
     struct Peers {
-        std::unordered_set<Peer::Pimpl> set;
-        std::list<Peer::Pimpl>          list;
+        std::unordered_set<PeerPtr> set;
+        std::list<PeerPtr>          list;
     };
     using NoticeToPeers = std::unordered_map<Notice, Peers>;
 
@@ -278,9 +278,9 @@ class SubBookkeeper final : public BookkeeperImpl
      * @param[in] peer        Peer to be vetted
      * @throw     LogicError  Peer is unknown
      */
-    inline void vetPeer(Peer::Pimpl peer) const {
+    inline void vetPeer(PeerPtr peer) const {
         if (peerToInfo.count(peer) == 0)
-            throw LOGIC_ERROR("Peer::Pimpl " + peer->to_string() + " is unknown");
+            throw LOGIC_ERROR("Peer " + peer->to_string() + " is unknown");
     }
 
     /**
@@ -295,7 +295,7 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldNotify(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const Notice notice) const
     {
         Guard guard(mutex);
@@ -323,7 +323,7 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldRequest(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const Notice notice)
     {
         Guard guard(mutex);
@@ -353,14 +353,14 @@ class SubBookkeeper final : public BookkeeperImpl
      * Process reception of a datum. The rating of the associated peer is increased.
      *
      * @param[in] peer        Peer that received the datum
-     * @param[in] noticed     Notice of available data
+     * @param[in] notice      Notice of available data
      * @retval    true        Success
      * @retval    false       Datum is unexpected
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
-    bool received(Peer::Pimpl  peer,
+    bool received(PeerPtr      peer,
                   const Notice notice)
     {
         bool   success = false;
@@ -393,11 +393,11 @@ class SubBookkeeper final : public BookkeeperImpl
      * @param[in] notice   Notice of available data
      * @return             Best alternative peer. Will test false if it doesn't exist.
      */
-    Peer::Pimpl getAltPeer(
-            const Peer::Pimpl badPeer,
-            const Notice      notice) {
-        Guard       guard{mutex};
-        Peer::Pimpl altPeer;
+    PeerPtr getAltPeer(
+            const PeerPtr badPeer,
+            const Notice  notice) {
+        Guard   guard{mutex};
+        PeerPtr altPeer;
 
         if (peerToInfo.count(badPeer))
             const auto count = peerToInfo[badPeer].notices.erase(notice);
@@ -450,7 +450,7 @@ public:
      * @exceptionsafety           Basic guarantee
      * @cancellationpoint         No
      */
-    bool add(Peer::Pimpl peer) override {
+    bool add(PeerPtr peer) override {
         Guard guard(mutex);
         return peerToInfo.insert({peer, PeerInfo{}}).second;
     }
@@ -465,7 +465,7 @@ public:
      * @exceptionsafety       Basic guarantee
      * @cancellationpoint     No
      */
-    bool erase(const Peer::Pimpl peer) override
+    bool erase(const PeerPtr peer) override
     {
         bool  existed = false;
         Guard guard{mutex};
@@ -487,34 +487,34 @@ public:
         return existed;
     }
 
-    void requested(const Peer::Pimpl peer) override {
+    void requested(const PeerPtr peer) override {
     }
 
     bool shouldNotify(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) const override {
         return shouldNotify(peer, Notice(prodId));
     }
 
     bool shouldNotify(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) const override {
         return shouldNotify(peer, Notice(dataSegId));
     }
 
     bool shouldRequest(
-            Peer::Pimpl  peer,
+            PeerPtr      peer,
             const ProdId prodId) override {
         return shouldRequest(peer, Notice(prodId));
     }
 
     bool shouldRequest(
-            Peer::Pimpl     peer,
+            PeerPtr         peer,
             const DataSegId dataSegId) override {
         return shouldRequest(peer, Notice(dataSegId));
     }
 
-    bool received(Peer::Pimpl  peer,
+    bool received(PeerPtr      peer,
                   const ProdId prodId) override {
         return received(peer, Notice{prodId});
     }
@@ -531,7 +531,7 @@ public:
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
-    bool received(Peer::Pimpl     peer,
+    bool received(PeerPtr         peer,
                   const DataSegId segId) override {
         return received(peer, Notice{segId});
     }
@@ -550,9 +550,9 @@ public:
      * @param[in] prodId  The product's ID
      * @return
      */
-    Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const ProdId      prodId) override {
+    PeerPtr getAltPeer(
+            const PeerPtr peer,
+            const ProdId  prodId) override {
         return getAltPeer(peer, Notice{prodId});
     }
 
@@ -562,9 +562,9 @@ public:
      * @param[in] segId   The segment's ID
      * @return
      */
-    Peer::Pimpl getAltPeer(
-            const Peer::Pimpl peer,
-            const DataSegId   segId) override {
+    PeerPtr getAltPeer(
+            const PeerPtr   peer,
+            const DataSegId segId) override {
         return getAltPeer(peer, Notice{segId});
     }
 
@@ -574,13 +574,13 @@ public:
      * @exceptionsafety           Strong guarantee
      * @cancellationpoint         No
      */
-    Peer::Pimpl getWorstPeer() const override
+    PeerPtr getWorstPeer() const override
     {
-        static Peer::Pimpl noPeer{};
-        Peer::Pimpl        peer{};
-        Rating             minRating = ~(Rating)0;
-        bool               valid = false;
-        Guard              guard(mutex);
+        static PeerPtr noPeer{};
+        PeerPtr        peer{};
+        Rating         minRating = ~(Rating)0;
+        bool           valid = false;
+        Guard          guard(mutex);
 
         for (auto& elt : peerToInfo) {
             if (elt.first->isClient()) {
@@ -612,8 +612,8 @@ public:
     }
 };
 
-Bookkeeper::Pimpl Bookkeeper::createSub(const int maxPeers) {
-    return Pimpl{new SubBookkeeper(maxPeers)};
+BookkeeperPtr Bookkeeper::createSub(const int maxPeers) {
+    return BookkeeperPtr{new SubBookkeeper(maxPeers)};
 }
 
 } // namespace

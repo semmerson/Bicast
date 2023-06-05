@@ -60,18 +60,17 @@ class Tracker::Impl final : public XprtAble
         {}
 
         /**
-         * Indicates if one server is less than another.
+         * Indicates if one server's address is less than another.
          * @param[in] srvr1   Socket address of one server
          * @param[in] srvr2   Socket address of another server
          * @retval true       The first argument is less than the second
          * @retval false      The first argument is not less than the second
-         * @throw LogicError  The socket address are identical
          */
         bool operator()(
                 const SockAddr& srvr1,
                 const SockAddr& srvr2) const {
-            if (srvr1 == srvr2)
-                throw LOGIC_ERROR("Identical socket addresses");
+            LOG_ASSERT(trackerImpl.srvrInfos.count(srvr1));
+            LOG_ASSERT(trackerImpl.srvrInfos.count(srvr2));
 
             const auto& info1 = trackerImpl.srvrInfos.at(srvr1);
             const auto& info2 = trackerImpl.srvrInfos.at(srvr2);
@@ -97,10 +96,7 @@ class Tracker::Impl final : public XprtAble
     };
 
     using SrvrQueue = std::set<SockAddr, QueueComp>;
-    SrvrQueue   srvrQueue;
-
-    using SockAddrSet = std::unordered_set<SockAddr>;
-    SockAddrSet activeSrvrs;
+    SrvrQueue srvrQueue;
 
     struct DelayElt {
         SockAddr     srvrAddr;
@@ -131,20 +127,14 @@ class Tracker::Impl final : public XprtAble
     Thread           delayThread; ///< Thread for moving servers from delay queue to server queue
 
 #ifdef NDEBUG
-    inline void assertInvariant(const SockAddr& srvrAddr) {
+    inline void assertInvariant() {
     }
 #else
-    void assertInvariant(const SockAddr& srvrAddr) {
+    void assertInvariant() {
         LOG_ASSERT(!mutex.try_lock());
 
-
-        const unsigned status =
-                (srvrInfos.count(srvrAddr) & 0x4) |
-                (srvrQueue.count(srvrAddr) & 0x2) |
-                (activeSrvrs.count(srvrAddr) & 0x1);
-
-        LOG_ASSERT(status == 0x6 || status == 0x5 || status == 4 || status == 0);
-        LOG_ASSERT(srvrInfos.size() == srvrQueue.size() + activeSrvrs.size() + delayQueue.size());
+        for (auto& srvrAddr : srvrQueue)
+            LOG_ASSERT(srvrInfos.count(srvrAddr));
     }
 #endif
 
@@ -170,14 +160,24 @@ class Tracker::Impl final : public XprtAble
                  * and
                  *   - The reveal-time for the top entry has expired; or
                  *   - `halt()` has been called.
+                 * NB: Two condition variable waits are used because
+                 *   1) The predicate "(!delayQueue.empty() && delayQueue.top().revealTime <= "
+                 *      "SysClock::now()) || done" requires that the condition variable be notified
+                 *      in order to return the next element -- regardless of it's reveal-time; and
+                 *   2) `delayCond.wait_until()` can't be used on an empty queue.
                  */
                 delayCond.wait_until(lock, delayQueue.top().revealTime, pred);
                 if (done)
                     break;
 
-                srvrQueue.insert(delayQueue.top().srvrAddr);
+                auto& srvrAddr = delayQueue.top().srvrAddr;
                 delayQueue.pop();
-                queueCond.notify_all();
+                if (srvrInfos.count(srvrAddr)) {
+                    // Information on server hasn't been removed -- so it's a valid candidate
+                    LOG_ASSERT(srvrQueue.count(srvrAddr) == 0);
+                    srvrQueue.insert(srvrAddr);
+                    queueCond.notify_all();
+                }
             }
         }
         catch (const std::exception& ex) {
@@ -203,20 +203,6 @@ class Tracker::Impl final : public XprtAble
     }
 
     /**
-     * Removes a server.
-     * @param[in] srvrAddr  Socket address of the server to be removed
-     */
-    void remove(const SockAddr srvrAddr) {
-        LOG_ASSERT(!mutex.try_lock());
-
-        assertInvariant(srvrAddr);
-
-        srvrInfos.erase(srvrAddr);
-        srvrQueue.erase(srvrAddr);
-        activeSrvrs.erase(srvrAddr);
-    }
-
-    /**
      * Tries to insert information on a P2P-server. If an entry for the server doesn't exist, then
      * the information is inserted; otherwise, the existing information is updated if the given
      * information is better. If the capacity is exceeded, then the worst entry is deleted.
@@ -228,6 +214,7 @@ class Tracker::Impl final : public XprtAble
      * @threadsafety        Safe
      */
     bool tryAdd(const P2pSrvrInfo& srvrInfo) {
+        LOG_ASSERT(srvrInfo);
         LOG_ASSERT(!mutex.try_lock());
 
         bool success;
@@ -235,8 +222,13 @@ class Tracker::Impl final : public XprtAble
 
         if (iter == srvrInfos.end()) {
             // Server is not known
-            if (srvrInfos.size() >= capacity)
-                remove(*srvrQueue.rbegin()); // At capacity. Delete worst server.
+            if (srvrInfos.size() >= capacity) {
+                // At capacity. Delete worst server.
+                LOG_ASSERT(!srvrQueue.empty());
+                const auto worstSrvrAddr = *srvrQueue.rbegin();
+                srvrQueue.erase(worstSrvrAddr); // Queue comparison function depends on `srvrInfos`
+                srvrInfos.erase(worstSrvrAddr); // Must be after `srvrQueue.erase(worstSrvrAddr)`
+            }
 
             srvrInfos[srvrInfo.srvrAddr] = srvrInfo; // Must be done before inserting into queue
             srvrQueue.insert(srvrInfo.srvrAddr);
@@ -247,14 +239,16 @@ class Tracker::Impl final : public XprtAble
             success = srvrInfo.valid > iter->second.valid;
             if (success) {
                 // Given information is more recent => update
-                iter->second = srvrInfo; // Must be done before updating queue
-                // Update queue
-                srvrQueue.erase(srvrInfo.srvrAddr);
-                srvrQueue.insert(srvrInfo.srvrAddr);
+                iter->second = srvrInfo; // Must be done before updating server-queue
+                if (srvrQueue.count(srvrInfo.srvrAddr)) {
+                    // Update entry in server-queue.
+                    srvrQueue.erase(srvrInfo.srvrAddr);
+                    srvrQueue.insert(srvrInfo.srvrAddr);
+                }
             }
         }
 
-        assertInvariant(srvrInfo.srvrAddr);
+        assertInvariant();
 
         return success;
     }
@@ -269,7 +263,6 @@ public:
             const SysDuration& delay)
         : srvrInfos(capacity)
         , srvrQueue(QueueComp(*this))
-        , activeSrvrs()
         , delayQueue()
         , mutex()
         , queueCond()
@@ -284,28 +277,24 @@ public:
             throw INVALID_ARGUMENT("Capacity is zero");
     }
 
-    /**
-     * Destroys.
-     */
     ~Impl() noexcept {
         halt();
         delayThread.join();
     }
 
     /**
-     * Returns the string representation of this instance.
-     * @return The string representation of this instance
+     * Returns a string representation.
+     * @return A string representation
      */
     std::string to_string() const {
         Guard guard(mutex);
         return "{capacity=" + std::to_string(capacity) + ", size=" +
-                std::to_string(srvrInfos.size()) + ", active=" + std::to_string(activeSrvrs.size())
-                + "}";
+                std::to_string(srvrInfos.size()) + "}";
     }
 
     /**
-     * Returns the number of P2P-server addresses.
-     * @return The number of P2P-server addresses
+     * Returns the number of known P2P-servers.
+     * @return The number of known P2P-servers
      */
     size_t size() const {
         Guard guard(mutex);
@@ -331,72 +320,32 @@ public:
     }
 
     /**
-     * Tries to adds information on P2P-servers contained in another instance.
-     * @param[in] src  The other instance
+     * Inserts the entries from another instance.
+     * @param[in] tracker  The other instance
      */
-    void insert(const Impl& src) {
+    void insert(const Impl& tracker) {
         threadEx.throwIfSet();
 
-        if (this != &src) { // No need if same object
+        if (this != &tracker) { // No need if same object
             Mutex* mutex1;
             Mutex* mutex2;
-            orderMutexes(src, &mutex1, &mutex2);
+            orderMutexes(tracker, &mutex1, &mutex2);
             Guard guard1(*mutex1);
             Guard guard2(*mutex2);
 
-            for (auto& pair : src.srvrInfos)
+            for (auto& pair : tracker.srvrInfos)
                 tryAdd(pair.second);
         }
     }
 
     /**
-     * Deletes the entry for a P2P-server.
-     * @param[in] srvrAddr  The socket address of the P2P-server to delete
-     */
-    void erase(const SockAddr srvrAddr) {
-        threadEx.throwIfSet();
-
-        Guard guard(mutex);
-        return remove(srvrAddr);
-    }
-
-    /**
-     * Deletes all P2P-server entries contained in another instance. Does not, however, erase
-     * servers returned by `getP2pSrvr()`.
-     * @param[in] src  The other instance with the servers that should be erased from this instance
-     */
-    void erase(const Impl& src) {
-        threadEx.throwIfSet();
-
-        if (this == &src) {
-            Guard guard{mutex};
-
-            for (auto& srvrAddr : srvrQueue)
-                srvrInfos.erase(srvrAddr);
-
-            srvrQueue.clear();
-        }
-        else {
-            Mutex* mutex1;
-            Mutex* mutex2;
-            orderMutexes(src, &mutex1, &mutex2);
-            Guard guard1(*mutex1);
-            Guard guard2(*mutex2);
-
-            for (auto& srvrAddr : src.srvrQueue) {
-                srvrInfos.erase(srvrAddr);
-                srvrQueue.erase(srvrAddr);
-            }
-        }
-    }
-
-    /**
-     * Returns the socket address of the next P2P-server to try. Blocks until one is available or
-     * `halt()` is called.
-     * @return The P2P-server's socket address. Will test false if `halt()` has been called.
+     * Removes and returns the address of the next P2P-server to try. Blocks until one is available
+     * or `halt()` has been called.
+     * @return The address of the next P2P-server to try. Will test false if `halt()` has been
+     *         called.
      * @see halt()
      */
-    SockAddr getNext() {
+    SockAddr getNextAddr() {
         threadEx.throwIfSet();
 
         Lock lock{mutex};
@@ -407,59 +356,60 @@ public:
 
         auto       iter = srvrQueue.begin();
         const auto srvrAddr = *iter;
-        activeSrvrs.insert(srvrAddr);
 
         srvrQueue.erase(iter);
 
-        assertInvariant(srvrAddr);
+        assertInvariant();
 
         return srvrAddr;
     }
 
     /**
-     * Handles a remote P2P-server going offline. The server will be deleted and no longer made
-     * available.
-     * @param[in] srvrAddr  Socket address of remote P2P-server
+     * Handles a P2P-server that's offline.
+     * @param[in] p2pSrvrAddr  Socket address of the remote P2P-server
      */
-    void offline(const SockAddr& srvrAddr) {
+    void offline(const SockAddr& p2pSrvrAddr) {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
 
-        LOG_ASSERT(srvrInfos.count(srvrAddr));
-        LOG_ASSERT(activeSrvrs.count(srvrAddr));
-        LOG_ASSERT(srvrQueue.count(srvrAddr) == 0);
-
-        remove(srvrAddr);
+        srvrQueue.erase(p2pSrvrAddr); // Queue comparison function depends on `srvrInfos`
+        srvrInfos.erase(p2pSrvrAddr); // Must be after `srvrQueue.erase(srvrAddr)`
     }
 
     /**
-     * Handles the disconnection of a peer whose remote address was returned by `getNext()`. The
-     * server will be delayed before it's made available.
-     * @param[in] srvrAddr  Socket address of associated remote P2P-server
-     * @see getNext()`
-     * @see runDelayQueue()
+     * Handles a peer disconnecting. If the local peer was constructed client-side, then the remote
+     * P2P-server has its number of available server-side peers increased.
+     * @param[in] srvrAddr     Socket address of the remote P2P-server
+     * @param[in] wasClient    Was the local peer constructed client-side?
+     * @retval true            P2P-server is known
+     * @retval false           P2P-server is not known. Nothing was done.
      */
-    void disconnected(const SockAddr& srvrAddr) {
+    bool disconnected(
+            const SockAddr& srvrAddr,
+            const bool      wasClient) {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
 
-        LOG_ASSERT(srvrInfos.count(srvrAddr));
-        LOG_ASSERT(activeSrvrs.count(srvrAddr));
-        LOG_ASSERT(srvrQueue.count(srvrAddr) == 0);
+        if (srvrInfos.count(srvrAddr) == 0)
+            return false;
 
-        activeSrvrs.erase(srvrAddr);
+        srvrQueue.erase(srvrAddr);
 
-        const auto now = SysClock::now();
-        srvrInfos.at(srvrAddr).valid = now;
-        delayQueue.emplace(srvrAddr, now + delay);
+        auto& srvrInfo = srvrInfos[srvrAddr];
+        if (wasClient)
+            srvrInfo.numAvail = srvrInfo.validMetrics() ? srvrInfo.numAvail + 1 : 1;
+        srvrInfo.valid = SysClock::now();
 
+        delayQueue.emplace(srvrAddr, srvrInfo.valid + delay);
         delayCond.notify_all();
+
+        return true;
     }
 
     /**
-     * Causes `getP2pSrvr()` to always return an invalid value.
+     * Causes `getNextAddr()` to always return a socket address that tests false. Idempotent.
      */
     void halt() {
         Guard guard{mutex};
@@ -468,6 +418,12 @@ public:
         delayCond.notify_all();
     }
 
+    /**
+     * Writes itself to a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool write(Xprt xprt) const {
         threadEx.throwIfSet();
 
@@ -485,6 +441,12 @@ public:
         return true;
     }
 
+    /**
+     * Reads itself from a transport.
+     * @param[in] xprt     The transport
+     * @retval    true     Success
+     * @retval    false    Lost connection
+     */
     bool read(Xprt xprt) {
         threadEx.throwIfSet();
 
@@ -495,7 +457,11 @@ public:
             return false;
         LOG_DEBUG("Read size=%s", std::to_string(size).data());
 
+        while (!delayQueue.empty())
+            delayQueue.pop();
+        srvrQueue.clear();
         srvrInfos.clear();
+
         for (Size i = 0; i < size; ++i) {
             P2pSrvrInfo srvrInfo;
 
@@ -533,24 +499,18 @@ void Tracker::insert(const Tracker tracker) const {
     pImpl->insert(*tracker.pImpl);
 }
 
-void Tracker::erase(const SockAddr srvrAddr) {
-    pImpl->erase(srvrAddr);
-}
-
-void Tracker::erase(const Tracker tracker) {
-    pImpl->erase(*tracker.pImpl);
-}
-
 SockAddr Tracker::getNextAddr() const {
-    return pImpl->getNext();
+    return pImpl->getNextAddr();
 }
 
 void Tracker::offline(const SockAddr p2pSrvrAddr) const {
     pImpl->offline(p2pSrvrAddr);
 }
 
-void Tracker::disconnected(const SockAddr p2pSrvrAddr) const {
-    pImpl->disconnected(p2pSrvrAddr);
+bool Tracker::disconnected(
+        const SockAddr p2pSrvrAddr,
+        const bool     wasClient) const {
+    return pImpl->disconnected(p2pSrvrAddr, wasClient);
 }
 
 void Tracker::halt() const {

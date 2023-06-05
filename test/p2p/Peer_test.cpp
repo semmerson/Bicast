@@ -15,20 +15,23 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public SubP2pMgr
+class PeerTest : public ::testing::Test, public SubP2pMgr, public PubP2pMgr
 {
 protected:
     typedef enum {
         INIT = 0,
-        LISTENING             =   0x1,
-        PROD_NOTICE_RCVD      =   0x2,
-        SEG_NOTICE_RCVD       =   0x4,
-        PROD_REQUEST_RCVD     =   0x8,
-        SEG_REQUEST_RCVD      =  0x10,
-        PROD_INFO_RCVD        =  0x20,
-        DATA_SEG_RCVD         =  0x40,
-        PROD_INFO_MISSED      =  0x80,
-        DATA_SEG_MISSED       = 0x200
+        LISTENING             =    0x1,
+        SRVR_INFO_RCVD        =    0x2,
+        TRACKER_RCVD          =    0x4,
+        SRVR_INFO_NOTICE_RCVD =    0x8,
+        PROD_NOTICE_RCVD      =   0x10,
+        SEG_NOTICE_RCVD       =   0x20,
+        PROD_REQUEST_RCVD     =   0x40,
+        SEG_REQUEST_RCVD      =   0x80,
+        PROD_INFO_RCVD        =  0x100,
+        DATA_SEG_RCVD         =  0x200,
+        PROD_INFO_MISSED      =  0x400,
+        DATA_SEG_MISSED       =  0x800
     } State;
     State             state;
     SockAddr          pubAddr;
@@ -59,6 +62,7 @@ protected:
     int               prodDataCount;
     int               segDataCount;
     Thread            pubPeerThread;
+    int               numTrackerRcvd;
 
     PeerTest()
         : state(INIT)
@@ -88,6 +92,7 @@ protected:
         , segRequestCount(0)
         , prodDataCount(0)
         , segDataCount(0)
+        , numTrackerRcvd(0)
     {
         DataSeg::setMaxSegSize(sizeof(memData));
         String prodNames[] = {"product1", "product2"};
@@ -138,9 +143,13 @@ public:
             : pubTracker;
     }
 
-    void saveRmtSrvrInfo(const P2pSrvrInfo& srvrInfo) {
-        EXPECT_TRUE(srvrInfo == pubSrvrInfo || srvrInfo == subSrvrInfo);
+    void recv(const Tracker& tracker) override {
+        if (++numTrackerRcvd == 2)
+            orState(TRACKER_RCVD);
     }
+
+    // Both sides
+    void waitForClntPeer() override {}
 
     // Both sides
     void waitForSrvrPeer() override {}
@@ -156,6 +165,10 @@ public:
 
     ProdIdSet getProdIds() const override {
         return ProdIdSet{};
+    }
+
+    void recvNotice(const P2pSrvrInfo& srvrInfo) override {
+        orState(SRVR_INFO_NOTICE_RCVD);
     }
 
     // Subscriber-side
@@ -243,7 +256,7 @@ public:
     void notify(const DataSegId dataSegId) {
     }
 
-    void startPubPeer(Peer::Pimpl& pubPeer)
+    void startPubPeer(PeerPtr& pubPeer)
     {
         try {
             auto pubPeerConnSrvr = PeerConnSrvr::create(pubAddr, 8);
@@ -254,6 +267,10 @@ public:
             auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
             EXPECT_EQ(pubAddr, rmtAddr);
 
+            pubPeer->xchgSrvrInfo(pubSrvrInfo, pubTracker);
+            EXPECT_EQ(subSrvrInfo, pubPeer->getRmtSrvrInfo());
+            orState(SRVR_INFO_RCVD);
+
             LOG_DEBUG("Starting publishing peer");
             pubPeerThread = Thread(&Peer::run, pubPeer.get());
         }
@@ -262,7 +279,7 @@ public:
         }
     }
 
-    void notify(Peer::Pimpl pubPeer) {
+    void notify(PeerPtr pubPeer) {
         // Start an exchange
         pubPeer->notify(prodId);
         pubPeer->notify(segId);
@@ -272,7 +289,7 @@ public:
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction)
 {
-    Peer::Pimpl peer{};
+    PeerPtr peer{};
     EXPECT_FALSE(peer);
 }
 
@@ -280,7 +297,7 @@ TEST_F(PeerTest, DefaultConstruction)
 TEST_F(PeerTest, PrematureStop)
 {
     // Create and execute publishing-peer on separate thread
-    Peer::Pimpl pubPeer{};
+    PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
@@ -288,6 +305,7 @@ TEST_F(PeerTest, PrematureStop)
 
         subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
+        subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
         Thread subPeerThread(&Peer::run, subPeer.get());
 
         ASSERT_TRUE(srvrThread.joinable());
@@ -338,7 +356,7 @@ TEST_F(PeerTest, PrematureDtor)
 TEST_F(PeerTest, DataExchange)
 {
     // Create and execute a publishing-peer on a separate thread
-    Peer::Pimpl pubPeer{};
+    PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
@@ -347,6 +365,9 @@ TEST_F(PeerTest, DataExchange)
         // Create and execute a subscribing-peer on a separate thread
         subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
+        subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
+        EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
+        orState(SRVR_INFO_RCVD);
         /*
          * If this program is executed in a "while" loop, then the following
          * will eventually cause the process to crash due to a segmentation
@@ -368,13 +389,15 @@ TEST_F(PeerTest, DataExchange)
 
         // Wait for the exchange to complete
         auto done = static_cast<State>(
-               LISTENING |
-               PROD_NOTICE_RCVD |
-               SEG_NOTICE_RCVD |
-               PROD_REQUEST_RCVD |
-               SEG_REQUEST_RCVD |
-               PROD_INFO_RCVD |
-               DATA_SEG_RCVD);
+                LISTENING |
+                SRVR_INFO_RCVD |
+                TRACKER_RCVD |
+                PROD_NOTICE_RCVD |
+                SEG_NOTICE_RCVD |
+                PROD_REQUEST_RCVD |
+                SEG_REQUEST_RCVD |
+                PROD_INFO_RCVD |
+                DATA_SEG_RCVD);
         waitForState(done);
 
         subPeer->halt();
@@ -396,7 +419,7 @@ TEST_F(PeerTest, DataExchange)
 TEST_F(PeerTest, BrokenConnection)
 {
     // Create and execute reception by publishing peer on separate thread
-    Peer::Pimpl pubPeer{};
+    PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
@@ -406,6 +429,9 @@ TEST_F(PeerTest, BrokenConnection)
             // Create and execute reception by subscribing peer on separate thread
             subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
+            subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
+            EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
+            orState(SRVR_INFO_RCVD);
             LOG_DEBUG("Starting subscribing peer");
             Thread subPeerThread(&Peer::run, subPeer.get());
 
@@ -439,7 +465,7 @@ TEST_F(PeerTest, UnsatisfiedRequests)
     skipping = true;
 
     // Create and execute reception by publishing peer on separate thread
-    Peer::Pimpl pubPeer{};
+    PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
@@ -449,6 +475,9 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             // Create and execute reception by subscribing peer on separate thread
             subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
+            subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
+            EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
+            orState(SRVR_INFO_RCVD);
             LOG_DEBUG("Starting subscribing peer");
             Thread subPeerThread(&Peer::run, subPeer.get());
 
@@ -465,6 +494,8 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             // Wait for the exchange to complete
             const auto done = static_cast<State>(
                 LISTENING |
+                SRVR_INFO_RCVD |
+                TRACKER_RCVD |
                 PROD_NOTICE_RCVD |
                 SEG_NOTICE_RCVD |
                 PROD_REQUEST_RCVD |

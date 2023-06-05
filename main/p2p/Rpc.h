@@ -38,45 +38,69 @@ class DataSegId;
 class ProdInfo;
 class DataSeg;
 
+/// Forward declaration
+class Rpc;
+/// Smart pointer to an implementation
+using RpcPtr = std::shared_ptr<Rpc>;
+
 /**
  * Interface for the peer-to-peer RPC layer.
  */
 class Rpc
 {
 public:
-    /// Smart pointer to an implementation
-    using Pimpl = std::shared_ptr<Rpc>;
-
     /**
      * Creates a default instance.
      * @return A default instance
      */
-    static Pimpl create();
+    static RpcPtr create();
 
     /// Destroys.
     virtual ~Rpc() {}
 
     /**
-     * Sends information on the local P2P-server to the remote peer.
+     * Sends information on the local P2P-server to the remote peer. Called by a peer connection.
      * @param[in] xprt      Transport on which to send the information
      * @param[in] srvrInfo  Information on the local P2P-server
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool setRmtSrvrInfo(
-            Xprt&               xprt,
+    virtual bool send(
+            Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) =0;
 
     /**
-     * Sends information on known P2P-servers to the remote peer.
+     * Sends information on P2P-servers to the remote peer. Called by a peer connection.
      * @param[in] xprt      Transport on which to send the information
      * @param[in] tracker   Information on P2P-servers
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool add(
+    virtual bool send(
             Xprt&          xprt,
             const Tracker& tracker) =0;
+
+    /**
+     * Receives and dispatches the next, incoming RPC message. Called by a peer connection.
+     * @param[in] xprt   Transport from which the RPC message will be read
+     * @param[in] peer   Associated peer
+     * @retval    true   Success
+     * @retval    false  Connection lost
+     */
+    virtual bool recv(
+            Xprt& xprt,
+            Peer& peer) =0;
+
+    /**
+     * Notifies the remote about the local P2P-server.
+     * @param[in] xprt      Transport on which to send the information
+     * @param[in] srvrInfo  Information on the local P2P-server
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
+    virtual bool notify(
+            Xprt&              xprt,
+            const P2pSrvrInfo& srvrInfo) =0;
 
     /**
      * Notifies the remote peer about available product information. May block.
@@ -166,17 +190,6 @@ public:
     virtual bool send(
             Xprt&         xprt,
             const DataSeg dataSeg) =0;
-
-    /**
-     * Processes the next, incoming RPC message.
-     * @param[in] xprt   Transport from which the RPC message will be read
-     * @param[in] peer   Associated peer
-     * @retval    true   Success
-     * @retval    false  Connection lost
-     */
-    virtual bool process(
-            Xprt& xprt,
-            Peer& peer) =0;
 };
 
 } // namespace
