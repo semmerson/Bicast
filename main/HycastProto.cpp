@@ -487,7 +487,7 @@ bool ProdInfo::read(Xprt xprt) {
 
 String P2pSrvrInfo::to_string() const {
     return "{addr=" + srvrAddr.to_string() + ", tier=" + std::to_string(tier) +
-            ", unused=" + std::to_string(numAvail) + ", valid=" + std::to_string(valid) + "}";
+            ", numAvail=" + std::to_string(numAvail) + ", valid=" + std::to_string(valid) + "}";
 }
 
 bool P2pSrvrInfo::write(Xprt xprt) const {
