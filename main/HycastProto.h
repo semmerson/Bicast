@@ -59,8 +59,9 @@ public:
     enum id : Type {
         UNSET,
         PROTOCOL_VERSION,    ///< Protocol version
-        SET_RMT_SRVR_INFO,   ///< Set information on the remote peer's P2P server
-        PEER_SRVR_INFOS,     ///< Information on P2P-servers
+        SRVR_INFO,           ///< Information on a P2P-server
+        TRACKER,             ///< Information on P2P-servers
+        SRVR_INFO_NOTICE,    ///< Information on the remote peer's P2P-server
         IS_PUBLISHER,        ///< Is the peer the publisher?
         AM_PUB_PATH,         ///< The peer has a path to the publisher
         AM_NOT_PUB_PATH,     ///< The peer does not have a path to the publisher
@@ -726,7 +727,7 @@ public:
 
 /******************************************************************************/
 
-/// Tracking information on a peer-to-peer server
+/// Information on a peer-to-peer server
 struct P2pSrvrInfo final : public XprtAble {
     using Tier     = int16_t; ///< Number of hops to the publisher
     using NumAvail = int16_t; ///< Number of server-side peers available
@@ -775,12 +776,22 @@ struct P2pSrvrInfo final : public XprtAble {
     }
 
     /**
+     * Indicates if a tier number is valid.
+     * @param[in] tier  The tier number in question
+     * @retval true     The tier number is valid
+     * @retval false    The tier number is not valid
+     */
+    inline static bool validTier(const Tier tier) {
+        return tier >= 0;
+    }
+
+    /**
      * Indicates if the tier number in this instance is valid.
      * @retval true   The tier number is valid
      * @retval false  The tier number is not valid
      */
     inline bool validTier() const noexcept {
-        return tier >= 0;
+        return validTier(tier);
     }
 
     /**
@@ -790,11 +801,11 @@ struct P2pSrvrInfo final : public XprtAble {
     String to_string() const;
 
     /**
-     * Returns the local tier number for a client-side peer assuming this instance is for a remote
-     * P2P-server.
-     * @return Local tier number for a client-side peer
+     * Returns the tier number that a remote peer would have due to the P2P-server referenced by
+     * this instance.
+     * @return Local tier number for a remote peer. Might be invalid.
      */
-    inline P2pSrvrInfo::Tier getClntTier() const noexcept {
+    inline P2pSrvrInfo::Tier getRmtTier() const noexcept {
         return validTier() ? tier + 1 : -1;
     }
 
@@ -880,18 +891,6 @@ public:
     void insert(const Tracker tracker) const;
 
     /**
-     * Removes the entry associated with a P2P-server's address.
-     * @param[in] peerSrvrAddr  Socket address of the P2P-server
-     */
-    void erase(const SockAddr peerSrvrAddr);
-
-    /**
-     * Removes the information associated with the P2P-servers contained in another instance.
-     * @param tracker  The other instance
-     */
-    void erase(const Tracker tracker);
-
-    /**
      * Removes and returns the address of the next P2P-server to try. Blocks until one is available
      * or `halt()` has been called.
      * @return The address of the next P2P-server to try. Will test false if `halt()` has been
@@ -902,18 +901,24 @@ public:
 
     /**
      * Handles a P2P-server that's offline.
-     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     * @param[in] p2pSrvrAddr  Socket address of the remote P2P-server
      */
-    void offline(const SockAddr peerSrvrAddr) const;
+    void offline(const SockAddr p2pSrvrAddr) const;
 
     /**
-     * Handles a peer disconnecting.
-     * @param[in] peerSrvrAddr  Socket address of the P2P-server
+     * Handles a peer disconnecting. If the local peer was constructed client-side, then the remote
+     * P2P-server has its number of available server-side peers increased.
+     * @param[in] p2pSrvrAddr  Socket address of the remote P2P-server
+     * @param[in] wasClient    Was the local peer constructed client-side?
+     * @retval true            P2P-server is known
+     * @retval false           P2P-server is not known. Nothing was done.
      */
-    void disconnected(const SockAddr peerSrvrAddr) const;
+    bool disconnected(
+            const SockAddr p2pSrvrAddr,
+            const bool     wasClient) const;
 
     /**
-     * Causes `remove()` to always return a socket address that tests false. Idempotent.
+     * Causes `getNextAddr()` to always return a socket address that tests false. Idempotent.
      */
     void halt() const;
 
@@ -946,6 +951,7 @@ public:
     /// Identifier of the type of notice
     enum class Id {
         UNSET,
+        P2P_SRVR_INFO,
         PEER_SRVR_INFOS,
         GOOD_PEER_SRVR,
         GOOD_PEER_SRVRS,
@@ -965,6 +971,15 @@ public:
     Notice() noexcept
         : prodId()
         , id(Id::UNSET)
+    {}
+
+    /**
+     * Constructs a notice about a P2P-server.
+     * @param[in] srvrInfo  Information on the P2P-server
+     */
+    explicit Notice(const P2pSrvrInfo& srvrInfo) noexcept
+        : id(Id::P2P_SRVR_INFO)
+        , srvrInfo(srvrInfo)
     {}
 
     /**
