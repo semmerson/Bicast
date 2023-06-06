@@ -101,9 +101,9 @@ public:
     explicit SockAddr(const struct sockaddr_storage& storage);
 
     /**
-     * Constructs from a hostname and port number.
+     * Constructs from a host specification and port number.
      *
-     * @param[in] name  Hostname
+     * @param[in] name  Host specification
      * @param[in] port  Port number in host byte-order. `0` obtains a system-
      *                  chosen port number, eventually.
      */
