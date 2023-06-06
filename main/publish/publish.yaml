@@ -9,10 +9,10 @@ Multicast:                   # Multicast component
   SrcAddr: localhost         # Internet address of source. Must not be wildcard.
 Peer2Peer:                   # Peer-to-peer component
   Server:                    # Local P2P server
-    IfaceAddr: localhost     # Internet address of server. Must not be wildcard.
+    InetAddr: localhost      # Internet address of server. Must not be wildcard.
     QueueSize: 8             # Maximum number of pending Hycast connections
   MaxPeers: 8                # Maximum number of connected subscriber-peers
-  TrackerSize: 100           # Maximum size of list of P2P servers
+  TrackerSize: 1000          # Maximum size of list of P2P servers
   EvalTime: 60               # Peer-evaluation duration in seconds
 Repository:                  # Data product repository
   Pathname: repo             # Pathname of repository
