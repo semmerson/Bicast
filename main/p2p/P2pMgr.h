@@ -82,7 +82,7 @@ public:
         int       evalTime;       ///< Time interval for evaluating peer performance in seconds
         /**
          * Constructs.
-         * @param[in] addr         Address for local P2P server
+         * @param[in] addr         Address for local P2P server. Port number may be 0.
          * @param[in] listenSize   Size of listen() queue
          * @param[in] maxPeers     Maximum number of neighboring peers to have
          * @param[in] trackerSize  Maximum size of pool of potential P2P server addresses
