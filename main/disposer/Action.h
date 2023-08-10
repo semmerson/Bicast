@@ -93,9 +93,9 @@ public:
      *
      * @param[in]  data    The data to process
      * @param[in]  nbytes  The amount of data in bytes
-     * @param[out] pid     The PID of the child process or -1 if no child process upon return
+     * @param[out] pid     The PID of the child process to wait(3) for or -1 if no such process
      * @param[out] args    The argument string. Cleared if no child process upon return.
-     * @retval     true    Success. `pid` and `args` are set. `pid < 0` if no child process.
+     * @retval     true    Success. `pid` and `args` are set. `pid == -1` if no child process.
      * @retval     false   Too many file descriptors are open
      * @throw SystemError  System failure
      */

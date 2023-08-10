@@ -142,7 +142,7 @@ public:
                     recvDatum<DataSeg>();
                 }
                 else {
-                    LOG_WARNING("Unknown PDU ID: %s", pduId.to_string().data());
+                    LOG_WARN("Unknown PDU ID: %s", pduId.to_string().data());
                 }
 
                 xprt.clear();

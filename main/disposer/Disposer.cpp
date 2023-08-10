@@ -23,6 +23,7 @@
 
 #include "ActionTemplate.h"
 #include "Disposer.h"
+#include "error.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
 #include "Parser.h"
@@ -36,6 +37,7 @@
 #include <queue>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <unordered_map>
 #include <yaml-cpp/yaml.h>
 
 namespace hycast {
@@ -43,17 +45,16 @@ namespace hycast {
 /// An implementation of a class that locally disposes of data products
 class Disposer::Impl
 {
-    using PatActs = std::list<PatternAction>;
-    using ChildProcs = std::unordered_map<pid_t, String>;
+    using PatActs  = std::list<PatternAction>;
+    using ProcCmds = std::unordered_map<pid_t, String>;
 
+    mutable Mutex              mutex;         ///< State mutex
+    mutable Cond               cond;          ///< Condition variable
     PatActs                    patActs;       ///< Pattern-actions to be matched
     std::unordered_set<Action> actionSet;     ///< Persistent (e.g., open) actions
     HashSetQueue<Action>       actionQueue;   ///< Persistent actions sorted by last use
     int                        maxPersistent; ///< Maximum number of persistent actions
-    ChildProcs                 childProcs;    ///< Child processes to be waited on
-    mutable Mutex              mutex;         ///< State mutex
-    ThreadEx                   threadEx;      ///< Exception thrown on waiter thread
-    Thread                     waitThread;    ///< Thread on which child processes are waited on
+    ProcCmds                   childCmds;     ///< Child processes to be waited on
 
     /**
      * Removes the least-recently-used, persistent action. This should cause destruction of the
@@ -77,6 +78,8 @@ class Disposer::Impl
     Action getAction(
             ActionTemplate& actionTemplate,
             std::smatch&    match) {
+        LOG_ASSERT(!mutex.try_lock());
+
         auto action = actionTemplate.reify(match);
 
         if (action.shouldPersist()) {
@@ -98,16 +101,19 @@ class Disposer::Impl
     /**
      * Processes a product's data.
      *
-     * @param[in] action   Action to perform
-     * @param[in] bytes    Product's data
-     * @param[in] nbytes   Number of bytes
+     * @pre                 Mutex is locked
+     * @param[in] action    Action to perform
+     * @param[in] bytes     Product's data
+     * @param[in] nbytes    Number of bytes
      * @throw RuntimeError  Too many open file descriptors or user processes
+     * @post                Mutex is locked
      */
     void process(
             Action         action,
             const char*    bytes,
             const ProdSize nbytes) {
-        Guard  guard{mutex};
+        LOG_ASSERT(!mutex.try_lock());
+
         bool   success;
         pid_t  pid;
         String childStr;
@@ -124,8 +130,10 @@ class Disposer::Impl
         if (!success)
             throw RUNTIME_ERROR("Too many open file descriptors or user processes");
 
-        if (pid >= 0)
-            childProcs[pid] = childStr;
+        if (pid > 0) {
+            childCmds[pid] = childStr;
+            cond.notify_all();
+        }
     }
 
     /*
@@ -136,90 +144,78 @@ class Disposer::Impl
 
     /**
      * Logs the termination of a child process.
-     * @param[in] pid   PID of the child process
-     * @param[in] stat  Status of the child process
+     * @param[in] childCmd   Child process' command
+     * @param[in] stat       Status of the child process
      */
-    void logChild(
-            const pid_t pid,
-            const int   stat) {
-        String childId;
-
-        if (childProcs.count(pid) == 0) {
-            childId = std::to_string(pid);
-        }
-        else {
-            childId = childProcs[pid];
-            childProcs.erase(pid);
-        }
-
+    static void logChild(
+            const String& childCmd,
+            const int     stat) {
         if (WIFSIGNALED(stat)) {
             if (WTERMSIG(stat) == SIGTERM) {
-                LOG_INFO("Child process \"" + childId + "\" terminated by SIGTERM");
+                LOG_INFO("Child process \"" + childCmd + "\" terminated by SIGTERM");
             }
             else {
-                LOG_WARNING("Child process \"" + childId + "\" terminated by signal " +
+                LOG_WARN("Child process \"" + childCmd + "\" terminated by signal " +
                         std::to_string(WTERMSIG(stat)));
             }
         }
         else if (WIFEXITED(stat)) {
             const int exitStatus = WEXITSTATUS(stat);
             if (exitStatus == 0) {
-                LOG_INFO("Child process \"" + childId + "\" exited successfully");
+                LOG_INFO("Child process \"" + childCmd + "\" exited successfully");
             }
             else {
-                LOG_WARNING("Child process \"" + childId + "\" exited with status " +
+                LOG_WARN("Child process \"" + childCmd + "\" exited with status " +
                         std::to_string(exitStatus));
             }
         }
     }
 
     /**
-     * Terminates all known child processes by sending them a SIGTERM and waits until they all
-     * terminate. Logs the termination of each child process.
+     * Reaps (i.e., waits upon) child processes and logs their termination.
+     * @pre                The mutex is locked
+     * @post               The mutex is locked
+     * @throw SystemError  `wait(3)` failure
+     * @throw LogicError   Terminated child process is unknown
      */
-    void killChildren() {
-        Guard guard{mutex};
+    void reap() {
+        LOG_ASSERT(!mutex.try_lock());
 
-        for (auto& pair : childProcs)
-            ::kill(pair.first, SIGTERM);
+        for (;;) {
+            int        stat;
+            const auto pid = ::wait(&stat);
 
-        for (auto& pair : childProcs) {
-            int   stat;
-            pid_t pid = ::waitpid(pair.first, &stat, 0);
             if (pid == -1) {
                 if (errno != ECHILD)
-                    throw SYSTEM_ERROR("Couldn't wait on child process {pid=" +
-                            std::to_string(pid) + ", proc=" + pair.second);
+                    throw SYSTEM_ERROR("wait() failure");
+                childCmds.clear();
+                break; // No child processes to wait upon
             }
-            else {
-                logChild(pid, stat);
-            }
+
+            auto iter = childCmds.find(pid);
+            if (iter == childCmds.end())
+                throw LOGIC_ERROR("Child process " + std::to_string(pid) + " is unknown");
+
+            auto childCmd = iter->second;
+            childCmds.erase(iter);
+
+            logChild(childCmd, stat);
         }
     }
 
     /**
-     * Thread start function for waiting on child processes. Designed to be cancelled.
+     * Terminates all known child processes by sending them a SIGTERM and waits until they all
+     * terminate. Logs the termination of each child process.
+     * @pre   Mutex is locked
+     * @post  Mutex is locked
      */
-    void runWaiter() {
-        try {
-            for (;;) {
-                int    stat;
-                pid_t  pid = wait(&stat);
-                Shield shield{};
+    void killChildren() {
+        LOG_ASSERT(!mutex.try_lock());
 
-                if (pid == -1) {
-                    if (errno != ECHILD)
-                        throw SYSTEM_ERROR("Couldn't wait on child process " + std::to_string(pid));
-                }
-                else {
-                    Guard guard{mutex};
-                    logChild(pid, stat);
-                }
-            }
-        }
-        catch (const std::exception& ex) {
-            threadEx.set(ex);
-        }
+        for (auto& pair : childCmds)
+            ::kill(pair.first, SIGTERM);
+
+        reap();
     }
 
 public:
@@ -230,23 +226,18 @@ public:
      * Default constructs.
      */
     Impl()
-        : patActs()
+        : mutex()
+        , cond()
+        , patActs()
         , actionSet(0)
         , actionQueue(0)
         , maxPersistent(0)
-        , childProcs()
-        , mutex()
-        , threadEx()
-        , waitThread(&Disposer::Impl::runWaiter, this)
+        , childCmds()
     {}
 
     ~Impl() {
-        int status = ::pthread_cancel(waitThread.native_handle());
-        if (status && status != ESRCH)
-            LOG_SYSERR("Couldn't cancel thread on which child processes are waited", status);
-        waitThread.join();
-
         try {
+            Guard guard{mutex};
             killChildren();
         }
         catch (const std::exception& ex) {
@@ -259,6 +250,7 @@ public:
      * @param[in] patAct  The pattern and action to add
      */
     void add(const PatternAction& patAct) {
+        Guard guard{mutex};
         patActs.push_back(patAct);
     }
 
@@ -267,6 +259,7 @@ public:
      * @param[in] maxKeepOpen  Maximum number of file descriptors to keep open
      */
     void setMaxKeepOpen(const int maxKeepOpen) {
+        Guard guard{mutex};
         maxPersistent = maxKeepOpen;
     }
 
@@ -275,6 +268,7 @@ public:
      * @return Maximum number of file descriptors to keep open
      */
     int getMaxKeepOpen() const {
+        Guard guard{mutex};
         return maxPersistent;
     }
 
@@ -283,6 +277,7 @@ public:
      * @return Iterator over pattern-actions
      */
     Iterator begin() {
+        Guard guard{mutex};
         return patActs.begin();
     }
 
@@ -291,18 +286,22 @@ public:
      * @return Iterator beyond pattern-actions
      */
     Iterator end() {
+        Guard guard{mutex};
         return patActs.end();
     }
 
     /**
-     * Disposes of a data product.
+     * Disposes of a data product and waits on any terminated child processes.
      * @param[in] prodInfo  Information on the product
      * @param[in] bytes     The product's data
+     * @throw RuntimeError  Too many open file descriptors or user processes
+     * @throw SystemError  `wait(3)` failure
+     * @throw LogicError    Terminated child process is unknown
      */
     void dispose(
             const ProdInfo prodInfo,
             const char*    bytes) {
-        threadEx.throwIfSet();
+        Guard guard{mutex};
 
         // TODO: Erase persistent actions that haven't been used for some time
         for (auto& patAct : patActs) {
@@ -323,6 +322,8 @@ public:
                 }
             } // Product should be processed
         } // Pattern-action loop
+
+        reap();
     }
 
     /**
@@ -330,33 +331,34 @@ public:
      * @return YAML representation of this instance
      */
     String getYaml() {
+        Guard         guard{mutex};
         YAML::Emitter yaml;
 
         yaml << YAML::BeginMap;
 
-        yaml << YAML::Key << "MaxKeepOpen";
+        yaml << YAML::Key << "maxKeepOpen";
         yaml << YAML::Value << std::to_string(maxPersistent);
 
-        yaml << YAML::Key << "PatternActions";
+        yaml << YAML::Key << "patternActions";
         yaml << YAML::BeginSeq;
 
         for (auto& patAct : patActs) {
             yaml << YAML::BeginMap;
-                yaml << YAML::Key << "Include";
+                yaml << YAML::Key << "include";
                 yaml << YAML::Value << patAct.include.to_string();
 
                 const String& string = patAct.exclude.to_string();
                 if (string.size()) {
-                    yaml << YAML::Key << "Exclude";
+                    yaml << YAML::Key << "exclude";
                     yaml << YAML::Value << string;
                 }
 
                 yaml << YAML::Key;
                 switch (patAct.actionTemplate.getType()) {
-                case ActionTemplate::Type::EXEC:   yaml << "Exec";   break;
-                case ActionTemplate::Type::PIPE:   yaml << "Pipe";   break;
-                case ActionTemplate::Type::FILE:   yaml << "File";   break;
-                case ActionTemplate::Type::APPEND: yaml << "Append"; break;
+                case ActionTemplate::Type::EXEC:   yaml << "exec";   break;
+                case ActionTemplate::Type::PIPE:   yaml << "pipe";   break;
+                case ActionTemplate::Type::FILE:   yaml << "file";   break;
+                case ActionTemplate::Type::APPEND: yaml << "append"; break;
                 }
                 const std::vector<String>& args = patAct.actionTemplate.getArgs();
                 const bool needsSeq = args.size() > 1;
@@ -444,89 +446,69 @@ static bool parseAction(
 /**
  * Decodes the action in a map node into an pattern-action template and adds it to a disposer.
  * @param[in] node         Map node
- * @param[in] actionName   Action name
  * @param[in] include      What products to process
  * @param[in] exclude      What products to ignore
- * @param[in] persist      Keep the output-file open?
  * @param[in] disposer     Disposer
- * @retval true            An action was found
- * @retval false           An action was not found
  * @throw InvalidArgument  Node isn't a map
  * @throw InvalidArgument  A subnode isn't the expected type
  * @throw InvalidArgument  A scalar value isn't the expected type
  * @throw LogicError       More than one action was found
  */
-static bool parseAction(
-        YAML::Node&    mapNode,
+static void parseAction(
+        YAML::Node&    node,
         const Pattern& include,
         const Pattern& exclude,
         Disposer&      disposer)
 {
+    if (!node.IsMap())
+        throw INVALID_ARGUMENT("Node isn't a map-node");
+
     bool persist = false;
-    Parser::tryDecode(mapNode, "KeepOpen", persist);
+    Parser::tryDecode(node, "keepOpen", persist);
 
     int numActions = 0;
 
-    if (parseAction<std::vector<String>, ExecTemplate>(mapNode, "Exec", include, exclude, persist,
+    if (parseAction<std::vector<String>, ExecTemplate>(node, "exec", include, exclude, persist,
             disposer))
         ++numActions;
-    if (parseAction<std::vector<String>, PipeTemplate>(mapNode, "Pipe", include, exclude, persist,
+    if (parseAction<std::vector<String>, PipeTemplate>(node, "pipe", include, exclude, persist,
             disposer))
         ++numActions;
-    if (parseAction<String, FileTemplate>(mapNode, "File", include, exclude, persist,
-            disposer))
+    if (parseAction<String, FileTemplate>(node, "file", include, exclude, persist, disposer))
         ++numActions;
-    if (parseAction<String, AppendTemplate>(mapNode, "Append", include, exclude, persist,
-            disposer))
+    if (parseAction<String, AppendTemplate>(node, "append", include, exclude, persist, disposer))
         ++numActions;
 
+    if (numActions == 0)
+        throw LOGIC_ERROR("Node has no action");
     if (numActions > 1)
         throw LOGIC_ERROR("Node has multiple actions");
-
-    return numActions == 1;
 }
 
 /**
  * Decodes the sequence of actions in a subnode of a map node into pattern-action templates and adds
  * them to a disposer.
- * @param[in] node         Map node containing a sequence of actions in a subnode
+ * @param[in] node         Sequence node containing a sequence of actions in a subnode
  * @param[in] include      Products to process
  * @param[in] exclude      Products to ignore
  * @param[in] disposer     Disposer
- * @retval true            An action was found.
- * @retval false           An action was not found.
  * @throw InvalidArgument  Node isn't a map
  * @throw InvalidArgument  A subnode isn't the expected type
  * @throw InvalidArgument  A scalar value isn't the expected type
  */
-static bool parseActions(
-        YAML::Node&    mapNode,
+static void parseActions(
+        YAML::Node&    node,
         const Pattern& include,
         const Pattern& exclude,
         Disposer&      disposer)
 {
-    bool haveAction = false;
+    if (!node.IsSequence())
+        throw INVALID_ARGUMENT("Node isn't a sequence");
 
-    if (!mapNode.IsMap())
-        throw INVALID_ARGUMENT("Node isn't a map");
-
-    if (mapNode["Actions"]) {
-        auto seqNode = mapNode["Actions"];
-        if (!seqNode.IsSequence())
-            throw INVALID_ARGUMENT("Node's value isn't a sequence");
-
-        for (size_t i = 0, n = seqNode.size(); i < n; ++i) {
-            auto actionNode = seqNode[i];
-            if (!parseAction(actionNode, include, exclude, disposer)) {
-                LOG_WARNING("Node has no action");
-            }
-            else {
-                haveAction = true;
-            }
-        }
+    for (size_t i = 0, n = node.size(); i < n; ++i) {
+        auto subNode = node[i];
+        parseAction(subNode, include, exclude, disposer);
     }
-
-    return haveAction;
 }
 
 /**
@@ -548,40 +530,34 @@ static String to_string(
 /**
  * Decodes the pattern and one or more actions in a map node into one or more pattern-action
  * templates and adds them to a disposer.
- * @param[in] mapNodeode   Map node containing a pattern and one or more actions
+ * @param[in] node         Map node containing a pattern and one or more actions
  * @param[in] disposer     Disposer
- * @retval true            A pattern-action was found.
- * @retval false           A pattern-action was not found.
  * @throw InvalidArgument  Node isn't a map
  * @throw InvalidArgument  A subnode isn't the expected type
  * @throw InvalidArgument  A scalar value isn't the expected type
  * @throw InvalidArgument  The node has both a single action and a subnode with actions
  */
-static bool parsePatActNode(
-        YAML::Node& mapNode,
+static void parsePatActNode(
+        YAML::Node& node,
         Disposer&   disposer)
 {
-    bool havePatAct = false;
-
     String  string(".*"); // Matches everything
-    Parser::tryDecode(mapNode, "Include", string);
+    Parser::tryDecode(node, "include", string);
     Pattern include(string);
 
     string.clear(); // Matches nothing
-    Parser::tryDecode(mapNode, "Exclude", string);
+    Parser::tryDecode(node, "exclude", string);
     Pattern exclude(string);
 
-    if (parseActions(mapNode, include, exclude, disposer)) {
-        if (parseAction(mapNode, include, exclude, disposer))
-            throw INVALID_ARGUMENT("Pattern " + to_string(include, exclude) + " has a single "
-                    "action and a subnode with actions");
-        havePatAct = true;
+    if (!node["actions"]) {
+        parseAction(node, include, exclude, disposer);
     }
-    else if (!parseAction(mapNode, include, exclude, disposer)) {
-        LOG_WARNING("Pattern " + to_string(include, exclude) + " has no action");
+    else {
+        auto subNode = node["actions"];
+        parseActions(subNode, include, exclude, disposer);
+        if (node["exec"] || node["pipe"] || node["file"] || node["append"])
+            throw LOGIC_ERROR("Node has single action and actions sequence");
     }
-
-    return havePatAct;
 }
 
 
@@ -595,35 +571,30 @@ static bool parsePatActNode(
  * @throw InvalidArgument  A subnode isn't the expected type
  * @throw InvalidArgument  A scalar value isn't the expected type
  */
-static bool parsePatternActions(
+static void parsePatternActions(
         YAML::Node& mapNode,
         Disposer&   disposer)
 {
     if (!mapNode.IsMap())
         throw INVALID_ARGUMENT("Node isn't a map");
 
-    bool havePatAct = false;
-
-    if (mapNode["PatternActions"]) {
-        auto seqNode = mapNode["PatternActions"];
+    if (mapNode["patternActions"]) {
+        auto seqNode = mapNode["patternActions"];
         if (!seqNode.IsSequence())
-            throw INVALID_ARGUMENT("\"PatternActions\" node isn't a sequence");
+            throw INVALID_ARGUMENT("\"patternActions\" node isn't a sequence");
 
         for (size_t i = 0, n = seqNode.size(); i < n; ++i) {
             auto patActNode = seqNode[i];
 
             try {
-                if (parsePatActNode(patActNode, disposer))
-                    havePatAct = true;
+                parsePatActNode(patActNode, disposer);
             }
             catch (const std::exception& ex) {
-                std::throw_with_nested(INVALID_ARGUMENT("Couldn't parse pattern-action #" +
+                std::throw_with_nested(INVALID_ARGUMENT("Couldn't parse \"patternAction\" #" +
                         std::to_string(i+1)));
             }
         } // Sequence loop
     } // Pattern-actions subnode exists
-
-    return havePatAct;
 }
 
 Disposer Disposer::createFromYaml(const String& configFile)
@@ -640,17 +611,16 @@ Disposer Disposer::createFromYaml(const String& configFile)
     try {
         // Set the maximum number of file descriptors to keep open
         int maxKeepOpen = 20;
-        Parser::tryDecode(node0, "MaxKeepOpen", maxKeepOpen);
+        Parser::tryDecode(node0, "maxKeepOpen", maxKeepOpen);
         if (maxKeepOpen < 0)
-            throw INVALID_ARGUMENT("Invalid \"MaxKeepOpen\" value: " + std::to_string(maxKeepOpen));
+            throw INVALID_ARGUMENT("Invalid \"maxKeepOpen\" value: " + std::to_string(maxKeepOpen));
 
         // Construct the Disposer
         Disposer disposer{};
         disposer.setMaxKeepOpen(maxKeepOpen);
 
         // Add pattern-actions to the Disposer
-        if (!parsePatternActions(node0, disposer))
-            LOG_WARNING("No pattern-action found in configuration-file \"" + configFile + "\"");
+        parsePatternActions(node0, disposer);
 
         return disposer;
     } // YAML file loaded
@@ -666,29 +636,29 @@ String Disposer::getYaml(const Disposer& disposer) {
 
     yaml << YAML::BeginMap;
 
-    yaml << YAML::Key << "MaxKeepOpen";
+    yaml << YAML::Key << "maxKeepOpen";
     yaml << YAML::Value << pImpl->getMaxKeepOpen();
 
-    yaml << YAML::Key << "PatternActions";
+    yaml << YAML::Key << "patternActions";
     yaml << YAML::BeginSeq;
 
     for (auto patAct = pImpl->begin(), end = pImpl->end(); patAct != end; ++patAct) {
         yaml << YAML::BeginMap;
-            yaml << YAML::Key << "Include";
+            yaml << YAML::Key << "include";
             yaml << YAML::Value << patAct->include.to_string();
 
             const String& string = patAct->exclude.to_string();
             if (string.size()) {
-                yaml << YAML::Key << "Exclude";
+                yaml << YAML::Key << "exclude";
                 yaml << YAML::Value << string;
             }
 
             yaml << YAML::Key;
             switch (patAct->actionTemplate.getType()) {
-            case ActionTemplate::Type::EXEC:   yaml << "Exec";   break;
-            case ActionTemplate::Type::PIPE:   yaml << "Pipe";   break;
-            case ActionTemplate::Type::FILE:   yaml << "File";   break;
-            case ActionTemplate::Type::APPEND: yaml << "Append"; break;
+            case ActionTemplate::Type::EXEC:   yaml << "exec";   break;
+            case ActionTemplate::Type::PIPE:   yaml << "pipe";   break;
+            case ActionTemplate::Type::FILE:   yaml << "file";   break;
+            case ActionTemplate::Type::APPEND: yaml << "append"; break;
             }
             const std::vector<String>& args = patAct->actionTemplate.getArgs();
             const bool needsSeq = args.size() > 1;
@@ -701,7 +671,7 @@ String Disposer::getYaml(const Disposer& disposer) {
                 yaml << YAML::EndSeq;
 
             if (patAct->actionTemplate.getKeepOpen())
-                yaml << YAML::Key << "KeepOpen" << YAML::Value << "true";
+                yaml << YAML::Key << "keepOpen" << YAML::Value << "true";
         yaml << YAML::EndMap;
     }
 

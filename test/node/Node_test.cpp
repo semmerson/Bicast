@@ -59,7 +59,7 @@ protected:
     const ProdInfo            prodInfo;
     const DataSegId           segId;
     const SockAddr            mcastAddr;
-    const InetAddr            loAddr;
+    const InetAddr            ifaceAddr;
     const SockAddr            pubP2pAddr;
     const SockAddr            subP2pAddr;
     const int                 listenSize;
@@ -82,9 +82,10 @@ protected:
         , prodInfo(prodId, prodName, PROD_SIZE)
         , segId(prodId, 0)
         , mcastAddr("232.1.1.1:3880")
-        , loAddr{"127.0.0.1"}
-        , pubP2pAddr{loAddr, 0}
-        , subP2pAddr{loAddr, 0}
+        //, ifaceAddr{"127.0.0.1"}    // Causes PDUs to be received via multicast (see "Sending")
+        , ifaceAddr{"192.168.58.133"} // Causes PDUs to be received via P2P (see "Sending")
+        , pubP2pAddr{ifaceAddr, 0}
+        , subP2pAddr{ifaceAddr, 0}
         , listenSize{0}
         , maxPeers{3}
         , numPeers{0}
@@ -92,7 +93,7 @@ protected:
         , subInfo()
     {
         subInfo.mcast.dstAddr = mcastAddr;
-        subInfo.mcast.srcAddr = loAddr;
+        subInfo.mcast.srcAddr = ifaceAddr;
         subInfo.maxSegSize = SEG_SIZE;
         DataSeg::setMaxSegSize(SEG_SIZE);
         FileUtil::rmDirTree(testRoot);
@@ -123,7 +124,7 @@ public:
             node->run();
         }
         catch (const std::exception& ex) {
-            threadEx.set(ex);
+            threadEx.set();
         }
     }
 };
@@ -132,29 +133,36 @@ public:
 TEST_F(NodeTest, Construction)
 {
     LOG_NOTE("Creating publishing node");
-    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, loAddr, 1, pubRepoRoot,
-            SEG_SIZE, maxOpenFiles);
+    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1, pubRepoRoot,
+            SEG_SIZE, maxOpenFiles, 3600);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
-    EXPECT_EQ(loAddr, pubInetAddr);
+    EXPECT_EQ(ifaceAddr, pubInetAddr);
     const auto pubPort = pubP2pSrvrAddr.getPort();
     EXPECT_NE(0, pubPort);
 
     LOG_NOTE("Creating subscribing node");
     subInfo.tracker.insert(pubP2pSrvrAddr);
-    auto subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60, subRepoRoot,
+    auto subNode = SubNode::create(subInfo, ifaceAddr, subP2pAddr, 5, -1, maxPeers, 60, subRepoRoot,
             maxOpenFiles);
 
     const auto subP2pSrvrAddr = subNode->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
-    EXPECT_EQ(loAddr, subInetAddr);
+    EXPECT_EQ(ifaceAddr, subInetAddr);
     const auto subPort = subP2pSrvrAddr.getPort();
     EXPECT_NE(0, subPort);
 }
 
 #if 1
-// Tests sending
+/**
+ * Tests sending.
+ *
+ * If the loopback interface is used, then the PDUs will be received via multicast. If the external
+ * interface is used, however, then the PDUs will be received via the P2P network. The reason for
+ * this is that multi-threaded transmission and reception isn't supported for an external interface.
+ * The reason for that is unknown.
+ */
 TEST_F(NodeTest, Sending)
 {
     try {
@@ -169,14 +177,14 @@ TEST_F(NodeTest, Sending)
         EXPECT_EQ(0, ::close(fd));
 
         // Create publisher
-        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, loAddr, 1,
-                pubRepoRoot, SEG_SIZE, maxOpenFiles);
+        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
+                pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
         // Create subscriber
         subInfo.tracker.insert(pubP2pSrvrAddr);
-        auto   subNode = SubNode::create(subInfo, loAddr, subP2pAddr, 5, -1, maxPeers, 60,
+        auto   subNode = SubNode::create(subInfo, ifaceAddr, subP2pAddr, 5, -1, maxPeers, 60,
                 subRepoRoot, maxOpenFiles);
         Thread subThread(&NodeTest::runNode, this, subNode);
 

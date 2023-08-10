@@ -391,22 +391,9 @@ public:
 
     /**
      * @param[in] srvrAddr         Socket address of server
-     * @param[in] timeout          Timeout in ms. <0 => system's default timeout.
      * @throw     LogicError       Destination port number is zero
      * @throw     SystemError      Couldn't connect to `sockAddr`. Bad failure.
-     * @throw     RuntimeError     Connection attempt timed-out
-     * @cancellationpoint
-     * @see `makeBlocking()`
-     */
-    TcpClntSock(
-            const SockAddr srvrAddr,
-            const int      timeout);
-
-    /**
-     * @param[in] srvrAddr         Socket address of server
-     * @throw     LogicError       Destination port number is zero
-     * @throw     SystemError      Couldn't connect to `sockAddr`. Bad failure.
-     * @throw     RuntimeError     Connection attempt timed-out
+     * @throw     RuntimeError     Couldn't connect to `sockAddr` at this time
      * @cancellationpoint
      * @see `makeBlocking()`
      */

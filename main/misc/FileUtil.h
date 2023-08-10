@@ -35,6 +35,8 @@ namespace hycast {
 class FileUtil
 {
 public:
+    static constexpr char separator = '/'; ///< Separator between pathname components
+
     /**
      * Indicates if a pathname is absolute or not.
      *
@@ -42,39 +44,56 @@ public:
      * @return    true      Pathname is absolute
      * @return    false     Pathname is relative
      */
-    static bool isAbsolute(const std::string& pathname);
+    static bool isAbsolute(const String& pathname);
 
     /**
-     * Returns the absolute pathname of a generic (i.e., relative or absolute)
-     * pathname. The current working directory is used if the pathname is
-     * relative.
+     * Returns the absolute pathname of a generic (i.e., relative or absolute) pathname. The current
+     * working directory is used if the pathname is relative.
      *
      * @param[in] pathname  Pathname to have its absolute form returned
      * @return              Corresponding absolute pathname. Will be the same
      *                      if the pathname is absolute
      * @throws OutOfRange   Pathname is empty
      */
-    static std::string makeAbsolute(const std::string& pathname);
+    static String makeAbsolute(const String& pathname);
 
     /**
      * Returns the filename portion of a pathname.
      * @param[in] pathname  The pathname
      * @return The filename portion of the pathname
      */
-    static std::string filename(const std::string& pathname) noexcept;
+    static String filename(const String& pathname) noexcept;
+
+    /**
+     * Returns a pathname with a trailing separator. If the input pathname already has a trailing
+     * separator, then a copy of it is returned.
+     * @param[in] pathname  The pathname
+     * @return              The pathname with a trailing separator.
+     */
+    static String ensureTrailingSep(const String& pathname);
+
+    /**
+     * Returns the pathname of a file given the pathname of its directory and the name of the file.
+     * @param[in] dirPath   The pathname of the parent directory. May be empty.
+     * @param[in] filename  The name of the file
+     * @return              The pathname of the file
+     */
+    static String pathname(
+            const String& dirPath,
+            const String& filename);
 
     /**
      * Returns the directory portion of a pathname.
      * @param[in] pathname  The pathname
      * @return The directory portion of the pathname
      */
-    static std::string dirname(const std::string& pathname) noexcept;
+    static String dirname(const String& pathname) noexcept;
 
     /**
      * Trims a pathname by removing any trailing slashes.
      * @param[in,out] pathname  The pathname to be trimmed
      */
-    static void trimPathname(std::string& pathname) noexcept;
+    static void trimPathname(String& pathname) noexcept;
 
     /**
      * Indicates if a file exists.
@@ -89,7 +108,7 @@ public:
      * @param[in] pathname  The pathname of the file
      * @return The size, in bytes, of the regular file referenced by the pathname
      */
-    static size_t getSize(const std::string& pathname);
+    static size_t getSize(const String& pathname);
 
     /**
      * Returns the metadata of a file. Doesn't follow symbolic links.
@@ -103,7 +122,7 @@ public:
      * @cancellationpoint       No
      */
     static struct ::stat& statNoFollow(
-            const std::string& pathname,
+            const String& pathname,
             struct ::stat&     statBuf);
 
     /**
@@ -121,7 +140,7 @@ public:
      */
     static struct stat getStat(
             const int          rootFd,
-            const std::string& pathname);
+            const String& pathname);
 
     /**
      * Sets the ownership of an existing file.
@@ -148,10 +167,10 @@ public:
             const mode_t  protMask);
 
     /**
-     * Returns the modification time of a file.
+     * Returns the modification time of a file. Doesn't follow symbolic links.
      *
-     * @param[in] pathname      Pathname of existing file
-     * @param[out] modTime      Modification time of the Tile
+     * @param[in]  pathname     Pathname of existing file
+     * @param[out] modTime      Modification time of the file
      * @return                  Reference to `modtime`
      * @throws    SYSTEM_ERROR  `stat()` failure
      * @threadsafety            Safe
@@ -159,11 +178,11 @@ public:
      * @cancellationpoint       No
      */
     static SysTimePoint& getModTime(
-            const std::string& pathname,
+            const String& pathname,
             SysTimePoint&      modTime);
 
     /**
-     * Returns the modification time of a file.
+     * Returns the modification time of a file. Follows symbolic links.
      *
      * @param[in] rootFd        File descriptor open on root-directory
      * @param[in] pathname      Pathname of existing file. May be absolute or relative to the
@@ -177,7 +196,7 @@ public:
      */
     static SysTimePoint getModTime(
             const int          rootFd,
-            const std::string& pathname);
+            const String& pathname);
 
     /**
      * Sets the modification time of a file.
@@ -187,7 +206,7 @@ public:
      * @param[in] followSymLinks  Follow symbolic links?
      */
     static void setModTime(
-            const std::string&  pathname,
+            const String&  pathname,
             const SysTimePoint& modTime,
             const bool          followSymLinks);
 
@@ -201,7 +220,7 @@ public:
      */
     static void setModTime(
             const int           rootFd,
-            const std::string&  pathname,
+            const String&  pathname,
             const SysTimePoint& modTime,
             const bool          followSymLinks);
 
@@ -215,7 +234,7 @@ public:
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
-    static off_t getFileSize(const std::string& pathname);
+    static off_t getFileSize(const String& pathname);
 
     /**
      * Returns the size of a file in bytes.
@@ -232,7 +251,7 @@ public:
      */
     static off_t getFileSize(
             const int          rootFd,
-            const std::string& pathname);
+            const String& pathname);
 
     /**
      * Renames a file.
@@ -244,8 +263,8 @@ public:
      */
     static void rename(
             const int          rootFd,
-            const std::string& oldPathname,
-            const std::string& newPathname);
+            const String& oldPathname,
+            const String& newPathname);
 
     /**
      * Follows symbolic links.
@@ -254,8 +273,8 @@ public:
      * @param[in] mode      Permission mode for directory
      * @return              `pathname`
      */
-    static const std::string& ensureDir(
-            const std::string& pathname,
+    static const String& ensureDir(
+            const String& pathname,
             const mode_t       mode = 0777);
 
     /**
@@ -266,9 +285,9 @@ public:
      * @param mode          Permission mode for directory
      * @return              `pathname`
      */
-    static const std::string& ensureDir(
+    static const String& ensureDir(
             const int          fd,
-            const std::string& pathname,
+            const String& pathname,
             const mode_t       mode = 0777);
 
     /**
@@ -278,7 +297,7 @@ public:
      * @param[in] mode      Directory creation mode
      */
     static void ensureParent(
-            const std::string& pathname,
+            const String& pathname,
             const mode_t       mode = 0777);
 
     /**
@@ -299,7 +318,7 @@ public:
      *
      * @param[in] dirPath  Root of directory hierarchy
      */
-    static void rmDirTree(const std::string& dirPath);
+    static void rmDirTree(const String& dirPath);
 
     /**
      * Deletes empty directories starting with a leaf directory and progressing towards a root
@@ -312,8 +331,8 @@ public:
      * @throw SystemError          A directory couldn't be deleted
      */
     static void pruneEmptyDirPath(
-            const std::string& rootPathname,
-            const std::string& dirPathname);
+            const String& rootPathname,
+            const String& dirPathname);
 
     /**
      * Deletes empty directories starting with a leaf directory and progressing towards a root
@@ -327,7 +346,7 @@ public:
      */
     static void pruneEmptyDirPath(
             const int      fd,
-            std::string&& dirPath);
+            String&& dirPath);
 
     /**
      * Deletes a file and any empty directories on the path from the file to a root directory. The
@@ -341,8 +360,8 @@ public:
      * @see `pruneEmptyDirPath()`
      */
     static void removeFileAndPrune(
-            const std::string& rootPathname,
-            const std::string& pathname);
+            const String& rootPathname,
+            const String& pathname);
 
     /**
      * Deletes a file and any empty directories on the path from a root directory to the file. The
@@ -357,7 +376,7 @@ public:
      */
     static void removeFileAndPrune(
             const int          fd,
-            const std::string& pathname);
+            const String& pathname);
 
     /**
      * Set a file descriptor to close-on-exec.

@@ -275,7 +275,7 @@ public:
             pubPeerThread = Thread(&Peer::run, pubPeer.get());
         }
         catch (const std::exception& ex) {
-            LOG_WARNING(ex);
+            LOG_WARN(ex);
         }
     }
 

@@ -53,16 +53,18 @@ class PeerImpl : public Peer
     ThreadEx           threadEx;      ///< Internal thread exception
     SockAddr           lclSockAddr;   ///< Local (notice) socket address
 
-    void setThreadEx(const std::exception& ex) {
-        threadEx.set(ex);
+    void setThreadEx() {
+        threadEx.set();
         ::sem_post(&stopSem);
     }
 
     /**
-     * Handles the backlog of products missing from the remote peer.
+     * Handles the backlog of products missing from the remote peer. Meant to be the start-routine
+     * of a separate thread. Calls `setThreadEx()` on error.
      *
-     * @pre                The current thread is detached
-     * @param[in] prodIds  Identifiers of complete products that the remote per has.
+     * @param[in] prodIds  Identifiers of complete products that the remote per has
+     * @see notify()
+     * @see setThreadEx()
      */
     void runBacklog(ProdIdSet prodIds) {
         try {
@@ -74,12 +76,12 @@ class PeerImpl : public Peer
                 notify(prodId);
 
                 /*
-                 * Getting data-product information will count against this instance iff the local
-                 * P2P manager is the publisher's. This might cause this instance to be judged the
-                 * worst peer and, consequently, disconnected. If the local P2P manager is a
-                 * subscriber, however, then this won't have that effect. This is a good thing
-                 * because it's better for the network if any backlogs are obtained from subscribers
-                 * rather than the publisher, IMO.
+                 * Making requests of the P2P manager will count against this peer iff the P2P
+                 * manager is the publisher's. This might cause this peer to be judged the worst
+                 * peer and, consequently, disconnected. If the local P2P manager is a subscriber,
+                 * however, then this won't have that effect. This is a good thing because it's
+                 * better for the network if any backlogs are obtained from subscribers rather than
+                 * from the publisher, IMO.
                  */
                 const auto prodInfo = p2pMgr.getDatum(prodId, rmtSockAddr);
                 if (prodInfo) {
@@ -91,7 +93,7 @@ class PeerImpl : public Peer
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            setThreadEx(ex);
+            setThreadEx();
         }
     }
 
@@ -101,6 +103,20 @@ protected:
     SockAddr           rmtSockAddr; ///< Remote socket address
     std::atomic<bool>  connected;   ///< Connected to remote peer?
     P2pSrvrInfo        rmtSrvrInfo; ///< Information on the remote peer's P2P-server
+
+    /// Sets the disconnected flag
+    void setDisconnected() noexcept
+    {
+        connected = false;
+        ::sem_post(&stopSem);
+    }
+
+    /// Sets the exception thrown on an internal thread to the current exception.
+    void setException()
+    {
+        threadEx.set();
+        ::sem_post(&stopSem);
+    }
 
     /**
      * Runs the writer of notices to the remote peer.
@@ -138,11 +154,10 @@ protected:
                 }
             }
 
-            ::sem_post(&stopSem);
+            setDisconnected();
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-            setThreadEx(ex);
+            setThreadEx();
         }
         LOG_TRACE("Terminating");
     }
@@ -171,9 +186,10 @@ protected:
     void runConn() {
         try {
             peerConnPtr->run(*this);
+            setDisconnected();
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex);
+            setException();
         }
     }
 
@@ -189,12 +205,15 @@ protected:
     }
 
     /**
+     * Executes this instance. Starts sending to and receiving from the remote peer. This function
+     * is the default implementation.
+     *
      * @pre               The state mutex is unlocked
      * @throw LogicError  The state isn't INIT
      * @post              The state is STARTED
      * @post              The state mutex is unlocked
      */
-    void startImpl() {
+    virtual void startImpl() {
         Guard guard{stateMutex};
         if (state != State::INIT)
             throw LOGIC_ERROR("Instance can't be re-executed");
@@ -277,7 +296,7 @@ public:
     {
         if (::sem_init(&stopSem, 0, 0) == -1)
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
-        LOG_DEBUG("Peer " + to_string() + " constructed");
+        LOG_DEBUG("Constructed peer " + to_string());
     }
 
     /**
@@ -290,7 +309,7 @@ public:
      * Destroys.
      */
     virtual ~PeerImpl() noexcept {
-        LOG_DEBUG("Peer " + to_string() + " terminating");
+        LOG_TRACE("Destroying peer " + to_string());
         Guard guard{stateMutex};
         LOG_ASSERT(state == State::INIT || state == State::STOPPED);
         ::sem_destroy(&stopSem);
@@ -397,11 +416,14 @@ public:
          *   - `threadEx` is true
          */
         ::sem_wait(&stopSem);
+        LOG_TRACE("connected=" + std::to_string(connected) + "; threadEx=" +
+                (threadEx ? "true" : "false"));
         stopImpl();
         threadEx.throwIfSet();
     }
 
     void halt() override {
+        LOG_TRACE("Called");
         int semval = 0;
         ::sem_getvalue(&stopSem, &semval);
         if (semval < 1)
@@ -412,7 +434,7 @@ public:
         if (!srvrInfo)
             throw INVALID_ARGUMENT("Remote peer's P2P-server information is invalid");
 
-        LOG_DEBUG("Peer " + to_string() + " received P2P-server " + srvrInfo.to_string());
+        LOG_DEBUG("Peer " + to_string() + " received P2P server-info " + srvrInfo.to_string());
         Guard guard{stateMutex};
         rmtSrvrInfo = srvrInfo;
     }
@@ -459,7 +481,7 @@ public:
     virtual void request(const DataSegId& segId) =0;
 
     void recvNotice(const P2pSrvrInfo& srvrInfo) override {
-        LOG_DEBUG("Peer " + to_string() + " received P2P-server notice " + srvrInfo.to_string());
+        LOG_DEBUG("Peer " + to_string() + " received notice about P2P-server " + srvrInfo.to_string());
         p2pMgr.recvNotice(srvrInfo);
     }
 
@@ -478,11 +500,9 @@ public:
          //       prodId.to_string().data());
         auto prodInfo = p2pMgr.getDatum(prodId, rmtSockAddr);
         if (prodInfo) {
+            LOG_DEBUG("Peer " + to_string() + " sending product-info " + prodInfo.to_string());
             connected = peerConnPtr->send(prodInfo);
-            if (connected) {
-                LOG_DEBUG("Peer " + to_string() + " sent product-info " + prodInfo.to_string());
-            }
-            else {
+            if (!connected) {
                 LOG_INFO("Peer " + to_string() + " is disconnected");
                 ::sem_post(&stopSem);
             }
@@ -498,10 +518,8 @@ public:
         LOG_DEBUG("Peer " + to_string() + " received segment request " + dataSegId.to_string());
         auto dataSeg = p2pMgr.getDatum(dataSegId, rmtSockAddr);
         if (dataSeg) {
-            if ((connected = peerConnPtr->send(dataSeg))) {
-                LOG_DEBUG("Peer " + to_string() + " sent data-segment " + dataSegId.to_string());
-            }
-            else {
+            LOG_DEBUG("Peer " + to_string() + " sending data-segment " + dataSegId.to_string());
+            if (!(connected = peerConnPtr->send(dataSeg))) {
                 LOG_INFO("Peer " + to_string() + " is disconnected");
                 ::sem_post(&stopSem);
             }
@@ -553,7 +571,10 @@ public:
     bool xchgSrvrInfo(
             const P2pSrvrInfo& srvrInfo,
             Tracker&           tracker) override {
-        // A publisher's peer is always server-side constructed, so it receives then sends
+        /*
+         * By convention, a publisher's peer always receives then sends because it's always
+         * constructed server-side.
+         */
         return peerConnPtr->recv(*this) && peerConnPtr->recv(*this) &&
                 peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker);
     }
@@ -809,8 +830,7 @@ class SubPeerImpl final : public PeerImpl
     std::once_flag backlogFlag; ///< Ensures that the backlog is requested only once
 
     /**
-     * Requests the backlog of data that's already been transmitted but that this instance doesn't
-     * have.
+     * Requests the backlog of data that this instance missed from the remote peer.
      */
     void requestBacklog() {
         const auto prodIds = subP2pMgr.getProdIds(); // All complete products
@@ -870,6 +890,16 @@ class SubPeerImpl final : public PeerImpl
                 datum.to_string());
     }
 
+    /**
+     * Executes this instance. Starts sending to and receiving from the remote peer. In particular,
+     * requests the backlog of data-products that this instance missed.
+     * @throw LogicError  The state isn't `INIT`
+     */
+    void startImpl() override {
+        PeerImpl::startImpl();
+        requestBacklog();
+    }
+
 public:
     /**
      * Constructs -- both client-side and server-side.
@@ -902,10 +932,10 @@ public:
             const P2pSrvrInfo& srvrInfo,
             Tracker&           tracker) override {
         return peerConnPtr->isClient()
-                // Client-side peers send then receive
+                // By convention, client-side peers send then receive
                 ? peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker) &&
                     peerConnPtr->recv(*this) && peerConnPtr->recv(*this)
-                // Server-side peers receive then send
+                // And server-side peers receive then send
                 : peerConnPtr->recv(*this) && peerConnPtr->recv(*this) &&
                     peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker);
     }
@@ -939,7 +969,7 @@ public:
 
     /**
      * Receives a notice about available product information. Notifies the subscriber's P2P manager.
-     * Requests the datum if told to do so by the P2P manager.
+     * Requests the datum if told to do so by the P2P manager. Called by the RPC layer.
      *
      * The first time this function is called, it tells the remote peer what complete data-products
      * it has.
@@ -953,7 +983,7 @@ public:
         //LOG_TRACE("Peer %s received notice about product %s", to_string().data(),
                 //prodId.to_string().data());
 
-        std::call_once(backlogFlag, [&]{requestBacklog();});
+        //std::call_once(backlogFlag, [&]{requestBacklog();});
 
         if (subP2pMgr.recvNotice(prodId, rmtSockAddr)) {
             // Subscriber wants the product information
@@ -967,7 +997,7 @@ public:
     }
     /**
      * Receives a notice about an available data segment. Notifies the subscriber's P2P manager.
-     * Requests the datum if told to do so by the P2P manager.
+     * Requests the datum if told to do so by the P2P manager. Called by the RPC layer.
      *
      * The first time this function is called, it tells the remote peer what complete data-products
      * it has.
@@ -981,7 +1011,7 @@ public:
         //LOG_TRACE("Peer %s received notice about data segment %s", to_string().data(),
                 //dataSegId.to_string().data());
 
-        std::call_once(backlogFlag, [&]{requestBacklog();});
+        //std::call_once(backlogFlag, [&]{requestBacklog();});
 
         if (subP2pMgr.recvNotice(dataSegId, rmtSockAddr)) {
             // Subscriber wants the data segment
@@ -1032,7 +1062,6 @@ PeerPtr Peer::create(
         SubP2pMgr&      p2pMgr,
         const SockAddr& srvrAddr) {
     auto conn = PeerConn::create(srvrAddr);
-    LOG_DEBUG("Connecting to P2P-server " + srvrAddr.to_string());
     return Peer::create(p2pMgr, conn);
 }
 
@@ -1050,7 +1079,9 @@ public:
             const SockAddr srvrAddr,
             const unsigned maxPendConn)
         : peerConnSrvr(PeerConnSrvr::create(srvrAddr, maxPendConn))
-    {}
+    {
+        LOG_NOTE("Created P2P server " + to_string());
+    }
 
     /// Constructs
     P2pSrvrImpl(PeerConnSrvrPtr peerConnSrvr)
@@ -1059,6 +1090,10 @@ public:
 
     SockAddr getSrvrAddr() const override {
         return peerConnSrvr->getSrvrAddr();
+    }
+
+    String to_string() const override {
+        return getSrvrAddr().to_string();
     }
 
     PeerPtr accept(P2P_MGR& p2pMgr) override {
@@ -1095,6 +1130,16 @@ PubP2pSrvrPtr PubP2pSrvr::create(
 
 /**
  * Returns a new instance of a P2P-server for a subscriber.
+ * @param[in] peerConnSrvr  Peer-connection server
+ * @return A new instance of a P2P-server for a subscriber
+ */
+template<>
+SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
+    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};
+}
+
+/**
+ * Returns a new instance of a P2P-server for a subscriber.
  * @param[in] srvrAddr     Socket address for the server
  * @param[in] maxPendConn  Maximum number of pending connections from remote peers
  * @return A new instance of a P2P-server for a subscriber
@@ -1104,16 +1149,6 @@ SubP2pSrvrPtr SubP2pSrvr::create(
         const SockAddr srvrAddr,
         const unsigned maxPendConn) {
     return SubP2pSrvrPtr{new SubP2pSrvrImpl(srvrAddr, maxPendConn)};
-}
-
-/**
- * Returns a new instance of a P2P-server for a subscriber.
- * @param[in] peerConnSrvr  Peer-connection server
- * @return A new instance of a P2P-server for a subscriber
- */
-template<>
-SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
-    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};
 }
 
 } // namespace

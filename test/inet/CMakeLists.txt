@@ -32,3 +32,6 @@ add_test(Connect_test Connect_test)
 
 add_executable(SsmRecvTest SsmRecvTest.c)
 add_executable(SsmSendTest SsmSendTest.c)
+
+add_executable(McastLoop McastLoop.c)
+target_link_libraries(McastLoop pthread)

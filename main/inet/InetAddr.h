@@ -38,11 +38,11 @@ class TcpSock;
 class UdpSock;
 class Xprt;
 
-/// Interface for an object that can be written to a transport.
-class WriteAble
+/// Interface for a transportable object
+class XprtAble
 {
 public:
-    virtual ~WriteAble() {};
+    virtual ~XprtAble() {};
 
     /**
      * Writes itself to a transport.
@@ -51,13 +51,6 @@ public:
      * @retval    false    Lost connection
      */
     virtual bool write(Xprt xprt) const =0;
-};
-
-/// Interface for a readable object
-class ReadAble
-{
-public:
-    virtual ~ReadAble() {};
 
     /**
      * Reads itself from a transport.
@@ -66,13 +59,6 @@ public:
      * @retval    false    Lost connection
      */
     virtual bool read(Xprt xprt) =0;
-};
-
-/// Interface for a transportable object
-class XprtAble : public WriteAble, public ReadAble
-{
-public:
-    virtual ~XprtAble() {};
 };
 
 /******************************************************************************

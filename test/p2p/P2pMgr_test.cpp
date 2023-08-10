@@ -156,7 +156,7 @@ public:
             p2pMgr->run();
         }
         catch (const std::exception& ex) {
-            threadEx.set(ex);
+            threadEx.set();
         }
     }
 

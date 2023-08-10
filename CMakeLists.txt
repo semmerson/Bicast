@@ -48,6 +48,9 @@ include_directories(
 # Find the OpenSSL library
 find_library(OPEN_SSL_LIBRARY ssl REQUIRED)
 
+# Find the pthread library
+find_library(PTHREAD_LIBRARY pthread REQUIRED)
+
 # Add the main subdirectory
 add_subdirectory(main)
 
@@ -73,10 +76,10 @@ endif()
 find_package(Doxygen)
 set(DOXYGEN_JAVADOC_AUTOBRIEF YES)
 set(DOXYGEN_ALIASES 
-    "exceptionsafety='@par Exception Safety:^^'" 
-    "threadsafety='@par Thread Safety:^^'" 
-    "asyncsignalsafe='@par Async-signal Safe:^^'" 
-    "cancellationpoint='@par Cancellation Point:^^'")
+    "exceptionsafety=@par Exception Safety:" 
+    "threadsafety=@par Thread Safety:" 
+    "asyncsignalsafe=@par Async-signal Safe:" 
+    "cancellationpoint=@par Cancellation Point:")
 doxygen_add_docs(doxydocs mainpage.md main ALL)
 
 # Install documentation
@@ -102,5 +105,5 @@ SET(CPACK_RPM_PACKAGE_LICENSE "Apache 2.0")
 SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp-devel openssl11-devel")
 SET(CPACK_RPM_PACKAGE_PROVIDES "publish(1), subscribe(1)")
 
-set(CPACK_GENERATOR RPM DEB STGZ)
+set(CPACK_GENERATOR DEB STGZ) # RPM needs yum(1)-compatible UPC software repository
 include(CPack)

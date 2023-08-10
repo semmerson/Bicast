@@ -1,0 +1,22 @@
+name: NOAAPort NWSTG         # Name of feed
+logLevel: DEBUG              # Logging level
+maxSegSize: 1444             # Maximum size of a data-segment in bytes
+server:                      # Publisher's server (not the P2P server)
+  pubAddr: localhost:38800   # Socket address of server publisher's server. Port must not be 0.
+  maxPending: 256            # Maximum number of pending connections
+multicast:                   # Multicast component
+  dstAddr: 232.1.1.1:38800   # Destination socket address of multicast group
+# srcAddr: localhost         # Internet address of source. Must not be wildcard. Default is
+                             # determined by operating system based on multicast group address
+peer2Peer:                   # Peer-to-peer component
+  server:                    # Local P2P server
+    p2pAddr: localhost       # Internet address/interface of server. Must not be wildcard. Default
+                             # is IP address of interface used for multicasting.
+    maxPending: 8            # Maximum number of pending Hycast connections
+  maxPeers: 8                # Maximum number of connected subscriber-peers
+  trackerSize: 1000          # Maximum size of list of P2P servers
+  evalTime: 300              # Peer-evaluation duration in seconds
+repository:                  # Data product repository
+  repoRoot: repo             # Pathname of root-directory of repository
+  maxOpenFiles: 10           # Maximum number of open files
+  keepTime: 3600             # How long to keep data-products in seconds

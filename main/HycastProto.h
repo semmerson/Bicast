@@ -730,7 +730,7 @@ public:
 /// Information on a peer-to-peer server
 struct P2pSrvrInfo final : public XprtAble {
     using Tier     = int16_t; ///< Number of hops to the publisher
-    using NumAvail = int16_t; ///< Number of server-side peers available
+    using NumAvail = int16_t; ///< Number of peer connections
 
     SysTimePoint valid;    ///< When this information was valid
     SockAddr     srvrAddr; ///< Socket address of the server

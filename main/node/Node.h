@@ -181,6 +181,7 @@ public:
      * @param[in] repoRoot        Pathname of the root directory of the repository
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @param[in] keepTime        Maximum time, in seconds, to keep data-product files
      * @throw InvalidArgument     `listenSize` is zero
      * @return                    New instance
      */
@@ -193,7 +194,8 @@ public:
             const unsigned maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
-            const long     maxOpenFiles);
+            const long     maxOpenFiles,
+            const int      keepTime);
 
     /**
      * Returns a new instance.

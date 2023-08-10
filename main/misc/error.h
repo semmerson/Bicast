@@ -72,9 +72,9 @@ public:
             const char*       func,
             const std::string msg);
 
-};
 /// Macro for creating a logic error
 #define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
+};
 
 /// Something wasn't found error
 class NotFoundError : public std::runtime_error

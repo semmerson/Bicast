@@ -172,9 +172,8 @@ public:
     }
 
     /**
-     * Binds a socket to a local socket address. Address is server's
-     * listening address/outgoing IP source field or incoming multicast
-     * destination address.
+     * Binds a socket to a local socket address. Address is server's listening address/outgoing IP
+     * source field or incoming multicast destination address.
      *
      * @param[in] sd                 Socket descriptor
      * @throws    std::system_error  Bind failure
@@ -184,9 +183,9 @@ public:
     {
         struct sockaddr_storage storage;
 
-        //LOG_NOTE("Binding socket " + std::to_string(sd) + " to " + to_string());
+        //LOG_DEBUG("Binding socket " + std::to_string(sd) + " to " + to_string());
         struct sockaddr* sockaddr = inetAddr.get_sockaddr(storage, port);
-        //LOG_NOTE("sockaddr->sa_family=" + std::to_string(sockaddr->sa_family));
+        //LOG_DEBUG("sockaddr->sa_family=" + std::to_string(sockaddr->sa_family));
         if (::bind(sd, sockaddr, sizeof(storage)))
             throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
     }
@@ -284,13 +283,13 @@ SockAddr::SockAddr(const struct sockaddr_storage& storage)
 }
 
 SockAddr::SockAddr(const struct sockaddr& sockaddr)
-    : SockAddr{*reinterpret_cast<const struct sockaddr_storage*>(&sockaddr)}
+    : SockAddr(*reinterpret_cast<const struct sockaddr_storage*>(&sockaddr))
 {}
 
 SockAddr::SockAddr(
         const std::string& addr,
         const in_port_t    port)
-    : SockAddr{}
+    : SockAddr()
 {
     const char*     cstr{addr.data()};
     struct in_addr  inaddr;
@@ -309,9 +308,9 @@ SockAddr::SockAddr(
 
 /**
  * Splits a socket specification into Internet and port number specifications
- * @param[in]  spec        Socket specification
+ * @param[in]  spec        Socket specification with optional port number
  * @param[out] inet        Internet specification
- * @param[out] port        Port number specification
+ * @param[out] port        Port number specification. Will be "0" if not specified.
  * @throw InvalidArgument  Not a socket specification
  */
 static void splitSpec(
@@ -321,18 +320,17 @@ static void splitSpec(
 {
     auto pos = spec.rfind(':');
 
-    if (pos == spec.npos)
-        throw INVALID_ARGUMENT("No port specified in \"" + spec + "\"");
+    port = (pos == spec.npos)
+            ? port = "0"
+            : spec.substr(pos+1);
 
-    if (pos >= 3 && spec[pos-1] == ']') {
-        // "[" <IPv6 addr> "]:" <port>
+    if (pos >= 2 && spec[pos-1] == ']') {
+        // IPv6 address
         inet = spec.substr(1, pos-2);
-        port = spec.substr(pos+1);
     }
     else if (pos >= 1) {
-        // (<IPv4 addr>|<hostname>) ":" <port>
+        // IPv4 address
         inet = spec.substr(0, pos);
-        port = spec.substr(pos+1);
     }
     else {
         throw INVALID_ARGUMENT("Not a socket specification: \"" + spec + "\"");
@@ -340,7 +338,7 @@ static void splitSpec(
 }
 
 SockAddr::SockAddr(const std::string& spec)
-    : SockAddr{}
+    : SockAddr()
 {
     // std::regex in gcc 4.8 doesn't work; hence, the following
 

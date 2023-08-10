@@ -290,7 +290,7 @@ class RpcImpl final : public Rpc
             }
 
             default:
-                LOG_WARNING("RPC " + xprt.to_string() + " unknown PDU ID: " +
+                LOG_WARN("RPC " + xprt.to_string() + " unknown PDU ID: " +
                         std::to_string(pduId));
                 connected = true;
         }
@@ -302,18 +302,16 @@ public:
     bool send(
             Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) override {
+        LOG_DEBUG("RPC " + xprt.to_string() + " sending P2P server-info " + srvrInfo.to_string());
         const auto success = send(xprt, PduId::SRVR_INFO, srvrInfo);
-        if (success)
-            LOG_DEBUG("RPC " + xprt.to_string() + " sent P2P-server " + srvrInfo.to_string());
         return success;
     }
 
     bool send(
             Xprt&          xprt,
             const Tracker& tracker) override {
+        LOG_DEBUG("RPC " + xprt.to_string() + " sending tracker " + tracker.to_string());
         const auto success = send(xprt, PduId::TRACKER, tracker);
-        if (success)
-            LOG_DEBUG("RPC " + xprt.to_string() + " sent tracker " + tracker.to_string());
         return success;
     }
 
@@ -329,26 +327,23 @@ public:
     bool notify(
             Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) override {
+        LOG_DEBUG("RPC " + xprt.to_string() + " sending P2P-server notice " + srvrInfo.to_string());
         const auto success = send(xprt, PduId::SRVR_INFO_NOTICE, srvrInfo);
-        if (success)
-            LOG_DEBUG("RPC " + xprt.to_string() + " sent P2P-server notice " + srvrInfo.to_string());
         return success;
     }
 
     bool notify(
             Xprt&        xprt,
             const ProdId prodId) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
         const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent product-ID notice " + prodId.to_string());
         return success;
     }
     bool notify(
             Xprt&           xprt,
             const DataSegId dataSegId) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending segment-ID notice " + dataSegId.to_string());
         const auto success = send(xprt, PduId::DATA_SEG_NOTICE, dataSegId);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent segment-ID notice " + dataSegId.to_string());
         return success;
     }
 
@@ -357,27 +352,24 @@ public:
     bool request(
             Xprt&        xprt,
             const ProdId prodId) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID request " + prodId.to_string());
         const auto success = send(xprt, PduId::PROD_INFO_REQUEST, prodId);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent product-ID request " + prodId.to_string());
         return success;
     }
     bool request(
             Xprt&           xprt,
             const DataSegId dataSegId) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending segment request " +  dataSegId.to_string());
         const auto success = send(xprt, PduId::DATA_SEG_REQUEST, dataSegId);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent segment request " +  dataSegId.to_string());
         return success;
     }
 
     bool request(
             Xprt&            xprt,
             const ProdIdSet& prodIds) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending product-IDs request " +
+                prodIds.to_string());
         const auto success = send(xprt, PduId::PREVIOUSLY_RECEIVED, prodIds);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent product-IDs request " +
-                    prodIds.to_string());
         return success;
     }
 
@@ -386,18 +378,16 @@ public:
     bool send(
             Xprt&          xprt,
             const ProdInfo prodInfo) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending product-info " + prodInfo.to_string());
         const auto success = send(xprt, PduId::PROD_INFO, prodInfo);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent product-info " + prodInfo.to_string());
         return success;
     }
 
     bool send(
             Xprt&         xprt,
             const DataSeg dataSeg) override {
+        LOG_TRACE("RPC " + xprt.to_string() + " sending segment " +  dataSeg.to_string());
         const auto success = send(xprt, PduId::DATA_SEG, dataSeg);
-        if (success)
-            LOG_TRACE("RPC " + xprt.to_string() + " sent segment " +  dataSeg.to_string());
         return success;
     }
 };

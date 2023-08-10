@@ -133,11 +133,8 @@ static void usage()
     std::cerr <<
 "Usage:\n"
 "    " << log_getName() << " -h\n"
-"    " << log_getName() << " [-c <configFile>] [-e <evalTime>] [-f <name>] [-p <p2pAddr>]\n"
-"        [-k <keepTime>] [-l <level>] [-M <mcastAddr>] [-m <maxPeers>]\n"
-"        [-o <maxOpenFiles>] [-P <pubAddr>] [-Q <size>] [-q <size>]\n"
-"        [-r <repoRoot>] [-S <srcAddr>] [-s <maxSegSize>] [-t <trackerSize>]\n"
-"where:\n"
+"    " << log_getName() << " [options]\n"
+"Options:\n"
 "  General:\n"
 "    -c <configFile>   Pathname of configuration-file. Overrides previous\n"
 "                      arguments; overridden by subsequent ones.\n"
@@ -145,18 +142,18 @@ static void usage()
                        defRunPar.maxSegSize << ".\n"
 "    -f <name>         Name of data-product feed. Default is \"" << defRunPar.feedName << "\".\n"
 "    -h                Print this help message on standard error, then exit.\n"
-"    -l <level>        Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
+"    -l <logLevel>     Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
 "                      \"" << defRunPar.logLevel << "\".\n"
 "  Publisher's Server:\n"
 "    -P <pubAddr>      Socket address of publisher's server (not the P2P server).\n"
 "                      Default is \"" << defRunPar.srvr.addr << "\".\n"
-"    -Q <size>         Maximum number of pending connections to publisher's\n"
+"    -Q <maxPending>   Maximum number of pending connections to publisher's\n"
 "                      server (not the P2P server). Default is " << defRunPar.srvr.listenSize <<
                        ".\n"
 "  Multicasting:\n"
-"    -g <mcastAddr>    Destination address of multicast group. Default is\n" <<
+"    -m <dstAddr>      Destination address of multicast group. Default is\n" <<
 "                      \"" << defRunPar.mcast.dstAddr << "\".\n"
 "    -s <srcAddr>      Internet address of multicast source/interface. Must not\n"
 "                      be wildcard. Default is determined by operating system\n"
@@ -169,7 +166,7 @@ static void usage()
 "    -p <p2pAddr>      Internet address for local P2P server (not the publisher's\n"
 "                      server). Must not be wildcard. Default is IP address of\n"
 "                      interface used for multicasting.\n"
-"    -q <size>         Maximum number of pending connections to P2P server (not\n"
+"    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << defRunPar.p2p.srvr.acceptQSize <<
                        ".\n"
 "    -t <trackerSize>  Maximum number of P2P servers to track. Default is " <<
@@ -179,7 +176,7 @@ static void usage()
 "                      " << defRunPar.repo.keepTime << ".\n"
 "    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
                        defRunPar.repo.maxOpenFiles << ".\n"
-"    -r <repoRoot>     Pathname of root of publisher's repository. Default is\n"
+"    -r <repoRoot>     Pathname of root of data-product repository. Default is\n"
 "                      \"" << defRunPar.repo.rootDir << "\".\n"
 "\n"
 "SIGUSR2 rotates the logging level.\n";
@@ -196,57 +193,57 @@ static void setFromConfig(const String& pathname)
     auto node0 = YAML::LoadFile(pathname);
 
     try {
-        Parser::tryDecode<decltype(runPar.feedName)>(node0, "Name", runPar.feedName);
-        auto node1 = node0["LogLevel"];
+        Parser::tryDecode<decltype(runPar.feedName)>(node0, "name", runPar.feedName);
+        auto node1 = node0["logLevel"];
         if (node1)
             log_setLevel(node1.as<String>());
-        Parser::tryDecode<decltype(runPar.maxSegSize)>(node0, "MaxSegSize", runPar.maxSegSize);
+        Parser::tryDecode<decltype(runPar.maxSegSize)>(node0, "maxSegSize", runPar.maxSegSize);
 
-        node1 = node0["Server"];
+        node1 = node0["server"];
         if (node1) {
-            auto node2 = node1["SockAddr"];
+            auto node2 = node1["pubAddr"];
             if (node2)
                 runPar.srvr.addr = SockAddr(node2.as<String>());
-            Parser::tryDecode<decltype(runPar.srvr.listenSize)>(node1, "QueueSize",
+            Parser::tryDecode<decltype(runPar.srvr.listenSize)>(node1, "maxPending",
                     runPar.srvr.listenSize);
         }
 
-        node1 = node0["Multicast"];
+        node1 = node0["multicast"];
         if (node1) {
-            auto node2 = node1["DstAddr"];
+            auto node2 = node1["dstAddr"];
             if (node2)
                 runPar.mcast.dstAddr = SockAddr(node2.as<String>());
-            node2 = node1["SrcAddr"];
+            node2 = node1["srcAddr"];
             if (node2)
                 runPar.mcast.srcAddr = InetAddr(node2.as<String>());
         }
 
-        node1 = node0["Peer2Peer"];
+        node1 = node0["peer2Peer"];
         if (node1) {
-            auto node2 = node1["Server"];
+            auto node2 = node1["server"];
             if (node2) {
-                auto node3 = node2["InetAddr"];
+                auto node3 = node2["p2pAddr"];
                 if (node3)
                     runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
-                Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "QueueSize",
+                Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "maxPending",
                         runPar.p2p.srvr.acceptQSize);
             }
 
-            Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "MaxPeers",
+            Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "maxPeers",
                     runPar.p2p.maxPeers);
-            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "TrackerSize",
+            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "trackerSize",
                     runPar.p2p.trackerSize);
-            Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "EvalTime",
+            Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "evalTime",
                     runPar.p2p.evalTime);
         }
 
-        node1 = node0["Repository"];
+        node1 = node0["repository"];
         if (node1) {
-            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "Pathname",
+            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "repoRoot",
                     runPar.repo.rootDir);
-            Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "MaxOpenFiles",
+            Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "maxOpenFiles",
                     runPar.repo.maxOpenFiles);
-            Parser::tryDecode<decltype(runPar.repo.keepTime)>(node1, "KeepTime",
+            Parser::tryDecode<decltype(runPar.repo.keepTime)>(node1, "keepTime",
                     runPar.repo.keepTime);
         }
     } // YAML file loaded
@@ -331,7 +328,7 @@ static void getCmdPars(
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
     int c;
-    while ((c = ::getopt(argc, argv, ":c:d:e:f:g:hk:l:m:o:P:p:Q:q:r:s:t:")) != -1) {
+    while ((c = ::getopt(argc, argv, ":c:d:e:f:hk:l:m:o:P:p:Q:q:r:s:t:")) != -1) {
         switch (c) {
         case 'h': {
             usage();
@@ -367,10 +364,6 @@ static void getCmdPars(
             runPar.feedName = String(optarg);
             break;
         }
-        case 'g': {
-            runPar.mcast.dstAddr = SockAddr(optarg);
-            break;
-        }
         case 'k': {
             int keepTime;
             if (::sscanf(optarg, "%" SCNd32, &keepTime) != 1)
@@ -382,6 +375,10 @@ static void getCmdPars(
         case 'l': {
             log_setLevel(optarg);
             runPar.logLevel = log_getLevel();
+            break;
+        }
+        case 'm': {
+            runPar.mcast.dstAddr = SockAddr(optarg);
             break;
         }
         case 'n': {
@@ -447,12 +444,11 @@ static void getCmdPars(
     if (optind != argc)
         throw LOGIC_ERROR("Too many operands specified");
 
-    const auto mcastIfaceAddr = UdpSock(runPar.mcast.dstAddr).getLclAddr().getInetAddr();
-    if (!runPar.p2p.srvr.addr)
-        runPar.p2p.srvr.addr = SockAddr(mcastIfaceAddr, 0);
-
     if (!runPar.mcast.srcAddr)
-        runPar.mcast.srcAddr = mcastIfaceAddr;
+        runPar.mcast.srcAddr = UdpSock(runPar.mcast.dstAddr).getLclAddr().getInetAddr();
+
+    if (!runPar.p2p.srvr.addr)
+        runPar.p2p.srvr.addr = SockAddr(runPar.mcast.srcAddr, 0);
 
     vetRunPar();
 }
@@ -474,22 +470,25 @@ static void setSigHandling()
 {
     log_setLevelSignal(SIGUSR2);
 
-    struct sigaction sigact;
+    struct sigaction sigact = {};
     (void) sigemptyset(&sigact.sa_mask);
     /*
      * System calls interrupted by a termination signal are restarted because termination is more
      * cleanly handled by this application.
-     */
+     *
+     * Bullshit! The system calls *should* be interrupted! Such calls should be restarted only for
+     * innocuous signals like ones that print metrics or reset logging.
     sigact.sa_flags = SA_RESTART;
+     */
     sigact.sa_handler = &sigHandler;
     (void)sigaction(SIGINT, &sigact, NULL);
     (void)sigaction(SIGTERM, &sigact, NULL);
 }
 
-/// Sets the exception thrown on an internal thread.
-static void setException(const std::exception& ex)
+/// Sets the exception thrown on an internal thread to the current exception.
+static void setException()
 {
-    threadEx.set(ex);
+    threadEx.set();
     ::sem_post(&stopSem);
 }
 
@@ -501,7 +500,7 @@ static void runNode()
     }
     catch (const std::exception& ex) {
         //LOG_DEBUG("Setting exception: %s", ex.what());
-        setException(ex);
+        setException();
     }
 }
 
@@ -515,20 +514,18 @@ static void servSubscriber(Xprt xprt)
     try {
         // Keep consonant with `subscribe.cpp:createSubNode()`
 
-        bool        lostConnection = true;
+        bool        connected = false;
         P2pSrvrInfo subP2pSrvrInfo;
 
         if (subP2pSrvrInfo.read(xprt)) {
-            LOG_DEBUG("Received P2P-server information " + subP2pSrvrInfo.to_string() +
-                    " from subscriber " + xprt.getRmtAddr().to_string());
+            LOG_INFO("Received information on subscriber's P2P-server: " +
+                    subP2pSrvrInfo.to_string());
 
-            LOG_DEBUG("Sending information on P2P-server to subscriber " +
-                    xprt.getRmtAddr().to_string());
             if (pubNode->getP2pSrvrInfo().write(xprt)) {
-                LOG_INFO("Sending subscription information to subscriber " +
+                LOG_INFO("Sending information on P2P-server to subscriber " +
                         xprt.getRmtAddr().to_string());
                 if (subInfo.write(xprt)) {
-                    lostConnection = false;
+                    connected = true;
                     /*
                      * No sense sending information on the subscriber's P2P-server to the
                      * subscriber
@@ -537,8 +534,8 @@ static void servSubscriber(Xprt xprt)
                 }
             }
         }
-        if (!lostConnection)
-            LOG_WARNING("Lost connection to subscriber " + xprt.getRmtAddr().to_string());
+        if (!connected)
+            LOG_WARN("Lost connection to subscriber " + xprt.getRmtAddr().to_string());
 
         --numSubThreads;
     }
@@ -557,6 +554,7 @@ static void runServer()
 {
     try {
         //LOG_DEBUG("Creating listening server");
+        LOG_NOTE("Creating publisher's server " + runPar.srvr.addr.to_string());
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
 
         for (;;) {
@@ -567,7 +565,7 @@ static void runServer()
         }
     } catch (const std::exception& ex) {
         //LOG_DEBUG("Setting exception: %s", ex.what());
-        setException(ex);
+        setException();
     }
 }
 
@@ -597,13 +595,14 @@ int main(const int    argc,
         if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-        pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
         setSigHandling(); // Catches termination signals
 
-        //LOG_DEBUG("Starting node thread");
-        auto nodeThread = Thread(&runNode);
         //LOG_DEBUG("Starting server thread");
         auto serverThread = Thread(&runServer);
+
+        pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
+        //LOG_DEBUG("Starting node thread");
+        auto nodeThread = Thread(&runNode);
 
         //LOG_DEBUG("Waiting on semaphore");
         ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
@@ -630,7 +629,7 @@ int main(const int    argc,
         status = 1;
     }
     catch (const std::exception& ex) {
-        LOG_FATAL(ex);
+        LOG_FATAL(ex.what());
         status = 2;
     }
     LOG_NOTE("Exiting with status %d", status);

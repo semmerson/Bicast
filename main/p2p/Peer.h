@@ -370,6 +370,13 @@ public:
      */
     virtual SockAddr getSrvrAddr() const =0;
 
+
+    /**
+     * Returns a string representation of this instance.
+     * @return A string representation of this instance
+     */
+    virtual String to_string() const =0;
+
     /**
      * Returns the next, accepted peer. Will test false if `halt()` has been called.
      * @param p2pMgr

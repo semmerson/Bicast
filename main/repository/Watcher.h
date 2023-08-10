@@ -1,11 +1,11 @@
 /**
- * Watches a directory hierarchy for files.
+ * A watcher of a directory hierarchy.
  *
  *        File: Watcher.h
  *  Created on: May 4, 2020
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,15 @@
 #ifndef MAIN_REPOSITORY_WATCHER_H_
 #define MAIN_REPOSITORY_WATCHER_H_
 
+#include "CommonTypes.h"
+
 #include <memory>
 #include <string>
 
 namespace hycast {
 
 /**
- * Watcher of a publisher's repository.
+ * Watches a repository.
  */
 class Watcher final
 {
@@ -45,27 +47,52 @@ protected:
     Watcher(Impl* const impl);
 
 public:
-    /// A watched-for event
-    struct WatchEvent {
-        /// Pathname of new file. Will have pathname of root-directory prefix.
-        std::string pathname;
+    /// Interface for the client of a `Watcher`.
+    class Client
+    {
+    public:
+        /// Destroys
+        virtual ~Client() =default;
+
+        /**
+         * Processes a newly-created directory. Called by a Watcher.
+         * @param[in] pathname  Absolute pathname of the newly-created directory
+         */
+        virtual void dirAdded(const String& pathname) =0;
+
+        /**
+         * Processes a newly-added, regular file. Called by a Watcher.
+         * @param[in] pathname  Absolute pathname of the newly-added, regular file
+         */
+        virtual void fileAdded(const String& pathname) =0;
     };
 
     /**
      * Constructs from the pathname of the root of a directory hierarchy to be
      * watched.
      *
-     * @param[in] rootDir  Pathname of root directory
+     * @param[in] rootDir   Pathname of root directory
+     * @param[in] client    Client of this instance
      */
-    Watcher(const std::string& rootDir);
+    Watcher(const std::string& rootDir,
+            Client&            client);
 
     /**
-     * Returns a watched-for event.
-     *
-     * @param[out] event  The watched-for event
-     * @threadsafety      Compatible but unsafe
+     * Starts calling the Client when appropriate.
+     * @throw SystemError   Couldn't read the inotify(7) file-descriptor
+     * @throw RuntimeError  A watched file-system was unmounted
      */
-    void getEvent(WatchEvent& event);
+    void operator()() const;
+
+    /**
+     * Adds a directory to be watched if it's not already being watched.
+     *
+     * @param[in] dirPath          Directory pathname
+     * @throws    InvalidArgument  The pathname doesn't reference a directory
+     * @throws    SystemError      System failure
+     * @threadsafety               Safe
+     */
+    void tryAdd(const std::string& dirPath) const;
 };
 
 } // namespace

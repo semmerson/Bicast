@@ -284,7 +284,8 @@ public:
     PubRepo();
 
     /**
-     * Constructs.
+     * Constructs. Upon return, the repository has been completely scanned and all relevant
+     * directories are being watched.
      *
      * @param[in] rootDir       Pathname of the root-directory of the repository
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously

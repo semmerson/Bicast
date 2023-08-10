@@ -1,0 +1,18 @@
+# This is an example configuration-file for subscribing to data-products. The syntax is standard
+# YAML. The command "subscribe -h" will print longer descripions of the variables in this file.
+
+logLevel: NOTE               # Logging level
+pubAddr: foo.bar:38800       # Publisher's socket address
+retryInterval: 60            # Seconds to wait between retry attempts
+peer2Peer:                   # Peer-to-peer component
+  server:                    # Local P2P server
+    p2pAddr: 192.168.0.1     # Internet address/interface of server. Must not be wildcard.
+    maxPending: 8            # Maximum number of pending Hycast connections
+  timeout: 15000             # Timeout, in ms, for connecting to remote P2P servers
+  maxPeers: 8                # Maximum number of connected peers
+  trackerSize: 1000          # Maximum size of list of potential P2P servers
+  evalTime: 300              # Peer-evaluation duration in seconds
+repository:                  # Data product repository
+  repoRoot: repo             # Pathname of root-directory of repository
+  maxOpenFiles: 10           # Maximum number of product-files kept open between products
+disposeConfig: dispose.yaml  # Pathname of configuration-file for disposition of products

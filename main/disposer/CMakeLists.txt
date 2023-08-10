@@ -6,3 +6,6 @@ add_library(disposer OBJECT
         ActionTemplate.cpp      ActionTemplate.h
         Disposer.cpp            Disposer.h
 )
+
+# Add the product-diposition example
+install(FILES dispose_example.yaml DESTINATION etc)

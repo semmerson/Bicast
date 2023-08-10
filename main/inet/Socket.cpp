@@ -746,16 +746,20 @@ protected:
             //LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure on socket " + to_string());
-            if (pollfd.revents & POLLHUP)
+            if (pollfd.revents & POLLHUP) {
+                LOG_TRACE("EOF on socket " + std::to_string(sd));
                 return false; // EOF
+            }
             if (pollfd.revents & (POLLIN | POLLERR)) {
                 auto nread = ::read(sd, bytes, nleft);
 
                 if (nread == -1)
                     throw SYSTEM_ERROR("Couldn't read from socket " +
                             to_string());
-                if (nread == 0)
+                if (nread == 0) {
+                    LOG_TRACE("EOF on socket " + std::to_string(sd));
                     return false; // EOF
+                }
 
                 nleft -= nread;
                 bytes += nread;
@@ -950,44 +954,23 @@ TcpSock TcpSrvrSock::accept() const {
 class TcpClntSock::Impl final : public TcpSock::Impl
 {
     /**
-     * Connects this socket to the remote address within a timeout.
+     * Connects this socket to the remote address
      *
-     * @param[in] timeout   Timeout in ms. <0 => system's default timeout.
-     * @throw RuntimeError  Timeout occurred
+     * @throw RuntimeError  Couldn't connect to remote address at this time
      * @throw SystemError   System failure
      */
-    void connect(const int timeout) const {
-        // Get original socket flags
-        int origSockFlags = ::fcntl(sd, F_GETFL, 0);
-        if (origSockFlags < 0)
-            throw SYSTEM_ERROR("Couldn't get socket flags");
-
-        // Set O_NONBLOCK
-        if (::fcntl(sd, F_SETFL, origSockFlags | O_NONBLOCK) == -1)
-            throw SYSTEM_ERROR("Couldn't make socket non-blocking");
-
-        // Call `::connect()`
+    void connect() const {
         struct sockaddr_storage storage;
-        if (::connect(sd, rmtSockAddr.get_sockaddr(storage), sizeof(storage)) &&
-                errno != EINPROGRESS)
+        int                     status = ::connect(sd, rmtSockAddr.get_sockaddr(storage),
+                sizeof(storage));
+        if (errno == EADDRNOTAVAIL || errno == ECONNREFUSED || errno == ENETUNREACH ||
+                errno == ETIMEDOUT || errno == ECONNRESET || errno == EHOSTUNREACH ||
+                errno == ENETDOWN)
+            throw RUNTIME_ERROR("Couldn't connect socket " + to_string() + ": " +
+                    ::strerror(errno));
+
+        if (status)
             throw SYSTEM_ERROR("connect() failure");
-
-        struct pollfd pfd = {.fd=sd, .events=POLLOUT};
-        int           status = ::poll(&pfd, 1, (timeout < 0) ? -1 : timeout);
-
-        if (status == -1)
-            throw SYSTEM_ERROR("poll() failure");
-        if (status == 0)
-            throw RUNTIME_ERROR("Couldn't connect to " + to_string() + " in " +
-                    std::to_string(timeout) + " ms");
-
-        // NB: This use of poll() causes `pfd.revents` to also contain `POLLHUP | POLLERR`
-        if (!(pfd.revents & POLLOUT))
-            throw RUNTIME_ERROR("Couldn't connect to " + to_string());
-
-        // Restore original socket flags
-        if (fcntl(sd, F_SETFL, origSockFlags) == -1)
-            throw SYSTEM_ERROR("Couldn't restore socket flags");
 
         LOG_DEBUG("Connected socket %s", to_string().data());
     }
@@ -1005,15 +988,13 @@ public:
      * Constructs. Attempts to connect to a remote server.
      *
      * @param[in] srvrAddr         Address of remote server
-     * @param[in] timeout          Timeout in ms. <0 => system's default timeout.
      * @throw     LogicError       Destination port number is zero
-     * @throw     RuntimeError     Positive timeout occurred
+     * @throw     RuntimeError     Couldn't connect to remote server at this time
      * @throw     SystemError      System failure
      * @exceptionsafety            Strong guarantee
      * @cancellationpoint          Yes
      */
-    Impl(   const SockAddr srvrAddr,
-            const int       timeout)
+    Impl(const SockAddr srvrAddr)
         : TcpSock::Impl(srvrAddr.getInetAddr())
     {
         //LOG_DEBUG("Checking port number");
@@ -1024,32 +1005,12 @@ public:
         rmtSockAddr = srvrAddr;
 
         //LOG_DEBUG("Connecting socket");
-        connect(timeout);
+        connect();
     }
-
-    /**
-     * Constructs. Attempts to connect to a remote server.
-     *
-     * @param[in] srvrAddr         Address of remote server
-     * @throw     LogicError       Destination port number is zero
-     * @throw     RuntimeError     Timeout occurred
-     * @throw     SystemError      System failure
-     * @exceptionsafety            Strong guarantee
-     * @cancellationpoint          Yes
-     */
-    Impl(   const SockAddr srvrAddr)
-        : Impl(srvrAddr, -1)
-    {}
 };
 
 TcpClntSock::TcpClntSock(const int family)
     : TcpSock(new Impl(family))
-{}
-
-TcpClntSock::TcpClntSock(
-        const SockAddr srvrAddr,
-        const int      timeout)
-    : TcpSock(new Impl(srvrAddr, timeout))
 {}
 
 TcpClntSock::TcpClntSock(const SockAddr srvrAddr)
@@ -1090,12 +1051,12 @@ class UdpSock::Impl final : public Socket::Impl
         ssmAddr.getInetAddr().get_sockaddr(mreq.gsr_group, ssmAddr.getPort());
         srcAddr.get_sockaddr(mreq.gsr_source, 0);
 
-        LOG_DEBUG("Joining socket %d to multicast group %s from source %s on interface %u", sd,
-                ssmAddr.to_string().data(), srcAddr.to_string().data(), mreq.gsr_interface);
         if (::setsockopt(sd, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP, &mreq, sizeof(mreq)))
             throw SYSTEM_ERROR("Couldn't join socket " + std::to_string(sd) + " to multicast group "
                     + ssmAddr.to_string() + " from source " + srcAddr.to_string() + "on interface "
                     + ifAddr.to_string());
+        LOG_DEBUG("Joined socket %d to multicast group %s from source %s on interface %u", sd,
+                ssmAddr.to_string().data(), srcAddr.to_string().data(), mreq.gsr_interface);
     }
 
     /**
@@ -1183,7 +1144,7 @@ public:
             {
                 unsigned char enable = 1;
                 if (::setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &enable, sizeof(enable)))
-                    throw SYSTEM_ERROR("Couldn't enable loopback of multicast datagrams");
+                    throw SYSTEM_ERROR("Couldn't enable local loopback of multicast datagrams");
             }
         }
 
@@ -1246,6 +1207,11 @@ public:
         const int yes = 1;
         if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) != 0)
             throw SYSTEM_ERROR("Couldn't reuse the same source-specific multicast address");
+        // Allow the local host to receive the same source-specific multicast
+        const unsigned char flag = 1;
+        if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &flag, sizeof(flag)))
+            throw SYSTEM_ERROR("Couldn't enable local loopback of multicast on socket " +
+                    std::to_string(sd));
 
         ssmAddr.bind(sd);
         join(sd, ssmAddr, srcAddr, iface);

@@ -85,30 +85,30 @@ struct SubInfo : public XprtAble {
                 tracker.write(xprt) &&
                 xprt.write(keepTime);
 #else
-        LOG_DEBUG("Writing version");
+        LOG_TRACE("Writing version");
         auto success = xprt.write(version);
         if (success) {
-            LOG_DEBUG("Writing feedName");
+            LOG_TRACE("Writing feedName");
             success = success && xprt.write<uint8_t>(feedName);
         }
         if (success) {
-            LOG_DEBUG("Writing maxSegSize");
+            LOG_TRACE("Writing maxSegSize");
             success = success && xprt.write(maxSegSize);
         }
         if (success) {
-            LOG_DEBUG("Writing dstAddr");
+            LOG_TRACE("Writing dstAddr");
             success = success && mcast.dstAddr.write(xprt);
         }
         if (success) {
-            LOG_DEBUG("Writing srcAddr");
+            LOG_TRACE("Writing srcAddr");
             success = success && mcast.srcAddr.write(xprt);
         }
         if (success) {
-            LOG_DEBUG("Writing tracker");
+            LOG_TRACE("Writing tracker");
             success = success && tracker.write(xprt);
         }
         if (success) {
-            LOG_DEBUG("Writing keepTime");
+            LOG_TRACE("Writing keepTime");
             success = success && xprt.write(keepTime);
         }
         return success;
@@ -131,30 +131,30 @@ struct SubInfo : public XprtAble {
                 tracker.read(xprt) &&
                 xprt.read(keepTime);
 #else
-        LOG_DEBUG("Reading version");
+        LOG_TRACE("Reading version");
         bool success = xprt.read(version);
         if (success) {
-            LOG_DEBUG("Reading feedName");
+            LOG_TRACE("Reading feedName");
             success = success && xprt.read<uint8_t>(feedName);
         }
         if (success) {
-            LOG_DEBUG("Reading maxSegSize");
+            LOG_TRACE("Reading maxSegSize");
             success = success && xprt.read(maxSegSize);
         }
         if (success) {
-            LOG_DEBUG("Reading dstAddr");
+            LOG_TRACE("Reading dstAddr");
             success = success && mcast.dstAddr.read(xprt);
         }
         if (success) {
-            LOG_DEBUG("Reading srcAddr");
+            LOG_TRACE("Reading srcAddr");
             success = success && mcast.srcAddr.read(xprt);
         }
         if (success) {
-            LOG_DEBUG("Reading tracker");
+            LOG_TRACE("Reading tracker");
             success = success && tracker.read(xprt);
         }
         if (success) {
-            LOG_DEBUG("Reading keepTime");
+            LOG_TRACE("Reading keepTime");
             success = success && xprt.read(keepTime);
         }
 #endif

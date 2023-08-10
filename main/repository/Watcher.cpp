@@ -1,11 +1,11 @@
 /**
- * Watcher of a publisher's directory hierarchy.
+ * A thread-safe watcher of a directory hierarchy.
  *
  *        File: Watcher.cpp
  *  Created on: May 4, 2020
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2022 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@
 
 #include "config.h"
 
+#include "CommonTypes.h"
 #include "error.h"
+#include "FileUtil.h"
 #include "Watcher.h"
 
 #include <cstring>
@@ -38,37 +40,35 @@
 
 namespace hycast {
 
-/// An implementation of a watcher
+/// An implementation of a Watcher
 class Watcher::Impl final
 {
-    using PathMap   = std::unordered_map<int, std::string>;
-    using WdMap     = std::unordered_map<std::string, int>;
-    using PathQueue = std::queue<std::string>;
-    using PathSet   = std::unordered_set<std::string>;
-    using FilesMap  = std::unordered_map<int, PathSet>;
+    using IntToStringMap = std::unordered_map<int, String>;
+    using StringSet      = std::unordered_set<String>;
 
-    std::string rootDir;      ///< Root directory of watched hierarchy
-    int         fd ;          ///< inotify(7) file-descriptor
-    PathMap     dirPaths;     ///< Pathnames of watched directories
-    WdMap       wds;          ///< inotify(7) watch descriptors
-    FilesMap    scannedFiles; ///< Regular files found by scanning
-    PathQueue   regFiles;     ///< Queue of pre-existing but new regular files
-    char        buf[100*(sizeof(struct inotify_event)+NAME_MAX+1)];
-    char*       nextEvent;    ///< Next event to access in event-buffer
-    char*       endEvent;     ///< End of events in event-buffer
-    /// inotify(7) event-buffer
-    alignas(inotify_event)
+    static constexpr size_t BUFSIZE = 100*(sizeof(struct inotify_event)+NAME_MAX+1);
+
+    mutable Mutex     mutex;        ///< For thread safety
+    const String      rootDir;      ///< Root directory of watched hierarchy
+    Client&           client;       ///< Client of the watcher
+    const int         fd ;          ///< inotify(7) file-descriptor
+    IntToStringMap    wdToDirs;     ///< Watch descriptors to directory pathnames map
+    StringSet         watchedDirs;  ///< Pathnames of watched directories
+    alignas(struct inotify_event)
+    char              buf[BUFSIZE]; ///< inotify(7) event-buffer
+    char*             nextEvent;    ///< Next event to access in event-buffer
+    char*             endEvent;     ///< End of events in event-buffer
 
     /**
-     * Indicates if a pathname references a directory, either directly or via
-     * symbolic links. NB: both "." and ".." return true.
+     * Indicates if a pathname references a directory, either directly or via symbolic links. NB:
+     * both "." and ".." return true.
      *
      * @param[in] pathname  Pathname to examine
      * @retval    true      Pathname references directory
      * @retval    false     Pathname doesn't reference directory
      * @threadsafety        Safe
      */
-    bool isDir(const std::string& pathname)
+    bool isDir(const String& pathname)
     {
         struct stat stat;
 
@@ -86,7 +86,7 @@ class Watcher::Impl final
      * @retval    false     Pathname is not a symbolic or hard link
      * @threadsafety        Safe
      */
-    bool isLink(const std::string& pathname)
+    bool isLink(const String& pathname)
     {
         struct stat stat;
 
@@ -97,23 +97,134 @@ class Watcher::Impl final
     }
 
     /**
-     * Initializes watching a directory if the directory isn't already being watched. Scans a
-     * watched directory for regular files and adds them if appropriate. Recursively descends into
-     * sub-directories.
+     * Blocks.
+     *
+     * @throws SystemError  Couldn't read inotify(7) file-descriptor
+     */
+    void readEvents() {
+        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Blocks
+
+        if (nbytes == -1)
+            throw SYSTEM_ERROR("Couldn't read inotify(7) file-descriptor " + std::to_string(fd));
+
+        nextEvent = buf;
+        endEvent = buf + nbytes;
+    }
+
+    /**
+     * Processes an inotify(7) event. Calls the client if the event is recognized; otherwise, does
+     * nothing.
+     *
+     * @param[in] event         Pointer to the inotify(7) event
+     * @throws    RuntimeError  A watched file-system was unmounted
+     */
+    inline void processEvent(struct inotify_event* event)
+    {
+        const auto wd = event->wd;
+        const auto mask = event->mask;
+
+        if (mask & IN_UNMOUNT)
+            throw RUNTIME_ERROR("Watched file-system was unmounted");
+        if (mask & IN_Q_OVERFLOW) {
+            LOG_WARN("Inotify(7) event-queue overflowed");
+        }
+        else {
+            const auto pathname = FileUtil::pathname(wdToDirs.at(wd), event->name);
+
+            if (mask & IN_ISDIR) {
+                if (mask & IN_CREATE) {
+                    client.dirAdded(pathname);
+                }
+                else if (mask & IN_DELETE) {
+                    LOG_DEBUG("Unwatching directory \"" + pathname + '"');
+                    wdToDirs.erase(wd);
+                    watchedDirs.erase(pathname);
+                    ::inotify_rm_watch(fd, wd);
+                }
+            }
+            else {
+                const uint32_t maskTemplate = isLink(pathname) ? IN_CREATE : IN_CLOSE_WRITE;
+
+                if (mask & maskTemplate)
+                    client.fileAdded(pathname);
+            }
+        }
+    }
+
+    /**
+     * Processes inotify(7) events in the input buffer
+     * @throw RuntimeError  A watched file-system was unmounted
+     */
+    void processEvents() {
+        while (nextEvent < endEvent) {
+            struct inotify_event* event = reinterpret_cast<struct inotify_event*>(nextEvent);
+
+            processEvent(event);
+            nextEvent += sizeof(struct inotify_event) + event->len;
+        } // While event-buffer needs processing
+    }
+
+public:
+    /**
+     * Constructs from the root directory to be watched.
+     *
+     * @param[in] rootDir          Pathname of root directory
+     * @param[in] client           Client of the watcher
+     * @throws    SystemError      `inotify_init()` failure
+     * @throws    InvalidArgument  The pathname doesn't reference a directory
+     * @throws    SystemError      Couldn't set `inotify_init(2)` file-descriptor to close-on-exec
+     * @throws    SystemError      Couldn't open directory
+     */
+    Impl(   const String& rootDir,
+            Client&       client)
+        : mutex()
+        , rootDir(rootDir)
+        , client(client)
+        , fd(::inotify_init())
+        , wdToDirs()
+        , watchedDirs()
+        , buf()
+        , nextEvent(buf)
+        , endEvent(nextEvent)
+    {
+        if (fd == -1)
+            throw SYSTEM_ERROR("inotify_init() failure");
+
+        if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
+            throw SYSTEM_ERROR("Couldn't set inotify(7) file-descriptor to close-on-exec");
+    }
+
+    ~Impl() noexcept
+    {
+        (void)::close(fd);
+    }
+
+    /**
+     * Starts calling the Client when appropriate.
+     */
+    void operator()() {
+        for (;;) {
+            readEvents(); // Blocks
+            processEvents();
+        }
+    }
+
+    /**
+     * Adds a directory to be watched if it's not already being watched.
      *
      * @param[in] dirPath          Directory pathname
-     * @param[in] addRegFiles      Add regular files encountered to `regFiles`?
      * @throws    InvalidArgument  The pathname doesn't reference a directory
      * @throws    SystemError      System failure
-     * @threadsafety               Compatible but unsafe
+     * @threadsafety               Safe
      */
-    void watchIfNew(
-            const std::string& dirPath,
-            const bool         addRegFiles = false)
-    {
-        if (wds.count(dirPath) == 0) {
+    void tryAdd(const String& dirPath) {
+        Guard guard{mutex};
+
+        if (watchedDirs.count(dirPath) == 0) {
             if (!isDir(dirPath))
                 throw INVALID_ARGUMENT("\"" + dirPath + "\" is not a directory");
+
+            // The directory is not being watched
 
             /*
              * Watch for
@@ -126,220 +237,30 @@ class Watcher::Impl final
                     IN_CLOSE_WRITE|IN_MOVED_TO|IN_CREATE|IN_DELETE);
             if (wd == -1)
                 throw SYSTEM_ERROR("Couldn't watch directory \"" + dirPath + "\"");
+            LOG_DEBUG("Added directory \"" + dirPath + "\"");
 
-            dirPaths[wd] = dirPath;
-            wds[dirPath] = wd;
-
-            try {
-                DIR* const dirStream = ::opendir(dirPath.data());
-
-                if (dirStream == nullptr)
-                    throw SYSTEM_ERROR(std::string("Couldn't open directory \"") + dirPath + "\"");
-                try {
-                    struct dirent  fileEntry;
-                    struct dirent* entry = &fileEntry;
-
-                    for (;;) {
-                        int status = ::readdir_r(dirStream, entry, &entry);
-
-                        if (status)
-                            throw SYSTEM_ERROR("readdir_r() failure", status);
-                        if (entry == NULL)
-                            break; // End of directory stream
-
-                        if (::strcmp(entry->d_name, ".") && ::strcmp(entry->d_name, "..")) {
-                            const auto pathname = dirPath + "/" + entry->d_name;
-
-                            if (isDir(pathname)) {
-                                LOG_DEBUG("Watching directory \"%s\"", pathname.data());
-                                watchIfNew(pathname, addRegFiles);
-                            }
-                            else if (addRegFiles) {
-                                LOG_DEBUG("Queuing regular file \"%s\"", pathname.data());
-                                regFiles.push(pathname);
-                                scannedFiles[wd].insert(pathname);
-                            }
-                        }
-                    }
-
-                    ::closedir(dirStream);
-                } // `dirStream` is open
-                catch (const std::exception& ex) {
-                    ::closedir(dirStream);
-                    throw;
-                }
-            } // `wd`, `dirPaths[wd]`, and `wds[dir]` are set
-            catch (const std::exception& ex) {
-                scannedFiles.erase(wd);
-                dirPaths.erase(wd);
-                wds.erase(dirPath);
-                (void)inotify_rm_watch(fd, wd);
-                throw;
-            }
+            wdToDirs[wd] = dirPath;
+            watchedDirs.insert(dirPath);
         }
-    }
-
-    /**
-     * Blocks.
-     *
-     * @throws SystemError  Couldn't read inotify(7) file-descriptor
-     */
-    void readEvents() {
-        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Blocks
-
-        if (nbytes == -1)
-            throw SYSTEM_ERROR("Couldn't read inotify(7) file-descriptor");
-
-        nextEvent = buf;
-        endEvent = buf + nbytes;
-    }
-
-    /**
-     * Indicates if a regular file was added because its parent directory was scanned.
-     *
-     * @param wd        Associated watch descriptor
-     * @param pathname  Pathname of the file
-     * @retval true     File was added because it was scanned
-     * @retval false    File was not added because it was scanned
-     * @see `watch()`
-     */
-    inline bool isScannedFile(
-            const int          wd,
-            const std::string& pathname) {
-        return scannedFiles.count(wd) && scannedFiles.at(wd).count(pathname);
-    }
-
-    /**
-     * Processes an event. Does nothing if the event isn't recognized.
-     *
-     * @param[in] wd        Event's watch descriptor
-     * @param[in] mask      Event's mask
-     * @param[in] pathname  Event's pathname
-     */
-    inline void processEvent(
-            const int          wd,
-            const uint32_t     mask,
-            const std::string& pathname)
-    {
-        if (mask & IN_ISDIR) {
-            if (mask & IN_CREATE) {
-                LOG_DEBUG("Watching directory \"%s\"", pathname.data());
-                watchIfNew(pathname, true); // Might add to `regFiles`
-            }
-            else if (mask & IN_DELETE) {
-                LOG_DEBUG("Unwatching directory \"%s\"", pathname.data());
-                if (scannedFiles.count(wd)) {
-                    auto& pathnames = scannedFiles.at(wd);
-                    if (pathnames.erase(pathname) && pathnames.empty())
-                        scannedFiles.erase(wd);
-                }
-                dirPaths.erase(wd);
-                wds.erase(pathname);
-                ::inotify_rm_watch(fd, wd);
-            }
-        }
-        else if (isLink(pathname)) {
-            if ((mask & IN_CREATE) && !isScannedFile(wd, pathname)) {
-                //LOG_DEBUG("Queuing link \"%s\"", pathname.data());
-                regFiles.push(pathname);
-            }
-        }
-        else if ((mask & IN_CLOSE_WRITE) && !isScannedFile(wd, pathname)) {
-            //LOG_DEBUG("Queuing regular file \"%s\"", pathname.data());
-            regFiles.push(pathname);
-        }
-    }
-
-    /**
-     * @throws       RuntimeError  A watched file-system was unmounted
-     * @throws       RuntimeError  The inotify(7) event-queue overflowed
-     */
-    void processEvents() {
-        while (nextEvent < endEvent) {
-            struct inotify_event* event = reinterpret_cast<struct inotify_event*>(nextEvent);
-            nextEvent += sizeof(struct inotify_event) + event->len;
-
-            const auto            mask = event->mask;
-
-            if (mask & IN_UNMOUNT)
-                throw RUNTIME_ERROR("Watched file-system was unmounted");
-            if (mask & IN_Q_OVERFLOW)
-                throw RUNTIME_ERROR("Inotify(7) event-queue overflowed");
-
-            const auto  wd = event->wd;
-            const auto& pathname = dirPaths.at(wd) + "/" + event->name;
-            processEvent(wd, mask, pathname);
-        } // While event-buffer needs processing
-    }
-
-public:
-    /**
-     * Constructs from the root directory to be watched.
-     *
-     * @param[in] rootDir          Pathname of root directory
-     * @throws    SystemError      `inotify_init()` failure
-     * @throws    InvalidArgument  The pathname doesn't reference a directory
-     * @throws    SystemError      Couldn't set `inotify_init(2)` file-descriptor to close-on-exec
-     * @throws    SystemError      Couldn't open directory
-     */
-    Impl(const std::string& rootDir)
-        : rootDir(rootDir)
-        , fd(::inotify_init())
-        , dirPaths()
-        , wds()
-        , scannedFiles()
-        , regFiles()
-        , buf()
-        , nextEvent(buf)
-        , endEvent(nextEvent)
-    {
-        if (fd == -1)
-            throw SYSTEM_ERROR("inotify_init() failure");
-
-        if (::fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
-            throw SYSTEM_ERROR("Couldn't set inotify(7) file-descriptor to close-on-exec");
-
-        LOG_TRACE("Watching directory %s", rootDir.data());
-        watchIfNew(rootDir, true);
-    }
-
-    ~Impl() noexcept
-    {
-        (void)::close(fd);
-    }
-
-    /**
-     * Returns a watched-for event.  Reads the `inotify(7)` file-descriptor.
-     * Recurses into new directories. Follows symbolic links. Blocks.
-     *
-     * @param[out] watchEvent  The watched-for event
-     * @threadsafety           Compatible but unsafe
-     * @throws       SystemError   Couldn't read inotify(7) file-descriptor
-     * @throws       RuntimeError  A watched file-system was unmounted
-     * @throws       RuntimeError  The inotify(7) event-queue overflowed
-     */
-    void getEvent(WatchEvent& watchEvent)
-    {
-        while (regFiles.empty()) {
-            readEvents(); // Blocks
-            processEvents();
-        }
-
-        watchEvent.pathname = regFiles.front();
-        regFiles.pop();
-        LOG_TRACE("Returning pathname \"%s\"", watchEvent.pathname.data());
     }
 };
 
 /******************************************************************************/
 
-Watcher::Watcher(const std::string& rootDir)
-    : pImpl{new Impl(rootDir)}
+Watcher::Watcher(
+        const String& rootDir,
+        Client&       client)
+    : pImpl(new Impl(rootDir, client))
 {}
 
-void Watcher::getEvent(WatchEvent& watchEvent)
+void Watcher::operator()() const
 {
-    pImpl->getEvent(watchEvent);
+    pImpl->operator()();
+}
+
+void Watcher::tryAdd(const String& dirPath) const
+{
+    pImpl->tryAdd(dirPath);
 }
 
 } // namespace

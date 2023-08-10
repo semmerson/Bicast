@@ -26,16 +26,15 @@
 
 namespace hycast {
 
-/// An exception thrown by a thread in a component with multiple threads
+/// The first exception thrown by a thread in a component with multiple threads
 class ThreadEx
 {
     using Mutex = std::mutex;
     using Guard = std::lock_guard<Mutex>;
     using ExPtr = std::exception_ptr;
 
-    mutable Mutex mutex;
-    ExPtr         exPtr;
-    bool          isSet; // Used because `exception_ptr::swap()` slices exceptions
+    mutable Mutex mutex; ///< For thread safety
+    ExPtr         exPtr; ///< Pointer to exception
 
 public:
     /**
@@ -44,37 +43,67 @@ public:
     ThreadEx()
         : mutex()
         , exPtr()
-        , isSet(false)
     {}
 
+#if 0
     /**
      * Sets the exception if it isn't already set.
      */
     void set(const std::exception& ex) {
-        Guard guard(mutex);
-        if (!isSet)
+        Guard guard{mutex};
+        if (!exPtr) {
+            LOG_DEBUG("Setting exception pointer to \"%s\"", ex.what());
             exPtr = std::make_exception_ptr(ex);
+        }
     }
+#else
+    /// Sets the exception to the current exception if it's not set.
+    void set() {
+        Guard guard{mutex};
+        if (!exPtr)
+            exPtr = std::current_exception();
+    }
+
+    /**
+     * Sets the exception based on an exception pointer if it's not already set.
+     * @param[in] exPtr  Exception pointer
+     */
+    void set(ExPtr& exPtr) {
+        Guard guard{mutex};
+        if (!this->exPtr)
+            this->exPtr = exPtr;
+    }
+
+    /**
+     * Sets the exception based on an exception pointer if it's not already set.
+     * @param[in] exPtr  Exception pointer
+     */
+    void set(ExPtr&& exPtr) {
+        Guard guard{mutex};
+        if (!this->exPtr)
+            this->exPtr = exPtr;
+    }
+#endif
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
      * @retval true    This instance is valid
      * @retval false   This instance is not valid
      */
-    operator bool() {
-        Guard guard(mutex);
-        return isSet;
+    operator bool() const noexcept {
+        Guard guard{mutex};
+        return static_cast<bool>(exPtr);
     }
 
     /**
-     * Throws the exception if it exists.
+     * Throws the exception if it exists. Clears the exception.
      */
     void throwIfSet() {
-        Guard guard(mutex);
-        if (isSet) {
-            // The original exception is thrown because `exPtr.swap()` slices the exception
-            isSet = false;
-            std::rethrow_exception(exPtr);
+        Guard guard{mutex};
+        if (exPtr) {
+            ExPtr tmp{};
+            tmp.swap(exPtr);
+            std::rethrow_exception(tmp);
         }
     }
 };

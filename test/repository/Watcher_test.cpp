@@ -21,6 +21,7 @@
  */
 #include "config.h"
 
+#include "CommonTypes.h"
 #include "Watcher.h"
 
 #include "error.h"
@@ -33,16 +34,20 @@
 #include <sys/stat.h>
 #include <thread>
 
+using namespace hycast;
+
 namespace {
 
 /// The fixture for testing class `Watcher`
-class WatcherTest : public ::testing::Test
+class WatcherTest : public ::testing::Test, public hycast::Watcher::Client
 {
 protected:
     std::string     testDir;
     std::string     rootDir;
+    std::string     relDirPath;
     std::string     filename;
     std::string     relFilePath;
+    String          expectedPathname;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -50,8 +55,10 @@ protected:
     WatcherTest()
         : testDir("/tmp/Watcher_test")
         , rootDir(testDir + "/watched")
+        , relDirPath("foo/bar")
         , filename("file.dat")
-        , relFilePath(std::string("foo/bar/") + filename)
+        , relFilePath(relDirPath + "/" + filename)
+        , expectedPathname()
     {
         char buf[PATH_MAX];
         hycast::FileUtil::rmDirTree(testDir);
@@ -85,27 +92,32 @@ protected:
     }
 
 public:
-    void getNextFile(
-            hycast::Watcher*   watcher,
-            const std::string* pathname) {
-        struct hycast::Watcher::WatchEvent watchEvent;
+    /**
+     * Processes the addition of a directory.
+     * @param[in] pathname  Absolute pathname of the directory
+     */
+    void dirAdded(const String& pathname) override {
+    }
 
-        watcher->getEvent(watchEvent);
-        ASSERT_EQ(*pathname, watchEvent.pathname);
-        LOG_DEBUG("Event: \"%s\"", pathname->data());
+    /**
+     * Processes the addition of a complete, regular file.
+     * @param[in] pathname  Absolute pathname of the complete, regular file
+     */
+    void fileAdded(const String& pathname) override {
+        ASSERT_EQ(expectedPathname, pathname);
     }
 };
 
 // Tests default construction
 TEST_F(WatcherTest, DefaultConstruction)
 {
-    hycast::Watcher watcher(rootDir);
+    hycast::Watcher watcher(rootDir, *this);
 }
 
 // Tests making and deleting a directory
 TEST_F(WatcherTest, DeleteDirectory)
 {
-    hycast::Watcher   watcher(rootDir);
+    hycast::Watcher   watcher(rootDir, *this);
     const std::string dirPath = rootDir + "/subdir";
 
     ASSERT_EQ(0, ::mkdir(dirPath.data(), 0777));
@@ -120,35 +132,57 @@ TEST_F(WatcherTest, DeleteDirectory)
 // Tests adding a file
 TEST_F(WatcherTest, AddFile)
 {
-    hycast::Watcher   watcher(rootDir);
-    const std::string filePath = rootDir + "/" + relFilePath;
-    auto              thrd = std::thread(&WatcherTest::getNextFile, this, &watcher, &filePath);
+    hycast::Watcher   watcher(rootDir, *this);
 
-    createFile(filePath);
-
-    thrd.join();
+    expectedPathname = rootDir + "/" + relFilePath;
+    createFile(expectedPathname);
 }
 
-// Tests adding a symbolic link
-TEST_F(WatcherTest, AddSymbolicLink)
+// Tests adding a symbolic link to a file
+TEST_F(WatcherTest, AddFileSymLink)
 {
-    hycast::Watcher   watcher(rootDir);
+    hycast::Watcher   watcher(rootDir, *this);
     const std::string filePath = testDir + "/" + relFilePath;
-    const std::string linkPath = rootDir + "/" + relFilePath;
-    auto              thread = std::thread(&WatcherTest::getNextFile, this,
-            &watcher, &linkPath);
 
+    expectedPathname = rootDir + "/" + relFilePath;
     createFile(filePath);
-    hycast::FileUtil::ensureParent(linkPath);
-    ASSERT_NE(-1, ::symlink(filePath.data(), linkPath.data()));
-
-    thread.join();
+    hycast::FileUtil::ensureParent(expectedPathname);
+    ASSERT_NE(-1, ::symlink(filePath.data(), expectedPathname.data()));
 }
 
-// Tests adding a hard link
+// Tests adding a symbolic link to a directory
+TEST_F(WatcherTest, AddDirectorySymLink)
+{
+    hycast::Watcher   watcher(rootDir, *this);
+    const std::string dirPath = testDir + "/" + relDirPath;
+    const std::string filePath = dirPath + "/" + filename;
+    const std::string dirLinkPath = rootDir + "/" + relDirPath;
+    expectedPathname = dirLinkPath + "/" + filename;
+
+    createFile(filePath);
+    hycast::FileUtil::ensureParent(dirLinkPath);
+    ASSERT_NE(-1, ::symlink(dirPath.data(), dirLinkPath.data()));
+}
+
+// Tests adding a hard link to a file
+TEST_F(WatcherTest, AddFileHardLink)
+{
+    hycast::Watcher   watcher(rootDir, *this);
+    const std::string filePath = testDir + "/" + relFilePath;
+    expectedPathname = rootDir + "/" + relFilePath;
+
+    createFile(filePath);
+    hycast::FileUtil::ensureParent(expectedPathname);
+    ASSERT_NE(-1, ::link(filePath.data(), expectedPathname.data()));
+}
+
+#if 0
+// A hard link to a directory doesn't work!
+
+// Tests adding a hard link to a directory
 TEST_F(WatcherTest, AddHardLink)
 {
-    hycast::Watcher   watcher(rootDir);
+    hycast::Watcher   watcher(rootDir, 60);
     const std::string filePath = testDir + "/" + relFilePath;
     const std::string linkPath = rootDir + "/" + relFilePath;
     auto              thread = std::thread(&WatcherTest::getNextFile, this,
@@ -160,6 +194,7 @@ TEST_F(WatcherTest, AddHardLink)
 
     thread.join();
 }
+#endif
 
 }  // namespace
 

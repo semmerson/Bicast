@@ -474,9 +474,10 @@ public:
     /**
      * Indicates if the product is complete.
      *
-     * @pre             State is locked
+     * @pre             State is unlocked
      * @retval true     Product is complete
      * @retval false    Product is not complete
+     * @post            State is unlocked
      */
     bool isComplete() const override {
         Guard guard{mutex};

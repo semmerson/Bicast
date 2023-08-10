@@ -147,10 +147,10 @@ protected:
     ThreadEx             threadEx;      ///< Exception thrown by internal threads
     const int            maxSrvrPeers;  ///< Maximum number of server-side peers
     int                  numSrvrPeers;  ///< Number of server-side peers
-    using PeerSet = std::set<PeerPtr>;                     ///< Set of active peers
+    using PeerSet = std::set<PeerPtr>;  ///< Set of peers
     PeerSet              peerSet;       ///< Set of active peers
-    using PeerMap = std::unordered_map<SockAddr, PeerPtr>; ///< Lookup table of active peers
-    PeerMap              peerMap;       ///< Map from remote address to peer
+    using PeerMap = std::unordered_map<SockAddr, PeerPtr>; ///< Remote address to peer map
+    PeerMap              peerMap;       ///< Lookup table of active peers
     BookkeeperPtr        bookkeeper;    ///< Monitors peer performance
     Thread               acceptThread;  ///< Creates server-side peers
     Thread               improveThread; ///< Improves the set of active peers
@@ -158,20 +158,19 @@ protected:
     P2pSrvrInfo          srvrInfo;      ///< Information on the local P2P-server
 
     /**
-     * Sets the exception to be thrown.
-     * @param[in] ex  The exception to be thrown
+     * Sets the exception to be thrown to the current exception.
      */
-    void setException(const std::exception& ex) {
-        threadEx.set(ex);
+    void setException() {
+        threadEx.set();
         ::sem_post(&stopSem);
     }
 
     /**
-     * @pre               The state mutex is unlocked
-     * @pre               The state is INIT
-     * @throw LogicError  The state isn't INIT
-     * @post              The state is STARTED
-     * @post              The state mutex is unlocked
+     * @pre               #stateMutex is unlocked
+     * @pre               #state is INIT
+     * @throw LogicError  #state isn't INIT
+     * @post              #state is STARTED
+     * @post              #stateMutex is unlocked
      */
     void startImpl() {
         Guard guard{stateMutex};
@@ -252,7 +251,7 @@ protected:
     void runPeer(PeerPtr peer) {
         try {
             peer->run();
-            LOG_INFO("Peer %s terminated", peer->to_string().data());
+            LOG_INFO("Peer %s stopped", peer->to_string().data());
         } // Peer was added to active peer set
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
@@ -332,11 +331,11 @@ protected:
                     tracker.insert(peer->getRmtSrvrInfo());
 
                     if (!add(peer)) // Honors concurrent access to the peer-set
-                        LOG_WARNING("Peer %s was previously accepted", peer->to_string().data());
+                        LOG_WARN("Peer %s was previously accepted", peer->to_string().data());
                 }
                 catch (const InvalidArgument& ex) {
                     // The remote peer sent bad information
-                    LOG_WARNING(ex);
+                    LOG_WARN(ex);
                     tracker.offline(peer->getRmtAddr());
                     continue;
                 }
@@ -347,7 +346,7 @@ protected:
                 std::throw_with_nested(RUNTIME_ERROR("P2pSrvr::accept() failure"));
             }
             catch (const std::exception& ex) {
-                setException(ex);
+                setException();
             }
         }
     }
@@ -395,7 +394,7 @@ protected:
             }
         }
         catch (const std::exception& ex) {
-            setException(ex);
+            setException();
         }
     }
 
@@ -499,11 +498,14 @@ public:
     /**
      * Constructs.
      *
-     * @param[in]     node          ///< Associated Hycast node
-     * @param[in,out] tracker       ///< Tracks available but unused P2P-servers
-     * @param[in]     maxPeers      ///< Maximum number of peers
-     * @param[in]     maxSrvrPeers  ///< Maximum number of server-side-constructed peers
-     * @param[in]     evalTime      ///< Peer evaluation time in seconds
+     * @param[in]     node          Associated Hycast node
+     * @param[in,out] tracker       Tracks available but unused P2P-servers
+     * @param[in]     maxPeers      Maximum number of peers
+     * @param[in]     maxSrvrPeers  Maximum number of server-side-constructed peers
+     * @param[in]     evalTime      Peer evaluation time in seconds
+     * @throw InvalidArgument       Invalid maximum number of peers
+     * @throw InvalidArgument       Invalid maximum number of server-side peers
+     * @throw InvalidArgument       Maximum number of peers < maximum number of server-side peers
      */
     P2pMgrImpl(
             Node&          node,
@@ -685,6 +687,7 @@ public:
      * @param[in] p2pSrvr       P2P-server
      * @param[in] maxPeers      Maximum number of peers
      * @param[in] evalTime      Evaluation time for poorest-performing peer in seconds
+     * @throw InvalidArgument   Invalid maximum number of peers
      */
     PubP2pMgrImpl(PubNode&            pubNode,
                   const PubP2pSrvrPtr p2pSrvr,
@@ -853,7 +856,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                     tracker.insert(rmtSrvrInfo);
 
                     /*
-                     * To help prevent orphan subnetworks, only peer that provide a path to the
+                     * To help prevent orphan subnetworks, only peers that provide a path to the
                      * publisher and can accept a new client are used.
                      */
                     if (!rmtSrvrInfo.validTier()) {
@@ -894,7 +897,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                 } // `rmtSrvrAddr` obtained from tracker
                 catch (const InvalidArgument& ex) {
                     // The remote peer sent bad information
-                    LOG_WARNING(ex);
+                    LOG_WARN(ex);
                     tracker.offline(rmtSrvrAddr);
                 }
                 catch (const std::exception& ex) {
@@ -905,7 +908,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
         }
         catch (const std::exception& ex) {
             LOG_DEBUG("Setting exception %s", ex.what());
-            setException(ex);
+            setException();
         }
         catch (...) {
             LOG_DEBUG("Caught cancellation exception?");
@@ -949,7 +952,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                     bookkeeper->erase(id); // No longer relevant
                 }
                 else {
-                    LOG_WARNING("Datum " + id.to_string() + " was unexpected");
+                    LOG_WARN("Datum " + id.to_string() + " was unexpected");
                 }
             }
             else {

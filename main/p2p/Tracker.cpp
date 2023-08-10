@@ -49,7 +49,7 @@ class Tracker::Impl final : public XprtAble
         }           state;
     };
     using SrvrInfoMap = std::unordered_map<SockAddr, P2pSrvrInfo>;
-    SrvrInfoMap srvrInfos;
+    SrvrInfoMap srvrInfos; /// Information on presumably valid P2P servers
 
     class QueueComp {
         Impl& trackerImpl;
@@ -139,6 +139,28 @@ class Tracker::Impl final : public XprtAble
 #endif
 
     /**
+     * Erases a P2P server from the database.
+     * @param[in] srvrAddr  Socket address of the P2P server
+     */
+    inline void erase(const SockAddr& srvrAddr) {
+        srvrQueue.erase(srvrAddr);
+        srvrInfos.erase(srvrAddr);
+    }
+
+    /**
+     * Updates the database for a P2P server. Creates an entry if necessary.
+     * @param[in] srvrInfo  Information on a P2P server
+     */
+    void update(const P2pSrvrInfo& srvrInfo) {
+        const auto& srvrAddr = srvrInfo.srvrAddr;
+
+        erase(srvrAddr);
+
+        srvrInfos[srvrAddr] = srvrInfo;
+        srvrQueue.insert(srvrAddr);
+    }
+
+    /**
      * Moves P2P-servers from the delay queue to the server queue. Implemented as a start routine
      * for a thread that expects `halt()` to be called.
      * @see peerDisconnected()
@@ -161,9 +183,10 @@ class Tracker::Impl final : public XprtAble
                  *   - The reveal-time for the top entry has expired; or
                  *   - `halt()` has been called.
                  * NB: Two condition variable waits are used because
-                 *   1) The predicate "(!delayQueue.empty() && delayQueue.top().revealTime <= "
-                 *      "SysClock::now()) || done" requires that the condition variable be notified
-                 *      in order to return the next element -- regardless of it's reveal-time; and
+                 *   1) The alternative predicate "(!delayQueue.empty() &&
+                 *      delayQueue.top().revealTime <= " "SysClock::now()) || done" would require
+                 *      that the condition variable be notified in order to return the next element
+                 *      -- regardless of it's reveal-time; and
                  *   2) `delayCond.wait_until()` can't be used on an empty queue.
                  */
                 delayCond.wait_until(lock, delayQueue.top().revealTime, pred);
@@ -174,14 +197,15 @@ class Tracker::Impl final : public XprtAble
                 delayQueue.pop();
                 if (srvrInfos.count(srvrAddr)) {
                     // Information on server hasn't been removed -- so it's a valid candidate
-                    LOG_ASSERT(srvrQueue.count(srvrAddr) == 0);
+                    // `srvrQueue` may contain `srvrAddr`, so erasure & insertion (==update)
+                    srvrQueue.erase(srvrAddr);
                     srvrQueue.insert(srvrAddr);
                     queueCond.notify_all();
                 }
             }
         }
         catch (const std::exception& ex) {
-            threadEx.set(ex);
+            threadEx.set(std::current_exception());
         }
     }
 
@@ -226,12 +250,10 @@ class Tracker::Impl final : public XprtAble
                 // At capacity. Delete worst server.
                 LOG_ASSERT(!srvrQueue.empty());
                 const auto worstSrvrAddr = *srvrQueue.rbegin();
-                srvrQueue.erase(worstSrvrAddr); // Queue comparison function depends on `srvrInfos`
-                srvrInfos.erase(worstSrvrAddr); // Must be after `srvrQueue.erase(worstSrvrAddr)`
+                erase(worstSrvrAddr);
             }
 
-            srvrInfos[srvrInfo.srvrAddr] = srvrInfo; // Must be done before inserting into queue
-            srvrQueue.insert(srvrInfo.srvrAddr);
+            update(srvrInfo);
             success = true;
         }
         else {
@@ -239,11 +261,13 @@ class Tracker::Impl final : public XprtAble
             success = srvrInfo.valid > iter->second.valid;
             if (success) {
                 // Given information is more recent => update
-                iter->second = srvrInfo; // Must be done before updating server-queue
-                if (srvrQueue.count(srvrInfo.srvrAddr)) {
-                    // Update entry in server-queue.
-                    srvrQueue.erase(srvrInfo.srvrAddr);
-                    srvrQueue.insert(srvrInfo.srvrAddr);
+                if (!srvrQueue.count(srvrInfo.srvrAddr)) {
+                    // Not in server-queue, so just update information
+                    iter->second = srvrInfo;
+                }
+                else {
+                    // Update entry
+                    update(srvrInfo);
                 }
             }
         }
@@ -373,8 +397,7 @@ public:
 
         Guard guard{mutex};
 
-        srvrQueue.erase(p2pSrvrAddr); // Queue comparison function depends on `srvrInfos`
-        srvrInfos.erase(p2pSrvrAddr); // Must be after `srvrQueue.erase(srvrAddr)`
+        erase(p2pSrvrAddr);
     }
 
     /**
@@ -430,7 +453,7 @@ public:
         Guard guard{mutex};
 
         auto size = static_cast<Size>(srvrInfos.size());
-        LOG_DEBUG("Writing size=%s", std::to_string(size).data());
+        LOG_TRACE("Writing size=%s", std::to_string(size).data());
         if (!xprt.write(size))
             return false;
 
@@ -455,7 +478,7 @@ public:
         Size size;
         if (!xprt.read(size))
             return false;
-        LOG_DEBUG("Read size=%s", std::to_string(size).data());
+        LOG_TRACE("Read size=%s", std::to_string(size).data());
 
         while (!delayQueue.empty())
             delayQueue.pop();

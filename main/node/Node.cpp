@@ -140,7 +140,7 @@ class NodeImpl : public Node
             p2pMgr->run();
         }
         catch (const std::exception& ex) {
-            setException(ex);
+            setException();
         }
     }
 
@@ -162,11 +162,9 @@ protected:
 
     /**
      * Sets the first exception thrown by a sub-thread.
-     *
-     * @param[in] ex  Sub-thread exception
      */
-    void setException(const std::exception& ex) {
-        threadEx.set(ex);
+    void setException() {
+        threadEx.set();
         ::sem_post(&stopSem);
     }
 
@@ -291,7 +289,8 @@ class PubNodeImpl final : public PubNode, public NodeImpl
     }
 
     /**
-     * Sends new data-products in the repository via the multicast and P2P components.
+     * Sends new data-products in the repository via the multicast and P2P components. Meant to be
+     * the start routine of a separate thread.
      */
     void runSender() {
         // TODO: Make the priority of this thread less than the handling of missed-data requests
@@ -300,13 +299,15 @@ class PubNodeImpl final : public PubNode, public NodeImpl
                 auto  prodEntry = repo.getNextProd();
                 auto& prodInfo = prodEntry.prodInfo;
 
+                LOG_INFO("Sending product " + prodInfo.to_string());
 #if 1
                 // Send product-information
                 send(prodInfo);
 
                 /*
-                 * Data-segment multicasting is interleaved with peer notification order to reduce
-                 * the chance of losing a multicast data-segment by reducing the multicast rate.
+                 * Data-segment multicasting is interleaved with peer notification in hopes of
+                 * reducing the chance of losing a multicast data-segment by reducing the multicast
+                 * rate.
                  */
                 auto prodSize = prodInfo.getSize();
                 for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
@@ -335,7 +336,7 @@ class PubNodeImpl final : public PubNode, public NodeImpl
             }
         }
         catch (const std::exception& ex) {
-            setException(ex);
+            setException();
         }
         catch (...) {
             LOG_DEBUG("Thread cancelled");
@@ -408,8 +409,8 @@ public:
      * @param[in] repoRoot        Pathname of the root directory of the repository
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @throw InvalidArgument     Invalid maximum number of peers
      * @throw InvalidArgument     `listenSize` is zero
-     * @return                    New instance
      */
     PubNodeImpl(
             SockAddr       p2pAddr,
@@ -420,13 +421,18 @@ public:
             const int      maxPendConn,
             const String&  repoRoot,
             const SegSize  maxSegSize,
-            const long     maxOpenFiles)
+            const long     maxOpenFiles,
+            const int      keepTime)
         : NodeImpl(PubP2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , repo(PubRepo(repoRoot, maxOpenFiles))
+        , repo(repoRoot, maxOpenFiles, keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
-    {}
+    {
+        DataSeg::setMaxSegSize(maxSegSize);
+        LOG_NOTE("Will multicast to group " + mcastAddr.to_string() + " on interface " +
+                mcastIfaceAddr.to_string());
+    }
 
     ~PubNodeImpl() noexcept {
         try {
@@ -495,9 +501,10 @@ PubNodePtr PubNode::create(
         const unsigned maxPendConn,
         const String&  repoRoot,
         const SegSize  maxSegSize,
-        const long     maxOpenFiles) {
+        const long     maxOpenFiles,
+        const int      keepTime) {
     return PubNodePtr{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
-            maxPendConn, repoRoot, maxSegSize, maxOpenFiles)};
+            maxPendConn, repoRoot, maxSegSize, maxOpenFiles, keepTime)};
 }
 
 PubNodePtr PubNode::create(
@@ -507,7 +514,7 @@ PubNodePtr PubNode::create(
         const PubRepo::RunPar&   repoRunPar) {
     return create(p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
             mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, repoRunPar.rootDir, maxSegSize,
-            repoRunPar.maxOpenFiles);
+            repoRunPar.maxOpenFiles, repoRunPar.keepTime);
 }
 
 /**************************************************************************************************/
@@ -546,7 +553,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
             mcastSub->run();
         }
         catch (const std::exception& ex) {
-            setException(ex);
+            setException();
         }
     }
 
@@ -657,14 +664,18 @@ public:
             const long              maxOpenFiles)
         : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, peerConnSrvr, timeout, maxPeers,
                 evalTime))
-        , repo(SubRepo(repoDir, subInfo.maxSegSize, maxOpenFiles))
+        , repo(repoDir, maxOpenFiles, subInfo.keepTime)
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}
         , numP2pDup{0}
         , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
         , mcastThread()
-    {}
+    {
+        DataSeg::setMaxSegSize(subInfo.maxSegSize);
+        LOG_NOTE("Will receive multicast group " + subInfo.mcast.dstAddr.to_string() + " from " +
+                subInfo.mcast.srcAddr.to_string() + " on interface " + mcastIface.to_string());
+    }
 
     ~SubNodeImpl() noexcept {
         try {

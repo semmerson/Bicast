@@ -1,0 +1,50 @@
+# This is an example of a configuration-file for disposing of received data-products. The syntax is
+# standard YAML.
+
+# The following parameter specifies the maximum number of file-descriptors that are kept open by the
+# "Append", "File", and "Pipe" actions. Keeping a file-descriptor open can be more efficient than
+# closing and reopening. The least-recently-used file descriptor will be closed if a new one is
+# needed and the current number of open file-descriptors is this value.
+maxKeepOpen: 20 # Maximum number of file-descriptors to keep-open
+
+# The following specifies the actions to be taken for NOAAPort data-products that match the
+# associated patterns. The patterns are specified using ECMAScript regular expressions. It is
+# assumed that a product's name is a relative pathname that's based on its WMO
+# abbreviated heading. A WMO heading which match the following regular expression:
+#     ^(..) (....) (....) (..)(..)(..)
+# is assumed to have a name that matches this pattern
+#     $1/$2/$3/<yyyy>-<mm>-$4T$5:$6.txt
+# Where "<yyyy>" and "<m>m" are the year and origin-1 month, respectively. Similarly, a WMO heading
+# which matches this expression
+#     ^(..) (....) (....) (..)(..)(..) (.*)
+# is assumed to have a name that matches this pattern
+#     $1/$2/$3/<yyyy>-<mm>-$4/$5:$6_$7.txt
+# For example, the product name corresponding to the WMO abbreviated heading
+#     SAUS14 KAWN 241800 RRX
+# could be (depending on the year and month)
+#     SA/US14/KAWN/2023-07-24/18:00_RRX.txt
+
+patternActions:
+  # Append US Metars the hard way (i.e., via a shell invocation and a utility)
+  - include: ^(SA/US../..../../....) # WMO abbreviated heading with spaces replaced with slashes
+    pipe: [sh, -c, cat >>$1]
+    keepOpen: true
+
+  # Keep only the most recent SIGMET. Exclude Russia's. Closes output file.
+  - include: ^WS
+    exclude: ^WS/RU
+    actions: # Multiple actions executed sequentialy
+      - file: WWA/lastSIGMET                                             # Executed first
+        keepOpen: false                                                  # Default
+      - exec: [sh, -c, mailx -s New SIGMET WeatherNerds <WWA/lastSIGMET] # Executed second
+
+  # APPEND example. Doesn't close output file.
+  - include: ^(../..../..../....-..-../..:...*)
+    append: IDS_DDPLUS/$1
+    keepOpen: true
+    
+  # PIPE example. Like the above but uses a decoder and parses the name. Closes output file.
+  - include: ^(..)/(....)/(....)/(....)-(..)-(..)/(..):(..).*\\.txt$
+    pipe: [ids_ddplus_decoder, $1, $2, $3, $4, $5, $6, $7, $8]
+    keepOpen: false # default
+  

@@ -230,7 +230,7 @@ TEST_F(SocketTest, ScalarExchange)
 
     startServer(lstnSock, srvrSock);
 
-    hycast::TcpClntSock clntSock(srvrAddr, 1000);
+    hycast::TcpClntSock clntSock(srvrAddr);
     int                 writeInt = 0xff00;
     int                 readInt = ~writeInt;
 

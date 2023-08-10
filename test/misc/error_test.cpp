@@ -38,12 +38,12 @@ TEST_F(ErrorTest, SimpleLogging) {
     LOG_DEBUG("Debug message");
     LOG_INFO("Info message");
     LOG_NOTE("Notice message");
-    LOG_WARNING("Warning message");
+    LOG_WARN("Warning message");
     LOG_ERROR("Error message");
     LOG_DEBUG("Debug message %d", 1);
     LOG_INFO("Info message %d", 2);
     LOG_NOTE("Notice message %d", 3);
-    LOG_WARNING("Warning message %d", 4);
+    LOG_WARN("Warning message %d", 4);
     LOG_ERROR("Error message %d", 5);
 }
 

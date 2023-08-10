@@ -33,7 +33,7 @@
 namespace hycast {
 
 /**
- * A combination of hash table and queue.
+ * A thread-safe combination of hash table and queue.
  * @tparam VALUE  Value to be stored. Must have default constructor, copy assignment,  `hash()`, and
  *                `operator==()`. Smaller values are better.
  */
@@ -82,10 +82,12 @@ public:
     {}
 
     bool empty() const {
+        Guard guard{mutex};
         return linksMap.empty();
     }
 
     size_t size() const {
+        Guard guard{mutex};
         return linksMap.size();
     }
 

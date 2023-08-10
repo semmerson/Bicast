@@ -117,6 +117,7 @@ public:
      *                    - host.name:38800
      *                    - 192.168.0.1:2400
      *                    - [fe80::20c:29ff:fe6b:3bda]:34084
+     *                  If the port number isn't specified, then the default is 0.
      */
     explicit SockAddr(const std::string& spec);
 

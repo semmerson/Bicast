@@ -218,7 +218,7 @@ class PeerConnImpl : public PeerConn
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            threadEx.set(ex);
+            threadEx.set();
             ::sem_post(&stopSem);
         }
     }
@@ -559,6 +559,7 @@ public:
 
         // Because 3 unicast connections per peer-connection
         srvrSock = TcpSrvrSock(srvrAddr, 3*maxPendConn);
+        LOG_DEBUG("Created P2P server " + srvrSock.to_string());
 
         /*
          * Connections are accepted on a separate thread so that a slow connection attempt won't

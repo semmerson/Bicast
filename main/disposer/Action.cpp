@@ -179,7 +179,7 @@ public:
      * Performs the action.
      * @param[in]  data    The data to process
      * @param[in]  nbytes  The amount of data in bytes
-     * @param[out] pid     The PID of the child process
+     * @param[out] pid     The PID of any child process or -1, which means don't `wait(3)` on it
      * @param[out] args    The argument string
      * @retval    true     Success. `pid` and `cmd` are set. `pid < 0` if no child process.
      * @retval    false    Too many file descriptors are open
@@ -307,13 +307,13 @@ private:
 
             if (WIFEXITED(exitStatus)) {
                 if (WIFSIGNALED(exitStatus)) {
-                    LOG_WARNING("Command %s terminated due to uncaught signal %d",
+                    LOG_WARN("Command %s terminated due to uncaught signal %d",
                             cmdVec().data(), WTERMSIG(exitStatus));
                 }
                 else {
                     exitStatus = WEXITSTATUS(exitStatus);
                     if (exitStatus) {
-                        LOG_WARNING("Command %s exited with status %d", cmdVec().data(),
+                        LOG_WARN("Command %s exited with status %d", cmdVec().data(),
                                 exitStatus);
                     }
                     else {
@@ -530,13 +530,13 @@ private:
             throw SYSTEM_ERROR("::waitpid() failure for decoder " + cmdVec());
 
         if (WIFSIGNALED(exitStatus)) {
-            LOG_WARNING("Decoder %s terminated due to uncaught signal %d",
+            LOG_WARN("Decoder %s terminated due to uncaught signal %d",
                     cmdVec().data(), WTERMSIG(exitStatus));
         }
         else {
             exitStatus = WEXITSTATUS(exitStatus);
             if (exitStatus) {
-                LOG_WARNING("Decoder %s exited with status %d", cmdVec().data(), exitStatus);
+                LOG_WARN("Decoder %s exited with status %d", cmdVec().data(), exitStatus);
             }
             else {
                 LOG_DEBUG("Decoder %s exited successfully", cmdVec().data());

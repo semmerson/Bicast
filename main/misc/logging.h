@@ -264,7 +264,7 @@ inline void log_fatal(const std::exception& ex) {
     while(false)
 
 /// Macro for logging a message at the warning level
-#define LOG_WARNING(...) \
+#define LOG_WARN(...) \
     do \
         if (hycast::log_enabled(hycast::LogLevel::WARN)) \
             hycast::log(hycast::LogLevel::WARN, __FILE__, __LINE__, __func__, __VA_ARGS__); \

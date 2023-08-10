@@ -360,8 +360,8 @@ public:
                 creationTime - SysClock::from_time_t(secs)).count();
         ::snprintf(iso8601+nbytes, sizeof(iso8601)-nbytes, ".%06ldZ", usecs);
 
-        return string + "{prodId=" + prodId.to_string() + ", name=\"" + name +
-                "\", size=" + std::to_string(size) + ", created=" + iso8601 + "}";
+        return string + "{name=\"" + name + "\", prodId=" + prodId.to_string() +
+                ", size=" + std::to_string(size) + ", created=" + iso8601 + "}";
     }
 
     /**

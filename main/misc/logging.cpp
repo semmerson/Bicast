@@ -172,15 +172,18 @@ const std::string& log_getName() noexcept {
 
 /**
  * Signal handler for rotating the logging threshold
- * @param[in] sig  The signal
+ * @param[in] sig  The signal. Ignored.
  */
 static void rollLevel(const int sig)
 {
     LogLevel level = static_cast<LogLevel>(logThreshold);
 
-    level.lower();
-    if (level.includes(LogLevel::TRACE))
+    if (level.includes(LogLevel::TRACE)) {
         level = LogLevel::NOTE;
+    }
+    else {
+        level.lower();
+    }
     logThreshold = level;
 }
 
