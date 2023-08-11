@@ -133,8 +133,9 @@ public:
 TEST_F(NodeTest, Construction)
 {
     LOG_NOTE("Creating publishing node");
-    auto pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1, pubRepoRoot,
-            SEG_SIZE, maxOpenFiles, 3600);
+    Tracker tracker{};
+    auto pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
+            pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
@@ -177,8 +178,9 @@ TEST_F(NodeTest, Sending)
         EXPECT_EQ(0, ::close(fd));
 
         // Create publisher
-        auto       pubNode = PubNode::create(pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
-                pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
+        Tracker tracker{};
+        auto       pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
+                ifaceAddr, 1, pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 

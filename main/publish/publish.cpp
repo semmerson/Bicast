@@ -34,23 +34,24 @@ using namespace hycast;
 using String = std::string;
 
 /// Default maximum number of active peers
-static constexpr int DEF_MAX_PEERS    = 8;
+static constexpr int DEF_MAX_PEERS     = 8;
 /// Size of queue for publisher's server
-static constexpr int DEF_BACKLOG_SIZE = 256;
+static constexpr int DEF_BACKLOG_SIZE  = 256;
 /// Default multicast group Internet address
-static constexpr char DEF_MCAST_SPEC[] = "232.1.1.1";
+static constexpr char DEF_MCAST_ADDR[] = "232.1.1.1";
 /// Default port for publisher's server & multicast group
-static constexpr int DEF_PORT         = 38800;
+static constexpr int DEF_PORT          = 38800;
 /// Default tracker size
-static constexpr int DEF_TRACKER_SIZE = 1000;
+static constexpr int DEF_TRACKER_CAP   = 1000;
 /// Default peer evaluation duration
 static constexpr int DEF_EVAL_DURATION = 300;
 
 /// Command-line/configuration-file parameters of this program
 struct RunPar {
-    String    feedName;                   ///< Name of data-product stream
-    LogLevel  logLevel;                   ///< Logging level
-    int32_t   maxSegSize;                 ///< Maximum size of a data-segment in bytes
+    String    feedName;   ///< Name of data-product stream
+    LogLevel  logLevel;   ///< Logging level
+    int32_t   maxSegSize; ///< Maximum size of a data-segment in bytes
+    int       trackerCap; ///< Maximum size of pool of potential P2P servers
     /// Runtime parameters for a publisher's server (not its P2P server)
     struct Srvr {
         SockAddr      addr;               ///< Socket address of publisher's server (not P2P server)
@@ -76,9 +77,10 @@ struct RunPar {
         : feedName("Hycast")
         , logLevel(LogLevel::NOTE)
         , maxSegSize(1444)
+        , trackerCap(DEF_TRACKER_CAP)
         , srvr(SockAddr("0.0.0.0", DEF_PORT), DEF_BACKLOG_SIZE)
-        , mcast(SockAddr(DEF_MCAST_SPEC, DEF_PORT), InetAddr())
-        , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_TRACKER_SIZE, DEF_EVAL_DURATION)
+        , mcast(SockAddr(DEF_MCAST_ADDR, DEF_PORT), InetAddr())
+        , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_EVAL_DURATION)
         , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
     {}
 };
@@ -127,6 +129,7 @@ static RunPar            runPar;        ///< Runtime parameters:
 static const RunPar      defRunPar;     ///< Default runtime parameters
 static PubNodePtr        pubNode;       ///< Data-product publishing node
 static SubInfo           subInfo;       ///< Subscription information passed to subscribers
+static Tracker           tracker;       ///< Tracks P2P servers
 
 static void usage()
 {
@@ -146,6 +149,8 @@ static void usage()
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
 "                      \"" << defRunPar.logLevel << "\".\n"
+"    -t <trackerCap>   Maximum number of P2P servers to track. Default is " <<
+                       defRunPar.trackerCap << ".\n"
 "  Publisher's Server:\n"
 "    -P <pubAddr>      Socket address of publisher's server (not the P2P server).\n"
 "                      Default is \"" << defRunPar.srvr.addr << "\".\n"
@@ -169,8 +174,6 @@ static void usage()
 "    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << defRunPar.p2p.srvr.acceptQSize <<
                        ".\n"
-"    -t <trackerSize>  Maximum number of P2P servers to track. Default is " <<
-                       defRunPar.p2p.trackerSize << ".\n"
 "  Repository:\n"
 "    -k <keepTime>     How long to keep data-products in seconds. Default is\n" <<
 "                      " << defRunPar.repo.keepTime << ".\n"
@@ -198,6 +201,8 @@ static void setFromConfig(const String& pathname)
         if (node1)
             log_setLevel(node1.as<String>());
         Parser::tryDecode<decltype(runPar.maxSegSize)>(node0, "maxSegSize", runPar.maxSegSize);
+        Parser::tryDecode<decltype(runPar.trackerCap)>(node0, "trackerCap",
+                runPar.trackerCap);
 
         node1 = node0["server"];
         if (node1) {
@@ -231,8 +236,6 @@ static void setFromConfig(const String& pathname)
 
             Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "maxPeers",
                     runPar.p2p.maxPeers);
-            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "trackerSize",
-                    runPar.p2p.trackerSize);
             Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "evalTime",
                     runPar.p2p.evalTime);
         }
@@ -265,7 +268,7 @@ static void vetRunPar()
     if (runPar.p2p.evalTime <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
 
-    if (runPar.p2p.trackerSize <= 0)
+    if (runPar.trackerCap <= 0)
         throw INVALID_ARGUMENT("Tracker size is not positive");
 
     if (runPar.p2p.maxPeers <= 0)
@@ -297,7 +300,7 @@ static void vetRunPar()
 }
 
 /// Initializes runtime parameters that aren't set from the command-line/configuration-file
-static void init()
+static void initRunPar()
 {
     DataSeg::setMaxSegSize(runPar.maxSegSize);
 
@@ -306,7 +309,7 @@ static void init()
     subInfo.maxSegSize = runPar.maxSegSize;
     subInfo.mcast.dstAddr = runPar.mcast.dstAddr;
     subInfo.mcast.srcAddr = runPar.mcast.srcAddr;
-    subInfo.tracker = Tracker(runPar.p2p.trackerSize);
+    subInfo.tracker = Tracker(runPar.trackerCap);
     subInfo.keepTime = runPar.repo.keepTime;
 
     numSubThreads.setMax(runPar.p2p.maxPeers);
@@ -424,11 +427,11 @@ static void getCmdPars(
             break;
         }
         case 't': {
-            int trackerSize;
-            if (::sscanf(optarg, "%d", &trackerSize) != 1)
+            int trackerCap;
+            if (::sscanf(optarg, "%d", &trackerCap) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
-            runPar.p2p.trackerSize = trackerSize;
+            runPar.trackerCap = trackerCap;
             break;
         }
         case ':': { // Missing option argument. Due to leading ":" in opt-string
@@ -590,17 +593,20 @@ int main(const int    argc,
         LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
 
         getCmdPars(argc, argv);
-        init();
+        initRunPar();
 
         if (::sem_init(&stopSem, 0, 0) == -1)
                 throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
         setSigHandling(); // Catches termination signals
 
+        tracker = Tracker(runPar.trackerCap); // Create the tracker
+
         //LOG_DEBUG("Starting server thread");
         auto serverThread = Thread(&runServer);
 
-        pubNode = PubNode::create(runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.repo);
+        pubNode = PubNode::create(tracker, runPar.maxSegSize, runPar.mcast, runPar.p2p,
+                runPar.repo);
         //LOG_DEBUG("Starting node thread");
         auto nodeThread = Thread(&runNode);
 

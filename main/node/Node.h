@@ -170,6 +170,7 @@ public:
      * Returns a new instance. The instance is immediately ready to accept connections from remote
      * peers and query the repository for products to send.
      *
+     * @param[in] tracker         Tracks P2P-servers
      * @param[in] p2pAddr         Socket address for local P2P server. It shall specify a specific
      *                            interface and not the wildcard. The port number may be 0, in which
      *                            case the operating system will choose the port.
@@ -186,6 +187,7 @@ public:
      * @return                    New instance
      */
     static PubNodePtr create(
+            Tracker&       tracker,
             const SockAddr p2pAddr,
             const unsigned maxPeers,
             const unsigned evalTime,
@@ -199,6 +201,7 @@ public:
 
     /**
      * Returns a new instance.
+     * @param[in] tracker       Tracks P2P-servers
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param mcastRunPar       Runtime parameters for the multicast component
      * @param p2pRunPar         Runtime parameters for the P2P component
@@ -206,6 +209,7 @@ public:
      * @return                  A new instance
      */
     static PubNodePtr create(
+            Tracker&                 tracker,
             const SegSize            maxSegSize,
             const McastPub::RunPar&  mcastRunPar,
             const PubP2pMgr::RunPar& p2pRunPar,

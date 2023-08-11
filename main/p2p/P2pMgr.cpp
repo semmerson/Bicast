@@ -498,8 +498,8 @@ public:
     /**
      * Constructs.
      *
+     * @param[in,out] tracker       Tracks available P2P-servers
      * @param[in]     node          Associated Hycast node
-     * @param[in,out] tracker       Tracks available but unused P2P-servers
      * @param[in]     maxPeers      Maximum number of peers
      * @param[in]     maxSrvrPeers  Maximum number of server-side-constructed peers
      * @param[in]     evalTime      Peer evaluation time in seconds
@@ -508,8 +508,8 @@ public:
      * @throw InvalidArgument       Maximum number of peers < maximum number of server-side peers
      */
     P2pMgrImpl(
+            Tracker&       tracker,
             Node&          node,
-            Tracker        tracker,
             const int      maxPeers,
             const int      maxSrvrPeers,
             const int      evalTime)
@@ -683,17 +683,19 @@ public:
     /**
      * Constructs.
      *
+     * @param[in] tracker       Tracks P2P-servers
      * @param[in] pubNode       Publisher's node
      * @param[in] p2pSrvr       P2P-server
      * @param[in] maxPeers      Maximum number of peers
      * @param[in] evalTime      Evaluation time for poorest-performing peer in seconds
      * @throw InvalidArgument   Invalid maximum number of peers
      */
-    PubP2pMgrImpl(PubNode&            pubNode,
+    PubP2pMgrImpl(Tracker&            tracker,
+                  PubNode&            pubNode,
                   const PubP2pSrvrPtr p2pSrvr,
                   const int           maxPeers,
                   const int           evalTime)
-        : P2pMgrImpl(pubNode, Tracker{}, maxPeers, maxPeers, evalTime)
+        : P2pMgrImpl(tracker, pubNode, maxPeers, maxPeers, evalTime)
         , p2pSrvr(p2pSrvr)
     {
         bookkeeper = Bookkeeper::createPub(maxPeers);
@@ -783,13 +785,14 @@ public:
 };
 
 PubP2pMgrPtr PubP2pMgr::create(
+        Tracker&       tracker,
         PubNode&       pubNode,
         const SockAddr p2pSrvrAddr,
         const int      maxPeers,
         const int      maxPendConn,
         const int      evalTime) {
     auto p2pSrvr = PubP2pSrvr::create(p2pSrvrAddr, maxPendConn);
-    return PubP2pMgrPtr{new PubP2pMgrImpl(pubNode, p2pSrvr, maxPeers, evalTime)};
+    return PubP2pMgrPtr{new PubP2pMgrImpl(tracker, pubNode, p2pSrvr, maxPeers, evalTime)};
 }
 
 /**************************************************************************************************/
@@ -1086,13 +1089,13 @@ public:
      * @return                  Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
-    SubP2pMgrImpl(SubNode&        subNode,
-                  Tracker         tracker,
+    SubP2pMgrImpl(Tracker         tracker,
+                  SubNode&        subNode,
                   PeerConnSrvrPtr peerConnSrvr,
                   const int       timeout,
                   const int       maxPeers,
                   const int       evalTime)
-        : P2pMgrImpl(subNode, tracker, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
+        : P2pMgrImpl(tracker, subNode, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
         , subNode(subNode)
         , maxClntPeers(maxSrvrPeers)
         , numClntPeers(0)
@@ -1228,26 +1231,26 @@ public:
 };
 
 SubP2pMgrPtr SubP2pMgr::create(
-        SubNode&              subNode,
         Tracker               tracker,
+        SubNode&              subNode,
         const PeerConnSrvrPtr peerConnSrvr,
         const int             timeout,
         const int             maxPeers,
         const int             evalTime) {
-    return SubP2pMgrPtr{new SubP2pMgrImpl{subNode, tracker, peerConnSrvr, timeout, maxPeers,
+    return SubP2pMgrPtr{new SubP2pMgrImpl{tracker, subNode, peerConnSrvr, timeout, maxPeers,
             evalTime}};
 }
 
 SubP2pMgrPtr SubP2pMgr::create(
-        SubNode&          subNode,
         Tracker           tracker,
+        SubNode&          subNode,
         const SockAddr    p2pSrvrAddr,
         const int         maxPendConn,
         const int         timeout,
         const int         maxPeers,
         const int         evalTime) {
     auto peerConnSrvr = PeerConnSrvr::create(p2pSrvrAddr, maxPendConn);
-    return create(subNode, tracker, peerConnSrvr, timeout, maxPeers, evalTime);
+    return create(tracker, subNode, peerConnSrvr, timeout, maxPeers, evalTime);
 }
 
 } // namespace

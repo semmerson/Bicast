@@ -78,24 +78,20 @@ public:
             {}
         }         srvr;           ///< P2P server
         int       maxPeers;       ///< Maximum number of connected peers
-        int       trackerSize;    ///< Maximum size of pool of potential P2P server addresses
         int       evalTime;       ///< Time interval for evaluating peer performance in seconds
         /**
          * Constructs.
          * @param[in] addr         Address for local P2P server. Port number may be 0.
          * @param[in] listenSize   Size of listen() queue
          * @param[in] maxPeers     Maximum number of neighboring peers to have
-         * @param[in] trackerSize  Maximum size of pool of potential P2P server addresses
          * @param[in] evalTime     Time interval for evaluating peer performance in seconds
          */
         RunPar( const SockAddr addr,
                 const int      listenSize,
                 const int      maxPeers,
-                const int      trackerSize,
                 const int      evalTime)
             : srvr(addr, listenSize)
             , maxPeers(maxPeers)
-            , trackerSize(trackerSize)
             , evalTime(evalTime)
         {}
     };
@@ -225,6 +221,7 @@ public:
      * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
+     * @param[in] tracker       Tracks P2P-servers
      * @param[in] pubNode       Hycast publishing node
      * @param[in] p2pSrvrAddr   P2P server's socket address. It shall specify a specific interface
      *                          and not the wildcard. The port number may be 0, in which case the
@@ -237,6 +234,7 @@ public:
      * @see `run()`
      */
     static PubP2pMgrPtr create(
+            Tracker&       tracker,
             PubNode&       pubNode,
             const SockAddr p2pSrvrAddr,
             const int      maxPeers,
@@ -262,8 +260,8 @@ public:
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] subNode      Subscriber's node
      * @param[in] tracker      Pool of addresses of P2P servers
+     * @param[in] subNode      Subscriber's node
      * @param[in] p2pSrvrAddr  Socket address for subscriber's P2P server. IP address *must not* be
      *                         wildcard. If the port number is zero, then the O/S will choose an
      *                         ephemeral port number.
@@ -276,8 +274,8 @@ public:
      * @see `getPeerSrvrAddr()`
      */
     static SubP2pMgrPtr create(
-            SubNode&          subNode,
             Tracker           tracker,
+            SubNode&          subNode,
             const SockAddr    p2pSrvrAddr,
             const int         maxPendConn,
             const int         timeout,
@@ -288,8 +286,8 @@ public:
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] subNode       Subscriber's node
      * @param[in] tracker       Pool of addresses of P2P servers
+     * @param[in] subNode       Subscriber's node
      * @param[in] peerConnSrvr  Peer-connection server
      * @param[in] timeout       Timeout, in ms, for connecting to remote P2P servers. -1 => default
      *                          timeout; 0 => immediate return.
@@ -299,8 +297,8 @@ public:
      * @see `getPeerSrvrAddr()`
      */
     static SubP2pMgrPtr create(
-            SubNode&          subNode,
             Tracker           tracker,
+            SubNode&          subNode,
             PeerConnSrvrPimpl peerConnSrvr,
             const int         timeout,
             const int         maxPeers,

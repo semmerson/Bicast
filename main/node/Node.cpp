@@ -398,6 +398,7 @@ public:
     /**
      * Constructs.
      *
+     * @param[in] tracker         Tracks P2P-servers
      * @param[in] p2pAddr         Socket address of local P2P server. It shall specify a specific
      *                            interface and not the wildcard. The port number may be 0, in which
      *                            case the operating system will choose the port.
@@ -409,10 +410,12 @@ public:
      * @param[in] repoRoot        Pathname of the root directory of the repository
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @param[in] keepTime        Number of seconds to keep data-products before deleting them
      * @throw InvalidArgument     Invalid maximum number of peers
      * @throw InvalidArgument     `listenSize` is zero
      */
     PubNodeImpl(
+            Tracker&       tracker,
             SockAddr       p2pAddr,
             const int      maxPeers,
             const int      evalTime,
@@ -423,7 +426,7 @@ public:
             const SegSize  maxSegSize,
             const long     maxOpenFiles,
             const int      keepTime)
-        : NodeImpl(PubP2pMgr::create(*this, p2pAddr, maxPeers, maxPendConn, evalTime))
+        : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
         , repo(repoRoot, maxOpenFiles, keepTime)
         , maxSegSize{maxSegSize}
@@ -493,6 +496,7 @@ public:
 };
 
 PubNodePtr PubNode::create(
+        Tracker&       tracker,
         SockAddr       p2pAddr,
         unsigned       maxPeers,
         const unsigned evalTime,
@@ -503,16 +507,17 @@ PubNodePtr PubNode::create(
         const SegSize  maxSegSize,
         const long     maxOpenFiles,
         const int      keepTime) {
-    return PubNodePtr{new PubNodeImpl(p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
+    return PubNodePtr{new PubNodeImpl(tracker, p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
             maxPendConn, repoRoot, maxSegSize, maxOpenFiles, keepTime)};
 }
 
 PubNodePtr PubNode::create(
+        Tracker&                 tracker,
         const SegSize            maxSegSize,
         const McastPub::RunPar&  mcastRunPar,
         const PubP2pMgr::RunPar& p2pRunPar,
         const PubRepo::RunPar&   repoRunPar) {
-    return create(p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
+    return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
             mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, repoRunPar.rootDir, maxSegSize,
             repoRunPar.maxOpenFiles, repoRunPar.keepTime);
 }
@@ -662,7 +667,7 @@ public:
             const unsigned          evalTime,
             const String&           repoDir,
             const long              maxOpenFiles)
-        : NodeImpl(SubP2pMgr::create(*this, subInfo.tracker, peerConnSrvr, timeout, maxPeers,
+        : NodeImpl(SubP2pMgr::create(subInfo.tracker, *this, peerConnSrvr, timeout, maxPeers,
                 evalTime))
         , repo(repoDir, maxOpenFiles, subInfo.keepTime)
         , numMcastOrig{0}

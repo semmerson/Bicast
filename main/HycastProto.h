@@ -852,8 +852,8 @@ public:
      * Constructs. The list will be empty.
      *
      * @param[in] capacity  Capacity in socket addresses.
-     * @param[in] delay     Minimum delay before re-making available the P2P-server associated with
-     *                      a peer
+     * @param[in] delay     Minimum delay before re-making available a the P2P-server associated with
+     *                      a disconnected peer
      */
     explicit Tracker(
             const size_t       capacity = 1000,

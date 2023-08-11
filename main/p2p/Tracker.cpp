@@ -499,7 +499,6 @@ public:
     }
 };
 
-// TODO: Make capacity user-configurable
 Tracker::Tracker(
         const size_t       capacity,
         const SysDuration& delay)
