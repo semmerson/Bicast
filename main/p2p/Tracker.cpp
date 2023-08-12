@@ -214,9 +214,9 @@ class Tracker::Impl final : public XprtAble
      * locked in order to prevent deadlock.
      */
     void orderMutexes(
-            const Impl& that,
-            Mutex**     mutex1,
-            Mutex**     mutex2) {
+            const Impl&   that,
+            Mutex** const mutex1,
+            Mutex** const mutex2) {
         if (this < &that) {
             *mutex1 = &mutex;
             *mutex2 = &that.mutex;
