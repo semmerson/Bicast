@@ -193,15 +193,15 @@ class Tracker::Impl final : public XprtAble
                 if (done)
                     break;
 
-                auto& srvrAddr = delayQueue.top().srvrAddr;
-                delayQueue.pop();
+                auto& srvrAddr = delayQueue.top().srvrAddr; // NB: reference
                 if (srvrInfos.count(srvrAddr)) {
                     // Information on server hasn't been removed -- so it's a valid candidate
-                    // `srvrQueue` may contain `srvrAddr`, so erasure & insertion (==update)
+                    // Erasure & insertion == update
                     srvrQueue.erase(srvrAddr);
                     srvrQueue.insert(srvrAddr);
                     queueCond.notify_all();
                 }
+                delayQueue.pop(); // Must come after `srvrAddr` use if it's a reference
             }
         }
         catch (const std::exception& ex) {
