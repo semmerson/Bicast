@@ -210,7 +210,8 @@ class Tracker::Impl final : public XprtAble
     }
 
     /**
-     * Ensures that mutexes are always locked in the same order to prevent deadlock.
+     * Determines the order in which the mutex in this instance and another instance should be
+     * locked in order to prevent deadlock.
      */
     void orderMutexes(
             const Impl& that,
