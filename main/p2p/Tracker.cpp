@@ -229,8 +229,8 @@ class Tracker::Impl final : public XprtAble
 
     /**
      * Tries to insert information on a P2P-server. If an entry for the server doesn't exist, then
-     * the information is inserted; otherwise, the existing information is updated if the given
-     * information is better. If the capacity is exceeded, then the worst entry is deleted.
+     * it is created; otherwise, the existing information is updated if the given information is
+     * more recent. If the capacity is exceeded, then the worst entry is deleted.
      *
      * @param[in] srvrInfo  Information on the P2P-server
      * @retval    true      Success. New information inserted or updated.
