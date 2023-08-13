@@ -201,7 +201,7 @@ class Tracker::Impl final : public XprtAble
                     srvrQueue.insert(srvrAddr);
                     queueCond.notify_all();
                 }
-                delayQueue.pop(); // Must come after `srvrAddr` use if it's a reference
+                delayQueue.pop(); // Must come after use of `srvrAddr` if it's a reference
             }
         }
         catch (const std::exception& ex) {
