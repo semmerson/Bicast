@@ -148,13 +148,14 @@ class Tracker::Impl final : public XprtAble
     }
 
     /**
-     * Updates the database for a P2P server. Creates an entry if necessary.
+     * Updates information on a P2P server. Creates an entry if necessary.
      * @param[in] srvrInfo  Information on a P2P server
      */
     void update(const P2pSrvrInfo& srvrInfo) {
         const auto& srvrAddr = srvrInfo.srvrAddr;
 
-        erase(srvrAddr);
+        if (srvrInfos.count(srvrAddr))
+            srvrQueue.erase(srvrAddr);
 
         srvrInfos[srvrAddr] = srvrInfo;
         srvrQueue.insert(srvrAddr);
