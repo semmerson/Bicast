@@ -82,8 +82,8 @@ protected:
         , prodInfo(prodId, prodName, PROD_SIZE)
         , segId(prodId, 0)
         , mcastAddr("232.1.1.1:3880")
-        , ifaceAddr{"127.0.0.1"}    // Causes PDUs to be received via multicast (see "Sending")
-        //, ifaceAddr{"192.168.58.137"} // Causes PDUs to be received via P2P (see "Sending")
+        //, ifaceAddr{"127.0.0.1"}    // Causes PDUs to be received via multicast (see "Sending")
+        , ifaceAddr{"192.168.58.137"} // Causes PDUs to be received via P2P (see "Sending")
         , pubP2pAddr{ifaceAddr, 0}
         , subP2pAddr{ifaceAddr, 0}
         , listenSize{0}
@@ -106,7 +106,7 @@ protected:
     }
 
     virtual ~NodeTest() {
-        //rmDirTree(testRoot);
+        FileUtil::rmDirTree(testRoot);
     }
 
     // If the constructor and destructor are not enough for setting up
