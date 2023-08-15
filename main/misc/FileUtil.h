@@ -126,6 +126,24 @@ public:
             struct ::stat&     statBuf);
 
     /**
+     * Returns the status of a file. Follows symbolic links.
+     *
+     * @param[in]  rootFd       File descriptor open on root-directory
+     * @param[in]  pathname     Pathname of existing file. May be absolute or relative to the root-
+     *                          directory.
+     * @param[out] statBuf      Status buffer
+     * @throws    SYSTEM_ERROR  Couldn't open file
+     * @throws    SYSTEM_ERROR  Couldn't get information on the file
+     * @threadsafety            Safe
+     * @exceptionsafety         Strong guarantee
+     * @cancellationpoint       No
+     */
+    static void getStat(
+            const int      rootFd,
+            const String&  pathname,
+            struct ::stat& statBuf);
+
+    /**
      * Returns the statistics of a file.
      *
      * @param[in] rootFd        File descriptor open on root-directory
@@ -139,7 +157,7 @@ public:
      * @cancellationpoint       No
      */
     static struct stat getStat(
-            const int          rootFd,
+            const int     rootFd,
             const String& pathname);
 
     /**

@@ -120,41 +120,36 @@ struct ::stat& FileUtil::statNoFollow(
     return statBuf;
 }
 
-/**
- * Returns the statistics of a file. Follows symbolic links.
- *
- * @param[in] rootFd        File descriptor open on root-directory
- * @param[in] pathname      Pathname of existing file. May be absolute or relative to the root-
- *                          directory.
- * @return                  Statistics of the file
- * @throws    SYSTEM_ERROR  Couldn't open file
- * @throws    SYSTEM_ERROR  Couldn't get information on the file
- * @threadsafety            Safe
- * @exceptionsafety         Strong guarantee
- * @cancellationpoint       No
- */
-struct stat FileUtil::getStat(
-        const int          rootFd,
-        const String& pathname)
+void FileUtil::getStat(
+        const int      rootFd,
+        const String&  pathname,
+        struct ::stat& statBuf)
 {
     const int fd = ::openat(rootFd, pathname.data(), O_RDONLY);
     if (fd == -1)
         throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
 
     try {
-        struct ::stat statBuf;
-        int           status = ::fstat(fd, &statBuf);
+        int status = ::fstat(fd, &statBuf);
 
         if (status)
             throw SYSTEM_ERROR("stat() failure");
 
         ::close(fd);
-        return statBuf;
     } // `fd` is open
     catch (...) {
         ::close(fd);
         throw;
     }
+}
+
+struct stat FileUtil::getStat(
+        const int     rootFd,
+        const String& pathname)
+{
+    struct ::stat statBuf;
+    getStat(rootFd, pathname, statBuf);
+    return statBuf;
 }
 
 void FileUtil::setOwnership(

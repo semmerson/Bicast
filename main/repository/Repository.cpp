@@ -79,8 +79,8 @@ class Repository::Impl
                  * can.
                  */
                 if (deleteQueue.empty())
-                    cond.wait(lock, [&]{return !deleteQueue.empty();});
-                cond.wait_until(lock, deleteQueue.top().deleteTime, pred);
+                    deleteQueueCond.wait(lock, [&]{return !deleteQueue.empty();});
+                deleteQueueCond.wait_until(lock, deleteQueue.top().deleteTime, pred);
 
                 // Temporarily disable thread cancellation to protect the following state change
                 Shield     shield{};
@@ -176,20 +176,21 @@ protected:
     /// Container for information on data products
     using ProcQueue   = std::queue<ProdId>;
 
-    mutable Mutex     mutex;          ///< To maintain consistency
-    mutable Cond      cond;           ///< For inter-thread communication
-    const SysDuration keepTime;       ///< Length of time to keep products
-    ProdEntries       prodEntries;    ///< Product entries
-    DeleteQueue       deleteQueue;    ///< Queue of products to delete and when to delete them
-    ProdIdQueue       openProds;      ///< Products whose files are open
-    const size_t      maxOpenProds;   ///< Maximum number of open products
-    const String      absPathRoot;    ///< Absolute pathname of root directory of repository.
-                                      ///< Includes trailing separator.
-    size_t            rootPrefixLen;  ///< Length in bytes of root pathname prefix. Includes
-                                      ///< trailing separator.
-    int               rootFd;         ///< File descriptor open on root-directory of repository
-    ThreadEx          threadEx;       ///< Subtask exception
-    ProcQueue         procQueue;      ///< Queue of identifiers of products ready for processing
+    mutable Mutex     mutex;           ///< To maintain consistency
+    mutable Cond      procQueueCond;   ///< For waiting on the process-queue
+    mutable Cond      deleteQueueCond; ///< For waiting on the delete-queue
+    const SysDuration keepTime;        ///< Length of time to keep products
+    ProdEntries       prodEntries;     ///< Product entries
+    DeleteQueue       deleteQueue;     ///< Queue of products to delete and when to delete them
+    ProdIdQueue       openProds;       ///< Products whose files are open
+    const size_t      maxOpenProds;    ///< Maximum number of open products
+    const String      absPathRoot;     ///< Absolute pathname of root directory of repository.
+                                       ///< Includes trailing separator.
+    size_t            rootPrefixLen;   ///< Length in bytes of root pathname prefix. Includes
+                                       ///< trailing separator.
+    int               rootFd;          ///< File descriptor open on root-directory of repository
+    ThreadEx          threadEx;        ///< Subtask exception
+    ProcQueue         procQueue;       ///< Queue of identifiers of products ready for processing
 
     /**
      * Ensures that a repository pathname is relative. If the pathname is prefixed with the
@@ -235,18 +236,20 @@ protected:
     }
 
     /**
-     * Process a directory in the repository. This default implementation does nothing.
+     * Maybe adds a directory to the repository's watch-list. This default implementation does
+     * nothing.
      *
-     * @param[in] absPathname  Absolute pathname of existing directory
+     * @param[in] absPathname  Absolute pathname of existing directory in the repository
      */
-    virtual void processDir(const String& absPathname) {
+    virtual void maybeWatch(const String& absPathname) {
     }
 
     /**
      * Tries to add an existing, regular file in the repository to the database. If the file is too
-     * old, then it's deleted; otherwise, it's added to the database as a product-file if it's not
-     * already there. This function is called by both publishers and subscribers during the initial
-     * scan of the repository and by the publisher when a file is added to the repository.
+     * old, then it's deleted and its ancestor directories pruned; otherwise, it's added to the
+     * database as a product-file if it's not already there. This function is called by both
+     * publishers and subscribers during the initial scan of the repository and by the publisher
+     * when a file is added to the repository.
      *
      * @pre                    Mutex is locked
      * @param[in] absPathname  Absolute pathname of existing, regular file
@@ -254,7 +257,7 @@ protected:
      * @retval    false        File was not added because it's a duplicate or was too old
      * @post                   Mutex is locked
      */
-    bool tryAddFile(const String& absPathname) {
+    bool processFile(const String& absPathname) {
         LOG_ASSERT(!mutex.try_lock());
         LOG_ASSERT(absPathname.find(absPathRoot) == 0);
 
@@ -268,15 +271,20 @@ protected:
             LOG_DEBUG("Deleted old file \"" + prodFile.getPathname() + "\"");
         }
         else {
-            const auto prodName = absPathname.substr(rootPrefixLen);
+            const auto prodName = getProdName(absPathname);
             ProdInfo   prodInfo(prodName, prodFile.getProdSize(), modTime);
             ProdEntry  prodEntry{prodInfo, prodFile};
-            auto       pair = prodEntries.emplace(prodInfo, prodFile);
 
-            if (pair.second) {
+            if (prodEntries.emplace(prodInfo, prodFile).second) {
+                // Product-file is not a duplicate
                 deleteQueue.push(DeleteEntry(deleteTime, prodInfo.getId()));
+                deleteQueueCond.notify_all();
                 LOG_TRACE("Added to delete-queue: modTime=%s, deleteTime=%s",
                         std::to_string(modTime).data(), std::to_string(deleteTime).data());
+
+                procQueue.push(prodInfo.getId());
+                procQueueCond.notify_all();
+
                 wasAdded = true;
             }
         }
@@ -286,7 +294,30 @@ protected:
 
     /**
      * Recursively scans a directory in the repository. Calls `processDir()` on directories and
-     * adds regular files to the database.
+     * `processFile() on regular files.
+     *
+     * General:
+     *   - A directory is scanned
+     *     - An encountered regular file is:
+     *       - Deleted if it's older than the keep-time, and its directory is pruned (up to but not
+     *         including the root directory)
+     *       - Otherwise:
+     *         - Added to the database
+     *         - Added to the process-queue TODO: if it's newer than the last,
+     *           successfully-processed file from the previous session
+     *     - An encountered directory is:
+     *       - Added to the publisher's watch-list if this is the publisher's repository
+     *       - Recursively scanned
+     * Publisher only:
+     *   - A file from the watcher is:
+     *     - Deleted if it's older than the keep-time and its directory is pruned (up to but not
+     *       including the root directory)
+     *     - Otherwise:
+     *       - Added to the database
+     *       - Added to the process-queue
+     *   - A directory from the watcher is:
+     *     - Added to the watch-list
+     *     - Recursively scanned
      *
      * @param[in] absPathParent  Absolute pathname of a repository directory to recursively scan
      * @throw SystemError        Couldn't open `absPathParent`
@@ -294,6 +325,7 @@ protected:
      * @throw SystemError        Couldn't change owner of file
      * @throw SystemError        Couldn't change mode of file
      * @see processDir()
+     * @see processFile()
      */
     void scanRepo(const String& absPathParent) {
         LOG_ASSERT(FileUtil::isAbsolute(absPathParent));
@@ -303,16 +335,14 @@ protected:
             throw SYSTEM_ERROR("::opendir() failure on directory \"" + absPathParent + "\"");
 
         try {
-            processDir(absPathParent);
+            maybeWatch(absPathParent);
 
             struct dirent  entry;
             struct dirent* result;
             int            status;
             size_t         numAdded = 0;
 
-            for (status = ::readdir_r(dir, &entry, &result);
-                    status == 0 && result != nullptr;
-                    status = ::readdir_r(dir, &entry, &result)) {
+            while ((status = ::readdir_r(dir, &entry, &result)) == 0 && result != nullptr) {
                 const String childFileName(entry.d_name);
 
                 if (childFileName == "." || childFileName == "..")
@@ -321,18 +351,16 @@ protected:
                 const String absPathChild = FileUtil::pathname(absPathParent, childFileName);
                 ensurePrivate(absPathChild);
 
-                struct stat  statBuf;
-                FileUtil::statNoFollow(absPathChild, statBuf);
+                struct ::stat statBuf;
+                FileUtil::getStat(rootFd, absPathChild, statBuf);
 
                 if (S_ISDIR(statBuf.st_mode)) {
                     scanRepo(absPathChild);
                 }
                 else {
                     Guard guard{mutex};
-                    if (tryAddFile(absPathChild)) {
+                    if (processFile(absPathChild))
                         ++numAdded;
-                        cond.notify_all();
-                    }
                 }
             }
             if (status && status != ENOENT)
@@ -352,7 +380,8 @@ protected:
     void setThreadEx() {
         Guard guard{mutex};
         threadEx.set();
-        cond.notify_all();
+        procQueueCond.notify_all();
+        deleteQueueCond.notify_all();
     }
 
     /**
@@ -470,7 +499,8 @@ public:
             const int     keepTime)
         : deleteThread()
         , mutex()
-        , cond()
+        , procQueueCond()
+        , deleteQueueCond()
         , keepTime(duration_cast<SysDuration>(seconds(keepTime)))
         , prodEntries(1000)
         , deleteQueue()
@@ -534,7 +564,7 @@ public:
         Lock      lock(mutex);
 
         for (;;) {
-            cond.wait(lock, [&]{return !procQueue.empty() || threadEx;});
+            procQueueCond.wait(lock, [&]{return !procQueue.empty() || threadEx;});
 
             threadEx.throwIfSet();
 
@@ -742,12 +772,11 @@ class PubRepo::Impl final : public Repository::Impl, public Watcher::Client
 
 protected:
     /**
-     * Process a directory in the repository. The directory is given to the watcher to be added to
-     * the set of watched directories.
+     * Adds a directory to the repository's watch-list.
      *
-     * @param[in] dirPath  Absolute pathname of an existing repository directory
+     * @param[in] dirPath  Absolute pathname of a repository directory
      */
-    void processDir(const String& dirPath) {
+    void maybeWatch(const String& dirPath) {
         LOG_ASSERT(dirPath.find(absPathRoot) == 0);
         watcher.tryAdd(dirPath);
     }
@@ -801,7 +830,7 @@ public:
      * @param[in] pathname  Absolute pathname of the directory
      */
     void dirAdded(const String& pathname) override {
-        processDir(pathname);
+        scanRepo(pathname);
     }
 
     /**
@@ -812,15 +841,7 @@ public:
         LOG_ASSERT(pathname.find(absPathRoot) == 0);
 
         Guard guard{mutex};
-        if (tryAddFile(pathname)) {
-            /*
-             * The newly-added file was added to the database. It must now be added to the queue of
-             * files to be processed.
-             */
-            const auto prodName = pathname.substr(rootPrefixLen);
-            procQueue.push(ProdId(prodName));
-            cond.notify_all();
-        }
+        processFile(pathname);
     }
 
     /**
@@ -851,8 +872,7 @@ public:
 
         FileUtil::ensureDir(FileUtil::dirname(linkPath), 0700);
 
-        if (!tryHardLink(extantPath, linkPath) &&
-                !trySoftLink(extantPath, linkPath))
+        if (!tryHardLink(extantPath, linkPath) && !trySoftLink(extantPath, linkPath))
             throw SYSTEM_ERROR("Couldn't link file \"" + linkPath + "\" to \"" + extantPath + "\"");
     }
 };
@@ -867,7 +887,7 @@ PubRepo::PubRepo(
         const String& rootPathname,
         const long    maxOpenFiles,
         const int     keepTime)
-    : Repository(new Impl(rootPathname, maxOpenFiles, keepTime))
+    : Repository(new PubRepo::Impl(rootPathname, maxOpenFiles, keepTime))
 {}
 
 /******************************************************************************/
@@ -913,7 +933,7 @@ class SubRepo::Impl final : public Repository::Impl
                     : iter->prodFile.getModTime();
             deleteQueue.push(DeleteEntry{createTime+keepTime, prodInfo.getId()});
             activate(*iter);
-            cond.notify_all(); // State changed
+            deleteQueueCond.notify_all(); // State changed
         }
 
         return *iter;
@@ -947,7 +967,7 @@ class SubRepo::Impl final : public Repository::Impl
                 prodFile.close(); // Removal from product-queue for processing will re-enable access
                 openProds.erase(prodId);
                 procQueue.push(prodInfo.getId());
-                cond.notify_all();
+                procQueueCond.notify_all();
             }
         }
     }
