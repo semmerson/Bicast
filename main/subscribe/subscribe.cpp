@@ -58,7 +58,8 @@ struct RunPar {
     InetAddr  mcastIface;    ///< Address of interface for multicast reception. May be wildcard.
     unsigned  retryInterval; ///< Number of seconds to wait between attempts to contact publisher
     /// Runtime parameters for a subscriber's P2P manager
-    struct P2pArgs {         ///< P2P runtime parameters
+    struct P2pArgs {
+        /// Runtime parameters for the P2P server
         struct SrvrArgs {
             SockAddr addr;        ///< P2P server's address. Must not be wildcard.
             int      maxPendConn; ///< Maximum number of pending P2P connections
@@ -136,6 +137,7 @@ struct RunPar {
 static ThreadEx            threadEx;   ///< Exception thrown by a thread
 static RunPar              runPar;     ///< Runtime parameters:
 static const RunPar        defRunPar;  ///< Default runtime parameters
+static Tracker             subTracker; ///< Subscriber's tracker of P2P servers
 static std::atomic_bool    done;       ///< Is this program done?
 
 static void usage()
@@ -472,70 +474,66 @@ static void stopDisposition(std::thread& procThread) {
 }
 
 /**
- * Creates the subscriber node.
+ * Subscribes to a feed.
+ *   - Creates a P2P server;
+ *   - Connects to the publisher's server;
+ *   - Obtains subscription information; and
+ *   - Creates a SubNode.
+ * @return The ready-to-be-run SubNode
  * @throw RuntimeError  Couldn't connect to publisher's server at this time
+ * @throw RuntimeError  Couldn't send to publisher
  * @throw SystemError   System failure
+ * @see publish.cpp:servSubscriber()
  */
-static SubNodePtr createSubNode()
+static SubNodePtr subscribe()
 {
     // Keep consonant with `publish.cpp:servSubscriber()`
 
+    bool lostConnection = true;
     auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
-
     Xprt xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
+
     LOG_NOTE("Created publisher-transport " + xprt.to_string());
 
-    P2pSrvrInfo p2pSrvrInfo{peerConnSrvr->getSrvrAddr(), (runPar.p2p.maxPeers+1)/2};
+    P2pSrvrInfo subP2pSrvrInfo{peerConnSrvr->getSrvrAddr(), (runPar.p2p.maxPeers+1)/2};
 
-    bool lostConnection = true;
-    if (!p2pSrvrInfo.write(xprt)) {
-        throw RUNTIME_ERROR("Couldn't send P2P-server information to publisher " +
-                runPar.pubAddr.to_string());
-    }
-    else {
-        LOG_DEBUG("Sent P2P-server information " + peerConnSrvr->getSrvrAddr().to_string() +
+    // Ensure that tracker to be sent contains local P2P server information
+    if (!subP2pSrvrInfo.write(xprt))
+        throw RUNTIME_ERROR("Couldn't send P2P server information " + subP2pSrvrInfo.to_string() +
                 " to publisher " + runPar.pubAddr.to_string());
 
-        P2pSrvrInfo pubP2pSrvrInfo;
-        if (!pubP2pSrvrInfo.read(xprt)) {
-            throw RUNTIME_ERROR("Couldn't receive P2P-server information from publisher " +
-                    runPar.pubAddr.to_string());
-        }
-        else {
-            LOG_INFO("Received publisher's P2P-server information " +
-                    pubP2pSrvrInfo.to_string());
+    if (!subTracker.write(xprt))
+        throw RUNTIME_ERROR("Couldn't send tracker " + subTracker.to_string() + " to publisher " +
+                runPar.pubAddr.to_string());
+    LOG_DEBUG("Sent tracker " + subTracker.to_string() + " to publisher " +
+            runPar.pubAddr.to_string());
 
-            SubInfo subInfo;
-            if (!subInfo.read(xprt)) {
-                throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
-                        runPar.pubAddr.to_string());
-            }
-            else {
-                LOG_INFO("Received subscription information from publisher " +
-                        runPar.pubAddr.to_string() + ": tracker size=" +
-                        std::to_string(subInfo.tracker.size()));
+    SubInfo subInfo; // Subscription information
+    if (!subInfo.read(xprt))
+        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
+                runPar.pubAddr.to_string());
+    LOG_INFO("Received subscription information from publisher " + runPar.pubAddr.to_string() +
+            ": tracker size=" + std::to_string(subInfo.tracker.size()));
 
-                subInfo.tracker.insert(pubP2pSrvrInfo);
-                DataSeg::setMaxSegSize(subInfo.maxSegSize);
+    subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
+    subTracker = subInfo.tracker;              // Update official tracker
+    DataSeg::setMaxSegSize(subInfo.maxSegSize);
 
-                // Address family of receiving interface should match that of multicast group
-                if (runPar.mcastIface.isAny()) {
-                    // The following doesn't work if the outgoing multicast interface is localhost
-                    //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
-                    // The following works in that context
-                    runPar.mcastIface =
-                            UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
-                    //LOG_DEBUG("Set interface for multicast reception to " +
-                            //runPar.mcastIface.to_string());
-                }
+    // Address family of receiving interface should match that of multicast group
+    if (runPar.mcastIface.isAny()) {
+        // The following doesn't work if the outgoing multicast interface is localhost
+        //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
+        // The following works in that context
+        runPar.mcastIface =
+                UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
+        //LOG_DEBUG("Set interface for multicast reception to " +
+                //runPar.mcastIface.to_string());
+    }
 
-                //LOG_DEBUG("Creating subscribing node");
-                return SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
-                        runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
-                        runPar.repo.maxOpenFiles);
-            } // Received subscription information from publisher
-        } // Received information on publisher's P2P-server
-    } // Sent information on subscriber's P2P-server to publisher
+    //LOG_DEBUG("Creating subscribing node");
+    return SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
+            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
+            runPar.repo.maxOpenFiles);
 }
 
 /**
@@ -591,10 +589,8 @@ static void stopSubNode(
  */
 static void trySession(Disposer& disposer)
 {
-    auto   subNode = createSubNode();
-    Thread disposeThread{};
-
-    disposeThread = startDisposition(subNode, disposer);
+    auto   subNode = subscribe();
+    Thread disposeThread = startDisposition(subNode, disposer);
 
     try {
         subNode->run();
@@ -625,6 +621,7 @@ int main(
 {
     int status = 0;
 
+    subTracker = Tracker(runPar.p2p.trackerSize);
     done = false;
     log_setName(::basename(argv[0]));
     std::set_terminate(&terminate); // NB: Hycast version

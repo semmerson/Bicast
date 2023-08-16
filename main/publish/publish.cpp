@@ -515,35 +515,40 @@ static void runNode()
 static void servSubscriber(Xprt xprt)
 {
     try {
-        // Keep consonant with `subscribe.cpp:createSubNode()`
+        // Keep consonant with `subscribe.cpp:subscribe()`
 
-        bool        connected = false;
-        P2pSrvrInfo subP2pSrvrInfo;
+        Tracker     subTracker{subInfo.tracker.getCapacity()}; // Subscriber's tracker
+        auto&       pubTracker = subInfo.tracker; // Publisher's tracker
+        P2pSrvrInfo subP2pSrvrInfo; // Information on subscriber's P2P server
 
-        if (subP2pSrvrInfo.read(xprt)) {
-            LOG_INFO("Received information on subscriber's P2P-server: " +
-                    subP2pSrvrInfo.to_string());
+        if (!subP2pSrvrInfo.read(xprt))
+            throw RUNTIME_ERROR("Couldn't receive information on P2P server from subscriber " +
+                    xprt.getRmtAddr().to_string());
+        LOG_INFO("Received information on P2P server " + subP2pSrvrInfo.to_string() +
+                " from subscriber " + xprt.getRmtAddr().to_string());
 
-            if (pubNode->getP2pSrvrInfo().write(xprt)) {
-                LOG_INFO("Sending information on P2P-server to subscriber " +
-                        xprt.getRmtAddr().to_string());
-                if (subInfo.write(xprt)) {
-                    connected = true;
-                    /*
-                     * No sense sending information on the subscriber's P2P-server to the
-                     * subscriber
-                     */
-                    subInfo.tracker.insert(subP2pSrvrInfo);
-                }
-            }
-        }
-        if (!connected)
-            LOG_WARN("Lost connection to subscriber " + xprt.getRmtAddr().to_string());
+        if (!subTracker.read(xprt))
+            throw RUNTIME_ERROR("Couldn't receive tracker from subscriber " +
+                    xprt.getRmtAddr().to_string());
+        LOG_INFO("Received tracker " + subTracker.to_string() + " from subscriber" +
+                xprt.getRmtAddr().to_string());
+
+        // Ensure that the publisher's tracker contains current information on the publisher's P2P
+        // server
+        pubTracker.insert(pubNode->getP2pSrvrInfo());
+
+        if (!subInfo.write(xprt))
+            throw RUNTIME_ERROR("Couldn't send subscription information to subscriber " +
+                    xprt.getRmtAddr().to_string());
+        LOG_INFO("Sent subscription information to subscriber " + xprt.getRmtAddr().to_string());
+
+        pubTracker.insert(subTracker);
+        pubTracker.insert(subP2pSrvrInfo);
 
         --numSubThreads;
     }
     catch (const std::exception& ex) {
-        LOG_ERROR("Couldn't serve subscriber " + xprt.getRmtAddr().to_string() + ": " + ex.what());
+        LOG_ERROR(ex, "Couldn't serve subscriber %s", xprt.getRmtAddr().to_string().data());
         --numSubThreads;
     }
     catch (...) {
