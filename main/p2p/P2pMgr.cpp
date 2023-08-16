@@ -336,7 +336,7 @@ protected:
                 catch (const InvalidArgument& ex) {
                     // The remote peer sent bad information
                     LOG_WARN(ex);
-                    tracker.offline(peer->getRmtAddr());
+                    tracker.erase(peer->getRmtAddr());
                     continue;
                 }
             }
@@ -835,8 +835,11 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                     // tracker.halt() called
                     break;
                 }
-                if (srvrInfo.srvrAddr == rmtSrvrAddr)
-                    continue; // Connecting to oneself is useless
+                if (srvrInfo.srvrAddr == rmtSrvrAddr) {
+                    // Connecting to oneself is useless
+                    tracker.erase(rmtSrvrAddr);
+                    continue;
+                }
 
                 try {
                     LOG_TRACE("Creating peer");
@@ -889,7 +892,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                                     errnum == EPIPE) {
                                 // Peer is unavailable
                                 LOG_NOTE(ex);
-                                tracker.offline(rmtSrvrAddr);
+                                tracker.erase(rmtSrvrAddr);
                             }
                             else {
                                 LOG_DEBUG("Throwing exception %s", ex.what());
@@ -901,7 +904,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                 catch (const InvalidArgument& ex) {
                     // The remote peer sent bad information
                     LOG_WARN(ex);
-                    tracker.offline(rmtSrvrAddr);
+                    tracker.erase(rmtSrvrAddr);
                 }
                 catch (const std::exception& ex) {
                     // The exception is unrelated to peer availability
