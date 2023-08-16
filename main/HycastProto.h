@@ -866,6 +866,12 @@ public:
     std::string to_string() const;
 
     /**
+     * Returns the capacity (i.e., the maximum number of entries).
+     * @return The capacity
+     */
+    size_t getCapacity() const;
+
+    /**
      * Returns the number of entries.
      * @return The number of entries
      */
@@ -900,10 +906,10 @@ public:
     SockAddr getNextAddr() const;
 
     /**
-     * Handles a P2P-server that's offline.
-     * @param[in] p2pSrvrAddr  Socket address of the remote P2P-server
+     * Erases information on a P2P-server
+     * @param[in] p2pSrvrAddr  Socket address of the P2P-server
      */
-    void offline(const SockAddr p2pSrvrAddr) const;
+    void erase(const SockAddr p2pSrvrAddr) const;
 
     /**
      * Handles a peer disconnecting. If the local peer was constructed client-side, then the remote
