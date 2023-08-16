@@ -76,22 +76,19 @@ class Tracker::Impl final : public XprtAble
             const auto& info2 = trackerImpl.srvrInfos.at(srvr2);
 
             // Server for which no metrics exist is greatest
-            if ((!info1.validMetrics() || !info2.validMetrics()) &&
-                    info1.validMetrics() != info2.validMetrics())
-                return info1.validMetrics();
+            if (info1.validMetrics() != info2.validMetrics())
+                return info1.validMetrics(); // Valid metrics is less
 
-            if (info1.tier != info2.tier) {
+            if (info1.tier != info2.tier)
                 return info1.tier < info2.tier; // Closer to source is less
-            }
-            else if (info1.numAvail != info2.numAvail) {
+
+            if (info1.numAvail != info2.numAvail)
                 return info1.numAvail > info2.numAvail; // Greater availability is less
-            }
-            else if (info1.valid != info2.valid) {
+
+            if (info1.valid != info2.valid)
                 return info1.valid > info2.valid; // Newer information is less
-            }
-            else {
-                return srvr1 < srvr2; // Intrinsic sort-order of server's socket address
-            }
+
+            return srvr1 < srvr2; // Intrinsic sort-order of server's socket address
         }
     };
 
@@ -142,7 +139,7 @@ class Tracker::Impl final : public XprtAble
      * Erases a P2P server from the database.
      * @param[in] srvrAddr  Socket address of the P2P server
      */
-    inline void erase(const SockAddr& srvrAddr) {
+    inline void remove(const SockAddr& srvrAddr) {
         srvrQueue.erase(srvrAddr);
         srvrInfos.erase(srvrAddr);
     }
@@ -252,7 +249,7 @@ class Tracker::Impl final : public XprtAble
                 // At capacity. Delete worst server.
                 LOG_ASSERT(!srvrQueue.empty());
                 const auto worstSrvrAddr = *srvrQueue.rbegin();
-                erase(worstSrvrAddr);
+                remove(worstSrvrAddr);
             }
 
             update(srvrInfo);
@@ -316,6 +313,14 @@ public:
         Guard guard(mutex);
         return "{capacity=" + std::to_string(capacity) + ", size=" +
                 std::to_string(srvrInfos.size()) + "}";
+    }
+
+    /**
+     * Returns the capacity.
+     * @return The capacity.
+     */
+    size_t getCapacity() const {
+        return capacity;
     }
 
     /**
@@ -391,15 +396,15 @@ public:
     }
 
     /**
-     * Handles a P2P-server that's offline.
-     * @param[in] p2pSrvrAddr  Socket address of the remote P2P-server
+     * Erases information on a P2P-server.
+     * @param[in] p2pSrvrAddr  Socket address of the P2P-server
      */
-    void offline(const SockAddr& p2pSrvrAddr) {
+    void erase(const SockAddr& p2pSrvrAddr) {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
 
-        erase(p2pSrvrAddr);
+        remove(p2pSrvrAddr);
     }
 
     /**
@@ -511,6 +516,10 @@ std::string Tracker::to_string() const {
     return pImpl->to_string();
 }
 
+size_t Tracker::getCapacity() const {
+    return pImpl->getCapacity();
+}
+
 size_t Tracker::size() const {
     return pImpl->size();
 }
@@ -527,8 +536,8 @@ SockAddr Tracker::getNextAddr() const {
     return pImpl->getNextAddr();
 }
 
-void Tracker::offline(const SockAddr p2pSrvrAddr) const {
-    pImpl->offline(p2pSrvrAddr);
+void Tracker::erase(const SockAddr p2pSrvrAddr) const {
+    pImpl->erase(p2pSrvrAddr);
 }
 
 bool Tracker::disconnected(
