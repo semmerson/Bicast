@@ -85,8 +85,8 @@ public:
     virtual String to_string() const =0;
 
     /**
-     * Sends information on the local P2P-server to the remote. Should execute before `run()`.
-     * Called by a peer.
+     * Immediately sends information on the local P2P-server to the remote. Bypasses the RPC layer.
+     * Should execute before `run()`.
      *
      * @param[in] srvrInfo  Information on the local P2P-server
      * @retval    true      Success
@@ -95,14 +95,31 @@ public:
     virtual bool send(const P2pSrvrInfo& srvrInfo) =0;
 
     /**
-     * Sends information on P2P-servers to the remote. Should execute before `run()`. Called by a
-     * peer.
+     * Immediately sends information on P2P-servers to the remote. Bypasses the RPC layer. Should
+     * execute before `run()`.
      *
      * @param[in] tracker   Information on P2P-servers
      * @retval    true      Success
      * @retval    false     Lost connection
      */
     virtual bool send(const Tracker& tracker) =0;
+
+    /**
+     * Immediately receives information on the remote P2P server. Bypasses the RPC layer. Should
+     * execute before `run()`.
+     * @param[in] rmtP2pSrvrInfo  Information on the remote P2P server
+     * @retval true               Success
+     * @retval false              Lost connection
+     */
+    virtual bool recv(P2pSrvrInfo& rmtP2pSrvrInfo) =0;
+
+    /**
+     * Immediately receives a tracker. Bypasses the RPC layer. Should execute before `run()`.
+     * @param[in] tracker  Tracker
+     * @retval true        Success
+     * @retval false       Lost connection
+     */
+    virtual bool recv(Tracker& tracker) =0;
 
     /**
      * Processes the next, incoming RPC message. Should execute before `run()`. Called by a peer.

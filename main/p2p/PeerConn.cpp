@@ -328,11 +328,29 @@ public:
     }
 
     bool send(const P2pSrvrInfo& srvrInfo) override {
-        return rpcPtr->send(noticeXprt, srvrInfo);
+        LOG_DEBUG("Sending P2P server information " + srvrInfo.to_string());
+        return srvrInfo.write(noticeXprt);
     }
 
     bool send(const Tracker& tracker) override {
-        return rpcPtr->send(noticeXprt, tracker);
+        LOG_DEBUG("Sending tracker " + tracker.to_string());
+        return tracker.write(noticeXprt);
+    }
+
+    bool recv(P2pSrvrInfo& srvrInfo) override {
+        if (srvrInfo.read(noticeXprt)) {
+            LOG_DEBUG("Received P2P server information " + srvrInfo.to_string());
+            return true;
+        }
+        return false;
+    }
+
+    bool recv(Tracker& tracker) override {
+        if (tracker.read(noticeXprt)) {
+            LOG_DEBUG("Received tracker " + tracker.to_string());
+            return true;
+        }
+        return false;
     }
 
     bool recv(Peer& peer) override {

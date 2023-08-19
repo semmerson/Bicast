@@ -53,6 +53,20 @@ class PeerImpl : public Peer
     ThreadEx           threadEx;      ///< Internal thread exception
     SockAddr           lclSockAddr;   ///< Local (notice) socket address
 
+    /**
+     * Exchanges information on the local and remote P2P servers.
+     * @param[in] lclSrvrInfo  Information on the local P2P server
+     * @retval true            Success
+     * @retval false           Connection lost
+     */
+    bool xchgSrvrInfo(const P2pSrvrInfo& lclSrvrInfo) {
+        return peerConnPtr->isClient()
+                // By convention, client-side peers send then receive
+                ? peerConnPtr->send(lclSrvrInfo) && peerConnPtr->recv(rmtSrvrInfo)
+                // And server-side peers receive then send
+                : peerConnPtr->recv(rmtSrvrInfo) && peerConnPtr->send(lclSrvrInfo);
+    }
+
     void setThreadEx() {
         threadEx.set();
         ::sem_post(&stopSem);
@@ -294,9 +308,14 @@ public:
         , connected{true}
         , rmtSrvrInfo()
     {
+        LOG_DEBUG("Constructing peer " + to_string());
+
         if (::sem_init(&stopSem, 0, 0) == -1)
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
-        LOG_DEBUG("Constructed peer " + to_string());
+
+        LOG_DEBUG("Exchanging P2P server information");
+        if (!xchgSrvrInfo(p2pMgr.getSrvrInfo()))
+            throw RUNTIME_ERROR("Lost connection with " + rmtSockAddr.to_string());
     }
 
     /**
@@ -315,13 +334,13 @@ public:
         ::sem_destroy(&stopSem);
     }
 
+    PeerConnPtr& getConnection() override {
+        return peerConnPtr;
+    }
+
     bool isClient() const noexcept override {
         return peerConnPtr->isClient();
     }
-
-    virtual bool xchgSrvrInfo(
-            const P2pSrvrInfo& srvrInfo,
-            Tracker&           tracker) =0;
 
     bool isRmtPub() const noexcept override {
         return rmtSrvrInfo.tier == 0; // A publisher's peer is always tier 0
@@ -556,7 +575,7 @@ public:
     {
         if (isRmtPub())
             throw INVALID_ARGUMENT("Remote peer " + rmtSrvrInfo.srvrAddr.to_string() +
-                    " can't be publisher");
+                    " can't be publisher because I am: " + p2pMgr.getSrvrInfo().to_string());
     }
 
     ~PubPeerImpl() noexcept {
@@ -566,17 +585,6 @@ public:
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
         }
-    }
-
-    bool xchgSrvrInfo(
-            const P2pSrvrInfo& srvrInfo,
-            Tracker&           tracker) override {
-        /*
-         * By convention, a publisher's peer always receives then sends because it's always
-         * constructed server-side.
-         */
-        return peerConnPtr->recv(*this) && peerConnPtr->recv(*this) &&
-                peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker);
     }
 
     P2pSrvrInfo::Tier getTier() const noexcept override {
@@ -911,8 +919,8 @@ public:
      * @throw     RuntimeError  Couldn't connect. Might be temporary.
      */
     SubPeerImpl(
-            SubP2pMgr&  p2pMgr,
-            PeerConnPtr conn)
+            SubP2pMgr&   p2pMgr,
+            PeerConnPtr  conn)
         : PeerImpl(p2pMgr, conn)
         , subP2pMgr(p2pMgr)
         , requested()
@@ -926,18 +934,6 @@ public:
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
         }
-    }
-
-    bool xchgSrvrInfo(
-            const P2pSrvrInfo& srvrInfo,
-            Tracker&           tracker) override {
-        return peerConnPtr->isClient()
-                // By convention, client-side peers send then receive
-                ? peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker) &&
-                    peerConnPtr->recv(*this) && peerConnPtr->recv(*this)
-                // And server-side peers receive then send
-                : peerConnPtr->recv(*this) && peerConnPtr->recv(*this) &&
-                    peerConnPtr->send(srvrInfo) && peerConnPtr->send(tracker);
     }
 
     P2pSrvrInfo::Tier getTier() const noexcept override {
@@ -1055,7 +1051,13 @@ public:
 PeerPtr Peer::create(
         SubP2pMgr&   p2pMgr,
         PeerConnPtr& conn) {
-    return PeerPtr{new SubPeerImpl{p2pMgr, conn}};
+    try {
+        return PeerPtr{new SubPeerImpl{p2pMgr, conn}};
+    }
+    catch (const std::exception& ex) {
+        LOG_WARN(ex, "Couldn't create peer for %s", conn->getRmtAddr().to_string().data());
+        return PeerPtr();
+    }
 }
 
 PeerPtr Peer::create(

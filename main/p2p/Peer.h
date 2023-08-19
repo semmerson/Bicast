@@ -43,11 +43,10 @@ class Peer
 public:
     /**
      * Returns a publisher's server-side implementation. The resulting peer is fully connected and
-     * ready for `xchgSrvrInfo()`, and then `run()` to be called.
+     * ready for `run()` to be called.
      *
      * @param[in] p2pMgr           Associated publisher's P2P manager
      * @param[in] conn             Connection with remote peer
-     * @see       xchgSrvrInfo()
      * @see       run()
      */
     static PeerPtr create(
@@ -56,11 +55,10 @@ public:
 
     /**
      * Returns a subscriber's server-side implementation. The resulting peer is fully connected and
-     * ready for `xchgSrvrInfo()`, and then `run()` to be called.
+     * ready for `run()` to be called.
      *
      * @param[in] p2pMgr           Associated subscriber's P2P manager
      * @param[in] conn             Connection with remote peer
-     * @see       xchgSrvrInfo()
      * @see       run()
      */
     static PeerPtr create(
@@ -69,14 +67,13 @@ public:
 
     /**
      * Returns a subscriber's client-side implementation. The resulting peer is fully connected and
-     * ready for `xchgSrvrInfo()`, and then `run()` to be called.
+     * ready for `run()` to be called.
      *
      * @param[in] p2pMgr           Associated subscriber's P2P manager
      * @param[in] srvrAddr         Address of remote P2P-server
      * @throw     LogicError       Destination port number is zero
      * @throw     SystemError      Couldn't connect. Bad failure.
      * @throw     RuntimeError     Couldn't connect. Might be temporary.
-     * @see       xchgSrvrInfo()
      * @see       run()
      */
     static PeerPtr create(
@@ -85,6 +82,12 @@ public:
 
     virtual ~Peer()
     {}
+
+    /**
+     * Returns a reference to the underlying connection with the remote peer.
+     * @return A reference to the underlying connection with the remote peer
+     */
+    virtual PeerConnPtr& getConnection() =0;
 
     /**
      * Receives information on the remote P2P-server. Called by the RPC layer. The information can
@@ -133,17 +136,6 @@ public:
      * @return Socket address of remote peer
      */
     virtual SockAddr getRmtAddr() const noexcept =0;
-
-    /**
-     * Exchanges information on the local and remote P2P-servers with the remote peer.
-     * @param[in] srvrInfo  Information on the local P2P-server
-     * @param[in] tracker   Information on known P2P-servers
-     * @retval true         Success
-     * @retval false        Lost connection
-     */
-    virtual bool xchgSrvrInfo(
-            const P2pSrvrInfo& srvrInfo,
-            Tracker&           tracker) =0;
 
     /**
      * Indicates if the remote peer is a publisher (and not a subscriber).

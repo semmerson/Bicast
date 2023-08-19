@@ -22,7 +22,6 @@ protected:
         INIT = 0,
         LISTENING             =    0x1,
         SRVR_INFO_RCVD        =    0x2,
-        TRACKER_RCVD          =    0x4,
         SRVR_INFO_NOTICE_RCVD =    0x8,
         PROD_NOTICE_RCVD      =   0x10,
         SEG_NOTICE_RCVD       =   0x20,
@@ -144,8 +143,6 @@ public:
     }
 
     void recv(const Tracker& tracker) override {
-        if (++numTrackerRcvd == 2)
-            orState(TRACKER_RCVD);
     }
 
     // Both sides
@@ -267,7 +264,6 @@ public:
             auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
             EXPECT_EQ(pubAddr, rmtAddr);
 
-            pubPeer->xchgSrvrInfo(pubSrvrInfo, pubTracker);
             EXPECT_EQ(subSrvrInfo, pubPeer->getRmtSrvrInfo());
             orState(SRVR_INFO_RCVD);
 
@@ -305,7 +301,6 @@ TEST_F(PeerTest, PrematureStop)
 
         subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
-        subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
         Thread subPeerThread(&Peer::run, subPeer.get());
 
         ASSERT_TRUE(srvrThread.joinable());
@@ -365,7 +360,6 @@ TEST_F(PeerTest, DataExchange)
         // Create and execute a subscribing-peer on a separate thread
         subThreadId = std::this_thread::get_id();
         auto subPeer = Peer::create(*this, pubAddr);
-        subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
         EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
         orState(SRVR_INFO_RCVD);
         /*
@@ -391,7 +385,6 @@ TEST_F(PeerTest, DataExchange)
         auto done = static_cast<State>(
                 LISTENING |
                 SRVR_INFO_RCVD |
-                TRACKER_RCVD |
                 PROD_NOTICE_RCVD |
                 SEG_NOTICE_RCVD |
                 PROD_REQUEST_RCVD |
@@ -429,7 +422,6 @@ TEST_F(PeerTest, BrokenConnection)
             // Create and execute reception by subscribing peer on separate thread
             subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
-            subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
             EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
             orState(SRVR_INFO_RCVD);
             LOG_DEBUG("Starting subscribing peer");
@@ -475,7 +467,6 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             // Create and execute reception by subscribing peer on separate thread
             subThreadId = std::this_thread::get_id();
             auto subPeer = Peer::create(*this, pubAddr);
-            subPeer->xchgSrvrInfo(subSrvrInfo, subTracker);
             EXPECT_EQ(pubSrvrInfo, subPeer->getRmtSrvrInfo());
             orState(SRVR_INFO_RCVD);
             LOG_DEBUG("Starting subscribing peer");
@@ -495,7 +486,6 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             const auto done = static_cast<State>(
                 LISTENING |
                 SRVR_INFO_RCVD |
-                TRACKER_RCVD |
                 PROD_NOTICE_RCVD |
                 SEG_NOTICE_RCVD |
                 PROD_REQUEST_RCVD |

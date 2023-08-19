@@ -151,7 +151,7 @@ protected:
     PeerSet              peerSet;       ///< Set of active peers
     using PeerMap = std::unordered_map<SockAddr, PeerPtr>; ///< Remote address to peer map
     PeerMap              peerMap;       ///< Lookup table of active peers
-    BookkeeperPtr        bookkeeper;    ///< Monitors peer performance
+    BookkeeperPtr        bookkeeper;    ///< Records peer performance
     Thread               acceptThread;  ///< Creates server-side peers
     Thread               improveThread; ///< Improves the set of active peers
     std::chrono::seconds evalTime;      ///< Evaluation interval for poorest-performing peer
@@ -285,7 +285,7 @@ protected:
 
     /**
      * Returns the server-side peer corresponding to an accepted connection from a client-side peer.
-     * The returned peer is connected to its remote counterpart but not yet enabled/active.
+     * The returned peer is connected to its remote counterpart but not yet running/active.
      *
      * @return  Server-side peer. Will test false if the P2P-server has been halted.
      */
@@ -298,6 +298,8 @@ protected:
      * NB: `noexcept` is incompatible with exception-based thread cancellation.
      */
     void acceptPeers() {
+        // Keep consonant with SubP2pMgrImpl::connectPeers()
+
         try {
             auto pred = [&]{return numSrvrPeers < maxSrvrPeers || state == State::STOPPING;};
             for (;;) {
@@ -320,17 +322,21 @@ protected:
                     if (!peer)
                         break; // `p2pSrvr->halt()` was called
 
-                    // Exchange information on P2P-servers
-                    if (!peer->xchgSrvrInfo(srvrInfo, tracker))
-                        continue; // Connection lost
+                    const auto& conn = peer->getConnection();
+                    Tracker     rmtTracker{};
+                    bool        success = false;
 
-                    /*
-                     * The peer now contains information on the remote P2P-server. That information
-                     * is now explicitly saved.
-                     */
+                    if (conn->recv(rmtTracker)) {
+                        if (conn->send(tracker)) {
+                            tracker.insert(rmtTracker);
+                            success = true;
+                            // Availability of client's P2P server for clients isn't modified
+                        }
+                    }
+
                     tracker.insert(peer->getRmtSrvrInfo());
 
-                    if (!add(peer)) // Honors concurrent access to the peer-set
+                    if (success && !add(peer)) // Handles concurrent access to the peer-set
                         LOG_WARN("Peer %s was previously accepted", peer->to_string().data());
                 }
                 catch (const InvalidArgument& ex) {
@@ -808,10 +814,58 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
     Thread        connectThread; ///< Thread for creating client-side peers
 
     /**
+     * Creates a client-side peer. Exchanges information on P2P servers. Decides if the remote site
+     * is worth using.
+     * @param[in] rmtSrvrAddr  Socket address of the remote P2P server
+     * @return                 A peer connected to its counterpart at the remote site. Will test
+     *                         false if the connection was lost or the remote site isn't worth
+     *                         using.
+     */
+    PeerPtr createPeer(const SockAddr& rmtSrvrAddr) {
+        bool success = false;
+        auto peer = Peer::create(*this, rmtSrvrAddr);
+
+        if (peer) {
+            auto rmtSrvrInfo = peer->getRmtSrvrInfo();
+
+            if (!rmtSrvrInfo.validTier()) {
+                LOG_DEBUG("Remote site " + rmtSrvrInfo.srvrAddr.to_string() +
+                        " has no path to publisher");
+            }
+            else if (rmtSrvrInfo.numAvail == 0) {
+                LOG_DEBUG("Remote site " + rmtSrvrInfo.srvrAddr.to_string() +
+                        " can't accept a new client");
+            }
+            else {
+                const auto& conn = peer->getConnection();
+
+                if (conn->send(tracker)) { // Sends immediately
+                    Tracker rmtTracker{};
+
+                    if (conn->recv(rmtTracker)) { // Receives immediately and directly
+                        tracker.insert(rmtTracker);
+                        --rmtSrvrInfo.numAvail; // Because new connection
+                        success = true;
+                    }
+                }
+            } // Remote site has a path to the publisher and is available
+
+            tracker.insert(rmtSrvrInfo); // Unconditionally update remote P2P server information
+
+            if (!success)
+                peer.reset(); // Remote peer isn't a valid candidate or connection was lost
+        } // Peer connected
+
+        return peer;
+    }
+
+    /**
      * Creates client-side peers. Meant to be the start routine of a separate thread.
      * NB: `noexcept` is incompatible with thread cancellation.
      */
     void connectPeers() {
+        // Keep consonant with P2pMgrImpl::acceptPeers()
+
         try {
             auto pred = [&]{return numClntPeers < maxClntPeers || state == State::STOPPING;};
             for (;;) {
@@ -829,7 +883,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                      */
                 }
 
-                LOG_TRACE("Removing tracker head");
+                LOG_TRACE("Getting next P2P server candidate");
                 auto rmtSrvrAddr = tracker.getNextAddr(); // Blocks if empty. Cancellation point.
                 if (!rmtSrvrAddr) {
                     // tracker.halt() called
@@ -843,72 +897,38 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
 
                 try {
                     LOG_TRACE("Creating peer");
-                    auto peer = Peer::create(*this, rmtSrvrAddr);
+                    auto peer = createPeer(rmtSrvrAddr);
 
-                    // Exchange information on P2P-servers
-                    if (!peer->xchgSrvrInfo(srvrInfo, tracker)) {
-                        LOG_DEBUG("Peer " + peer->to_string() + " lost connection");
-                        continue;
-                    }
-
-                    /*
-                     * The peer now contains information on the remote P2P-server. That information
-                     * is now explicitly saved in the tracker. This sequence prevents this
-                     * instance's tier number from being modified by a peer that will not be added
-                     * to the set of active peers while still allowing information on the remote
-                     * P2P-server to be saved.
-                     */
-                    auto rmtSrvrInfo = peer->getRmtSrvrInfo();
-                    tracker.insert(rmtSrvrInfo);
-
-                    /*
-                     * To help prevent orphan subnetworks, only peers that provide a path to the
-                     * publisher and can accept a new client are used.
-                     */
-                    if (!rmtSrvrInfo.validTier()) {
-                        LOG_DEBUG("Remote site " + rmtSrvrInfo.srvrAddr.to_string() +
-                                " has no path to publisher");
-                    }
-                    else if (rmtSrvrInfo.numAvail == 0) {
-                        LOG_DEBUG("Remote site " + rmtSrvrInfo.srvrAddr.to_string() +
-                                " can't accept a new client");
+                    if (!peer) {
+                        tracker.disconnected(rmtSrvrAddr, true); // Makes it available after a delay
                     }
                     else {
-                        try {
-                            LOG_TRACE("Adding peer to peer-set");
-                            if (!add(peer)) { // Updates the tier number if appropriate
-                                LOG_DEBUG("Throwing logic error");
-                                throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
-                            }
-                            LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
-                        } // `peer` is connected
-                        catch (const SystemError& ex) {
-                            auto errnum = ex.code().value();
-                            if (    errnum == ENETUNREACH  ||
-                                    errnum == ETIMEDOUT    ||
-                                    errnum == ECONNRESET   ||
-                                    errnum == EHOSTUNREACH ||
-                                    errnum == ENETDOWN     ||
-                                    errnum == EPIPE) {
-                                // Peer is unavailable
-                                LOG_NOTE(ex);
-                                tracker.erase(rmtSrvrAddr);
-                            }
-                            else {
-                                LOG_DEBUG("Throwing exception %s", ex.what());
-                                throw;
-                            }
+                        LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
+
+                        LOG_TRACE("Adding peer to peer-set");
+                        if (!add(peer)) { // Updates the tier number if appropriate
+                            LOG_DEBUG("Throwing logic error");
+                            throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
                         }
-                    } // Remote P2P-server is available
-                } // `rmtSrvrAddr` obtained from tracker
+                    } // Peer is connected
+                } // Candidate remote P2P server obtained from tracker
+                catch (const SystemError& ex) {
+                    auto errnum = ex.code().value();
+                    if (    errnum == ENETUNREACH  || errnum == ETIMEDOUT || errnum == ECONNRESET ||
+                            errnum == EHOSTUNREACH || errnum == ENETDOWN  || errnum == EPIPE) {
+                        // Peer is unavailable
+                        LOG_NOTE(ex);
+                        tracker.erase(rmtSrvrAddr);
+                    }
+                    else {
+                        LOG_DEBUG("Throwing exception %s", ex.what());
+                        throw;
+                    }
+                }
                 catch (const InvalidArgument& ex) {
                     // The remote peer sent bad information
                     LOG_WARN(ex);
                     tracker.erase(rmtSrvrAddr);
-                }
-                catch (const std::exception& ex) {
-                    // The exception is unrelated to peer availability
-                    tracker.disconnected(rmtSrvrAddr, true); // Makes it available after a delay
                 }
             } // New, client-side peer loop
         }
