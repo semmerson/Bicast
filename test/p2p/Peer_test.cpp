@@ -15,7 +15,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Peer`
-class PeerTest : public ::testing::Test, public SubP2pMgr, public PubP2pMgr
+class PeerTest : public ::testing::Test, public Peer::SubMgr // Peer::SubMgr has all functions
 {
 protected:
     typedef enum {
@@ -136,20 +136,8 @@ public:
             : pubSrvrInfo;
     }
 
-    Tracker& getTracker() override {
-        return (std::this_thread::get_id() == subThreadId)
-            ? subTracker
-            : pubTracker;
-    }
-
     void recv(const Tracker& tracker) override {
     }
-
-    // Both sides
-    void waitForClntPeer() override {}
-
-    // Both sides
-    void waitForSrvrPeer() override {}
 
     void start() {};
     void stop() {};
@@ -259,7 +247,7 @@ public:
             auto pubPeerConnSrvr = PeerConnSrvr::create(pubAddr, 8);
             orState(LISTENING);
 
-            pubPeer = Peer::create(*static_cast<PubP2pMgr*>(this), pubPeerConnSrvr->accept());
+            pubPeer = Peer::create(*static_cast<Peer::PubMgr*>(this), pubPeerConnSrvr->accept());
 
             auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
             EXPECT_EQ(pubAddr, rmtAddr);

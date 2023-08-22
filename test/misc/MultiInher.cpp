@@ -1,25 +1,33 @@
 #include "MultiInher.h"
 
-class BaseImpl : public BaseIface
+class BaseImpl
 {
 public:
-    void foo() {
-    }
+    virtual ~BaseImpl() =default;
 };
 
-class DerivedImpl : public FactoryIface, public BaseImpl
+class Class1 : public BaseImpl, public Iface1
 {
 public:
-    using BaseImpl::foo; // Doesn't work
-
-    DerivedImpl()
+    Class1()
         : BaseImpl()
     {}
 
-    void foo() { // Works
+    virtual ~Class1() =default;
+
+    void func1() override {
     }
 };
 
-void bar() {
-    DerivedImpl();
-}
+class Class2 : public Class1, public Iface2
+{
+public:
+    Class2()
+        : Class1()
+    {}
+
+    ~Class2() =default;
+
+    void func2() override {
+    }
+};

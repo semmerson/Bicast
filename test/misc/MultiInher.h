@@ -1,10 +1,15 @@
-class BaseIface
+class Iface1
 {
 public:
-    virtual ~BaseIface();
+    virtual ~Iface1() =default;
 
-    virtual void foo() =0;
+    virtual void func1() =0;
 };
 
-class FactoryIface : public BaseIface
-{};
+class Iface2 : public Iface1
+{
+public:
+    virtual ~Iface2() =default;
+
+    virtual void func2() =0;
+};

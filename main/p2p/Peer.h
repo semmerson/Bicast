@@ -5,7 +5,7 @@
  *  @file:  Peer.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@
 #define MAIN_PROTO_PEER_H_
 
 #include "HycastProto.h"
-#include "P2pMgr.h"
 #include "PeerConn.h"
 #include "Socket.h"
 
@@ -41,35 +40,182 @@ using PeerPtr = std::shared_ptr<Peer>; ///< Smart pointer to an implementation
 class Peer
 {
 public:
+    /// Common interface for a client of a Peer (both publishing and subscribing clients).
+    class BaseMgr
+    {
+    public:
+        /**
+         * Destroys.
+         */
+        virtual ~BaseMgr() noexcept =default;
+
+        /**
+         * Returns information on the P2P-server.
+         *
+         * @return  Information on the 's P2P-server
+         */
+        virtual P2pSrvrInfo getSrvrInfo() =0;
+
+        /**
+         * Receives information on P2P-servers.
+         * @param[in] tracker  Information on P2P-servers
+         */
+        virtual void recv(const Tracker& tracker) =0;
+
+        /**
+         * Receives information on a P2P-server.
+         * @param[in] srvrInfo  Information on the P2P-server
+         */
+        virtual void recvNotice(const P2pSrvrInfo& srvrInfo) =0;
+
+        /**
+         * Returns a set of this instance's identifiers of complete products minus those of another
+         * set.
+         *
+         * @param[in]  rhs      Other set of product identifiers to be subtracted from the ones this
+         *                      instance has
+         * @return              This instance's identifiers minus those of the other set
+         */
+        virtual ProdIdSet subtract(ProdIdSet rhs) const =0;
+
+        /**
+         * Returns information on a product. This might count against the remote peer.
+         *
+         * @param[in] prodId       Which product
+         * @param[in] rmtAddr      Socket address of remote peer
+         * @return                 Product information. Will test false if it
+         *                         shouldn't be sent to remote peer.
+         */
+        virtual ProdInfo getDatum(
+                const ProdId   prodId,
+                const SockAddr rmtAddr) =0;
+
+        /**
+         * Returns a data-segment. This might count against the remote peer.
+         *
+         * @param[in] dataSegId    Which data-segment
+         * @param[in] rmtAddr      Socket address of remote peer
+         * @return                 Product information. Will test false if it
+         *                         shouldn't be sent to remote peer.
+         */
+        virtual DataSeg getDatum(
+                const DataSegId dataSegId,
+                const SockAddr  rmtAddr) =0;
+    };
+
+    /// Interface for a publishing client of a peer
+    using PubMgr = BaseMgr;
+
+    /// Interface for a subscribing client of a Peer.
+    class SubMgr : virtual public BaseMgr
+    {
+    public:
+        /**
+         * Destroys.
+         */
+        virtual ~SubMgr() noexcept =default;
+
+        /**
+         * Returns the set of identifiers of complete products.
+         *
+         * @return             Set of complete product identifiers
+         */
+        virtual ProdIdSet getProdIds() const =0;
+
+        /**
+         * Receives a notice of available product information from a remote peer.
+         *
+         * @param[in] notice       Which product
+         * @param[in] rmtAddr      Socket address of remote peer
+         * @retval    false        Local peer shouldn't request from remote peer
+         * @retval    true         Local peer should request from remote peer
+         */
+        virtual bool recvNotice(
+                const ProdId   notice,
+                const SockAddr rmtAddr) =0;
+
+        /**
+         * Receives a notice of an available data-segment from a remote peer.
+         *
+         * @param[in] notice       Which data-segment
+         * @param[in] rmtAddr      Socket address of remote peer
+         * @retval    false        Local peer shouldn't request from remote peer
+         * @retval    true         Local peer should request from remote peer
+         */
+        virtual bool recvNotice(
+                const DataSegId notice,
+                const SockAddr  rmtAddr) =0;
+
+        /**
+         * Handles a request for data-product information not being satisfied by a remote peer.
+         *
+         * @param[in] prodId     Index of the data-product
+         * @param[in] rmtAddr    Socket address of remote peer
+         */
+        virtual void missed(
+                const ProdId prodId,
+                SockAddr     rmtAddr) =0;
+
+        /**
+         * Handles a request for a data-segment not being satisfied by a remote peer.
+         *
+         * @param[in] dataSegId  ID of data-segment
+         * @param[in] rmtAddr    Socket address of remote peer
+         */
+        virtual void missed(
+                const DataSegId dataSegId,
+                SockAddr        rmtAddr) =0;
+
+        /**
+         * Receives product information from a remote peer.
+         *
+         * @param[in] prodInfo  Product information
+         * @param[in] rmtAddr   Socket address of remote peer
+         */
+        virtual void recvData(
+                const ProdInfo prodInfo,
+                SockAddr       rmtAddr) =0;
+
+        /**
+         * Receives a data segment from a remote peer.
+         *
+         * @param[in] dataSeg  Data segment
+         * @param[in] rmtAddr  Socket address of remote peer
+         */
+        virtual void recvData(
+                const DataSeg dataSeg,
+                SockAddr      rmtAddr) =0;
+    };
+
     /**
      * Returns a publisher's server-side implementation. The resulting peer is fully connected and
      * ready for `run()` to be called.
      *
-     * @param[in] p2pMgr           Associated publisher's P2P manager
+     * @param[in] pubPeerMgr       Associated publisher's peer manager
      * @param[in] conn             Connection with remote peer
      * @see       run()
      */
     static PeerPtr create(
-            PubP2pMgr&  p2pMgr,
+            PubMgr&     pubPeerMgr,
             PeerConnPtr conn);
 
     /**
      * Returns a subscriber's server-side implementation. The resulting peer is fully connected and
      * ready for `run()` to be called.
      *
-     * @param[in] p2pMgr           Associated subscriber's P2P manager
+     * @param[in] subPeerMgr       Associated subscriber's peer manager
      * @param[in] conn             Connection with remote peer
      * @see       run()
      */
     static PeerPtr create(
-            SubP2pMgr&   p2pMgr,
+            SubMgr&      subPeerMgr,
             PeerConnPtr& conn);
 
     /**
      * Returns a subscriber's client-side implementation. The resulting peer is fully connected and
      * ready for `run()` to be called.
      *
-     * @param[in] p2pMgr           Associated subscriber's P2P manager
+     * @param[in] subPeerMgr       Associated subscriber's peer manager
      * @param[in] srvrAddr         Address of remote P2P-server
      * @throw     LogicError       Destination port number is zero
      * @throw     SystemError      Couldn't connect. Bad failure.
@@ -77,11 +223,10 @@ public:
      * @see       run()
      */
     static PeerPtr create(
-            SubP2pMgr&      p2pMgr,
+            SubMgr&         subPeerMgr,
             const SockAddr& srvrAddr);
 
-    virtual ~Peer()
-    {}
+    virtual ~Peer() noexcept =default;
 
     /**
      * Returns a reference to the underlying connection with the remote peer.
@@ -107,7 +252,7 @@ public:
 
     /**
      * Returns information on the remote P2P-server. This function may be called immediately after
-     * construction. Called by the P2P manager.
+     * construction. Called by the peer manager.
      * @return        Information on the remote P2P-server
      * @threadsafety  Compatible but unsafe
      * @see setRmtSrvrInfo()
@@ -127,7 +272,7 @@ public:
      *
      * @return Socket address of local peer
      */
-    virtual SockAddr getLclAddr() const noexcept =0;
+    virtual const SockAddr& getLclAddr() const noexcept =0;
 
     /**
      * Returns the socket address of the remote peer. This will be the socket address of the remote
@@ -135,7 +280,7 @@ public:
      *
      * @return Socket address of remote peer
      */
-    virtual SockAddr getRmtAddr() const noexcept =0;
+    virtual const SockAddr& getRmtAddr() const noexcept =0;
 
     /**
      * Indicates if the remote peer is a publisher (and not a subscriber).
@@ -257,7 +402,7 @@ public:
     virtual void request(const DataSegId& segId) =0;
 
     /**
-     * Receives a notice about the remote P2P-server. Passes the information to the P2P manager.
+     * Receives a notice about the remote P2P-server. Passes the information to the peer manager.
      * @param[in] srvrInfo  Information on the remote P2P-server
      * @see P2pMgr::recvNotice(const P2pSrvrInfo&, SockAddr)
      */
@@ -310,7 +455,7 @@ public:
     virtual void recvData(const DataSeg dataSeg) =0;
 
     /**
-     * Drains outstanding requests to the subscriber's P2P manager. Should only be called after the
+     * Drains outstanding requests to the subscriber's peer manager. Should only be called after the
      * peer has stopped.
      *
      * @throw LogicError  This instance is for a publisher and doesn't request data
@@ -321,11 +466,11 @@ public:
 
 /******************************************************************************/
 
-template<typename P2P_MGR> class P2pSrvr; ///< Forward declaration
+template<typename PEER_MGR> class P2pSrvr; ///< Forward declaration
 /// Smart pointer to an implementation
-template<typename P2P_MGR> using P2pSrvrPtr = std::shared_ptr<P2pSrvr<P2P_MGR>>;
-using PubP2pSrvrPtr = P2pSrvrPtr<PubP2pMgr>; ///< Publisher's P2P-server smart pointer
-using SubP2pSrvrPtr = P2pSrvrPtr<SubP2pMgr>; ///< Subscriber's P2P-server smart pointer
+template<typename PEER_MGR> using P2pSrvrPtr = std::shared_ptr<P2pSrvr<PEER_MGR>>;
+using PubP2pSrvrPtr = P2pSrvrPtr<Peer::PubMgr>; ///< Publisher's P2P-server smart pointer
+using SubP2pSrvrPtr = P2pSrvrPtr<Peer::SubMgr>; ///< Subscriber's P2P-server smart pointer
 
 /**
  * Interface for a P2P-server. A P2P-server creates server-side peers by accepting connections
@@ -371,8 +516,9 @@ public:
 
     /**
      * Returns the next, accepted peer. Will test false if `halt()` has been called.
-     * @param p2pMgr
-     * @return
+     * @param[in] p2pMgr  Associated P2P manager
+     * @return            Pointer to the accepted peer. Will test false if `halt()` has been called.
+     * @see halt()
      */
     virtual PeerPtr accept(P2P_MGR& p2pMgr) =0;
 
@@ -383,8 +529,8 @@ public:
     virtual void halt() =0;
 };
 
-using PubP2pSrvr = P2pSrvr<PubP2pMgr>; ///< Type of publisher's P2P-server
-using SubP2pSrvr = P2pSrvr<SubP2pMgr>; ///< Type of subscriber's P2P-server
+using PubP2pSrvr = P2pSrvr<Peer::PubMgr>; ///< Type of publisher's P2P-server
+using SubP2pSrvr = P2pSrvr<Peer::SubMgr>; ///< Type of subscriber's P2P-server
 
 } // namespace
 

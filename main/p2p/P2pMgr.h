@@ -25,6 +25,7 @@
 
 #include "error.h"
 #include "HycastProto.h"
+#include "Peer.h"
 
 #include <cstdint>
 #include <memory>
@@ -32,23 +33,20 @@
 
 namespace hycast {
 
-class Peer;         // Forward declaration
-class PubPeer;      // Forward declaration
-class SubPeer;      // Forward declaration
 class PeerConnSrvr; // Forward declaration
-using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
+using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>;
 
 class PubNode;
 class SubNode;
 
-class P2pMgr;                              ///< Forward declaration
-using P2pMgrPtr = std::shared_ptr<P2pMgr>; ///< Smart pointer to an implementation
+class BaseP2pMgr;                                  ///< Forward declaration
+using BaseP2pMgrPtr = std::shared_ptr<BaseP2pMgr>; ///< Smart pointer to an implementation
 
 /**
  * Interface for a peer-to-peer manager. A publisher's P2P manager will only implement this
  * interface.
  */
-class P2pMgr
+class BaseP2pMgr : virtual public Peer::BaseMgr
 {
 public:
     /**
@@ -99,13 +97,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~P2pMgr() noexcept {};
-
-    /**
-     * Returns a reference to the tracker used by this instance.
-     * @return A reference to the tracker used by this instance
-     */
-    virtual Tracker& getTracker() =0;
+    virtual ~BaseP2pMgr() noexcept {};
 
     /**
      * Returns information on this instance's P2P-server.
@@ -214,7 +206,7 @@ class PubP2pMgr;                                 ///< Forward declaration
 using PubP2pMgrPtr = std::shared_ptr<PubP2pMgr>; ///< Smart pointer to an implementation
 
 /// Interface for a publisher's P2P manager
-class PubP2pMgr : public P2pMgr
+class PubP2pMgr : public BaseP2pMgr
 {
 public:
     /**
@@ -253,7 +245,7 @@ class SubP2pMgr;                                 ///< Forward declaration
 using SubP2pMgrPtr = std::shared_ptr<SubP2pMgr>; ///< Smart pointer to an implementation
 
 /// Interface for a subscriber's P2P manager.
-class SubP2pMgr : public P2pMgr
+class SubP2pMgr : public BaseP2pMgr, public Peer::SubMgr
 {
 public:
     /**
@@ -297,12 +289,12 @@ public:
      * @see `getPeerSrvrAddr()`
      */
     static SubP2pMgrPtr create(
-            Tracker           tracker,
-            SubNode&          subNode,
-            PeerConnSrvrPimpl peerConnSrvr,
-            const int         timeout,
-            const int         maxPeers,
-            const int         evalTime);
+            Tracker         tracker,
+            SubNode&        subNode,
+            PeerConnSrvrPtr peerConnSrvr,
+            const int       timeout,
+            const int       maxPeers,
+            const int       evalTime);
 
     /**
      * Destroys.

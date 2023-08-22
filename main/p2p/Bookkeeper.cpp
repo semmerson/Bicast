@@ -80,8 +80,8 @@ class PubBookkeeper final : public BookkeeperImpl
 {
     using RequestCount = int_fast32_t;
 
-    /// Map of peer -> number of requests by remote peer
-    std::unordered_map<PeerPtr, RequestCount> numRequests;
+    /// Map of remote peer address -> number of requests by remote peer
+    std::unordered_map<SockAddr, RequestCount> numRequests;
 
 public:
     /**
@@ -93,114 +93,79 @@ public:
         , numRequests(maxPeers)
     {}
 
-    bool add(const PeerPtr peer) override {
+    bool add(
+            const SockAddr& rmtAddr,
+            const bool      isClient) override {
         Guard guard(mutex);
-        return numRequests.insert({peer, 0}).second;
+        return numRequests.insert({rmtAddr, 0}).second;
     }
 
-    /**
-     * Removes a peer.
-     * @param[in] peer  The peer to be removed
-     * @retval    true     The peer existed
-     * @retval    false    The peer didn't exist
-     */
-    bool erase(const PeerPtr peer) override {
+    bool erase(const SockAddr& rmtAddr) override {
         Guard guard(mutex);
-        return numRequests.erase(peer) == 1;
+        return numRequests.erase(rmtAddr) == 1;
     }
 
-    /**
-     * Handles a peer requesting something.
-     * @param[in] peer  The peer that requested something
-     */
-    void requested(const PeerPtr peer) override {
+    void requested(const SockAddr& rmtAddr) override {
         Guard guard(mutex);
-        ++numRequests[peer];
+        ++numRequests[rmtAddr];
     }
 
     bool shouldNotify(
-            PeerPtr      peer,
-            const ProdId prodId) const override {
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) const override {
         return false;
     }
 
     bool shouldNotify(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) const override {
         return false;
     }
 
     bool shouldRequest(
-            PeerPtr      peer,
-            const ProdId prodindex) override {
+            const SockAddr& rmtAddr,
+            const ProdId    prodindex) override {
         return false;
     }
 
     bool shouldRequest(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) override {
         return false;
     }
 
     bool received(
-            PeerPtr      peer,
-            const ProdId prodId) override {
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) override {
         return false;
     }
 
-    /**
-     * Handles a peer receiving a data segment from its remote counterpart.
-     * @param[in] peer     The peer that received the data segment
-     * @param[in] segId    The data segment identifier
-     * @retval    true     Success
-     * @retval    false    The data segment wasn't requested
-     */
     bool received(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId segId) override {
         return false;
     }
 
-    /**
-     * Deletes all knowledge of a data product.
-     * @param[in] prodId  The data product ID
-     */
     void erase(const ProdId prodId) override {
     }
 
-    /**
-     * Deletes all knowledge of a data segment.
-     * @param[in] segId  The data segment ID
-     */
     void erase(const DataSegId segId) override {
     }
 
-    /**
-     * Returns the next best peer from which to request product information.
-     * @param[in] peer    The previous peer that failed
-     * @param[in] prodId  The product identifier
-     * @return            The next best peer. Might be invalid.
-     */
-    PeerPtr getAltPeer(
-            const PeerPtr peer,
-            const ProdId  prodId) override {
-        return PeerPtr{};
+    SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) override {
+        return SockAddr{};
     }
 
-    /**
-     * Returns the next best peer from which to request a data segment.
-     * @param[in] peer    The previous peer that failed
-     * @param[in] segId   The data segment ID
-     * @return            The next best peer. Might be invalid.
-     */
-    PeerPtr getAltPeer(
-            const PeerPtr   peer,
+    SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
             const DataSegId segId) override {
-        return PeerPtr{};
+        return SockAddr{};
     }
 
-    PeerPtr getWorstPeer() const override {
-        PeerPtr      peer{};
+    SockAddr getWorstPeer() const override {
+        SockAddr     rmtAddr{};
         RequestCount maxCount = -1;
         Guard        guard(mutex);
 
@@ -209,11 +174,11 @@ public:
 
             if (count && count > maxCount) {
                 maxCount = count;
-                peer = iter->first;
+                rmtAddr = iter->first;
             }
         }
 
-        return peer;
+        return rmtAddr;
     }
 
     /**
@@ -242,11 +207,14 @@ class SubBookkeeper final : public BookkeeperImpl
     using NoticeSet = std::set<Notice>;
 
     struct PeerInfo {
-        Rating    rating;  ///< Peer rating
-        NoticeSet notices; ///< Data available from remote peer
-        PeerInfo()
+        Rating     rating;   ///< Peer rating
+        NoticeSet  notices;  ///< Data available from remote peer
+        const bool isClient; ///< Local peer was constructed client-side (i.e., it initiated the
+                             ///< connection
+        explicit PeerInfo(const bool isClient = false)
             : rating(0)
             , notices()
+            , isClient(isClient)
         {}
     };
 
@@ -257,10 +225,10 @@ class SubBookkeeper final : public BookkeeperImpl
      *   - A peer with a given datum to be in the datum's list of peers at most
      *     once.
      */
-    using PeerToInfo = std::unordered_map<PeerPtr, PeerInfo>;
+    using PeerToInfo = std::unordered_map<SockAddr, PeerInfo>;
     struct Peers {
-        std::unordered_set<PeerPtr> set;
-        std::list<PeerPtr>          list;
+        std::unordered_set<SockAddr> set;
+        std::list<SockAddr>          list;
     };
     using NoticeToPeers = std::unordered_map<Notice, Peers>;
 
@@ -275,18 +243,18 @@ class SubBookkeeper final : public BookkeeperImpl
      * Vets a peer.
      *
      * @pre                   `mutex` is locked
-     * @param[in] peer        Peer to be vetted
+     * @param[in] rmtAddr     Socket address of the remote peer
      * @throw     LogicError  Peer is unknown
      */
-    inline void vetPeer(PeerPtr peer) const {
-        if (peerToInfo.count(peer) == 0)
-            throw LOGIC_ERROR("Peer " + peer->to_string() + " is unknown");
+    inline void vetPeer(const SockAddr& rmtAddr) const {
+        if (peerToInfo.count(rmtAddr) == 0)
+            throw LOGIC_ERROR("Peer " + rmtAddr.to_string() + " is unknown");
     }
 
     /**
      * Indicates if a given, remote peer should be notified about an available datum.
      *
-     * @param[in] peer        Local peer connected to remote peer
+     * @param[in] rmtAddr     Socket address of the remote peer
      * @param[in] notice      Notice of available datum
      * @return    true        Notice should be sent
      * @return    false       Notice shouldn't be sent
@@ -295,19 +263,19 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldNotify(
-            PeerPtr      peer,
-            const Notice notice) const
+            const SockAddr& rmtAddr,
+            const Notice    notice) const
     {
         Guard guard(mutex);
 
-        vetPeer(peer);
+        vetPeer(rmtAddr);
 
         /*
-         * The remote peer should be notified if no remote peer has announced that it
+         * The remote rmtAddr should be notified if no remote rmtAddr has announced that it
          * has the given datum or the given remote peer hasn't announced that it has.
          */
         return noticeToPeers.count(notice) == 0 ||
-                noticeToPeers.at(notice).set.count(peer) == 0;
+                noticeToPeers.at(notice).set.count(rmtAddr) == 0;
     }
 
     /**
@@ -323,15 +291,12 @@ class SubBookkeeper final : public BookkeeperImpl
      * @cancellationpoint     No
      */
     bool shouldRequest(
-            PeerPtr      peer,
-            const Notice notice)
+            const SockAddr& rmtAddr,
+            const Notice    notice)
     {
         Guard guard(mutex);
 
-        vetPeer(peer);
-
-        //LOG_DEBUG("Peer %s has datum %s", peer->to_string().data(),
-                //notice.to_string().data());
+        vetPeer(rmtAddr);
 
         /*
          * A request for the given datum should be made if there are no peers
@@ -343,8 +308,8 @@ class SubBookkeeper final : public BookkeeperImpl
          * that have the datum.
          */
         auto& datumPeers = noticeToPeers[notice];
-        if (datumPeers.set.insert(peer).second)
-            datumPeers.list.push_back(peer);
+        if (datumPeers.set.insert(rmtAddr).second)
+            datumPeers.list.push_back(rmtAddr);
 
         return should;
     }
@@ -352,7 +317,7 @@ class SubBookkeeper final : public BookkeeperImpl
     /**
      * Process reception of a datum. The rating of the associated peer is increased.
      *
-     * @param[in] peer        Peer that received the datum
+     * @param[in] rmtAddr     Socket address of the remote peer
      * @param[in] notice      Notice of available data
      * @retval    true        Success
      * @retval    false       Datum is unexpected
@@ -360,16 +325,17 @@ class SubBookkeeper final : public BookkeeperImpl
      * @exceptionsafety       Strong guarantee
      * @cancellationpoint     No
      */
-    bool received(PeerPtr      peer,
-                  const Notice notice)
+    bool received(
+            const SockAddr& rmtAddr,
+            const Notice    notice)
     {
         bool   success = false;
         Guard  guard(mutex);
 
-        vetPeer(peer);
+        vetPeer(rmtAddr);
 
-        if (noticeToPeers.count(notice) && noticeToPeers[notice].set.count(peer)) {
-            ++(peerToInfo.at(peer).rating);
+        if (noticeToPeers.count(notice) && noticeToPeers[notice].set.count(rmtAddr)) {
+            ++(peerToInfo.at(rmtAddr).rating);
             success = true;
         }
 
@@ -379,8 +345,8 @@ class SubBookkeeper final : public BookkeeperImpl
     void erase(const Notice notice) {
         Guard  guard(mutex);
         if (noticeToPeers.count(notice)) {
-            for (auto peer : noticeToPeers[notice].list)
-                peerToInfo.at(peer).notices.erase(notice);
+            for (auto rmtAddr : noticeToPeers[notice].list)
+                peerToInfo.at(rmtAddr).notices.erase(notice);
             noticeToPeers.erase(notice);
         }
     }
@@ -388,32 +354,34 @@ class SubBookkeeper final : public BookkeeperImpl
     /**
      * Returns the best alternative peer for a datum.
      *
-     * @param[in] badPeer  Local peer whose remote couldn't supply the datum. Upon return, it will
-     *                     not be in the the set of peers that indicated availability of the datum.
+     * @param[in] rmtAddr  Socket address of remote peer that couldn't supply the datum. Upon
+     *                     return, it will not be in the the set of peers that indicated
+     *                     availability of the datum.
      * @param[in] notice   Notice of available data
-     * @return             Best alternative peer. Will test false if it doesn't exist.
+     * @return             Socket address of best alternative, remote peer. Will test false if it
+     *                     doesn't exist.
      */
-    PeerPtr getAltPeer(
-            const PeerPtr badPeer,
-            const Notice  notice) {
-        Guard   guard{mutex};
-        PeerPtr altPeer;
+    SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
+            const Notice    notice) {
+        Guard    guard{mutex};
+        SockAddr altRmtAddr{};
 
-        if (peerToInfo.count(badPeer))
-            const auto count = peerToInfo[badPeer].notices.erase(notice);
+        if (peerToInfo.count(rmtAddr))
+            const auto count = peerToInfo[rmtAddr].notices.erase(notice);
 
         if (noticeToPeers.count(notice)) {
-            noticeToPeers[notice].set.erase(badPeer);
+            noticeToPeers[notice].set.erase(rmtAddr);
             auto& peers = noticeToPeers[notice].list;
             if (peers.size()) {
-                if (peers.front() == badPeer)
+                if (peers.front() == rmtAddr)
                     peers.pop_front();
                 if (peers.size())
-                    altPeer = peers.front();
+                    altRmtAddr = peers.front();
             }
         }
 
-        return altPeer;
+        return altRmtAddr;
     }
 
 public:
@@ -439,101 +407,72 @@ public:
         }
     }
 
-    /**
-     * Adds a peer.
-     *
-     * @param[in] peer            Peer
-     * @retval true               Success
-     * @retval false              Not added because already exists
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Basic guarantee
-     * @cancellationpoint         No
-     */
-    bool add(PeerPtr peer) override {
+    bool add(
+            const SockAddr& rmtAddr,
+            const bool      isClient) override {
         Guard guard(mutex);
-        return peerToInfo.insert({peer, PeerInfo{}}).second;
+        return peerToInfo.insert({rmtAddr, PeerInfo{isClient}}).second;
     }
 
-    /**
-     * Removes a peer.
-     *
-     * @param[in] peer        The peer to be removed
-     * @retval    true        Success
-     * @retval    false       Peer is unknown
-     * @threadsafety          Safe
-     * @exceptionsafety       Basic guarantee
-     * @cancellationpoint     No
-     */
-    bool erase(const PeerPtr peer) override
+    bool erase(const SockAddr& rmtAddr) override
     {
         bool  existed = false;
         Guard guard{mutex};
-        if (peerToInfo.count(peer)) {
-            for (const auto& notice : peerToInfo[peer].notices) {
+        if (peerToInfo.count(rmtAddr)) {
+            for (const auto& notice : peerToInfo[rmtAddr].notices) {
                 auto& peers = noticeToPeers.at(notice);
                 auto& peerList = peers.list;
                 for (auto iter = peerList.begin(), end = peerList.end(); iter != end; ++iter) {
-                    if (*iter == peer) {
+                    if (*iter == rmtAddr) {
                         peerList.erase(iter);
                         break;
                     }
                 }
-                peers.set.erase(peer);
+                peers.set.erase(rmtAddr);
             }
-            peerToInfo.erase(peer);
+            peerToInfo.erase(rmtAddr);
             existed = true;
         }
         return existed;
     }
 
-    void requested(const PeerPtr peer) override {
+    void requested(const SockAddr& rmtAddr) override {
     }
 
     bool shouldNotify(
-            PeerPtr      peer,
-            const ProdId prodId) const override {
-        return shouldNotify(peer, Notice(prodId));
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) const override {
+        return shouldNotify(rmtAddr, Notice(prodId));
     }
 
     bool shouldNotify(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) const override {
-        return shouldNotify(peer, Notice(dataSegId));
+        return shouldNotify(rmtAddr, Notice(dataSegId));
     }
 
     bool shouldRequest(
-            PeerPtr      peer,
-            const ProdId prodId) override {
-        return shouldRequest(peer, Notice(prodId));
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) override {
+        return shouldRequest(rmtAddr, Notice(prodId));
     }
 
     bool shouldRequest(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) override {
-        return shouldRequest(peer, Notice(dataSegId));
+        return shouldRequest(rmtAddr, Notice(dataSegId));
     }
 
-    bool received(PeerPtr      peer,
-                  const ProdId prodId) override {
-        return received(peer, Notice{prodId});
+    bool received(
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) override {
+        return received(rmtAddr, Notice{prodId});
     }
 
-    /**
-     * Process a peer having received a data segment. Nothing happens if it wasn't requested by the
-     * peer; otherwise, the corresponding request is removed from the peer's outstanding requests.
-     *
-     * @param[in] peer        Peer
-     * @param[in] segId       Data segment identifier
-     * @retval    true        Success
-     * @retval    false       Data segment wasn't requested
-     * @threadsafety          Safe
-     * @exceptionsafety       Strong guarantee
-     * @cancellationpoint     No
-     */
-    bool received(PeerPtr         peer,
-                  const DataSegId segId) override {
-        return received(peer, Notice{segId});
+    bool received(
+            const SockAddr& rmtAddr,
+            const DataSegId segId) override {
+        return received(rmtAddr, Notice{segId});
     }
 
     void erase(const ProdId prodId) override {
@@ -544,66 +483,41 @@ public:
         erase(Notice(segId));
     }
 
-    /**
-     * Returns the best alternative peer, besides a given one, for requesting product information.
-     * @param[in] peer    The peer that didn't receive the information
-     * @param[in] prodId  The product's ID
-     * @return
-     */
-    PeerPtr getAltPeer(
-            const PeerPtr peer,
-            const ProdId  prodId) override {
-        return getAltPeer(peer, Notice{prodId});
+    SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) override {
+        return getAltPeer(rmtAddr, Notice{prodId});
     }
 
-    /**
-     * Returns the best alternative peer, besides a given one, for requesting a data segment.
-     * @param[in] peer    The peer that didn't receive the segment
-     * @param[in] segId   The segment's ID
-     * @return
-     */
-    PeerPtr getAltPeer(
-            const PeerPtr   peer,
+    SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
             const DataSegId segId) override {
-        return getAltPeer(peer, Notice{segId});
+        return getAltPeer(rmtAddr, Notice{segId});
     }
 
-    /**
-     * @throws std::system_error  Out of memory
-     * @threadsafety              Safe
-     * @exceptionsafety           Strong guarantee
-     * @cancellationpoint         No
-     */
-    PeerPtr getWorstPeer() const override
+    SockAddr getWorstPeer() const override
     {
-        static PeerPtr noPeer{};
-        PeerPtr        peer{};
-        Rating         minRating = ~(Rating)0;
-        bool           valid = false;
-        Guard          guard(mutex);
+        static SockAddr noPeer{};
+        SockAddr        rmtAddr{};
+        Rating          minRating = ~(Rating)0;
+        bool            valid = false;
+        Guard           guard(mutex);
 
         for (auto& elt : peerToInfo) {
-            if (elt.first->isClient()) {
+            if (elt.second.isClient) {
                 const auto rating = elt.second.rating;
                 if (rating)
                     valid = true;
                 if (rating < minRating) {
                     minRating = rating;
-                    peer = elt.first;
+                    rmtAddr = elt.first;
                 }
             }
         }
 
-        return valid ? peer : noPeer;
+        return valid ? rmtAddr : noPeer;
     }
 
-    /**
-     * Resets the rating of every peer.
-     *
-     * @threadsafety       Safe
-     * @exceptionsafety    No throw
-     * @cancellationpoint  No
-     */
     void reset() noexcept override {
         Guard guard(mutex);
 

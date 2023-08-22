@@ -37,7 +37,7 @@
 namespace hycast {
 
 class PeerConnSrvr; ///< Forward declaration
-using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-dependency
+using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-dependency
 
 #if 0
     FeedInfo    feedInfo;   ///< Information on data-product feed
@@ -147,7 +147,7 @@ class NodeImpl : public Node
 protected:
     mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
     mutable sem_t  stopSem;      ///< For async-signal-safe stopping
-    P2pMgrPtr      p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
+    BaseP2pMgrPtr      p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
     ThreadEx       threadEx;     ///< Thread exception
 
     /**
@@ -197,7 +197,7 @@ public:
      * @param[in] p2pMgr             Peer-to-peer manager
      * @throws    std::system_error  Couldn't initialize semaphore
      */
-    NodeImpl(P2pMgrPtr p2pMgr)
+    NodeImpl(BaseP2pMgrPtr p2pMgr)
         : p2pThread()
         , stopSem()
         , p2pMgr(p2pMgr)
@@ -661,7 +661,7 @@ public:
     SubNodeImpl(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
-            const PeerConnSrvrPimpl peerConnSrvr,
+            const PeerConnSrvrPtr peerConnSrvr,
             const int               timeout,
             const unsigned          maxPeers,
             const unsigned          evalTime,
@@ -861,7 +861,7 @@ public:
 SubNodePtr SubNode::create(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
-            const PeerConnSrvrPimpl peerConnSrvr,
+            const PeerConnSrvrPtr peerConnSrvr,
             const int               timeout,
             const unsigned          maxPeers,
             const unsigned          evalTime,

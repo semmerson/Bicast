@@ -2,11 +2,10 @@
 
 #include "Bookkeeper.h"
 #include "logging.h"
+#include "P2pMgr.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
-#include <P2pMgr.h>
-
 #include <list>
 #include <mutex>
 #include <thread>
@@ -16,136 +15,28 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `Bookkeeper`
-class BookkeeperTest : public ::testing::Test, public PubP2pMgr, public SubP2pMgr
+class BookkeeperTest : public ::testing::Test
 {
-    void runPubPeerSrvr() {
-        std::list<PeerPtr> peers;
-        for (;;) {
-            peers.push_back(pubP2pSrvr->accept(*this));
-        }
-    }
-
 protected:
-    SockAddr      pubAddr;
-    PubP2pSrvrPtr pubP2pSrvr;
-    std::thread   pubP2pSrvrThrd;
     ProdId        prodId;
     DataSegId     segId;
-    PeerPtr       subPeer1;
-    PeerPtr       subPeer2;
+    SockAddr      rmtAddr1;
+    SockAddr      rmtAddr2;
     const SegSize maxSegSize = 1400;
 
     BookkeeperTest()
-        : pubAddr{"localhost:38800"}
-        , pubP2pSrvr(PubP2pSrvr::create(pubAddr, 5))
-        , pubP2pSrvrThrd(&BookkeeperTest::runPubPeerSrvr, this)
-        , prodId{"product"}
+        : prodId{"product"}
         , segId(prodId, maxSegSize) // Second data-segment
-        , subPeer1(Peer::create(*static_cast<SubP2pMgr*>(this), pubAddr))
-        , subPeer2(Peer::create(*static_cast<SubP2pMgr*>(this), pubAddr))
+        , rmtAddr1("localhost:38801")
+        , rmtAddr2("localhost:38802")
     {
         DataSeg::setMaxSegSize(maxSegSize);
     }
 
     ~BookkeeperTest() {
-        ::pthread_cancel(pubP2pSrvrThrd.native_handle());
-        pubP2pSrvrThrd.join();
     }
 
 public:
-    void start() {};
-    void stop() {};
-    void run() {};
-    void halt() {};
-
-    // Both sides
-    void waitForClntPeer() override {}
-
-    // Both sides
-    void waitForSrvrPeer() override {}
-
-    P2pSrvrInfo getSrvrInfo() override {
-        return P2pSrvrInfo(pubP2pSrvr->getSrvrAddr(), 2, 0);
-    }
-
-    void recv(const P2pSrvrInfo& srvrInfo) {
-    }
-
-    void recv(const Tracker& tracker) {
-    }
-
-    Tracker& getTracker() override {
-        static Tracker tracker{};
-        return tracker;
-    }
-
-    ProdIdSet subtract(ProdIdSet rhs) const override {
-        return ProdIdSet{};
-    }
-
-    ProdIdSet getProdIds() const override {
-        return ProdIdSet{};
-    }
-
-    // Subscriber-side
-    void recvNotice(const P2pSrvrInfo& srvrInfo) override
-    {}
-
-    // Subscriber-side
-    bool recvNotice(
-            const ProdId notice,
-            const SockAddr  rmtAddr) override
-    {
-        return false;
-    }
-
-    // Subscriber-side
-    bool recvNotice(
-            const DataSegId notice,
-            const SockAddr  rmtAddr) override
-    {
-        return false;
-    }
-
-    // Publisher-side
-    ProdInfo getDatum(const ProdId request, const SockAddr rmtAddr) override
-    {
-        return ProdInfo{};
-    }
-
-    // Publisher-side
-    DataSeg getDatum(const DataSegId request, const SockAddr rmtAddr) override
-    {
-        return DataSeg{};
-    }
-
-    void missed(
-            const ProdId   prodId,
-            const SockAddr rmtAddr) {
-    }
-
-    void missed(
-            const DataSegId dataSegId,
-            const SockAddr  rmtAddr) {
-    }
-
-    void notify(const ProdId prodId) {
-    }
-
-    void notify(const DataSegId dataSegId) {
-    }
-
-    // Subscriber-side
-    void recvData(
-            const ProdInfo data,
-            const SockAddr rmtAddr) override
-    {}
-
-    // Subscriber-side
-    void recvData(
-            const DataSeg  actualDataSeg,
-            const SockAddr rmtAddr) override
-    {}
 };
 
 // Tests default construction
@@ -159,9 +50,7 @@ TEST_F(BookkeeperTest, DefaultConstruction)
 TEST_F(BookkeeperTest, PeerAddition)
 {
     auto bookkeeper = Bookkeeper::createSub();
-    auto subPeer = Peer::create(*this, pubAddr);
-
-    bookkeeper->add(subPeer);
+    bookkeeper->add(rmtAddr1, true);
 }
 
 // Tests making a request
@@ -169,31 +58,31 @@ TEST_F(BookkeeperTest, ShouldRequest)
 {
     auto bookkeeper = Bookkeeper::createSub();
 
-    bookkeeper->add(subPeer1);
+    bookkeeper->add(rmtAddr1, true);
 
-    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, prodId));
-    EXPECT_TRUE(bookkeeper->shouldRequest(subPeer1, segId));
+    EXPECT_TRUE(bookkeeper->shouldRequest(rmtAddr1, prodId));
+    EXPECT_TRUE(bookkeeper->shouldRequest(rmtAddr1, segId));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, prodId), LogicError);
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer2, segId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(rmtAddr2, prodId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(rmtAddr2, segId), LogicError);
 
-    ASSERT_TRUE(bookkeeper->add(subPeer2));
-    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, prodId));
-    EXPECT_FALSE(bookkeeper->shouldRequest(subPeer2, segId));
-    ASSERT_FALSE(bookkeeper->add(subPeer2));
+    ASSERT_TRUE(bookkeeper->add(rmtAddr2, true));
+    EXPECT_FALSE(bookkeeper->shouldRequest(rmtAddr2, prodId));
+    EXPECT_FALSE(bookkeeper->shouldRequest(rmtAddr2, segId));
+    ASSERT_FALSE(bookkeeper->add(rmtAddr2, true));
 
-    ASSERT_TRUE(bookkeeper->received(subPeer1, prodId));
-    ASSERT_TRUE(bookkeeper->received(subPeer1, segId));
+    ASSERT_TRUE(bookkeeper->received(rmtAddr1, prodId));
+    ASSERT_TRUE(bookkeeper->received(rmtAddr1, segId));
 
-    auto worstPeer = bookkeeper->getWorstPeer();
-    EXPECT_NE(subPeer1, worstPeer);
-    EXPECT_EQ(subPeer2, worstPeer);
+    auto worstPeerAddr = bookkeeper->getWorstPeer();
+    EXPECT_NE(rmtAddr1, worstPeerAddr);
+    EXPECT_EQ(rmtAddr2, worstPeerAddr);
 
-    EXPECT_TRUE(bookkeeper->erase(subPeer1));
-    EXPECT_FALSE(bookkeeper->erase(subPeer1));
+    EXPECT_TRUE(bookkeeper->erase(rmtAddr1));
+    EXPECT_FALSE(bookkeeper->erase(rmtAddr1));
 
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, prodId), LogicError);
-    EXPECT_THROW(bookkeeper->shouldRequest(subPeer1, segId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(rmtAddr1, prodId), LogicError);
+    EXPECT_THROW(bookkeeper->shouldRequest(rmtAddr1, segId), LogicError);
 }
 
 #if 0

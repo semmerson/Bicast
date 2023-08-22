@@ -120,7 +120,7 @@ protected:
 
     // Objects declared here can be used by all tests in the test case for Error.
 
-    void notify(P2pMgrPtr p2pMgr) {
+    void notify(BaseP2pMgrPtr p2pMgr) {
         p2pMgr->notify(prodId);
         for (ProdSize offset = 0; offset < sizeof(prodData); offset += SEG_SIZE) {
             DataSegId dataSegId(prodId, offset);
@@ -151,7 +151,7 @@ public:
     void run() {}
     void halt() {}
 
-    void runP2pMgr(P2pMgrPtr p2pMgr) {
+    void runP2pMgr(BaseP2pMgrPtr p2pMgr) {
         try {
             p2pMgr->run();
         }

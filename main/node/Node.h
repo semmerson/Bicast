@@ -37,7 +37,7 @@
 namespace hycast {
 
 class PeerConnSrvr;
-using PeerConnSrvrPimpl = std::shared_ptr<PeerConnSrvr>;
+using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>;
 
 class Node;                            ///< Forward declaration
 using NodePtr = std::shared_ptr<Node>; ///< Smart pointer to an implementation
@@ -277,7 +277,7 @@ public:
     static SubNodePtr create(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
-            const PeerConnSrvrPimpl peerConnSrvr,
+            const PeerConnSrvrPtr   peerConnSrvr,
             const int               timeout,
             const unsigned          maxPeers,
             const unsigned          evalTime,

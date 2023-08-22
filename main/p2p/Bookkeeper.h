@@ -5,7 +5,7 @@
  *  Created on: Oct 17, 2019
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@
 #ifndef MAIN_PROTO_BOOKKEEPER_H_
 #define MAIN_PROTO_BOOKKEEPER_H_
 
-#include "Peer.h"
+#include "HycastProto.h"
+#include "SockAddr.h"
 
 #include <memory>
 #include <unordered_set>
@@ -58,52 +59,56 @@ public:
 
     /**
      * Adds a peer.
-     * @param[in] peer     The peer to be added
+     * @param[in] rmtAddr  Socket address of the remote peer
+     * @param[in] isClient Local peer was constructed client-side (i.e., it initiated the
+     *                     connection)
      * @retval    true     Success
      * @retval    false    The peer was previously added
      */
-    virtual bool add(const PeerPtr peer) =0;
+    virtual bool add(
+            const SockAddr& rmtAddr,
+            const bool      isClient) =0;
 
     /**
      * Removes a peer.
-     * @param[in] peer     The peer to be removed
+     * @param[in] rmtAddr  Socket address of the remote peer
      * @retval    true     The peer existed
      * @retval    false    The peer didn't exist
      */
-    virtual bool erase(const PeerPtr peer) =0;
+    virtual bool erase(const SockAddr& rmtAddr) =0;
 
     /**
      * Handles a peer requesting something from its remote counterpart.
-     * @param[in] peer  The peer that made the request
+     * @param[in] rmtAddr  Socket address of the remote peer
      */
-    virtual void requested(const PeerPtr peer) =0;
+    virtual void requested(const SockAddr& rmtAddr) =0;
 
     /**
      * Indicates if a remote peer should be notified about available information
      * on a product. Returns false iff the remote peer has indicated that it has
      * the datum.
      *
-     * @param[in] peer       Peer
+     * @param[in] rmtAddr    Socket address of the remote peer
      * @param[in] prodId     Identifier of the product
      * @retval    true       Peer should be notified
      * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
-            PeerPtr      peer,
-            const ProdId prodId) const =0;
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) const =0;
 
     /**
      * Indicates if a remote peer should be notified about an available data
      * segment. Returns false iff the remote peer has indicated that it has the
      * datum.
      *
-     * @param[in] peer       Peer
+     * @param[in] rmtAddr    Socket address of the remote peer
      * @param[in] dataSegId  ID of the data segment
      * @retval    true       Peer should be notified
      * @retval    false      Peer should not be notified
      */
     virtual bool shouldNotify(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) const =0;
 
     /**
@@ -112,7 +117,7 @@ public:
      * requests; if no, then the peer is added to a list of alternative peers
      * for the request.
      *
-     * @param[in] peer               Peer
+     * @param[in] rmtAddr            Socket address of the remote peer
      * @param[in] prodId             Product identifier
      * @return    true               Request should be made
      * @return    false              Request shouldn't be made
@@ -124,15 +129,15 @@ public:
      * @cancellationpoint            No
      */
     virtual bool shouldRequest(
-            PeerPtr      peer,
-            const ProdId prodId) =0;
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) =0;
 
     /**
      * Indicates if a data segment should be requested by a peer. If yes, then
      * the concomitant request is added to the peer's list of requests; if no,
      * then the peer is added to a list of alternative peers for the request.
      *
-     * @param[in] peer               Peer
+     * @param[in] rmtAddr            Socket address of the remote peer
      * @param[in] dataSegId          Data segment identifier
      * @return    true               Request should be made
      * @return    false              Request shouldn't be made
@@ -144,7 +149,7 @@ public:
      * @cancellationpoint            No
      */
     virtual bool shouldRequest(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId dataSegId) =0;
 
     /**
@@ -153,7 +158,7 @@ public:
      * removed from the peer's outstanding requests and the set of alternative
      * peers for that request is cleared.
      *
-     * @param[in] peer        Peer
+     * @param[in] rmtAddr     Socket address of the remote peer
      * @param[in] prodId      Product identifier
      * @retval    true        Success
      * @retval    false       Product information wasn't requested
@@ -163,15 +168,15 @@ public:
      * @cancellationpoint     No
      */
     virtual bool received(
-            PeerPtr      peer,
-            const ProdId prodId) =0;
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) =0;
 
     /**
      * Process a peer having received a data segment. Nothing happens if it
      * wasn't requested by the peer; otherwise, the corresponding request is
      * removed from the peer's outstanding requests.
      *
-     * @param[in] peer        Peer
+     * @param[in] rmtAddr     Socket address of the remote peer
      * @param[in] segId       Data segment identifier
      * @retval    true        Success
      * @retval    false       Data segment wasn't requested
@@ -180,7 +185,7 @@ public:
      * @cancellationpoint     No
      */
     virtual bool received(
-            PeerPtr         peer,
+            const SockAddr& rmtAddr,
             const DataSegId segId) =0;
 
     /**
@@ -198,33 +203,34 @@ public:
     virtual void erase(const DataSegId segId) =0;
 
     /**
-     * Returns the worst performing local peer. For a publisher, this will be the peer whose remote
-     * counterpart made the most requests. For a subscriber, this will be the peer whose remote
-     * counterpart supplied the least amount of data.
+     * Returns the socket address of the remote peer of the worst performing local peer. For a
+     * publisher, this will be the peer whose remote counterpart made the most requests. For a
+     * subscriber, this will be the peer whose remote counterpart supplied the least amount of data.
      *
      * @return Worst performing peer. Will test false if no such peer exists.
      */
-    virtual PeerPtr getWorstPeer() const =0;
+    virtual SockAddr getWorstPeer() const =0;
 
     /**
-     * Returns the best alternative peer, besides a given one, from which to request product
-     * information.
-     * @param[in] peer    The peer that didn't receive the information
-     * @param[in] prodId  The product's ID
-     * @return            The best alternative peer
+     * Returns the socket address of the best alternative peer, besides a given one, from which to
+     * request product information.
+     * @param[in] rmtAddr  Socket address of the remote peer that didn't send the data
+     * @param[in] prodId   The product's ID
+     * @return             The best alternative peer
      */
-    virtual PeerPtr getAltPeer(
-            const PeerPtr peer,
-            const ProdId  prodId) =0;
+    virtual SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
+            const ProdId    prodId) =0;
 
     /**
-     * Returns the best alternative peer, besides a given one, from which to request a data segment.
-     * @param[in] peer    The peer that didn't receive the segment
-     * @param[in] segId   The data-segment's ID
-     * @return            The best alternative peer
+     * Returns the socket address of the best alternative peer, besides a given one, from which to
+     * request a data segment.
+     * @param[in] rmtAddr  Socket address of the remote peer that didn't send the data
+     * @param[in] segId    The data-segment's ID
+     * @return             The best alternative peer
      */
-    virtual PeerPtr getAltPeer(
-            const PeerPtr   peer,
+    virtual SockAddr getAltPeer(
+            const SockAddr& rmtAddr,
             const DataSegId segId) =0;
 
     /**

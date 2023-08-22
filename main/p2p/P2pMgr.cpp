@@ -42,7 +42,7 @@ namespace hycast {
 /**************************************************************************************************/
 
 /// Base P2P manager implementation
-class P2pMgrImpl : public P2pMgr
+class BaseP2pMgrImpl : public BaseP2pMgr
 {
     Node& node;          ///< Hycast node
     bool  peersChanged;  ///< Set of peers has changed?
@@ -50,7 +50,7 @@ class P2pMgrImpl : public P2pMgr
     template<class FUNC>
     void forActivePeers(FUNC func) {
         for (auto iter = peerSet.begin(), end = peerSet.end(); iter != end; )
-            func(*(iter++)); // Increment prevents becoming invalid
+            func(*(iter++)); // Increment prevents iterator from becoming invalid
     }
 
     template<typename ID>
@@ -93,7 +93,7 @@ class P2pMgrImpl : public P2pMgr
                 notifySrvrInfo(); // Change to tier number or number of available server-side peers
 
             peerMap[peer->getRmtAddr()] = peer;
-            const auto added = bookkeeper->add(peer);
+            const auto added = bookkeeper->add(peer->getRmtAddr(), peer->isClient());
             LOG_ASSERT(added);
             peersChanged = true;
             stateCond.notify_all();
@@ -113,7 +113,7 @@ class P2pMgrImpl : public P2pMgr
         if (peerSet.erase(peer)) {
             const auto n = peerMap.erase(peer->getRmtAddr());
             LOG_ASSERT(n);
-            const auto existed = bookkeeper->erase(peer);
+            const auto existed = bookkeeper->erase(peer->getRmtAddr());
             LOG_ASSERT(existed);
 
             if (state != State::STOPPING) {
@@ -279,7 +279,7 @@ protected:
     bool add(PeerPtr peer) {
         if (!addPeer(peer))
             return false;
-        Thread(&P2pMgrImpl::runPeer, this, peer).detach();
+        Thread(&BaseP2pMgrImpl::runPeer, this, peer).detach();
         return true;
     }
 
@@ -390,8 +390,9 @@ protected:
                 else {
                     // The set of active peers has been unchanged for the evaluation duration
                     if (isFull()) {
-                        auto worstPeer = bookkeeper->getWorstPeer();
-                        if (worstPeer) {
+                        auto worstPeerAddr = bookkeeper->getWorstPeer();
+                        if (worstPeerAddr) {
+                            auto worstPeer = peerMap.at(worstPeerAddr);
                             LOG_DEBUG("Halting peer %s", worstPeer->to_string().data());
                             worstPeer->halt(); // `runPeer()` will remove peer and notify observers
                         }
@@ -513,7 +514,7 @@ public:
      * @throw InvalidArgument       Invalid maximum number of server-side peers
      * @throw InvalidArgument       Maximum number of peers < maximum number of server-side peers
      */
-    P2pMgrImpl(
+    BaseP2pMgrImpl(
             Tracker&       tracker,
             Node&          node,
             const int      maxPeers,
@@ -551,14 +552,10 @@ public:
             throw SYSTEM_ERROR("Couldn't initialize semaphore");
     }
 
-    virtual ~P2pMgrImpl() noexcept {
+    virtual ~BaseP2pMgrImpl() noexcept {
         Guard guard{stateMutex};
         LOG_ASSERT(state == State::INIT || state == State::STOPPED);
         ::sem_destroy(&stopSem);
-    }
-
-    Tracker& getTracker() override {
-        return tracker;
     }
 
     P2pSrvrInfo getSrvrInfo() override {
@@ -613,7 +610,7 @@ public:
 /**************************************************************************************************/
 
 /// Publisher's P2P manager implementation
-class PubP2pMgrImpl final : public P2pMgrImpl, public PubP2pMgr
+class PubP2pMgrImpl final : public BaseP2pMgrImpl, public PubP2pMgr
 {
     PubP2pSrvrPtr p2pSrvr;   ///< Publisher's P2p-server
 
@@ -683,8 +680,8 @@ protected:
     }
 
 public:
-    using P2pMgrImpl::waitForSrvrPeer;
-    using P2pMgrImpl::getDatum;
+    using BaseP2pMgrImpl::waitForSrvrPeer;
+    using BaseP2pMgrImpl::getDatum;
 
     /**
      * Constructs.
@@ -701,7 +698,7 @@ public:
                   const PubP2pSrvrPtr p2pSrvr,
                   const int           maxPeers,
                   const int           evalTime)
-        : P2pMgrImpl(tracker, pubNode, maxPeers, maxPeers, evalTime)
+        : BaseP2pMgrImpl(tracker, pubNode, maxPeers, maxPeers, evalTime)
         , p2pSrvr(p2pSrvr)
     {
         bookkeeper = Bookkeeper::createPub(maxPeers);
@@ -721,36 +718,32 @@ public:
      */
     PubP2pMgrImpl& operator=(const PubP2pMgrImpl& rhs) =delete;
 
-    Tracker& getTracker() override {
-        return P2pMgrImpl::getTracker();
-    }
-
     P2pSrvrInfo getSrvrInfo() override {
-        return P2pMgrImpl::getSrvrInfo();
+        return BaseP2pMgrImpl::getSrvrInfo();
     }
 
     void recv(const Tracker& tracker) override {
-        P2pMgrImpl::recv(tracker);
+        BaseP2pMgrImpl::recv(tracker);
     }
 
     void run() override {
-        P2pMgrImpl::run();
+        BaseP2pMgrImpl::run();
     }
 
     void halt() override {
-        P2pMgrImpl::halt();
+        BaseP2pMgrImpl::halt();
     }
 
     void waitForSrvrPeer() override {
-        P2pMgrImpl::waitForSrvrPeer();
+        BaseP2pMgrImpl::waitForSrvrPeer();
     }
 
     void notify(const ProdId prodId) override {
-        P2pMgrImpl::notify(prodId);
+        BaseP2pMgrImpl::notify(prodId);
     }
 
     void notify(const DataSegId segId) override {
-        P2pMgrImpl::notify(segId);
+        BaseP2pMgrImpl::notify(segId);
     }
 
     void recvNotice(const P2pSrvrInfo& srvrInfo) override {
@@ -758,11 +751,11 @@ public:
     }
 
     ProdIdSet subtract(ProdIdSet other) const override {
-        return P2pMgrImpl::subtract(other);
+        return BaseP2pMgrImpl::subtract(other);
     }
 
     ProdIdSet getProdIds() const override {
-        return P2pMgrImpl::getProdIds();
+        return BaseP2pMgrImpl::getProdIds();
     }
 
     ProdInfo getDatum(
@@ -772,7 +765,7 @@ public:
             Guard guard{stateMutex};
             if (peerMap.count(rmtAddr) == 0)
                 return ProdInfo{};
-            bookkeeper->requested(peerMap.at(rmtAddr));
+            bookkeeper->requested(rmtAddr);
         }
         return getDatum(prodId);
     }
@@ -784,7 +777,7 @@ public:
             Guard guard{stateMutex};
             if (peerMap.count(rmtAddr) == 0)
                 return DataSeg{};
-            bookkeeper->requested(peerMap.at(rmtAddr));
+            bookkeeper->requested(rmtAddr);
         }
         return getDatum(segId);
     }
@@ -804,7 +797,7 @@ PubP2pMgrPtr PubP2pMgr::create(
 /**************************************************************************************************/
 
 /// Implementation of a subscribing P2P manager
-class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
+class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
 {
     SubNode&      subNode;       ///< Subscriber's node
     const int     maxClntPeers;  ///< Maximum number of client-side peers
@@ -966,7 +959,7 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
                  *      from the bookkeeper; and
                  *   3) The relevant bookkeeper entries are deleted.
                  */
-                if (bookkeeper->received(peer, id)) {
+                if (bookkeeper->received(peer->getRmtAddr(), id)) {
                     subNode.recvP2pData(datum);
 
                     LOG_DEBUG("Notifying peers about datum %s", id.to_string().data());
@@ -998,9 +991,9 @@ class SubP2pMgrImpl final :  public P2pMgrImpl, public SubP2pMgr
     void reassign(
             const PeerPtr peer,
             const ID&     id) {
-        auto altPeer = bookkeeper->getAltPeer(peer, id);
-        if (altPeer)
-            altPeer->request(id);
+        auto altPeerAddr = bookkeeper->getAltPeer(peer->getRmtAddr(), id);
+        if (altPeerAddr)
+            peerMap.at(altPeerAddr)->request(id);
     }
 
 protected:
@@ -1086,7 +1079,7 @@ protected:
             const ProdId prodId) override {
         LOG_ASSERT(!stateMutex.try_lock());
         // Remote peer is subscriber & doesn't have the datum => notify
-        return !peer->isRmtPub() && bookkeeper->shouldNotify(peer, prodId);
+        return !peer->isRmtPub() && bookkeeper->shouldNotify(peer->getRmtAddr(), prodId);
     }
 
     bool shouldNotify(
@@ -1094,7 +1087,7 @@ protected:
             const DataSegId dataSegId) override {
         LOG_ASSERT(!stateMutex.try_lock());
         // Remote peer is subscriber & doesn't have the datum => notify
-        return !peer->isRmtPub() && bookkeeper->shouldNotify(peer, dataSegId);
+        return !peer->isRmtPub() && bookkeeper->shouldNotify(peer->getRmtAddr(), dataSegId);
     }
 
 public:
@@ -1118,7 +1111,7 @@ public:
                   const int       timeout,
                   const int       maxPeers,
                   const int       evalTime)
-        : P2pMgrImpl(tracker, subNode, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
+        : BaseP2pMgrImpl(tracker, subNode, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
         , subNode(subNode)
         , maxClntPeers(maxSrvrPeers)
         , numClntPeers(0)
@@ -1136,24 +1129,20 @@ public:
     /// Copy assignment operator
     SubP2pMgrImpl& operator=(const SubP2pMgrImpl& rhs) =delete;
 
-    Tracker& getTracker() override {
-        return P2pMgrImpl::getTracker();
-    }
-
     P2pSrvrInfo getSrvrInfo() override {
-        return P2pMgrImpl::getSrvrInfo();
+        return BaseP2pMgrImpl::getSrvrInfo();
     }
 
     void recv(const Tracker& tracker) override {
-        P2pMgrImpl::recv(tracker);
+        BaseP2pMgrImpl::recv(tracker);
     }
 
     void run() override {
-        P2pMgrImpl::run();
+        BaseP2pMgrImpl::run();
     }
 
     void halt() override {
-        P2pMgrImpl::halt();
+        BaseP2pMgrImpl::halt();
     }
 
     void waitForClntPeer() override {
@@ -1162,23 +1151,23 @@ public:
     }
 
     void waitForSrvrPeer() override {
-        P2pMgrImpl::waitForSrvrPeer();
+        BaseP2pMgrImpl::waitForSrvrPeer();
     }
 
     void notify(const ProdId prodId) override {
-        P2pMgrImpl::notify(prodId);
+        BaseP2pMgrImpl::notify(prodId);
     }
 
     void notify(const DataSegId segId) override {
-        P2pMgrImpl::notify(segId);
+        BaseP2pMgrImpl::notify(segId);
     }
 
     ProdIdSet subtract(ProdIdSet other) const override {
-        return P2pMgrImpl::subtract(other);
+        return BaseP2pMgrImpl::subtract(other);
     }
 
     ProdIdSet getProdIds() const override {
-        return P2pMgrImpl::getProdIds();
+        return BaseP2pMgrImpl::getProdIds();
     }
 
     void recvNotice(const P2pSrvrInfo& srvrInfo) override {
@@ -1195,7 +1184,7 @@ public:
         if (subNode.shouldRequest(prodId)) {
             Guard guard{stateMutex};
             if (peerMap.count(rmtAddr))
-                return bookkeeper->shouldRequest(peerMap[rmtAddr], prodId);
+                return bookkeeper->shouldRequest(rmtAddr, prodId);
         }
         return false;
     }
@@ -1205,7 +1194,7 @@ public:
         if (subNode.shouldRequest(segId)) {
             Guard guard{stateMutex};
             if (peerMap.count(rmtAddr))
-                return bookkeeper->shouldRequest(peerMap[rmtAddr], segId);
+                return bookkeeper->shouldRequest(rmtAddr, segId);
         }
         return false;
     }
@@ -1213,13 +1202,13 @@ public:
     ProdInfo getDatum(
             const ProdId   prodId,
             const SockAddr rmtAddr) override {
-        return P2pMgrImpl::getDatum(prodId);
+        return BaseP2pMgrImpl::getDatum(prodId);
     }
 
     DataSeg getDatum(
             const DataSegId segId,
             const SockAddr  rmtAddr) override {
-        return P2pMgrImpl::getDatum(segId);
+        return BaseP2pMgrImpl::getDatum(segId);
     }
 
     void missed(const ProdId prodId,
