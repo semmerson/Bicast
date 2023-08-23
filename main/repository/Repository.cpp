@@ -167,36 +167,6 @@ protected:
         }
     };
 
-    /// Class function to compare products for processing.
-    class ProcComp {
-        Impl& repo; ///< Associated repository implementation
-
-    public:
-        /**
-         * Constructs.
-         * @param[in] repo  Associated repository implementation
-         */
-        ProcComp(Impl& repo)
-            : repo(repo)
-        {}
-
-        /**
-         * Compares two products to be processed.
-         * @param[in] lhs  Left-hand-side product ID
-         * @param[in] rhs  Right-hand-side product ID
-         * @return true    The left-hand-side product is considered less than the right-hand-side
-         *                 product
-         * @return false   The left-hand-side product is not considered less than the
-         *                 right-hand-side product
-         */
-        bool operator()(
-                const ProdId lhs,
-                const ProdId rhs) {
-            return repo.getProdEntry(lhs)->prodInfo.getCreateTime() <
-                    repo.getProdEntry(rhs)->prodInfo.getCreateTime();
-        }
-    };
-
     /// Set of product entries
     using ProdEntries = std::unordered_set<ProdEntry, HashProdEntry>;
     /// Queue of product-files with open file descriptors. LRU is at the front.
@@ -204,7 +174,7 @@ protected:
     /// Queue for product-files that should be deleted after a certain time
     using DeleteQueue = std::priority_queue<DeleteEntry, std::deque<DeleteEntry>>;
     /// Queue for local processing of data products
-    using ProcQueue   = std::set<ProdId, ProcComp>;
+    using ProcQueue   = std::map<SysTimePoint, ProdId>;
 
     mutable Mutex     mutex;           ///< To maintain consistency
     mutable Cond      procQueueCond;   ///< For waiting on the process-queue
@@ -220,7 +190,6 @@ protected:
                                        ///< trailing separator.
     int               rootFd;          ///< File descriptor open on root-directory of repository
     ThreadEx          threadEx;        ///< Subtask exception
-    ProcComp          procComp;        ///< Process queue comparison function
     ProcQueue         procQueue;       ///< Queue of identifiers of products ready for processing
 
     /**
@@ -313,7 +282,7 @@ protected:
                 LOG_TRACE("Added to delete-queue: modTime=%s, deleteTime=%s",
                         std::to_string(modTime).data(), std::to_string(deleteTime).data());
 
-                procQueue.insert(prodInfo.getId());
+                procQueue.emplace(modTime, prodInfo.getId());
                 procQueueCond.notify_all();
 
                 wasAdded = true;
@@ -542,8 +511,7 @@ public:
         , rootPrefixLen{absPathRoot.size()}
         , rootFd(::open(FileUtil::ensureDir(absPathRoot).data(), O_DIRECTORY | O_RDONLY))
         , threadEx()
-        , procComp(ProcComp{*this})
-        , procQueue(procComp)
+        , procQueue()
     {
         if (maxOpenProds <= 0)
             throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
@@ -602,7 +570,7 @@ public:
             threadEx.throwIfSet();
 
             auto procQueueIter = procQueue.begin();
-            auto prodEntriesIter = getProdEntry(*procQueueIter);
+            auto prodEntriesIter = getProdEntry(procQueueIter->second);
 
             if (prodEntriesIter != prodEntries.end()) {
                 prodEntry = *prodEntriesIter;
@@ -1004,7 +972,12 @@ class SubRepo::Impl final : public Repository::Impl
 
                 prodFile.close(); // Removal from product-queue for processing will re-enable access
                 openProds.erase(prodId);
-                procQueue.insert(prodInfo.getId());
+                /*
+                 * The file modification-time is used rather than the product's creation-time
+                 * because the two might have different resolutions which could have a harmful
+                 * effect.
+                 */
+                procQueue.emplace(prodFile.getModTime(), prodInfo.getId());
                 procQueueCond.notify_all();
             }
         }
