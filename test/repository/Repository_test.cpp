@@ -246,7 +246,7 @@ TEST_F(RepositoryTest, Performance)
 
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LogLevel::DEBUG);
+  hycast::log_setLevel(hycast::LogLevel::INFO);
   std::set_terminate(&hycast::terminate);
 
   ::testing::InitGoogleTest(&argc, argv);

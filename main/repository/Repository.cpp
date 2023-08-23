@@ -167,14 +167,44 @@ protected:
         }
     };
 
+    /// Class function to compare products for processing.
+    class ProcComp {
+        Impl& repo; ///< Associated repository implementation
+
+    public:
+        /**
+         * Constructs.
+         * @param[in] repo  Associated repository implementation
+         */
+        ProcComp(Impl& repo)
+            : repo(repo)
+        {}
+
+        /**
+         * Compares two products to be processed.
+         * @param[in] lhs  Left-hand-side product ID
+         * @param[in] rhs  Right-hand-side product ID
+         * @return true    The left-hand-side product is considered less than the right-hand-side
+         *                 product
+         * @return false   The left-hand-side product is not considered less than the
+         *                 right-hand-side product
+         */
+        bool operator()(
+                const ProdId lhs,
+                const ProdId rhs) {
+            return repo.getProdEntry(lhs)->prodInfo.getCreateTime() <
+                    repo.getProdEntry(rhs)->prodInfo.getCreateTime();
+        }
+    };
+
     /// Set of product entries
     using ProdEntries = std::unordered_set<ProdEntry, HashProdEntry>;
-    /// Container for product-files with open file descriptors
+    /// Queue of product-files with open file descriptors. LRU is at the front.
     using ProdIdQueue = HashSetQueue<ProdId>;
-    /// Container for product-files that should be deleted after a certain time
+    /// Queue for product-files that should be deleted after a certain time
     using DeleteQueue = std::priority_queue<DeleteEntry, std::deque<DeleteEntry>>;
-    /// Container for information on data products
-    using ProcQueue   = std::queue<ProdId>;
+    /// Queue for local processing of data products
+    using ProcQueue   = std::set<ProdId, ProcComp>;
 
     mutable Mutex     mutex;           ///< To maintain consistency
     mutable Cond      procQueueCond;   ///< For waiting on the process-queue
@@ -182,14 +212,15 @@ protected:
     const SysDuration keepTime;        ///< Length of time to keep products
     ProdEntries       prodEntries;     ///< Product entries
     DeleteQueue       deleteQueue;     ///< Queue of products to delete and when to delete them
-    ProdIdQueue       openProds;       ///< Products whose files are open
-    const size_t      maxOpenProds;    ///< Maximum number of open products
+    ProdIdQueue       openProds;       ///< Products whose files are open. LRU is at the front.
+    const size_t      maxOpenProds;    ///< Maximum number of products with an open file descriptor
     const String      absPathRoot;     ///< Absolute pathname of root directory of repository.
                                        ///< Includes trailing separator.
     size_t            rootPrefixLen;   ///< Length in bytes of root pathname prefix. Includes
                                        ///< trailing separator.
     int               rootFd;          ///< File descriptor open on root-directory of repository
     ThreadEx          threadEx;        ///< Subtask exception
+    ProcComp          procComp;        ///< Process queue comparison function
     ProcQueue         procQueue;       ///< Queue of identifiers of products ready for processing
 
     /**
@@ -282,7 +313,7 @@ protected:
                 LOG_TRACE("Added to delete-queue: modTime=%s, deleteTime=%s",
                         std::to_string(modTime).data(), std::to_string(deleteTime).data());
 
-                procQueue.push(prodInfo.getId());
+                procQueue.insert(prodInfo.getId());
                 procQueueCond.notify_all();
 
                 wasAdded = true;
@@ -303,8 +334,9 @@ protected:
      *         including the root directory)
      *       - Otherwise:
      *         - Added to the database
-     *         - Added to the process-queue TODO: if it's newer than the last,
-     *           successfully-processed file from the previous session
+     *         - Added to the process-queue TODO: iff it's newer than the last,
+     *           successfully-processed file from the previous session. Requires use of finnish-time
+     *           rather than creation-time due to possibility of out-of-order delivery?
      *     - An encountered directory is:
      *       - Added to the publisher's watch-list if this is the publisher's repository
      *       - Recursively scanned
@@ -510,7 +542,8 @@ public:
         , rootPrefixLen{absPathRoot.size()}
         , rootFd(::open(FileUtil::ensureDir(absPathRoot).data(), O_DIRECTORY | O_RDONLY))
         , threadEx()
-        , procQueue()
+        , procComp(ProcComp{*this})
+        , procQueue(procComp)
     {
         if (maxOpenProds <= 0)
             throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
@@ -568,12 +601,13 @@ public:
 
             threadEx.throwIfSet();
 
-            auto iter = getProdEntry(procQueue.front());
+            auto procQueueIter = procQueue.begin();
+            auto prodEntriesIter = getProdEntry(*procQueueIter);
 
-            if (iter != prodEntries.end()) {
-                prodEntry = *iter;
-                openProds.erase(iter->prodInfo.getId());
-                procQueue.pop();
+            if (prodEntriesIter != prodEntries.end()) {
+                prodEntry = *prodEntriesIter;
+                openProds.erase(prodEntry.prodInfo.getId());
+                procQueue.erase(procQueueIter);
                 break;
             }
         }
@@ -887,7 +921,7 @@ PubRepo::PubRepo(
         const String& rootPathname,
         const long    maxOpenFiles,
         const int     keepTime)
-    : Repository(new PubRepo::Impl(rootPathname, maxOpenFiles, keepTime))
+    : Repository(new PubRepo::Impl{rootPathname, maxOpenFiles, keepTime})
 {}
 
 /******************************************************************************/
@@ -955,10 +989,14 @@ class SubRepo::Impl final : public Repository::Impl
             if (prodFile.isComplete()) {
                 const auto& prodInfo = prodEntry.prodInfo;
                 const auto  prodId = prodInfo.getId();
-                const auto& modTime = prodInfo.getCreateTime();
-                prodFile.setModTime(modTime);
+                const auto& createTime = prodInfo.getCreateTime();
+                // The creation time of the product is saved in the modification time of the file
+                prodFile.setModTime(createTime);
 
-                LOG_INFO("Received product " + prodInfo.to_string());
+                static constexpr double ratio = (static_cast<double>(SysDuration::period::num)) /
+                        SysDuration::period::den;
+                LOG_INFO("Received " + prodInfo.to_string() + ". Latency was " +
+                        std::to_string((SysClock::now() - createTime).count() * ratio) + " s");
 
                 const auto newPathname = absPathRoot + prodInfo.getName();
                 FileUtil::ensureDir(FileUtil::dirname(newPathname), 0755);
@@ -966,7 +1004,7 @@ class SubRepo::Impl final : public Repository::Impl
 
                 prodFile.close(); // Removal from product-queue for processing will re-enable access
                 openProds.erase(prodId);
-                procQueue.push(prodInfo.getId());
+                procQueue.insert(prodInfo.getId());
                 procQueueCond.notify_all();
             }
         }
@@ -1116,7 +1154,7 @@ SubRepo::SubRepo(
         const std::string& rootPathname,
         const size_t       maxOpenFiles,
         const int          keepTime)
-    : Repository(new Impl(rootPathname, maxOpenFiles, keepTime))
+    : Repository(new Impl{rootPathname, maxOpenFiles, keepTime})
 {}
 
 bool SubRepo::save(const ProdInfo prodInfo) const {
