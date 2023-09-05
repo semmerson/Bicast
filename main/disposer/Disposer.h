@@ -37,52 +37,87 @@ private:
 
 public:
     /**
-     * Default constructs. The `dispose()` method will do nothing until `add()` is called.
-     * @see `add()`
+     * Default constructs. The resulting Disposer will not be valid and will test false.
      */
     Disposer();
 
     /**
-     * Sets the maximum number of file descriptors to keep open between products.
-     * @param[in] maxKeepOpen  Maximum number of file descriptors to keep open
+     * Constructs. The `dispose()` method will do nothing until `add()` is called.
+     * @param[in] lastProcDir    Pathname of the directory to hold information on the last,
+     *                           successfully-processed data-product
+     * @param[in] feedName       Name of the data-product feed
+     * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
+     *                           descriptors are kept open)
+     * @see `add()`
      */
-    void setMaxKeepOpen(const int maxKeepOpen) noexcept;
+    Disposer(
+            const String& lastProcDir,
+            const String  feedName,
+            const int     maxPersistent = 20);
 
     /**
-     * Returns the maximum number of file descriptors to keep open between products.
-     * @return Maximum number of file descriptors to keep open
+     * Indicates if this is a valid instance (i.e., not default constructed).
+     * @retval true   This is a valid instance
+     * @retval false  This is not a valid instance
      */
-    int getMaxKeepOpen() const noexcept;
+    operator bool() const noexcept;
 
     /**
      * Adds a pattern-action.
      *
      * @param[in] patternAction  Pattern-action to be added
      */
-    void add(const PatternAction& patternAction);
+    void add(const PatternAction& patternAction) const;
+
+    /**
+     * Returns the modification-time of the last, successfully-processed data-product.
+     * @return The modification-time of the last, successfully-processed data-product if this
+     *         instance is valid and the time exists; otherwise, SysTimePoint::min()
+     */
+    SysTimePoint getLastProcTime() const;
+
+    /**
+     * Returns the number of pattern/action entries.
+     * @return The number of pattern/action entries. Will be 0 if `operator bool()` is false.
+     * @see operator bool()
+     */
+    size_t size() const;
 
     /**
      * Disposes of a product.
      *
      * @param[in] prodInfo  Product metadata
      * @param[in] bytes     Product data. There shall be `prodInfo.getSize()` bytes.
+     * @param[in] path      Pathname of the underlying file
+     * @retval    true      Disposition was successful
+     * @retval    false     Disposition was not successful
      */
-    void dispose(
+    bool dispose(
             const ProdInfo prodInfo,
-            const char*    bytes) const;
+            const char*    bytes,
+            const String&  path) const;
 
     /**
-     * Creates a Disposer instance from a YAML file. This factory method exists
-     * in addition to the constructor in order to unit-test the Disposer class
-     * independent of a configuration-file parser.
+     * Creates a Disposer instance from a YAML file. This factory method exists in addition to the
+     * constructor in order to unit-test the Disposer class independent of a configuration-file
+     * parser.
      *
-     * @param[in] configFile   Pathname of the configuration-file
-     * @return                 A Disposer corresponding to the configuration-file
-     * @throw InvalidArgument  Couldn't load configuration-file
-     * @throw SystemError      Couldn't get pathname of current working directory
-     * @throw RuntimeError     Couldn't parse configuration-file
+     * @param[in] configFile     Pathname of the configuration-file
+     * @param[in] feedName       Name of the data-product feed
+     * @param[in] lastProcDir    Default pathname of the directory to hold information on the last,
+     *                           successfully-processed data-product
+     * @param[in] maxPersistent  Default maximum number of persistent actions (i.e., actions whose
+     *                           file descriptors are kept open)
+     * @return                   A Disposer corresponding to the configuration-file
+     * @throw InvalidArgument    Couldn't load configuration-file
+     * @throw SystemError        Couldn't get pathname of current working directory
+     * @throw RuntimeError       Couldn't parse configuration-file
      */
-    static Disposer createFromYaml(const String& configFile);
+    static Disposer createFromYaml(
+            const String& configFile,
+            const String& feedName,
+            String        lastProcDir,
+            int           maxPersistent);
 
     /**
      * Returns the YAML representation.

@@ -26,6 +26,7 @@
 #include "error.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
+#include "LastProc.h"
 #include "Parser.h"
 #include "PatternAction.h"
 #include "Shield.h"
@@ -50,6 +51,11 @@ class Disposer::Impl
 
     mutable Mutex              mutex;         ///< State mutex
     mutable Cond               cond;          ///< Condition variable
+    String                     lastProcDir;   ///< Pathname of directory to hold information on the
+                                              ///< last, successfully-processed data-product
+    String                     feedName;      ///< Name of the data-product feed
+    LastProcPtr                lastProc;      ///< Saves information on last, successfully-processed
+                                              ///< data-product
     PatActs                    patActs;       ///< Pattern-actions to be matched
     std::unordered_set<Action> actionSet;     ///< Persistent (e.g., open) actions
     HashSetQueue<Action>       actionQueue;   ///< Persistent actions sorted by last use
@@ -223,17 +229,29 @@ public:
     using Iterator = PatActs::iterator;
 
     /**
-     * Default constructs.
+     * Constructs.
+     * @param[in] lastProcDir    Pathname of the directory to hold information on the last,
+     *                           successfully-processed data-product
+     * @param[in] feedName       Name of the data-product feed
+     * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
+     *                           descriptors are kept open)
      */
-    Impl()
+    Impl(   const String& lastProcDir,
+            const String& feedName,
+            const int     maxPersistent)
         : mutex()
         , cond()
+        , lastProcDir(lastProcDir)
+        , feedName(feedName)
+        , lastProc(LastProc::create(lastProcDir, feedName))
         , patActs()
         , actionSet(0)
         , actionQueue(0)
-        , maxPersistent(0)
+        , maxPersistent(maxPersistent)
         , childCmds()
-    {}
+    {
+        FileUtil::ensureDir(lastProcDir);
+    }
 
     ~Impl() {
         try {
@@ -246,12 +264,23 @@ public:
     }
 
     /**
-     * Adds an entry.
-     * @param[in] patAct  The pattern and action to add
+     * Sets the pathname of the directory to hold information on the last, successfully-processed
+     * data-product.
+     * @param[in] lastProcDir  Pathname of the directory to hold information on the last,
+     *                         successfully-processed data-product
      */
-    void add(const PatternAction& patAct) {
-        Guard guard{mutex};
-        patActs.push_back(patAct);
+    void setLastProcDir(const String& lastProcDir) {
+        this->lastProcDir = lastProcDir;
+    }
+
+    /**
+     * Returns the pathname of the directory to hold information on the last, successfully-processed
+     * data-product.
+     * @return  Pathname of the directory to hold information on the last, successfully-processed
+     *          data-product
+     */
+    const String& getLastProcDir() const noexcept {
+        return lastProcDir;
     }
 
     /**
@@ -270,6 +299,32 @@ public:
     int getMaxKeepOpen() const {
         Guard guard{mutex};
         return maxPersistent;
+    }
+
+    /**
+     * Adds an entry.
+     * @param[in] patAct  The pattern and action to add
+     */
+    void add(const PatternAction& patAct) {
+        Guard guard{mutex};
+        patActs.push_back(patAct);
+    }
+
+    /**
+     * Returns the modification-time of the last, successfully-processed data-product.
+     * @return Modification-time of the last, successfully-processed data-product
+     */
+    SysTimePoint getLastProcTime() const {
+        return lastProc->recall();
+    }
+
+    /**
+     * Returns the number of pattern/action entries.
+     * @return The number of pattern/action entries
+     */
+    size_t size() const {
+        Guard guard{mutex};
+        return patActs.size();
     }
 
     /**
@@ -294,13 +349,18 @@ public:
      * Disposes of a data product and waits on any terminated child processes.
      * @param[in] prodInfo  Information on the product
      * @param[in] bytes     The product's data
+     * @param[in] path      Pathname of the underlying file
+     * @retval    true      Disposition was successful
+     * @retval    false     Disposition was not successful
      * @throw RuntimeError  Too many open file descriptors or user processes
      * @throw SystemError  `wait(3)` failure
      * @throw LogicError    Terminated child process is unknown
      */
-    void dispose(
+    bool dispose(
             const ProdInfo prodInfo,
-            const char*    bytes) {
+            const char*    bytes,
+            const String&  path) {
+        bool  success = true;
         Guard guard{mutex};
 
         // TODO: Erase persistent actions that haven't been used for some time
@@ -312,18 +372,22 @@ public:
                     !std::regex_search(prodName, patAct.exclude.getRegex())) {
                 auto action = getAction(patAct.actionTemplate, match);
 
-                LOG_INFO("Executing " + action.to_string() + " on " + prodInfo.to_string());
-
                 try {
                     process(action, bytes, prodInfo.getSize());
+                    LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string());
+                    lastProc->save(path);
                 }
                 catch (const std::exception& ex) {
-                    LOG_ERROR(ex, ("Couldn't process product " + prodInfo.to_string()).data());
+                    LOG_ERROR(ex, ("Couldn't execute " + action.to_string() + " on " +
+                            prodInfo.to_string()).data());
+                    success = false;
                 }
             } // Product should be processed
         } // Pattern-action loop
 
         reap();
+
+        return success;
     }
 
     /**
@@ -383,25 +447,37 @@ public:
 };
 
 Disposer::Disposer()
-    : pImpl(new Impl{})
+    : pImpl()
 {}
 
-void Disposer::setMaxKeepOpen(const int maxKeepOpen) noexcept {
-    pImpl->setMaxKeepOpen(maxKeepOpen);
+Disposer::Disposer(
+        const String& lastProcDir,
+        const String  feedName,
+        const int     maxPersistent)
+    : pImpl(new Impl{lastProcDir, feedName, maxPersistent})
+{}
+
+Disposer::operator bool() const noexcept {
+    return pImpl.operator bool();
 }
 
-int Disposer::getMaxKeepOpen() const noexcept {
-    return pImpl->getMaxKeepOpen();
-}
-
-void Disposer::add(const PatternAction& patAct) {
+void Disposer::add(const PatternAction& patAct) const {
     pImpl->add(patAct);
 }
 
-void Disposer::dispose(
+SysTimePoint Disposer::getLastProcTime() const {
+    return pImpl ? pImpl->getLastProcTime() : SysTimePoint::min();
+}
+
+size_t Disposer::size() const {
+    return pImpl ? pImpl->size() : 0;
+}
+
+bool Disposer::dispose(
         const ProdInfo prodInfo,
-        const char*    bytes) const {
-    pImpl->dispose(prodInfo, bytes);
+        const char*    bytes,
+        const String&  path) const {
+    return pImpl->dispose(prodInfo, bytes, path);
 }
 
 /**
@@ -597,7 +673,11 @@ static void parsePatternActions(
     } // Pattern-actions subnode exists
 }
 
-Disposer Disposer::createFromYaml(const String& configFile)
+Disposer Disposer::createFromYaml(
+        const String& configFile,
+        const String& feedName,
+        String        lastProcDir,
+        int           maxKeepOpen)
 {
     YAML::Node node0;
     try {
@@ -609,15 +689,15 @@ Disposer Disposer::createFromYaml(const String& configFile)
     }
 
     try {
+        Parser::tryDecode<decltype(lastProcDir)>(node0, "lastProcDir", lastProcDir);
+
         // Set the maximum number of file descriptors to keep open
-        int maxKeepOpen = 20;
         Parser::tryDecode(node0, "maxKeepOpen", maxKeepOpen);
         if (maxKeepOpen < 0)
             throw INVALID_ARGUMENT("Invalid \"maxKeepOpen\" value: " + std::to_string(maxKeepOpen));
 
         // Construct the Disposer
-        Disposer disposer{};
-        disposer.setMaxKeepOpen(maxKeepOpen);
+        Disposer disposer{lastProcDir, feedName, maxKeepOpen};
 
         // Add pattern-actions to the Disposer
         parsePatternActions(node0, disposer);

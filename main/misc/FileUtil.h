@@ -111,19 +111,21 @@ public:
     static size_t getSize(const String& pathname);
 
     /**
-     * Returns the metadata of a file. Doesn't follow symbolic links.
+     * Returns the metadata of a file.
      *
      * @param[in]  pathname     Pathname of existing file
      * @param[out] statBuf      Metadata of the file
+     * @param[in]  follow       Follow symbolic links?
      * @return                  Reference to `statBuf`
      * @throws     SystemError  Couldn't get information on the file
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
-    static struct ::stat& statNoFollow(
-            const String& pathname,
-            struct ::stat&     statBuf);
+    static struct ::stat& getStat(
+            const String&  pathname,
+            struct ::stat& statBuf,
+            const bool     follow = true);
 
     /**
      * Returns the status of a file. Follows symbolic links.
@@ -185,10 +187,11 @@ public:
             const mode_t  protMask);
 
     /**
-     * Returns the modification time of a file. Doesn't follow symbolic links.
+     * Returns the modification time of a file.
      *
      * @param[in]  pathname     Pathname of existing file
      * @param[out] modTime      Modification time of the file
+     * @param[in]  follow       Follow symbolic links?
      * @return                  Reference to `modtime`
      * @throws    SYSTEM_ERROR  `stat()` failure
      * @threadsafety            Safe
@@ -197,7 +200,8 @@ public:
      */
     static SysTimePoint& getModTime(
             const String& pathname,
-            SysTimePoint&      modTime);
+            SysTimePoint& modTime,
+            const bool    follow = true);
 
     /**
      * Returns the modification time of a file. Follows symbolic links.
@@ -213,34 +217,47 @@ public:
      * @cancellationpoint       No
      */
     static SysTimePoint getModTime(
-            const int          rootFd,
+            const int     rootFd,
             const String& pathname);
 
     /**
-     * Sets the modification time of a file.
+     * Returns the modification time of a file. Follows symbolic links.
      *
-     * @param[in] pathname        Pathname of file
-     * @param[in] modTime         New modification time
-     * @param[in] followSymLinks  Follow symbolic links?
+     * @param[in] pathname      Pathname of existing file. May be absolute or relative.
+     * @return                  Modification time of the file
+     * @throws    SYSTEM_ERROR  Couldn't open the file
+     * @throws    SYSTEM_ERROR  Couldn't get information on the file
+     * @threadsafety            Safe
+     * @exceptionsafety         Strong guarantee
+     * @cancellationpoint       No
      */
-    static void setModTime(
-            const String&  pathname,
-            const SysTimePoint& modTime,
-            const bool          followSymLinks);
+    static SysTimePoint getModTime(const String& pathname);
 
     /**
      * Sets the modification time of a file.
      *
-     * @param[in] rootFd          File descriptor open on root directory
-     * @param[in] pathname        Pathname relative to root file descriptor
-     * @param[in] modTime         New modification time
-     * @param[in] followSymLinks  Follow symbolic links?
+     * @param[in] pathname Pathname of file
+     * @param[in] modTime  New modification time
+     * @param[in] follow   Follow symbolic links?
+     */
+    static void setModTime(
+            const String&       pathname,
+            const SysTimePoint& modTime,
+            const bool          follow);
+
+    /**
+     * Sets the modification time of a file.
+     *
+     * @param[in] rootFd   File descriptor open on root directory
+     * @param[in] pathname Pathname relative to root file descriptor
+     * @param[in] modTime  New modification time
+     * @param[in] follow   Follow symbolic links?
      */
     static void setModTime(
             const int           rootFd,
-            const String&  pathname,
+            const String&       pathname,
             const SysTimePoint& modTime,
-            const bool          followSymLinks);
+            const bool          follow);
 
     /**
      * Returns the size of a file in bytes.
@@ -268,7 +285,7 @@ public:
      * @cancellationpoint       No
      */
     static off_t getFileSize(
-            const int          rootFd,
+            const int     rootFd,
             const String& pathname);
 
     /**
@@ -280,7 +297,7 @@ public:
      * @throw SystemError      Couldn't rename the file
      */
     static void rename(
-            const int          rootFd,
+            const int     rootFd,
             const String& oldPathname,
             const String& newPathname);
 
@@ -293,7 +310,7 @@ public:
      */
     static const String& ensureDir(
             const String& pathname,
-            const mode_t       mode = 0777);
+            const mode_t  mode = 0777);
 
     /**
      * Follows symbolic links.
@@ -304,9 +321,9 @@ public:
      * @return              `pathname`
      */
     static const String& ensureDir(
-            const int          fd,
+            const int     fd,
             const String& pathname,
-            const mode_t       mode = 0777);
+            const mode_t  mode = 0777);
 
     /**
      * Ensures that the parent directory of a file exists.
@@ -316,7 +333,7 @@ public:
      */
     static void ensureParent(
             const String& pathname,
-            const mode_t       mode = 0777);
+            const mode_t  mode = 0777);
 
     /**
      * Creates a hard link to a file.
@@ -363,8 +380,8 @@ public:
      * @throw SystemError      A directory couldn't be deleted
      */
     static void pruneEmptyDirPath(
-            const int      fd,
-            String&& dirPath);
+            const int fd,
+            String&&  dirPath);
 
     /**
      * Deletes a file and any empty directories on the path from the file to a root directory. The
@@ -393,7 +410,7 @@ public:
      * @see `pruneEmptyDirPath()`
      */
     static void removeFileAndPrune(
-            const int          fd,
+            const int     fd,
             const String& pathname);
 
     /**

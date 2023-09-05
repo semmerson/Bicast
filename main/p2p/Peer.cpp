@@ -1102,8 +1102,8 @@ public:
     /**
      * Accepts a connection from a remote client peer and returns a newly-constructed, server-side
      * counterpart.
-     * @param[in] p2pMgr  The associated peer manager
-     * @return            The server-side counterpart of the remote peer
+     * @param[in] peerMgr  The associated peer manager
+     * @return             The server-side counterpart of the remote peer
      */
     PeerPtr accept(PEER_MGR& peerMgr) override {
         auto peerConn = peerConnSrvr->accept();

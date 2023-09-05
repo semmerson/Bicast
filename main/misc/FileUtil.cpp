@@ -110,13 +110,13 @@ size_t FileUtil::getSize(const String& pathname)
     return statBuf.st_size;
 }
 
-struct ::stat& FileUtil::statNoFollow(
-        const String& pathname,
-        struct ::stat&     statBuf)
+struct ::stat& FileUtil::getStat(
+        const String&  pathname,
+        struct ::stat& statBuf,
+        const bool     follow)
 {
-    // lstat() doesn't follow symbolic links; stat() does
-    if (::lstat(pathname.data(), &statBuf))
-        throw SYSTEM_ERROR("::lstat() failure on file \"" + pathname + "\"");
+    if (::fstatat(AT_FDCWD, pathname.data(), &statBuf, follow ? 0 : AT_SYMLINK_NOFOLLOW))
+        throw SYSTEM_ERROR("::fstatat() failure on file \"" + pathname + "\"");
     return statBuf;
 }
 
@@ -125,22 +125,9 @@ void FileUtil::getStat(
         const String&  pathname,
         struct ::stat& statBuf)
 {
-    const int fd = ::openat(rootFd, pathname.data(), O_RDONLY);
-    if (fd == -1)
-        throw SYSTEM_ERROR("Couldn't open file \"" + pathname + "\"");
-
-    try {
-        int status = ::fstat(fd, &statBuf);
-
-        if (status)
-            throw SYSTEM_ERROR("stat() failure");
-
-        ::close(fd);
-    } // `fd` is open
-    catch (...) {
-        ::close(fd);
-        throw;
-    }
+    int status = fstatat(rootFd, pathname.data(), &statBuf, 0); // NB: Follows symlinks
+    if (status == -1)
+        throw SYSTEM_ERROR("Couldn't fstatat() file \"" + pathname + "\"");
 }
 
 struct stat FileUtil::getStat(
@@ -171,17 +158,18 @@ void FileUtil::setProtection(
 
 SysTimePoint& FileUtil::getModTime(
         const String& pathname,
-        SysTimePoint&      modTime)
+        SysTimePoint& modTime,
+        const bool    follow)
 {
     struct ::stat statBuf;
-    FileUtil::statNoFollow(pathname, statBuf); // Doesn't follow symlinks
+    FileUtil::getStat(pathname, statBuf, follow);
     modTime = SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
             std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
     return modTime;
 }
 
 SysTimePoint FileUtil::getModTime(
-        const int          rootFd,
+        const int     rootFd,
         const String& pathname)
 {
     auto statBuf = getStat(rootFd, pathname);
@@ -189,9 +177,17 @@ SysTimePoint FileUtil::getModTime(
             std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
 }
 
+SysTimePoint FileUtil::getModTime(const String& pathname)
+{
+    struct stat statBuf;
+    getStat(pathname, statBuf, true);
+    return SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
+            std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
+}
+
 void FileUtil::setModTime(
         const int           rootFd,
-        const String&  pathname,
+        const String&       pathname,
         const SysTimePoint& modTime,
         const bool          followSymLinks) {
     struct timespec times[2];
@@ -204,7 +200,7 @@ void FileUtil::setModTime(
 }
 
 void FileUtil::setModTime(
-        const String&  pathname,
+        const String&       pathname,
         const SysTimePoint& modTime,
         const bool          followSymLinks) {
     setModTime(AT_FDCWD, pathname, modTime, followSymLinks);
@@ -213,18 +209,18 @@ void FileUtil::setModTime(
 off_t FileUtil::getFileSize(const String& pathname)
 {
     struct ::stat statBuf;
-    return statNoFollow(pathname, statBuf).st_size;
+    return getStat(pathname, statBuf, true).st_size;
 }
 
 off_t FileUtil::getFileSize(
-        const int          rootFd,
+        const int     rootFd,
         const String& pathname)
 {
     return getStat(rootFd, pathname).st_size;
 }
 
 void FileUtil::rename(
-        const int          rootFd,
+        const int     rootFd,
         const String& oldPathname,
         const String& newPathname)
 {
@@ -235,7 +231,7 @@ void FileUtil::rename(
 
 const String& FileUtil::ensureDir(
         const String& pathname,
-        const mode_t       mode)
+        const mode_t  mode)
 {
     struct ::stat statBuf;
 
@@ -253,9 +249,9 @@ const String& FileUtil::ensureDir(
 }
 
 const String& FileUtil::ensureDir(
-        const int          fd,
+        const int     fd,
         const String& pathname,
-        const mode_t       mode)
+        const mode_t  mode)
 {
     struct ::stat statBuf;
 
@@ -275,7 +271,7 @@ const String& FileUtil::ensureDir(
 
 void FileUtil::ensureParent(
         const String& pathname,
-        const mode_t       mode)
+        const mode_t  mode)
 {
     ensureDir(dirname(pathname), mode);
 }
@@ -304,10 +300,10 @@ void FileUtil::rmDirTree(const String& dirPath)
                 const char* name = entry.d_name;
 
                 if (::strcmp(".", name) && ::strcmp("..", name)) {
-                    const String subName = dirPath + "/" + name;
-                    struct ::stat     statBuf;
+                    const String  subName = dirPath + "/" + name;
+                    struct ::stat statBuf;
 
-                    statNoFollow(subName, statBuf);
+                    getStat(subName, statBuf, false); // Don't follow symbolic links
 
                     if (S_ISDIR(statBuf.st_mode)) {
                         rmDirTree(subName);
@@ -324,7 +320,7 @@ void FileUtil::rmDirTree(const String& dirPath)
             dir = nullptr;
 
             struct stat statBuf;
-            statNoFollow(dirPath, statBuf);
+            getStat(dirPath, statBuf, false);
             if (S_ISDIR(statBuf.st_mode)) {
                 // Not a symbolic link
                 if (::rmdir(dirPath.data()))
@@ -344,11 +340,11 @@ void FileUtil::pruneEmptyDirPath(
         const String& dirPathname)
 {
     struct ::stat statBuf;
-    const auto    rootInode = statNoFollow(rootPathname, statBuf).st_ino;
+    const auto    rootInode = getStat(rootPathname, statBuf, false).st_ino;
     String   dirPath(dirPathname);
 
     for (;;) {
-        statNoFollow(dirPath, statBuf);
+        getStat(dirPath, statBuf, false);
 
         if (statBuf.st_ino == rootInode)
             break; // Stop because at root directory
@@ -369,8 +365,8 @@ void FileUtil::pruneEmptyDirPath(
 }
 
 void FileUtil::pruneEmptyDirPath(
-        const int     fd,
-        String&& dirPath)
+        const int fd,
+        String&&  dirPath)
 {
     struct ::stat statBuf;
     if (::fstat(fd, &statBuf))
@@ -408,7 +404,7 @@ void FileUtil::removeFileAndPrune(
 }
 
 void FileUtil::removeFileAndPrune(
-        const int          fd,
+        const int     fd,
         const String& pathname)
 {
     if (::unlinkat(fd, pathname.data(), 0))

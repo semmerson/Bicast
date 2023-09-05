@@ -4,20 +4,25 @@
 # The following parameter specifies the maximum number of file-descriptors that are kept open by the
 # "Append", "File", and "Pipe" actions. Keeping a file-descriptor open can be more efficient than
 # closing and reopening. The least-recently-used file descriptor will be closed if a new one is
-# needed and the current number of open file-descriptors is this value.
-maxKeepOpen: 20 # Maximum number of file-descriptors to keep-open
+# needed and the current number of open file-descriptors is this value. The default value is 20.
+# maxKeepOpen: 20
+
+# The following parameter specified the pathname of the directory to hold information on the last,
+# successfully-processed data-product. This information allows the local processing of data-products
+# to pick-up where it left-off from the previous session. The default is "lastProc".
+# lastProcDir: lastProc
 
 # The following specifies the actions to be taken for NOAAPort data-products that match the
 # associated patterns. The patterns are specified using ECMAScript regular expressions. It is
-# assumed that a product's name is a relative pathname that's based on its WMO
-# abbreviated heading. A WMO heading which match the following regular expression:
+# assumed that a product's name is a relative pathname that's based on its WMO abbreviated heading.
+# For example, a product whose WMO heading would match this regular expression:
 #     ^(..) (....) (....) (..)(..)(..)
-# is assumed to have a name that matches this pattern
+# is assumed to have a product-name that matches this pattern
 #     $1/$2/$3/<yyyy>-<mm>-$4T$5:$6.txt
-# Where "<yyyy>" and "<m>m" are the year and origin-1 month, respectively. Similarly, a WMO heading
-# which matches this expression
+# Where "<yyyy>" and "<mm>" are the year and origin-1 month, respectively. Similarly, a product
+# whose WMO heading would match this regular expression
 #     ^(..) (....) (....) (..)(..)(..) (.*)
-# is assumed to have a name that matches this pattern
+# is assumed to have a product-name that matches this pattern
 #     $1/$2/$3/<yyyy>-<mm>-$4/$5:$6_$7.txt
 # For example, the product name corresponding to the WMO abbreviated heading
 #     SAUS14 KAWN 241800 RRX
@@ -36,15 +41,15 @@ patternActions:
     actions: # Multiple actions executed sequentialy
       - file: WWA/lastSIGMET                                             # Executed first
         keepOpen: false                                                  # Default
-      - exec: [sh, -c, mailx -s New SIGMET WeatherNerds <WWA/lastSIGMET] # Executed second
+      - exec: [sh, -c, mailx -s 'New SIGMET' WeatherNerds <WWA/lastSIGMET] # Executed second
 
   # APPEND example. Doesn't close output file.
-  - include: ^(../..../..../....-..-../..:...*)
+  - include: ^(../..../..../....-..-../..:...*) # Converted WMO header
     append: IDS_DDPLUS/$1
     keepOpen: true
     
-  # PIPE example. Like the above but uses a decoder and parses the name. Closes output file.
-  - include: ^(..)/(....)/(....)/(....)-(..)-(..)/(..):(..).*\\.txt$
+  # PIPE example. Like the above but parses the name and uses a decoder. Closes output file.
+  - include: ^(..)/(....)/(....)/(....)-(..)-(..)/(..):(..).*\\.txt$ # Converted WMO header
     pipe: [ids_ddplus_decoder, $1, $2, $3, $4, $5, $6, $7, $8]
     keepOpen: false # default
   

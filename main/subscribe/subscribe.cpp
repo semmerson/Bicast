@@ -118,6 +118,8 @@ struct RunPar {
         {}
     }      repo;            ///< Runtime parameters for the repository
     String dispositionFile; ///< Pathname of YAML file indicating how products should be processed
+    String lastProcDir;     ///< Pathname of directory containing information on last, successfully-
+                            ///< processed data-product
 
     /**
      * Default constructs.
@@ -131,14 +133,15 @@ struct RunPar {
                 DEF_EVAL_DURATION)
         , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
         , dispositionFile()
+        , lastProcDir("lastProc")
     {}
 };
 
-static ThreadEx            threadEx;   ///< Exception thrown by a thread
-static RunPar              runPar;     ///< Runtime parameters:
-static const RunPar        defRunPar;  ///< Default runtime parameters
-static Tracker             subTracker; ///< Subscriber's tracker of P2P servers
-static std::atomic_bool    done;       ///< Is this program done?
+static ThreadEx            threadEx;    ///< Exception thrown by a thread
+static RunPar              runPar;      ///< Runtime parameters:
+static const RunPar        defRunPar;   ///< Default runtime parameters
+static Tracker             subTracker;  ///< Subscriber's tracker of P2P servers
+static std::atomic_bool    done;        ///< Is this program done?
 
 static void usage()
 {
@@ -164,8 +167,8 @@ static void usage()
 "    -p <p2pAddr>        Internet address for local P2P server Must not be\n"
 "                        wildcard. Default is IP address of interface used to\n"
 "                        connect to publisher.\n"
-"    -n <maxPeers>       Maximum number of connected peers. Default is " << defRunPar.p2p.maxPeers <<
-                         ".\n"
+"    -n <maxPeers>       Maximum number of connected peers. Default is " << defRunPar.p2p.maxPeers
+                         << ".\n"
 "    -T <timeout>        Timeout, in ms, for connecting to remote P2P server.\n"
 "                        Default is " << defRunPar.p2p.timeout << ".\n"
 "    -q <maxPending>     Maximum number of pending connections to P2P server.\n"
@@ -179,7 +182,10 @@ static void usage()
 "                        \"" << defRunPar.repo.rootDir << "\".\n"
 "  Product Disposition:\n"
 "    -d <disposeConfig>  Pathname of configuration-file specifying disposition of\n"
-"                        products. No local processing if empty string (default).\n"
+"                        products. The default is no local processing.\n"
+"    -L <lastProcDir>    Pathname of directory containing information on the\n"
+"                        last, successfully-processed data-product. Default is\n"
+"                        \"" << runPar.lastProcDir << "\".\n"
 "Operands:\n"
 "    <pubAddr>[:<port>]  Socket address of publisher's server. Default port\n"
 "                        number is " << DEF_PORT << ".\n"
@@ -242,6 +248,8 @@ static void setFromConfig(const String& pathname)
 
         Parser::tryDecode<decltype(runPar.dispositionFile)>(node0, "disposeConfig",
                 runPar.dispositionFile);
+        Parser::tryDecode<decltype(runPar.lastProcDir)>(node0, "lastProcDir",
+                runPar.lastProcDir);
     } // YAML file loaded
     catch (const std::exception& ex) {
         std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" + pathname + "\""));
@@ -332,6 +340,10 @@ static void getCmdPars(
             if (::sscanf(optarg, "%u", &runPar.retryInterval) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
+            break;
+        }
+        case 'L': {
+            runPar.lastProcDir = String(optarg);
             break;
         }
         case 'l': {
@@ -433,69 +445,27 @@ static void setException()
 }
 
 /**
- * Performs local processing of complete data-products. Intended as start function for a thread.
- */
-static void runDisposition(
-        SubNodePtr& subNode,
-        Disposer&   disposer) {
-    try {
-        for (;;) {
-            auto   prodEntry = subNode->getNextProd();
-            Shield shield{}; // Protects product disposition from cancellation
-
-            LOG_DEBUG("Disposing of " + prodEntry.to_string());
-            disposer.dispose(prodEntry.getProdInfo(), prodEntry.getData());
-        }
-    }
-    catch (const std::exception& ex) {
-        setException();
-    }
-}
-
-static std::thread startDisposition(
-        SubNodePtr& subNode,
-        Disposer&   disposer) {
-    try {
-        return std::thread(&runDisposition, std::ref(subNode), std::ref(disposer));
-    }
-    catch (const std::exception& ex) {
-        std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to process products"));
-    }
-}
-
-/**
- * Stops product processing. Shouldn't block for long.
- */
-static void stopDisposition(std::thread& procThread) {
-    if (procThread.joinable()) {
-        ::pthread_cancel(procThread.native_handle());
-        procThread.join();
-    }
-}
-
-/**
  * Subscribes to a feed.
- *   - Creates a P2P server;
- *   - Connects to the publisher's server;
- *   - Obtains subscription information; and
- *   - Creates a SubNode.
- * @return The ready-to-be-run SubNode
- * @throw RuntimeError  Couldn't connect to publisher's server at this time
- * @throw RuntimeError  Couldn't send to publisher
- * @throw SystemError   System failure
+ *   - Connects to the publisher's server; and
+ *   - Obtains subscription information.
+ * @param[in]  p2pSrvrAddr  Socket address of the local P2P server
+ * @param[out] subInfo      Subscription information
+ * @throw RuntimeError      Couldn't connect to publisher's server at this time
+ * @throw RuntimeError      Couldn't send to publisher
+ * @throw SystemError       System failure
  * @see publish.cpp:servSubscriber()
  */
-static SubNodePtr subscribe()
+static void subscribe(
+        SockAddr  p2pSrvrAddr,
+        SubInfo&  subInfo)
 {
     // Keep consonant with `publish.cpp:servSubscriber()`
 
-    bool lostConnection = true;
-    auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
     Xprt xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
 
     LOG_NOTE("Created publisher-transport " + xprt.to_string());
 
-    P2pSrvrInfo subP2pSrvrInfo{peerConnSrvr->getSrvrAddr(), (runPar.p2p.maxPeers+1)/2};
+    P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (runPar.p2p.maxPeers+1)/2};
 
     // Ensure that tracker to be sent contains local P2P server information
     if (!subP2pSrvrInfo.write(xprt))
@@ -508,7 +478,6 @@ static SubNodePtr subscribe()
     LOG_DEBUG("Sent tracker " + subTracker.to_string() + " to publisher " +
             runPar.pubAddr.to_string());
 
-    SubInfo subInfo; // Subscription information
     if (!subInfo.read(xprt))
         throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
                 runPar.pubAddr.to_string());
@@ -529,11 +498,6 @@ static SubNodePtr subscribe()
         //LOG_DEBUG("Set interface for multicast reception to " +
                 //runPar.mcastIface.to_string());
     }
-
-    //LOG_DEBUG("Creating subscribing node");
-    return SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
-            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
-            runPar.repo.maxOpenFiles);
 }
 
 /**
@@ -584,24 +548,34 @@ static void stopSubNode(
 
 /**
  * Executes a session.
- * @param[in] disposer  Disposer of data-products
  * @throw RuntimeError  Couldn't connect to publisher's server at this time
  */
-static void trySession(Disposer& disposer)
+static void trySession()
 {
-    auto   subNode = subscribe();
-    Thread disposeThread = startDisposition(subNode, disposer);
+    // Peer connection server
+    auto    peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
+
+    // Use actual P2P server address because port number might have been 0
+    SubInfo subInfo; // Subscription information
+    subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
+
+    Disposer disposer{}; // Invalid instance
+    if (runPar.dispositionFile.size())
+        disposer = Disposer{runPar.lastProcDir, subInfo.feedName};
+
+    //LOG_DEBUG("Creating subscribing node");
+    auto    subNode = SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
+            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
+            runPar.repo.maxOpenFiles, disposer, nullptr);
 
     try {
         subNode->run();
         if (threadEx)
             LOG_DEBUG("Internal thread threw exception");
         threadEx.throwIfSet(); // Throws if failure on a thread
-        stopDisposition(std::ref(disposeThread));
     } // Disposer started
     catch (const std::exception& ex) {
         LOG_DEBUG(ex);
-        stopDisposition(std::ref(disposeThread));
         throw;
     }
 }
@@ -631,13 +605,9 @@ int main(
     try {
         getCmdPars(argc, argv);
 
-        Disposer disposer{};
-        if (runPar.dispositionFile.size())
-            disposer = Disposer::createFromYaml(runPar.dispositionFile);
-
         while (!done) {
             try {
-                trySession(disposer);
+                trySession();
             }
             catch (const RuntimeError& ex) {
                 LOG_WARN(ex);

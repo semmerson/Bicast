@@ -178,7 +178,7 @@ public:
      */
     SysTimePoint getModTime() {
         SysTimePoint modTime;
-        return FileUtil::getModTime(pathname, modTime);
+        return FileUtil::getModTime(pathname, modTime, false);
     }
 
     /**
@@ -187,7 +187,7 @@ public:
      * @return              A reference to `modTime`
      */
     SysTimePoint& getModTime(SysTimePoint& modTime) {
-        return FileUtil::getModTime(pathname, modTime);
+        return FileUtil::getModTime(pathname, modTime, false);
     }
 
     /**

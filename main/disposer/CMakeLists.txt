@@ -5,6 +5,7 @@ add_library(disposer OBJECT
                                 PatternAction.h
         ActionTemplate.cpp      ActionTemplate.h
         Disposer.cpp            Disposer.h
+        LastProc.cpp            LastProc.h
 )
 
 # Add the product-diposition example

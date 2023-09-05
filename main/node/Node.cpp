@@ -25,6 +25,7 @@
 #include "Node.h"
 
 #include "Disposer.h"
+#include "LastProc.h"
 #include "PeerConn.h"
 #include "Shield.h"
 #include "ThreadException.h"
@@ -129,7 +130,7 @@ using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-
 /**
  * Base class for Hycast node implementations.
  */
-class NodeImpl : public Node
+class NodeImpl : virtual public Node
 {
     /**
      * Runs the peer-to-peer component. Blocks until `P2pMgr::run()` returns.
@@ -147,7 +148,7 @@ class NodeImpl : public Node
 protected:
     mutable Thread p2pThread;    ///< Peer-to-peer thread (either publisher's or subscriber's)
     mutable sem_t  stopSem;      ///< For async-signal-safe stopping
-    BaseP2pMgrPtr      p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
+    BaseP2pMgrPtr  p2pMgr;       ///< Peer-to-peer component (either publisher's or subscriber's)
     ThreadEx       threadEx;     ///< Thread exception
 
     /**
@@ -208,6 +209,7 @@ public:
     }
 
     virtual ~NodeImpl() noexcept {
+        //LOG_DEBUG("NodeImpl being destroyed");
         ::sem_destroy(&stopSem);
     }
 
@@ -222,6 +224,8 @@ public:
     void run() override {
         startThreads();
         ::sem_wait(&stopSem);
+        //LOG_DEBUG("Semaphore returned");
+        //LOG_DEBUG("Stopping threads");
         stopThreads();
         threadEx.throwIfSet();
     }
@@ -229,8 +233,10 @@ public:
     void halt() override {
         int semval = 0;
         ::sem_getvalue(&stopSem, &semval);
-        if (semval < 1)
+        if (semval < 1) {
+            //LOG_DEBUG("Posting to semaphore");
             ::sem_post(&stopSem);
+        }
     }
 
     void waitForPeer() override {
@@ -245,10 +251,12 @@ public:
  */
 class PubNodeImpl final : public PubNode, public NodeImpl
 {
-    McastPub::Pimpl    mcastPub;     ///< Publisher's multicast component
-    PubRepo            repo;         ///< Publisher's data-product repository
-    SegSize            maxSegSize;   ///< Maximum size of a data-segment in bytes
-    mutable Thread     senderThread; ///< Thread on which products are sent via multicast and P2P
+    McastPub::Pimpl mcastPub;     ///< Publisher's multicast component
+    LastProcPtr     lastProc;     ///< Saves information on last, successfully-processed
+                                  ///< data-product
+    PubRepo         repo;         ///< Publisher's data-product repository
+    SegSize         maxSegSize;   ///< Maximum size of a data-segment in bytes
+    Thread          senderThread; ///< Thread on which products are sent via multicast and P2P
 
     /**
      * Sends information on a product.
@@ -294,9 +302,11 @@ class PubNodeImpl final : public PubNode, public NodeImpl
      */
     void runSender() {
         // TODO: Make the priority of this thread less than the handling of missed-data requests
+        LOG_DEBUG("Sender thread started");
         try {
-            for (;;) {
-                auto  prodEntry = repo.getNextProd();
+            for (auto prodEntry = repo.getNextProd(); prodEntry;
+                      prodEntry = repo.getNextProd()) {
+
                 auto& prodInfo = prodEntry.prodInfo;
 
                 LOG_INFO("Sending product " + prodInfo.to_string());
@@ -339,13 +349,15 @@ class PubNodeImpl final : public PubNode, public NodeImpl
             setException();
         }
         catch (...) {
-            LOG_DEBUG("Thread cancelled");
+            LOG_DEBUG("Sending thread cancelled");
             throw;
         }
+        //LOG_DEBUG("Sending thread terminating");
     }
 
     void haltSender() {
-        ::pthread_cancel(senderThread.native_handle());
+        //LOG_DEBUG("Halting sender thread");
+        repo.halt();
     }
 
     /**
@@ -366,7 +378,9 @@ class PubNodeImpl final : public PubNode, public NodeImpl
      */
     void stopSender() {
         if (senderThread.joinable()) {
+            //LOG_DEBUG("Halting sender");
             haltSender();
+            //LOG_DEBUG("Joining sender thread");
             senderThread.join();
         }
     }
@@ -390,6 +404,7 @@ protected:
      * Stops all sub-threads. Doesn't block.
      */
     void stopThreads() override {
+        //LOG_DEBUG("Stopping sender");
         stopSender();
         stopP2p();
     }
@@ -410,25 +425,31 @@ public:
      * @param[in] repoRoot        Pathname of the root directory of the repository
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @param[in] lastProcDir     Pathname of the directory containing information on the last,
+     *                            successfully-processed product-file
+     * @param[in] feedName        Name of the data-product feed
      * @param[in] keepTime        Number of seconds to keep data-products before deleting them
      * @throw InvalidArgument     Invalid maximum number of peers
-     * @throw InvalidArgument     `listenSize` is zero
+     * @throw InvalidArgument     `maxPendConn` is zero
      */
     PubNodeImpl(
-            Tracker&       tracker,
-            SockAddr       p2pAddr,
-            const int      maxPeers,
-            const int      evalTime,
-            const SockAddr mcastAddr,
-            const InetAddr mcastIfaceAddr,
-            const int      maxPendConn,
-            const String&  repoRoot,
-            const SegSize  maxSegSize,
-            const long     maxOpenFiles,
-            const int      keepTime)
+            Tracker&           tracker,
+            SockAddr           p2pAddr,
+            const int          maxPeers,
+            const int          evalTime,
+            const SockAddr     mcastAddr,
+            const InetAddr     mcastIfaceAddr,
+            const int          maxPendConn,
+            const String&      repoRoot,
+            const SegSize      maxSegSize,
+            const long         maxOpenFiles,
+            const String&      lastProcDir,
+            const String&      feedName,
+            const int          keepTime)
         : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , repo(repoRoot, maxOpenFiles, keepTime)
+        , lastProc(LastProc::create(lastProcDir, feedName))
+        , repo(repoRoot, maxOpenFiles, lastProc->recall(), keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
     {
@@ -438,32 +459,14 @@ public:
     }
 
     ~PubNodeImpl() noexcept {
+        //LOG_DEBUG("Publisher-node being destroyed");
         try {
             stopThreads();
+            //LOG_DEBUG("Publisher-node's threads stopped");
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "Couldn't stop execution");
         }
-    }
-
-    P2pSrvrInfo getP2pSrvrInfo() const override {
-        return NodeImpl::getP2pSrvrInfo();
-    }
-
-    SockAddr getP2pSrvrAddr() const override {
-        return NodeImpl::getP2pSrvrAddr();
-    }
-
-    void run() override {
-        NodeImpl::run();
-    }
-
-    void halt() override {
-        NodeImpl::halt();
-    }
-
-    void waitForPeer() override {
-        NodeImpl::waitForPeer();
     }
 
     ProdIdSet subtract(ProdIdSet rhs) const override {
@@ -496,19 +499,21 @@ public:
 };
 
 PubNodePtr PubNode::create(
-        Tracker&       tracker,
-        SockAddr       p2pAddr,
-        unsigned       maxPeers,
-        const unsigned evalTime,
-        const SockAddr mcastAddr,
-        const InetAddr ifaceAddr,
-        const unsigned maxPendConn,
-        const String&  repoRoot,
-        const SegSize  maxSegSize,
-        const long     maxOpenFiles,
-        const int      keepTime) {
+        Tracker&           tracker,
+        const SockAddr     p2pAddr,
+        const unsigned     maxPeers,
+        const unsigned     evalTime,
+        const SockAddr     mcastAddr,
+        const InetAddr     ifaceAddr,
+        const unsigned     maxPendConn,
+        const String&      repoRoot,
+        const SegSize      maxSegSize,
+        const long         maxOpenFiles,
+        const String&      lastProcDir,
+        const String&      feedName,
+        const int          keepTime) {
     return PubNodePtr{new PubNodeImpl(tracker, p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
-            maxPendConn, repoRoot, maxSegSize, maxOpenFiles, keepTime)};
+            maxPendConn, repoRoot, maxSegSize, maxOpenFiles, lastProcDir, feedName, keepTime)};
 }
 
 PubNodePtr PubNode::create(
@@ -516,10 +521,11 @@ PubNodePtr PubNode::create(
         const SegSize            maxSegSize,
         const McastPub::RunPar&  mcastRunPar,
         const PubP2pMgr::RunPar& p2pRunPar,
-        const PubRepo::RunPar&   repoRunPar) {
+        const PubRepo::RunPar&   repoRunPar,
+        const String&            feedName) {
     return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
             mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, repoRunPar.rootDir, maxSegSize,
-            repoRunPar.maxOpenFiles, repoRunPar.keepTime);
+            repoRunPar.maxOpenFiles, repoRunPar.lastProcDir, feedName, repoRunPar.keepTime);
 }
 
 /**************************************************************************************************/
@@ -527,30 +533,59 @@ PubNodePtr PubNode::create(
 /**
  * Implementation of a subscribing node.
  */
-class SubNodeImpl final : public NodeImpl, public SubNode
+class SubNodeImpl final : public SubNode, public NodeImpl
 {
+    mutable Thread             disposeThread;///< Local processing of data-products thread
+    mutable Thread             mcastThread;  ///< Multicast receiving thread
+    Disposer                   disposer;     ///< Locally processes received data-products
     SubRepo                    repo;         ///< Data-product repository
     std::atomic<unsigned long> numMcastOrig; ///< Number of original multicast PDUs
     std::atomic<unsigned long> numP2pOrig;   ///< Number of original P2P PDUs
     std::atomic<unsigned long> numMcastDup;  ///< Number of duplicate multicast PDUs
     std::atomic<unsigned long> numP2pDup;    ///< Number of duplicate P2P PDUs
     McastSub::Pimpl            mcastSub;     ///< Subscriber's multicast component
-    mutable Thread             mcastThread;  ///< Multicast receiving thread
+    Client* const              client;       ///< A SubNode's client
 
     /**
-     * Handles the publisher: Connects to it, reads the subscription information, sends the socket
-     * address of the local P2P server, and closes the connection.
-     *
-     * @param[in]  pubAddr  Socket address of the publisher
-     * @param[out] subInfo  Subscription information
+     * Performs local processing of complete data-products. Intended as start function for a thread.
+     * @see stopDisposer()
      */
-    void handlePublisher(
-            const SockAddr pubAddr,
-            SubInfo&       subInfo) {
-        // Keep consonant with `Publisher::handleSubscriber()`
-        Xprt xprt{TcpClntSock(pubAddr)}; // Default timeout
-        subInfo.read(xprt);
-        p2pMgr->getSrvrInfo().write(xprt);
+    void runDisposer() {
+        try {
+            for (auto prodEntry = repo.getNextProd(); prodEntry;
+                      prodEntry = repo.getNextProd()) {
+                Shield shield{}; // Protects product disposition from cancellation
+
+                LOG_DEBUG("Disposing of " + prodEntry.to_string());
+                disposer.dispose(prodEntry.getProdInfo(), prodEntry.getData(),
+                        prodEntry.getPathname());
+                if (client)
+                    client->received(prodEntry.getProdInfo());
+            }
+        }
+        catch (const std::exception& ex) {
+            setException();
+        }
+    }
+
+    inline void startDisposer() {
+        try {
+            disposeThread = std::thread(&SubNodeImpl::runDisposer, this);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Couldn't create thread to process products"));
+        }
+    }
+
+    /**
+     * Stops local processing of data-products. Shouldn't block for long.
+     * @see runDisposer()
+     */
+    inline void stopDisposer() {
+        if (disposeThread.joinable()) {
+            repo.halt(); // Causes repo.getNextProd() to return an invalid object
+            disposeThread.join();
+        }
     }
 
     void runMcast() {
@@ -565,7 +600,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
     /**
      * Starts the multicast component on a separate thread. Doesn't block.
      */
-    void startMcast() {
+    inline void startMcast() {
         try {
             mcastThread = Thread(&SubNodeImpl::runMcast, this);
         }
@@ -578,7 +613,7 @@ class SubNodeImpl final : public NodeImpl, public SubNode
     /**
      * Stops the multicast component. Shouldn't block for long.
      */
-    void stopMcast() {
+    inline void stopMcast() {
         if (mcastThread.joinable()) {
             mcastSub->halt();
             mcastThread.join();
@@ -591,6 +626,8 @@ protected:
      */
     void startThreads() override {
         try {
+            if (disposer)
+                startDisposer();
             startP2p();
             startMcast();
         }
@@ -606,6 +643,7 @@ protected:
     void stopThreads() override {
         stopMcast();
         stopP2p();
+        stopDisposer();
     }
 
 public:
@@ -654,28 +692,37 @@ public:
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] repoDir       Pathname of root directory of data-product repository
-     * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @param[in] maxOpenFiles  Maximum number of product-files with open file descriptors
+     * @param[in] disposer      Locally processes received data-products
+     * @param[in] client        Pointer to the SubNode's client
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
      */
     SubNodeImpl(
             SubInfo&                subInfo,
             const InetAddr          mcastIface,
-            const PeerConnSrvrPtr peerConnSrvr,
+            const PeerConnSrvrPtr   peerConnSrvr,
             const int               timeout,
             const unsigned          maxPeers,
             const unsigned          evalTime,
             const String&           repoDir,
-            const long              maxOpenFiles)
+            const long              maxOpenFiles,
+            const Disposer&         disposer,
+            Client* const           client)
         : NodeImpl(SubP2pMgr::create(subInfo.tracker, *this, peerConnSrvr, timeout, maxPeers,
                 evalTime))
-        , repo(repoDir, maxOpenFiles, subInfo.keepTime)
+        , disposeThread()
+        , mcastThread()
+        , disposer(disposer)
+        , repo(SubRepo(repoDir, maxOpenFiles, disposer.getLastProcTime(), disposer.size(),
+                subInfo.keepTime))
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}
         , numP2pDup{0}
-        , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface, *this)}
-        , mcastThread()
+        , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface,
+                *this)}
+        , client(client)
     {
         DataSeg::setMaxSegSize(subInfo.maxSegSize);
         LOG_NOTE("Will receive multicast group " + subInfo.mcast.dstAddr.to_string() + " from " +
@@ -696,26 +743,6 @@ public:
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "~SubNodeImpl() failure");
         }
-    }
-
-    P2pSrvrInfo getP2pSrvrInfo() const override {
-        return NodeImpl::getP2pSrvrInfo();
-    }
-
-    SockAddr getP2pSrvrAddr() const override {
-        return NodeImpl::getP2pSrvrAddr();
-    }
-
-    void run() override {
-        NodeImpl::run();
-    }
-
-    void halt() override {
-        NodeImpl::halt();
-    }
-
-    void waitForPeer() override {
-        NodeImpl::waitForPeer();
     }
 
     ProdIdSet subtract(ProdIdSet rhs) const override {
@@ -840,15 +867,6 @@ public:
     }
 
     /**
-     * Returns the next product to process locally. Blocks until one is available. The returned
-     * product is complete and open.
-     * @return The next product to process
-     */
-    ProdEntry getNextProd() override {
-        return repo.getNextProd();
-    }
-
-    /**
      * Returns a data segment.
      * @param[in] segId  Segment identifier
      * @return           Corresponding data segment
@@ -859,30 +877,18 @@ public:
 };
 
 SubNodePtr SubNode::create(
-            SubInfo&                subInfo,
-            const InetAddr          mcastIface,
-            const PeerConnSrvrPtr peerConnSrvr,
-            const int               timeout,
-            const unsigned          maxPeers,
-            const unsigned          evalTime,
-            const String&           repoDir,
-            const long              maxOpenFiles) {
+        SubInfo&              subInfo,
+        const InetAddr        mcastIface,
+        const PeerConnSrvrPtr peerConnSrvr,
+        const int             timeout,
+        const unsigned        maxPeers,
+        const unsigned        evalTime,
+        const String&         repoDir,
+        const long            maxOpenFiles,
+        Disposer&             disposer,
+        Client* const         client) {
     return SubNodePtr{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers,
-            evalTime, repoDir, maxOpenFiles)};
-}
-SubNodePtr SubNode::create(
-        SubInfo&          subInfo,
-        const InetAddr    mcastIface,
-        const SockAddr    p2pSrvrAddr,
-        const int         maxPendConn,
-        const int         timeout,
-        const unsigned    maxPeers,
-        const unsigned    evalTime,
-        const String&     repoDir,
-        const long        maxOpenFiles) {
-    auto peerConnSrvr = PeerConnSrvr::create(p2pSrvrAddr, maxPendConn);
-    return create(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers, evalTime, repoDir,
-            maxOpenFiles);
+            evalTime, repoDir, maxOpenFiles, disposer, client)};
 }
 
 } // namespace

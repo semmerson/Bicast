@@ -108,6 +108,14 @@ struct ProdEntry final
     }
 
     /**
+     * Returns the pathname of the underlying product-file.
+     * @return The pathname of the underlying product-file
+     */
+    inline const String& getPathname() const noexcept {
+        return prodFile.getPathname();
+    }
+
+    /**
      * Returns a data segment.
      * @param[in] offset  Offset to the segment in bytes
      */
@@ -167,24 +175,29 @@ protected:
 public:
     /// Runtime parameters
     struct RunPar {
-        String    rootDir;        ///< Pathname of root directory of repository
-        int32_t   maxSegSize;     ///< Maximum size of a data-segment in bytes
-        long      maxOpenFiles;   ///< Maximum number of open repository files
-        int32_t   keepTime;       ///< Length of time to keep data-products in seconds
+        String  rootDir;      ///< Pathname of root directory of repository
+        int32_t maxSegSize;   ///< Maximum size of a data-segment in bytes
+        long    maxOpenFiles; ///< Maximum number of open repository files
+        String  lastProcDir;  ///< Pathname of the directory containing information on the last,
+                              ///< successfully-processed data-product
+        int32_t keepTime;     ///< Length of time to keep data-products in seconds
         /**
          * Constructs.
          * @param[in] rootDir       Pathname of the root directory of the repository
          * @param[in] maxSegSize    Maximum size of a data segment in bytes
          * @param[in] maxOpenFiles  Maximum number of open files
+         * @param[in] lastProcDir   Directory to hold information on last, processed data-product
          * @param[in] keepTime      Duration to keep data products
          */
         RunPar( const String& rootDir,
                 const int32_t maxSegSize,
                 const long    maxOpenFiles,
+                const String& lastProcDir,
                 const int32_t keepTime)
             : rootDir(rootDir)
             , maxSegSize(maxSegSize)
             , maxOpenFiles(maxOpenFiles)
+            , lastProcDir(lastProcDir)
             , keepTime(keepTime)
         {}
     };
@@ -214,16 +227,30 @@ public:
      * @exceptionsafety    No throw
      * @cancellationpoint  No
      */
-    const std::string& getRootDir() const noexcept;
+    String getRootDir() const noexcept;
+
+    /**
+     * Returns the pathname of the top-level directory that contains only product-files.
+     * @return The pathname of the top-level directory that contains only product-files
+     */
+    String getProdDir() const noexcept;
 
     /**
      * Returns the next product to process, either for transmission or local processing. Blocks
-     * until one is available.
-     * @return The next product to transmit or process locally
+     * until one is available. The returned product is active.
+     * @return               The next product to process. Will test false if halt() has been called;
+     *                       otherwise, the product's metadata and data will be complete.
      * @throws SystemError   System failure
      * @throws RuntimeError  inotify(7) failure
+     * @see halt()
      */
     ProdEntry getNextProd() const;
+
+    /**
+     * Causes getNextProd() to always return a ProdEntry that tests false.
+     * @see getNextProd()
+     */
+    void halt() const;
 
     /**
      * Returns information on a product.
@@ -289,11 +316,13 @@ public:
      *
      * @param[in] rootDir       Pathname of the root-directory of the repository
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
+     * @param[in] lastProcTime  Modification-time of the last, successfully-processed product-file
      * @param[in] keepTime      Duration to keep products before deleting them in seconds
      */
-    PubRepo(const String& rootDir,
-            const long    maxOpenFiles,
-            const int     keepTime = 3600);
+    PubRepo(const String&      rootDir,
+            const long         maxOpenFiles,
+            const SysTimePoint lastProcTime = SysTimePoint::min(),
+            const int          keepTime = 3600);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -322,12 +351,17 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] rootPathname  Pathname of the root of the repository
+     * @param[in] rootPathname  Pathname of the root directory of the repository
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
+     * @param[in] lastProcTime  Modification-time of the last, successfully-processed data-product
+     * @param[in] queueProds    Queue complete data-products for return by getNextProd()?
      * @param[in] keepTime      Duration, in seconds, to keep products before deleting them
+     * @see getNextProd()
      */
     SubRepo(const std::string& rootPathname,
             const size_t       maxOpenFiles,
+            const SysTimePoint lastProcTime,
+            const bool         queueProds,
             const int          keepTime = 3600);
 
     /**

@@ -21,6 +21,7 @@
  */
 #include "config.h"
 
+#include "Disposer.h"
 #include "error.h"
 #include "FileUtil.h"
 #include "HycastProto.h"
@@ -28,6 +29,7 @@
 #include "SubInfo.h"
 #include "ThreadException.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <fcntl.h>
 #include <gtest/gtest.h>
@@ -38,26 +40,25 @@
 
 namespace {
 
+using namespace std;
 using namespace hycast;
 
 /// The fixture for testing class `Node`
-class NodeTest : public ::testing::Test
+class NodeTest : public ::testing::Test, public SubNode::Client
 {
 protected:
-    static constexpr SegSize  SEG_SIZE = 2048;
-    static constexpr ProdSize PROD_SIZE = 4095;
+    static constexpr SegSize  SEG_SIZE = 10000;
+    static constexpr ProdSize PROD_SIZE = 100000;
     Mutex                     mutex;
     Cond                      cond;
+    ProdInfo                  prodInfo;
     char                      prodData[PROD_SIZE];
-    const String              prodName;
-    const ProdId              prodId;
+    bool                      prodRcvd;
     const String              testRoot;
     const String              pubRepoRoot;
     const String              subRepoRoot;
+    String                    lastProcDir;
     const long                maxOpenFiles;
-    const String              filePath;
-    const ProdInfo            prodInfo;
-    const DataSegId           segId;
     const SockAddr            mcastAddr;
     const InetAddr            ifaceAddr;
     const SockAddr            pubP2pAddr;
@@ -67,23 +68,23 @@ protected:
     int                       numPeers;
     ThreadEx                  threadEx;
     SubInfo                   subInfo;
+    String                    feedName;
+    SubNodePtr                subNodePtr;
 
     NodeTest()
         : mutex()
         , cond()
+        , prodInfo()
         , prodData{}
-        , prodName{"foo/bar/product.dat"}
-        , prodId{prodName}
+        , prodRcvd(false)
         , testRoot("/tmp/Node_test")
         , pubRepoRoot(testRoot + "/pub")
-        , subRepoRoot(testRoot + "/sub")
+        , subRepoRoot(testRoot + "/sub/prods")
+        , lastProcDir(testRoot + "/sub/lastProc")
         , maxOpenFiles(25)
-        , filePath(testRoot + "/" + prodName)
-        , prodInfo(prodId, prodName, PROD_SIZE)
-        , segId(prodId, 0)
         , mcastAddr("232.1.1.1:3880")
-        //, ifaceAddr{"127.0.0.1"}    // Causes PDUs to be received via multicast (see "Sending")
-        , ifaceAddr{"192.168.58.137"} // Causes PDUs to be received via P2P (see "Sending")
+        //, ifaceAddr{"192.168.58.139"} // Causes PDU reception via P2P only
+        , ifaceAddr{"127.0.0.1"}        // Causes PDU reception via P2P & multicast
         , pubP2pAddr{ifaceAddr, 0}
         , subP2pAddr{ifaceAddr, 0}
         , listenSize{0}
@@ -91,6 +92,8 @@ protected:
         , numPeers{0}
         , threadEx()
         , subInfo()
+        , feedName("Node_test_feed")
+        , subNodePtr()
     {
         subInfo.mcast.dstAddr = mcastAddr;
         subInfo.mcast.srcAddr = ifaceAddr;
@@ -100,7 +103,7 @@ protected:
         int i = 0;
         for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
             auto str = std::to_string(i++);
-            int c = str[str.length()-1];
+            int c = str.back();
             ::memset(prodData+offset, c, DataSeg::size(PROD_SIZE, offset));
        }
     }
@@ -124,8 +127,26 @@ public:
             node->run();
         }
         catch (const std::exception& ex) {
+            LOG_ERROR(ex);
             threadEx.set();
         }
+    }
+
+    void received(const ProdInfo& prodInfo) {
+        Guard      guard{mutex};
+        EXPECT_TRUE(prodInfo == this->prodInfo);
+
+        const auto prodId = prodInfo.getId();
+        for (SegOffset offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
+            DataSegId  segId(prodId, offset);
+            const auto dataSeg = subNodePtr->getDataSeg(segId);
+            const auto size = DataSeg::size(PROD_SIZE, offset);
+            ASSERT_EQ(size, dataSeg.getSize());
+            ASSERT_EQ(0, ::memcmp(prodData+offset, dataSeg.getData(), size));
+        }
+
+        prodRcvd = true;
+        cond.notify_all();
     }
 };
 
@@ -135,7 +156,7 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating publishing node");
     Tracker tracker{};
     auto pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
-            pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
+            pubRepoRoot, SEG_SIZE, maxOpenFiles, lastProcDir, feedName, 3600);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
@@ -145,10 +166,12 @@ TEST_F(NodeTest, Construction)
 
     LOG_NOTE("Creating subscribing node");
     subInfo.tracker.insert(pubP2pSrvrAddr);
-    auto subNode = SubNode::create(subInfo, ifaceAddr, subP2pAddr, 5, -1, maxPeers, 60, subRepoRoot,
-            maxOpenFiles);
+    auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
+    Disposer disposer{};
+    subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRepoRoot,
+            maxOpenFiles, disposer, this); // NB: Invalid dispose-file
 
-    const auto subP2pSrvrAddr = subNode->getP2pSrvrAddr();
+    const auto subP2pSrvrAddr = subNodePtr->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
     EXPECT_EQ(ifaceAddr, subInetAddr);
     const auto subPort = subP2pSrvrAddr.getPort();
@@ -157,17 +180,23 @@ TEST_F(NodeTest, Construction)
 
 #if 1
 /**
- * Tests sending.
+ * Tests sending and performance.
  *
- * If the loopback interface is used, then the PDUs will be received via multicast. If the external
- * interface is used, however, then the PDUs will be received via the P2P network. The reason for
- * this is that multi-threaded transmission and reception isn't supported for an external interface.
- * The reason for that is unknown.
+ * If the loopback interface is used, then the PDUs will be received via multicast and P2P. If the
+ * external interface is used, however, then the PDUs will be received solely via the P2P network.
+ * The reason for this is that multi-threaded transmission and reception isn't supported for an
+ * external interface. The reason for that is unknown.
  */
 TEST_F(NodeTest, Sending)
 {
+    constexpr int NUM_PRODS = 1000;
+    const String  prodBaseName("foo/bar/product.dat");
+    const String  filePath(testRoot + "/" + prodBaseName);
+    steady_clock::time_point start;
+    steady_clock::time_point stop;
+
     try {
-        // Create product-file
+        // Create the single product-file
         FileUtil::ensureParent(filePath, 0700);
         const int fd = ::open(filePath.data(), O_WRONLY|O_CREAT|O_EXCL, 0600);
         EXPECT_NE(-1, fd);
@@ -179,61 +208,78 @@ TEST_F(NodeTest, Sending)
 
         // Create publisher
         Tracker tracker{};
-        auto       pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
-                ifaceAddr, 1, pubRepoRoot, SEG_SIZE, maxOpenFiles, 3600);
+        auto    pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
+                ifaceAddr, 1, pubRepoRoot, SEG_SIZE, maxOpenFiles, lastProcDir, feedName, 3600);
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
+        // Create disposer
+        Pattern       incl(".*");
+        Pattern       excl{};  // Exclude nothing
+        String        pathTemplate(testRoot + "/processed/$&"); // Product-name as output pathname
+        FileTemplate  fileTemplate(pathTemplate, false);
+        PatternAction patAct(incl, excl, fileTemplate);
+        Disposer disposer{lastProcDir, feedName, 0}; // 0 => No file descriptors kept open
+        disposer.add(patAct);
+
         // Create subscriber
         subInfo.tracker.insert(pubP2pSrvrAddr);
-        auto   subNode = SubNode::create(subInfo, ifaceAddr, subP2pAddr, 5, -1, maxPeers, 60,
-                subRepoRoot, maxOpenFiles);
-        Thread subThread(&NodeTest::runNode, this, subNode);
+        auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
+        subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60,
+                subRepoRoot, maxOpenFiles, disposer, this);
+        Thread subThread(&NodeTest::runNode, this, subNodePtr);
 
         // Wait for subscriber to connect to publisher
         pubNode->waitForPeer();
 
-        // Publish
-        const auto repoProdPath = pubRepoRoot + '/' + prodName;
-        FileUtil::ensureParent(repoProdPath);
-        FileUtil::hardLink(filePath, repoProdPath);
-
-        // Verify reception
         try {
-            auto prodInfo = subNode->getNextProd().getProdInfo();
+            start = steady_clock::now();
+            for (int i = 0; i < NUM_PRODS; ++i) {
+                // Publish
+                const auto prodName = prodBaseName + "." + std::to_string(i);
+                const auto prodId = ProdId(prodName);
+                prodInfo = ProdInfo{prodId, prodName, PROD_SIZE};
 
-            EXPECT_FALSE(threadEx);
-            /*
-             * The creation-time can't be compared because it's constructed by the repository;
-             * consequently, the times will differ.
-             */
-            ASSERT_TRUE(NodeTest::prodInfo.getId() == prodInfo.getId());
-            ASSERT_TRUE(NodeTest::prodInfo.getName() == prodInfo.getName());
-            ASSERT_TRUE(NodeTest::prodInfo.getSize() == prodInfo.getSize());
+                const auto pubProdPath = pubRepoRoot + '/' + prodName;
+                FileUtil::ensureParent(pubProdPath);
+                FileUtil::hardLink(filePath, pubProdPath);
 
-            for (SegOffset offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
-                DataSegId  segId(prodId, offset);
-                const auto dataSeg = subNode->getDataSeg(segId);
-                const auto size = DataSeg::size(PROD_SIZE, offset);
-                ASSERT_EQ(size, dataSeg.getSize());
-                ASSERT_EQ(0, ::memcmp(prodData+offset, dataSeg.getData(), size));
+                // Verify transmission and reception
+                Lock lock{mutex};
+                EXPECT_FALSE(threadEx);
+                cond.wait(lock, [&]{return prodRcvd;});
+                prodRcvd = false;
             }
+            stop = steady_clock::now();
         }
         catch (const std::exception& ex) {
-            LOG_ERROR(ex, "Couldn't verify repository access");
+            LOG_ERROR(ex, "Couldn't verify transmission and reception");
             GTEST_FAIL();
         }
 
-        subNode->halt();
+        //LOG_DEBUG("Halting subscriber thread");
+        subNodePtr->halt();
+        //LOG_DEBUG("Halting publisher thread");
         pubNode->halt();
 
+        //LOG_DEBUG("Joining subscriber thread");
         subThread.join();
+        //LOG_DEBUG("Joining publisher thread");
         pubThread.join();
     }
     catch (const std::exception& ex) {
         LOG_ERROR("Failure");
         throw;
     }
+
+    const auto s = duration_cast<duration<double>>(stop - start);
+    LOG_NOTE("");
+    LOG_NOTE(to_string(NUM_PRODS) + " " + to_string(PROD_SIZE) + "-byte products in " +
+            to_string(s.count()) + " seconds");
+    LOG_NOTE("Product-rate = " + to_string(NUM_PRODS/s.count()) + " Hz");
+    LOG_NOTE("Byte-rate = " + to_string(NUM_PRODS*PROD_SIZE/s.count()) + " Hz");
+    LOG_NOTE("Bit-rate = " + to_string(NUM_PRODS*PROD_SIZE*8/s.count()) + " Hz");
+    LOG_NOTE("");
 }
 #endif
 
@@ -263,7 +309,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   log_setName(::basename(argv[0]));
-  log_setLevel(LogLevel::DEBUG);
+  //log_setLevel(LogLevel::DEBUG);
 
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the

@@ -81,7 +81,7 @@ struct RunPar {
         , srvr(SockAddr("0.0.0.0", DEF_PORT), DEF_BACKLOG_SIZE)
         , mcast(SockAddr(DEF_MCAST_ADDR, DEF_PORT), InetAddr())
         , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_EVAL_DURATION)
-        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, 3600)
+        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, "lastProc", 3600)
     {}
 };
 
@@ -611,7 +611,7 @@ int main(const int    argc,
         auto serverThread = Thread(&runServer);
 
         pubNode = PubNode::create(tracker, runPar.maxSegSize, runPar.mcast, runPar.p2p,
-                runPar.repo);
+                runPar.repo, runPar.feedName);
         //LOG_DEBUG("Starting node thread");
         auto nodeThread = Thread(&runNode);
 

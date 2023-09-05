@@ -23,6 +23,7 @@
 #ifndef MAIN_NODE_NODE_H_
 #define MAIN_NODE_NODE_H_
 
+#include "Disposer.h"
 #include "HycastProto.h"
 #include "mcast.h"
 #include "P2pMgr.h"
@@ -139,7 +140,7 @@ using PubNodePtr = std::shared_ptr<PubNode>; ///< Smart pointer to an implementa
  * Interface for a Hycast publishing node. In addition to managing incoming P2P requests,
  * implementations also multicast data-products and notify subscribing nodes.
  */
-class PubNode : public Node
+class PubNode : virtual public Node
 {
 public:
     /// Runtime parameters for a publishing node
@@ -182,30 +183,36 @@ public:
      * @param[in] repoRoot        Pathname of the root directory of the repository
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
+     * @param[in] lastProcDir     Pathname of the directory containing information on the last,
+     *                            successfully-processed data-product
+     * @param[in] feedName        Name of the data-product feed
      * @param[in] keepTime        Maximum time, in seconds, to keep data-product files
      * @throw InvalidArgument     `listenSize` is zero
      * @return                    New instance
      */
     static PubNodePtr create(
-            Tracker&       tracker,
-            const SockAddr p2pAddr,
-            const unsigned maxPeers,
-            const unsigned evalTime,
-            const SockAddr mcastAddr,
-            const InetAddr mcastIfaceAddr,
-            const unsigned maxPendConn,
-            const String&  repoRoot,
-            const SegSize  maxSegSize,
-            const long     maxOpenFiles,
-            const int      keepTime);
+            Tracker&           tracker,
+            const SockAddr     p2pAddr,
+            const unsigned     maxPeers,
+            const unsigned     evalTime,
+            const SockAddr     mcastAddr,
+            const InetAddr     mcastIfaceAddr,
+            const unsigned     maxPendConn,
+            const String&      repoRoot,
+            const SegSize      maxSegSize,
+            const long         maxOpenFiles,
+            const String&      lastProcDir,
+            const String&      feedName,
+            const int          keepTime);
 
     /**
      * Returns a new instance.
      * @param[in] tracker       Tracks P2P-servers
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
-     * @param mcastRunPar       Runtime parameters for the multicast component
-     * @param p2pRunPar         Runtime parameters for the P2P component
-     * @param repoRunPar        Runtime parameters for the repository component
+     * @param[in] mcastRunPar   Runtime parameters for the multicast component
+     * @param[in] p2pRunPar     Runtime parameters for the P2P component
+     * @param[in] repoRunPar    Runtime parameters for the repository component
+     * @param[in] feedName      Name of the data-product feed
      * @return                  A new instance
      */
     static PubNodePtr create(
@@ -213,7 +220,8 @@ public:
             const SegSize            maxSegSize,
             const McastPub::RunPar&  mcastRunPar,
             const PubP2pMgr::RunPar& p2pRunPar,
-            const PubRepo::RunPar&   repoRunPar);
+            const PubRepo::RunPar&   repoRunPar,
+            const String&            feedName);
 
     /**
      * Destroys.
@@ -230,7 +238,7 @@ using SubNodePtr = std::shared_ptr<SubNode>; ///< Smart pointer to an implementa
  * Interface for a subscribing Hycast node. Implementations manage incoming multicast transmissions
  * and incoming and outgoing P2P transmissions.
  */
-class SubNode : public Node
+class SubNode : virtual public Node
 {
 public:
 #if 0
@@ -261,6 +269,22 @@ public:
 #endif
 
     /**
+     * Interface for a SubNode's client. As of 2023-09-04, this is used for unit/integration-testing
+     * and not by a subscriber.
+     */
+    class Client {
+    public:
+        /// Destroys.
+        virtual ~Client() =default;
+
+        /**
+         * Notifies the client about a data-product that was just received.
+         * @param[in] prodInfo  Information on the just-received data-product
+         */
+        virtual void received(const ProdInfo& prodInfo) =0;
+    };
+
+    /**
      * Returns a new instance.
      *
      * @param[in] subInfo       Subscription information
@@ -271,46 +295,23 @@ public:
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
      * @param[in] repoDir       Pathname of root directory of data-product repository
      * @param[in] maxOpenFiles  Maximum number of open files in repository
+     * @param[in] disposer      Locally processes received data-products
+     * @param[in] client        Pointer to SubNode's client or `nullptr`
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
+     * @see getNextProd()
      */
     static SubNodePtr create(
-            SubInfo&                subInfo,
-            const InetAddr          mcastIface,
-            const PeerConnSrvrPtr   peerConnSrvr,
-            const int               timeout,
-            const unsigned          maxPeers,
-            const unsigned          evalTime,
-            const String&           repoDir,
-            const long              maxOpenFiles);
-
-    /**
-     * Returns a new instance.
-     *
-     * @param[in] subInfo       Subscription information
-     * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] p2pSrvrAddr   Socket address for local P2P server. IP address must not be the
-     *                          wildcard. If the port number is zero, then then O/S will choose an
-     *                          ephemeral port number.
-     * @param[in] maxPendConn   Maximum number of pending peer connections. Don't use 0.
-     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
-     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] repoDir       Pathname of root directory of data-product repository
-     * @param[in] maxOpenFiles  Maximum number of open files in repository
-     * @throw     LogicError    IP address families of multicast group address and multicast
-     *                          interface don't match
-     */
-    static SubNodePtr create(
-            SubInfo&          subInfo,
-            const InetAddr    mcastIface,
-            const SockAddr    p2pSrvrAddr,
-            const int         maxPendConn,
-            const int         timeout,
-            const unsigned    maxPeers,
-            const unsigned    evalTime,
-            const String&     repoDir,
-            const long        maxOpenFiles);
+            SubInfo&              subInfo,
+            const InetAddr        mcastIface,
+            const PeerConnSrvrPtr peerConnSrvr,
+            const int             timeout,
+            const unsigned        maxPeers,
+            const unsigned        evalTime,
+            const String&         repoDir,
+            const long            maxOpenFiles,
+            Disposer&             disposer,
+            Client* const         client);
 
     /**
      * Destroys.
@@ -365,14 +366,6 @@ public:
      * @param[in] dataSeg  Data-segment
      */
     virtual void recvP2pData(const DataSeg dataSeg) {
-    }
-
-    /**
-     * Returns the next product to process locally.
-     * @return The next product to process locally
-     */
-    virtual ProdEntry getNextProd() {
-        return ProdEntry{};
     }
 
     /**

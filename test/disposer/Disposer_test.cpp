@@ -1,7 +1,7 @@
 /**
  * This file tests class `Disposer`.
  *
- *    Copyright 2022 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,12 +42,14 @@ class DisposerTest : public ::testing::Test
 {
 protected:
     String rootDir;
+    String lastProcDir;
 
     // You can remove any or all of the following functions if its body
     // is empty.
 
     DisposerTest()
         : rootDir("/tmp/Disposer_test/")
+        , lastProcDir(rootDir + "/lastProc")
     {
         FileUtil::rmDirTree(rootDir);
         FileUtil::ensureDir(rootDir);
@@ -102,9 +104,7 @@ TEST_F(DisposerTest, Filing)
                 Entry{"bar/prod4/foo", "(\\w+)/prod4/(\\w+)", "$2/$1/prod4", "foo/bar/prod4"},
         };
         Pattern  excl{};  // Exclude nothing
-        Disposer disposer{};
-
-        disposer.setMaxKeepOpen(0); // No persistent actions
+        Disposer disposer{lastProcDir, "feedName", 0};
 
         for (auto& entry : entries) {
             Pattern       incl(entry.pattern);
@@ -118,7 +118,7 @@ TEST_F(DisposerTest, Filing)
         for (ProdSize i = 0; i < sizeof(entries)/sizeof(Entry); ++i) {
             String contents(std::to_string(i));
             ProdInfo prodInfo(entries[i].prodName, contents.size());
-            disposer.dispose(prodInfo, contents.data());
+            disposer.dispose(prodInfo, contents.data(), "/dev/null");
         }
 
         for (ProdSize i = 0; i < sizeof(entries)/sizeof(Entry); ++i) {
@@ -145,21 +145,20 @@ TEST_F(DisposerTest, Appending)
 {
     try {
         Pattern        excl{};      // Exclude nothing
-        Disposer       disposer{};
+        Disposer       disposer{lastProcDir, "feedName", 0};
         Pattern        incl("prod");
         String         pathTemplate(rootDir + "$&");
         AppendTemplate appendTemplate(pathTemplate, true);
         PatternAction  patAct(incl, excl, appendTemplate);
 
-        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String contents("1");
         ProdInfo prodInfo("prod", contents.size());
-        disposer.dispose(prodInfo, contents.data());
+        disposer.dispose(prodInfo, contents.data(), "/dev/null");
 
         contents = String("2");
-        disposer.dispose(prodInfo, contents.data());
+        disposer.dispose(prodInfo, contents.data(), "/dev/null");
 
         std::ifstream input(rootDir+"prod");
         char buf[80];
@@ -183,18 +182,17 @@ TEST_F(DisposerTest, Piping)
 {
     try {
         Pattern             excl{};      // Exclude nothing
-        Disposer            disposer{};
+        Disposer            disposer{lastProcDir, "feedName", 0};
         Pattern             incl("prod");
         std::vector<String> cmdTemplate{"sh", "-c", String("cat >") + rootDir + "$&"};
         PipeTemplate        pipeTemplate(cmdTemplate, true);
         PatternAction       patAct(incl, excl, pipeTemplate);
 
-        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String contents("1");
         ProdInfo prodInfo("prod", contents.size());
-        disposer.dispose(prodInfo, contents.data());
+        disposer.dispose(prodInfo, contents.data(), "/dev/null");
 
         std::ifstream input(rootDir+"prod");
         char buf[80];
@@ -217,19 +215,18 @@ TEST_F(DisposerTest, Piping)
 TEST_F(DisposerTest, Excluding)
 {
     try {
-        Disposer       disposer{};
+        Disposer       disposer{lastProcDir, "feedName", 0};
         Pattern        incl("prod");
         Pattern        excl{"prod"};
         String         pathTemplate(rootDir + "$&");
         FileTemplate   fileTemplate(pathTemplate, true);
         PatternAction  patAct(incl, excl, fileTemplate);
 
-        disposer.setMaxKeepOpen(0); // No persistent actions
         disposer.add(patAct);
 
         String   contents("1");
         ProdInfo prodInfo("prod", contents.size());
-        disposer.dispose(prodInfo, contents.data());
+        disposer.dispose(prodInfo, contents.data(), "/dev/null");
 
         std::ifstream input(rootDir+"prod");
         EXPECT_EQ(std::ios_base::failbit, input.rdstate());
@@ -250,7 +247,7 @@ TEST_F(DisposerTest, Excluding)
 TEST_F(DisposerTest, ConfigFile)
 {
     try {
-        auto disposer = Disposer::createFromYaml(configFile);
+        auto disposer = Disposer::createFromYaml(configFile, "feedName", lastProcDir, 20);
         //std::cout << disposer.getYaml();
         const String expect(
                 "maxKeepOpen: 20\n"
@@ -263,7 +260,7 @@ TEST_F(DisposerTest, ConfigFile)
                 "    file: WWA/lastSIGMET\n"
                 "  - include: ^WS\n"
                 "    exclude: ^WS/RU\n"
-                "    exec: [sh, -c, mailx -s New SIGMET WeatherNerds <WWA/lastSIGMET]\n"
+                "    exec: [sh, -c, mailx -s 'New SIGMET' WeatherNerds <WWA/lastSIGMET]\n"
                 "  - include: ^(../..../..../....-..-../..:...*)\n"
                 "    append: IDS_DDPLUS/$1\n"
                 "    keepOpen: true\n"
