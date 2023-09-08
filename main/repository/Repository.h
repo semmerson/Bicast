@@ -173,35 +173,6 @@ protected:
     Repository(Impl* impl) noexcept;
 
 public:
-    /// Runtime parameters
-    struct RunPar {
-        String  rootDir;      ///< Pathname of root directory of repository
-        int32_t maxSegSize;   ///< Maximum size of a data-segment in bytes
-        long    maxOpenFiles; ///< Maximum number of open repository files
-        String  lastProcDir;  ///< Pathname of the directory containing information on the last,
-                              ///< successfully-processed data-product
-        int32_t keepTime;     ///< Length of time to keep data-products in seconds
-        /**
-         * Constructs.
-         * @param[in] rootDir       Pathname of the root directory of the repository
-         * @param[in] maxSegSize    Maximum size of a data segment in bytes
-         * @param[in] maxOpenFiles  Maximum number of open files
-         * @param[in] lastProcDir   Directory to hold information on last, processed data-product
-         * @param[in] keepTime      Duration to keep data products
-         */
-        RunPar( const String& rootDir,
-                const int32_t maxSegSize,
-                const long    maxOpenFiles,
-                const String& lastProcDir,
-                const int32_t keepTime)
-            : rootDir(rootDir)
-            , maxSegSize(maxSegSize)
-            , maxOpenFiles(maxOpenFiles)
-            , lastProcDir(lastProcDir)
-            , keepTime(keepTime)
-        {}
-    };
-
     virtual ~Repository() =default;
 
     /**
@@ -331,6 +302,21 @@ public:
      * @retval false    This instance is not valid
      */
     operator bool() const noexcept;
+
+    /**
+     * Links to a file (which could be a directory) that's outside the repository. The watcher will
+     * notice and process the link.
+     *
+     * @param[in] pathname       Absolute pathname (with no trailing separator) of the file or
+     *                           directory to be linked to
+     * @param[in] prodName       Product name if the pathname references a file and Product name
+     *                           prefix if the pathname references a directory
+     * @throws InvalidArgument  `pathname` is empty or a relative pathname
+     * @throws InvalidArgument  `prodName` is invalid
+     */
+    void link(
+            const String& pathname,
+            const String& prodName) const;
 };
 
 /******************************************************************************/

@@ -1,3 +1,4 @@
+pubRoot: .                   # Pathname of publisher's root-directory
 name: NOAAPort NWSTG         # Name of feed
 logLevel: DEBUG              # Logging level
 maxSegSize: 1444             # Maximum size of a data-segment in bytes

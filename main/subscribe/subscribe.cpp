@@ -553,20 +553,25 @@ static void stopSubNode(
 static void trySession()
 {
     // Peer connection server
-    auto    peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
+    auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
 
     // Use actual P2P server address because port number might have been 0
     SubInfo subInfo; // Subscription information
     subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
 
-    Disposer disposer{}; // Invalid instance
-    if (runPar.dispositionFile.size())
-        disposer = Disposer{runPar.lastProcDir, subInfo.feedName};
+    // Create disposer factory-method
+    Disposer::Factory factory = [&] (
+            const String& lastProcDir,
+            const String& feedName) {
+        return runPar.dispositionFile.size()
+            ? Disposer::createFromYaml(runPar.dispositionFile, feedName, lastProcDir)
+            : Disposer{}; // No local processing <=> invalid instance
+    };
 
     //LOG_DEBUG("Creating subscribing node");
     auto    subNode = SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
             runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
-            runPar.repo.maxOpenFiles, disposer, nullptr);
+            runPar.repo.maxOpenFiles, factory, nullptr);
 
     try {
         subNode->run();

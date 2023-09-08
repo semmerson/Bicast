@@ -170,6 +170,11 @@ public:
 
     void waitForPeer() {}
 
+    void addProd(
+            const String& filePath,
+            const String& prodName) const {
+    }
+
     ProdIdSet subtract(ProdIdSet rhs) const override {
         return ProdIdSet{};
     }

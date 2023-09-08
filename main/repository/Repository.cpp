@@ -933,6 +933,12 @@ PubRepo::PubRepo(
     : Repository(new PubRepo::Impl{rootPathname, maxOpenFiles, keepTime, lastProcTime})
 {}
 
+void PubRepo::link(
+            const String& pathname,
+            const String& prodName) const {
+    static_cast<PubRepo::Impl*>(pImpl.get())->link(pathname, prodName);
+}
+
 /******************************************************************************/
 /******************************************************************************/
 

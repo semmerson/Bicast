@@ -52,6 +52,7 @@ struct RunPar {
     LogLevel  logLevel;   ///< Logging level
     int32_t   maxSegSize; ///< Maximum size of a data-segment in bytes
     int       trackerCap; ///< Maximum size of pool of potential P2P servers
+    String    pubRoot;    ///< Pathname of the publisher's root directory
     /// Runtime parameters for a publisher's server (not its P2P server)
     struct Srvr {
         SockAddr      addr;               ///< Socket address of publisher's server (not P2P server)
@@ -66,10 +67,11 @@ struct RunPar {
             : addr(addr)
             , listenSize{listenSize}
         {}
-    }         srvr;                       ///< Publisher's server
-    McastPub::RunPar  mcast;              ///< Multicast component
-    PubP2pMgr::RunPar p2p;                ///< Peer-to-peer component
-    PubRepo::RunPar   repo;               ///< Data-product repository
+    }                     srvr;           ///< Publisher's server
+    McastPub::RunPar      mcast;          ///< Multicast component
+    PubP2pMgr::RunPar     p2p;            ///< Peer-to-peer component
+    PubNode::RunPar::Repo repo;           ///< Runtime parameters for the publisher's repository
+
     /**
      * Default constructs.
      */
@@ -78,10 +80,11 @@ struct RunPar {
         , logLevel(LogLevel::NOTE)
         , maxSegSize(1444)
         , trackerCap(DEF_TRACKER_CAP)
+        , pubRoot(".")
         , srvr(SockAddr("0.0.0.0", DEF_PORT), DEF_BACKLOG_SIZE)
         , mcast(SockAddr(DEF_MCAST_ADDR, DEF_PORT), InetAddr())
         , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_EVAL_DURATION)
-        , repo("repo", maxSegSize, ::sysconf(_SC_OPEN_MAX)/2, "lastProc", 3600)
+        , repo(::sysconf(_SC_OPEN_MAX)/2, 3600)
     {}
 };
 
@@ -149,6 +152,8 @@ static void usage()
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
 "                      \"" << defRunPar.logLevel << "\".\n"
+"    -r <pubRoot>      Pathname of publisher's root-directory. Default is \"" << runPar.pubRoot <<
+                       "\".\n"
 "    -t <trackerCap>   Maximum number of P2P servers to track. Default is " <<
                        defRunPar.trackerCap << ".\n"
 "  Publisher's Server:\n"
@@ -179,8 +184,6 @@ static void usage()
 "                      " << defRunPar.repo.keepTime << ".\n"
 "    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
                        defRunPar.repo.maxOpenFiles << ".\n"
-"    -r <repoRoot>     Pathname of root of data-product repository. Default is\n"
-"                      \"" << defRunPar.repo.rootDir << "\".\n"
 "\n"
 "SIGUSR2 rotates the logging level.\n";
 }
@@ -196,6 +199,7 @@ static void setFromConfig(const String& pathname)
     auto node0 = YAML::LoadFile(pathname);
 
     try {
+        Parser::tryDecode<decltype(runPar.pubRoot)>(node0, "pubRoot", runPar.pubRoot);
         Parser::tryDecode<decltype(runPar.feedName)>(node0, "name", runPar.feedName);
         auto node1 = node0["logLevel"];
         if (node1)
@@ -242,8 +246,6 @@ static void setFromConfig(const String& pathname)
 
         node1 = node0["repository"];
         if (node1) {
-            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "repoRoot",
-                    runPar.repo.rootDir);
             Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "maxOpenFiles",
                     runPar.repo.maxOpenFiles);
             Parser::tryDecode<decltype(runPar.repo.keepTime)>(node1, "keepTime",
@@ -288,8 +290,8 @@ static void vetRunPar()
     if (runPar.p2p.srvr.acceptQSize <= 0)
         throw INVALID_ARGUMENT("Size of P2P server-queue is not positive");
 
-    if (runPar.repo.rootDir.empty())
-        throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
+    if (runPar.pubRoot.empty())
+        throw INVALID_ARGUMENT("Name of publisher's root-directory is the empty string");
 
     if (runPar.maxSegSize <= 0)
         throw INVALID_ARGUMENT("Maximum size of a data-segment is not positive");
@@ -419,7 +421,7 @@ static void getCmdPars(
             break;
         }
         case 'r': {
-            runPar.repo.rootDir = String(optarg);
+            runPar.pubRoot = String(optarg);
             break;
         }
         case 's': {
@@ -611,7 +613,7 @@ int main(const int    argc,
         auto serverThread = Thread(&runServer);
 
         pubNode = PubNode::create(tracker, runPar.maxSegSize, runPar.mcast, runPar.p2p,
-                runPar.repo, runPar.feedName);
+                runPar.pubRoot, runPar.repo, runPar.feedName);
         //LOG_DEBUG("Starting node thread");
         auto nodeThread = Thread(&runNode);
 

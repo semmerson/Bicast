@@ -267,7 +267,7 @@ TEST_F(DisposerTest, ConfigFile)
                 "  - include: ^(..)/(....)/(....)/(....)-(..)-(..)/(..):(..).*\\\\.txt$\n"
                 "    pipe: [ids_ddplus_decoder, $1, $2, $3, $4, $5, $6, $7, $8]"
                 );
-        EXPECT_STREQ(expect.data(), Disposer::getYaml(disposer).data());
+        EXPECT_STREQ(expect.data(), disposer.getYaml().data());
     }
     catch (const std::exception& ex) {
         LOG_ERROR(ex);

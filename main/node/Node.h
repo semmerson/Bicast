@@ -53,7 +53,7 @@ public:
     /**
      * Destroys.
      */
-    virtual ~Node() noexcept {}
+    virtual ~Node() =default;
 
     /**
      * Executes this instance. Starts internal threads that execute the multicast and peer-to-peer
@@ -148,7 +148,22 @@ public:
         SegSize           maxSegSize; ///< Maximum size of a data-segment
         McastPub::RunPar  mcast;      ///< Multicast component
         PubP2pMgr::RunPar p2p;        ///< Peer-to-peer component
-        PubRepo::RunPar   repo;       ///< Data-product repository
+        /// Class for holding runtime parameters for the publisher's repository
+        struct Repo {
+            long    maxOpenFiles;     ///< Maximum number of open repository files
+            int32_t keepTime;         ///< Length of time to keep data-products in seconds
+            /**
+             * Constructs.
+             * @param[in] maxOpenFiles  Maximum number of open files
+             * @param[in] keepTime      Duration to keep data products
+             */
+            Repo(
+                    const long    maxOpenFiles,
+                    const int32_t keepTime)
+                : maxOpenFiles(maxOpenFiles)
+                , keepTime(keepTime)
+            {}
+        }                 repo;       ///< Runtime parameters for the publisher's repository
          /**
           * Constructs.
           * @param[in] maxSegSize  Maximum number of bytes in a data-segment
@@ -159,7 +174,7 @@ public:
         RunPar( const SegSize            maxSegSize,
                 const McastPub::RunPar&  mcast,
                 const PubP2pMgr::RunPar& p2p,
-                const PubRepo::RunPar&   repo)
+                const Repo&              repo)
             : maxSegSize(maxSegSize)
             , mcast(mcast)
             , p2p(p2p)
@@ -179,12 +194,11 @@ public:
      * @param[in] evalTime        Evaluation interval for poorest-performing peer in seconds
      * @param[in] mcastAddr       Socket address of multicast group
      * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] maxPendConn     Maximum number of pending connections. 0 obtains the system default.
-     * @param[in] repoRoot        Pathname of the root directory of the repository
+     * @param[in] maxPendConn     Maximum number of pending connections. 0 obtains the system
+     *                            default.
+     * @param[in] pubRoot         Pathname of the root directory of the publisher
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles    Maximum number of open, data-products files
-     * @param[in] lastProcDir     Pathname of the directory containing information on the last,
-     *                            successfully-processed data-product
+     * @param[in] maxOpenFiles    Maximum number of files the repository should have open
      * @param[in] feedName        Name of the data-product feed
      * @param[in] keepTime        Maximum time, in seconds, to keep data-product files
      * @throw InvalidArgument     `listenSize` is zero
@@ -198,12 +212,11 @@ public:
             const SockAddr     mcastAddr,
             const InetAddr     mcastIfaceAddr,
             const unsigned     maxPendConn,
-            const String&      repoRoot,
+            const String&      pubRoot,
             const SegSize      maxSegSize,
             const long         maxOpenFiles,
-            const String&      lastProcDir,
-            const String&      feedName,
-            const int          keepTime);
+            const int          keepTime,
+            const String&      feedName);
 
     /**
      * Returns a new instance.
@@ -211,22 +224,33 @@ public:
      * @param[in] maxSegSize    Maximum size of a data-segment in bytes
      * @param[in] mcastRunPar   Runtime parameters for the multicast component
      * @param[in] p2pRunPar     Runtime parameters for the P2P component
-     * @param[in] repoRunPar    Runtime parameters for the repository component
+     * @param[in] pubRoot       Pathname of the root directory of the publisher
+     * @param[in] repoRunPar    Runtime parameters for the publisher's repository
      * @param[in] feedName      Name of the data-product feed
      * @return                  A new instance
      */
     static PubNodePtr create(
-            Tracker&                 tracker,
-            const SegSize            maxSegSize,
-            const McastPub::RunPar&  mcastRunPar,
-            const PubP2pMgr::RunPar& p2pRunPar,
-            const PubRepo::RunPar&   repoRunPar,
-            const String&            feedName);
+            Tracker&                  tracker,
+            const SegSize             maxSegSize,
+            const McastPub::RunPar&   mcastRunPar,
+            const PubP2pMgr::RunPar&  p2pRunPar,
+            const String&             pubRoot,
+            const RunPar::Repo&       repoRunPar,
+            const String&             feedName);
 
     /**
      * Destroys.
      */
-    virtual ~PubNode() noexcept {}
+    virtual ~PubNode() =default;
+
+    /**
+     * Adds a data-product contained in a file.
+     * @param[in] filePath  The pathname of the file
+     * @param[in] prodName  The name of the data-product
+     */
+    virtual void addProd(
+            const String& filePath,
+            const String& prodName) const =0;
 };
 
 /**************************************************************************************************/
@@ -293,9 +317,9 @@ public:
      * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] subRoot       Pathname of root directory of subscriber
      * @param[in] maxOpenFiles  Maximum number of open files in repository
-     * @param[in] disposer      Locally processes received data-products
+     * @param[in] dispoFact     Factory for creating the SubNode's Disposer
      * @param[in] client        Pointer to SubNode's client or `nullptr`
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
@@ -308,15 +332,15 @@ public:
             const int             timeout,
             const unsigned        maxPeers,
             const unsigned        evalTime,
-            const String&         repoDir,
+            const String&         subRoot,
             const long            maxOpenFiles,
-            Disposer&             disposer,
+            Disposer::Factory&    dispoFact,
             Client* const         client);
 
     /**
      * Destroys.
      */
-    virtual ~SubNode() noexcept {};
+    virtual ~SubNode() =default;
 
     /**
      * Receives a notice about the availability of information on a product.

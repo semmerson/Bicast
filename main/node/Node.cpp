@@ -25,6 +25,7 @@
 #include "Node.h"
 
 #include "Disposer.h"
+#include "FileUtil.h"
 #include "LastProc.h"
 #include "PeerConn.h"
 #include "Shield.h"
@@ -422,13 +423,11 @@ public:
      * @param[in] mcastAddr       Socket address of multicast group
      * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] maxPendConn     Maximum number of pending connections
-     * @param[in] repoRoot        Pathname of the root directory of the repository
+     * @param[in] pubRoot         Pathname of the root directory of the publisher
      * @param[in] maxSegSize      Maximum size of a data-segment in bytes
      * @param[in] maxOpenFiles    Maximum number of open, data-products files
-     * @param[in] lastProcDir     Pathname of the directory containing information on the last,
-     *                            successfully-processed product-file
-     * @param[in] feedName        Name of the data-product feed
      * @param[in] keepTime        Number of seconds to keep data-products before deleting them
+     * @param[in] feedName        Name of the data-product feed
      * @throw InvalidArgument     Invalid maximum number of peers
      * @throw InvalidArgument     `maxPendConn` is zero
      */
@@ -440,16 +439,15 @@ public:
             const SockAddr     mcastAddr,
             const InetAddr     mcastIfaceAddr,
             const int          maxPendConn,
-            const String&      repoRoot,
+            const String&      pubRoot,
             const SegSize      maxSegSize,
             const long         maxOpenFiles,
-            const String&      lastProcDir,
-            const String&      feedName,
-            const int          keepTime)
+            const int          keepTime,
+            const String&      feedName)
         : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , lastProc(LastProc::create(lastProcDir, feedName))
-        , repo(repoRoot, maxOpenFiles, lastProc->recall(), keepTime)
+        , lastProc(LastProc::create(FileUtil::pathname(pubRoot, "lastProc"), feedName))
+        , repo(FileUtil::pathname(pubRoot, "repo"), maxOpenFiles, lastProc->recall(), keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
     {
@@ -475,6 +473,12 @@ public:
 
     ProdIdSet getProdIds() const override {
         return repo.getProdIds();
+    }
+
+    void addProd(
+            const String& filePath,
+            const String& prodName) const {
+        repo.link(filePath, prodName);
     }
 
     /**
@@ -506,26 +510,26 @@ PubNodePtr PubNode::create(
         const SockAddr     mcastAddr,
         const InetAddr     ifaceAddr,
         const unsigned     maxPendConn,
-        const String&      repoRoot,
+        const String&      pubRoot,
         const SegSize      maxSegSize,
         const long         maxOpenFiles,
-        const String&      lastProcDir,
-        const String&      feedName,
-        const int          keepTime) {
+        const int          keepTime,
+        const String&      feedName) {
     return PubNodePtr{new PubNodeImpl(tracker, p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
-            maxPendConn, repoRoot, maxSegSize, maxOpenFiles, lastProcDir, feedName, keepTime)};
+            maxPendConn, pubRoot, maxSegSize, maxOpenFiles, keepTime, feedName)};
 }
 
 PubNodePtr PubNode::create(
-        Tracker&                 tracker,
-        const SegSize            maxSegSize,
-        const McastPub::RunPar&  mcastRunPar,
-        const PubP2pMgr::RunPar& p2pRunPar,
-        const PubRepo::RunPar&   repoRunPar,
-        const String&            feedName) {
-    return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime, mcastRunPar.dstAddr,
-            mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, repoRunPar.rootDir, maxSegSize,
-            repoRunPar.maxOpenFiles, repoRunPar.lastProcDir, feedName, repoRunPar.keepTime);
+        Tracker&                  tracker,
+        const SegSize             maxSegSize,
+        const McastPub::RunPar&   mcastRunPar,
+        const PubP2pMgr::RunPar&  p2pRunPar,
+        const String&             pubRoot,
+        const RunPar::Repo&       repoRunPar,
+        const String&             feedName) {
+    return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime,
+            mcastRunPar.dstAddr, mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, pubRoot,
+            maxSegSize, repoRunPar.maxOpenFiles, repoRunPar.keepTime, feedName);
 }
 
 /**************************************************************************************************/
@@ -691,9 +695,9 @@ public:
      * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
      * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] repoDir       Pathname of root directory of data-product repository
+     * @param[in] subRoot       Pathname of root directory of the subscriber
      * @param[in] maxOpenFiles  Maximum number of product-files with open file descriptors
-     * @param[in] disposer      Locally processes received data-products
+     * @param[in] dispoFact     Factory for creating the SubNode's Disposer
      * @param[in] client        Pointer to the SubNode's client
      * @throw     LogicError    IP address families of multicast group address and multicast
      *                          interface don't match
@@ -705,17 +709,17 @@ public:
             const int               timeout,
             const unsigned          maxPeers,
             const unsigned          evalTime,
-            const String&           repoDir,
+            const String&           subRoot,
             const long              maxOpenFiles,
-            const Disposer&         disposer,
+            Disposer::Factory&      dispoFact,
             Client* const           client)
         : NodeImpl(SubP2pMgr::create(subInfo.tracker, *this, peerConnSrvr, timeout, maxPeers,
                 evalTime))
         , disposeThread()
         , mcastThread()
-        , disposer(disposer)
-        , repo(SubRepo(repoDir, maxOpenFiles, disposer.getLastProcTime(), disposer.size(),
-                subInfo.keepTime))
+        , disposer(dispoFact(FileUtil::pathname(subRoot, "lastProc"), subInfo.feedName))
+        , repo(SubRepo(FileUtil::pathname(subRoot, "repo"), maxOpenFiles,
+                disposer.getLastProcTime(), disposer.size(), subInfo.keepTime))
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}
@@ -725,6 +729,7 @@ public:
         , client(client)
     {
         DataSeg::setMaxSegSize(subInfo.maxSegSize);
+
         LOG_NOTE("Will receive multicast group " + subInfo.mcast.dstAddr.to_string() + " from " +
                 subInfo.mcast.srcAddr.to_string() + " on interface " + mcastIface.to_string());
     }
@@ -883,12 +888,12 @@ SubNodePtr SubNode::create(
         const int             timeout,
         const unsigned        maxPeers,
         const unsigned        evalTime,
-        const String&         repoDir,
+        const String&         subRoot,
         const long            maxOpenFiles,
-        Disposer&             disposer,
+        Disposer::Factory&    dispoFact,
         Client* const         client) {
     return SubNodePtr{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers,
-            evalTime, repoDir, maxOpenFiles, disposer, client)};
+            evalTime, subRoot, maxOpenFiles, dispoFact, client)};
 }
 
 } // namespace

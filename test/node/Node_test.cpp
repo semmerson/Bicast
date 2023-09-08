@@ -32,6 +32,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <fcntl.h>
+#include <functional>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <string>
@@ -55,9 +56,8 @@ protected:
     char                      prodData[PROD_SIZE];
     bool                      prodRcvd;
     const String              testRoot;
-    const String              pubRepoRoot;
-    const String              subRepoRoot;
-    String                    lastProcDir;
+    const String              pubRoot;
+    const String              subRoot;
     const long                maxOpenFiles;
     const SockAddr            mcastAddr;
     const InetAddr            ifaceAddr;
@@ -78,9 +78,8 @@ protected:
         , prodData{}
         , prodRcvd(false)
         , testRoot("/tmp/Node_test")
-        , pubRepoRoot(testRoot + "/pub")
-        , subRepoRoot(testRoot + "/sub/prods")
-        , lastProcDir(testRoot + "/sub/lastProc")
+        , pubRoot(testRoot + "/pub")
+        , subRoot(testRoot + "/sub")
         , maxOpenFiles(25)
         , mcastAddr("232.1.1.1:3880")
         //, ifaceAddr{"192.168.58.139"} // Causes PDU reception via P2P only
@@ -156,7 +155,7 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating publishing node");
     Tracker tracker{};
     auto pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
-            pubRepoRoot, SEG_SIZE, maxOpenFiles, lastProcDir, feedName, 3600);
+            pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
@@ -167,9 +166,13 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating subscribing node");
     subInfo.tracker.insert(pubP2pSrvrAddr);
     auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
-    Disposer disposer{};
-    subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRepoRoot,
-            maxOpenFiles, disposer, this); // NB: Invalid dispose-file
+    Disposer::Factory factory = [&] (
+            const String& lastProcDir,
+            const String& feedName) {
+        return Disposer{};
+    };
+    subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRoot,
+            maxOpenFiles, factory, this); // NB: Invalid dispose-file
 
     const auto subP2pSrvrAddr = subNodePtr->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
@@ -191,7 +194,7 @@ TEST_F(NodeTest, Sending)
 {
     constexpr int NUM_PRODS = 1000;
     const String  prodBaseName("foo/bar/product.dat");
-    const String  filePath(testRoot + "/" + prodBaseName);
+    const String  filePath(FileUtil::pathname(testRoot, prodBaseName));
     steady_clock::time_point start;
     steady_clock::time_point stop;
 
@@ -206,27 +209,41 @@ TEST_F(NodeTest, Sending)
         }
         EXPECT_EQ(0, ::close(fd));
 
-        // Create publisher
+        // Create the publishing node
         Tracker tracker{};
         auto    pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
-                ifaceAddr, 1, pubRepoRoot, SEG_SIZE, maxOpenFiles, lastProcDir, feedName, 3600);
+                ifaceAddr, 1, pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName);
         const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
-        // Create disposer
-        Pattern       incl(".*");
-        Pattern       excl{};  // Exclude nothing
-        String        pathTemplate(testRoot + "/processed/$&"); // Product-name as output pathname
-        FileTemplate  fileTemplate(pathTemplate, false);
-        PatternAction patAct(incl, excl, fileTemplate);
-        Disposer disposer{lastProcDir, feedName, 0}; // 0 => No file descriptors kept open
-        disposer.add(patAct);
+        /*
+         * The SubNode determines the pathname of the directory that contains information on the
+         * last, successfully-processed data-product, which the SubNode uses to construct the
+         * Disposer. During that construction, however, it's too late for this unit-test to add
+         * pattern/actions to the Disposer. Consequently, the SubNode uses a factory method to
+         * create the Disposer and, in this case, that factory is a lambda which adds the
+         * unit-test pattern/action entry.
+         */
 
-        // Create subscriber
+        // Create disposer factory-method
+        Disposer::Factory dispoFact = [&] (
+                const String& lastProcDir,
+                const String& feedName) {
+            Disposer      disposer{lastProcDir, feedName, 0}; // 0 => No file descriptors kept open
+            Pattern       incl(".*");
+            Pattern       excl{};  // Exclude nothing
+            String        pathTemplate(testRoot + "/processed/$&"); // Product-name as pathname
+            FileTemplate  fileTemplate(pathTemplate, false); // false => don't keep open
+            PatternAction patAct(incl, excl, fileTemplate);
+            disposer.add(patAct);
+            return disposer;
+        };
+
+        // Create the subscribing node
         subInfo.tracker.insert(pubP2pSrvrAddr);
         auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
         subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60,
-                subRepoRoot, maxOpenFiles, disposer, this);
+                subRoot, maxOpenFiles, dispoFact, this);
         Thread subThread(&NodeTest::runNode, this, subNodePtr);
 
         // Wait for subscriber to connect to publisher
@@ -240,9 +257,7 @@ TEST_F(NodeTest, Sending)
                 const auto prodId = ProdId(prodName);
                 prodInfo = ProdInfo{prodId, prodName, PROD_SIZE};
 
-                const auto pubProdPath = pubRepoRoot + '/' + prodName;
-                FileUtil::ensureParent(pubProdPath);
-                FileUtil::hardLink(filePath, pubProdPath);
+                pubNode->addProd(filePath, prodName);
 
                 // Verify transmission and reception
                 Lock lock{mutex};
@@ -309,7 +324,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   log_setName(::basename(argv[0]));
-  //log_setLevel(LogLevel::DEBUG);
+  log_setLevel(LogLevel::NOTE);
 
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the

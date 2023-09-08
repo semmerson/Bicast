@@ -710,8 +710,7 @@ Disposer Disposer::createFromYaml(
     }
 }
 
-String Disposer::getYaml(const Disposer& disposer) {
-    auto          pImpl = disposer.pImpl;
+String Disposer::getYaml() {
     YAML::Emitter yaml;
 
     yaml << YAML::BeginMap;

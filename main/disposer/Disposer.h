@@ -22,11 +22,12 @@
 
 #include "PatternAction.h"
 
+#include <functional>
 #include <memory>
 
 namespace hycast {
 
-/// A class for the local disposition of data products
+/// A class for the local disposition (i.e., processing) of data products
 class Disposer
 {
 public:
@@ -37,12 +38,24 @@ private:
 
 public:
     /**
+     * Factory-method for creating a Disposer. This method allows the SubNode to create its Disposer
+     * independent of how the Disposer is created.
+     * @param[in] lastProcDir  Pathname of directory containing information on the last,
+     *                         successfully-processed data-product
+     * @param[in] feedName     Name of the data-product feed
+     */
+    using Factory = std::function<Disposer(const String& lastProdDir, const String& feedName)>;
+
+    /**
      * Default constructs. The resulting Disposer will not be valid and will test false.
+     * @see operator bool()
      */
     Disposer();
 
     /**
-     * Constructs. The `dispose()` method will do nothing until `add()` is called.
+     * Constructs. The `dispose()` method will do nothing until `add()` is called. This constructor
+     * exists to support unit-testing of the Disposer class independent of a configuration-file
+     * parser.
      * @param[in] lastProcDir    Pathname of the directory to hold information on the last,
      *                           successfully-processed data-product
      * @param[in] feedName       Name of the data-product feed
@@ -54,6 +67,26 @@ public:
             const String& lastProcDir,
             const String  feedName,
             const int     maxPersistent = 20);
+
+    /**
+     * Creates a Disposer instance based on a YAML configuration-file.
+     *
+     * @param[in] configFile     Pathname of the configuration-file
+     * @param[in] feedName       Name of the data-product feed
+     * @param[in] lastProcDir    Default pathname of the directory to hold information on the last,
+     *                           successfully-processed data-product
+     * @param[in] maxPersistent  Default maximum number of persistent actions (i.e., actions whose
+     *                           file descriptors are kept open)
+     * @return                   A Disposer corresponding to the configuration-file
+     * @throw InvalidArgument    Couldn't load configuration-file
+     * @throw SystemError        Couldn't get pathname of current working directory
+     * @throw RuntimeError       Couldn't parse configuration-file
+     */
+    static Disposer createFromYaml(
+            const String& configFile,
+            const String& feedName,
+            String        lastProcDir,
+            int           maxPersistent = 20);
 
     /**
      * Indicates if this is a valid instance (i.e., not default constructed).
@@ -84,6 +117,12 @@ public:
     size_t size() const;
 
     /**
+     * Returns the YAML representation.
+     * @return The YAML representation
+     */
+    String getYaml();
+
+    /**
      * Disposes of a product.
      *
      * @param[in] prodInfo  Product metadata
@@ -96,34 +135,6 @@ public:
             const ProdInfo prodInfo,
             const char*    bytes,
             const String&  path) const;
-
-    /**
-     * Creates a Disposer instance from a YAML file. This factory method exists in addition to the
-     * constructor in order to unit-test the Disposer class independent of a configuration-file
-     * parser.
-     *
-     * @param[in] configFile     Pathname of the configuration-file
-     * @param[in] feedName       Name of the data-product feed
-     * @param[in] lastProcDir    Default pathname of the directory to hold information on the last,
-     *                           successfully-processed data-product
-     * @param[in] maxPersistent  Default maximum number of persistent actions (i.e., actions whose
-     *                           file descriptors are kept open)
-     * @return                   A Disposer corresponding to the configuration-file
-     * @throw InvalidArgument    Couldn't load configuration-file
-     * @throw SystemError        Couldn't get pathname of current working directory
-     * @throw RuntimeError       Couldn't parse configuration-file
-     */
-    static Disposer createFromYaml(
-            const String& configFile,
-            const String& feedName,
-            String        lastProcDir,
-            int           maxPersistent);
-
-    /**
-     * Returns the YAML representation.
-     * @return The YAML representation
-     */
-    static String getYaml(const Disposer& disposer);
 };
 
 } // namespace
