@@ -34,17 +34,17 @@ using namespace hycast;
 using String = std::string;
 
 /// Default maximum number of active peers
-static constexpr int DEF_MAX_PEERS     = 8;
+static constexpr int  DEF_MAX_PEERS     = 8;
 /// Size of queue for publisher's server
-static constexpr int DEF_BACKLOG_SIZE  = 256;
+static constexpr int  DEF_BACKLOG_SIZE  = 256;
 /// Default multicast group Internet address
-static constexpr char DEF_MCAST_ADDR[] = "232.1.1.1";
+static constexpr char DEF_MCAST_ADDR[]  = "232.1.1.1";
 /// Default port for publisher's server & multicast group
-static constexpr int DEF_PORT          = 38800;
+static constexpr int  DEF_PORT          = 38800;
 /// Default tracker size
-static constexpr int DEF_TRACKER_CAP   = 1000;
+static constexpr int  DEF_TRACKER_CAP   = 1000;
 /// Default peer evaluation duration
-static constexpr int DEF_EVAL_DURATION = 300;
+static constexpr int  DEF_EVAL_DURATION = 300;
 
 /// Command-line/configuration-file parameters of this program
 struct RunPar {
@@ -497,7 +497,7 @@ static void setException()
     ::sem_post(&stopSem);
 }
 
-/// Runs the publishing node.
+/// Runs the publishing node. Meant to be the start routine for a thread.
 static void runNode()
 {
     try {
@@ -520,7 +520,6 @@ static void servSubscriber(Xprt xprt)
         // Keep consonant with `subscribe.cpp:subscribe()`
 
         Tracker     subTracker{subInfo.tracker.getCapacity()}; // Subscriber's tracker
-        auto&       pubTracker = subInfo.tracker; // Publisher's tracker
         P2pSrvrInfo subP2pSrvrInfo; // Information on subscriber's P2P server
 
         if (!subP2pSrvrInfo.read(xprt))
@@ -537,15 +536,15 @@ static void servSubscriber(Xprt xprt)
 
         // Ensure that the publisher's tracker contains current information on the publisher's P2P
         // server
-        pubTracker.insert(pubNode->getP2pSrvrInfo());
+        subInfo.tracker.insert(pubNode->getP2pSrvrInfo());
 
         if (!subInfo.write(xprt))
             throw RUNTIME_ERROR("Couldn't send subscription information to subscriber " +
                     xprt.getRmtAddr().to_string());
         LOG_INFO("Sent subscription information to subscriber " + xprt.getRmtAddr().to_string());
 
-        pubTracker.insert(subTracker);
-        pubTracker.insert(subP2pSrvrInfo);
+        subInfo.tracker.insert(subTracker);
+        subInfo.tracker.insert(subP2pSrvrInfo);
 
         --numSubThreads;
     }
