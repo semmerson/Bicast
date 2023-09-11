@@ -307,10 +307,13 @@ class PubNodeImpl final : public PubNode, public NodeImpl
         try {
             for (auto prodEntry = repo.getNextProd(); prodEntry;
                       prodEntry = repo.getNextProd()) {
-
                 auto& prodInfo = prodEntry.prodInfo;
 
-                LOG_INFO("Sending product " + prodInfo.to_string());
+                static constexpr double ratio = (static_cast<double>(SysDuration::period::num)) /
+                        SysDuration::period::den;
+                LOG_INFO("Sending product " + prodInfo.to_string() + ". Latency=" +
+                        std::to_string((SysClock::now() - prodInfo.getCreateTime()).count() * ratio)
+                        + " s");
 #if 1
                 // Send product-information
                 send(prodInfo);
