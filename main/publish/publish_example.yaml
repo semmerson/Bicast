@@ -1,10 +1,14 @@
+# This is an example configuration-file for publishing data-products. The syntax is standard
+# YAML. The command "publish -h" will also print descripions of the variables in this file.
+
 pubRoot: .                   # Pathname of publisher's root-directory
 name: NOAAPort NWSTG         # Name of feed
 logLevel: DEBUG              # Logging level
-maxSegSize: 1444             # Maximum size of a data-segment in bytes
+maxSegSize: 1444             # Maximum size of data-segment in bytes
 trackerCap: 1000             # Maximum size of list of P2P servers
-server:                      # Publisher's server (not the P2P server)
-  pubAddr: localhost:38800   # Socket address of server publisher's server. Port must not be 0.
+server:                      # Publisher's server (not P2P server)
+  pubAddr: localhost:38800   # Socket address of publisher's server (not P2P server). Port number
+                             # must not be 0.
   maxPending: 256            # Maximum number of pending connections
 multicast:                   # Multicast component
   dstAddr: 232.1.1.1:38800   # Destination socket address of multicast group
@@ -18,6 +22,5 @@ peer2Peer:                   # Peer-to-peer component
   maxPeers: 8                # Maximum number of connected subscriber-peers
   evalTime: 300              # Peer-evaluation duration in seconds
 repository:                  # Data product repository
-  repoRoot: repo             # Pathname of root-directory of repository
-  maxOpenFiles: 10           # Maximum number of open files
+  maxOpenFiles: 10           # Maximum number of open file descriptors
   keepTime: 3600             # How long to keep data-products in seconds
