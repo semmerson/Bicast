@@ -1018,7 +1018,7 @@ class SubRepo::Impl final : public Repository::Impl
 
                 static constexpr double ratio = (static_cast<double>(SysDuration::period::num)) /
                         SysDuration::period::den;
-                LOG_INFO("Received " + prodInfo.to_string() + ". Latency was " +
+                LOG_INFO("Received " + prodInfo.to_string() + ". Latency=" +
                         std::to_string((SysClock::now() - createTime).count() * ratio) + " s");
 
                 const auto newPathname = prodDir + prodInfo.getName();
