@@ -54,6 +54,7 @@ using String = std::string; ///< String type
 /// Runtime parameters of this program
 struct RunPar {
     LogLevel  logLevel;      ///< Logging level
+    String    subRoot;       ///< Pathname of subscriber's root-directory
     SockAddr  pubAddr;       ///< Address of publisher
     InetAddr  mcastIface;    ///< Address of interface for multicast reception. May be wildcard.
     unsigned  retryInterval; ///< Number of seconds to wait between attempts to contact publisher
@@ -103,18 +104,13 @@ struct RunPar {
     }         p2p; ///< P2P runtime parameters
     /// Runtime parameters for the repository
     struct RepoArgs {
-        String   rootDir;      ///< Pathname of the repository's root directory
         int      maxOpenFiles; ///< Maximum number of open files
         /**
          * Constructs.
-         * @param[in] rootDir       Pathname of the root of the repository
          * @param[in] maxOpenFiles  Maximum number of open file descriptors
          */
-        RepoArgs(
-                const String&  rootDir,
-                const unsigned maxOpenFiles)
-            : rootDir(rootDir)
-            , maxOpenFiles(maxOpenFiles)
+        RepoArgs(const unsigned maxOpenFiles)
+            : maxOpenFiles(maxOpenFiles)
         {}
     }      repo;            ///< Runtime parameters for the repository
     String dispositionFile; ///< Pathname of YAML file indicating how products should be processed
@@ -126,12 +122,13 @@ struct RunPar {
      */
     RunPar()
         : logLevel(LogLevel::NOTE)
+        , subRoot(".")
         , pubAddr()
         , mcastIface("0.0.0.0") // Might get changed to match address family of multicast group
         , retryInterval(60)
         , p2p(SockAddr(), DEF_MAX_PEERS, DEF_TIMEOUT, DEF_TRACKER_SIZE, DEF_MAX_PEERS,
                 DEF_EVAL_DURATION)
-        , repo("repo", ::sysconf(_SC_OPEN_MAX)/2)
+        , repo(::sysconf(_SC_OPEN_MAX)/2)
         , dispositionFile()
         , lastProcDir("lastProc")
     {}
@@ -161,6 +158,8 @@ static void usage()
 "                        \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                        insensitive and takes effect immediately. Default is\n"
 "                        \"" << defRunPar.logLevel << "\".\n"
+"    -r <subRoot>        Pathname of subscriber's root-directory. Default is \"" <<
+                         defRunPar.subRoot << "\".\n"
 "  Peer-to-Peer:\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
 "                        poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
@@ -178,8 +177,6 @@ static void usage()
 "  Repository:\n"
 "    -o <maxOpenFiles>   Maximum number of open repository files. Default is " <<
                          defRunPar.repo.maxOpenFiles << ".\n"
-"    -r <repoRoot>       Pathname of root of data-product repository. Default is\n"
-"                        \"" << defRunPar.repo.rootDir << "\".\n"
 "  Product Disposition:\n"
 "    -d <disposeConfig>  Pathname of configuration-file specifying disposition of\n"
 "                        products. The default is no local processing.\n"
@@ -207,6 +204,8 @@ static void setFromConfig(const String& pathname)
         auto node1 = node0["logLevel"];
         if (node1)
             log_setLevel(node1.as<String>());
+
+        Parser::tryDecode<decltype(runPar.subRoot)>(node0, "subRoot", runPar.subRoot);
 
         node1 = node0["pubAddr"];
         if (node1) {
@@ -240,8 +239,6 @@ static void setFromConfig(const String& pathname)
 
         node1 = node0["repository"];
         if (node1) {
-            Parser::tryDecode<decltype(runPar.repo.rootDir)>(node1, "repoRoot",
-                    runPar.repo.rootDir);
             Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "maxOpenFiles",
                     runPar.repo.maxOpenFiles);
         }
@@ -279,7 +276,7 @@ static void vetRunPars()
     if (runPar.p2p.evalTime <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-duration is not positive");
 
-    if (runPar.repo.rootDir.empty())
+    if (runPar.subRoot.empty())
         throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
     if (runPar.repo.maxOpenFiles <= 0)
         throw INVALID_ARGUMENT("Maximum number of open repository files is not positive");
@@ -385,8 +382,8 @@ static void getCmdPars(
             break;
         }
         case 'r': {
-            runPar.repo.rootDir = String(optarg);
-            if (runPar.repo.rootDir.empty())
+            runPar.subRoot = String(optarg);
+            if (runPar.subRoot.empty())
                 throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
             break;
         }
@@ -552,10 +549,10 @@ static void stopSubNode(
  */
 static void trySession()
 {
-    // Peer connection server
+    // Create peer-connection server
     auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
 
-    // Use actual P2P server address because port number might have been 0
+    // Use the address of the peer-connection server because port number might have been 0
     SubInfo subInfo; // Subscription information
     subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
 
@@ -570,8 +567,8 @@ static void trySession()
 
     //LOG_DEBUG("Creating subscribing node");
     auto    subNode = SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
-            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.repo.rootDir,
-            runPar.repo.maxOpenFiles, factory, nullptr);
+            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.subRoot, runPar.repo.maxOpenFiles,
+            factory, nullptr);
 
     try {
         subNode->run();
