@@ -36,10 +36,6 @@ struct SubInfo : public XprtAble {
     struct Mcast {
         SockAddr dstAddr;  ///< Multicast destination address
         InetAddr srcAddr;  ///< Multicast source address
-        Mcast()
-            : dstAddr()
-            , srcAddr()
-        {}
     }         mcast;       ///< Multicast parameters
     Tracker   tracker;     ///< Information on potential P2P-servers
     uint32_t  keepTime;    ///< Duration to keep data-products in seconds
