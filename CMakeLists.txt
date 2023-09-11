@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Set the project name and version
-PROJECT(hycast VERSION 1.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
+PROJECT(hycast VERSION 0.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
 
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
@@ -105,5 +105,5 @@ SET(CPACK_RPM_PACKAGE_LICENSE "Apache 2.0")
 SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp-devel openssl11-devel")
 SET(CPACK_RPM_PACKAGE_PROVIDES "publish(1), subscribe(1)")
 
-set(CPACK_GENERATOR DEB STGZ) # RPM needs yum(1)-compatible UPC software repository
+set(CPACK_GENERATOR DEB STGZ RPM) # RPM needs yum(1)-compatible UPC software repository
 include(CPack)
