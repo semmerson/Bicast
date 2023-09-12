@@ -20,13 +20,13 @@
  * limitations under the License.
  */
 
+#include <LastProd.h>
 #include "config.h"
 
 #include "Node.h"
 
 #include "Disposer.h"
 #include "FileUtil.h"
-#include "LastProc.h"
 #include "PeerConn.h"
 #include "Shield.h"
 #include "ThreadException.h"
@@ -253,7 +253,7 @@ public:
 class PubNodeImpl final : public PubNode, public NodeImpl
 {
     McastPub::Pimpl mcastPub;     ///< Publisher's multicast component
-    LastProcPtr     lastProc;     ///< Saves information on last, successfully-processed
+    LastProdPtr     lastProd;     ///< Saves information on last, successfully-transmitted
                                   ///< data-product
     PubRepo         repo;         ///< Publisher's data-product repository
     SegSize         maxSegSize;   ///< Maximum size of a data-segment in bytes
@@ -449,8 +449,8 @@ public:
             const String&      feedName)
         : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , lastProc(LastProc::create(FileUtil::pathname(pubRoot, "lastProc"), feedName))
-        , repo(FileUtil::pathname(pubRoot, "repo"), maxOpenFiles, lastProc->recall(), keepTime)
+        , lastProd(LastProd::create(FileUtil::pathname(pubRoot, "lastProduct"), feedName))
+        , repo(FileUtil::pathname(pubRoot, "repo"), maxOpenFiles, lastProd->recall(), keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
     {

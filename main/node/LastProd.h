@@ -1,5 +1,5 @@
 /**
- * @file LastProc.h
+ * @file LastProd.h
  * Manages access to the time of the last, successfully-processed product.
  * A locally processed product (either sent by a publisher or received by a subscriber) has  an
  * associated creation-time (i.e., the time that the publisher created it). This time is the
@@ -25,8 +25,8 @@
  * the License.
  */
 
-#ifndef MAIN_DISPOSER_LASTPROC_H_
-#define MAIN_DISPOSER_LASTPROC_H_
+#ifndef MAIN_NODE_LASTPROD_H_
+#define MAIN_NODE_LASTPROD_H_
 
 #include "CommonTypes.h"
 
@@ -34,11 +34,11 @@
 
 namespace hycast {
 
-class LastProc;
-using LastProcPtr = std::shared_ptr<LastProc>; ///< Smart pointer to a LastProc
+class LastProd;
+using LastProdPtr = std::shared_ptr<LastProd>; ///< Smart pointer to an instance
 
 /// Interface for this component
-class LastProc
+class LastProd
 {
 public:
     /**
@@ -46,12 +46,12 @@ public:
      * @param[in] dirPathname  Pathname of the directory to hold the information
      * @param[in] feedName     Name of the data-product feed
      */
-    static LastProcPtr create(
+    static LastProdPtr create(
             const String& dirPathname,
             const String& feedName);
 
     /// Destroys.
-    virtual ~LastProc() =default;
+    virtual ~LastProd() =default;
 
     /**
      * Saves the time of the last, successfully-processed product-file.
@@ -69,4 +69,4 @@ public:
 
 } // namespace
 
-#endif /* MAIN_DISPOSER_LASTPROC_H_ */
+#endif /* MAIN_NODE_LASTPROD_H_ */

@@ -26,7 +26,6 @@
 #include "error.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
-#include "LastProc.h"
 #include "Parser.h"
 #include "PatternAction.h"
 #include "Shield.h"
@@ -34,6 +33,7 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <LastProd.h>
 #include <list>
 #include <queue>
 #include <sys/wait.h>
@@ -54,7 +54,7 @@ class Disposer::Impl
     String                     lastProcDir;   ///< Pathname of directory to hold information on the
                                               ///< last, successfully-processed data-product
     String                     feedName;      ///< Name of the data-product feed
-    LastProcPtr                lastProc;      ///< Saves information on last, successfully-processed
+    LastProdPtr                lastProd;      ///< Saves information on last, successfully-processed
                                               ///< data-product
     PatActs                    patActs;       ///< Pattern-actions to be matched
     std::unordered_set<Action> actionSet;     ///< Persistent (e.g., open) actions
@@ -243,7 +243,7 @@ public:
         , cond()
         , lastProcDir(lastProcDir)
         , feedName(feedName)
-        , lastProc(LastProc::create(lastProcDir, feedName))
+        , lastProd(LastProd::create(lastProcDir, feedName))
         , patActs()
         , actionSet(0)
         , actionQueue(0)
@@ -315,7 +315,7 @@ public:
      * @return Modification-time of the last, successfully-processed data-product
      */
     SysTimePoint getLastProcTime() const {
-        return lastProc->recall();
+        return lastProd->recall();
     }
 
     /**
@@ -374,8 +374,10 @@ public:
 
                 try {
                     process(action, bytes, prodInfo.getSize());
-                    LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string());
-                    lastProc->save(path);
+                    LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string() +
+                            ". Latency=" + std::to_string((SysClock::now() -
+                            prodInfo.getCreateTime()).count() * SysClockRatio) + " s");
+                    lastProd->save(path);
                 }
                 catch (const std::exception& ex) {
                     LOG_ERROR(ex, ("Couldn't execute " + action.to_string() + " on " +

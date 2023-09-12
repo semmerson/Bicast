@@ -1,5 +1,5 @@
 /**
- * @file LastProc.cpp
+ * @file LastProd.cpp
  * Manages access to the time of the last, successfully-processed product.
  * A locally processed product (either sent by a publisher or received by a subscriber) has  an
  * associated creation-time (i.e., the time that the publisher created it). This time is the
@@ -27,9 +27,8 @@
  * limitations under the License.
  */
 
+#include <LastProd.h>
 #include "config.h"
-
-#include "LastProc.h"
 
 #include "FileUtil.h"
 #include "error.h"
@@ -111,8 +110,8 @@ public:
     }
 };
 
-/// Implementation of LastProc.
-class LastProcImpl : public LastProc
+/// Implementation of LastProd.
+class LastProdImpl : public LastProd
 {
     TimeFile timeFiles[2]; ///< Symbolic links for storing information
     int      last;         ///< Index of last, successfully-processed product-file
@@ -121,17 +120,17 @@ class LastProcImpl : public LastProc
 public:
     /**
      * Constructs.
-     * @param[in] lastProcDir  Pathname of directory to hold information
+     * @param[in] lastProdDir  Pathname of directory to hold information
      * @param[in] feedName     Name of data-product feed
      */
-    LastProcImpl(
-            const String& lastProcDir,
+    LastProdImpl(
+            const String& lastProdDir,
             const String& feedName)
         : timeFiles()
         , last(0)
         , next(1)
     {
-        const String baseFilename = lastProcDir + FileUtil::separator + feedName;
+        const String baseFilename = lastProdDir + FileUtil::separator + feedName;
         SysTimePoint modTimes[2];
 
         for (int i = 0; i < 2; ++i) {
@@ -162,11 +161,11 @@ public:
     }
 };
 
-LastProcPtr LastProc::create(
-        const String& lastProcDir,
+LastProdPtr LastProd::create(
+        const String& lastProdDir,
         const String& feedName)
 {
-    return LastProcPtr(new LastProcImpl(lastProcDir, feedName));
+    return LastProdPtr(new LastProdImpl(lastProdDir, feedName));
 }
 
 } // namespace
