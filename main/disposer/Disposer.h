@@ -40,11 +40,10 @@ public:
     /**
      * Factory-method for creating a Disposer. This method allows the SubNode to create its Disposer
      * independent of how the Disposer is created.
-     * @param[in] lastProcDir  Pathname of directory containing information on the last,
-     *                         successfully-processed data-product
-     * @param[in] feedName     Name of the data-product feed
+     * @param[in] pathTemplate  Template for pathnames of files containing information on the last,
+     *                          successfully-processed data-product
      */
-    using Factory = std::function<Disposer(const String& lastProdDir, const String& feedName)>;
+    using Factory = std::function<Disposer(const String& pathTemplate)>;
 
     /**
      * Default constructs. The resulting Disposer will not be valid and will test false.
@@ -56,24 +55,21 @@ public:
      * Constructs. The `dispose()` method will do nothing until `add()` is called. This constructor
      * exists to support unit-testing of the Disposer class independent of a configuration-file
      * parser.
-     * @param[in] lastProcDir    Pathname of the directory to hold information on the last,
+     * @param[in] pathTemplate   Template for pathnames of files containing information on the last,
      *                           successfully-processed data-product
-     * @param[in] feedName       Name of the data-product feed
      * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
      *                           descriptors are kept open)
      * @see `add()`
      */
     Disposer(
-            const String& lastProcDir,
-            const String  feedName,
+            const String& pathTemplate,
             const int     maxPersistent = 20);
 
     /**
      * Creates a Disposer instance based on a YAML configuration-file.
      *
      * @param[in] configFile     Pathname of the configuration-file
-     * @param[in] feedName       Name of the data-product feed
-     * @param[in] lastProcDir    Default pathname of the directory to hold information on the last,
+     * @param[in] pathTemplate   Template for pathnames of files containing information on the last,
      *                           successfully-processed data-product
      * @param[in] maxPersistent  Default maximum number of persistent actions (i.e., actions whose
      *                           file descriptors are kept open)
@@ -84,8 +80,7 @@ public:
      */
     static Disposer createFromYaml(
             const String& configFile,
-            const String& feedName,
-            String        lastProcDir,
+            const String& pathTemplate,
             int           maxPersistent = 20);
 
     /**

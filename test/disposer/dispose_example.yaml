@@ -7,11 +7,6 @@
 # needed and the current number of open file-descriptors is this value. The default value is 20.
 # maxKeepOpen: 20
 
-# The following parameter specified the pathname of the directory to hold information on the last,
-# successfully-processed data-product. This information allows the local processing of data-products
-# to pick-up where it left-off from the previous session. The default is "lastProc".
-# lastProcDir: lastProc
-
 # The following specifies the actions to be taken for NOAAPort data-products that match the
 # associated patterns. The patterns are specified using ECMAScript regular expressions. It is
 # assumed that a product's name is a relative pathname that's based on its WMO abbreviated heading.

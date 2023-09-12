@@ -53,7 +53,6 @@ class Disposer::Impl
     mutable Cond               cond;          ///< Condition variable
     String                     lastProcDir;   ///< Pathname of directory to hold information on the
                                               ///< last, successfully-processed data-product
-    String                     feedName;      ///< Name of the data-product feed
     LastProdPtr                lastProd;      ///< Saves information on last, successfully-processed
                                               ///< data-product
     PatActs                    patActs;       ///< Pattern-actions to be matched
@@ -230,28 +229,22 @@ public:
 
     /**
      * Constructs.
-     * @param[in] lastProcDir    Pathname of the directory to hold information on the last,
+     * @param[in] pathTemplate   Template for pathnames of files to hold information on the last,
      *                           successfully-processed data-product
-     * @param[in] feedName       Name of the data-product feed
      * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
      *                           descriptors are kept open)
      */
-    Impl(   const String& lastProcDir,
-            const String& feedName,
+    Impl(   const String& pathTemplate,
             const int     maxPersistent)
         : mutex()
         , cond()
-        , lastProcDir(lastProcDir)
-        , feedName(feedName)
-        , lastProd(LastProd::create(lastProcDir, feedName))
+        , lastProd(LastProd::create(pathTemplate))
         , patActs()
         , actionSet(0)
         , actionQueue(0)
         , maxPersistent(maxPersistent)
         , childCmds()
-    {
-        FileUtil::ensureDir(lastProcDir);
-    }
+    {}
 
     ~Impl() {
         try {
@@ -261,35 +254,6 @@ public:
         catch (const std::exception& ex) {
             LOG_ERROR(ex); // Destructors must not throw
         }
-    }
-
-    /**
-     * Sets the pathname of the directory to hold information on the last, successfully-processed
-     * data-product.
-     * @param[in] lastProcDir  Pathname of the directory to hold information on the last,
-     *                         successfully-processed data-product
-     */
-    void setLastProcDir(const String& lastProcDir) {
-        this->lastProcDir = lastProcDir;
-    }
-
-    /**
-     * Returns the pathname of the directory to hold information on the last, successfully-processed
-     * data-product.
-     * @return  Pathname of the directory to hold information on the last, successfully-processed
-     *          data-product
-     */
-    const String& getLastProcDir() const noexcept {
-        return lastProcDir;
-    }
-
-    /**
-     * Sets the maximum number of file descriptors to keep open between products.
-     * @param[in] maxKeepOpen  Maximum number of file descriptors to keep open
-     */
-    void setMaxKeepOpen(const int maxKeepOpen) {
-        Guard guard{mutex};
-        maxPersistent = maxKeepOpen;
     }
 
     /**
@@ -453,10 +417,9 @@ Disposer::Disposer()
 {}
 
 Disposer::Disposer(
-        const String& lastProcDir,
-        const String  feedName,
+        const String& pathTemplate,
         const int     maxPersistent)
-    : pImpl(new Impl{lastProcDir, feedName, maxPersistent})
+    : pImpl(new Impl{pathTemplate, maxPersistent})
 {}
 
 Disposer::operator bool() const noexcept {
@@ -677,8 +640,7 @@ static void parsePatternActions(
 
 Disposer Disposer::createFromYaml(
         const String& configFile,
-        const String& feedName,
-        String        lastProcDir,
+        const String& pathTemplate,
         int           maxKeepOpen)
 {
     YAML::Node node0;
@@ -691,15 +653,13 @@ Disposer Disposer::createFromYaml(
     }
 
     try {
-        Parser::tryDecode<decltype(lastProcDir)>(node0, "lastProcDir", lastProcDir);
-
         // Set the maximum number of file descriptors to keep open
         Parser::tryDecode(node0, "maxKeepOpen", maxKeepOpen);
         if (maxKeepOpen < 0)
             throw INVALID_ARGUMENT("Invalid \"maxKeepOpen\" value: " + std::to_string(maxKeepOpen));
 
         // Construct the Disposer
-        Disposer disposer{lastProcDir, feedName, maxKeepOpen};
+        Disposer disposer{pathTemplate, maxKeepOpen};
 
         // Add pattern-actions to the Disposer
         parsePatternActions(node0, disposer);

@@ -449,8 +449,9 @@ public:
             const String&      feedName)
         : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , lastProd(LastProd::create(FileUtil::pathname(pubRoot, "lastProduct"), feedName))
-        , repo(FileUtil::pathname(pubRoot, "repo"), maxOpenFiles, lastProd->recall(), keepTime)
+        , lastProd(LastProd::create(FileUtil::pathname(FileUtil::pathname(pubRoot,
+                "lastTransmitted"), feedName)))
+        , repo(FileUtil::pathname(pubRoot, "products"), maxOpenFiles, lastProd->recall(), keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
     {
@@ -720,8 +721,9 @@ public:
                 evalTime))
         , disposeThread()
         , mcastThread()
-        , disposer(dispoFact(FileUtil::pathname(subRoot, "lastProc"), subInfo.feedName))
-        , repo(SubRepo(FileUtil::pathname(subRoot, "repo"), maxOpenFiles,
+        , disposer(dispoFact(FileUtil::pathname(FileUtil::pathname(subRoot, "lastProcessed"),
+                subInfo.feedName)))
+        , repo(SubRepo(FileUtil::pathname(subRoot, "products"), maxOpenFiles,
                 disposer.getLastProcTime(), disposer.size(), subInfo.keepTime))
         , numMcastOrig{0}
         , numP2pOrig{0}

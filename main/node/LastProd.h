@@ -1,13 +1,11 @@
 /**
  * @file LastProd.h
- * Manages access to the time of the last, successfully-processed product.
- * A locally processed product (either sent by a publisher or received by a subscriber) has  an
- * associated creation-time (i.e., the time that the publisher created it). This time is the
- * modification-time of the corresponding product-file and is promulgated as such to subscribers.
- * This creation-time is used to determine if a product-file needs to be locally processed based on
- * the creation-time of the last, successfully-processed product. Obviously, this latter time must
- * persist between sessions and be available at the start of a new session. That is the job of this
- * component.
+ * Manages access to the time of the last product transmitted, received, or locally processed. A
+ * product has  an associated creation-time (i.e., the time that the publisher created it). This
+ * time is the modification-time of the corresponding product-file and is promulgated as such to
+ * subscribers. This creation-time is used to determine if a product needs to be transmitted, has
+ * been received, or has been locally processed. Obviously, this time must persist between sessions
+ * and be available at the start of a new session. That is the job of this component.
  *
  *  Created on: Aug 25, 2023
  *      Author: Steven R. Emmerson
@@ -43,12 +41,10 @@ class LastProd
 public:
     /**
      * Returns a new instance.
-     * @param[in] dirPathname  Pathname of the directory to hold the information
-     * @param[in] feedName     Name of the data-product feed
+     * @param[in] pathTemplate  Template for pathname of files to hold information
+     * @throw SystemError       Couldn't create a necessary directory
      */
-    static LastProdPtr create(
-            const String& dirPathname,
-            const String& feedName);
+    static LastProdPtr create(const String& pathTemplate);
 
     /// Destroys.
     virtual ~LastProd() =default;

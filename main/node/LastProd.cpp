@@ -1,13 +1,11 @@
 /**
  * @file LastProd.cpp
- * Manages access to the time of the last, successfully-processed product.
- * A locally processed product (either sent by a publisher or received by a subscriber) has  an
- * associated creation-time (i.e., the time that the publisher created it). This time is the
- * modification-time of the corresponding product-file and is promulgated as such to subscribers.
- * This creation-time is used to determine if a product file needs to be locally processed based on
- * the creation-time of the last, successfully-processed product. Obviously, this latter time must
- * persist between sessions and be available at the start of a new session. That is the job of this
- * component.
+ * Manages access to the time of the last product transmitted, received, or locally processed. A
+ * product has  an associated creation-time (i.e., the time that the publisher created it). This
+ * time is the modification-time of the corresponding product-file and is promulgated as such to
+ * subscribers. This creation-time is used to determine if a product needs to be transmitted, has
+ * been received, or has been locally processed. Obviously, this time must persist between sessions
+ * and be available at the start of a new session. That is the job of this component.
  *
  *  Created on: Aug 26, 2023
  *      Author: Steven R. Emmerson
@@ -27,22 +25,19 @@
  * limitations under the License.
  */
 
-#include <LastProd.h>
 #include "config.h"
 
 #include "FileUtil.h"
+#include "LastProd.h"
 #include "error.h"
 
 #include <unistd.h>
 
 namespace hycast {
 
-/// File for saving a time.
+/// File for saving the time of a file.
 class TimeFile
 {
-    /* TODO: Use a symlink to the last, successfuly-modified file and the modification-time of that
-     * file
-     */
     String symLink; ///< Pathname of the symbolic link
 
 public:
@@ -71,8 +66,8 @@ public:
     }
 
     /**
-     * Saves a reference to the last, successfully-processed product-file.
-     * @param[in] pathname  Pathname of the last, successfully-processed product-file
+     * Saves a reference to a file.
+     * @param[in] pathname  Pathname of the file
      */
     void save(const String& pathname) {
         if (::unlink(symLink.data()) && errno != ENOENT)
@@ -89,7 +84,7 @@ public:
     }
 
     /**
-     * Returns the modification-time of the last, successfully-processed file.
+     * Returns the modification-time of the last file.
      * @return             Modification-file of the file or SysTimePoint::min() if no such time
      *                     exists
      * @throw SystemError  The file exists but its modification-time couldn't be obtained
@@ -120,21 +115,20 @@ class LastProdImpl : public LastProd
 public:
     /**
      * Constructs.
-     * @param[in] lastProdDir  Pathname of directory to hold information
-     * @param[in] feedName     Name of data-product feed
+     * @param[in] pathTemplate  Template for pathname of files to hold information
+     * @throw SystemError       Couldn't create a necessary directory
      */
-    LastProdImpl(
-            const String& lastProdDir,
-            const String& feedName)
+    LastProdImpl(const String& pathTemplate)
         : timeFiles()
         , last(0)
         , next(1)
     {
-        const String baseFilename = lastProdDir + FileUtil::separator + feedName;
+        FileUtil::ensureDir(FileUtil::dirname(pathTemplate));
+
         SysTimePoint modTimes[2];
 
         for (int i = 0; i < 2; ++i) {
-            TimeFile timeFile(baseFilename + "." + std::to_string(i));
+            TimeFile timeFile(pathTemplate + "." + std::to_string(i));
             timeFiles[i].swap(timeFile);
             timeFiles[i].recall(modTimes[i]);
         }
@@ -161,11 +155,9 @@ public:
     }
 };
 
-LastProdPtr LastProd::create(
-        const String& lastProdDir,
-        const String& feedName)
+LastProdPtr LastProd::create(const String& pathTemplate)
 {
-    return LastProdPtr(new LastProdImpl(lastProdDir, feedName));
+    return LastProdPtr(new LastProdImpl(pathTemplate));
 }
 
 } // namespace

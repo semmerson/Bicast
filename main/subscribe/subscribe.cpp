@@ -557,11 +557,9 @@ static void trySession()
     subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
 
     // Create disposer factory-method
-    Disposer::Factory factory = [&] (
-            const String& lastProcDir,
-            const String& feedName) {
+    Disposer::Factory factory = [&] (const String& pathTemplate) {
         return runPar.dispositionFile.size()
-            ? Disposer::createFromYaml(runPar.dispositionFile, feedName, lastProcDir)
+            ? Disposer::createFromYaml(runPar.dispositionFile, pathTemplate)
             : Disposer{}; // No local processing <=> invalid instance
     };
 

@@ -166,9 +166,7 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating subscribing node");
     subInfo.tracker.insert(pubP2pSrvrAddr);
     auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
-    Disposer::Factory factory = [&] (
-            const String& lastProcDir,
-            const String& feedName) {
+    Disposer::Factory factory = [&] (const String& pathTemplate) {
         return Disposer{};
     };
     subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRoot,
@@ -226,14 +224,12 @@ TEST_F(NodeTest, Sending)
          */
 
         // Create disposer factory-method
-        Disposer::Factory dispoFact = [&] (
-                const String& lastProcDir,
-                const String& feedName) {
-            Disposer      disposer{lastProcDir, feedName, 0}; // 0 => No file descriptors kept open
+        Disposer::Factory dispoFact = [&] (const String& timeTemplate) {
+            Disposer      disposer{timeTemplate, 0}; // 0 => No file descriptors kept open
             Pattern       incl(".*");
             Pattern       excl{};  // Exclude nothing
-            String        pathTemplate(testRoot + "/processed/$&"); // Product-name as pathname
-            FileTemplate  fileTemplate(pathTemplate, false); // false => don't keep open
+            String        procTemplate(testRoot + "/processed/$&"); // Product-name as pathname
+            FileTemplate  fileTemplate(procTemplate, false); // false => don't keep open
             PatternAction patAct(incl, excl, fileTemplate);
             disposer.add(patAct);
             return disposer;
