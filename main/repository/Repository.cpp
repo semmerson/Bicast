@@ -26,6 +26,7 @@
 
 #include "FileUtil.h"
 #include "HashSetQueue.h"
+#include "LastProd.h"
 #include "Shield.h"
 #include "Thread.h"
 #include "ThreadException.h"
@@ -355,7 +356,7 @@ protected:
                 ensurePrivate(absPathChild);
 
                 struct ::stat statBuf;
-                FileUtil::getStat(prodDirFd, absPathChild, statBuf);
+                FileUtil::getStat(prodDirFd, absPathChild, statBuf, true); // Follow symlinks
 
                 if (S_ISDIR(statBuf.st_mode)) {
                     scanRepo(absPathChild);
@@ -416,7 +417,6 @@ protected:
 
     /**
      * Ensures that a file is
-     *   - Either a directory or a regular file;
      *   - Owned by this process' effective user and group; and
      *   - protected from all others.
      *
@@ -429,9 +429,6 @@ protected:
     void ensurePrivate(const String& absPathname) {
         struct ::stat statBuf;
         FileUtil::getStat(absPathname, statBuf, false);
-
-        if (!S_ISDIR(statBuf.st_mode) && !S_ISREG(statBuf.st_mode))
-            throw INVALID_ARGUMENT("\"" + absPathname + "\" isn't a directory or regular file");
 
         if (statBuf.st_uid != ::geteuid())
             FileUtil::setOwnership(absPathname, ::geteuid(), ::getegid());
@@ -913,9 +910,8 @@ public:
         Guard             guard(mutex);
 
         FileUtil::ensureDir(FileUtil::dirname(linkPath), 0700);
-
-        if (!tryHardLink(extantPath, linkPath) && !trySoftLink(extantPath, linkPath))
-            throw SYSTEM_ERROR("Couldn't link file \"" + linkPath + "\" to \"" + extantPath + "\"");
+        // A hard link results in an inappropriate modification-time on the repository's side
+        softLink(extantPath, linkPath);
     }
 };
 
@@ -955,6 +951,7 @@ class SubRepo::Impl final : public Repository::Impl
      * won't have.
      */
     const String rootDir;
+    LastProdPtr  lastReceived;
     const bool   queueProds; ///< Queue complete data-products for processing?
 
     /**
@@ -1024,8 +1021,11 @@ class SubRepo::Impl final : public Repository::Impl
                 const auto newPathname = prodDir + prodInfo.getName();
                 FileUtil::ensureDir(FileUtil::dirname(newPathname), 0755);
                 prodFile.rename(newPathname);
-
                 prodFile.close(); // Removal from processing-queue will re-enable access
+
+                const auto modTime = prodFile.getModTime();
+                lastReceived->save(modTime);
+
                 openProds.erase(prodId);
                 if (queueProds) {
                     /*
@@ -1034,7 +1034,7 @@ class SubRepo::Impl final : public Repository::Impl
                      * will be used to locally process files that arrived since the last
                      * successfully-processed product from the previous session.
                      */
-                    procQueue.emplace(prodFile.getModTime(), prodInfo.getId());
+                    procQueue.emplace(modTime, prodInfo.getId());
                     procQueueCond.notify_all();
                 }
             }
@@ -1045,11 +1045,12 @@ public:
     Impl(   const std::string& rootDir,
             const size_t       maxOpenFiles,
             const int          keepTime,
-            const SysTimePoint lastProcTime,
+            const LastProdPtr& lastReceived,
             const bool         queueProds)
         : Repository::Impl{FileUtil::pathname(rootDir, COMPLETE_DIR_NAME), maxOpenFiles, keepTime,
-                lastProcTime}
+                lastReceived->recall()}
         , rootDir(FileUtil::ensureTrailingSep(FileUtil::makeAbsolute(rootDir)))
+        , lastReceived(lastReceived)
         , queueProds(queueProds)
     {
         try {
@@ -1190,10 +1191,10 @@ SubRepo::SubRepo()
 SubRepo::SubRepo(
         const std::string& rootPathname,
         const size_t       maxOpenFiles,
-        const SysTimePoint lastProcTime,
+        const LastProdPtr& lastReceived,
         const bool         queueProds,
         const int          keepTime)
-    : Repository(new Impl{rootPathname, maxOpenFiles, keepTime, lastProcTime, queueProds})
+    : Repository(new Impl{rootPathname, maxOpenFiles, keepTime, lastReceived, queueProds})
 {}
 
 bool SubRepo::save(const ProdInfo prodInfo) const {

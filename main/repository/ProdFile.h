@@ -105,22 +105,14 @@ public:
     void close() const;
 
     /**
-     * Returns the last modification time of the underlying file.
+     * Returns the modification time of the underlying file.
      *
-     * @return Last modification time of the underlying file
+     * @return Modification time of the underlying file
      */
     SysTimePoint getModTime() const;
 
     /**
-     * Returns the last modification time of the underlying file.
-     *
-     * @param[out] modTime  Last modification time of the underlying file
-     * @return              Reference to `modTime`
-     */
-    SysTimePoint& getModTime(SysTimePoint& modTime) const;
-
-    /**
-     * Sets the last modification time of the underlying file.
+     * Sets the modification time of the underlying file.
      *
      * @param[in] modTime  Modification time for the underlying file
      */

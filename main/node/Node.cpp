@@ -20,13 +20,13 @@
  * limitations under the License.
  */
 
-#include <LastProd.h>
 #include "config.h"
 
 #include "Node.h"
 
 #include "Disposer.h"
 #include "FileUtil.h"
+#include "LastProd.h"
 #include "PeerConn.h"
 #include "Shield.h"
 #include "ThreadException.h"
@@ -252,12 +252,12 @@ public:
  */
 class PubNodeImpl final : public PubNode, public NodeImpl
 {
-    McastPub::Pimpl mcastPub;     ///< Publisher's multicast component
-    LastProdPtr     lastProd;     ///< Saves information on last, successfully-transmitted
-                                  ///< data-product
-    PubRepo         repo;         ///< Publisher's data-product repository
-    SegSize         maxSegSize;   ///< Maximum size of a data-segment in bytes
-    Thread          senderThread; ///< Thread on which products are sent via multicast and P2P
+    McastPub::Pimpl mcastPub;         ///< Publisher's multicast component
+    LastProdPtr     lastTransmission; ///< Saves information on last, successfully-transmitted
+                                      ///< data-product
+    PubRepo         repo;             ///< Publisher's data-product repository
+    SegSize         maxSegSize;       ///< Maximum size of a data-segment in bytes
+    Thread          senderThread;     ///< Thread on which products are sent via multicast and P2P
 
     /**
      * Sends information on a product.
@@ -347,6 +347,9 @@ class PubNodeImpl final : public PubNode, public NodeImpl
                     // TODO: Test for valid segment
                     p2pMgr->notify(DataSegId(prodId, offset));
 #endif
+
+                // Save modification-time of last product-file
+                lastTransmission->save(prodEntry.prodFile.getModTime());
             }
         }
         catch (const std::exception& ex) {
@@ -449,9 +452,8 @@ public:
             const String&      feedName)
         : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
-        , lastProd(LastProd::create(FileUtil::pathname(FileUtil::pathname(pubRoot,
-                "lastTransmitted"), feedName)))
-        , repo(FileUtil::pathname(pubRoot, "products"), maxOpenFiles, lastProd->recall(), keepTime)
+        , lastTransmission(LastProd::create(FileUtil::pathname(pubRoot, "lastTransmittedTime")))
+        , repo(FileUtil::pathname(pubRoot, "products"), maxOpenFiles, lastTransmission->recall(), keepTime)
         , maxSegSize{maxSegSize}
         , senderThread()
     {
@@ -543,16 +545,19 @@ PubNodePtr PubNode::create(
  */
 class SubNodeImpl final : public SubNode, public NodeImpl
 {
-    mutable Thread             disposeThread;///< Local processing of data-products thread
-    mutable Thread             mcastThread;  ///< Multicast receiving thread
-    Disposer                   disposer;     ///< Locally processes received data-products
-    SubRepo                    repo;         ///< Data-product repository
-    std::atomic<unsigned long> numMcastOrig; ///< Number of original multicast PDUs
-    std::atomic<unsigned long> numP2pOrig;   ///< Number of original P2P PDUs
-    std::atomic<unsigned long> numMcastDup;  ///< Number of duplicate multicast PDUs
-    std::atomic<unsigned long> numP2pDup;    ///< Number of duplicate P2P PDUs
-    McastSub::Pimpl            mcastSub;     ///< Subscriber's multicast component
-    Client* const              client;       ///< A SubNode's client
+    mutable Thread             disposeThread; ///< Local processing of data-products thread
+    mutable Thread             mcastThread;   ///< Multicast receiving thread
+    LastProdPtr                lastReceived;  ///< Saves information on last received data-product
+    LastProdPtr                lastProcessed; ///< Saves information on the last successfully-
+                                              ///< processed data-product
+    Disposer                   disposer;      ///< Locally processes received data-products
+    SubRepo                    repo;          ///< Data-product repository
+    std::atomic<unsigned long> numMcastOrig;  ///< Number of original multicast PDUs
+    std::atomic<unsigned long> numP2pOrig;    ///< Number of original P2P PDUs
+    std::atomic<unsigned long> numMcastDup;   ///< Number of duplicate multicast PDUs
+    std::atomic<unsigned long> numP2pDup;     ///< Number of duplicate P2P PDUs
+    McastSub::Pimpl            mcastSub;      ///< Subscriber's multicast component
+    Client* const              client;        ///< A SubNode's client
 
     /**
      * Performs local processing of complete data-products. Intended as start function for a thread.
@@ -721,10 +726,11 @@ public:
                 evalTime))
         , disposeThread()
         , mcastThread()
-        , disposer(dispoFact(FileUtil::pathname(FileUtil::pathname(subRoot, "lastProcessed"),
-                subInfo.feedName)))
+        , lastReceived(LastProd::create(FileUtil::pathname(subRoot, "lastReceivedTime")))
+        , lastProcessed(LastProd::create(FileUtil::pathname(subRoot, "lastProcessedTime")))
+        , disposer(dispoFact(lastProcessed))
         , repo(SubRepo(FileUtil::pathname(subRoot, "products"), maxOpenFiles,
-                disposer.getLastProcTime(), disposer.size(), subInfo.keepTime))
+                lastReceived, disposer.size(), subInfo.keepTime))
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}

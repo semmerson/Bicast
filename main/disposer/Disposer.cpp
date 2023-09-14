@@ -229,16 +229,15 @@ public:
 
     /**
      * Constructs.
-     * @param[in] pathTemplate   Template for pathnames of files to hold information on the last,
-     *                           successfully-processed data-product
+     * @param[in] lastProcessed  Saves information on the last successfully-processed data-product
      * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
      *                           descriptors are kept open)
      */
-    Impl(   const String& pathTemplate,
-            const int     maxPersistent)
+    Impl(   const LastProdPtr& lastProcessed,
+            const int          maxPersistent)
         : mutex()
         , cond()
-        , lastProd(LastProd::create(pathTemplate))
+        , lastProd(lastProcessed)
         , patActs()
         , actionSet(0)
         , actionQueue(0)
@@ -341,7 +340,7 @@ public:
                     LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string() +
                             ". Latency=" + std::to_string((SysClock::now() -
                             prodInfo.getCreateTime()).count() * SysClockRatio) + " s");
-                    lastProd->save(path);
+                    lastProd->save(FileUtil::getModTime(path));
                 }
                 catch (const std::exception& ex) {
                     LOG_ERROR(ex, ("Couldn't execute " + action.to_string() + " on " +
@@ -417,9 +416,9 @@ Disposer::Disposer()
 {}
 
 Disposer::Disposer(
-        const String& pathTemplate,
-        const int     maxPersistent)
-    : pImpl(new Impl{pathTemplate, maxPersistent})
+        const LastProdPtr& lastProcessed,
+        const int          maxPersistent)
+    : pImpl(new Impl{lastProcessed, maxPersistent})
 {}
 
 Disposer::operator bool() const noexcept {
@@ -639,9 +638,9 @@ static void parsePatternActions(
 }
 
 Disposer Disposer::createFromYaml(
-        const String& configFile,
-        const String& pathTemplate,
-        int           maxKeepOpen)
+        const String&      configFile,
+        const LastProdPtr& lastProcessed,
+        int                maxKeepOpen)
 {
     YAML::Node node0;
     try {
@@ -659,7 +658,7 @@ Disposer Disposer::createFromYaml(
             throw INVALID_ARGUMENT("Invalid \"maxKeepOpen\" value: " + std::to_string(maxKeepOpen));
 
         // Construct the Disposer
-        Disposer disposer{pathTemplate, maxKeepOpen};
+        Disposer disposer{lastProcessed, maxKeepOpen};
 
         // Add pattern-actions to the Disposer
         parsePatternActions(node0, disposer);

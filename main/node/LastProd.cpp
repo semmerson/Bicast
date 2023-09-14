@@ -31,129 +31,97 @@
 #include "LastProd.h"
 #include "error.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace hycast {
 
-/// File for saving the time of a file.
-class TimeFile
+/// Saves a time persistently.
+class LastProdImpl : public LastProd
 {
-    String symLink; ///< Pathname of the symbolic link
+    String path;    ///< Pathname of the file
+    String relPath; ///< Pathname of the file relative to dirFd
+    int    dirFd;   ///< File descriptor open on the file's parent directory
 
 public:
     /**
-     * Default constructs.
-     */
-    TimeFile()
-        : symLink("")
-    {}
-
-    /**
      * Constructs.
-     * @param[in] symLink Pathname of symbolic link
+     * @param[in] path Pathname of file to contain the time
      */
-    explicit TimeFile(const String& symLink)
-        : symLink(symLink)
-    {}
+    explicit LastProdImpl(const String& path)
+        : path(path)
+        , relPath(FileUtil::filename(path))
+        , dirFd(-1)
+    {
+        FileUtil::ensureDir(FileUtil::dirname(path));
+        dirFd = ::open(FileUtil::dirname(path).data(), O_CLOEXEC | O_DIRECTORY);
+        if (dirFd == -1)
+            throw SYSTEM_ERROR("Couldn't open directory \"" + FileUtil::dirname(path) + "\"");
 
-    /**
-     * Swaps this instance with another.
-     * @param[in] that  The other instance
-     */
-    void swap(TimeFile& that) {
-        if (this != &that)
-            this->symLink.swap(that.symLink);
+        const auto fd = ::openat(dirFd, relPath.data(), O_WRONLY | O_CREAT | O_CLOEXEC | O_TRUNC,
+                0666);
+        if (fd == -1)
+            throw SYSTEM_ERROR("Couldn't open file \"" + path + "\"");
+        ::close(fd);
+    }
+
+    ~LastProdImpl() {
+        if (dirFd >= 0)
+            ::close(dirFd);
     }
 
     /**
-     * Saves a reference to a file.
-     * @param[in] pathname  Pathname of the file
+     * Saves a time.
+     * @param[in] time  Time to be saved
      */
-    void save(const String& pathname) {
-        if (::unlink(symLink.data()) && errno != ENOENT)
-            throw SYSTEM_ERROR("Couldn't unlink symbolic link \"" + symLink + "\"");
-        if (::symlink(pathname.data(), symLink.data()))
-            throw SYSTEM_ERROR("Couldn't link \"" + symLink + "\" to \"" + pathname + "\"");
-        /*
-         * The modification-time of the symlink is set to that of the product-file because the
-         * product-file could be a symlink itself. See recall().
-         */
-        SysTimePoint modTime;
-        FileUtil::getModTime(pathname, modTime, false);
-        FileUtil::setModTime(symLink, modTime, false);
+    void save(const SysTimePoint time) override {
+        // The time is saved as the modification-time of the file.
+        FileUtil::setModTime(dirFd, relPath, time, false); // false => won't follow symlinks
     }
 
     /**
-     * Returns the modification-time of the last file.
-     * @return             Modification-file of the file or SysTimePoint::min() if no such time
+     * Returns the previously-saved time.
+     * @return             Previously-saved time or SysTimePoint::min() if no such time
      *                     exists
-     * @throw SystemError  The file exists but its modification-time couldn't be obtained
+     * @throw SystemError  The time couldn't be obtained
      */
-    SysTimePoint& recall(SysTimePoint& modTime) {
+    SysTimePoint recall() override {
         try {
-            FileUtil::getModTime(symLink, modTime, false); // Don't follow symbolic links
+            return (dirFd < 0)
+                    ? SysTimePoint::min()
+                    : FileUtil::getModTime(dirFd, relPath, false);
         }
-        catch (const std::exception& ex) {
-            if (errno == ENOENT) {
-                modTime = SysTimePoint::min();
-            }
-            else {
-                throw;
-            }
+        catch (const SystemError& ex) {
+            if (ex.code().value() == ENOENT)
+                return SysTimePoint::min();
+            throw;
         }
-        return modTime;
     }
 };
 
-/// Implementation of LastProd.
-class LastProdImpl : public LastProd
+/// Implementation of a dummy LastProd.
+class DummyLastProd : public LastProd
 {
-    TimeFile timeFiles[2]; ///< Symbolic links for storing information
-    int      last;         ///< Index of last, successfully-processed product-file
-    int      next;         ///< Index of next, successfully-processed product-file
-
 public:
     /**
      * Constructs.
      * @param[in] pathTemplate  Template for pathname of files to hold information
      * @throw SystemError       Couldn't create a necessary directory
      */
-    LastProdImpl(const String& pathTemplate)
-        : timeFiles()
-        , last(0)
-        , next(1)
-    {
-        FileUtil::ensureDir(FileUtil::dirname(pathTemplate));
+    DummyLastProd() =default;
 
-        SysTimePoint modTimes[2];
-
-        for (int i = 0; i < 2; ++i) {
-            TimeFile timeFile(pathTemplate + "." + std::to_string(i));
-            timeFiles[i].swap(timeFile);
-            timeFiles[i].recall(modTimes[i]);
-        }
-
-        if (modTimes[0] >= modTimes[1]) {
-            last = 0;
-            next = 1;
-        }
-        else {
-            last = 1;
-            next = 0;
-        }
-    }
-
-    void save(const String& pathname) override {
-        timeFiles[next].save(pathname);
-        next = last;
-        last ^= 1;
+    void save(const SysTimePoint time) override {
     }
 
     SysTimePoint recall() override {
-        SysTimePoint modTime{};
-        return timeFiles[last].recall(modTime);
+        return SysTimePoint::min();
     }
 };
+
+LastProdPtr LastProd::create()
+{
+    return LastProdPtr(new DummyLastProd());
+}
 
 LastProdPtr LastProd::create(const String& pathTemplate)
 {

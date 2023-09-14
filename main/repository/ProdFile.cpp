@@ -177,17 +177,7 @@ public:
      * @return The modification time of the underlying file
      */
     SysTimePoint getModTime() {
-        SysTimePoint modTime;
-        return FileUtil::getModTime(pathname, modTime, false);
-    }
-
-    /**
-     * Returns the modification time of the underlying file.
-     * @param[out] modTime  The modification time of the underlying file
-     * @return              A reference to `modTime`
-     */
-    SysTimePoint& getModTime(SysTimePoint& modTime) {
-        return FileUtil::getModTime(pathname, modTime, false);
+        return FileUtil::getModTime(pathname, false); // false => won't follow symlinks
     }
 
     /**
@@ -195,7 +185,7 @@ public:
      * @param[in] modTime  The modification time
      */
     void setModTime(const SysTimePoint& modTime) {
-        FileUtil::setModTime(pathname, modTime, false);
+        FileUtil::setModTime(pathname, modTime, false); // false => won't follow symlinks
     }
 
     /**
@@ -326,10 +316,6 @@ void ProdFile::close() const {
 
 SysTimePoint ProdFile::getModTime() const {
     return pImpl->getModTime();
-}
-
-SysTimePoint& ProdFile::getModTime(SysTimePoint& modTime) const {
-    return pImpl->getModTime(modTime);
 }
 
 void ProdFile::setModTime(const SysTimePoint& modTime) const {

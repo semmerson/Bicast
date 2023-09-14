@@ -20,6 +20,7 @@
 #ifndef MAIN_DISPOSER_DISPOSER_H_
 #define MAIN_DISPOSER_DISPOSER_H_
 
+#include "LastProd.h"
 #include "PatternAction.h"
 
 #include <functional>
@@ -40,10 +41,9 @@ public:
     /**
      * Factory-method for creating a Disposer. This method allows the SubNode to create its Disposer
      * independent of how the Disposer is created.
-     * @param[in] pathTemplate  Template for pathnames of files containing information on the last,
-     *                          successfully-processed data-product
+     * @param[in] lastProcessed  Saves information on the last successfully-processed data-product
      */
-    using Factory = std::function<Disposer(const String& pathTemplate)>;
+    using Factory = std::function<Disposer(const LastProdPtr& lastProcessed)>;
 
     /**
      * Default constructs. The resulting Disposer will not be valid and will test false.
@@ -55,22 +55,20 @@ public:
      * Constructs. The `dispose()` method will do nothing until `add()` is called. This constructor
      * exists to support unit-testing of the Disposer class independent of a configuration-file
      * parser.
-     * @param[in] pathTemplate   Template for pathnames of files containing information on the last,
-     *                           successfully-processed data-product
+     * @param[in] lastProcessed  Saves information on the last successfully-processed data-product
      * @param[in] maxPersistent  Maximum number of persistent actions (i.e., actions whose file
      *                           descriptors are kept open)
      * @see `add()`
      */
     Disposer(
-            const String& pathTemplate,
-            const int     maxPersistent = 20);
+            const LastProdPtr& lastProcessed,
+            const int          maxPersistent = 20);
 
     /**
      * Creates a Disposer instance based on a YAML configuration-file.
      *
      * @param[in] configFile     Pathname of the configuration-file
-     * @param[in] pathTemplate   Template for pathnames of files containing information on the last,
-     *                           successfully-processed data-product
+     * @param[in] lastProcessed  Saves information on the last successfully-processed data-product
      * @param[in] maxPersistent  Default maximum number of persistent actions (i.e., actions whose
      *                           file descriptors are kept open)
      * @return                   A Disposer corresponding to the configuration-file
@@ -79,9 +77,9 @@ public:
      * @throw RuntimeError       Couldn't parse configuration-file
      */
     static Disposer createFromYaml(
-            const String& configFile,
-            const String& pathTemplate,
-            int           maxPersistent = 20);
+            const String&      configFile,
+            const LastProdPtr& lastProcessed,
+            int                maxPersistent = 20);
 
     /**
      * Indicates if this is a valid instance (i.e., not default constructed).

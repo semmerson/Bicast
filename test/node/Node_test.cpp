@@ -48,7 +48,7 @@ using namespace hycast;
 class NodeTest : public ::testing::Test, public SubNode::Client
 {
 protected:
-    static constexpr SegSize  SEG_SIZE = 10000;
+    static constexpr SegSize  SEG_SIZE = 20000;
     static constexpr ProdSize PROD_SIZE = 100000;
     Mutex                     mutex;
     Cond                      cond;
@@ -108,7 +108,7 @@ protected:
     }
 
     virtual ~NodeTest() {
-        FileUtil::rmDirTree(testRoot);
+        //FileUtil::rmDirTree(testRoot);
     }
 
     // If the constructor and destructor are not enough for setting up
@@ -166,7 +166,7 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating subscribing node");
     subInfo.tracker.insert(pubP2pSrvrAddr);
     auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
-    Disposer::Factory factory = [&] (const String& pathTemplate) {
+    Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
         return Disposer{};
     };
     subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRoot,
@@ -224,8 +224,8 @@ TEST_F(NodeTest, Sending)
          */
 
         // Create disposer factory-method
-        Disposer::Factory dispoFact = [&] (const String& timeTemplate) {
-            Disposer      disposer{timeTemplate, 0}; // 0 => No file descriptors kept open
+        Disposer::Factory dispoFact = [&] (const LastProdPtr& lastProcessed) {
+            Disposer      disposer{lastProcessed, 0}; // 0 => No file descriptors kept open
             Pattern       incl(".*");
             Pattern       excl{};  // Exclude nothing
             String        procTemplate(testRoot + "/processed/$&"); // Product-name as pathname

@@ -39,17 +39,18 @@ using namespace std;
 class RepositoryTest : public ::testing::Test
 {
 protected:
-    const std::string     testDir;
-    const std::string     repoDir;
-    std::string           prodName;
-    const std::string     filePath;
-    hycast::ProdId        prodId;
-    char                  memData[10000];
-    const hycast::SegSize segSize;
-    hycast::ProdSize      prodSize;
-    hycast::ProdInfo      prodInfo;
-    hycast::DataSegId     segId;
-    hycast::DataSeg       dataSeg;
+    const String  testDir;
+    const String  repoDir;
+    String        prodName;
+    const String  filePath;
+    ProdId        prodId;
+    char          memData[10000];
+    const SegSize segSize;
+    ProdSize      prodSize;
+    ProdInfo      prodInfo;
+    DataSegId     segId;
+    DataSeg       dataSeg;
+    LastProdPtr   lastReceived;
 
     RepositoryTest()
         : testDir("/tmp/Repository_test")
@@ -63,6 +64,7 @@ protected:
         , prodInfo(prodId, prodName, prodSize)
         , segId(prodId, 0)
         , dataSeg(segId, prodSize, memData)
+        , lastReceived{LastProd::create()}
     {
         hycast::DataSeg::setMaxSegSize(sizeof(memData));
         hycast::FileUtil::rmDirTree(testDir);
@@ -90,14 +92,14 @@ public:
 TEST_F(RepositoryTest, Construction)
 {
     hycast::PubRepo pubRepo{repoDir, 5, SysTimePoint::min()};
-    hycast::SubRepo subRepo{repoDir, 5, SysTimePoint::min(), true};
+    hycast::SubRepo subRepo{repoDir, 5, lastReceived, true};
 }
 #endif
 
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    hycast::SubRepo repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo repo(repoDir, 5, lastReceived, true);
     ASSERT_FALSE(repo.getProdInfo(prodId));
     ASSERT_TRUE(repo.save(prodInfo));
     auto actual = repo.getProdInfo(prodId);
@@ -109,7 +111,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    hycast::SubRepo repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo repo(repoDir, 5, lastReceived, true);
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
@@ -126,7 +128,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    hycast::SubRepo repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo repo(repoDir, 5, lastReceived, true);
 
     ASSERT_TRUE(repo.save(dataSeg));
     ASSERT_TRUE(repo.save(prodInfo));
@@ -165,7 +167,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
         ASSERT_TRUE(repoDataSeg);
         ASSERT_TRUE(dataSeg == repoDataSeg);
     }
-    catch (const std::exception& ex) {
+    catch (const exception& ex) {
         LOG_ERROR(ex, "Couldn't verify repository access");
         GTEST_FAIL();
     }
@@ -174,7 +176,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
 // Tests subtracting product IDs from what the repository has.
 TEST_F(RepositoryTest, Subtract)
 {
-    hycast::SubRepo  repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo  repo(repoDir, 5, lastReceived, true);
     ProdIdSet other{0};
     ProdIdSet prodIds{};
 
@@ -199,7 +201,7 @@ TEST_F(RepositoryTest, Subtract)
 // Tests getting the set of complete product identifiers
 TEST_F(RepositoryTest, getProdIds)
 {
-    hycast::SubRepo repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo repo(repoDir, 5, lastReceived, true);
 
     auto prodIds = repo.getProdIds(); // empty
     EXPECT_EQ(0, prodIds.size());
@@ -213,14 +215,14 @@ TEST_F(RepositoryTest, getProdIds)
 
 TEST_F(RepositoryTest, Performance)
 {
-    hycast::SubRepo repo(repoDir, 5, SysTimePoint::min(), true);
+    hycast::SubRepo repo(repoDir, 5, lastReceived, true);
 
     const auto     numProds = 10000;
     const ProdSize prodSize = 10*segSize;
     const auto     start = steady_clock::now();
 
     for (int i = 0; i < numProds; ++i) {
-        prodName = std::to_string(i);
+        prodName = to_string(i);
         auto prodId = ProdId(prodName);
         auto prodInfo = ProdInfo(prodId, prodName, prodSize);
 
@@ -236,7 +238,7 @@ TEST_F(RepositoryTest, Performance)
 
     const auto stop = steady_clock::now();
     const auto s = duration_cast<duration<double>>(stop - start);
-    LOG_NOTE(to_string(numProds) + " " + std::to_string(prodSize) + "-byte products in " +
+    LOG_NOTE(to_string(numProds) + " " + to_string(prodSize) + "-byte products in " +
             to_string(s.count()) + " seconds");
     LOG_NOTE("Product-rate = " + to_string(numProds/s.count()) + " Hz");
     LOG_NOTE("Byte-rate = " + to_string(numProds*prodSize/s.count()) + " Hz");
@@ -249,7 +251,7 @@ TEST_F(RepositoryTest, Performance)
 int main(int argc, char **argv) {
   hycast::log_setName(::basename(argv[0]));
   hycast::log_setLevel(hycast::LogLevel::NOTE);
-  std::set_terminate(&hycast::terminate);
+  set_terminate(&hycast::terminate);
 
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

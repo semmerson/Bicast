@@ -41,9 +41,9 @@ namespace {
 class DisposerTest : public ::testing::Test
 {
 protected:
-    String rootDir;
-    String lastProcDir;
-    String pathTemplate;
+    String      rootDir;
+    String      lastProcDir;
+    LastProdPtr lastProcessed;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -51,7 +51,7 @@ protected:
     DisposerTest()
         : rootDir("/tmp/Disposer_test/")
         , lastProcDir(FileUtil::pathname(rootDir, "lastProcessed"))
-        , pathTemplate(FileUtil::pathname(lastProcDir, "feedname"))
+        , lastProcessed{LastProd::create()}
     {
         FileUtil::rmDirTree(rootDir);
         FileUtil::ensureDir(rootDir);
@@ -106,7 +106,7 @@ TEST_F(DisposerTest, Filing)
                 Entry{"bar/prod4/foo", "(\\w+)/prod4/(\\w+)", "$2/$1/prod4", "foo/bar/prod4"},
         };
         Pattern  excl{};  // Exclude nothing
-        Disposer disposer{pathTemplate};
+        Disposer disposer{lastProcessed};
 
         for (auto& entry : entries) {
             Pattern       incl(entry.pattern);
@@ -147,7 +147,7 @@ TEST_F(DisposerTest, Appending)
 {
     try {
         Pattern        excl{};      // Exclude nothing
-        Disposer       disposer{pathTemplate, 0};
+        Disposer       disposer{lastProcessed, 0};
         Pattern        incl("prod");
         String         pathTemplate(rootDir + "$&");
         AppendTemplate appendTemplate(pathTemplate, true);
@@ -184,7 +184,7 @@ TEST_F(DisposerTest, Piping)
 {
     try {
         Pattern             excl{};      // Exclude nothing
-        Disposer            disposer{pathTemplate, 0};
+        Disposer            disposer{lastProcessed, 0};
         Pattern             incl("prod");
         std::vector<String> cmdTemplate{"sh", "-c", String("cat >") + rootDir + "$&"};
         PipeTemplate        pipeTemplate(cmdTemplate, true);
@@ -217,7 +217,7 @@ TEST_F(DisposerTest, Piping)
 TEST_F(DisposerTest, Excluding)
 {
     try {
-        Disposer       disposer{pathTemplate, 0};
+        Disposer       disposer{lastProcessed, 0};
         Pattern        incl("prod");
         Pattern        excl{"prod"};
         String         pathTemplate(rootDir + "$&");
@@ -249,7 +249,7 @@ TEST_F(DisposerTest, Excluding)
 TEST_F(DisposerTest, ConfigFile)
 {
     try {
-        auto disposer = Disposer::createFromYaml(configFile, pathTemplate, 20);
+        auto disposer = Disposer::createFromYaml(configFile, lastProcessed, 20);
         //std::cout << disposer.getYaml();
         const String expect(
                 "maxKeepOpen: 20\n"

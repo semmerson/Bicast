@@ -113,6 +113,25 @@ public:
     /**
      * Returns the metadata of a file.
      *
+     * @param[in]  rootFd       File descriptor open on root-directory
+     * @param[in]  pathname     Pathname of existing file. If relative, then relative to rootFd.
+     * @param[out] statBuf      Metadata of the file
+     * @param[in]  follow       Follow symbolic links?
+     * @return                  Reference to `statBuf`
+     * @throws     SystemError  Couldn't get information on the file
+     * @threadsafety            Safe
+     * @exceptionsafety         Strong guarantee
+     * @cancellationpoint       No
+     */
+    static struct ::stat& getStat(
+            const int      rootFd,
+            const String&  pathname,
+            struct ::stat& statBuf,
+            const bool     follow = true);
+
+    /**
+     * Returns the metadata of a file.
+     *
      * @param[in]  pathname     Pathname of existing file
      * @param[out] statBuf      Metadata of the file
      * @param[in]  follow       Follow symbolic links?
@@ -189,8 +208,8 @@ public:
     /**
      * Returns the modification time of a file.
      *
-     * @param[in]  pathname     Pathname of existing file
-     * @param[out] modTime      Modification time of the file
+     * @param[in]  dirFd        File descriptor open on root-directory
+     * @param[in]  pathname     Pathname of existing file. If relative, then relative to dirFd.
      * @param[in]  follow       Follow symbolic links?
      * @return                  Reference to `modtime`
      * @throws    SYSTEM_ERROR  `stat()` failure
@@ -198,40 +217,24 @@ public:
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
-    static SysTimePoint& getModTime(
+    static SysTimePoint getModTime(
+            const int     dirFd,
             const String& pathname,
-            SysTimePoint& modTime,
             const bool    follow = true);
 
     /**
-     * Returns the modification time of a file. Follows symbolic links.
+     * Returns the modification time of a file.
      *
-     * @param[in] rootFd        File descriptor open on root-directory
-     * @param[in] pathname      Pathname of existing file. May be absolute or relative to the
-     *                          root-directory.
-     * @return                  Modification time of the file
-     * @throws    SYSTEM_ERROR  Couldn't open the file
-     * @throws    SYSTEM_ERROR  Couldn't get information on the file
+     * @param[in]  pathname     Pathname of existing file
+     * @param[in]  follow       Follow symbolic links?
+     * @throws    SYSTEM_ERROR  `stat()` failure
      * @threadsafety            Safe
      * @exceptionsafety         Strong guarantee
      * @cancellationpoint       No
      */
     static SysTimePoint getModTime(
-            const int     rootFd,
-            const String& pathname);
-
-    /**
-     * Returns the modification time of a file. Follows symbolic links.
-     *
-     * @param[in] pathname      Pathname of existing file. May be absolute or relative.
-     * @return                  Modification time of the file
-     * @throws    SYSTEM_ERROR  Couldn't open the file
-     * @throws    SYSTEM_ERROR  Couldn't get information on the file
-     * @threadsafety            Safe
-     * @exceptionsafety         Strong guarantee
-     * @cancellationpoint       No
-     */
-    static SysTimePoint getModTime(const String& pathname);
+            const String& pathname,
+            const bool    follow = true);
 
     /**
      * Sets the modification time of a file.

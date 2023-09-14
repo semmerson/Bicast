@@ -111,6 +111,17 @@ size_t FileUtil::getSize(const String& pathname)
 }
 
 struct ::stat& FileUtil::getStat(
+        const int      rootFd,
+        const String&  pathname,
+        struct ::stat& statBuf,
+        const bool     follow)
+{
+    if (fstatat(rootFd, pathname.data(), &statBuf, follow ? 0 : AT_SYMLINK_NOFOLLOW))
+        throw SYSTEM_ERROR("Couldn't fstatat() file \"" + pathname + "\"");
+    return statBuf;
+}
+
+struct ::stat& FileUtil::getStat(
         const String&  pathname,
         struct ::stat& statBuf,
         const bool     follow)
@@ -130,12 +141,12 @@ void FileUtil::getStat(
         throw SYSTEM_ERROR("Couldn't fstatat() file \"" + pathname + "\"");
 }
 
-struct stat FileUtil::getStat(
+struct ::stat FileUtil::getStat(
         const int     rootFd,
         const String& pathname)
 {
     struct ::stat statBuf;
-    getStat(rootFd, pathname, statBuf);
+    getStat(rootFd, pathname, statBuf, true);
     return statBuf;
 }
 
@@ -156,31 +167,23 @@ void FileUtil::setProtection(
         throw SYSTEM_ERROR("::chmod() failure on file \"" + pathname + "\"");
 }
 
-SysTimePoint& FileUtil::getModTime(
+SysTimePoint FileUtil::getModTime(
+        const int     dirFd,
         const String& pathname,
-        SysTimePoint& modTime,
         const bool    follow)
 {
     struct ::stat statBuf;
-    FileUtil::getStat(pathname, statBuf, follow);
-    modTime = SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
-            std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
-    return modTime;
-}
-
-SysTimePoint FileUtil::getModTime(
-        const int     rootFd,
-        const String& pathname)
-{
-    auto statBuf = getStat(rootFd, pathname);
+    getStat(dirFd, pathname, statBuf, follow);
     return SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
             std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
 }
 
-SysTimePoint FileUtil::getModTime(const String& pathname)
+SysTimePoint FileUtil::getModTime(
+        const String& pathname,
+        const bool    follow)
 {
-    struct stat statBuf;
-    getStat(pathname, statBuf, true);
+    struct ::stat statBuf;
+    FileUtil::getStat(pathname, statBuf, follow);
     return SysClock::from_time_t(statBuf.st_mtim.tv_sec) +
             std::chrono::nanoseconds(statBuf.st_mtim.tv_nsec);
 }

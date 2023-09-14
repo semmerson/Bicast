@@ -40,6 +40,12 @@ class LastProd
 {
 public:
     /**
+     * Returns a dummy instance for unit-testing. save() will always succeed and recall() will
+     * always return SysTimePoint::min().
+     */
+    static LastProdPtr create();
+
+    /**
      * Returns a new instance.
      * @param[in] pathTemplate  Template for pathname of files to hold information
      * @throw SystemError       Couldn't create a necessary directory
@@ -50,10 +56,10 @@ public:
     virtual ~LastProd() =default;
 
     /**
-     * Saves the time of the last, successfully-processed product-file.
-     * @param[in] pathname  Pathname of the last, successfully-processed product-file
+     * Saves a time.
+     * @param[in] time  The time to be saved
      */
-    virtual void save(const String& pathname) =0;
+    virtual void save(const SysTimePoint time) =0;
 
     /**
      * Returns the time of the last, successfuly-processed product-file.

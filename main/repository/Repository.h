@@ -24,6 +24,7 @@
 #define MAIN_REPOSITORY_REPOSITORY_H_
 
 #include "HycastProto.h"
+#include "LastProd.h"
 #include "ProdFile.h"
 
 #include <memory>
@@ -339,14 +340,14 @@ public:
      *
      * @param[in] rootPathname  Pathname of the root directory of the repository
      * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
-     * @param[in] lastProcTime  Modification-time of the last, successfully-processed data-product
+     * @param[in] lastReceived  Saves information on the last received data-product
      * @param[in] queueProds    Queue complete data-products for return by getNextProd()?
      * @param[in] keepTime      Duration, in seconds, to keep products before deleting them
      * @see getNextProd()
      */
     SubRepo(const std::string& rootPathname,
             const size_t       maxOpenFiles,
-            const SysTimePoint lastProcTime,
+            const LastProdPtr& lastReceived,
             const bool         queueProds,
             const int          keepTime = 3600);
 
