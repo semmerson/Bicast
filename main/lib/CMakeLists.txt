@@ -10,9 +10,7 @@ add_library(hycast
 )
 #       $<TARGET_OBJECTS:protocol>
 
-# "PUBLIC" enables clients of "hycast" to obtain correct SSL library
-#target_link_options(hycast PUBLIC -L/usr/lib64/openssl11)
-target_link_libraries(hycast yaml-cpp ssl pthread)
-#target_link_libraries(hycast yaml-cpp pthread)
+# Neither "-lyaml-cpp.so" nor "-lyaml-cpp.so.0" records the right YAML library
+target_link_libraries(hycast PUBLIC -lyaml-cpp ssl pthread)
 
 install(TARGETS hycast DESTINATION lib)
