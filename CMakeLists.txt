@@ -42,14 +42,8 @@ endif()
 configure_file(config-cmake.h config.h)
 include_directories(${CMAKE_BINARY_DIR}) # necessary
 
-include_directories(
-        main main/misc main/inet main/mcast main/p2p main/repository main/node main/disposer)
-
-# Find the OpenSSL library
-find_library(OPEN_SSL_LIBRARY ssl REQUIRED)
-
-# Find the pthread library
-find_library(PTHREAD_LIBRARY pthread REQUIRED)
+include_directories(main main/misc main/inet main/mcast main/p2p main/repository main/node main/disposer)
+include_directories(SYSTEM /usr/local/include)
 
 # Add the main subdirectory
 add_subdirectory(main)
@@ -57,7 +51,7 @@ add_subdirectory(main)
 # Enable testing if and only if Google Test can be found
 find_library(GTEST_LIBRARY gtest)
 if (GTEST_LIBRARY)
-    find_path(GTEST_INCLUDE_DIR "gtest/gtest.h")
+    find_path(GTEST_INCLUDE_DIR "gtest/gtest.h" HINTS /usr/include /usr/local/include)
     if (NOT GTEST_INCLUDE_DIR)
         message(STATUS "Gtest header-file wasn't found. Unit-testing is disabled.")
     else()

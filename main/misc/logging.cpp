@@ -205,11 +205,6 @@ void log_setLevelSignal(const int signal) noexcept {
     (void)sigprocmask(SIG_UNBLOCK, &sigset, NULL);
 }
 
-/**
- * Sets the logging threshold.
- * @param[in] name  Name of the logging level: "TRACE", "DEBUG", "INFO", "NOTE", "WARN", "ERROR",
- *                  "FATAL"
- */
 void log_setLevel(const std::string& name)
 {
     // To prevent `entry->id.find(lowerName)` from returning 0

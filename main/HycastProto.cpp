@@ -31,7 +31,7 @@
 #include <cstring>
 #include <time.h>
 #include <inttypes.h>
-#include <openssl11/openssl/sha.h>
+#include <openssl/sha.h>
 
 namespace hycast {
 

@@ -1,7 +1,7 @@
 /**
  * This file declares a
  *
- *  @file:  
+ *  @file:  Preferences.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
