@@ -243,7 +243,6 @@ public:
      * Makes the given socket use the interface associated with this instance.
      *
      * @param[in] sd          UDP socket descriptor
-     * @return                This instance
      * @throws    LogicError  This instance is based on a hostname and not an IP address
      * @threadsafety          Safe
      * @exceptionsafety       Strong guarantee
@@ -908,7 +907,7 @@ public:
         try {
             getIpAddr(); // Throws if the name can't be resolved
         }
-        catch (const std::SystemError& ex) {
+        catch (const std::system_error& ex) {
             std::throw_with_nested(INVALID_ARGUMENT("Invalid hostname: \"" + name + "\""));
         }
         catch (...) {
@@ -1103,13 +1102,6 @@ int InetAddr::getFamily() const {
     return pImpl->getFamily();
 }
 
-/**
- * Returns the wildcard IP address for the given address family.
- *
- * @param[in] family       Address family: `AF_INET` or `AF_INET6`.
- * @return                 Associated wildcard IP address
- * @throw InvalidArgument  Invalid address family
- */
 InetAddr InetAddr::getWildcard(const int family) {
     static InetAddr ipv4Wildcard{htonl(INADDR_ANY)};
     static InetAddr ipv6Wildcard{in6addr_any};

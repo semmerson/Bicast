@@ -21,6 +21,7 @@
  */
 
 #include "config.h"
+#include <list>
 
 #include "Bookkeeper.h"
 #include "HycastProto.h"
@@ -28,7 +29,6 @@
 #include "Trigger.h"
 
 #include <climits>
-#include <list>
 #include <mutex>
 #include <queue>
 #include <unordered_map>

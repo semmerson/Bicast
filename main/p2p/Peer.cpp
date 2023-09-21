@@ -1137,11 +1137,6 @@ PubP2pSrvrPtr PubP2pSrvr::create(
     return PubP2pSrvrPtr{new PubP2pSrvrImpl(srvrAddr, maxPendConn)};
 }
 
-/**
- * Returns a new instance of a P2P-server for a subscriber.
- * @param[in] peerConnSrvr  Peer-connection server
- * @return A new instance of a P2P-server for a subscriber
- */
 template<>
 SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
     return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};

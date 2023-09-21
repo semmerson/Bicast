@@ -42,7 +42,7 @@ add_test(error_test error_test)
 #add_test(DelayQueue_test DelayQueue_test)
 
 add_executable(HashSetQueue_test HashSetQueue_test.cpp)
-target_link_libraries(HashSetQueue_test hycast gtest pthread)
+target_link_libraries(HashSetQueue_test hycast ${GTEST_LIBRARY} pthread)
 add_test(HashSetQueue_test HashSetQueue_test)
 
 add_executable(HashMapQueue_test HashMapQueue_test.cpp)

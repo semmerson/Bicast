@@ -31,7 +31,7 @@ namespace {
 using namespace hycast;
 
 /// The fixture for testing class `HashSetQueue`
-class HashSetQueueTest : public ::testing::Test
+class HashSetQueueTest : public testing::Test
 {
 protected:
     class Elt {

@@ -25,12 +25,15 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 #include <fcntl.h>
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <string>
 #include <sys/time.h>
+#include <thread>
 #include <unistd.h>
 
 namespace hycast {
@@ -256,14 +259,6 @@ void log_setLevel(const LogLevel level) noexcept {
     logThreshold.store(level);
 }
 
-/**
- * Returns a constructed message for an exception.
- * @param[in] file  The name of the file in which the exception occurred
- * @param[in] line  The line number in the file in which the exception occurred
- * @param[in] func  The name of the function in the file in which the exception occurred
- * @param[in] msg   The log message
- * @return          The message for the exception
- */
 std::string makeWhat(
         const char*        file,
         const int          line,

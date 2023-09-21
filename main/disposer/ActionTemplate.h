@@ -22,11 +22,12 @@
 #ifndef MAIN_DISPOSER_ACTIONTEMPLATE_H_
 #define MAIN_DISPOSER_ACTIONTEMPLATE_H_
 
+#include <regex>
+
 #include "Action.h"
 #include "CommonTypes.h"
 
 #include <memory>
-#include <regex>
 #include <vector>
 
 namespace hycast {

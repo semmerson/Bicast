@@ -1,5 +1,6 @@
 /**
- * StdUsing.h
+ * @file: CommonTypes.h
+ * @brief: Common types used in the code.
  *
  *  Created on: Aug 10, 2022
  *      Author: Steven R. Emmerson
@@ -10,7 +11,6 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <stdint.h>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -35,9 +35,7 @@ constexpr double SysClockRatio = (static_cast<double>(SysDuration::period::num))
 } // namespace
 
 namespace std {
-    using namespace hycast;
-
-    String to_string(const SysTimePoint& timePoint);
+    hycast::String to_string(const hycast::SysTimePoint& timePoint);
 }
 
 #endif /* MAIN_MISC_COMMONTYPES_H_ */

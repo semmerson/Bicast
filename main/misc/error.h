@@ -50,10 +50,9 @@ public:
             const int         line,
             const char*       func,
             const std::string msg);
-
+};
 /// Macro for creating an invalid argument error
 #define INVALID_ARGUMENT(msg) InvalidArgument(__FILE__, __LINE__, __func__, (msg))
-};
 
 /// Logic error
 class LogicError : public std::logic_error
@@ -71,10 +70,9 @@ public:
             const int         line,
             const char*       func,
             const std::string msg);
-
+};
 /// Macro for creating a logic error
 #define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
-};
 
 /// Something wasn't found error
 class NotFoundError : public std::runtime_error
@@ -92,10 +90,9 @@ public:
             const int         line,
             const char*       func,
             const std::string msg);
-
+};
 /// Macro for creating a not-found error
 #define NOT_FOUND_ERROR(msg) NotFoundError(__FILE__, __LINE__, __func__, msg)
-};
 
 /// Domain error
 class DomainError : public std::domain_error
@@ -113,10 +110,9 @@ public:
             const int         line,
             const char*       func,
             const std::string msg);
-
+};
 /// Macro for using `DomainError`
 #define DOMAIN_ERROR(msg) DomainError(__FILE__, __LINE__, __func__, msg)
-};
 
 /// Out-of-range error.
 class OutOfRange : public std::out_of_range
@@ -134,10 +130,9 @@ public:
             const int         line,
             const char*       func,
             const std::string msg);
-
+};
 /// Macro for creating an out-of-range error
 #define OUT_OF_RANGE(msg) OutOfRange(__FILE__, __LINE__, __func__, msg)
-};
 
 /// Runtime error
 class RuntimeError : public std::runtime_error

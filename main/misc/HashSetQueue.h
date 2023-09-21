@@ -81,11 +81,20 @@ public:
         , tail{}
     {}
 
+    /**
+     * Indicates if this instance is empty.
+     * @retval true  This instance is empty
+     * @retval false This instance is not empty
+     */
     bool empty() const {
         Guard guard{mutex};
         return linksMap.empty();
     }
 
+    /**
+     * Returns the number of entries.
+     * @return The number of entries
+     */
     size_t size() const {
         Guard guard{mutex};
         return linksMap.size();

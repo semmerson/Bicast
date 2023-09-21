@@ -182,13 +182,13 @@ public:
 namespace std {
     /// The hash code class for an action
     template<>
-    struct hash<Action> {
+    struct hash<hycast::Action> {
         /**
          * Returns the hash code of an action.
          * @param[in] action  The action
          * @return The hash code of the action
          */
-        size_t operator()(const Action action) const {
+        size_t operator()(const hycast::Action action) const {
             return action.hash();
         }
     };

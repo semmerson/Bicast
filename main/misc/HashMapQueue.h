@@ -126,6 +126,11 @@ public:
         return &pair.first->second.value;
     }
 
+    /**
+     * Indicates if this instance is empty.
+     * @retval true   This instance is empty
+     * @retval true   This instance is not empty
+     */
     bool empty() const {
         return map.empty();
     }
@@ -137,7 +142,6 @@ public:
     /**
      * Returns the front entry.
      *
-     * @param[out] key    Key
      * @return            Pointer to value referenced by key
      * @throw OutOfRange  Queue is empty
      * @threadsafety      Safe

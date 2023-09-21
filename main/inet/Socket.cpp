@@ -24,11 +24,13 @@
 #include "error.h"
 #include "InetAddr.h"
 #include "Shield.h"
+#include "SockAddr.h"
 #include "Socket.h"
 #include "Stopwatch.h"
 
 #include <atomic>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <inttypes.h>

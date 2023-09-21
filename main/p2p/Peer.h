@@ -441,16 +441,12 @@ public:
      * Receives information on a product.
      *
      * @param[in] prodInfo  Data-product information
-     * @retval    true      Success
-     * @retval    false     EOF
      */
     virtual void recvData(const ProdInfo prodInfo) =0;
     /**
      * Receives a data-segment.
      *
      * @param[in] dataSeg  Data-segment
-     * @retval    true     Success
-     * @retval    false    EOF
      */
     virtual void recvData(const DataSeg dataSeg) =0;
 

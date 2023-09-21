@@ -25,6 +25,8 @@
 
 namespace std {
 
+using namespace hycast;
+
 /// Returns the string representation of a system time-point
 String to_string(const SysTimePoint& timePoint) {
     time_t      secs = SysClock::to_time_t(timePoint);

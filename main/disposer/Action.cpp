@@ -138,9 +138,9 @@ public:
     }
 
     /**
-     * Should the file descriptor be kept open?
-     * @retval true     Yes
-     * @retval false    No
+     * Whether or not the associated file-descriptor should be kept open.
+     * @retval true   Yes
+     * @retval false  No
      */
     bool shouldPersist() const noexcept {
         return persist;
@@ -580,8 +580,8 @@ public:
      * @param[out] pid       The PID of the child process
      * @param[out] childStr  The child process string
      * @retval true          Success. `pid` and `cmd` are set.
-     * @retval false         Failure. Couldn't obtain a new file descriptor.
-     * @retval false         Failure. Too many user process.
+     * @retval false         Failure. Couldn't obtain a new file descriptor or too many user
+     *                       processes.
      * @throw SystemError    Couldn't create pipe for a reason other than too many open files
      * @throw SystemError    Couldn't get file descriptor flags
      * @throw SystemError    Couldn't set file descriptor to close-on-exec()

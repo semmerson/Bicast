@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <limits.h>
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
@@ -297,9 +298,7 @@ void FileUtil::rmDirTree(const String& dirPath)
             struct dirent* result;
             int            status;
 
-            for (status = ::readdir_r(dir, &entry, &result);
-                    status == 0 && result != nullptr;
-                    status = ::readdir_r(dir, &entry, &result)) {
+            while ((status = ::readdir_r(dir, &entry, &result)) == 0 && result != nullptr) {
                 const char* name = entry.d_name;
 
                 if (::strcmp(".", name) && ::strcmp("..", name)) {

@@ -105,7 +105,6 @@ class DummyLastProd : public LastProd
 public:
     /**
      * Constructs.
-     * @param[in] pathTemplate  Template for pathname of files to hold information
      * @throw SystemError       Couldn't create a necessary directory
      */
     DummyLastProd() =default;

@@ -26,6 +26,7 @@
 #include "error.h"
 #include "HycastProto.h"
 #include "Peer.h"
+#include "Xprt.h"
 
 #include <list>
 #include <memory>
@@ -239,8 +240,8 @@ class RpcImpl final : public Rpc
                 P2pSrvrInfo srvrInfo;
                 if (srvrInfo.read(xprt)) {
                     connected = true;
-                    LOG_DEBUG("RPC " + xprt.to_string() + " received P2P-server information " +
-                            srvrInfo.to_string());
+                    LOG_DEBUG(String("RPC ") + xprt.to_string() +
+                            " received P2P-server information " + srvrInfo.to_string());
                     peer.recv(srvrInfo);
                 }
                 break;
@@ -249,7 +250,7 @@ class RpcImpl final : public Rpc
                 Tracker tracker{};
                 if (tracker.read(xprt)) {
                     connected = true;
-                    LOG_DEBUG("RPC " + xprt.to_string() + " received tracker " +
+                    LOG_DEBUG(String("RPC ") + xprt.to_string() + " received tracker " +
                             tracker.to_string());
                     peer.recv(tracker);
                 }

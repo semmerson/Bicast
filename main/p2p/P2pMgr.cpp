@@ -1092,8 +1092,8 @@ protected:
 
 public:
     /**
-     * Creates an implementation of a subscribing P2P manager. Creates a P2P-server listening on a
-     * socket but doesn't do anything with it until `run()` is called.
+     * Constructs a subscribing P2P manager. Creates a P2P-server listening on a socket but doesn't
+     * do anything with it until `run()` is called.
      *
      * @param[in] subNode       Subscriber's node
      * @param[in] tracker       Pool of addresses of P2P-servers
@@ -1102,7 +1102,6 @@ public:
      *                          timeout; 0 => immediate return.
      * @param[in] maxPeers      Maximum number of peers. Might be adjusted upwards.
      * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @return                  Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     SubP2pMgrImpl(Tracker         tracker,

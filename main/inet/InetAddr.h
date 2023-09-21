@@ -159,7 +159,7 @@ public:
      * @retval    true    This instance is less than the other
      * @retval    true    This instance is not less than the other
      */
-    bool operator <(const InetAddr& rhs) const noexcept;
+    bool operator<(const InetAddr& rhs) const noexcept;
 
     /**
      * Indicates if this instance is equal to another.
@@ -167,7 +167,7 @@ public:
      * @retval    true    This instance is equal to the other
      * @retval    true    This instance is not equal to the other
      */
-    bool operator ==(const InetAddr& rhs) const noexcept;
+    bool operator==(const InetAddr& rhs) const noexcept;
 
     /**
      * Returns the hash code of this instance.

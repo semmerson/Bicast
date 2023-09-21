@@ -24,7 +24,8 @@
 #include "CommonTypes.h"
 
 #include <error.h>
-#include <inttypes.h>
+#include <cstddef>
+#include <cstdint>
 #include <Socket.h>
 #include <string>
 #include <Xprt.h>

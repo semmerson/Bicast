@@ -27,12 +27,14 @@
 #include "Socket.h"
 #include "Xprt.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <set>
 #include <time.h>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace hycast {

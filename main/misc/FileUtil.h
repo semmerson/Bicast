@@ -26,6 +26,7 @@
 #include "CommonTypes.h"
 
 #include <chrono>
+#include <stddef.h>
 #include <string>
 #include <sys/stat.h>
 

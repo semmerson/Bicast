@@ -61,6 +61,7 @@ if (GTEST_LIBRARY)
 
         add_subdirectory(test)
         message(STATUS "Gtest was found. Unit-testing is enabled.")
+        message(STATUS "Gtest library=${GTEST_LIBRARY}.")
     endif()
 else()
     message(STATUS "Gtest library wasn't found. Unit-testing is disabled.")
