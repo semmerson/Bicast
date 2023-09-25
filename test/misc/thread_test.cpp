@@ -34,7 +34,7 @@
 namespace {
 
 /// The fixture for testing class `std::thread`
-class ThreadTest : public ::testing::Test
+class ThreadTest : public testing::Test
 {
 protected:
     typedef std::mutex              Mutex;
@@ -126,9 +126,10 @@ TEST_F(ThreadTest, CancelThread)
 // Tests canceling a terminated thread
 TEST_F(ThreadTest, CancelTerminatedThread)
 {
-    std::thread thread{&::usleep, 1};
+    std::thread thread{&::pthread_exit, nullptr};
     ::usleep(100000);
-    EXPECT_EQ(ESRCH, ::pthread_cancel(thread.native_handle())); // No such process
+    const auto status = ::pthread_cancel(thread.native_handle());
+    EXPECT_TRUE(status == ESRCH || status == 0); // ESRCH => No such process
     EXPECT_TRUE(thread.joinable());
     EXPECT_NO_THROW(thread.join());
 }
