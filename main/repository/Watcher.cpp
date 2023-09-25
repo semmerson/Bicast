@@ -98,31 +98,55 @@ class Watcher::Impl final
     }
 
     /**
-     * Blocks.
+     * Determines if a file descriptor is ready for reading. Blocks.
      *
-     * @throws SystemError  Couldn't read inotify(7) file-descriptor
-     * @retval true         Success
-     * @retval false        inotify(7) file descriptor has been closed
+     * @retval true         File descriptor is ready for reading
+     * @retval false        File descriptor is closed
      * @throw SystemError   poll(2) failure
      */
-    bool readEvents() {
-        // poll(2) is used to determine if the file descriptor has been closed
-
+    inline bool hasInput(const int fd) {
         struct pollfd pollfd = {};
         pollfd.fd = fd;
         pollfd.events = POLLIN;
 
         if (::poll(&pollfd, 1, -1) == -1) // Blocks
-            throw SYSTEM_ERROR("poll() failure on inotify(7) file descriptor ");
+            throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
         if (pollfd.revents & POLLHUP) {
+            LOG_TRACE("EOF on file descriptor %d", fd);
+            return false; // EOF
+        }
+        if ((pollfd.revents & (POLLIN | POLLERR)) == 0)
+            throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
+
+        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
+
+        if (nbytes == -1)
+            throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
+
+        if (nbytes == 0) {
             LOG_TRACE("EOF on inotify(7) file descriptor");
             return false; // EOF
         }
-        if (pollfd.revents & (POLLIN | POLLERR)) {
+
+        return true;
+    }
+
+    /**
+     * Blocks.
+     *
+     * @retval true         Success
+     * @retval false        inotify(7) file descriptor has been closed
+     * @throw SystemError   poll(2) failure
+     * @throw SystemError   Couldn't read inotify(7) file-descriptor
+     */
+    bool readEvents() {
+        // if (hasInput(fd))
+        {
             ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
 
             if (nbytes == -1)
                 throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
+
             if (nbytes == 0) {
                 LOG_TRACE("EOF on inotify(7) file descriptor");
                 return false; // EOF
@@ -130,10 +154,8 @@ class Watcher::Impl final
 
             nextEvent = buf;
             endEvent = buf + nbytes;
+
             return true;
-        }
-        else {
-            throw SYSTEM_ERROR("poll() failure on inotify(7) file descriptor");
         }
     }
 
