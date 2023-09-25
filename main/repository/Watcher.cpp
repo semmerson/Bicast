@@ -111,22 +111,10 @@ class Watcher::Impl final
 
         if (::poll(&pollfd, 1, -1) == -1) // Blocks
             throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
-        if (pollfd.revents & POLLHUP) {
-            LOG_TRACE("EOF on file descriptor %d", fd);
+        if (pollfd.revents & POLLHUP)
             return false; // EOF
-        }
         if ((pollfd.revents & (POLLIN | POLLERR)) == 0)
             throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
-
-        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
-
-        if (nbytes == -1)
-            throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
-
-        if (nbytes == 0) {
-            LOG_TRACE("EOF on inotify(7) file descriptor");
-            return false; // EOF
-        }
 
         return true;
     }
