@@ -318,22 +318,25 @@ static void splitSpec(
         String&       inet,
         String&       port)
 {
-    auto pos = spec.rfind(':');
+    auto colonPos = spec.rfind(':');
 
-    port = (pos == spec.npos)
-            ? port = "0"
-            : spec.substr(pos+1);
-
-    if (pos >= 2 && spec[pos-1] == ']') {
-        // IPv6 address
-        inet = spec.substr(1, pos-2);
-    }
-    else if (pos >= 1) {
-        // IPv4 address
-        inet = spec.substr(0, pos);
+    if (colonPos == spec.npos) {
+        port = "0";
+        inet = spec;
     }
     else {
-        throw INVALID_ARGUMENT("Not a socket specification: \"" + spec + "\"");
+        port = spec.substr(colonPos+1);
+        if (colonPos >= 2 && spec[colonPos-1] == ']') {
+            // IPv6 address
+            inet = spec.substr(1, colonPos-2);
+        }
+        else if (colonPos >= 1) {
+            // IPv4 address
+            inet = spec.substr(0, colonPos);
+        }
+        else {
+            throw INVALID_ARGUMENT("Not a socket specification: \"" + spec + "\"");
+        }
     }
 }
 

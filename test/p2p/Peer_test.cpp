@@ -247,6 +247,7 @@ public:
             auto pubPeerConnSrvr = PeerConnSrvr::create(pubAddr, 8);
             orState(LISTENING);
 
+            // Blocks until subscribing peer connects
             pubPeer = Peer::create(*static_cast<Peer::PubMgr*>(this), pubPeerConnSrvr->accept());
 
             auto rmtAddr = pubPeer->getRmtAddr().getInetAddr();
@@ -285,6 +286,8 @@ TEST_F(PeerTest, PrematureStop)
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
 
     try {
+        // Publishing peer is running
+
         waitForState(LISTENING);
 
         subThreadId = std::this_thread::get_id();
@@ -524,7 +527,7 @@ static void myTerminate()
 
 int main(int argc, char **argv) {
   log_setName(::basename(argv[0]));
-  log_setLevel(LogLevel::DEBUG);
+  log_setLevel(LogLevel::INFO);
 
   std::set_terminate(&myTerminate);
 

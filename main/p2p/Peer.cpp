@@ -35,17 +35,21 @@ namespace hycast {
  */
 class BasePeerImpl : public Peer
 {
-    using NoticeQ = std::queue<Notice>;
-
+protected:
     enum class State {
         INIT,
         STARTED,
         STOPPED
     }                  state;         ///< State of this instance
     mutable Mutex      stateMutex;    ///< Protects state changes
+
+private:
+    using NoticeQ = std::queue<Notice>;
+
     mutable Mutex      noticeMutex;   ///< For accessing notice queue
     mutable Cond       noticeCond;    ///< For accessing notice queue
     Thread             noticeThread;  ///< For sending notices
+    bool               stopNotices;   ///< Stop the notice writer?
     Thread             connThread;    ///< Thread for running the peer-connection
     std::once_flag     backlogFlag;   ///< Ensures that a backlog is sent only once
     BaseMgr&           basePeerMgr;   ///< Associated peer manager
@@ -142,7 +146,10 @@ protected:
                 Notice notice;
                 {
                     Lock lock{noticeMutex};
-                    noticeCond.wait(lock, [&]{return !noticeQ.empty();});
+                    noticeCond.wait(lock, [&]{return stopNotices || !noticeQ.empty();});
+
+                    if (stopNotices)
+                        break;
 
                     notice = noticeQ.front();
                     noticeQ.pop();
@@ -189,7 +196,11 @@ protected:
     void stopNoticeWriter() {
         LOG_ASSERT(!stateMutex.try_lock());
         if (noticeThread.joinable()) {
-            ::pthread_cancel(noticeThread.native_handle());
+            {
+                Guard guard{noticeMutex};
+                stopNotices = true;
+                noticeCond.notify_all();
+            }
             noticeThread.join();
         }
     }
@@ -207,8 +218,13 @@ protected:
         }
     }
 
+    /// Starts the thread that runs the connection with the remote peer.
+    void startConn() {
+        connThread = Thread(&BasePeerImpl::runConn, this);
+    }
+
     /**
-     * Stops the connection. Idempotent.
+     * Stops the connection with the remote peer. Idempotent.
      */
     void stopConn() {
         LOG_ASSERT(!stateMutex.try_lock());
@@ -222,19 +238,14 @@ protected:
      * Executes this instance. Starts sending to and receiving from the remote peer. This function
      * is the default implementation.
      *
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state isn't INIT
-     * @post              The state is STARTED
-     * @post              The state mutex is unlocked
+     * @pre               The state mutex is locked
+     * @post              The state mutex is locked
      */
     virtual void startImpl() {
-        Guard guard{stateMutex};
-        if (state != State::INIT)
-            throw LOGIC_ERROR("Instance can't be re-executed");
-
-        noticeThread = Thread(&BasePeerImpl::runNoticeWriter, this);
+        LOG_ASSERT(!stateMutex.try_lock());
+        startNoticeWriter();
         try {
-            connThread = Thread(&BasePeerImpl::runConn, this);
+            startConn();
         }
         catch (const std::exception& ex) {
             stopNoticeWriter();
@@ -247,14 +258,13 @@ protected:
     /**
      * Idempotent.
      *
-     * @pre               The state mutex is unlocked
-     * @throw LogicError  The state is not STARTED
+     * @pre               The state mutex is locked
      * @post              The state is STOPPED
-     * @post              The state mutex is unlocked
+     * @post              The state mutex is locked
      */
     void stopImpl() {
-        Guard guard{stateMutex};
-        stopConn();          // Idempotent
+        LOG_ASSERT(!stateMutex.try_lock());
+        stopConn();         // Idempotent
         stopNoticeWriter(); // Idempotent
         state = State::STOPPED;
     }
@@ -296,6 +306,7 @@ public:
         , noticeMutex()
         , noticeCond()
         , noticeThread()
+        , stopNotices(false)
         , connThread()
         , backlogFlag()
         , basePeerMgr(baseMgr)
@@ -330,7 +341,8 @@ public:
     virtual ~BasePeerImpl() noexcept {
         LOG_TRACE("Destroying peer " + to_string());
         Guard guard{stateMutex};
-        LOG_ASSERT(state == State::INIT || state == State::STOPPED);
+        if (state == State::STARTED)
+            stopImpl();
         ::sem_destroy(&stopSem);
     }
 
@@ -427,26 +439,44 @@ public:
     }
 
     void run() override {
-        startImpl();
         /*
-         * Blocks until
-         *   - `connected` is false
-         *   - `halt()` called
-         *   - `threadEx` is true
+         * Because a condition variable isn't async-signal-safe, its behavior is simulated using a
+         * semaphore (which *is* async-signal-safe).
          */
-        ::sem_wait(&stopSem);
-        LOG_TRACE("connected=" + std::to_string(connected) + "; threadEx=" +
-                (threadEx ? "true" : "false"));
-        stopImpl();
-        threadEx.throwIfSet();
+        {
+            Guard guard{stateMutex};
+            LOG_ASSERT(state == State::INIT);
+            startImpl();
+        }
+        try {
+            /*
+             * Blocks until
+             *   - `connected` is false
+             *   - `halt()` is called
+             *   - `threadEx` is true
+             */
+            ::sem_wait(&stopSem);
+            {
+                Guard guard{stateMutex};
+                LOG_TRACE("connected=" + std::to_string(connected) + "; threadEx=" +
+                        (threadEx ? "true" : "false"));
+                stopImpl();
+            }
+            threadEx.throwIfSet();
+        }
+        catch (const std::exception& ex) {
+            {
+                Guard guard{stateMutex};
+                if (state == State::STARTED)
+                    stopImpl();
+            }
+            throw;
+        }
     }
 
     void halt() override {
         LOG_TRACE("Called");
-        int semval = 0;
-        ::sem_getvalue(&stopSem, &semval);
-        if (semval < 1)
-            ::sem_post(&stopSem);
+        ::sem_post(&stopSem);
     }
 
     void recv(const P2pSrvrInfo& srvrInfo) override {
@@ -576,15 +606,6 @@ public:
         if (isRmtPub())
             throw INVALID_ARGUMENT("Remote peer " + rmtSrvrInfo.srvrAddr.to_string() +
                     " can't be publisher because I am: " + pubMgr.getSrvrInfo().to_string());
-    }
-
-    ~PubPeerImpl() noexcept {
-        try {
-            stopImpl(); // Idempotent
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
     }
 
     P2pSrvrInfo::Tier getTier() const noexcept override {
@@ -901,7 +922,6 @@ class SubPeerImpl final : public BasePeerImpl
     /**
      * Executes this instance. Starts sending to and receiving from the remote peer. In particular,
      * requests the backlog of data-products that this instance missed.
-     * @throw LogicError  The state isn't `INIT`
      */
     void startImpl() override {
         BasePeerImpl::startImpl();
@@ -926,15 +946,6 @@ public:
         , requested()
         , backlogFlag()
     {}
-
-    ~SubPeerImpl() noexcept {
-        try {
-            stopImpl();
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
-    }
 
     P2pSrvrInfo::Tier getTier() const noexcept override {
         return rmtSrvrInfo.getRmtTier();

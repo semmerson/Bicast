@@ -24,6 +24,7 @@
 
 #include "Repository.h"
 
+#include "CommonTypes.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
 #include "LastProd.h"
@@ -32,6 +33,7 @@
 #include "ThreadException.h"
 #include "Watcher.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -60,18 +62,18 @@ using namespace std::chrono;
  */
 class Repository::Impl
 {
-    Thread deleteThread;   ///< Thread for deleting old products
-
     /**
      * Deletes products that are at least as old as the keep-time. Implemented as a start routine
-     * for a separate thread that's expected to be cancelled. Calls `setThreadEx()` on exception.
+     * for a separate thread. Calls `setThreadEx()` on exception.
      */
     void deleteProds() {
         try {
+            //LOG_DEBUG("Starting deleter of products that are too old");
             /**
              * The following code deletes products on-time regardless of their arrival rate.
              */
-            auto pred = [&] {return (deleteQueue.top().deleteTime <= SysClock::now());};
+            auto doneOrNotEmpty= [&]{return done || !deleteQueue.empty();};
+            auto doneOrReady= [&] {return done || deleteQueue.top().deleteTime <= SysClock::now();};
             Lock lock{mutex};
 
             for (;;) {
@@ -80,8 +82,10 @@ class Repository::Impl
                  * can.
                  */
                 if (deleteQueue.empty())
-                    deleteQueueCond.wait(lock, [&]{return !deleteQueue.empty();});
-                deleteQueueCond.wait_until(lock, deleteQueue.top().deleteTime, pred);
+                    deleteQueueCond.wait(lock, doneOrNotEmpty);
+                deleteQueueCond.wait_until(lock, deleteQueue.top().deleteTime, doneOrReady);
+                if (done)
+                    break;
 
                 // Temporarily disable thread cancellation to protect the following state change
                 Shield     shield{};
@@ -102,7 +106,7 @@ class Repository::Impl
                 }
             }
 
-            LOG_DEBUG("Deleted too-old products");
+            //LOG_DEBUG("Deleted too-old products");
         }
         catch (const std::exception& ex) {
            /*
@@ -194,6 +198,7 @@ protected:
     ProcQueue         procQueue;       ///< Queue of identifiers of products ready for processing
                                        ///< (i.e., either being transmitted or locally processed)
     SysTimePoint      lastProcessed;   ///< Time of the last, successfully-processed file
+    bool              done;            ///< Should this instance terminate?
 
     /**
      * Ensures that a repository pathname is relative. If the pathname is prefixed with the
@@ -225,16 +230,6 @@ protected:
             if (FileUtil::isAbsolute(pathname))
                 throw INVALID_ARGUMENT("Absolute pathname not part of repository");
             pathname.insert(0, prodDir);
-        }
-    }
-
-    /// Stops the thread on which files are deleted
-    void stopDeleteThread() {
-        if (deleteThread.joinable()) {
-            int status = ::pthread_cancel(deleteThread.native_handle());
-            if (status)
-                throw SYSTEM_ERROR("::pthread_cancel() failure on delete-thread");
-            deleteThread.join();
         }
     }
 
@@ -483,6 +478,10 @@ protected:
         return iter;
     }
 
+private:
+    ///< Thread on which products that are too old are deleted
+    Thread deleteThread;
+
 public:
     /**
      * Constructs.
@@ -500,8 +499,7 @@ public:
             const size_t       maxOpenProds,
             const int          keepTime,
             const SysTimePoint lastProcTime)
-        : deleteThread()
-        , mutex()
+        : mutex()
         , stop(false)
         , procQueueCond()
         , deleteQueueCond()
@@ -516,6 +514,8 @@ public:
         , threadEx()
         , procQueue()
         , lastProcessed(lastProcTime)
+        , done(false)
+        , deleteThread(&Impl::deleteProds, this)
     {
         if (maxOpenProds <= 0)
             throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
@@ -525,27 +525,18 @@ public:
 
         if (prodDirFd == -1)
             throw SYSTEM_ERROR("Couldn't open repository directory, \"" + prodDir + "\"");
-
-        try {
-            deleteThread = Thread(&Impl::deleteProds, this);
-            LOG_ASSERT(deleteThread.joinable());
-        } // `rootFd` is open
-        catch (const std::exception& ex) {
-            ::close(prodDirFd);
-            throw;
-        }
     }
 
     virtual ~Impl() {
-        try {
-            stopDeleteThread();
+        {
+            Guard guard{mutex};
+            done = true;
+            deleteQueueCond.notify_all();
+        }
+        deleteThread.join();
 
-            if (prodDirFd >= 0)
-                ::close(prodDirFd);
-        }
-        catch (const std::exception& ex) {
-            LOG_ERROR(ex);
-        }
+        if (prodDirFd >= 0)
+            ::close(prodDirFd);
     }
 
     /**
@@ -764,10 +755,14 @@ ProdIdSet Repository::getProdIds() const {
 class PubRepo::Impl final : public Repository::Impl, public Watcher::Client
 {
     Watcher watcher;     ///< Watches the repository
-    Thread  watchThread; ///< Thread to execute the Watcher
+    Thread  watchThread; ///< Watcher thread
 
+    /**
+     * Executes the watcher of new product-files. Implemented as the start routine of a new thread.
+     */
     void runWatcher() {
         try {
+            //LOG_DEBUG("Starting thread to watch the repository");
             watcher();
         }
         catch (const std::exception& ex) {
@@ -849,19 +844,19 @@ public:
          * might be acted upon by both threads. Duplicate detection, however, will ensure that such
          * files are added to the database only once.
          */
-        try {
-            scanRepo(prodDir);
-        }
-        catch (const std::exception& ex) {
-            stopDeleteThread();
-        }
+        scanRepo(prodDir);
     }
 
     ~Impl() {
-        if (watchThread.joinable()) {
-            ::pthread_cancel(watchThread.native_handle());
-            watchThread.join();
-        }
+        const auto nativeHandle = watchThread.native_handle();
+        const auto threadId = std::to_string(nativeHandle);
+        //LOG_DEBUG("Cancelling watch thread " + threadId);
+        const auto status = ::pthread_cancel(nativeHandle);
+        if (status)
+            LOG_SYSERR("pthread_cancel() failure: %s", ::strerror(errno));
+        //LOG_DEBUG("Joining watch thread " + threadId);
+        watchThread.join();
+        //LOG_DEBUG("Joined watch thread " + threadId);
     }
 
     /**
@@ -1053,17 +1048,12 @@ public:
         , lastReceived(lastReceived)
         , queueProds(queueProds)
     {
-        try {
-            /**
-             * Ignore incomplete data-products and start from scratch. They will be completely
-             * recovered as part of the backlog.
-             */
-            FileUtil::rmDirTree(prodDir + INCOMPLETE_DIR_NAME);
-            scanRepo(prodDir); // NB: No "incomplete" directory for it to scan
-        }
-        catch (const std::exception& ex) {
-            stopDeleteThread();
-        }
+        /**
+         * Ignore incomplete data-products and start from scratch. They will be completely
+         * recovered as part of the backlog.
+         */
+        FileUtil::rmDirTree(prodDir + INCOMPLETE_DIR_NAME);
+        scanRepo(prodDir); // NB: No "incomplete" directory for it to scan
     }
 
     /**

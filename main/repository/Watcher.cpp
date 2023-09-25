@@ -31,6 +31,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <queue>
 #include <sys/inotify.h>
 #include <sys/stat.h>
@@ -100,15 +101,40 @@ class Watcher::Impl final
      * Blocks.
      *
      * @throws SystemError  Couldn't read inotify(7) file-descriptor
+     * @retval true         Success
+     * @retval false        inotify(7) file descriptor has been closed
+     * @throw SystemError   poll(2) failure
      */
-    void readEvents() {
-        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Blocks
+    bool readEvents() {
+        // poll(2) is used to determine if the file descriptor has been closed
 
-        if (nbytes == -1)
-            throw SYSTEM_ERROR("Couldn't read inotify(7) file-descriptor " + std::to_string(fd));
+        struct pollfd pollfd = {};
+        pollfd.fd = fd;
+        pollfd.events = POLLIN;
 
-        nextEvent = buf;
-        endEvent = buf + nbytes;
+        if (::poll(&pollfd, 1, -1) == -1) // Blocks
+            throw SYSTEM_ERROR("poll() failure on inotify(7) file descriptor ");
+        if (pollfd.revents & POLLHUP) {
+            LOG_TRACE("EOF on inotify(7) file descriptor");
+            return false; // EOF
+        }
+        if (pollfd.revents & (POLLIN | POLLERR)) {
+            ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
+
+            if (nbytes == -1)
+                throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
+            if (nbytes == 0) {
+                LOG_TRACE("EOF on inotify(7) file descriptor");
+                return false; // EOF
+            }
+
+            nextEvent = buf;
+            endEvent = buf + nbytes;
+            return true;
+        }
+        else {
+            throw SYSTEM_ERROR("poll() failure on inotify(7) file descriptor");
+        }
     }
 
     /**

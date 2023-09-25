@@ -32,7 +32,7 @@
 namespace {
 
 // The fixture for testing class SockAddr.
-class SockAddrTest : public ::testing::Test {
+class SockAddrTest : public testing::Test {
 protected:
     #define PORT1 1
     #define PORT1_STR "1"
@@ -119,7 +119,7 @@ TEST_F(SockAddrTest, IPv4Construction) {
 
     EXPECT_TRUE(sockAddr);
 
-    const std::string actual{sockAddr.to_string()};
+    const std::string actual(sockAddr.to_string());
     EXPECT_STREQ(sockAddrInSpec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn_2) != (sockAddrIn_2 < sockAddr));
 }
@@ -130,7 +130,7 @@ TEST_F(SockAddrTest, IPv6Construction) {
 
     EXPECT_TRUE(sockAddr);
 
-    const std::string actual{sockAddr.to_string()};
+    const std::string actual(sockAddr.to_string());
     EXPECT_STREQ(sockAddrIn6Spec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn6_2) != (sockAddrIn6_2 < sockAddr));
 }

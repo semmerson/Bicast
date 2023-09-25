@@ -368,10 +368,7 @@ public:
     }
 
     void halt() override {
-        int semval = 0;
-        ::sem_getvalue(&stopSem, &semval);
-        if (semval < 1)
-            ::sem_post(&stopSem);
+        ::sem_post(&stopSem);
     }
 
     // Notices:

@@ -95,7 +95,7 @@ void terminate()
 
     if (!exPtr) {
         LOG_FATAL("terminate() called without an active exception. "
-                "A joinable thread was likely destroyed.");
+                "A joinable thread object was likely destroyed.");
     }
     else {
         try {

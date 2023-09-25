@@ -91,7 +91,9 @@ public:
 // Tests construction
 TEST_F(RepositoryTest, Construction)
 {
+    //LOG_DEBUG("Creating publishing repository");
     hycast::PubRepo pubRepo{repoDir, 5, SysTimePoint::min()};
+    //LOG_DEBUG("Creating subscribing repository");
     hycast::SubRepo subRepo{repoDir, 5, lastReceived, true};
 }
 #endif
