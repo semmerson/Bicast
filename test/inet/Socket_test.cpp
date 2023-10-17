@@ -33,6 +33,8 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `Socket`
 class SocketTest : public ::testing::Test
 {
@@ -43,7 +45,7 @@ protected:
         CONNECTED = 0x3,
         READ_SOMETHING = 0x7,
     } State;
-    hycast::SockAddr        srvrAddr;
+    SockAddr                srvrAddr;
     std::mutex              mutex;
     std::condition_variable cond;
     bool                    srvrReady;
@@ -79,8 +81,8 @@ protected:
 
     // Objects declared here can be used by all tests in the test case for Socket.
 
-    void runServer(hycast::TcpSrvrSock& lstnSock,
-                   hycast::TcpSock&    srvrSock)
+    void runServer(TcpSrvrSock& lstnSock,
+                   TcpSock&    srvrSock)
     {
         try {
             srvrSock = lstnSock.accept();
@@ -103,10 +105,10 @@ protected:
         }
     }
 
-    void startServer(hycast::TcpSrvrSock& lstnSock,
-                     hycast::TcpSock&     srvrSock)
+    void startServer(TcpSrvrSock& lstnSock,
+                     TcpSock&     srvrSock)
     {
-        lstnSock = hycast::TcpSrvrSock(srvrAddr);
+        lstnSock = TcpSrvrSock(srvrAddr);
         setState(LISTENING);
         srvrThread = std::thread(&SocketTest::runServer, this, std::ref(lstnSock), std::ref(srvrSock));
     }
@@ -115,14 +117,14 @@ protected:
 // Tests copy construction
 TEST_F(SocketTest, CopyConstruction)
 {
-    hycast::TcpSrvrSock lstnSock{srvrAddr};
-    hycast::TcpSrvrSock sock(lstnSock);
+    TcpSrvrSock lstnSock{srvrAddr};
+    TcpSrvrSock sock(lstnSock);
 }
 
 // Tests setting the Nagle algorithm
 TEST_F(SocketTest, SettingNagle)
 {
-    hycast::TcpSrvrSock lstnSock(srvrAddr);
+    TcpSrvrSock lstnSock(srvrAddr);
 
     EXPECT_TRUE(&lstnSock.setDelay(false) == &lstnSock);
 }
@@ -130,14 +132,14 @@ TEST_F(SocketTest, SettingNagle)
 // Tests server-socket construction
 TEST_F(SocketTest, ServerConstruction)
 {
-    hycast::TcpSrvrSock lstnSock(srvrAddr);
+    TcpSrvrSock lstnSock(srvrAddr);
 }
 
 // Tests canceling the server thread after `::listen()` has been called
 TEST_F(SocketTest, CancelListening)
 {
-    hycast::TcpSrvrSock lstnSock;
-    hycast::TcpSock     srvrSock;
+    TcpSrvrSock lstnSock;
+    TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
 
@@ -148,8 +150,8 @@ TEST_F(SocketTest, CancelListening)
 // Tests shutting down the server's listening-socket
 TEST_F(SocketTest, ShutdownAcceptSocket)
 {
-    hycast::TcpSrvrSock lstnSock{};
-    hycast::TcpSock     srvrSock{};
+    TcpSrvrSock lstnSock{};
+    TcpSock     srvrSock{};
 
     startServer(lstnSock, srvrSock);
     ::sleep(1);
@@ -160,14 +162,14 @@ TEST_F(SocketTest, ShutdownAcceptSocket)
 // Tests canceling the server thread while read() is executing
 TEST_F(SocketTest, CancelServerReading)
 {
-    hycast::TcpSrvrSock lstnSock{};
-    hycast::TcpSock     srvrSock{};
+    TcpSrvrSock lstnSock{};
+    TcpSock     srvrSock{};
 
     //LOG_DEBUG("Starting server");
     startServer(lstnSock, srvrSock);
 
     //LOG_DEBUG("Constructing client socket");
-    hycast::TcpClntSock clntSock(srvrAddr);
+    TcpClntSock clntSock(srvrAddr);
     //LOG_DEBUG("Writing to client socket");
     auto success = clntSock.write(true);
     EXPECT_TRUE(success);
@@ -182,13 +184,13 @@ TEST_F(SocketTest, CancelServerReading)
 // Tests shutting down the server's socket
 TEST_F(SocketTest, ShutdownServerSocket)
 {
-    hycast::TcpSrvrSock lstnSock;
-    hycast::TcpSock     srvrSock;
+    TcpSrvrSock lstnSock;
+    TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
     waitForState(LISTENING);
 
-    hycast::TcpClntSock clntSock(srvrAddr);
+    TcpClntSock clntSock(srvrAddr);
     clntSock.write(true);
 
     waitForState(READ_SOMETHING);
@@ -206,13 +208,13 @@ TEST_F(SocketTest, ShutdownServerSocket)
 // Tests shutting down the client's socket
 TEST_F(SocketTest, ShutdownClientSocket)
 {
-    hycast::TcpSrvrSock lstnSock;
-    hycast::TcpSock     srvrSock;
+    TcpSrvrSock lstnSock;
+    TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
     waitForState(LISTENING);
 
-    hycast::TcpClntSock clntSock(srvrAddr);
+    TcpClntSock clntSock(srvrAddr);
     EXPECT_EQ(true, clntSock.write(true));
 
     waitForState(READ_SOMETHING);
@@ -225,14 +227,14 @@ TEST_F(SocketTest, ShutdownClientSocket)
 // Tests round-trip scalar exchange
 TEST_F(SocketTest, ScalarExchange)
 {
-    hycast::TcpSrvrSock lstnSock;
-    hycast::TcpSock     srvrSock;
+    TcpSrvrSock lstnSock;
+    TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
 
-    hycast::TcpClntSock clntSock(srvrAddr);
-    int                 writeInt = 0xff00;
-    int                 readInt = ~writeInt;
+    TcpClntSock clntSock(srvrAddr);
+    int         writeInt = 0xff00;
+    int         readInt = ~writeInt;
 
     clntSock.write(&writeInt, sizeof(writeInt));
     clntSock.read(&readInt, sizeof(readInt));
@@ -246,12 +248,12 @@ TEST_F(SocketTest, ScalarExchange)
 // Tests round-trip I/O-vector exchange
 TEST_F(SocketTest, VectorExchange)
 {
-    hycast::TcpSrvrSock lstnSock;
-    hycast::TcpSock     srvrSock;
+    TcpSrvrSock lstnSock;
+    TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
 
-    hycast::TcpClntSock clntSock(srvrAddr);
+    TcpClntSock clntSock(srvrAddr);
     int                 writeInt[2] = {0xff00, 0x00ff};
     int                 readInt[2] = {0};
     struct iovec        iov[2];
@@ -299,8 +301,8 @@ int main(int argc, char **argv) {
   sigact.sa_flags = 0;
   (void)sigaction(SIGPIPE, &sigact, NULL);
 
-  hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LogLevel::DEBUG);
+  log_setName(::basename(argv[0]));
+  log_setLevel(LogLevel::DEBUG);
   //LOG_ERROR
 
   std::set_terminate(&myTerminate);
