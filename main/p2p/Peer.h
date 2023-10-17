@@ -23,13 +23,15 @@
 #ifndef MAIN_PROTO_PEER_H_
 #define MAIN_PROTO_PEER_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "PeerConn.h"
 #include "Socket.h"
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
+
+class P2pSrvrInfo;
 
 class Peer;                            ///< Forward declaration
 using PeerPtr = std::shared_ptr<Peer>; ///< Smart pointer to an implementation
@@ -294,7 +296,7 @@ public:
      * @return     The number of hops to the publisher from this instance
      * @retval -1  The number of hops is unknown
      */
-    virtual P2pSrvrInfo::Tier getTier() const noexcept =0;
+    virtual Tier getTier() const noexcept =0;
 
     /**
      * Returns the hash code of this instance.
@@ -533,22 +535,24 @@ using SubP2pSrvr = P2pSrvr<Peer::SubMgr>; ///< Type of subscriber's P2P-server
 /******************************************************************************/
 
 namespace std {
+    using namespace bicast;
+
     /// Hash code class-function for an implementation of a peer
     template<>
-    struct hash<hycast::PeerPtr> {
+    struct hash<PeerPtr> {
         /**
          * Returns the hash code of a peer.
          * @param[in] peer  The peer
          * @return The hash code of the peer
          */
-        size_t operator()(const hycast::PeerPtr peer) const noexcept {
+        size_t operator()(const PeerPtr peer) const noexcept {
             return peer->hash();
         }
     };
 
     /// Less-than class function for an implementation of a peer
     template<>
-    struct less<hycast::PeerPtr> {
+    struct less<PeerPtr> {
         /**
          * Indicates if one peer is less than another
          * @param[in] rhs       The left-hand-side peer
@@ -557,8 +561,8 @@ namespace std {
          * @retval    false     The first peer is not less than the second
          */
         bool operator()(
-                const hycast::PeerPtr lhs,
-                const hycast::PeerPtr rhs) const noexcept {
+                const PeerPtr lhs,
+                const PeerPtr rhs) const noexcept {
             return *lhs < *rhs;
         }
     };

@@ -28,7 +28,7 @@
 #include <regex>
 #include <yaml-cpp/yaml.h>
 
-namespace hycast {
+namespace bicast {
 
 /// Class for parsing a scalar YAML value.
 class Parser

@@ -23,7 +23,7 @@
 
 #include "PimplIface.h"
 
-using namespace hycast;
+using namespace bicast;
 
 int main(int argc, char** argv)
 {

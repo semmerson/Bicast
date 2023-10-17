@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "logging.h"
 #include "Shield.h"
 #include "Thread.h"
 
@@ -37,7 +38,7 @@
 #include <thread>
 #include <utility>
 
-namespace hycast {
+namespace bicast {
 
 /// An implementation of a class that blocks a thread until it's cued
 class Cue::Impl
@@ -79,16 +80,16 @@ public:
     }
 };
 
-hycast::Cue::Cue()
+Cue::Cue()
     : pImpl{new Impl{}}
 {}
 
-void hycast::Cue::cue() const
+void Cue::cue() const
 {
     pImpl->cue();
 }
 
-void hycast::Cue::wait() const
+void Cue::wait() const
 {
     pImpl->wait();
 }
@@ -184,8 +185,7 @@ Barrier::~Barrier() noexcept
 {
     int status = ::pthread_barrier_destroy(&barrier);
     if (status)
-        log_error(SYSTEM_ERROR(
-                "pthread_barrier_destroy() failure", status));
+        log_error(SYSTEM_ERROR("pthread_barrier_destroy() failure", status));
 }
 
 /******************************************************************************/
@@ -361,7 +361,7 @@ void Thread::Impl::cancel()
     ensureCompleted();
 }
 
-void Thread::Impl::cancel(const Id& threadId)
+void Thread::Impl::cancel(const Tag& threadId)
 {
     Impl* impl = threads.get(threadId);
     if (impl) {
@@ -438,7 +438,7 @@ Thread::~Thread() noexcept
     }
 }
 
-Thread::Id Thread::getId() noexcept
+Thread::Tag Thread::getId() noexcept
 {
     return Impl::getId();
 }
@@ -448,9 +448,9 @@ long Thread::getThreadNumber() noexcept
     return Impl::getThreadNumber();
 }
 
-Thread::Id Thread::id() const
+Thread::Tag Thread::id() const
 {
-    return pImpl ? pImpl->id() : Thread::Id{};
+    return pImpl ? pImpl->id() : Thread::Tag{};
 }
 
 long Thread::threadNumber() const noexcept
@@ -478,7 +478,7 @@ void Thread::cancel()
         pImpl->cancel();
 }
 
-void Thread::cancel(const Id& threadId)
+void Thread::cancel(const Tag& threadId)
 {
     Impl::cancel(threadId);
 }

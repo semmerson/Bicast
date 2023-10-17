@@ -28,7 +28,7 @@
 #include <memory>
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Watches a repository.

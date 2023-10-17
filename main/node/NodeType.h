@@ -31,7 +31,7 @@
 
 #include <atomic>
 
-namespace hycast {
+namespace bicast {
 
 /// Type of node
 class NodeType : public XprtAble

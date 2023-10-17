@@ -1,5 +1,5 @@
 /**
- * This file declares subscription information common to a Hycast publisher and Hycast subscriber.
+ * This file declares subscription information common to a Bicast publisher and Bicast subscriber.
  *
  *  @file:  SubInfo.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -22,10 +22,12 @@
 #ifndef MAIN_PUBSUB_H_
 #define MAIN_PUBSUB_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
+#include "logging.h"
+#include "Tracker.h"
 #include "Xprt.h"
 
-namespace hycast {
+namespace bicast {
 
 /// Subscription information for a subscriber
 struct SubInfo : public XprtAble {
@@ -45,7 +47,7 @@ struct SubInfo : public XprtAble {
       */
     SubInfo(Tracker tracker)
         : version(1)
-        , feedName("Hycast")
+        , feedName("Bicast")
         , maxSegSize(1444)
         , mcast()
         , tracker(tracker)
@@ -70,7 +72,7 @@ struct SubInfo : public XprtAble {
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const {
+    bool write(Xprt& xprt) const {
 #if 0
         return
                 xprt.write(version) &&
@@ -116,7 +118,7 @@ struct SubInfo : public XprtAble {
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
 #if 0
         auto success =
                 xprt.read(version) &&

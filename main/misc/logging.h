@@ -4,7 +4,7 @@
  *   @file: logging.h
  * @author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,61 +23,126 @@
 #define MAIN_LOGGING_H_
 
 #include <atomic>
-#include <errno.h>
-#include <exception>
-#include <iostream>
-#include <signal.h>
-#include <stdlib.h>
+#include <signal.h> // For SIGUSR2
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
-/// Logging level
+/// Logging threshold
 class LogLevel
 {
-    int level;
-
-    LogLevel(const int level) noexcept
-        : level{level}
-    {}
-
 public:
-    static const LogLevel TRACE; ///< Lowest priority logging level
-    static const LogLevel DEBUG; ///< Logging level for debug messages
-    static const LogLevel INFO;  ///< Logging level for informational messages
-    static const LogLevel NOTE;  ///< Logging level to notices
-    static const LogLevel WARN;  ///< Logging level for warnings
-    static const LogLevel ERROR; ///< Logging level for errors
-    static const LogLevel FATAL; ///< Logging level for fatal errors
+    /*
+    static const LogLevel TRACE; ///< Trace messages
+    static const LogLevel DEBUG; ///< Debug messages
+    static const LogLevel INFO;  ///< Informational messages
+    static const LogLevel NOTE;  ///< Notices
+    static const LogLevel WARN;  ///< Warnings
+    static const LogLevel ERROR; ///< Errors
+    static const LogLevel FATAL; ///< Fatal errors
+    */
 
-    LogLevel() noexcept
-        : LogLevel(0)
+    /// Logging priorities
+    enum Priority {
+        TRACE, ///< Trace messages
+        DEBUG, ///< Debug messages
+        INFO,  ///< Informational messages
+        NOTE,  ///< Notices
+        WARN,  ///< Warnings
+        ERROR, ///< Errors
+        FATAL  ///< Fatal errors
+    };
+
+    /**
+     * Default constructs.
+     */
+    LogLevel()
+        : priority(NOTE)
     {}
 
     /**
-     * Casts this instance to an integer.
-     * @return The integer representation of this instance
+     * Constructs from a priority.
+     * @param[in] priority  The logging priority
+     */
+    LogLevel(const int priority)
+        : priority(priority)
+    {}
+
+    /**
+     * Copy constructs.
+     * @param[in] level  Another instance
+     */
+    LogLevel(const LogLevel& level)
+        : LogLevel(level.priority.load())
+    {}
+
+    /**
+     * Copy assigns.
+     * @param[in] rhs  Priority
+     * @return         This instance
+     */
+    LogLevel& operator=(const LogLevel& rhs) {
+        priority.store(rhs.priority.load());
+        return *this;
+    }
+
+    /**
+     * Assigns from a priority.
+     * @param[in] rhs  Priority
+     * @return         This instance
+     */
+    LogLevel& operator=(const Priority rhs) {
+        priority.store(rhs);
+        return *this;
+    }
+
+    /**
+     * Returns this instance cast to an int.
+     * @return This instance as an int
      */
     operator int() const noexcept {
-        return level;
+        return priority;
+    }
+
+    operator bool() const = delete;
+
+    /**
+     * Indicates if this instance is considered equal to another.
+     * @param[in] rhs     The other instance
+     * @retval true       This instance does equal the other
+     * @retval false      This instance does not equal the other
+     */
+    bool operator==(LogLevel rhs) const noexcept {
+        return priority == rhs.priority;
+    }
+
+    /**
+     * Indicates if this instance is not considered equal to another.
+     * @param[in] rhs     The other instance
+     * @retval true       This instance does not equal the other
+     * @retval false      This instance does equal the other
+     */
+    bool operator!=(LogLevel rhs) const noexcept {
+        return priority != rhs.priority;
     }
 
     /**
      * Indicates if the current logging level includes a given one.
-     * @param[in] arg  The given logging level to be examined
-     * @retval    true     The current logging level includes the given one
-     * @retval    false    The current logging level does not include the given one
+     * @param[in] level  The given logging level to be examined
+     * @retval    true   The current logging level includes the given one
+     * @retval    false  The current logging level does not include the given one
      */
-    bool includes(const LogLevel& arg) const noexcept {
-        return arg.level >= level;
+    bool includes(const LogLevel level) const noexcept {
+        return priority <= level.priority;
     }
 
     /**
-     * Lowers the logging level making it more verbose.
+     * Lowers the priority threshold making logging more verbose.
      */
     void lower() noexcept {
-        if (level)
-            --level;
+        int expect = TRACE;
+        if (!priority.compare_exchange_strong(expect, expect))
+            --priority;
     }
 
     /**
@@ -88,8 +153,11 @@ public:
         static const std::string strings[] = {
                 "TRACE", "DEBUG", "INFO", "NOTE", "WARN", "ERROR", "FATAL"
         };
-        return strings[level];
+        return strings[priority];
     }
+
+private:
+    std::atomic_int priority;
 };
 
 std::ostream& operator<<(std::ostream& ostream, const LogLevel& level);
@@ -104,8 +172,7 @@ std::string getCmdLine(
         int                argc,
         const char* const* argv);
 
-typedef std::atomic<LogLevel> LogThreshold; ///< Type of the logging threshold
-extern LogThreshold           logThreshold; ///< The logging threshold
+extern LogLevel logThreshold; ///< The logging threshold
 
 void log_setName(const std::string& name);
 
@@ -123,7 +190,7 @@ LogLevel log_getLevel() noexcept;
 /**
  * @cancellationpoint No
  */
-void log_setLevel(const LogLevel level) noexcept;
+void log_setLevel(const LogLevel::Priority priority) noexcept;
 
 /**
  * Sets the logging level. Useful in command-line decoding.
@@ -140,7 +207,7 @@ void log_setLevel(const std::string& name);
  * @cancellationpoint No
  */
 inline bool log_enabled(const LogLevel& level) noexcept {
-    return logThreshold.load().includes(level);
+    return logThreshold.includes(level);
 }
 
 void log(
@@ -239,60 +306,60 @@ inline void log_fatal(const std::exception& ex) {
 /// Macro for logging a message at the trace level
 #define LOG_TRACE(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::TRACE)) \
-            hycast::log(hycast::LogLevel::TRACE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::TRACE)) \
+            bicast::log(bicast::LogLevel::TRACE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the debug level
 #define LOG_DEBUG(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::DEBUG)) \
-            hycast::log(hycast::LogLevel::DEBUG, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::DEBUG)) \
+            bicast::log(bicast::LogLevel::DEBUG, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the info level
 #define LOG_INFO(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::INFO)) \
-            hycast::log(hycast::LogLevel::INFO, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::INFO)) \
+            bicast::log(bicast::LogLevel::INFO, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the note level
 #define LOG_NOTE(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::NOTE)) \
-            hycast::log(hycast::LogLevel::NOTE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::NOTE)) \
+            bicast::log(bicast::LogLevel::NOTE, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the warning level
 #define LOG_WARN(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::WARN)) \
-            hycast::log(hycast::LogLevel::WARN, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::WARN)) \
+            bicast::log(bicast::LogLevel::WARN, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the error level
 #define LOG_ERROR(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::ERROR)) \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::ERROR)) \
+            bicast::log(bicast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 /// Macro for logging a message at the system-error level
 #define LOG_SYSERR(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::ERROR)) { \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, "%s", \
-                    strerror(errno)); \
-            hycast::log(hycast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::ERROR)) { \
+            bicast::log(bicast::LogLevel::ERROR, __FILE__, __LINE__, __func__, "%s", \
+                    ::strerror(errno)); \
+            bicast::log(bicast::LogLevel::ERROR, __FILE__, __LINE__, __func__, __VA_ARGS__); \
         } \
     while(false)
 
 /// Macro for logging a message at the fatal level
 #define LOG_FATAL(...) \
     do \
-        if (hycast::log_enabled(hycast::LogLevel::FATAL)) \
-            hycast::log(hycast::LogLevel::FATAL, __FILE__, __LINE__, __func__, __VA_ARGS__); \
+        if (bicast::log_enabled(bicast::LogLevel::FATAL)) \
+            bicast::log(bicast::LogLevel::FATAL, __FILE__, __LINE__, __func__, __VA_ARGS__); \
     while(false)
 
 

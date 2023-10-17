@@ -23,11 +23,12 @@
 #ifndef MAIN_STORAGE_MEMPROD_H_
 #define MAIN_STORAGE_MEMPROD_H_
 
-#include <hycast.h>
+#include "bicast.h"
+
 #include <cstddef>
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /// A data product that exists in memory
 class MemProd

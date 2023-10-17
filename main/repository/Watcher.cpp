@@ -24,6 +24,7 @@
 
 #include "CommonTypes.h"
 #include "error.h"
+#include "logging.h"
 #include "FileUtil.h"
 #include "Watcher.h"
 
@@ -39,7 +40,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace hycast {
+namespace bicast {
 
 /// An implementation of a Watcher
 class Watcher::Impl final
@@ -113,6 +114,10 @@ class Watcher::Impl final
             throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
         if (pollfd.revents & POLLHUP)
             return false; // EOF
+        /*
+         * On error, some poll(2)s return POLLERR; others return POLLIN and rely on a subsequent
+         * read(2).
+         */
         if ((pollfd.revents & (POLLIN | POLLERR)) == 0)
             throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
 

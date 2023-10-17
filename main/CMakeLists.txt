@@ -14,14 +14,13 @@ if(BUILD_SHARED_LIBS)
     endif()
 endif()
 
-add_library(main OBJECT
-        HycastProto.cpp HycastProto.h
-)
-
 add_subdirectory(misc)
+
+add_library(main OBJECT BicastProto.cpp BicastProto.h)
+
 add_subdirectory(inet)
-add_subdirectory(p2p)
 add_subdirectory(mcast)
+add_subdirectory(p2p)
 add_subdirectory(repository)
 add_subdirectory(disposer)
 add_subdirectory(node)

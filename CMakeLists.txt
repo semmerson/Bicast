@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Set the project name and version
-PROJECT(hycast VERSION 0.0 DESCRIPTION "Hybrid multicast/P2P protocol & data-distribution system")
+PROJECT(Bicast VERSION 0.0 DESCRIPTION "Combined multicast/P2P protocol & data-distribution system")
 
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
@@ -23,7 +23,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
 # Specify the C++ standard
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.9)
@@ -39,7 +39,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 # Configure a configuration header file
-configure_file(config-cmake.h config.h)
+configure_file(config.h.in config.h)
 include_directories(${CMAKE_BINARY_DIR}) # necessary
 
 include_directories(main main/misc main/inet main/mcast main/p2p main/repository main/node main/disposer)
@@ -71,10 +71,11 @@ endif()
 find_package(Doxygen)
 set(DOXYGEN_JAVADOC_AUTOBRIEF YES)
 set(DOXYGEN_ALIASES 
-    "exceptionsafety=@par Exception Safety:" 
-    "threadsafety=@par Thread Safety:" 
-    "asyncsignalsafe=@par Async-signal Safe:" 
-    "cancellationpoint=@par Cancellation Point:")
+    [[exceptionsafety="@par Exception Safety:"]]
+    [[threadsafety="@par Thread Safety:"]]
+    [[asyncsignalsafe="@par Async-signal Safe:"]]
+    [[cancellationpoint="@par Cancellation Point:"]])
+set(DOXYGEN_VERBATIM_VARS DOXYGEN_ALIASES)
 doxygen_add_docs(doxydocs mainpage.md main ALL)
 
 # Install documentation

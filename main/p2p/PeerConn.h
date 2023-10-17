@@ -25,18 +25,25 @@
 #ifndef MAIN_P2P_PEERCONN_H_
 #define MAIN_P2P_PEERCONN_H_
 
-//#include "Peer.h"
-#include "Socket.h"
+#include "SockAddr.h"
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 class Peer;                            ///< Forward declaration
 using PeerPtr = std::shared_ptr<Peer>; ///< Smart pointer to a peer
 
 class PeerConn;                                ///< Forward declaration
-using PeerConnPtr = std::shared_ptr<PeerConn>; ///< Smart pointer to a peer
+using PeerConnPtr = std::shared_ptr<PeerConn>; ///< Smart pointer to a peer connection
+
+class P2pSrvrInfo;
+class Tracker;
+class ProdId;
+class ProdIdSet;
+class DataSegId;
+class ProdInfo;
+class DataSeg;
 
 /// Interface for the connection between a local and remote peer.
 class PeerConn
@@ -122,21 +129,13 @@ public:
     virtual bool recv(Tracker& tracker) =0;
 
     /**
-     * Processes the next, incoming RPC message. Should execute before `run()`. Called by a peer.
-     * @param[in] peer  Peer to call for incoming messages
-     * @retval true     Success
-     * @retval false    Lost connection
-     */
-    virtual bool recv(Peer& peer) =0;
-
-    /**
      * Runs this instance. Doesn't return until
      *   - The connection is lost;
      *   - An error occurs; or
      *   - `halt()` is called.
      * @param[in] peer         Peer to call for incoming messages
-     * @throw InvalidArgument  Null pointer
-     * @throw LogicError       This function already called
+     * @throw InvalidArgument  `peer` is invalid
+     * @throw LogicError       This function has already been called
      * @see halt()
      */
     virtual void run(Peer& peer) =0;
@@ -166,7 +165,7 @@ public:
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    virtual bool notify(const ProdId prodId) =0;
+    virtual bool notify(const ProdId& prodId) =0;
 
     /**
      * Notifies the remote peer about an available data segment. Might block.
@@ -178,7 +177,7 @@ public:
      * @throw     LogicError  Instance isn't in started state
      * @see       `start()`
      */
-    virtual bool notify(const DataSegId dataSegId) =0;
+    virtual bool notify(const DataSegId& dataSegId) =0;
 
     /**
      * Requests information on a product from the remote peer. Might block.
@@ -187,7 +186,7 @@ public:
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool request(const ProdId prodId) =0;
+    virtual bool request(const ProdId& prodId) =0;
 
     /**
      * Requests a data segment from the remote peer. Might block.
@@ -196,7 +195,7 @@ public:
      * @retval    true       Success
      * @retval    false      Lost connection
      */
-    virtual bool request(const DataSegId dataSegId) =0;
+    virtual bool request(const DataSegId& dataSegId) =0;
 
     /**
      * Requests the identifiers of available products.
@@ -213,7 +212,7 @@ public:
      * @retval    true      Success
      * @retval    false     Lost connection
      */
-    virtual bool send(const ProdInfo prodInfo) =0;
+    virtual bool send(const ProdInfo& prodInfo) =0;
 
     /**
      * Sends a data segment to the remote peer. Might block.
@@ -222,7 +221,7 @@ public:
      * @retval    true       Success
      * @retval    false      Lost connection
      */
-    virtual bool send(const DataSeg dataSeg) =0;
+    virtual bool send(const DataSeg& dataSeg) =0;
 };
 
 class PeerConnSrvr;                                    ///< Forward declaration

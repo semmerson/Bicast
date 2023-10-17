@@ -23,6 +23,7 @@
 
 #include "error.h"
 #include "InetAddr.h"
+#include "logging.h"
 #include "Shield.h"
 #include "SockAddr.h"
 #include "Socket.h"
@@ -46,7 +47,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 /// Implementation of a socket
 class Socket::Impl
@@ -856,6 +857,8 @@ TcpSock& TcpSock::setDelay(bool enable) {
 /// Implementation of a TCP server socket
 class TcpSrvrSock::Impl final : public TcpSock::Impl
 {
+    int queueSize; ///< Size of the listen(2) queue
+
 public:
     /**
      * Constructs. Calls listen() on the created socket.
@@ -874,6 +877,7 @@ public:
     Impl(   const SockAddr lclSockAddr,
             const int      queueSize)
         : TcpSock::Impl{lclSockAddr.getInetAddr()}
+        , queueSize(queueSize)
     {
         //LOG_DEBUG("Setting SO_REUSEADDR");
         const int enable = 1;
@@ -895,19 +899,8 @@ public:
 
     std::string to_string() const override
     {
-        return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string() + ", proto=TCP}";
-    }
-
-    /**
-     * Calls listen() on the underlying socket.
-     * @param[in] size       Size of the listening queue
-     * @throws  SystemError  System failure
-     * @cancellationpoint    Yes
-     */
-    void listen(const int size) {
-        if (::listen(sd, size))
-            throw SYSTEM_ERROR("Couldn't set socket " + to_string() + " listen-queue size to " +
-                    std::to_string(size));
+        return "{sd=" + std::to_string(sd) + ", lcl=" + getLclAddr().to_string() + ", proto=TCP"
+                ", queueSize=" + std::to_string(queueSize) + "}";
     }
 
     /**
@@ -940,10 +933,6 @@ TcpSrvrSock::TcpSrvrSock(
         const SockAddr sockAddr,
         const int      queueSize)
     : TcpSock(new Impl(sockAddr, queueSize)) {
-}
-
-void TcpSrvrSock::listen(const int size) const {
-    static_cast<TcpSrvrSock::Impl*>(pImpl.get())->listen(size);
 }
 
 TcpSock TcpSrvrSock::accept() const {
@@ -1197,7 +1186,7 @@ public:
                     std::to_string(srcAddr.getFamily()) + ", iface=" +
                     std::to_string(iface.getFamily()));
 
-        auto& ipAddr = ssmAddr.getInetAddr();
+        auto ipAddr = ssmAddr.getInetAddr();
         if (!ipAddr.isSsm())
             throw INVALID_ARGUMENT("Multicast group IP address, " + ipAddr.to_string() +
                     ", isn't source-specific");

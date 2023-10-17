@@ -30,7 +30,7 @@
 #include <string>
 #include <sys/stat.h>
 
-namespace hycast {
+namespace bicast {
 
 /// A class with utility functions for files
 class FileUtil

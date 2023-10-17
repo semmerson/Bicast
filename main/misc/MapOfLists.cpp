@@ -23,7 +23,7 @@
 
 #include "MapOfLists.h"
 
-namespace hycast {
+namespace bicast {
 
 template<class K, class V>
 MapOfLists<K, V>::MapOfLists(unsigned numKeys)

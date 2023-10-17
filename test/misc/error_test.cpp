@@ -21,11 +21,15 @@
 
 #include "error.h"
 
+#include "logging.h"
+
 #include <exception>
 #include <gtest/gtest.h>
 #include <thread>
 
 namespace {
+
+using namespace bicast;
 
 // The fixture for testing module `error`.
 class ErrorTest : public ::testing::Test {
@@ -34,7 +38,7 @@ protected:
 
 // Tests simple logging
 TEST_F(ErrorTest, SimpleLogging) {
-    hycast::logThreshold = hycast::LogLevel::DEBUG;
+    log_setLevel(LogLevel::DEBUG);
     LOG_DEBUG("Debug message");
     LOG_INFO("Info message");
     LOG_NOTE("Notice message");
@@ -49,41 +53,41 @@ TEST_F(ErrorTest, SimpleLogging) {
 
 // Tests exception logging levels
 TEST_F(ErrorTest, ExceptionLoggingLevels) {
-    hycast::logThreshold = hycast::LogLevel::DEBUG;
-    hycast::log_error(hycast::RUNTIME_ERROR("Error level"));
-    hycast::log_warn(hycast::RUNTIME_ERROR("Warning level"));
-    hycast::log_note(hycast::RUNTIME_ERROR("Notice level"));
-    hycast::log_info(hycast::RUNTIME_ERROR("Informational level"));
-    hycast::log_debug(hycast::RUNTIME_ERROR("Debug level"));
+    logThreshold = LogLevel::DEBUG;
+    log_error(RUNTIME_ERROR("Error level"));
+    log_warn(RUNTIME_ERROR("Warning level"));
+    log_note(RUNTIME_ERROR("Notice level"));
+    log_info(RUNTIME_ERROR("Informational level"));
+    log_debug(RUNTIME_ERROR("Debug level"));
 }
 
 // Tests system error
 TEST_F(ErrorTest, SystemError) {
     try {
         errno = 1;
-        throw hycast::SYSTEM_ERROR("System error");
+        throw SYSTEM_ERROR("System error");
     }
     catch (const std::exception& e) {
-        hycast::log_error(e);
+        log_error(e);
     }
     try {
-        throw hycast::SYSTEM_ERROR("System error", 2);
+        throw SYSTEM_ERROR("System error", 2);
     }
     catch (const std::exception& e) {
-        hycast::log_error(e);
+        log_error(e);
     }
     try {
         errno = 1;
-        throw hycast::SYSTEM_ERROR("System error");
+        throw SYSTEM_ERROR("System error");
     }
     catch (const std::exception& e) {
-        hycast::log_error(e);
+        log_error(e);
     }
     try {
-        throw hycast::SYSTEM_ERROR("System error", 2);
+        throw SYSTEM_ERROR("System error", 2);
     }
     catch (const std::exception& e) {
-        hycast::log_error(e);
+        log_error(e);
     }
 }
 
@@ -92,14 +96,14 @@ static void throwNestedException() {
     try {
         try {
             errno = 1;
-            throw hycast::SYSTEM_ERROR("Inner exception");
+            throw SYSTEM_ERROR("Inner exception");
         }
         catch (const std::exception& e) {
-            std::throw_with_nested(hycast::RUNTIME_ERROR("Outer exception"));
+            std::throw_with_nested(RUNTIME_ERROR("Outer exception"));
         }
     }
     catch (const std::exception& e) {
-        hycast::log_error(e);
+        log_error(e);
     }
 }
 

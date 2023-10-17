@@ -1,5 +1,5 @@
 /**
- * A node in the Hycast data-product distribution network.
+ * A node in the Bicast data-product distribution network.
  *
  *        File: Node.cpp
  *  Created on: Mar 9, 2020
@@ -27,16 +27,18 @@
 #include "Disposer.h"
 #include "FileUtil.h"
 #include "LastProd.h"
+#include "P2pSrvrInfo.h"
 #include "PeerConn.h"
 #include "Shield.h"
 #include "ThreadException.h"
+#include "Tracker.h"
 
 #include <pthread.h>
 #include <semaphore.h>
 #include <semaphore.h>
 #include <thread>
 
-namespace hycast {
+namespace bicast {
 
 class PeerConnSrvr; ///< Forward declaration
 using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-dependency
@@ -129,7 +131,7 @@ using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>; ///< Necessary due to co-
 #endif
 
 /**
- * Base class for Hycast node implementations.
+ * Base class for Bicast node implementations.
  */
 class NodeImpl : virtual public Node
 {
@@ -450,7 +452,8 @@ public:
             const long         maxOpenFiles,
             const int          keepTime,
             const String&      feedName)
-        : NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
+        : Node()
+        , NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
         , lastTransmission(LastProd::create(FileUtil::pathname(pubRoot, "lastTransmittedTime")))
         , repo(FileUtil::pathname(pubRoot, "products"), maxOpenFiles, lastTransmission->recall(), keepTime)
@@ -729,32 +732,24 @@ public:
         , lastReceived(LastProd::create(FileUtil::pathname(subRoot, "lastReceivedTime")))
         , lastProcessed(LastProd::create(FileUtil::pathname(subRoot, "lastProcessedTime")))
         , disposer(dispoFact(lastProcessed))
-        , repo(SubRepo(FileUtil::pathname(subRoot, "products"), maxOpenFiles,
-                lastReceived, disposer.size(), subInfo.keepTime))
+        , repo(SubRepo(subRoot, maxOpenFiles, lastReceived, disposer.size(), subInfo.keepTime))
         , numMcastOrig{0}
         , numP2pOrig{0}
         , numMcastDup{0}
         , numP2pDup{0}
         , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, mcastIface,
-                *this)}
+                this)}
         , client(client)
     {
         DataSeg::setMaxSegSize(subInfo.maxSegSize);
 
-        LOG_NOTE("Will receive multicast group " + subInfo.mcast.dstAddr.to_string() + " from " +
+        LOG_INFO("Will receive multicast group " + subInfo.mcast.dstAddr.to_string() + " from " +
                 subInfo.mcast.srcAddr.to_string() + " on interface " + mcastIface.to_string());
     }
 
     ~SubNodeImpl() noexcept {
         try {
             stopThreads();
-            LOG_NOTE("Metrics:");
-            LOG_NOTE("  Number of multicast PDUs:");
-            LOG_NOTE("      Original:  " + std::to_string(numMcastOrig));
-            LOG_NOTE("      Duplicate: " + std::to_string(numMcastDup));
-            LOG_NOTE("  Number of P2P PDUs:");
-            LOG_NOTE("      Original:  " + std::to_string(numP2pOrig));
-            LOG_NOTE("      Duplicate: " + std::to_string(numP2pDup));
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex, "~SubNodeImpl() failure");
@@ -889,6 +884,29 @@ public:
      */
     DataSeg getDataSeg(const DataSegId segId) override {
         return repo.getDataSeg(segId);
+    }
+
+    void getPduCounts(
+            long& numMcastOrig,
+            long& numP2pOrig,
+            long& numMcastDup,
+            long& numP2pDup) const noexcept override {
+        numMcastOrig = this->numMcastOrig.load();
+        numP2pOrig   = this->numP2pOrig.load();
+        numMcastDup  = this->numMcastDup.load();
+        numP2pDup    = this->numP2pDup.load();
+    }
+
+    long getTotalProds() const noexcept override {
+        return repo.getTotalProds();
+    }
+
+    long long getTotalBytes() const noexcept override {
+        return repo.getTotalBytes();
+    }
+
+    double getTotalLatency() const noexcept override {
+        return repo.getTotalLatency();
     }
 };
 

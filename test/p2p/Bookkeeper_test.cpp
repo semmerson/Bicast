@@ -12,7 +12,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 /// The fixture for testing class `Bookkeeper`
 class BookkeeperTest : public ::testing::Test

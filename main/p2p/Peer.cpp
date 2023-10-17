@@ -19,16 +19,22 @@
  */
 #include "config.h"
 
-#include "error.h"
 #include "Peer.h"
+
+#include "BicastProto.h"
+#include "CommonTypes.h"
+#include "error.h"
+#include "logging.h"
+#include "Notice.h"
 #include "ThreadException.h"
 
 #include <atomic>
+#include <mutex>
 #include <queue>
 #include <semaphore.h>
 #include <unordered_map>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Abstract base implementation of the `Peer` interface.
@@ -36,10 +42,11 @@ namespace hycast {
 class BasePeerImpl : public Peer
 {
 protected:
+    /// State of this instance
     enum class State {
-        INIT,
-        STARTED,
-        STOPPED
+        INIT,    ///< Constructed
+        STARTED, ///< Started
+        STOPPED  ///< Stopped
     }                  state;         ///< State of this instance
     mutable Mutex      stateMutex;    ///< Protects state changes
 
@@ -71,27 +78,28 @@ private:
                 : peerConnPtr->recv(rmtSrvrInfo) && peerConnPtr->send(lclSrvrInfo);
     }
 
-    void setThreadEx() {
-        threadEx.set();
-        ::sem_post(&stopSem);
-    }
-
     /**
      * Handles the backlog of products missing from the remote peer. Meant to be the start-routine
-     * of a separate thread. Calls `setThreadEx()` on error.
+     * of a separate thread. Calls `setException()` on error.
      *
      * @param[in] prodIds  Identifiers of complete products that the remote per has
      * @see notify()
-     * @see setThreadEx()
+     * @see setException()
      */
     void runBacklog(ProdIdSet prodIds) {
         try {
-            const auto missing = basePeerMgr.subtract(prodIds); // Products missing from remote peer
-            const auto maxSegSize = DataSeg::getMaxSegSize();
+            // Products that the remote peer doesn't have
+            const ProdIdSet missing = basePeerMgr.subtract(prodIds);
+            const auto      maxSegSize = DataSeg::getMaxSegSize();
 
-            // The regular P2P mechanism is used to notify the remote peer of data that it's missing
-            for (const auto prodId : missing) {
-                notify(prodId);
+            /*
+             * The regular P2P mechanism is used to notify the remote peer of products that it's
+             * missing
+             */
+            for (auto iter =  missing.begin(), end = missing.end(); iter != end; ++iter) {
+                const ProdId prodId = *iter;
+            //for (const auto prodId : missing) {
+                notify(prodId); // Hidden by Peer::notify()? Can't be; that function's pure virtual
 
                 /*
                  * Making requests of the peer manager will count against this peer iff the peer
@@ -111,7 +119,7 @@ private:
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            setThreadEx();
+            setException();
         }
     }
 
@@ -156,19 +164,19 @@ protected:
                 }
 
                 if (notice.id == Notice::Id::DATA_SEG_ID) {
+                    //LOG_TRACE("Notifying about data-segment " + notice.dataSegId.to_string());
                     connected = peerConnPtr->notify(notice.dataSegId);
-                        //LOG_TRACE("Peer %s notified remote about data-segment %s",
-                                //to_string().data(), notice.to_string().data());
+                    //LOG_TRACE("Notified");
                 }
-                else if (notice.id == Notice::Id::PROD_INDEX) {
+                else if (notice.id == Notice::Id::PROD_ID) {
+                    //LOG_TRACE("Notifying about product " + notice.prodId.to_string());
                     connected = peerConnPtr->notify(notice.prodId);
-                        //LOG_TRACE("Peer %s notified remote about product %s",
-                                //to_string().data(), notice.to_string().data());
+                    //LOG_TRACE("Notified");
                 }
                 else if (notice.id == Notice::Id::P2P_SRVR_INFO) {
+                    //LOG_TRACE("Notifying about P2P server " + notice.srvrInfo.to_string());
                     connected = peerConnPtr->notify(notice.srvrInfo);
-                        //LOG_TRACE("Peer %s notified remote about good P2P servers %s",
-                                //to_string().data(), notice.to_string().data());
+                    //LOG_TRACE("Notified");
                 }
                 else {
                     throw LOGIC_ERROR("Notice ID is unknown: " + std::to_string((int)notice.id));
@@ -178,7 +186,7 @@ protected:
             setDisconnected();
         }
         catch (const std::exception& ex) {
-            setThreadEx();
+            setException();
         }
         LOG_TRACE("Terminating");
     }
@@ -358,7 +366,7 @@ public:
         return rmtSrvrInfo.tier == 0; // A publisher's peer is always tier 0
     }
 
-    virtual P2pSrvrInfo::Tier getTier() const noexcept =0;
+    virtual Tier getTier() const noexcept =0;
 
     /**
      * Returns the socket address of the local peer.
@@ -505,7 +513,8 @@ public:
 
     void notify(const P2pSrvrInfo& srvrInfo) override {
         LOG_DEBUG("Peer " + to_string() + " queuing P2P-server notice " + srvrInfo.to_string());
-        addNotice(Notice{srvrInfo});
+        auto notice = Notice{srvrInfo};
+        addNotice(notice);
     }
 
     void notify(const ProdId prodId) override {
@@ -608,7 +617,7 @@ public:
                     " can't be publisher because I am: " + pubMgr.getSrvrInfo().to_string());
     }
 
-    P2pSrvrInfo::Tier getTier() const noexcept override {
+    Tier getTier() const noexcept override {
         return 0; // A publisher's peer is always tier 0
     }
 
@@ -653,94 +662,162 @@ PeerPtr Peer::create(
  */
 class SubPeerImpl final : public BasePeerImpl
 {
-    /**
-     * A thread-safe, linked-map of datum requests.
-     */
-    class RequestQ {
-        struct HashRequest
-        {
-            size_t operator()(const Notice& request) const noexcept {
-                return request.hash();
-            }
+    /// A request for a datum. Implemented as a tagged union.
+    struct Request {
+        /// Identifier of the type of request
+        enum class Tag {
+            UNSET,          ///< Request was default constructed
+            PROD_ID,        ///< Product ID
+            DATA_SEG_ID     ///< Data segment ID
+        } tag; ///< Identifier of the type of request
+        union {
+            ProdId      prodId;    ///< Product ID
+            DataSegId   dataSegId; ///< Data segment ID
         };
 
-        /// The value component references the next entry in a linked list
-        using Requests = std::unordered_map<Notice, Notice, HashRequest>;
-
-        mutable Mutex mutex;
-        mutable Cond  cond;
-        Requests      requests;
-        Notice        head;
-        Notice        tail;
-        bool          stopped;
+        /// Default constructs
+        Request() noexcept
+            : tag(Tag::UNSET)
+        {}
 
         /**
-         * Deletes the request at the head of the queue.
-         *
-         * @pre    Mutex is locked
-         * @pre    Queue is not empty
-         * @return The former head of the queue
-         * @post   Mutex is locked
+         * Constructs a request about an available product.
+         * @param[in] prodId  The product's ID
          */
-        Notice deleteHead() {
-            auto oldHead = head;
-            auto newHead = requests[head];
-            requests.erase(head);
-            head = newHead;
-            if (!head)
-                tail = head; // Queue is empty
-            return oldHead;
+        explicit Request(const ProdId prodId) noexcept
+            : tag(Tag::PROD_ID)
+            , prodId(prodId)
+        {}
+
+        /**
+         * Constructs a request about an available data segment.
+         * @param[in] dataSegId The data segment's ID
+         */
+        explicit Request(const DataSegId dataSegId) noexcept
+            : tag(Tag::DATA_SEG_ID)
+            , dataSegId(dataSegId)
+        {}
+
+        /**
+         * Copy constructs.
+         * @param[in] that  The other instance
+         */
+         Request(const Request& that) noexcept {
+            tag = that.tag;
+            switch (tag) {
+            case Tag::PROD_ID:        new (&prodId)    auto(that.prodId);    break;
+            case Tag::DATA_SEG_ID:    new (&dataSegId) auto(that.dataSegId); break;
+            default:                                                         break;
+            }
         }
 
-    public:
-        /// Iterator for a request-queue
-        class Iter : public std::iterator<std::input_iterator_tag, Notice>
-        {
-            RequestQ& queue;
-            Notice    request;
+        /// Destroys
+        ~Request() noexcept {
+        }
 
-        public:
-            /**
-             * Constructs.
-             * @param[in] queue    Queue of requests
-             * @param[in] request  First request to return
-             */
-            Iter(RequestQ& queue, const Notice& request)
-                : queue(queue)
-                , request(request) {}
-            /**
-             * Copy constructs.
-             * @param[in] iter  The other instance
-             */
-            Iter(const Iter& iter)
-                : queue(iter.queue)
-                , request(iter.request) {}
-            /// Inequality operator
-            bool operator!=(const Iter& rhs) const {
-                return request ? (request != rhs.request) : false;
+        /**
+         * Copy assigns.
+         * @param[in] rhs  The other instance
+         * @return         A reference to this just-assigned instance
+         */
+        Request& operator=(const Request& rhs) noexcept {
+            tag = rhs.tag;
+            switch (tag) {
+            case Tag::PROD_ID:        new (&prodId)    auto(rhs.prodId);    break;
+            case Tag::DATA_SEG_ID:    new (&dataSegId) auto(rhs.dataSegId); break;
+            default:                                                        break;
             }
-            /// Dereference operator
-            Notice& operator*()  {return request;}
-            /// Dereference operator
-            Notice* operator->() {return &request;}
-            /// Increment operator
-            Iter& operator++() {
-                Guard guard{queue.mutex};
-                request = queue.requests[request]; // Value component references next entry
-                return *this;
+            return *this;
+        }
+
+        /**
+         * Indicates if this instance is valid (i.e., wasn't default constructed).
+         * @retval true     This instance is valid
+         * @retval false    This instance is not valid
+         */
+        inline operator bool() const noexcept {
+            return tag != Tag::UNSET;
+        }
+
+        /**
+         * Returns the string representation of this instance.
+         * @return The string representation of this instance
+         */
+        String to_string() const {
+            switch (tag) {
+                case Tag::PROD_ID:        return prodId.to_string();
+                case Tag::DATA_SEG_ID:    return dataSegId.to_string();
+                default:                  return "<unset>";
+            }
+        }
+
+        /// Hash function class
+        struct Hash {
+            /**
+             * Returns the hash value of a Request.
+             * @param[in] request  The Request
+             * @return             The corresponding hash value
+             */
+            size_t operator()(const Request& request) const noexcept {
+                switch (request.tag) {
+                    case Tag::PROD_ID:     return request.prodId.hash();
+                    case Tag::DATA_SEG_ID: return request.dataSegId.hash();
+                    default:               return static_cast<size_t>(0);
+                }
             }
         };
 
+        /**
+         * Indicates if this instance is equal to another.
+         * @param[in] rhs      The other instance
+         * @retval    true     This instance is equal to the other
+         * @retval    false    This instance is not equal to the other
+         */
+        inline bool operator==(const Request& rhs) const noexcept {
+            if (tag != rhs.tag)     return false;
+            switch (tag) {
+                case Tag::UNSET:       return true;
+                case Tag::PROD_ID:     return prodId == rhs.prodId;
+                case Tag::DATA_SEG_ID: return dataSegId == rhs.dataSegId;
+                default:               return false;
+            }
+        }
+
+        /**
+         * Tells the subscriber's P2P manager about a datum that the remote peer doesn't have.
+         * @param[in] subMgr       Subscriber's P2P manager
+         * @param[in] rmtSockAddr  Socket address of the remote peer
+         */
+        void missed(
+                SubMgr&   subMgr,
+                SockAddr& rmtSockAddr) {
+            switch (tag) {
+            case Request::Tag::PROD_ID:     subMgr.missed(prodId, rmtSockAddr);    break;
+            case Request::Tag::DATA_SEG_ID: subMgr.missed(dataSegId, rmtSockAddr); break;
+            default:                                                               break;
+            }
+        }
+    };
+
+    /**
+     * A thread-unsafe, linked-map of datum requests.
+     */
+    class RequestQ {
+        /// The value component references the next entry in a linked list
+        using Requests = std::unordered_map<Request, Request, Request::Hash>;
+
+        Requests      requests;
+        Request       head;
+        Request       tail;
+
+    public:
         /**
          * Default constructs.
          */
         RequestQ()
-            : mutex()
-            , cond()
-            , requests()
+            : requests()
             , head()
             , tail()
-            , stopped(false)
         {}
 
         RequestQ(const RequestQ& queue) =delete;
@@ -753,75 +830,43 @@ class SubPeerImpl final : public BasePeerImpl
          * @param[in] request  Request to be added
          * @return             Number of requests in the queue
          */
-        size_t push(const Notice& request) {
-            Guard guard{mutex};
-            requests.insert({request, Notice{}});
+        size_t push(const Request& request) {
+            requests.emplace(request, Request{});
             if (tail)
                 requests[tail] = request;
             if (!head)
                 head = request;
             tail = request;
-            cond.notify_all();
             return requests.size();
         }
 
-        size_t count(const Notice& request) {
-            Guard guard{mutex};
+        size_t count(const Request& request) {
             return requests.count(request);
         }
 
         /**
-         * Indicates if the queue is empty.
+         * Removes and returns the request at the head of the queue.
          *
-         * @retval true     Queue is empty
-         * @retval false    Queue is not empty
+         * @pre    Mutex is locked
+         * @pre    Queue is not empty
+         * @return The former head of the queue
+         * @post   Mutex is locked
          */
-        bool empty() const {
-            Guard guard{mutex};
-            return requests.empty();
-        }
-
-        /**
-         * Deletes the request at the head of the queue.
-         *
-         * @throw OutOfRange  Queue is empty
-         */
-        void pop() {
-            Guard guard{mutex};
-            if (requests.empty())
-                throw OUT_OF_RANGE("Queue is empty");
-            deleteHead();
-        }
-
-        /**
-         * Removes and returns the request at the head of the queue. Blocks until it exists or
-         * `stop()` is called.
-         *
-         * @return  Head request or false one if `stop()` was called
-         * @see     `stop()`
-         */
-        Notice waitGet() {
-            Lock lock{mutex};
-            cond.wait(lock, [&]{return !requests.empty() || stopped;});
-            if (stopped)
-                return Notice{};
-            return deleteHead();
-        }
-
-        /**
-         * Causes `waitGet()` to always return a false request.
-         */
-        void stop() {
-            Guard guard{mutex};
-            stopped = true;
-            cond.notify_all();
+        Request removeHead() {
+            auto oldHead = head;
+            auto newHead = requests[head];
+            requests.erase(head);
+            head = newHead;
+            if (!head)
+                tail = head; // Queue is empty
+            return oldHead;
         }
 
         /**
          * Tells a subscriber's peer manager about all requests in the queue in the order in which
          * they were added, then clears the queue.
          *
-         * @param[in] peerMgr      Subscriber's peer manager
+         * @param[in] subMgr       Subscriber's peer manager
          * @param[in] rmtSockAddr  Socket address of the remote peer
          * @see SubP2pNode::missed(ProdId, SockAddr)
          * @see SubP2pNode::missed(DataSegId, SockAddr)
@@ -829,12 +874,11 @@ class SubPeerImpl final : public BasePeerImpl
         void drainTo(
                 SubMgr&        subMgr,
                 const SockAddr rmtSockAddr) {
-            Guard guard{mutex};
             while (head) {
-                if (head.id == Notice::Id::PROD_INDEX) {
+                if (head.tag == Request::Tag::PROD_ID) {
                     subMgr.missed(head.prodId, rmtSockAddr);
                 }
-                else if (head.id == Notice::Id::DATA_SEG_ID) {
+                else if (head.tag == Request::Tag::DATA_SEG_ID) {
                     subMgr.missed(head.dataSegId, rmtSockAddr);
                 }
                 head = requests[head];
@@ -842,21 +886,10 @@ class SubPeerImpl final : public BasePeerImpl
             requests.clear();
             tail = head;
         }
-
-        Iter begin() {
-            Guard guard{mutex};
-            return Iter(*this, head);
-        }
-
-        Iter end() {
-            Guard guard{mutex};
-            return Iter{*this, Notice{}};
-        }
     }; // RequestQ
 
     SubMgr&        subMgr;      ///< Subscriber's peer manager
     RequestQ       requested;   ///< Requests sent to remote peer
-    std::once_flag backlogFlag; ///< Ensures that the backlog is requested only once
 
     /**
      * Requests the backlog of data that this instance missed from the remote peer.
@@ -875,7 +908,7 @@ class SubPeerImpl final : public BasePeerImpl
     }
 
     /**
-     * Received a datum from the remote peer. If the datum wasn't requested, then an exception is
+     * Receives a datum from the remote peer. If the datum wasn't requested, then an exception is
      * thrown. Each request in the requested queue before the request for the given datum is removed
      * from the queue and passed to the peer manager as not satisfiable by the remote peer.
      * Otherwise, the datum is passed to the subscriber's peer manager and the pending request is
@@ -887,36 +920,27 @@ class SubPeerImpl final : public BasePeerImpl
      * @see `SubP2pMgr::missed()`
      */
     template<typename DATUM>
-    void processData(const DATUM datum) {
+    void processDatum(const DATUM datum) {
         //LOG_DEBUG("Processing datum %s", datum.to_string().data());
-        const auto& id = datum.getId();
-        if (requested.count(Notice{id}) == 0)
+
+        const auto&   id = datum.getId(); // Either ProdId or DataSegId
+        const Request request{id};
+        Guard         guard{stateMutex}; // To keep `requested` consistent
+
+        if (requested.count(request) == 0) {
+            //LOG_ERROR("Peer " + to_string() + " received unrequested datum " + datum.to_string());
             throw LOGIC_ERROR("Peer " + to_string() + " received unrequested datum " +
                     datum.to_string());
-
-        for (auto iter =  requested.begin(), end = requested.end(); iter != end; ) {
-            //LOG_DEBUG("Comparing against request %s", iter->to_string().data());
-            if (iter->equals(id)) {
-                subMgr.recvData(datum, rmtSockAddr);
-                requested.pop();
-                return;
-            }
-            /*
-             * NB: A skipped response from the remote peer means that it doesn't have the requested
-             * data.
-             */
-            if (iter->getType() == Notice::Id::DATA_SEG_ID) {
-                subMgr.missed(iter->dataSegId, rmtSockAddr);
-            }
-            else if (iter->getType() == Notice::Id::PROD_INDEX) {
-                subMgr.missed(iter->prodId, rmtSockAddr);
-            }
-
-            ++iter; // Must occur before `requested.pop()`
-            requested.pop();
         }
-        throw LOGIC_ERROR("Peer " + to_string() + " received unrequested datum " +
-                datum.to_string());
+
+        // The given request exists
+        for (auto head = requested.removeHead(); head; head = requested.removeHead()) {
+            if (head == request) {
+                subMgr.recvData(datum, rmtSockAddr);
+                break;
+            }
+            head.missed(subMgr, rmtSockAddr); // DEADLOCK if this tries to lock stateMutex
+        }
     }
 
     /**
@@ -944,16 +968,18 @@ public:
         : BasePeerImpl(subMgr, conn)
         , subMgr(subMgr)
         , requested()
-        , backlogFlag()
     {}
 
-    P2pSrvrInfo::Tier getTier() const noexcept override {
+    Tier getTier() const noexcept override {
         return rmtSrvrInfo.getRmtTier();
     }
 
     void request(const ProdId prodId) override {
         LOG_DEBUG("Peer " + to_string() + " sending request for product " + prodId.to_string());
-        requested.push(Notice{prodId});
+        {
+            Guard guard{stateMutex}; // To keep `requested` consistent
+            requested.push(Request{prodId});
+        }
         if ((connected = peerConnPtr->request(prodId))) {
             //LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
                     //prodId.to_string().data());
@@ -964,7 +990,10 @@ public:
     }
     void request(const DataSegId& segId) override {
         LOG_DEBUG("Peer " + to_string() + " sending request for segment " + segId.to_string());
-        requested.push(Notice{segId});
+        {
+            Guard guard{stateMutex}; // To keep `requested` consistent
+            requested.push(Request{segId});
+        }
         if ((connected = peerConnPtr->request(segId))) {
             //LOG_TRACE("Peer %s requested information on data-segment %s", to_string().data(),
                     //segId.to_string().data());
@@ -1040,7 +1069,7 @@ public:
         LOG_DEBUG("Peer " + to_string() + " received product-info " + prodInfo.to_string());
         //LOG_TRACE("Peer %s received information on product %s",
                 //to_string().data(), prodInfo.getId().to_string().data());
-        processData<ProdInfo>(prodInfo);
+        processDatum<ProdInfo>(prodInfo);
     }
     /**
      * Receives a data segment from the remote peer.
@@ -1048,13 +1077,20 @@ public:
      * @param[in] dataSeg  Data segment
      */
     void recvData(const DataSeg dataSeg) override {
-        LOG_DEBUG("Peer " + to_string() + " received segment " + dataSeg.to_string());
-        //LOG_TRACE("Peer %s received data-segment %s", to_string().data(),
-                //dataSeg.to_string().data());
-        processData<DataSeg>(dataSeg);
+        try {
+            LOG_DEBUG("Peer " + to_string() + " received segment " + dataSeg.to_string());
+            //LOG_TRACE("Peer %s received data-segment %s", to_string().data(),
+                    //dataSeg.to_string().data());
+            processDatum<DataSeg>(dataSeg);
+        }
+        catch (const std::exception& ex) {
+            std::throw_with_nested(RUNTIME_ERROR("Peer" + to_string() +
+                    " received unrequested segment"));
+        }
     }
 
     void drainPending() override {
+        Guard guard{stateMutex}; // To keep `requested` consistent
         requested.drainTo(subMgr, rmtSockAddr);
     }
 };
@@ -1063,7 +1099,7 @@ PeerPtr Peer::create(
         SubMgr&      subMgr,
         PeerConnPtr& conn) {
     try {
-        return PeerPtr{new SubPeerImpl{subMgr, conn}};
+        return PeerPtr(new SubPeerImpl{subMgr, conn});
     }
     catch (const std::exception& ex) {
         LOG_WARN(ex, "Couldn't create peer for %s", conn->getRmtAddr().to_string().data());
@@ -1135,12 +1171,6 @@ public:
 using PubP2pSrvrImpl = P2pSrvrImpl<Peer::PubMgr>; ///< Implementation of publisher's P2P-server
 using SubP2pSrvrImpl = P2pSrvrImpl<Peer::SubMgr>; ///< Implementation of subscriber's P2P-server
 
-/**
- * Returns a new instance of a P2P-server for a publisher.
- * @param[in] srvrAddr     Socket address for the server
- * @param[in] maxPendConn  Maximum number of pending connections from remote peers
- * @return A new instance of a P2P-server for a publisher
- */
 template<>
 PubP2pSrvrPtr PubP2pSrvr::create(
         const SockAddr  srvrAddr,
@@ -1153,12 +1183,6 @@ SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
     return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};
 }
 
-/**
- * Returns a new instance of a P2P-server for a subscriber.
- * @param[in] srvrAddr     Socket address for the server
- * @param[in] maxPendConn  Maximum number of pending connections from remote peers
- * @return A new instance of a P2P-server for a subscriber
- */
 template<>
 SubP2pSrvrPtr SubP2pSrvr::create(
         const SockAddr srvrAddr,

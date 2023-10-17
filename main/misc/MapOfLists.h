@@ -30,7 +30,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * @tparam K  Type of key. The classes `std::hash<K>` and `std::equal_to<K>`

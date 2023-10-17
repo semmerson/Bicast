@@ -28,7 +28,7 @@
 #include <memory>
 #include <regex>
 
-namespace hycast {
+namespace bicast {
 
 /// A regular expression pattern
 class Pattern {
@@ -43,7 +43,7 @@ public:
     {}
 
     /// Constructs
-    Pattern(const String& string)
+    Pattern(const std::string& string)
         : string(string)
         , regex(string)
     {}

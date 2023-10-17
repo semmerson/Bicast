@@ -22,6 +22,7 @@
 
 #include "error.h"
 #include "InetAddr.h"
+#include "logging.h"
 #include "SockAddr.h"
 #include "Xprt.h"
 
@@ -45,7 +46,7 @@
 #define _POSIX_HOST_NAME_MAX 255
 #endif
 
-namespace hycast {
+namespace bicast {
 
 class Inet4Addr;
 class Inet6Addr;
@@ -113,7 +114,7 @@ public:
      * @retval    nullptr  Lost connection
      */
     template<typename TYPE>
-    static TYPE* create(Xprt xprt) {
+    static TYPE* create(Xprt& xprt) {
         auto impl = new TYPE();
         if (impl->read(xprt))
             return impl;
@@ -330,11 +331,11 @@ public:
 
     /**
      * Writes this instance to a transport.
-     * @param[in] xprt  The transport
-     * @retval    true     Success
-     * @retval    false    Connection lost
+     * @param[in] xprt   The transport
+     * @retval    true   Success
+     * @retval    false  Connection lost
      */
-    virtual bool write(Xprt xprt) const =0;
+    virtual bool write(Xprt& xprt) const =0;
 };
 
 InetAddr::Impl::~Impl() noexcept
@@ -368,7 +369,7 @@ public:
      * Constructs.
      * @param[in] xprt  Transport from which to read an IPv4 address
      */
-    Inet4Addr(Xprt xprt)
+    Inet4Addr(Xprt& xprt)
         : Inet4Addr()
     {
         if (!read(xprt))
@@ -565,7 +566,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const override {
+    bool write(Xprt& xprt) const override {
         return xprt.write(addr.s_addr);
     }
 
@@ -575,7 +576,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         return xprt.read(addr.s_addr);
     }
 };
@@ -681,7 +682,7 @@ public:
      * Constructs by reading a transport.
      * @param[in] xprt  The transport
      */
-    Inet6Addr(Xprt xprt)
+    Inet6Addr(Xprt& xprt)
         : Inet6Addr()
     {
         if (!read(xprt))
@@ -820,7 +821,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const override {
+    bool write(Xprt& xprt) const override {
         return xprt.write(addr.s6_addr, sizeof(addr.s6_addr));
     }
 
@@ -830,7 +831,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         return xprt.read(addr.s6_addr, sizeof(addr.s6_addr));
     }
 };
@@ -924,7 +925,7 @@ public:
      * Constructs by reading a transport.
      * @param[in] xprt  The transport
      */
-    NameAddr(Xprt xprt)
+    NameAddr(Xprt& xprt)
         : NameAddr()
     {
         if (!read(xprt))
@@ -1030,7 +1031,7 @@ public:
         return getIpAddr().isSsm();
     }
 
-    bool write(Xprt xprt) const override {
+    bool write(Xprt& xprt) const override {
         return xprt.write<SizeType>(name);
     }
 
@@ -1040,7 +1041,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         auto success = xprt.read<SizeType>(name);
         if (success && name.size() > _POSIX_HOST_NAME_MAX)
             throw RUNTIME_ERROR("Hostname is longer than " + std::to_string(_POSIX_HOST_NAME_MAX) +
@@ -1175,12 +1176,12 @@ bool InetAddr::isSsm() const {
     return pImpl->isSsm();
 }
 
-bool InetAddr::write(Xprt xprt) const {
+bool InetAddr::write(Xprt& xprt) const {
     uint8_t addrType = pImpl->getAddrType();
     return xprt.write(addrType) && pImpl->write(xprt);
 }
 
-bool InetAddr::read(Xprt xprt) {
+bool InetAddr::read(Xprt& xprt) {
     uint8_t addrType;
     Impl*   impl;
 
@@ -1214,7 +1215,7 @@ bool InetAddr::read(Xprt xprt) {
  * @param[in] addr     The IP address
  * @return
  */
-std::ostream& operator<<(std::ostream& ostream, const hycast::InetAddr& addr) {
+std::ostream& operator<<(std::ostream& ostream, const InetAddr& addr) {
     return ostream << addr.to_string();
 }
 

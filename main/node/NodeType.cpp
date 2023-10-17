@@ -25,7 +25,7 @@
 #include "error.h"
 #include "NodeType.h"
 
-namespace hycast {
+namespace bicast {
 
 bool NodeType::read(Xprt xprt) {
     Type value;

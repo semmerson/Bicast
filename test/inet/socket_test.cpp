@@ -34,6 +34,8 @@
 
 namespace {
 
+using namespace bicast;
+
 using Mutex = std::mutex;
 using Guard = std::lock_guard<Mutex>;
 using Lock  = std::unique_lock<Mutex>;
@@ -58,7 +60,7 @@ protected:
     } State;
     Mutex            mutex;
     Cond             cond;
-    hycast::SockAddr srvrAddr;
+    SockAddr         srvrAddr;
     std::thread      srvrThread;
     std::thread      clntThread;
     State            state;
@@ -111,7 +113,7 @@ protected:
             srvrSock = ::accept(lstnSock, reinterpret_cast<struct
                     sockaddr*>(&rmtAddr), &addrLen);
             if (srvrSock == -1)
-                throw hycast::SYSTEM_ERROR("accept() failure");
+                throw SYSTEM_ERROR("accept() failure");
 
             try {
                 for (;;) {
@@ -125,12 +127,12 @@ protected:
                         break;
                     }
                     if (nbytes == -1)
-                        throw hycast::SYSTEM_ERROR("read() failure");
+                        throw SYSTEM_ERROR("read() failure");
 
                     set(SERVER_WRITING);
                     waitUntilSet(SERVER_WRITE);
                     if (::write(srvrSock, &byte, sizeof(byte)) != 1)
-                        throw hycast::SYSTEM_ERROR("write() failure");
+                        throw SYSTEM_ERROR("write() failure");
                 }
             } // `srvrSock` allocated
             catch (const std::exception& ex) {
@@ -153,14 +155,14 @@ protected:
                 const int enable = 1;
                 if (::setsockopt(lstnSock, SOL_SOCKET, SO_REUSEADDR, &enable,
                         sizeof(enable)))
-                    throw hycast::SYSTEM_ERROR("Couldn't set SO_REUSEADDR on "
+                    throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on "
                             "socket " + std::to_string(lstnSock) + ", address "
                             + srvrAddr.to_string());
 
                 srvrAddr.bind(lstnSock);
 
                 if (::listen(lstnSock, 0))
-                    throw hycast::SYSTEM_ERROR("listen() failure: {sock=" +
+                    throw SYSTEM_ERROR("listen() failure: {sock=" +
                             std::to_string(lstnSock) + "}");
 
                 srvrThread = std::thread(&SocketTest::runServer, this);
@@ -172,7 +174,7 @@ protected:
         }
         catch (const std::exception& ex) {
             LOG_ERROR(ex);
-            throw hycast::RUNTIME_ERROR("Server failure");
+            throw RUNTIME_ERROR("Server failure");
         }
     }
 
@@ -182,7 +184,7 @@ protected:
         try {
             struct sockaddr_storage storage;
             if (::connect(clntSock, srvrAddr.get_sockaddr(storage), sizeof(storage)))
-                throw hycast::SYSTEM_ERROR("connect() failure");
+                throw SYSTEM_ERROR("connect() failure");
 
             for (;;) {
                 unsigned char byte = 0xbd;
@@ -190,7 +192,7 @@ protected:
                 set(CLIENT_WRITING);
                 waitUntilSet(CLIENT_WRITE);
                 if (::write(clntSock, &byte, sizeof(byte)) != 1)
-                    throw hycast::SYSTEM_ERROR("write() failure");
+                    throw SYSTEM_ERROR("write() failure");
 
                 set(CLIENT_READING);
                 waitUntilSet(CLIENT_READ);
@@ -200,7 +202,7 @@ protected:
                     break;
                 }
                 if (nbytes == -1)
-                    throw hycast::SYSTEM_ERROR("read() failure");
+                    throw SYSTEM_ERROR("read() failure");
             }
         } // `clntSock` allocated
         catch (const std::exception& ex) {
@@ -462,6 +464,8 @@ TEST_F(SocketTest, VectorExchange)
 
 }  // namespace
 
+using namespace bicast;
+
 int main(int argc, char **argv) {
   /*
    * Ignore SIGPIPE so that writing to a closed socket doesn't terminate the
@@ -473,7 +477,7 @@ int main(int argc, char **argv) {
   sigact.sa_flags = 0;
   (void)sigaction(SIGPIPE, &sigact, NULL);
 
-  hycast::log_setName(::basename(argv[0]));
+  log_setName(::basename(argv[0]));
   //LOG_ERROR
 
   ::testing::InitGoogleTest(&argc, argv);

@@ -24,10 +24,12 @@
 #include "Disposer.h"
 #include "error.h"
 #include "FileUtil.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "Node.h"
+#include "P2pSrvrInfo.h"
 #include "SubInfo.h"
 #include "ThreadException.h"
+#include "Tracker.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -42,7 +44,8 @@
 namespace {
 
 using namespace std;
-using namespace hycast;
+using namespace std::chrono;
+using namespace bicast;
 
 /// The fixture for testing class `Node`
 class NodeTest : public ::testing::Test, public SubNode::Client
@@ -164,7 +167,7 @@ TEST_F(NodeTest, Construction)
     EXPECT_NE(0, pubPort);
 
     LOG_NOTE("Creating subscribing node");
-    subInfo.tracker.insert(pubP2pSrvrAddr);
+    subInfo.tracker.insert(pubNode->getP2pSrvrInfo());
     auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
     Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
         return Disposer{};
@@ -211,7 +214,8 @@ TEST_F(NodeTest, Sending)
         Tracker tracker{};
         auto    pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
                 ifaceAddr, 1, pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName);
-        const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
+        const auto pubP2pSrvrInfo = pubNode->getP2pSrvrInfo();
+        const auto pubP2pSrvrAddr = pubP2pSrvrInfo.srvrAddr;
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
 
         /*
@@ -236,7 +240,7 @@ TEST_F(NodeTest, Sending)
         };
 
         // Create the subscribing node
-        subInfo.tracker.insert(pubP2pSrvrAddr);
+        subInfo.tracker.insert(pubP2pSrvrInfo);
         auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
         subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60,
                 subRoot, maxOpenFiles, dispoFact, this);

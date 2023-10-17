@@ -26,7 +26,7 @@
 #include <memory>
 #include <vector>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Base handle class for processing data-products.
@@ -68,7 +68,7 @@ public:
      * Indicates whether or not this instance should persist between data-products.
      *
      * @retval true     This instance should persist
-     * @retval true     This instance should not persist
+     * @retval false    This instance should not persist
      */
     bool shouldPersist() const noexcept;
 
@@ -180,15 +180,17 @@ public:
 } // namespace
 
 namespace std {
+    using namespace bicast;
+
     /// The hash code class for an action
     template<>
-    struct hash<hycast::Action> {
+    struct hash<Action> {
         /**
          * Returns the hash code of an action.
          * @param[in] action  The action
          * @return The hash code of the action
          */
-        size_t operator()(const hycast::Action action) const {
+        size_t operator()(const Action action) const {
             return action.hash();
         }
     };

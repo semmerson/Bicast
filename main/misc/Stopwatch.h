@@ -25,7 +25,7 @@
 #include <chrono>
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /// A stopwatch class
 template<class DUR=std::chrono::steady_clock::duration>

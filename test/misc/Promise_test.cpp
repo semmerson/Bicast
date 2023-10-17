@@ -29,6 +29,8 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `Promise`
 class PromiseTest : public ::testing::Test
 {};
@@ -36,7 +38,7 @@ class PromiseTest : public ::testing::Test
 // Tests default construction of an `int` promise
 TEST_F(PromiseTest, DefaultIntConstruction)
 {
-    hycast::Promise<int> promise{};
+    Promise<int> promise{};
     EXPECT_FALSE(promise.isDone());
     EXPECT_FALSE(promise.wasCanceled());
 }
@@ -44,7 +46,7 @@ TEST_F(PromiseTest, DefaultIntConstruction)
 // Tests default construction of a `void` promise
 TEST_F(PromiseTest, DefaultVoidConstruction)
 {
-    hycast::Promise<void> promise{};
+    Promise<void> promise{};
     EXPECT_FALSE(promise.isDone());
     EXPECT_FALSE(promise.wasCanceled());
 }
@@ -52,7 +54,7 @@ TEST_F(PromiseTest, DefaultVoidConstruction)
 // Tests setting an exception in an `int` promise
 TEST_F(PromiseTest, IntException)
 {
-    hycast::Promise<int> promise{};
+    Promise<int> promise{};
     try {
         throw std::runtime_error("Dummy");
     }
@@ -67,7 +69,7 @@ TEST_F(PromiseTest, IntException)
 // Tests setting an exception in a `void` promise
 TEST_F(PromiseTest, VoidException)
 {
-    hycast::Promise<void> promise{};
+    Promise<void> promise{};
     try {
         throw std::runtime_error("Dummy");
     }
@@ -82,28 +84,28 @@ TEST_F(PromiseTest, VoidException)
 // Tests canceling an `int` promise
 TEST_F(PromiseTest, CancelInt)
 {
-    hycast::Promise<int> promise{};
+    Promise<int> promise{};
     promise.markCanceled();
     EXPECT_TRUE(promise.isDone());
     EXPECT_TRUE(promise.wasCanceled());
-    EXPECT_THROW(promise.getResult(), hycast::LogicError);
+    EXPECT_THROW(promise.getResult(), LogicError);
 }
 
 // Tests canceling a `void` promise
 TEST_F(PromiseTest, CancelVoid)
 {
-    hycast::Promise<void> promise{};
+    Promise<void> promise{};
     promise.markCanceled();
     EXPECT_TRUE(promise.isDone());
     EXPECT_TRUE(promise.wasCanceled());
-    EXPECT_THROW(promise.getResult(), hycast::LogicError);
+    EXPECT_THROW(promise.getResult(), LogicError);
 }
 
 // Tests setting the result of an `int` promise
 TEST_F(PromiseTest, IntResult)
 {
     int result = 1;
-    hycast::Promise<int> promise{};
+    Promise<int> promise{};
     promise.setResult(result);
     EXPECT_TRUE(promise.isDone());
     EXPECT_FALSE(promise.wasCanceled());
@@ -113,7 +115,7 @@ TEST_F(PromiseTest, IntResult)
 // Tests setting the result of a `void` promise
 TEST_F(PromiseTest, VoidResult)
 {
-    hycast::Promise<void> promise{};
+    Promise<void> promise{};
     promise.setResult();
     EXPECT_TRUE(promise.isDone());
     EXPECT_FALSE(promise.wasCanceled());
@@ -124,7 +126,7 @@ TEST_F(PromiseTest, VoidResult)
 TEST_F(PromiseTest, WaitForIntResult)
 {
     int result = 1;
-    hycast::Promise<int> promise{};
+    Promise<int> promise{};
     std::thread thread{[&promise,&result]{promise.setResult(result);}};
     promise.wait();
     EXPECT_TRUE(promise.isDone());
@@ -136,7 +138,7 @@ TEST_F(PromiseTest, WaitForIntResult)
 // Tests waiting for a `void` promise
 TEST_F(PromiseTest, WaitForVoidResult)
 {
-    hycast::Promise<void> promise{};
+    Promise<void> promise{};
     std::thread thread{[&promise]{promise.setResult();}};
     promise.wait();
     EXPECT_TRUE(promise.isDone());

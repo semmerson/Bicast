@@ -1,4 +1,4 @@
-add_library(hycast
+add_library(bicast
         $<TARGET_OBJECTS:misc>
         $<TARGET_OBJECTS:inet>
         $<TARGET_OBJECTS:p2p>
@@ -11,6 +11,6 @@ add_library(hycast
 #       $<TARGET_OBJECTS:protocol>
 
 # Neither "-lyaml-cpp.so" nor "-lyaml-cpp.so.0" records the right YAML library
-target_link_libraries(hycast PUBLIC -lyaml-cpp ssl pthread)
+target_link_libraries(bicast PUBLIC -lyaml-cpp ssl pthread)
 
-install(TARGETS hycast DESTINATION lib)
+install(TARGETS bicast DESTINATION lib)

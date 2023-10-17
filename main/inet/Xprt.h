@@ -28,7 +28,7 @@
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /// A class used to transport objects
 class Xprt

@@ -38,6 +38,8 @@
 
 namespace {
 
+using namespace bicast;
+
 // The fixture for testing class Future.
 class FutureTest : public ::testing::Test
 {
@@ -57,15 +59,15 @@ protected:
 // Tests default construction
 TEST_F(FutureTest, DefaultConstruction)
 {
-    hycast::Future<void> future{};
+    Future<void> future{};
     EXPECT_FALSE(future);
     EXPECT_FALSE(future.wasCanceled());
-    EXPECT_THROW(future.cancel(), hycast::LogicError);
-    EXPECT_THROW(future.cancel(false), hycast::LogicError);
-    EXPECT_THROW(future.setResult(), hycast::LogicError);
+    EXPECT_THROW(future.cancel(), LogicError);
+    EXPECT_THROW(future.cancel(false), LogicError);
+    EXPECT_THROW(future.setResult(), LogicError);
     EXPECT_THROW(future.setException(
             std::make_exception_ptr(std::out_of_range("test"))),
-            hycast::LogicError);
+            LogicError);
 }
 
 /******************************************************************************/
@@ -73,11 +75,11 @@ TEST_F(FutureTest, DefaultConstruction)
 // Tests relational operators between void futures
 TEST_F(FutureTest, VoidFutureRelationalOperations)
 {
-    hycast::Future<void> future1{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<void> future1{[this](bool mayInterrupt){stop(mayInterrupt);}};
     EXPECT_TRUE(future1);
     EXPECT_TRUE(future1 == future1);
 
-    hycast::Future<void> future2{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<void> future2{[this](bool mayInterrupt){stop(mayInterrupt);}};
     EXPECT_TRUE(future2);
     EXPECT_TRUE(future1 != future2);
     EXPECT_TRUE(future1 < future2);
@@ -86,7 +88,7 @@ TEST_F(FutureTest, VoidFutureRelationalOperations)
 // Tests setting canceled flag of void future
 TEST_F(FutureTest, VoidFutureSetCancelFlag)
 {
-    hycast::Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     future.setCanceled();
     EXPECT_TRUE(future.wasCanceled());
 }
@@ -94,7 +96,7 @@ TEST_F(FutureTest, VoidFutureSetCancelFlag)
 // Tests waiting on void future
 TEST_F(FutureTest, WaitingOnVoidFuture)
 {
-    hycast::Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     auto thread = std::thread([&future]{usleep(100000); future.setResult();});
     future.wait();
     EXPECT_FALSE(future.wasCanceled());
@@ -109,7 +111,7 @@ TEST_F(FutureTest, VoidFutureHardCancellation)
 {
     bool stopCalled{false};
     bool interrupted{false};
-    hycast::Future<void> future{[&stopCalled,&interrupted,&future]
+    Future<void> future{[&stopCalled,&interrupted,&future]
             (bool mayInterrupt) {
         stopCalled = true;
         interrupted = mayInterrupt;
@@ -120,7 +122,7 @@ TEST_F(FutureTest, VoidFutureHardCancellation)
     EXPECT_TRUE(stopCalled);
     EXPECT_TRUE(interrupted);
     EXPECT_TRUE(future.hasCompleted());
-    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_THROW(future.getResult(), LogicError);
     EXPECT_TRUE(future.wasCanceled());
 }
 
@@ -129,7 +131,7 @@ TEST_F(FutureTest, VoidFutureSoftCancellation)
 {
     bool stopCalled{false};
     bool interrupted{false};
-    hycast::Future<void> future{[&stopCalled,&interrupted,&future]
+    Future<void> future{[&stopCalled,&interrupted,&future]
             (bool mayInterrupt) {
         stopCalled = true;
         interrupted = mayInterrupt;
@@ -145,7 +147,7 @@ TEST_F(FutureTest, VoidFutureSoftCancellation)
 // Tests setting exception for void future
 TEST_F(FutureTest, VoidFutureException)
 {
-    hycast::Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<void> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     auto thread = std::thread([&future]{usleep(100000);
             future.setException(
                     std::make_exception_ptr(std::out_of_range("test")));});
@@ -160,11 +162,11 @@ TEST_F(FutureTest, VoidFutureException)
 // Tests relational operators between int futures
 TEST_F(FutureTest, IntFutureRelationalOperations)
 {
-    hycast::Future<int> future1{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<int> future1{[this](bool mayInterrupt){stop(mayInterrupt);}};
     EXPECT_TRUE(future1);
     EXPECT_TRUE(future1 == future1);
 
-    hycast::Future<int> future2{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<int> future2{[this](bool mayInterrupt){stop(mayInterrupt);}};
     EXPECT_TRUE(future2);
     EXPECT_TRUE(future1 != future2);
     EXPECT_TRUE(future1 < future2);
@@ -173,7 +175,7 @@ TEST_F(FutureTest, IntFutureRelationalOperations)
 // Tests setting canceled flag of int future
 TEST_F(FutureTest, IntFutureSetCancelFlag)
 {
-    hycast::Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     future.setCanceled();
     EXPECT_TRUE(future.wasCanceled());
 }
@@ -181,7 +183,7 @@ TEST_F(FutureTest, IntFutureSetCancelFlag)
 // Tests waiting on int future
 TEST_F(FutureTest, WaitingOnIntFuture)
 {
-    hycast::Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     auto thread = std::thread([&future]{usleep(100000); future.setResult(1);});
     future.wait();
     EXPECT_FALSE(future.wasCanceled());
@@ -196,7 +198,7 @@ TEST_F(FutureTest, IntFutureHardCancellation)
 {
     bool stopCalled{false};
     bool interrupted{false};
-    hycast::Future<int> future{[&stopCalled,&interrupted,&future]
+    Future<int> future{[&stopCalled,&interrupted,&future]
             (bool mayInterrupt) {
         stopCalled = true;
         interrupted = mayInterrupt;
@@ -207,7 +209,7 @@ TEST_F(FutureTest, IntFutureHardCancellation)
     EXPECT_TRUE(stopCalled);
     EXPECT_TRUE(interrupted);
     EXPECT_TRUE(future.hasCompleted());
-    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_THROW(future.getResult(), LogicError);
     EXPECT_TRUE(future.wasCanceled());
 }
 
@@ -216,7 +218,7 @@ TEST_F(FutureTest, IntFutureSoftCancellation)
 {
     bool stopCalled{false};
     bool interrupted{false};
-    hycast::Future<int> future{[&stopCalled,&interrupted,&future]
+    Future<int> future{[&stopCalled,&interrupted,&future]
             (bool mayInterrupt) {
         stopCalled = true;
         interrupted = mayInterrupt;
@@ -232,7 +234,7 @@ TEST_F(FutureTest, IntFutureSoftCancellation)
 // Tests setting exception for int future
 TEST_F(FutureTest, IntFutureException)
 {
-    hycast::Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
+    Future<int> future{[this](bool mayInterrupt){stop(mayInterrupt);}};
     auto thread = std::thread([&future]{usleep(100000);
             future.setException(
                     std::make_exception_ptr(std::out_of_range("test")));});

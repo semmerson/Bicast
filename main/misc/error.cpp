@@ -21,7 +21,11 @@
 
 #include "error.h"
 
-namespace hycast {
+#include "logging.h"
+
+#include <stdexcept>
+
+namespace bicast {
 
 InvalidArgument::InvalidArgument(
         const char*       file,

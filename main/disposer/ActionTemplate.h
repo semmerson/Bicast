@@ -30,7 +30,7 @@
 #include <memory>
 #include <vector>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Template for an action. The template is reified into an action by replacement of its back-

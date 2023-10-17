@@ -25,13 +25,15 @@
 #define MAIN_INET_SOCKADDR_H_
 
 #include "InetAddr.h"
+#include "XprtAble.h"
 
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <netinet/in.h>
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
 /// A socket address. Socket address comprise an Internet address and a port number.
 class SockAddr : public XprtAble
@@ -122,6 +124,23 @@ public:
     explicit SockAddr(const std::string& spec);
 
     /**
+     * Destroys.
+     */
+    ~SockAddr() {
+        pImpl.reset();
+    }
+
+    /**
+     * Copy assigns from another instance.
+     * @param[in] rhs  The other instance
+     * @return         This instance
+     */
+    SockAddr& operator=(const SockAddr& rhs) {
+        pImpl = rhs.pImpl;
+        return *this;
+    }
+
+    /**
      * Clones this instance and changes the port number.
      *
      * @param[in] port      New port number in host byte-order
@@ -140,7 +159,7 @@ public:
      *
      * @return Internet address of this socket address
      */
-    const InetAddr getInetAddr() const noexcept;
+    InetAddr getInetAddr() const noexcept;
 
     /**
      * Returns the port number given to the constructor in host byte-order.
@@ -219,7 +238,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const;
+    bool write(Xprt& xprt) const;
 
     /**
      * Reads from a transport.
@@ -228,7 +247,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool read(Xprt xprt);
+    bool read(Xprt& xprt);
 };
 
 std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr);
@@ -236,11 +255,13 @@ std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr);
 } // namespace
 
 namespace std {
-    std::string to_string(const hycast::SockAddr& sockAddr);
+    using namespace bicast;
+
+    std::string to_string(const SockAddr& sockAddr);
 
     /// Less-than class function for a socket address
     template<>
-    struct less<hycast::SockAddr> {
+    struct less<SockAddr> {
         /**
          * Indicates if one socket address is less than another.
          * @param[in] lhs      The first socket address
@@ -248,22 +269,22 @@ namespace std {
          * @retval    true     The first address is less than the second
          * @retval    false    The first address is not less than the second
          */
-        inline bool operator()(
-                const hycast::SockAddr& lhs,
-                const hycast::SockAddr& rhs) {
+        bool operator()(
+                const SockAddr& lhs,
+                const SockAddr& rhs) {
             return lhs < rhs;
         }
     };
 
     /// Hash code class function for a socket address
     template<>
-    struct hash<hycast::SockAddr> {
+    struct hash<SockAddr> {
         /**
          * Returns the hash code of a socket address.
          * @param[in] sockAddr  The socket address
          * @return The hash code of the socket address
          */
-        inline bool operator()(const hycast::SockAddr& sockAddr) const {
+        size_t operator()(const SockAddr& sockAddr) const {
             return sockAddr.hash();
         }
     };

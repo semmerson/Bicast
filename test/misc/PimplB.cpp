@@ -22,7 +22,7 @@
 
 #include "PimplB.h"
 
-namespace hycast {
+namespace bicast {
 
 class PimplB::Impl {
     PimplA pimplA;

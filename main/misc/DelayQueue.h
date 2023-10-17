@@ -30,7 +30,7 @@
 #include <iterator>
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * @tparam VALUE     Type of value being stored in the queue. Must support

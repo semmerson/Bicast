@@ -14,7 +14,9 @@
 #include "logging.h"
 #include "Node.h"
 #include "P2pMgr.h"
+#include "P2pSrvrInfo.h"
 #include "ThreadException.h"
+#include "Tracker.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
@@ -22,7 +24,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 bool operator==(const SubP2pMgrPtr lhs, const SubP2pMgr& rhs) {
     return lhs.get() == &rhs;
@@ -232,6 +234,25 @@ public:
             orState(SEG_RCVD);
         LOG_DEBUG("numSeg=%d, numSubscribers=%d", (int)numSeg, (int)numSubscribers);
     }
+
+    void getPduCounts(
+            long& numMcastOrig,
+            long& numP2pOrig,
+            long& numMcastDup,
+            long& numP2pDup) const noexcept {
+    }
+
+    long getTotalProds() const noexcept {
+        return 0;
+    }
+
+    long long getTotalBytes() const noexcept {
+        return 0;
+    }
+
+    double getTotalLatency() const noexcept {
+        return 0;
+    }
 };
 
 #if 0
@@ -380,12 +401,14 @@ static void myTerminate()
             LOG_FATAL("Exception is unknown");
         }
     }
-    abort();
+    ::abort();
 }
 
 int main(int argc, char **argv) {
-  hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LogLevel::TRACE);
+  using namespace bicast;
+
+  log_setName(::basename(argv[0]));
+  log_setLevel(LogLevel::TRACE);
 
   std::set_terminate(&myTerminate);
 

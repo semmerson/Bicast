@@ -21,20 +21,22 @@
  */
 
 #include "config.h"
-#include <list>
 
 #include "Bookkeeper.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "logging.h"
+#include "Notice.h"
 #include "Trigger.h"
 
 #include <climits>
+#include <list>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Bookkeeper base class implementation.

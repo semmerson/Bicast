@@ -22,21 +22,21 @@
 #ifndef MAIN_P2P_RPC_H_
 #define MAIN_P2P_RPC_H_
 
-#include "HycastProto.h"
-#include "Peer.h"
-#include "SockAddr.h"
-
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 class Tracker;
+class Peer;
 class PubPeer;
 class SubPeer;
+class P2pSrvrInfo;
 class ProdId;
+class ProdIdSet;
 class DataSegId;
 class ProdInfo;
 class DataSeg;
+class Xprt;
 
 /// Forward declaration
 class Rpc;
@@ -114,8 +114,8 @@ public:
      * @see       `start()`
      */
     virtual bool notify(
-            Xprt&        xprt,
-            const ProdId prodId) =0;
+            Xprt&         xprt,
+            const ProdId& prodId) =0;
 
     /**
      * Notifies the remote peer about an available data segment. May block.
@@ -129,8 +129,8 @@ public:
      * @see       `start()`
      */
     virtual bool notify(
-            Xprt&           xprt,
-            const DataSegId dataSegId) =0;
+            Xprt&            xprt,
+            const DataSegId& dataSegId) =0;
 
     /**
      * Requests information on a product from the remote peer. May block.
@@ -141,8 +141,8 @@ public:
      * @retval    false     Lost connection
      */
     virtual bool request(
-            Xprt&        xprt,
-            const ProdId prodId) =0;
+            Xprt&         xprt,
+            const ProdId& prodId) =0;
 
     /**
      * Requests a data segment from the remote peer. May block.
@@ -154,7 +154,7 @@ public:
      */
     virtual bool request(
             Xprt&           xprt,
-            const DataSegId dataSegId) =0;
+            const DataSegId& dataSegId) =0;
 
     /**
      * Requests available but not previously-received products.
@@ -176,8 +176,8 @@ public:
      * @retval    false     Lost connection
      */
     virtual bool send(
-            Xprt&          xprt,
-            const ProdInfo prodInfo) =0;
+            Xprt&           xprt,
+            const ProdInfo& prodInfo) =0;
 
     /**
      * Sends a data segment to the remote peer. May block.
@@ -188,8 +188,8 @@ public:
      * @retval    false      Lost connection
      */
     virtual bool send(
-            Xprt&         xprt,
-            const DataSeg dataSeg) =0;
+            Xprt&          xprt,
+            const DataSeg& dataSeg) =0;
 };
 
 } // namespace

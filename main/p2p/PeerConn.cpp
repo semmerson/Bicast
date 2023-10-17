@@ -22,10 +22,13 @@
 
 #include "config.h"
 
+#include "logging.h"
+#include "P2pSrvrInfo.h"
 #include "Peer.h"
 #include "PeerConn.h"
 #include "Rpc.h"
 #include "ThreadException.h"
+#include "Tracker.h"
 #include "Xprt.h"
 
 #include <poll.h>
@@ -33,7 +36,7 @@
 #include <semaphore.h>
 #include <unordered_map>
 
-namespace hycast {
+namespace bicast {
 
 using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connection to a peer
 
@@ -211,13 +214,13 @@ class PeerConnImpl : public PeerConn
         // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
+            //LOG_NOTE("Starting reader using transport " + xprt.to_string());
             while (rpcPtr->recv(xprt, peer))
                 ;
             // Connection lost
             ::sem_post(&stopSem);
         }
         catch (const std::exception& ex) {
-            log_error(ex);
             threadEx.set();
             ::sem_post(&stopSem);
         }
@@ -353,10 +356,6 @@ public:
         return false;
     }
 
-    bool recv(Peer& peer) override {
-        return rpcPtr->recv(noticeXprt, peer);
-    }
-
     void run(Peer& peer) override {
         if (dataReader.joinable() || requestReader.joinable() || noticeReader.joinable())
             throw LOGIC_ERROR("Peer-connection already started");
@@ -377,21 +376,21 @@ public:
         return rpcPtr->notify(noticeXprt, srvrInfo);
     }
 
-    bool notify(const ProdId prodId) override {
+    bool notify(const ProdId& prodId) override {
         return rpcPtr->notify(noticeXprt, prodId);
     }
 
-    bool notify(const DataSegId dataSegId) override {
+    bool notify(const DataSegId& dataSegId) override {
         return rpcPtr->notify(noticeXprt, dataSegId);
     }
 
     // Requests:
 
-    bool request(const ProdId prodId) override {
+    bool request(const ProdId& prodId) override {
         return rpcPtr->request(requestXprt, prodId);
     }
 
-    bool request(const DataSegId dataSegId) override {
+    bool request(const DataSegId& dataSegId) override {
         return rpcPtr->request(requestXprt, dataSegId);
     }
 
@@ -401,11 +400,11 @@ public:
 
     // Data:
 
-    bool send(const ProdInfo prodInfo) override {
+    bool send(const ProdInfo& prodInfo) override {
         return rpcPtr->send(dataXprt, prodInfo);
     }
 
-    bool send(const DataSeg dataSeg) override {
+    bool send(const DataSeg& dataSeg) override {
         return rpcPtr->send(dataXprt, dataSeg);
     }
 };
@@ -500,7 +499,7 @@ private:
      * @param[in] sock  Newly-accepted socket
      */
     void processSock(TcpSock sock) {
-        LOG_TRACE("Starting to process a socket");
+        //LOG_TRACE("Starting to process a socket");
         in_port_t noticePort;
         Xprt      xprt{sock}; // Might take a while depending on `Xprt`
 
@@ -511,9 +510,9 @@ private:
             // TODO: Remove old, stale entries from accept-queue
 
             if (acceptQ.size() < maxPendConn) {
-                LOG_TRACE("Adding transport to factory");
+                //LOG_TRACE("Adding transport to factory");
                 if (peerConnFactory.add(xprt, noticePort)) {
-                    LOG_TRACE("Emplacing peer-connection in queue");
+                    //LOG_TRACE("Emplacing peer-connection in queue");
                     acceptQ.emplace(new PeerConnImpl(peerConnFactory.get(xprt, noticePort)));
                     cond.notify_one();
                 }
@@ -525,7 +524,7 @@ private:
         try {
             LOG_TRACE("Starting to accept sockets");
             for (;;) {
-                LOG_TRACE("Accepting a socket");
+                //LOG_TRACE("Accepting a socket");
                 auto sock = srvrSock.accept();
                 if (!sock) {
                     // The server's listening socket has been shut down
@@ -538,7 +537,7 @@ private:
                 }
 
                 processSock(sock);
-                LOG_TRACE("Processed socket %s", sock.to_string().data());
+                //LOG_TRACE("Processed socket %s", sock.to_string().data());
             }
         }
         catch (const std::exception& ex) {

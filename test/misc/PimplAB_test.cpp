@@ -23,10 +23,12 @@
 #include "PimplA.h"
 #include "PimplB.h"
 
+using namespace bicast;
+
 int main(int argc, char** argv)
 {
-    hycast::PimplA pimplA{};
-    hycast::PimplB pimplB{pimplA};
+    PimplA pimplA{};
+    PimplB pimplB{pimplA};
     pimplA.foo();
     return 0;
 }

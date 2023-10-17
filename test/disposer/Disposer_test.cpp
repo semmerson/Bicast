@@ -33,7 +33,7 @@
 
 static std::string configFile;
 
-using namespace hycast;
+using namespace bicast;
 
 namespace {
 
@@ -287,6 +287,6 @@ int main(int argc, char **argv) {
   std::cout << "argv[0]=" << std::string(argv[0]) << '\n';
   std::cout << "argv[1]=" << std::string(argv[1]) << '\n';
   configFile = std::string(argv[1]);
-  std::set_terminate(&hycast::terminate);
+  std::set_terminate(&bicast::terminate);
   return RUN_ALL_TESTS();
 }

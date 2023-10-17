@@ -1,5 +1,5 @@
 /**
- * This file declares interfaces for the Hycast multicast component.
+ * This file declares interfaces for the Bicast multicast component.
  *
  *  @file:  mcast.h
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -22,13 +22,15 @@
 #ifndef MAIN_MCAST_MCAST_H_
 #define MAIN_MCAST_MCAST_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
+#include "SockAddr.h"
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 class SubNode;
+using SubNodePtr = std::shared_ptr<SubNode>;
 
 /// Interface for a multicast publisher
 class McastPub
@@ -106,7 +108,7 @@ public:
             const SockAddr& mcastAddr,
             const InetAddr& srcAddr,
             const InetAddr& iface,
-            SubNode&        node);
+            SubNode*        node);
 
     /**
      * Idempotent. Calls `halt()`.

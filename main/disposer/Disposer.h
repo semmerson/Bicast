@@ -26,7 +26,7 @@
 #include <functional>
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /// A class for the local disposition (i.e., processing) of data products
 class Disposer

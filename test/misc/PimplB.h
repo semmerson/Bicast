@@ -25,7 +25,7 @@
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 class PimplA;
 

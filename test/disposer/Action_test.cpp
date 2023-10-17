@@ -18,7 +18,9 @@
  *     Author: Steven R. Emmerson
  */
 #include "config.h"
+
 #include "Action.h"
+#include "logging.h"
 
 #include <fcntl.h>
 #include <gtest/gtest.h>
@@ -27,7 +29,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 /// The fixture for testing class `Action`
 class ActionTest : public ::testing::Test
@@ -176,8 +178,8 @@ TEST_F(ActionTest, PersistentAction)
 }  // namespace
 
 int main(int argc, char **argv) {
-  log_setName(::basename(argv[0]));
-  log_setLevel(LogLevel::DEBUG);
+  bicast::log_setName(::basename(argv[0]));
+  bicast::log_setLevel(LogLevel::DEBUG);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

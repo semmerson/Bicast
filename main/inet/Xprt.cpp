@@ -22,15 +22,15 @@
 #include "config.h"
 
 #include "CommonTypes.h"
+#include "error.h"
 
-#include <error.h>
 #include <cstddef>
 #include <cstdint>
 #include <Socket.h>
 #include <string>
 #include <Xprt.h>
 
-namespace hycast {
+namespace bicast {
 
 /// An implementation of a transport
 class Xprt::Impl

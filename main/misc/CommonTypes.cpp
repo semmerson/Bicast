@@ -25,16 +25,16 @@
 
 namespace std {
 
-using namespace hycast;
+using namespace bicast;
 
 /// Returns the string representation of a system time-point
-String to_string(const SysTimePoint& timePoint) {
+string to_string(const SysTimePoint& timePoint) {
     time_t      secs = SysClock::to_time_t(timePoint);
     struct tm   tmStruct;
     ::gmtime_r(&secs, &tmStruct);
     char        iso8601[28]; // "YYYY-MM-DDThh:mm:ss.uuuuuuZ"
     auto        nbytes = ::strftime(iso8601, sizeof(iso8601), "%FT%T", &tmStruct);
-    long        usecs = std::chrono::duration_cast<std::chrono::microseconds>(
+    long        usecs = chrono::duration_cast<chrono::microseconds>(
             timePoint - SysClock::from_time_t(secs)).count();
     if (usecs < 0) {
         --secs;

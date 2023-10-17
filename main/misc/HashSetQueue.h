@@ -30,7 +30,7 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * A thread-safe combination of hash table and queue.
@@ -107,7 +107,7 @@ public:
      * @retval true      Value added
      * @retval false     Value not added because it's already in the queue
      * @throw            Exceptions related to construction of `Value`
-     * @exceptionSafety  Strong guarantee
+     * @exceptionsafety  Strong guarantee
      * @threadsafety     Safe
      */
     bool push(const VALUE& value) {
@@ -132,7 +132,7 @@ public:
      * Returns a reference to the front value.
      *
      * @throw OutOfRange  Map is empty
-     * @exceptionSafety   Nothrow
+     * @exceptionsafety   Nothrow
      * @threadsafety      Safe
      * @throw OutOfRange  Queue is empty
      */
@@ -171,7 +171,7 @@ public:
      * @param[in] value   Value to be deleted
      * @retval true       Value existed
      * @retval false      Value did not exist
-     * @exceptionSafety   Nothrow
+     * @exceptionsafety   Nothrow
      * @threadsafety      Safe
      */
     bool erase(const VALUE& value) noexcept {

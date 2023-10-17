@@ -24,17 +24,16 @@
 #include "Rpc.h"
 
 #include "error.h"
-#include "HycastProto.h"
+#include "logging.h"
+#include "BicastProto.h"
+#include "P2pSrvrInfo.h"
 #include "Peer.h"
+#include "Tracker.h"
 #include "Xprt.h"
 
-#include <list>
-#include <memory>
-#include <poll.h>
-#include <queue>
-#include <unordered_map>
+#include <array>
 
-namespace hycast {
+namespace bicast {
 
 using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connection to a peer
 
@@ -43,68 +42,6 @@ using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connec
  */
 class RpcImpl final : public Rpc
 {
-#if 0
-    /**
-     * Vets the protocol version used by the remote RPC layer. Called by constructor.
-     *
-     * @param[in] protoVers  Remote protocol version
-     * @throw LogicError     Remote RPC layer uses unsupported protocol
-     */
-    void vetProtoVers(decltype(PROTOCOL_VERSION) protoVers) {
-        if (protoVers != PROTOCOL_VERSION)
-            throw LOGIC_ERROR("RPC layer " + to_string() +
-                    ": received incompatible protocol version " + std::to_string(protoVers) +
-                    "; not " + std::to_string(PROTOCOL_VERSION));
-    }
-
-    /**
-     * Sends then receives the protocol version and vets it. Called by constructor.
-     */
-    void sendAndVetProtoVers() {
-        auto rmtProtoVers = PROTOCOL_VERSION;
-
-        if (!noticeXprt.write(PROTOCOL_VERSION) || !noticeXprt.flush())
-            throw RUNTIME_ERROR("Couldn't write to " + noticeXprt.to_string());
-        if (!noticeXprt.read(rmtProtoVers))
-            throw RUNTIME_ERROR("Couldn't read from " + noticeXprt.to_string());
-        noticeXprt.clear();
-        vetProtoVers(rmtProtoVers);
-    }
-
-    /**
-     * Receives then sends the protocol version and vets it. Called by constructor.
-     */
-    void recvAndVetProtoVers() {
-        auto rmtProtoVers = PROTOCOL_VERSION;
-
-        if (!noticeXprt.read(rmtProtoVers))
-            throw RUNTIME_ERROR("Couldn't read from " + noticeXprt.to_string());
-        if (!noticeXprt.write(PROTOCOL_VERSION) || !noticeXprt.flush())
-            throw RUNTIME_ERROR("Couldn't write to " + noticeXprt.to_string());
-        noticeXprt.clear();
-        vetProtoVers(rmtProtoVers);
-    }
-
-    /**
-     * Tells the remote RPC layer if this instance is the publisher. Executed
-     * by a server-side RPC layer only. Called by constructor.
-     */
-    inline void sendIsPub() {
-        if (!noticeXprt.write(iAmPub) || !noticeXprt.flush())
-            throw RUNTIME_ERROR("Couldn't write to " + noticeXprt.to_string());
-    }
-
-    /**
-     * Receives from the remote RPC layer if that instance is the publisher.
-     * Executed by a client-side RPC layer only. Called by constructor.
-     */
-    inline void recvIsPub() {
-        if (!noticeXprt.read(rmtIsPub))
-            throw RUNTIME_ERROR("Couldn't read from " + noticeXprt.to_string());
-        noticeXprt.clear();
-    }
-#endif
-
     /**
      * Receives a request for a datum from the remote peer. Passes the request
      * to the associated local peer.
@@ -124,8 +61,8 @@ class RpcImpl final : public Rpc
         ID   id;
         bool success = id.read(xprt);
         if (success) {
-            LOG_TRACE("RPC " + xprt.to_string() + " received request for " + desc + " " +
-                    id.to_string());
+            //LOG_TRACE("RPC " + xprt.to_string() + " received request for " + desc + " " +
+                    //id.to_string());
             peer.recvRequest(id);
         }
         return success;
@@ -150,8 +87,8 @@ class RpcImpl final : public Rpc
         if (!notice.read(xprt))
             return false;
 
-        LOG_TRACE("RPC " + xprt.to_string() + " received notice about " + desc + " " +
-                notice.to_string());
+        //LOG_TRACE("RPC " + xprt.to_string() + " received notice about " + desc + " " +
+                //notice.to_string());
         peer.recvNotice(notice);
         return true;
     }
@@ -174,7 +111,7 @@ class RpcImpl final : public Rpc
         DATUM datum{};
         auto  success = datum.read(xprt);
         if (success) {
-            LOG_TRACE("RPC " + xprt.to_string() + " received " + desc + " " + datum.to_string());
+            //LOG_TRACE("RPC " + xprt.to_string() + " received " + desc + " " + datum.to_string());
             peer.recvData(datum);
         }
         return success;
@@ -198,16 +135,27 @@ class RpcImpl final : public Rpc
      * Sends a transportable object as a PDU.
      *
      * @param[in] xprt     Transport to use
-     * @param[in] pduId    PDU ID
+     * @param[in] id       PDU ID
      * @param[in] obj      Object to be sent
      * @retval    true     Success
      * @retval    false    Lost connection
      */
     inline bool send(
-            Xprt            xprt,
-            const PduId     pduId,
+            Xprt&           xprt,
+            const PduId::Id id,
             const XprtAble& obj) {
-        return pduId.write(xprt) && obj.write(xprt) && xprt.flush();
+        //LOG_TRACE("Sending: xprt=" + xprt.to_string());
+        //LOG_TRACE("Writing ID");
+        if (!xprt.write(id))
+            return false;
+        //LOG_TRACE("Writing object");
+        if (!obj.write(xprt))
+            return false;
+        //LOG_TRACE("Flushing");
+        if (!xprt.flush())
+            return false;
+        //LOG_TRACE("Sent");
+        return true;
     }
 
     /**
@@ -291,8 +239,7 @@ class RpcImpl final : public Rpc
             }
 
             default:
-                LOG_WARN("RPC " + xprt.to_string() + " unknown PDU ID: " +
-                        std::to_string(pduId));
+                LOG_WARN("RPC " + xprt.to_string() + " unknown PDU ID: " + std::to_string(pduId));
                 connected = true;
         }
 
@@ -334,16 +281,16 @@ public:
     }
 
     bool notify(
-            Xprt&        xprt,
-            const ProdId prodId) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
+            Xprt&         xprt,
+            const ProdId& prodId) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
         const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
         return success;
     }
     bool notify(
-            Xprt&           xprt,
-            const DataSegId dataSegId) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending segment-ID notice " + dataSegId.to_string());
+            Xprt&            xprt,
+            const DataSegId& dataSegId) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending segment-ID notice " + dataSegId.to_string());
         const auto success = send(xprt, PduId::DATA_SEG_NOTICE, dataSegId);
         return success;
     }
@@ -351,16 +298,16 @@ public:
     // Requests:
 
     bool request(
-            Xprt&        xprt,
-            const ProdId prodId) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID request " + prodId.to_string());
+            Xprt&         xprt,
+            const ProdId& prodId) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID request " + prodId.to_string());
         const auto success = send(xprt, PduId::PROD_INFO_REQUEST, prodId);
         return success;
     }
     bool request(
-            Xprt&           xprt,
-            const DataSegId dataSegId) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending segment request " +  dataSegId.to_string());
+            Xprt&            xprt,
+            const DataSegId& dataSegId) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending segment request " +  dataSegId.to_string());
         const auto success = send(xprt, PduId::DATA_SEG_REQUEST, dataSegId);
         return success;
     }
@@ -368,8 +315,8 @@ public:
     bool request(
             Xprt&            xprt,
             const ProdIdSet& prodIds) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending product-IDs request " +
-                prodIds.to_string());
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending product-IDs request " +
+                //prodIds.to_string());
         const auto success = send(xprt, PduId::PREVIOUSLY_RECEIVED, prodIds);
         return success;
     }
@@ -377,17 +324,17 @@ public:
     // Data:
 
     bool send(
-            Xprt&          xprt,
-            const ProdInfo prodInfo) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending product-info " + prodInfo.to_string());
+            Xprt&           xprt,
+            const ProdInfo& prodInfo) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending product-info " + prodInfo.to_string());
         const auto success = send(xprt, PduId::PROD_INFO, prodInfo);
         return success;
     }
 
     bool send(
-            Xprt&         xprt,
-            const DataSeg dataSeg) override {
-        LOG_TRACE("RPC " + xprt.to_string() + " sending segment " +  dataSeg.to_string());
+            Xprt&          xprt,
+            const DataSeg& dataSeg) override {
+        //LOG_TRACE("RPC " + xprt.to_string() + " sending segment " +  dataSeg.to_string());
         const auto success = send(xprt, PduId::DATA_SEG, dataSeg);
         return success;
     }

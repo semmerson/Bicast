@@ -26,6 +26,7 @@
 #include "error.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
+#include "logging.h"
 #include "Parser.h"
 #include "PatternAction.h"
 #include "Shield.h"
@@ -41,7 +42,7 @@
 #include <unordered_map>
 #include <yaml-cpp/yaml.h>
 
-namespace hycast {
+namespace bicast {
 
 /// An implementation of a class that locally disposes of data products
 class Disposer::Impl
@@ -339,7 +340,7 @@ public:
                     process(action, bytes, prodInfo.getSize());
                     LOG_INFO("Executed " + action.to_string() + " on " + prodInfo.to_string() +
                             ". Latency=" + std::to_string((SysClock::now() -
-                            prodInfo.getCreateTime()).count() * SysClockRatio) + " s");
+                            prodInfo.getCreateTime()).count() * sysClockRatio) + " s");
                     lastProd->save(FileUtil::getModTime(path));
                 }
                 catch (const std::exception& ex) {

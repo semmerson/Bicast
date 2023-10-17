@@ -32,6 +32,8 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `Task`
 class TaskTest : public ::testing::Test
 {
@@ -45,7 +47,7 @@ protected:
     Cond                     cond;
     bool                     taskStarted;
     bool                     callableCalled;
-    hycast::Thread::Id       threadId;
+    Thread::Tag               threadId;
     bool                     stopCalled;
 
     TaskTest()
@@ -63,8 +65,8 @@ protected:
     }
 
     void stop(
-            const bool      mayInterrupt,
-            hycast::Thread& thread)
+            const bool mayInterrupt,
+            Thread&    thread)
     {
         stopCalled = true;
         thread.cancel();
@@ -74,14 +76,14 @@ protected:
     {
         LockGuard lock{mutex};
         callableCalled = true;
-        threadId = hycast::Thread::getId();
+        threadId = Thread::getId();
         cond.notify_one();
     }
 
     void markNotifyAndPause()
     {
         markAndNotify();
-        hycast::Canceler canceler{};
+        Canceler canceler{};
         ::pause();
     }
 
@@ -89,7 +91,7 @@ protected:
     {
         UniqueLock lock(mutex);
         while (!callableCalled) {
-            hycast::Canceler canceler{};
+            Canceler canceler{};
             cond.wait(lock);
         }
     }
@@ -98,19 +100,19 @@ protected:
 // Tests default construction of void task
 TEST_F(TaskTest, VoidTaskDefaultConstruction)
 {
-    hycast::Task<void> task{};
+    Task<void> task{};
     EXPECT_FALSE(task);
-    EXPECT_THROW(task(), hycast::LogicError);
+    EXPECT_THROW(task(), LogicError);
 }
 
 // Tests construction of trivial void task
 TEST_F(TaskTest, VoidTaskConstruction)
 {
-    hycast::Task<void> task{[]{}};
+    Task<void> task{[]{}};
     EXPECT_TRUE(task);
     auto future = task.getFuture();
     EXPECT_TRUE(future);
-    auto thread = hycast::Thread(task);
+    auto thread = Thread(task);
     EXPECT_NO_THROW(future.getResult());
     EXPECT_NO_THROW(future.cancel());
     EXPECT_FALSE(future.wasCanceled());
@@ -120,10 +122,10 @@ TEST_F(TaskTest, VoidTaskConstruction)
 // Tests exception in void task
 TEST_F(TaskTest, VoidTaskException)
 {
-    hycast::Thread thread;
-    hycast::Task<void> task{[]{throw std::runtime_error("Dummy");}};
+    Thread thread;
+    Task<void> task{[]{throw std::runtime_error("Dummy");}};
     auto future = task.getFuture();
-    thread = hycast::Thread{task};
+    thread = Thread{task};
     try {
         future.getResult();
     }
@@ -138,13 +140,13 @@ TEST_F(TaskTest, VoidTaskException)
 // Tests cancellation of void task
 TEST_F(TaskTest, VoidTaskCancellation)
 {
-    hycast::Thread thread;
-    hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
+    Thread thread;
+    Task<void> task{[]{Canceler canceler{}; ::pause();}};
     auto future = task.getFuture();
-    thread = hycast::Thread{task};
+    thread = Thread{task};
     EXPECT_FALSE(future.hasCompleted());
     EXPECT_NO_THROW(task.cancel());
-    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_THROW(future.getResult(), LogicError);
     EXPECT_TRUE(future.hasCompleted());
     EXPECT_TRUE(future.wasCanceled());
     thread.join();
@@ -153,13 +155,13 @@ TEST_F(TaskTest, VoidTaskCancellation)
 // Tests cancellation of void task via future
 TEST_F(TaskTest, VoidFutureCancellation)
 {
-    hycast::Thread thread;
-    hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
+    Thread thread;
+    Task<void> task{[]{Canceler canceler{}; ::pause();}};
     auto future = task.getFuture();
-    thread = hycast::Thread{task};
+    thread = Thread{task};
     EXPECT_FALSE(future.hasCompleted());
     EXPECT_NO_THROW(future.cancel());
-    EXPECT_THROW(future.getResult(), hycast::LogicError);
+    EXPECT_THROW(future.getResult(), LogicError);
     EXPECT_TRUE(future.hasCompleted());
     EXPECT_TRUE(future.wasCanceled());
     thread.join();
@@ -168,11 +170,11 @@ TEST_F(TaskTest, VoidFutureCancellation)
 // Tests looping over cancellation via future of void task
 TEST_F(TaskTest, VoidTaskCancellationLoop)
 {
-    hycast::Thread thread;
+    Thread thread;
     for (int i = 0; i < 1000; ++i) {
-        hycast::Task<void> task{[]{hycast::Canceler canceler{}; ::pause();}};
+        Task<void> task{[]{Canceler canceler{}; ::pause();}};
         auto future = task.getFuture();
-        thread = hycast::Thread{task};
+        thread = Thread{task};
         future.cancel();
         EXPECT_TRUE(future.wasCanceled());
         thread.join();

@@ -1,6 +1,6 @@
 add_executable(publish publish.cpp)
 
-target_link_libraries(publish hycast)
+target_link_libraries(publish bicast)
 
 install(TARGETS publish DESTINATION bin)
 

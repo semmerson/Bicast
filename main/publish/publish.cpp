@@ -1,5 +1,5 @@
 /**
- * Program to publish data-products via Hycast.
+ * Program to publish data-products via Bicast.
  *
  *        File: publish.cpp
  *  Created on: Aug 13, 2020
@@ -20,8 +20,11 @@
 
 #include "config.h"
 
+#include "logging.h"
 #include "Node.h"
+#include "P2pSrvrInfo.h"
 #include "Parser.h"
+#include "SubInfo.h"
 #include "ThreadException.h"
 
 #include <inttypes.h>
@@ -29,7 +32,7 @@
 #include <thread>
 #include <yaml-cpp/yaml.h>
 
-using namespace hycast;
+using namespace bicast;
 
 using String = std::string;
 
@@ -76,7 +79,7 @@ struct RunPar {
      * Default constructs.
      */
     RunPar()
-        : feedName("Hycast")
+        : feedName("Bicast")
         , logLevel(LogLevel::NOTE)
         , maxSegSize(1444)
         , trackerCap(DEF_TRACKER_CAP)
@@ -113,6 +116,7 @@ public:
      */
     void waitToInc() {
         Lock lock{mutex};
+        LOG_DEBUG("count=" + std::to_string(count) + "; max=" + std::to_string(max));
         cond.wait(lock, [&]{return count < max;});
         ++count;
     }
@@ -355,6 +359,7 @@ static void getCmdPars(
             if (::sscanf(optarg, "%d", &maxSegSize) != 1)
                 throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                         "\" option argument");
+            runPar.maxSegSize = maxSegSize;
             break;
         }
         case 'e': {
@@ -563,8 +568,8 @@ static void runServer()
 {
     try {
         //LOG_DEBUG("Creating listening server");
-        LOG_NOTE("Creating publisher's server " + runPar.srvr.addr.to_string());
         auto srvrSock = TcpSrvrSock(runPar.srvr.addr, runPar.srvr.listenSize);
+        LOG_NOTE("Created publisher's server " + srvrSock.to_string());
 
         for (;;) {
             numSubThreads.waitToInc();
@@ -592,7 +597,7 @@ int main(const int    argc,
 {
     int status;
 
-    std::set_terminate(&terminate); // NB: Hycast version
+    std::set_terminate(&terminate); // NB: Bicast version
 
     try {
         log_setName(::basename(argv[0]));

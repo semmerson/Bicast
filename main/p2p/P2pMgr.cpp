@@ -25,6 +25,7 @@
 
 #include "Bookkeeper.h"
 #include "Node.h"
+#include "P2pSrvrInfo.h"
 #include "ThreadException.h"
 
 #include <condition_variable>
@@ -37,14 +38,14 @@
 #include <system_error>
 #include <unordered_map>
 
-namespace hycast {
+namespace bicast {
 
 /**************************************************************************************************/
 
 /// Base P2P manager implementation
 class BaseP2pMgrImpl : public BaseP2pMgr
 {
-    Node& node;          ///< Hycast node
+    Node& node;          ///< Bicast node
     bool  peersChanged;  ///< Set of peers has changed?
 
     template<class FUNC>
@@ -232,7 +233,7 @@ protected:
      * @retval true     The tier number was updated
      * @retval false    The tier number was not updated
      */
-    virtual bool updateTier(const P2pSrvrInfo::Tier tier) =0;
+    virtual bool updateTier(const Tier tier) =0;
 
     /**
      * Reassigns unsatisfied requests for data from a peer to other peers. Should be executed only
@@ -251,10 +252,10 @@ protected:
     void runPeer(PeerPtr peer) {
         try {
             peer->run();
-            LOG_INFO("Peer %s stopped", peer->to_string().data());
+            LOG_NOTE("Peer %s stopped", peer->to_string().data());
         } // Peer was added to active peer set
         catch (const std::exception& ex) {
-            LOG_ERROR(ex);
+            log_error(ex);
             LOG_ERROR("Peer %s failed", peer->to_string().data());
         }
 
@@ -506,7 +507,7 @@ public:
      * Constructs.
      *
      * @param[in,out] tracker       Tracks available P2P-servers
-     * @param[in]     node          Associated Hycast node
+     * @param[in]     node          Associated Bicast node
      * @param[in]     maxPeers      Maximum number of peers
      * @param[in]     maxSrvrPeers  Maximum number of server-side-constructed peers
      * @param[in]     evalTime      Peer evaluation time in seconds
@@ -648,7 +649,7 @@ protected:
             acceptThread.join();
     }
 
-    inline bool updateTier(const P2pSrvrInfo::Tier tier) override {
+    inline bool updateTier(const Tier tier) override {
         // Does nothing because the number of hops to the publisher is always zero
         return false; // Never updated
     }
@@ -863,9 +864,9 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
             auto pred = [&]{return numClntPeers < maxClntPeers || state == State::STOPPING;};
             for (;;) {
                 {
-                    LOG_TRACE("Locking the peer-set mutex");
+                    //LOG_TRACE("Locking the peer-set mutex");
                     Lock lock{stateMutex};
-                    LOG_TRACE("Waiting for the need for a peer or stopping");
+                    //LOG_TRACE("Waiting for the need for a peer or stopping");
                     stateCond.wait(lock, pred);
 
                     if (state == State::STOPPING)
@@ -876,7 +877,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                      */
                 }
 
-                LOG_TRACE("Getting next P2P server candidate");
+                //LOG_TRACE("Getting next P2P server candidate");
                 auto rmtSrvrAddr = tracker.getNextAddr(); // Blocks if empty. Cancellation point.
                 if (!rmtSrvrAddr) {
                     // tracker.halt() called
@@ -889,7 +890,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                 }
 
                 try {
-                    LOG_TRACE("Creating peer");
+                    //LOG_TRACE("Creating peer");
                     auto peer = createPeer(rmtSrvrAddr);
 
                     if (!peer) {
@@ -898,7 +899,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                     else {
                         LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
 
-                        LOG_TRACE("Adding peer to peer-set");
+                        //LOG_TRACE("Adding peer to peer-set");
                         if (!add(peer)) { // Updates the tier number if appropriate
                             LOG_DEBUG("Throwing logic error");
                             throw LOGIC_ERROR("Already connected to " + rmtSrvrAddr.to_string());
@@ -910,7 +911,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                     if (    errnum == ENETUNREACH  || errnum == ETIMEDOUT || errnum == ECONNRESET ||
                             errnum == EHOSTUNREACH || errnum == ENETDOWN  || errnum == EPIPE) {
                         // Peer is unavailable
-                        LOG_NOTE(ex);
+                        LOG_INFO(ex);
                         tracker.erase(rmtSrvrAddr);
                     }
                     else {
@@ -967,7 +968,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                         if (shouldNotify(p, datum.getId()))
                             p->notify(id);
                     }
-                    LOG_TRACE("Erasing bookkeeper entry");
+                    //LOG_TRACE("Erasing bookkeeper entry");
                     bookkeeper->erase(id); // No longer relevant
                 }
                 else {
@@ -1042,7 +1043,7 @@ protected:
      * @retval    false  The current tier number was not changed
      * @pre              The state mutex is locked
      */
-    bool updateTier(const P2pSrvrInfo::Tier tier) override {
+    bool updateTier(const Tier tier) override {
         LOG_ASSERT(!stateMutex.try_lock());
 
         // A subscriber's P2P-server can't be tier 0

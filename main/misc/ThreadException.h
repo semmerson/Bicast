@@ -24,7 +24,7 @@
 
 #include <exception>
 
-namespace hycast {
+namespace bicast {
 
 /// The first exception thrown by a thread in a component with multiple threads
 class ThreadEx

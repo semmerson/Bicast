@@ -74,8 +74,8 @@ static void refFunc(Counter& base) {
  *      $ g++ -dumpversion
  *      4.8.5
  *      $ make pimpl_test
- *      /bin/sh ../../libtool  --tag=CXX   --mode=link g++ -std=c++11 -g   -o pimpl_test pimpl_test.o ../../main/libhycast.la -lgtest -lyaml-cpp -lsctp -lpthread 
- *      libtool: link: g++ -std=c++11 -g -o .libs/pimpl_test pimpl_test.o  ../../main/.libs/libhycast.so -lgtest -lyaml-cpp -lsctp -lpthread -Wl,-rpath -Wl,/home/steve/Projects/hycast/lib
+ *      /bin/sh ../../libtool  --tag=CXX   --mode=link g++ -std=c++11 -g   -o pimpl_test pimpl_test.o ../../main/libbicast.la -lgtest -lyaml-cpp -lsctp -lpthread 
+ *      libtool: link: g++ -std=c++11 -g -o .libs/pimpl_test pimpl_test.o  ../../main/.libs/libbicast.so -lgtest -lyaml-cpp -lsctp -lpthread -Wl,-rpath -Wl,/home/steve/Projects/bicast/lib
  *      $ ./pimpl_test 
  *      valFunc() time/call = 6.22877e-08 s
  *      refFunc() time/call = 1.3568e-08 s

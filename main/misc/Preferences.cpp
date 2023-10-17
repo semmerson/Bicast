@@ -28,7 +28,7 @@
 #include <sstream>
 #include <yaml-cpp/yaml.h>
 
-namespace hycast {
+namespace bicast {
 
 using namespace std;
 

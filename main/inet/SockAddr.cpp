@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include "error.h"
+#include "logging.h"
 #include "SockAddr.h"
 #include "Xprt.h"
 
@@ -37,7 +38,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
-namespace hycast {
+namespace bicast {
 
 /// Implementation of a socket
 class SockAddr::Impl
@@ -72,7 +73,7 @@ public:
      * Returns the IP address component.
      * @return The IP address component
      */
-    const InetAddr getInetAddr() const noexcept
+    InetAddr getInetAddr() const noexcept
     {
         return inetAddr;
     }
@@ -196,7 +197,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const {
+    bool write(Xprt& xprt) const {
         return inetAddr.write(xprt) && xprt.write(port);
     }
 
@@ -206,7 +207,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         return inetAddr.read(xprt) && xprt.read(port);
     }
 };
@@ -405,7 +406,7 @@ void SockAddr::bind(const int sd) const
     pImpl->bind(sd);
 }
 
-const InetAddr SockAddr::getInetAddr() const noexcept
+InetAddr SockAddr::getInetAddr() const noexcept
 {
     return pImpl->getInetAddr();
 }
@@ -420,11 +421,11 @@ struct sockaddr* SockAddr::get_sockaddr(struct sockaddr_storage& storage) const
     return pImpl->get_sockaddr(storage);
 }
 
-bool SockAddr::write(Xprt xprt) const {
+bool SockAddr::write(Xprt& xprt) const {
     return pImpl->write(xprt);
 }
 
-bool SockAddr::read(Xprt xprt) {
+bool SockAddr::read(Xprt& xprt) {
     pImpl.reset(new Impl());
     return pImpl->read(xprt);
 }
@@ -432,8 +433,8 @@ bool SockAddr::read(Xprt xprt) {
 /**
  * Writes a socket address to an output stream.
  * @param[in] ostream  The output stream
- * @param[in] addr
- * @return
+ * @param[in] addr     The socket address
+ * @return             A reference to the output stream
  */
 std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr) {
     return ostream << addr.to_string();
@@ -442,13 +443,15 @@ std::ostream& operator<<(std::ostream& ostream, const SockAddr& addr) {
 } // namespace
 
 namespace std {
+    using namespace bicast;
+
     /**
      * Returns the string representation of a socket address.
      * @param[in] sockAddr  Socket address
      * @return              String representation of socket address
      * @see SockAddr::to_string()
      */
-    string to_string(const hycast::SockAddr& sockAddr) {
+    string to_string(const SockAddr& sockAddr) {
         return sockAddr.to_string();
     }
 }

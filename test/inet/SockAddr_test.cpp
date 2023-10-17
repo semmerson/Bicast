@@ -31,6 +31,8 @@
 
 namespace {
 
+using namespace bicast;
+
 // The fixture for testing class SockAddr.
 class SockAddrTest : public testing::Test {
 protected:
@@ -57,12 +59,12 @@ protected:
     const char* sockAddrNameSpec_1;
     const char* sockAddrNameSpec_2;
 
-    hycast::SockAddr sockAddrIn_1;
-    hycast::SockAddr sockAddrIn_2;
-    hycast::SockAddr sockAddrIn6_1;
-    hycast::SockAddr sockAddrIn6_2;
-    hycast::SockAddr sockAddrName_1;
-    hycast::SockAddr sockAddrName_2;
+    SockAddr sockAddrIn_1;
+    SockAddr sockAddrIn_2;
+    SockAddr sockAddrIn6_1;
+    SockAddr sockAddrIn6_2;
+    SockAddr sockAddrName_1;
+    SockAddr sockAddrName_2;
 
     SockAddrTest()
         : sockAddrInSpec_1{IPV4_HOST1 ":" PORT1_STR}
@@ -81,41 +83,41 @@ protected:
         // IPv4 socket addresses
         struct in_addr inAddr{::inet_addr(IPV4_HOST1)};
 
-        sockAddrIn_1 = hycast::SockAddr(inAddr, PORT1);
+        sockAddrIn_1 = SockAddr(inAddr, PORT1);
 
         inAddr.s_addr = ::inet_addr(IPV4_HOST2);
-        sockAddrIn_2 = hycast::SockAddr(inAddr, PORT2);
+        sockAddrIn_2 = SockAddr(inAddr, PORT2);
 
         // IPv6 socket addresses
         struct in6_addr in6Addr;
         inet_pton(AF_INET6, IPV6_HOST1, &in6Addr);
 
-        sockAddrIn6_1 = hycast::SockAddr(in6Addr, PORT1);
+        sockAddrIn6_1 = SockAddr(in6Addr, PORT1);
 
         inet_pton(AF_INET6, IPV6_HOST2, &in6Addr);
-        sockAddrIn6_2 = hycast::SockAddr(in6Addr, PORT2);
+        sockAddrIn6_2 = SockAddr(in6Addr, PORT2);
 
         // Hostname socket addresses
-        sockAddrName_1 = hycast::SockAddr{NAME_HOST1, PORT1};
-        sockAddrName_2 = hycast::SockAddr{NAME_HOST2, PORT2};
+        sockAddrName_1 = SockAddr{NAME_HOST1, PORT1};
+        sockAddrName_2 = SockAddr{NAME_HOST2, PORT2};
     }
 };
 
 TEST_F(SockAddrTest, DefaultConstruction) {
-    hycast::SockAddr sockAddr{}; // Braces are necessary
+    SockAddr sockAddr{}; // Braces are necessary
     EXPECT_FALSE(sockAddr);
 }
 
 TEST_F(SockAddrTest, BadSpec) {
-    EXPECT_THROW(hycast::SockAddr("#"), std::invalid_argument);
-    EXPECT_THROW(hycast::SockAddr("127.0.0.1:99999"), std::invalid_argument);
-    EXPECT_THROW(hycast::SockAddr("localhost:999999"), std::invalid_argument);
-    EXPECT_THROW(hycast::SockAddr("[ax:zz]:1"), std::invalid_argument);
+    EXPECT_THROW(SockAddr("#"), std::invalid_argument);
+    EXPECT_THROW(SockAddr("127.0.0.1:99999"), std::invalid_argument);
+    EXPECT_THROW(SockAddr("localhost:999999"), std::invalid_argument);
+    EXPECT_THROW(SockAddr("[ax:zz]:1"), std::invalid_argument);
 }
 
 // Tests construction of an IPv4 socket address
 TEST_F(SockAddrTest, IPv4Construction) {
-    hycast::SockAddr sockAddr{sockAddrInSpec_1};
+    SockAddr sockAddr{sockAddrInSpec_1};
 
     EXPECT_TRUE(sockAddr);
 
@@ -126,7 +128,7 @@ TEST_F(SockAddrTest, IPv4Construction) {
 
 // Tests construction of an IPv6 socket address
 TEST_F(SockAddrTest, IPv6Construction) {
-    hycast::SockAddr sockAddr{sockAddrIn6Spec_1};
+    SockAddr sockAddr{sockAddrIn6Spec_1};
 
     EXPECT_TRUE(sockAddr);
 
@@ -137,12 +139,47 @@ TEST_F(SockAddrTest, IPv6Construction) {
 
 // Tests construction of a named socket address
 TEST_F(SockAddrTest, NameConstruction) {
-    hycast::SockAddr sockAddr{sockAddrNameSpec_1};
+    SockAddr sockAddr{sockAddrNameSpec_1};
 
     EXPECT_TRUE(sockAddr);
 
     EXPECT_STREQ(sockAddrNameSpec_1, sockAddr.to_string().data());
     EXPECT_TRUE((sockAddr < sockAddrName_2) != (sockAddrName_2 < sockAddr));
+}
+
+// Tests hashing
+TEST_F(SockAddrTest, Hash) {
+    const auto   myHash = std::hash<SockAddr>{};
+
+    size_t h1 = myHash(sockAddrIn_1);
+    size_t h2 = myHash(sockAddrIn_2);
+    EXPECT_NE(h1, h2);
+
+    h1 = myHash(sockAddrIn_1);
+    h2 = myHash(sockAddrName_1);
+    EXPECT_NE(h1, h2);
+
+    h1 = myHash(sockAddrIn6_1 );
+    h2 = myHash(sockAddrIn6_2);
+    EXPECT_NE(h1, h2);
+
+    h1 = myHash(sockAddrIn6_1 );
+    h2 = myHash(sockAddrName_1);
+    EXPECT_NE(h1, h2);
+
+    h1 = myHash(sockAddrName_1 );
+    h2 = myHash(sockAddrName_2);
+    EXPECT_NE(h1, h2);
+
+    SockAddr sockAddrIn = sockAddrIn_1.clone(PORT1+1);
+    h1 = myHash(sockAddrIn_1 );
+    h2 = myHash(sockAddrIn);
+    EXPECT_NE(h1, h2);
+
+    SockAddr sockAddrIn6 = sockAddrIn6_1.clone(PORT1+1);
+    h1 = myHash(sockAddrIn6_1 );
+    h2 = myHash(sockAddrIn6);
+    EXPECT_NE(h1, h2);
 }
 
 // Tests less-than operator
@@ -165,11 +202,11 @@ TEST_F(SockAddrTest, LessThanOperator) {
     EXPECT_TRUE(sockAddrName_1 < sockAddrName_2);
     EXPECT_FALSE(sockAddrName_2 < sockAddrName_1);
 
-    hycast::SockAddr sockAddrIn = sockAddrIn_1.clone(PORT1+1);
+    SockAddr sockAddrIn = sockAddrIn_1.clone(PORT1+1);
     EXPECT_TRUE(sockAddrIn_1 < sockAddrIn);
     EXPECT_FALSE(sockAddrIn < sockAddrIn_1);
 
-    hycast::SockAddr sockAddrIn6 = sockAddrIn6_1.clone(PORT1+1);
+    SockAddr sockAddrIn6 = sockAddrIn6_1.clone(PORT1+1);
     EXPECT_TRUE(sockAddrIn6_1 < sockAddrIn6);
     EXPECT_FALSE(sockAddrIn6 < sockAddrIn6_1);
 }

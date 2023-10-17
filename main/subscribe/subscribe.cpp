@@ -1,6 +1,6 @@
 /**
  * @file subscribe.cpp
- * Program to subscribe to data-products via Hycast.
+ * Program to subscribe to data-products via Bicast.
  *
  * @section Legal
  * @copyright 2022 University Corporation for Atmospheric Research
@@ -25,6 +25,7 @@
 #include "Disposer.h"
 #include "FileUtil.h"
 #include "Node.h"
+#include "P2pSrvrInfo.h"
 #include "Parser.h"
 #include "PeerConn.h"
 #include "Shield.h"
@@ -47,7 +48,7 @@ static constexpr int DEF_TIMEOUT      = 15000;
 /// Default peer evaluation duration
 static constexpr int DEF_EVAL_DURATION = 300;
 
-using namespace hycast;
+using namespace bicast;
 
 using String = std::string; ///< String type
 
@@ -460,7 +461,7 @@ static void subscribe(
 
     Xprt xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
 
-    LOG_NOTE("Created publisher-transport " + xprt.to_string());
+    LOG_INFO("Created publisher-transport " + xprt.to_string());
 
     P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (runPar.p2p.maxPeers+1)/2};
 
@@ -484,6 +485,7 @@ static void subscribe(
     subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
     subTracker = subInfo.tracker;              // Update official tracker
     DataSeg::setMaxSegSize(subInfo.maxSegSize);
+    LOG_NOTE("Maximum data-segment size is " + std::to_string(subInfo.maxSegSize) + " bytes");
 
     // Address family of receiving interface should match that of multicast group
     if (runPar.mcastIface.isAny()) {
@@ -543,6 +545,40 @@ static void stopSubNode(
     }
 }
 
+static void printMetrics(SubNodePtr subNode)
+{
+    long numMcastOrig;
+    long numP2pOrig;
+    long numMcastDup;
+    long numP2pDup;
+    subNode->getPduCounts(numMcastOrig, numP2pOrig, numMcastDup, numP2pDup);
+    LOG_NOTE("Metrics:");
+    LOG_NOTE("    Number of multicast PDUs:");
+    LOG_NOTE("        Original:  " + std::to_string(numMcastOrig));
+    LOG_NOTE("        Duplicate: " + std::to_string(numMcastDup));
+    LOG_NOTE("    Number of P2P PDUs:");
+    LOG_NOTE("        Original:  " + std::to_string(numP2pOrig));
+    LOG_NOTE("        Duplicate: " + std::to_string(numP2pDup));
+
+    const auto totalProds = subNode->getTotalProds();
+    if (totalProds == 0) {
+        LOG_NOTE("Total:");
+        LOG_NOTE("    Products: " + std::to_string(totalProds));
+    }
+    else {
+        const auto totalBytes = subNode->getTotalBytes();
+        const auto meanProdSize = static_cast<double>(totalBytes)/totalProds;
+        const auto totalLatency = subNode->getTotalLatency();
+        const auto byteRate = totalBytes/totalLatency;
+        LOG_NOTE("    Total Number of:");
+        LOG_NOTE("        Products: " + std::to_string(totalProds));
+        LOG_NOTE("        Bytes:    " + std::to_string(totalBytes));
+        LOG_NOTE("    Mean Product:");
+        LOG_NOTE("        Size:    " + std::to_string(meanProdSize) + " bytes");
+        LOG_NOTE("        Latency: " + std::to_string(totalLatency/totalProds) + " s");
+    }
+}
+
 /**
  * Executes a session.
  * @throw RuntimeError  Couldn't connect to publisher's server at this time
@@ -578,6 +614,8 @@ static void trySession()
         LOG_DEBUG(ex);
         throw;
     }
+
+    printMetrics(subNode);
 }
 
 /**
@@ -598,7 +636,7 @@ int main(
     subTracker = Tracker(runPar.p2p.trackerSize);
     done = false;
     log_setName(::basename(argv[0]));
-    std::set_terminate(&terminate); // NB: Hycast version
+    std::set_terminate(&terminate); // NB: Bicast version
     setSigHand(); // Catches termination signals
     LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
 

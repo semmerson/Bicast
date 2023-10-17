@@ -1,8 +1,10 @@
 #include "config.h"
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "logging.h"
+#include "P2pSrvrInfo.h"
 #include "Peer.h"
+#include "Tracker.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
@@ -12,7 +14,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 /// The fixture for testing class `Peer`
 class PeerTest : public ::testing::Test, public Peer::SubMgr // Peer::SubMgr has all functions

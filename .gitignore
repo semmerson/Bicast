@@ -39,6 +39,5 @@ rcvrRepo/
 sndrRepo/
 .libs/
 vgcore.*
-/hycast-1.0/
 /_build/
 /build/

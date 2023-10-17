@@ -22,12 +22,12 @@
 
 #include "config.h"
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "Trigger.h"
 
 #include <thread>
 
-namespace hycast {
+namespace bicast {
 
 using namespace std::chrono;
 

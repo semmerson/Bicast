@@ -34,7 +34,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 /// Saves a time persistently.
 class LastProdImpl : public LastProd

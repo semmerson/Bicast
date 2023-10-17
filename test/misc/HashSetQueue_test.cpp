@@ -28,7 +28,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 /// The fixture for testing class `HashSetQueue`
 class HashSetQueueTest : public testing::Test

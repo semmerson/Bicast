@@ -23,14 +23,14 @@
 #ifndef MAIN_PROTO_BOOKKEEPER_H_
 #define MAIN_PROTO_BOOKKEEPER_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "SockAddr.h"
 
 #include <memory>
 #include <unordered_set>
 #include <utility>
 
-namespace hycast {
+namespace bicast {
 
 class Bookkeeper;                                  ///< Forward declaration
 using BookkeeperPtr = std::shared_ptr<Bookkeeper>; ///< Smart pointer to an implementation

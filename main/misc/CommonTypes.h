@@ -9,33 +9,27 @@
 #ifndef MAIN_MISC_COMMONTYPES_H_
 #define MAIN_MISC_COMMONTYPES_H_
 
-#include "error.h"
-
-#include <chrono>
 #include <condition_variable>
-#include <functional>
-#include <mutex>
-#include <pthread.h>
-#include <string>
 #include <thread>
 
-namespace hycast {
+namespace bicast {
 
-// Convenience types
-using Thread       = std::thread;                ///< Type of a thread
-using Mutex        = std::mutex;                 ///< Type of a mutex
-using Guard        = std::lock_guard<Mutex>;     ///< Type of a guard lock
-using Lock         = std::unique_lock<Mutex>;    ///< Type of a condition variable lock
-using Cond         = std::condition_variable;    ///< Type of a condition variable
-using String       = std::string;                ///< Type of a string
-using SysClock     = std::chrono::system_clock;  ///< Type of the system clock
-using SysTimePoint = SysClock::time_point;       ///< Type of a system time point
-using SysDuration  = SysClock::duration;         ///< Type of a system clock duration
+/// Convenience types
+using Thread       = std::thread;                ///< A thread
+using Mutex        = std::mutex;                 ///< A mutex
+using Guard        = std::lock_guard<Mutex>;     ///< A guard lock
+using Lock         = std::unique_lock<Mutex>;    ///< A condition variable lock
+using Cond         = std::condition_variable;    ///< A condition variable
+using String       = std::string;                ///< A string
+using SysClock     = std::chrono::system_clock;  ///< The system clock
+using SysTimePoint = SysClock::time_point;       ///< A system clock time point
+using SysDuration  = SysClock::duration;         ///< A system clock duration
 
 /// Ratio of the SysClock period to one second
-constexpr double SysClockRatio = (static_cast<double>(SysDuration::period::num)) /
+constexpr double sysClockRatio = (static_cast<double>(SysDuration::period::num)) /
         SysDuration::period::den;
 
+#if 0
 /**
  * RAII class for ensuring that a joinable thread halts and gets joined when an instance of this
  * class goes out of scope.
@@ -46,7 +40,7 @@ public:
     using HaltFunc = std::function<void()>; ///< Type of function used to halt the thread
 
 private:
-    Thread    thread; ///< The thread being guarded
+    Thread   thread; ///< The thread being guarded
     HaltFunc halt;   ///< The function to halt the thread
 
     /// Cancels the thread.
@@ -100,11 +94,14 @@ public:
     ThreadGuard(const ThreadGuard&) =delete;
     ThreadGuard& operator=(const ThreadGuard& rhs) =delete;
 };
+#endif
 
 } // namespace
 
 namespace std {
-    hycast::String to_string(const hycast::SysTimePoint& timePoint);
+    using namespace bicast;
+
+    string to_string(const SysTimePoint& timePoint);
 }
 
 #endif /* MAIN_MISC_COMMONTYPES_H_ */

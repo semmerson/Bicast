@@ -22,36 +22,23 @@
  */
 #include "config.h"
 
-#include "error.h"
-#include "HycastProto.h"
+#include "logging.h"
+#include "P2pSrvrInfo.h"
 #include "ThreadException.h"
+#include "Tracker.h"
 #include "Xprt.h"
 
-#include <chrono>
-#include <iterator>
-#include <map>
-#include <mutex>
 #include <queue>
 #include <set>
 #include <unordered_map>
-#include <utility>
 
-namespace hycast {
+namespace bicast {
 
 /// Tracker of P2P-servers
 class Tracker::Impl final : public XprtAble
 {
-    struct SrvrElt {
-        P2pSrvrInfo info;
-        enum class State {
-            AVAILABLE,
-            ACTIVE,
-            DELAYED
-        }           state;
-    };
     using SrvrInfoMap = std::unordered_map<SockAddr, P2pSrvrInfo>;
-    SrvrInfoMap srvrInfos; /// Information on presumably valid P2P servers
-
+    SrvrInfoMap srvrInfos; ///< Information on presumably valid P2P servers
     class QueueComp {
         Impl& trackerImpl;
 
@@ -448,14 +435,13 @@ public:
         queueCond.notify_all();
         delayCond.notify_all();
     }
-
     /**
      * Writes itself to a transport.
      * @param[in] xprt     The transport
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(Xprt xprt) const {
+    bool write(Xprt& xprt) const {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
@@ -468,7 +454,6 @@ public:
         for (auto& pair : srvrInfos)
             if (!pair.second.write(xprt))
                 return false;
-
         return true;
     }
 
@@ -478,7 +463,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         threadEx.throwIfSet();
 
         Guard guard{mutex};
@@ -502,7 +487,6 @@ public:
 
             tryAdd(srvrInfo);
         }
-
         return true;
     }
 };
@@ -512,7 +496,6 @@ Tracker::Tracker(
         const SysDuration& delay)
     : pImpl{new Impl(capacity, delay)} {
 }
-
 std::string Tracker::to_string() const {
     return pImpl->to_string();
 }
@@ -551,11 +534,11 @@ void Tracker::halt() const {
     pImpl->halt();
 }
 
-bool Tracker::write(Xprt xprt) const {
+bool Tracker::write(Xprt& xprt) const {
     return pImpl->write(xprt);
 }
 
-bool Tracker::read(Xprt xprt) {
+bool Tracker::read(Xprt& xprt) {
     return pImpl->read(xprt);
 }
 

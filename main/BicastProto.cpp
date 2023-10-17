@@ -1,10 +1,10 @@
 /**
- * This file implements the types used in the Hycast protocol.
+ * This file implements the types used in the Bicast protocol.
  *
- *  @file:  HycastProto.cpp
+ *  @file:  BicastProto.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,31 +20,39 @@
  */
 #include "config.h"
 
+#include "BicastProto.h"
+
 #include "error.h"
-#include "FileUtil.h"
-#include "HycastProto.h"
 #include "Xprt.h"
 
 #include <chrono>
+#include <cinttypes>
 #include <climits>
 #include <cstdio>
 #include <cstring>
-#include <time.h>
-#include <inttypes.h>
+#include <ctime>
+#include <unordered_set>
 #include <openssl/sha.h>
 
-namespace hycast {
+namespace bicast {
 
-bool FeedInfo::write(Xprt xprt) const {
-    return mcastGroup.write(xprt) &&
-            mcastSource.write(xprt) &&
-            xprt.write(segSize);
+PduId::PduId(Xprt& xprt) {
+    if (!xprt.read(value))
+        throw EOF_ERROR("Couldn't read value");
+    if (value > MAX_PDU_ID)
+        throw INVALID_ARGUMENT("value=" + to_string());
 }
 
-bool FeedInfo::read(Xprt xprt) {
-    return mcastGroup.read(xprt) &&
-            mcastSource.read(xprt) &&
-            xprt.read(segSize);
+bool PduId::write(Xprt& xprt) const {
+    return xprt.write(value);
+}
+
+bool PduId::read(Xprt& xprt) {
+    if (!xprt.read(value))
+        return false;
+    if (value > MAX_PDU_ID)
+        throw INVALID_ARGUMENT("value=" + to_string());
+    return true;
 }
 
 /**
@@ -78,47 +86,33 @@ String ProdId::to_string() const noexcept {
     return String(buf);
 }
 
-std::string DataSegId::to_string(const bool withName) const
-{
+bool ProdId::write(Xprt& xprt) const {
+    return xprt.write(id);
+}
+
+bool ProdId::read(Xprt& xprt) {
+    return xprt.read(id);
+}
+
+std::string DataSegId::to_string(const bool withName) const {
     String string;
     if (withName)
         string += "DataSegId";
     return string + "{prodId=" + prodId.to_string() + ", offset=" + std::to_string(offset) + "}";
 }
 
-String Notice::to_string() const {
-    switch (id) {
-    case Id::DATA_SEG_ID:
-        return dataSegId.to_string();
-    case Id::PROD_INDEX:
-        return prodId.to_string();
-    case Id::GOOD_PEER_SRVR:
-        return srvrAddr.to_string();
-    case Id::BAD_PEER_SRVR:
-        return srvrAddr.to_string();
-    case Id::GOOD_PEER_SRVRS:
-        return tracker.to_string();
-    case Id::BAD_PEER_SRVRS:
-        return tracker.to_string();
-    default:
-        return "<unset>";
-    }
+bool DataSegId::write(Xprt& xprt) const {
+    auto success = prodId.write(xprt);
+    if (success)
+        success = xprt.write(offset);
+    return success;
 }
 
-size_t Notice::hash() const noexcept {
-    return (id == Id::PROD_INDEX)
-            ? prodId.hash()
-            : (id == Id::DATA_SEG_ID)
-                ? dataSegId.hash()
-                : 0;
-}
-
-bool Notice::operator==(const Notice& rhs) const noexcept {
-    if (id != rhs.id)    return false;
-    if (id == Id::UNSET) return true;
-    return (id == Id::PROD_INDEX)
-            ? prodId == rhs.prodId
-            : dataSegId == rhs.dataSegId;
+bool DataSegId::read(Xprt& xprt) {
+    auto success = prodId.read(xprt);
+    if (success)
+        success = xprt.read(offset);
+    return success;
 }
 
 /******************************************************************************/
@@ -127,9 +121,8 @@ bool Notice::operator==(const Notice& rhs) const noexcept {
 
 class ProdIdSet::Impl
 {
-    using Set = std::unordered_set<ProdId>;
-
-    Set prodIds;
+private:
+    std::unordered_set<ProdId> prodIds;
 
 public:
     /**
@@ -137,7 +130,7 @@ public:
      * @param[in] n  Initial capacity
      */
     Impl(const size_t n)
-        : prodIds{n}
+        : prodIds(n)
     {}
 
     /**
@@ -163,7 +156,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const {
+    bool write(Xprt& xprt) const {
         if (!xprt.write(static_cast<uint32_t>(prodIds.size())))
             return false;
         for (auto iter = prodIds.begin(), end = prodIds.end(); iter != end; ++iter)
@@ -178,7 +171,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         uint32_t size;
         if (!xprt.read(size))
             return false;
@@ -223,7 +216,7 @@ public:
      * Returns an iterator over the product identifiers.
      * @return An iterator over the product identifiers
      */
-    Set::iterator begin() {
+    decltype(prodIds)::iterator begin() {
         return prodIds.begin();
     }
 
@@ -231,7 +224,7 @@ public:
      * Returns an iterator just outside the product identifiers.
      * @return An iterator just outside the product identifiers
      */
-    Set::iterator end() {
+    decltype(prodIds)::iterator end() {
         return prodIds.end();
     }
 
@@ -255,11 +248,11 @@ void ProdIdSet::subtract(const ProdIdSet rhs) {
     pImpl->subtract(*rhs.pImpl);
 }
 
-bool ProdIdSet::write(Xprt xprt) const {
+bool ProdIdSet::write(Xprt& xprt) const {
     return pImpl->write(xprt);
 }
 
-bool ProdIdSet::read(Xprt xprt) {
+bool ProdIdSet::read(Xprt& xprt) {
     return pImpl->read(xprt);
 }
 
@@ -302,7 +295,12 @@ class ProdInfo::Impl
     SysTimePoint creationTime; ///< When product was initially created
 
 public:
-    Impl() =default;
+    Impl()
+        : prodId()
+        , name()
+        , size(0)
+        , creationTime()
+    {}
 
     /**
      * Constructs.
@@ -370,7 +368,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool write(Xprt xprt) const {
+    bool write(Xprt& xprt) const {
         //LOG_DEBUG("Writing product information to %s", xprt.to_string().data());
         auto success = prodId.write(xprt);
         if (success) {
@@ -396,7 +394,7 @@ public:
      * @retval    true     Success
      * @retval    false    Lost connection
      */
-    bool read(Xprt xprt) {
+    bool read(Xprt& xprt) {
         //LOG_DEBUG("Reading product information from %s", xprt.to_string().data());
         auto success = prodId.read(xprt);
         if (success) {
@@ -429,13 +427,13 @@ public:
 ProdInfo::ProdInfo(const ProdId        index,
                    const std::string&  name,
                    const ProdSize      size,
-                   const SysTimePoint& createTime)
+                   const SysTimePoint  createTime)
     : pImpl{new Impl(index, name, size, createTime)}
 {}
 
 ProdInfo::ProdInfo(const std::string&  name,
                    const ProdSize      size,
-                   const SysTimePoint& createTime)
+                   const SysTimePoint  createTime)
     : ProdInfo(ProdId{name}, name, size, createTime)
 {}
 
@@ -472,47 +470,27 @@ String ProdInfo::to_string(const bool withName) const {
     return pImpl ? pImpl->to_string(withName) : "<unset>";
 }
 
-bool ProdInfo::write(Xprt xprt) const {
+bool ProdInfo::write(Xprt& xprt) const {
     return pImpl->write(xprt);
 }
 
-bool ProdInfo::read(Xprt xprt) {
+bool ProdInfo::read(Xprt& xprt) {
     if (!pImpl)
         pImpl = std::make_shared<Impl>();
     return pImpl->read(xprt);
 }
 
-/**************************************************************************************************/
-// P2P server information
-
-String P2pSrvrInfo::to_string() const {
-    return "{addr=" + srvrAddr.to_string() + ", tier=" + std::to_string(tier) +
-            ", numAvail=" + std::to_string(numAvail) + ", valid=" + std::to_string(valid) + "}";
-}
-
-bool P2pSrvrInfo::write(Xprt xprt) const {
-    return srvrAddr.write(xprt) &&
-            xprt.write(tier) &&
-            xprt.write(numAvail) &&
-            xprt.write(valid);
-}
-
-bool P2pSrvrInfo::read(Xprt xprt) {
-    return srvrAddr.read(xprt) &&
-            xprt.read(tier) &&
-            xprt.read(numAvail) &&
-            xprt.read(valid);
-}
-
 } // namespace
 
 namespace std {
+    using namespace bicast;
+
     /// Returns the string representation of a data product's identifier
-    string to_string(const hycast::ProdId prodId) {
+    string to_string(const ProdId prodId) {
         return prodId.to_string();
     }
     /// Returns the string representation of information on a data product
-    string to_string(const hycast::ProdInfo prodInfo) {
+    string to_string(const ProdInfo prodInfo) {
         return prodInfo.to_string();
     }
 }

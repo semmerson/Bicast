@@ -32,7 +32,7 @@
 #include <queue>
 #include <vector>
 
-namespace hycast {
+namespace bicast {
 
 typedef std::chrono::steady_clock Clock;     ///< Type of clock used
 typedef Clock::time_point         TimePoint; ///< Type of time point used

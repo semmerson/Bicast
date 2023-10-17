@@ -1,63 +1,86 @@
 set -e
 
-rm -rf pubrepo subrepo_*
+# Set base variables
+progName=`basename $0`
+numSubs=4
+blockSize=10000
+numBlocks=100
+numFiles=10
+#interface=192.168.58.141
+interface=127.0.0.1
 
-#numSubs=4
-numSubs=2
-blockSize=1440
-#numBlocks=2
-numBlocks=1
-#numFiles=2
-numFiles=1
-interFileUsleep=100000
-interface=192.168.58.132 
-#interface=127.0.0.1
+# Set derived variables
+testDir=/tmp/$progName
+pubRepo=$testDir/pubRepo
+pubProds=$pubRepo/products
+subRepoTempl=$testDir/subRepo
 
-# Start publisher
-echo Starting publisher
-../main/publish/publish -s $interface -r pubrepo &
+# Clean up any previous session
+rm -rf $testDir
+mkdir $testDir
+
+declare -a subRepos subProds subPids
+iSub=0; while test $((iSub++)) -lt $numSubs; do
+    subRepos[$iSub]=${subRepoTempl}_$iSub
+    subProds[$iSub]=${subRepos[$iSub]}/products
+    mkdir -p ${subProds[$iSub]}
+done
+
+# Ensure termination of all child processes on exit
+trap wait EXIT
+trap "trap '' TERM; kill 0; exit" INT
+
+# Start the publisher
+echo "$progName: Starting publisher"
+../main/publish/publish -d 50000 -l NOTE -s $interface -r $pubRepo &
+sleep 1 # Give the publisher time
 pubPid=$!
 
-sleep 1
-
-# Start subscribers
-declare -a subPids
+# Start the subscribers
+logLevel=INFO
 iSub=0; while test $((iSub++)) -lt $numSubs; do
-    echo Starting subscriber $iSub
-    ../main/subscribe/subscribe -r subrepo_$iSub $interface &
+    echo "$progName: Starting subscriber $iSub"
+    ../main/subscribe/subscribe -l $logLevel -r ${subRepos[$iSub]} $interface &
+    logLevel=NOTE
     subPids[$iSub]=$!
+    sleep 1 # Give the subscriber time
 done
 
-sleep $numSubs
-
-# Create files to distribute
-iFile=0; while test $((iFile++)) -lt $numFiles; do
-    echo Creating file $iFile
-    dd ibs=$blockSize count=$numBlocks </dev/urandom >pubrepo/$iFile || exit 1
-    usleep $interFileUsleep
-done
-
-# Wait for files to show up in the subscriber's repositories
-iSub=0; while test $((iSub++)) -lt $numSubs; do
-    echo Testing for files received by subscriber $iSub
-    #while test `ls subrepo_$iSub/ | wc -w 2>/dev/null` -lt $numFiles; do
-    #    usleep $interFileUsleep
-    #done
-    test `ls subrepo_$iSub/ | wc -w 2>/dev/null` -lt $numFiles || sleep 1
-done
-
-# Compare subscriber repositories with publisher's
-iSub=0; while test $((iSub++)) -lt $numSubs; do
-    echo Comparing files received by subscriber $iSub
+# Create and distribute the files
+echo "$progName: Creating files"
+inotifywait -mq -e moved_to ${subProds[*]} | ( \
+    sleep 1 # Give inotifywait(1) time
     iFile=0; while test $((iFile++)) -lt $numFiles; do
-        cmp subrepo_$iSub/$iFile pubrepo/$iFile
+        pubFile=$pubProds/$iFile
+#       echo "$progName: Creating file $pubFile"
+        dd ibs=$blockSize count=$numBlocks </dev/urandom >$pubFile 2>/dev/null
+        iSub=0; while test $((iSub++)) -lt $numSubs; do
+#           sleep 1
+            read line
+#           echo $progName: $line
+        done
+#       echo $progName: File $iFile received
+    done
+    ps -e -o user,pid,cmd | grep -w inotifywait | awk '$1 ~ /^'$USER'$/ && $3 ~ /^inotifywait$/ {
+            system("kill " $2);}'
+)
+
+# Verify distribution of the files
+iFile=0; while test $((iFile++)) -lt $numFiles; do
+    iSub=0; while test $((iSub++)) -lt $numSubs; do
+        # Compare file with original
+        cmp ${subProds[$iSub]}/$iFile $pubProds/$iFile
     done
 done
 
+# Kill the subscribers
+#echo "$progName: Killing subscribers"
 iSub=0; while test $((iSub++)) -lt $numSubs; do
-    echo Killing subscriber $iSub
-    kill ${subPids[$iSub]}
+    pid=${subPids[$iSub]}
+    echo "$progName: Killing subscriber $pid"
+    kill $pid
 done
-echo Killing publisher
+
+# Kill the publisher
+echo "$progName: Killing publisher $pubPid"
 kill $pubPid
-wait

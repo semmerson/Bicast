@@ -30,25 +30,25 @@ target_link_libraries(unordered_map_test gtest)
 add_test(unordered_map_test unordered_map_test)
 
 add_executable(error_test error_test.cpp)
-target_link_libraries(error_test hycast gtest)
+target_link_libraries(error_test bicast gtest)
 add_test(error_test error_test)
 
 #add_executable(MapQ_test MapQ_test.cpp)
-#target_link_libraries(MapQ_test hycast gtest)
+#target_link_libraries(MapQ_test bicast gtest)
 #add_test(MapQ_test MapQ_test)
 
 #add_executable(DelayQueue_test DelayQueue_test.cpp)
-#target_link_libraries(DelayQueue_test hycast gtest)
+#target_link_libraries(DelayQueue_test bicast gtest)
 #add_test(DelayQueue_test DelayQueue_test)
 
 add_executable(HashSetQueue_test HashSetQueue_test.cpp)
-target_link_libraries(HashSetQueue_test hycast ${GTEST_LIBRARY} pthread)
+target_link_libraries(HashSetQueue_test bicast ${GTEST_LIBRARY} pthread)
 add_test(HashSetQueue_test HashSetQueue_test)
 
 add_executable(HashMapQueue_test HashMapQueue_test.cpp)
-target_link_libraries(HashMapQueue_test hycast gtest pthread)
+target_link_libraries(HashMapQueue_test bicast gtest pthread)
 add_test(HashMapQueue_test HashMapQueue_test)
 
 add_executable(reuseaddr_test reuseaddr_test.c)
-target_link_libraries(reuseaddr_test hycast pthread)
+target_link_libraries(reuseaddr_test bicast pthread)
 add_test(reuseaddr_test reuseaddr_test)

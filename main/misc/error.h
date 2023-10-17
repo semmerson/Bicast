@@ -22,8 +22,6 @@
 #ifndef MAIN_MISC_ERROR_H_
 #define MAIN_MISC_ERROR_H_
 
-#include "logging.h"
-
 #include <atomic>
 #include <cerrno>
 #include <cstring>
@@ -32,7 +30,7 @@
 #include <string>
 #include <system_error>
 
-namespace hycast {
+namespace bicast {
 
 /// Invalid argument error
 class InvalidArgument : public std::invalid_argument
@@ -52,7 +50,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating an invalid argument error
-#define INVALID_ARGUMENT(msg) InvalidArgument(__FILE__, __LINE__, __func__, (msg))
+#define INVALID_ARGUMENT(msg) bicast::InvalidArgument(__FILE__, __LINE__, __func__, (msg))
 
 /// Logic error
 class LogicError : public std::logic_error
@@ -72,7 +70,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating a logic error
-#define LOGIC_ERROR(msg) LogicError(__FILE__, __LINE__, __func__, msg)
+#define LOGIC_ERROR(msg) bicast::LogicError(__FILE__, __LINE__, __func__, msg)
 
 /// Something wasn't found error
 class NotFoundError : public std::runtime_error
@@ -92,7 +90,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating a not-found error
-#define NOT_FOUND_ERROR(msg) NotFoundError(__FILE__, __LINE__, __func__, msg)
+#define NOT_FOUND_ERROR(msg) bicast::NotFoundError(__FILE__, __LINE__, __func__, msg)
 
 /// Domain error
 class DomainError : public std::domain_error
@@ -112,7 +110,7 @@ public:
             const std::string msg);
 };
 /// Macro for using `DomainError`
-#define DOMAIN_ERROR(msg) DomainError(__FILE__, __LINE__, __func__, msg)
+#define DOMAIN_ERROR(msg) bicast::DomainError(__FILE__, __LINE__, __func__, msg)
 
 /// Out-of-range error.
 class OutOfRange : public std::out_of_range
@@ -132,7 +130,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating an out-of-range error
-#define OUT_OF_RANGE(msg) OutOfRange(__FILE__, __LINE__, __func__, msg)
+#define OUT_OF_RANGE(msg) bicast::OutOfRange(__FILE__, __LINE__, __func__, msg)
 
 /// Runtime error
 class RuntimeError : public std::runtime_error
@@ -152,7 +150,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating a runtime error
-#define RUNTIME_ERROR(msg) RuntimeError(__FILE__, __LINE__, __func__, msg)
+#define RUNTIME_ERROR(msg) bicast::RuntimeError(__FILE__, __LINE__, __func__, msg)
 
 /// End-of-file error
 class EofError : public RuntimeError
@@ -172,7 +170,7 @@ public:
             const std::string msg);
 };
 /// Macro for creating an end-of-file error
-#define EOF_ERROR(msg) EofError(__FILE__, __LINE__, __func__, msg)
+#define EOF_ERROR(msg) bicast::EofError(__FILE__, __LINE__, __func__, msg)
 
 /// System error
 class SystemError : public std::system_error
@@ -194,7 +192,7 @@ public:
             const int         errnum = errno);
 };
 /// Macro for creating a system error
-#define SYSTEM_ERROR(...) SystemError(__FILE__, __LINE__, __func__, __VA_ARGS__)
+#define SYSTEM_ERROR(...) bicast::SystemError(__FILE__, __LINE__, __func__, __VA_ARGS__)
 
 /**
  * Constructs a message for an exception.

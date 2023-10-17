@@ -20,8 +20,8 @@
  * limitations under the License.
  */
 
-#ifndef HYCAST_MISC_SSLHELP_H
-#define HYCAST_MISC_SSLHELP_H
+#ifndef HYCAST_MAIN_MAC_SSLHELP_H
+#define HYCAST_MAIN_MAC_SSLHELP_H
 
 #include <queue>
 #include <string>
@@ -64,4 +64,4 @@ void throwOpenSslError(const std::string& msg);
 
 } // Namespace
 
-#endif /* HYCAST_MISC_SSLHELP_H */
+#endif /* HYCAST_MAIN_MAC_SSLHELP_H */

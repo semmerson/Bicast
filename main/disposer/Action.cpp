@@ -23,6 +23,7 @@
 
 #include "Action.h"
 #include "FileUtil.h"
+#include "logging.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -32,7 +33,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 /// Implementation of an action
 class Action::Impl
@@ -138,9 +139,9 @@ public:
     }
 
     /**
-     * Whether or not the associated file-descriptor should be kept open.
-     * @retval true   Yes
-     * @retval false  No
+     * Indicates if the associated file descriptor should be kept open between products.
+     * @retval true   The associated file descriptor should be kept open between products
+     * @retval false  The associated file descriptor should not be kept open between products
      */
     bool shouldPersist() const noexcept {
         return persist;
@@ -182,8 +183,7 @@ public:
      * @param[out] pid     The PID of any child process or -1, which means don't `wait(3)` on it
      * @param[out] args    The argument string
      * @retval    true     Success. `pid` and `cmd` are set. `pid < 0` if no child process.
-     * @retval    false    Too many file descriptors are open
-     * @retval    false    Too many child processes exist
+     * @retval    false    Too many file descriptors are open or too many child processes exist
      * @throw SystemError  System failure
      */
     virtual bool process(

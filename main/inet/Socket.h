@@ -28,7 +28,7 @@
 #include <memory>
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
 /// Socket
 class Socket
@@ -355,12 +355,6 @@ public:
      */
     explicit TcpSrvrSock(const SockAddr sockAddr,
                          const int      queueSize = 0);
-
-    /**
-     * Calls listen() on the underlying socket.
-     * @param[in] size  Size of the listening queue
-     */
-    void listen(const int size) const;
 
     /**
      * Accepts the next, incoming connection.

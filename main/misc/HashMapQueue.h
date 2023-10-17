@@ -28,7 +28,7 @@
 #include <iterator>
 #include <unordered_map>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * A combination of queue and hash table.
@@ -76,6 +76,7 @@ class HashMapQueue
         LogicalEntry operator*() {return LogicalEntry{next->first, next->second.value};}
     };
 
+    //static auto hash = [](const KEY& key){return key.hash();};
     Hash  myHash;  ///< Hash function
     Equal myEqual; ///< Equality function
     Map   map;     ///< Map from key to linked value
@@ -104,7 +105,7 @@ public:
      * @return               Pointer to the added value
      * @retval    `nullptr`  Value wasn't added because the key already exists
      * @throw                Exceptions related to construction of the key and value
-     * @exceptionSafety      Strong guarantee
+     * @exceptionsafety      Strong guarantee
      * @threadsafety         Safe
      */
     VALUE* pushBack(
@@ -129,12 +130,16 @@ public:
     /**
      * Indicates if this instance is empty.
      * @retval true   This instance is empty
-     * @retval true   This instance is not empty
+     * @retval false  This instance is not empty
      */
     bool empty() const {
         return map.empty();
     }
 
+    /**
+     * Returns the number of elements in the queue.
+     * @return The number of elements in the queue
+     */
     size_t size() const {
         return map.size();
     }
@@ -191,7 +196,7 @@ public:
      * @param[in]  key    Key
      * @retval true       Entry existed
      * @retval false      Entry did not exist
-     * @exceptionSafety   Nothrow
+     * @exceptionsafety   Nothrow
      * @threadsafety      Safe
      */
     bool erase(KEY& key) noexcept {
@@ -219,10 +224,18 @@ public:
         return true;
     }
 
+    /**
+     * Returns an iterator pointing to the first entry in the queue.
+     * @return An iterator pointing to the first entry in the queue
+     */
     Iterator begin() {
         return Iterator(head);
     }
 
+    /**
+     * Returns an iterator pointing to just beyond the last entry in the queue.
+     * @return An iterator pointing to just beyond the last entry in the queue
+     */
     Iterator end() {
         return ++Iterator{tail};
     }

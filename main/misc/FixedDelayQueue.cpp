@@ -30,7 +30,7 @@
 #include <mutex>
 #include <queue>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Implementation of `FixedDelayQueue`.

@@ -23,7 +23,7 @@
 
 #include "Stopwatch.h"
 
-namespace hycast {
+namespace bicast {
 
 /// Implementation of a stopwatch
 template<class DUR>

@@ -22,12 +22,13 @@
 #include "config.h"
 #include "mcast.h"
 #include "Node.h"
+#include "P2pSrvrInfo.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
 #include <mutex>
 
-using namespace hycast;
+using namespace bicast;
 
 namespace {
 
@@ -176,19 +177,38 @@ public:
         if (dataSeg == actual)
             orState(DATA_SEG_RCVD);
     }
+
+    void getPduCounts(
+            long& numMcastOrig,
+            long& numP2pOrig,
+            long& numMcastDup,
+            long& numP2pDup) const noexcept {
+    }
+
+    long getTotalProds() const noexcept {
+        return 0;
+    }
+
+    long long getTotalBytes() const noexcept {
+        return 0;
+    }
+
+    double getTotalLatency() const noexcept {
+        return 0;
+    }
 };
 
 // Tests construction
 TEST_F(McastTest, Construction)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, *this);
+    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
     auto pub = McastPub::create(ssmAddr, srcAddr);
 }
 
 // Tests multicasting product information
 TEST_F(McastTest, McastProdInfo)
 {
-    auto   sub = McastSub::create(ssmAddr, srcAddr, subIface, *this);
+    auto   sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
     Thread thread{&McastSub::run, sub.get()};
     auto pub = McastPub::create(ssmAddr, srcAddr);
     pub->multicast(prodInfo);
@@ -200,7 +220,7 @@ TEST_F(McastTest, McastProdInfo)
 // Tests multicasting a data segment
 TEST_F(McastTest, McastDataSeg)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, *this);
+    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
     Thread thread{&McastSub::run, sub.get()};
     auto pub = McastPub::create(ssmAddr, srcAddr);
     pub->multicast(dataSeg);
@@ -212,7 +232,7 @@ TEST_F(McastTest, McastDataSeg)
 // Tests multicasting a product
 TEST_F(McastTest, McastProduct)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, *this);
+    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
     Thread thread{&McastSub::run, sub.get()};
     auto pub = McastPub::create(ssmAddr, srcAddr);
     pub->multicast(prodInfo);

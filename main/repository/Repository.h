@@ -23,7 +23,7 @@
 #ifndef MAIN_REPOSITORY_REPOSITORY_H_
 #define MAIN_REPOSITORY_REPOSITORY_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "LastProd.h"
 #include "ProdFile.h"
 
@@ -31,7 +31,7 @@
 #include <string>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Class that contains both information on a product and access to its data.
@@ -402,6 +402,24 @@ public:
      * @retval    true       Data-segment does exist
      */
     bool exists(const DataSegId segId) const;
+
+    /**
+     * Returns the total number of products received.
+     * @return  The total number of products received
+     */
+    long getTotalProds() const noexcept;
+
+    /**
+     * Returns the sum of the size of all products in bytes.
+     * @return The sum of the size of all products in bytes
+     */
+    long long getTotalBytes() const noexcept;
+
+    /**
+     * Returns the sum of the latencies of all products in seconds.
+     * @return The sum of the latencies of all products in seconds
+     */
+    double getTotalLatency() const noexcept;
 };
 
 } // namespace

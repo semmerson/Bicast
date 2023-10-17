@@ -22,11 +22,11 @@
 #ifndef MAIN_MISC_CONTEXT_H_
 #define MAIN_MISC_CONTEXT_H_
 
+#include "CommonTypes.h"
+
 #include <memory>
 
-namespace hycast {
-
-using String = std::string;
+namespace bicast {
 
 /// Interface for a preferences object
 class Preferences

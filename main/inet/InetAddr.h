@@ -5,7 +5,7 @@
  *  Created on: May 6, 2019
  *      Author: Steven R. Emmerson
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,49 +23,17 @@
 #ifndef MAIN_NET_IO_INADDR_H_
 #define MAIN_NET_IO_INADDR_H_
 
+#include "XprtAble.h"
+
 #include <iostream>
 #include <memory>
 #include <netinet/in.h>
 
-namespace hycast {
-
-/******************************************************************************
- * Transport API
- ******************************************************************************/
-
-class SockAddr;
-class TcpSock;
-class UdpSock;
-class Xprt;
-
-/// Interface for a transportable object
-class XprtAble
-{
-public:
-    virtual ~XprtAble() {};
-
-    /**
-     * Writes itself to a transport.
-     * @param[in] xprt     The transport
-     * @retval    true     Success
-     * @retval    false    Lost connection
-     */
-    virtual bool write(Xprt xprt) const =0;
-
-    /**
-     * Reads itself from a transport.
-     * @param[in] xprt     The transport
-     * @retval    true     Success
-     * @retval    false    Lost connection
-     */
-    virtual bool read(Xprt xprt) =0;
-};
+namespace bicast {
 
 /******************************************************************************
  * Internet Addresses
  ******************************************************************************/
-
-class SockAddr;
 
 /// An Internet address
 class InetAddr : public XprtAble
@@ -94,28 +62,28 @@ public:
      *
      * @param[in] addr  IPv4 address in network byte order
      */
-    InetAddr(const in_addr_t addr) noexcept;
+    explicit InetAddr(const in_addr_t addr) noexcept;
 
     /**
      * Constructs from an IPv4 address in network byte order.
      *
      * @param[in] addr  IPv4 address in network byte order
      */
-    InetAddr(const struct in_addr& addr) noexcept;
+    explicit InetAddr(const struct in_addr& addr) noexcept;
 
     /**
      * Constructs from an IPv6 address in network byte order.
      *
      * @param[in] addr  IPv6 address in network byte order
      */
-    InetAddr(const struct in6_addr& addr) noexcept;
+    explicit InetAddr(const struct in6_addr& addr) noexcept;
 
     /**
      * Constructs from a string representation of an Internet address.
      *
      * @param[in] addr  String representation of Internet address
      */
-    InetAddr(const std::string& addr);
+    explicit InetAddr(const std::string& addr);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -157,7 +125,7 @@ public:
      * Indicates if this instance is less than another.
      * @param[in] rhs     The other instance
      * @retval    true    This instance is less than the other
-     * @retval    true    This instance is not less than the other
+     * @retval    false   This instance is not less than the other
      */
     bool operator<(const InetAddr& rhs) const noexcept;
 
@@ -165,7 +133,7 @@ public:
      * Indicates if this instance is equal to another.
      * @param[in] rhs     The other instance
      * @retval    true    This instance is equal to the other
-     * @retval    true    This instance is not equal to the other
+     * @retval    false   This instance is not equal to the other
      */
     bool operator==(const InetAddr& rhs) const noexcept;
 
@@ -257,7 +225,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool write(Xprt xprt) const;
+    bool write(Xprt& xprt) const;
 
     /**
      * Reads from a transport.
@@ -266,7 +234,7 @@ public:
      * @retval    true     Success
      * @retval    false    Connection lost
      */
-    bool read(Xprt xprt);
+    bool read(Xprt& xprt);
 };
 
 std::ostream& operator<<(std::ostream& ostream, const InetAddr& addr);

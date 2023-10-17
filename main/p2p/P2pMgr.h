@@ -24,14 +24,14 @@
 #define MAIN_P2P_P2PMGR_H_
 
 #include "error.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "Peer.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
 class PeerConnSrvr; // Forward declaration
 using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>;
@@ -214,7 +214,7 @@ public:
      * anything with it until `run()` is called.
      *
      * @param[in] tracker       Tracks P2P-servers
-     * @param[in] pubNode       Hycast publishing node
+     * @param[in] pubNode       Bicast publishing node
      * @param[in] p2pSrvrAddr   P2P server's socket address. It shall specify a specific interface
      *                          and not the wildcard. The port number may be 0, in which case the
      *                          operating system will choose the port.

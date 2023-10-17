@@ -6,11 +6,11 @@
 
 @section overview Overview
 
-The Hycast package is a distribution system for data-products that is based on the publish/subscribe
+The Bicast package is a distribution system for data-products that is based on the publish/subscribe
 model and implemented using a one-to-many reliable multicast that combines source-specific multicast
-(SSM) with peer-to-peer (P2P) networking. A data-product is an arbitrary sequence of 0 to
-4294967295 bytes. The publish/subscribe model means that a subscriber make a subscription request to
-a publisher and immdeately starts receiving (and processing) the subscribed-to data-products. The
+(SSM) with peer-to-peer (P2P) networking. A data-product is an arbitrary sequence of 0 to (2^32)-1
+(4294967295) bytes. The publish/subscribe model means that a subscriber make a subscription request
+to a publisher and immdeately starts receiving (and processing) the subscribed-to data-products. The
 reliable multicast attribute means that the publisher's bandwidth requirement is capped at a low
 level. The SSM component is used on networks that support it to maximize throughput and minimize
 latency. The P2P component is used to convey data segments to subscribers that were not delivered
@@ -21,7 +21,8 @@ via SSM and to completely handle data delivery on networks that don't support SS
 @section platform Platform Requirements
 
 - An accurate and monotonic system clock (e.g., one that is synchronized by ntpd(8) or chronyd(8)).
-- An operating system compliant with the POSIX.1-2017 standard. Most Linux and MacOS are fine.
+- An operating system compliant with the POSIX.1-2017 standard. Most Linux and MacOS systems are
+  fine.
 
 <hr>
 

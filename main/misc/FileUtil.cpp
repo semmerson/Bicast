@@ -36,7 +36,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 bool FileUtil::isAbsolute(const String& pathname)
 {

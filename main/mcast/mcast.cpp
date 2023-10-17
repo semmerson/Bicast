@@ -1,5 +1,5 @@
 /**
- * This file implements the Hycast multicast component.
+ * This file implements the Bicast multicast component.
  *
  *  @file:  mcast.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -21,10 +21,14 @@
 
 #include "mcast.h"
 
+#include "logging.h"
 #include "Node.h"
+#include "Socket.h"
 #include "Xprt.h"
 
-namespace hycast {
+#include "BicastProto.h"
+
+namespace bicast {
 
 /// Base class for multicast implementations
 class McastImpl
@@ -67,13 +71,13 @@ public:
         : McastImpl{UdpSock{mcastAddr, ifaceAddr}}
     {}
 
-    void multicast(const ProdInfo prodInfo) {
+    void multicast(const ProdInfo prodInfo) override {
         cast<ProdInfo>(prodInfo);
         LOG_DEBUG("Multicasted product information %s on transport %s",
                 prodInfo.to_string().data(), xprt.to_string().data());
     }
 
-    void multicast(const DataSeg dataSeg) {
+    void multicast(const DataSeg dataSeg) override {
         cast<DataSeg>(dataSeg);
         LOG_DEBUG("Multicasted data segment %s on transport %s",
                 dataSeg.getId().to_string().data(), xprt.to_string().data());
@@ -91,7 +95,7 @@ McastPub::Pimpl McastPub::create(
 /// Implementation of a multicast subscriber
 class McastSubImpl final : public McastImpl, public McastSub
 {
-    SubNode& node;
+    SubNode* node;
 
     template<typename DATUM>
     void recvDatum() {
@@ -100,7 +104,7 @@ class McastSubImpl final : public McastImpl, public McastSub
             throw SYSTEM_ERROR("Multicast transport, " + xprt.to_string() + ", closed");
         LOG_TRACE("Received multicast datum %s on transport %s", datum.getId().to_string().data(),
                 xprt.to_string().data());
-        node.recvMcastData(datum);
+        node->recvMcastData(datum);
     }
 
 public:
@@ -118,7 +122,7 @@ public:
             const SockAddr& ssmAddr,
             const InetAddr& srcAddr,
             const InetAddr& ifaceAddr,
-            SubNode&        node)
+            SubNode*        node)
         : McastImpl{UdpSock{ssmAddr, srcAddr, ifaceAddr}}
         , node(node)
     {}
@@ -162,7 +166,7 @@ McastSub::Pimpl McastSub::create(
         const SockAddr& mcastAddr,
         const InetAddr& srcAddr,
         const InetAddr& iface,
-        SubNode&        node) {
+        SubNode*        node) {
     return Pimpl(new McastSubImpl(mcastAddr, srcAddr, iface, node));
 }
 

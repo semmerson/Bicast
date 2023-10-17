@@ -25,7 +25,7 @@
 
 #include "ActionTemplate.h"
 
-namespace hycast {
+namespace bicast {
 
 /**
  * A template for an action. Such a template is reified into an action by replacing its regular

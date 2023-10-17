@@ -23,12 +23,12 @@
 #include "config.h"
 
 #include "error.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "Socket.h"
 
 #include <string>
 
-namespace hycast {
+namespace bicast {
 
 class MemProd : public Product
 {

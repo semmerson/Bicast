@@ -30,7 +30,7 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 using namespace std;
 
 /// The fixture for testing class `Xprt`

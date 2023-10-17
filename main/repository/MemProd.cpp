@@ -30,7 +30,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace hycast {
+namespace bicast {
 
 typedef uint64_t ProdSize;
 

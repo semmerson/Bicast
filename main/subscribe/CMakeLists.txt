@@ -1,6 +1,6 @@
 add_executable(subscribe subscribe.cpp)
 
-target_link_libraries(subscribe hycast)
+target_link_libraries(subscribe bicast)
 
 install(TARGETS subscribe DESTINATION bin)
 

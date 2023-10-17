@@ -26,7 +26,7 @@
 #include <chrono>
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /// Interface for trigger indicating when to replace worst-performing peer
 class Trigger

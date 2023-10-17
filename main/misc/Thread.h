@@ -40,7 +40,7 @@
 #define THREAD_CLEANUP_PUSH(func, arg) pthread_cleanup_push(func, arg)
 #define THREAD_CLEANUP_POP(execute)    pthread_cleanup_pop(execute)
 
-namespace hycast {
+namespace bicast {
 
 /******************************************************************************/
 
@@ -540,7 +540,7 @@ private:
 
 public:
     /// Thread identifier
-    typedef Impl::ThreadId             Id;
+    typedef Impl::ThreadId             Tag;
 
 private:
     typedef std::shared_ptr<Impl>      Pimpl;
@@ -610,7 +610,7 @@ public:
      * @exceptionsafety  Nothrow
      * @threadsafety     Safe
      */
-    static Id getId() noexcept;
+    static Tag getId() noexcept;
 
     /**
      * Returns the thread-number of the current thread. This is useful in,
@@ -627,7 +627,7 @@ public:
      * @exceptionsafety        Strong guarantee
      * @threadsafety           Safe
      */
-    Id id() const;
+    Tag id() const;
 
     /**
      * Returns the thread-number. This is useful in,
@@ -683,7 +683,7 @@ public:
      * @throw SystemError  Thread couldn't be canceled
      * @threadsafety       Safe
      */
-    static void cancel(const Id& threadId);
+    static void cancel(const Tag& threadId);
 
     /**
      * Indicates if this instance is joinable.
@@ -716,23 +716,26 @@ public:
 /******************************************************************************/
 
 namespace std {
+
+using namespace bicast;
+
 #if 0
     /// Class function for hashing a thread.
-    template<> struct hash<hycast::Thread>
+    template<> struct hash<Thread>
     {
         /**
          * Returns the hash code of a thread.
          * @param[in] thread  The thread
          * @return The hash code of a thread
          */
-        size_t operator()(hycast::Thread& thread) const noexcept
+        size_t operator()(Thread& thread) const noexcept
         {
-            return hash<hycast::Thread::Id>()(thread.id());
+            return hash<Thread::Tag>()(thread.id());
         }
     };
 
     /// The less-than class function for a thread
-    template<> struct less<hycast::Thread>
+    template<> struct less<Thread>
     {
         /**
          * Indicates if one thread is less than another.
@@ -742,10 +745,10 @@ namespace std {
          * @retval    false    The left-hand-side is not less than the right-hand-side
          */
         size_t operator()(
-                hycast::Thread& lhs,
-                hycast::Thread& rhs) const noexcept
+                Thread& lhs,
+                Thread& rhs) const noexcept
         {
-            return less<hycast::Thread::Id>()(lhs.id(), rhs.id());
+            return less<Thread::Tag>()(lhs.id(), rhs.id());
         }
     };
 #else

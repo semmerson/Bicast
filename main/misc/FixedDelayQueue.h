@@ -31,7 +31,7 @@
 #include <mutex>
 #include <queue>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * @tparam Value     Type of value being stored in the queue. Must support

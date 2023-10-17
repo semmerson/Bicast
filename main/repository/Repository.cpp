@@ -24,10 +24,12 @@
 
 #include "Repository.h"
 
+#include "BicastProto.h"
 #include "CommonTypes.h"
 #include "FileUtil.h"
 #include "HashSetQueue.h"
 #include "LastProd.h"
+#include "logging.h"
 #include "Shield.h"
 #include "Thread.h"
 #include "ThreadException.h"
@@ -50,10 +52,8 @@
 #include <thread>
 #include <time.h>
 #include <unistd.h>
-#include <unordered_map>
-#include <vector>
 
-namespace hycast {
+namespace bicast {
 
 using namespace std::chrono;
 
@@ -941,13 +941,14 @@ class SubRepo::Impl final : public Repository::Impl
     static const String INCOMPLETE_DIR_NAME;
     static const String COMPLETE_DIR_NAME;
 
-    /**
-     * Pathname of the root-directory of the repository. Will have subdirectories that a PubRepo
-     * won't have.
-     */
-    const String rootDir;
-    LastProdPtr  lastReceived;
-    const bool   queueProds; ///< Queue complete data-products for processing?
+    /// Pathname of the directory for holding incomplete product files
+    const String       incompleteDir;
+    LastProdPtr        lastReceived; ///< Object for identifying the most recently-received product
+    const bool         queueProds;   ///< Queue complete data-products for processing?
+    unsigned long      totalProds;   ///< Total number of products.
+    unsigned long long totalBytes;   ///< Total number of bytes of all products.
+    unsigned long long totalLatency; ///< Total latency of all products. A uint64_t should be good
+                                     ///< for about 584 years of a nanosecond system clock
 
     /**
      * Returns a temporary absolute pathname to hold an incomplete data-product.
@@ -956,8 +957,7 @@ class SubRepo::Impl final : public Repository::Impl
      * @return            Temporary absolute pathname
      */
     inline String tempAbsPathname(const ProdId prodId) {
-        return FileUtil::pathname(FileUtil::pathname(rootDir, INCOMPLETE_DIR_NAME),
-                prodId.to_string());
+        return FileUtil::pathname(incompleteDir, prodId.to_string());
     }
 
     /**
@@ -1005,13 +1005,17 @@ class SubRepo::Impl final : public Repository::Impl
                 const auto& prodInfo = prodEntry.prodInfo;
                 const auto  prodId = prodInfo.getId();
                 const auto& createTime = prodInfo.getCreateTime();
+                const auto  sysClockLatency = (SysClock::now() - createTime).count();
+
+                ++totalProds;
+                totalBytes += prodInfo.getSize();
+                totalLatency += sysClockLatency;
+
                 // The creation-time of the product is saved in the modification-time of the file
                 prodFile.setModTime(createTime);
 
-                static constexpr double ratio = (static_cast<double>(SysDuration::period::num)) /
-                        SysDuration::period::den;
                 LOG_INFO("Received " + prodInfo.to_string() + ". Latency=" +
-                        std::to_string((SysClock::now() - createTime).count() * ratio) + " s");
+                        std::to_string(sysClockLatency * sysClockRatio) + " s");
 
                 const auto newPathname = prodDir + prodInfo.getName();
                 FileUtil::ensureDir(FileUtil::dirname(newPathname), 0755);
@@ -1044,15 +1048,19 @@ public:
             const bool         queueProds)
         : Repository::Impl{FileUtil::pathname(rootDir, COMPLETE_DIR_NAME), maxOpenFiles, keepTime,
                 lastReceived->recall()}
-        , rootDir(FileUtil::ensureTrailingSep(FileUtil::makeAbsolute(rootDir)))
+        , incompleteDir(FileUtil::pathname(FileUtil::ensureTrailingSep(
+                FileUtil::makeAbsolute(rootDir)), INCOMPLETE_DIR_NAME))
         , lastReceived(lastReceived)
         , queueProds(queueProds)
+        , totalProds(0)
+        , totalBytes(0)
+        , totalLatency(0)
     {
         /**
          * Ignore incomplete data-products and start from scratch. They will be completely
          * recovered as part of the backlog.
          */
-        FileUtil::rmDirTree(prodDir + INCOMPLETE_DIR_NAME);
+        FileUtil::rmDirTree(incompleteDir);
         scanRepo(prodDir); // NB: No "incomplete" directory for it to scan
     }
 
@@ -1167,10 +1175,34 @@ public:
 
         return iter != prodEntries.end() && iter->prodFile.exists(segId.offset);
     }
+
+    /**
+     * Returns the total number of products received.
+     * @return  The total number of products received
+     */
+    long getTotalProds() const noexcept {
+        return totalProds;
+    }
+
+    /**
+     * Returns the sum of the size of all products in bytes.
+     * @return The sum of the size of all products in bytes
+     */
+    long long getTotalBytes() const noexcept {
+        return totalBytes;
+    }
+
+    /**
+     * Returns the sum of the latencies of all products in seconds.
+     * @return The sum of the latencies of all products in seconds
+     */
+    double getTotalLatency() const noexcept {
+        return totalLatency * sysClockRatio;
+    }
 };
 
 const String SubRepo::Impl::INCOMPLETE_DIR_NAME = "incomplete";
-const String SubRepo::Impl::COMPLETE_DIR_NAME = "complete";
+const String SubRepo::Impl::COMPLETE_DIR_NAME = "products";
 
 /**************************************************************************************************/
 
@@ -1201,6 +1233,18 @@ bool SubRepo::exists(const ProdId prodId) const {
 
 bool SubRepo::exists(const DataSegId segId) const {
     return static_cast<Impl*>(pImpl.get())->exists(segId);
+}
+
+long SubRepo::getTotalProds() const noexcept {
+    return static_cast<Impl*>(pImpl.get())->getTotalProds();
+}
+
+long long SubRepo::getTotalBytes() const noexcept {
+    return static_cast<Impl*>(pImpl.get())->getTotalBytes();
+}
+
+double SubRepo::getTotalLatency() const noexcept {
+    return static_cast<Impl*>(pImpl.get())->getTotalLatency();
 }
 
 } // namespace

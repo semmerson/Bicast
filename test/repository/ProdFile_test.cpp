@@ -25,7 +25,7 @@
 
 #include "error.h"
 #include "FileUtil.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 
 #include <cassert>
 #include <fcntl.h>
@@ -35,6 +35,8 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `ProdFile`
 class ProdFileTest : public ::testing::Test
 {
@@ -42,13 +44,13 @@ protected:
     const std::string rootPath;
     const std::string prodName;
     const std::string absPathname;
-    hycast::ProdId    prodId;
-    hycast::ProdSize  prodSize;
-    hycast::SegSize   segSize;
-    hycast::ProdInfo  prodInfo;
-    hycast::DataSegId segId;
+    ProdId            prodId;
+    ProdSize          prodSize;
+    SegSize           segSize;
+    ProdInfo          prodInfo;
+    DataSegId         segId;
     char              memData[800];
-    hycast::DataSeg   memSeg;
+    DataSeg           memSeg;
 
     // You can remove any or all of the following functions if its body
     // is empty.
@@ -65,25 +67,25 @@ protected:
         , memData{}
         , memSeg{segId, prodSize, memData}
     {
-        hycast::DataSeg::setMaxSegSize(segSize);
-        hycast::FileUtil::rmDirTree(rootPath);
-        hycast::FileUtil::ensureDir(rootPath, 0777);
+        DataSeg::setMaxSegSize(segSize);
+        FileUtil::rmDirTree(rootPath);
+        FileUtil::ensureDir(rootPath, 0777);
 
         for (int i = 0; i < sizeof(memData); ++i)
             memData[i] = static_cast<char>(i);
     }
 
     ~ProdFileTest() noexcept {
-        hycast::FileUtil::rmDirTree(rootPath);
-        //hycast::rmDirTree(rootPath);
+        FileUtil::rmDirTree(rootPath);
+        //rmDirTree(rootPath);
     }
 };
 
 // Tests a zero-size sending ProdFile
 TEST_F(ProdFileTest, ZeroSndProdFile)
 {
-    hycast::ProdFile prodFile(absPathname, 0);
-    EXPECT_THROW(prodFile.getData(0), hycast::InvalidArgument);
+    ProdFile prodFile(absPathname, 0);
+    EXPECT_THROW(prodFile.getData(0), InvalidArgument);
 }
 
 // Tests a valid sending ProdFile
@@ -94,11 +96,11 @@ TEST_F(ProdFileTest, ValidSndProdFile)
     const char bytes[2] = {1, 2};
     ASSERT_EQ(2, ::write(fd, bytes, sizeof(bytes)));
     ASSERT_NE(-1, ::close(fd));
-    hycast::ProdFile prodFile(absPathname);
+    ProdFile prodFile(absPathname);
     const char* data = static_cast<const char*>(prodFile.getData(0));
     EXPECT_EQ(1, data[0]);
     EXPECT_EQ(2, data[1]);
-    EXPECT_THROW(prodFile.getData(1), hycast::InvalidArgument);
+    EXPECT_THROW(prodFile.getData(1), InvalidArgument);
 }
 
 // Tests a bad sending ProdFile
@@ -110,9 +112,9 @@ TEST_F(ProdFileTest, BadSndProdFile)
         const char byte = 1;
         ASSERT_EQ(1, ::write(fd, &byte, sizeof(byte)));
         ASSERT_NE(-1, ::close(fd));
-        hycast::ProdFile(absPathname, 0);
+        ProdFile(absPathname, 0);
     }
-    catch (const hycast::InvalidArgument& ex) {
+    catch (const InvalidArgument& ex) {
     }
     catch (...) {
         GTEST_FAIL();
@@ -123,9 +125,9 @@ TEST_F(ProdFileTest, BadSndProdFile)
 TEST_F(ProdFileTest, BadRcvProdFile)
 {
     try {
-        hycast::ProdFile(absPathname, 0);
+        ProdFile(absPathname, 0);
     }
-    catch (const hycast::InvalidArgument& ex) {
+    catch (const InvalidArgument& ex) {
     }
     catch (...) {
         GTEST_FAIL();
@@ -135,20 +137,20 @@ TEST_F(ProdFileTest, BadRcvProdFile)
 // Tests a zero-size receiving ProdFile
 TEST_F(ProdFileTest, ZeroRcvProdFile)
 {
-    hycast::ProdSize prodSize(0);
-    hycast::ProdFile prodFile(absPathname, prodSize);
+    ProdSize prodSize(0);
+    ProdFile prodFile(absPathname, prodSize);
     ASSERT_TRUE(prodFile.isComplete());
 }
 
 // Tests a receiving ProdFile
 TEST_F(ProdFileTest, RecvProdFile)
 {
-    hycast::ProdSize prodSize{static_cast<hycast::ProdSize>(2*segSize)};
-    hycast::ProdInfo prodInfo(prodId, prodName, prodSize);
-    hycast::ProdFile prodFile(absPathname, prodSize);
+    ProdSize prodSize{static_cast<ProdSize>(2*segSize)};
+    ProdInfo prodInfo(prodId, prodName, prodSize);
+    ProdFile prodFile(absPathname, prodSize);
     for (int i = 0; i < 2; ++i) {
-        hycast::DataSegId segId(prodId, i*segSize);
-        hycast::DataSeg   memSeg(segId, prodSize, memData);
+        DataSegId segId(prodId, i*segSize);
+        DataSeg   memSeg(segId, prodSize, memData);
         ASSERT_TRUE(prodFile.save(memSeg));
     }
     prodFile.close();

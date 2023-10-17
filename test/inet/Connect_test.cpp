@@ -1,5 +1,5 @@
 /**
- * This file tests using the Hycast C++ API to connect to a server
+ * This file tests using the Bicast C++ API to connect to a server
  *
  *  @file:  Connect_test.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -25,7 +25,7 @@
 #include <pthread.h>
 #include <thread>
 
-using namespace hycast;
+using namespace bicast;
 
 static pthread_barrier_t barrier;
 static SockAddr          srvrAddr;

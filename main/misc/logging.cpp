@@ -18,6 +18,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "config.h"
+
+#include "logging.h"
 
 #include "error.h"
 #include "Thread.h"
@@ -36,7 +39,7 @@
 #include <thread>
 #include <unistd.h>
 
-namespace hycast {
+namespace bicast {
 
 static int LOC_WIDTH = 32;
 
@@ -105,6 +108,12 @@ static int timeStamp(FILE* stream)
 static void procStamp(FILE* stream)
 {
     char               progField[80];
+#if 1
+    // Without thread ID
+    ::snprintf(progField, sizeof(progField), "%s:%d", progName.c_str(), getpid());
+    ::fprintf(stream, "%-20s", progField);
+#else
+    // With thread ID
     std::ostringstream threadId;
 
     threadId << std::this_thread::get_id();
@@ -112,6 +121,7 @@ static void procStamp(FILE* stream)
             getpid(), threadId.str().c_str());
 
     ::fprintf(stream, "%-35s", progField);
+#endif
 }
 
 static std::string codeStamp(
@@ -147,6 +157,7 @@ static void logHeader(
     ::fprintf(stderr, "%-*s", LOC_WIDTH, codeStamp(file, line, func).c_str());
 }
 
+/*
 const LogLevel LogLevel::TRACE{0};
 const LogLevel LogLevel::DEBUG{1};
 const LogLevel LogLevel::INFO{2};
@@ -154,8 +165,9 @@ const LogLevel LogLevel::NOTE{3};
 const LogLevel LogLevel::WARN{4};
 const LogLevel LogLevel::ERROR{5};
 const LogLevel LogLevel::FATAL{6};
+*/
 
-LogThreshold logThreshold(LogLevel::NOTE); ///< The current logging threshold
+LogLevel logThreshold(LogLevel::NOTE); ///< The current logging threshold
 
 /**
  * Sets the name of the program.
@@ -179,15 +191,12 @@ const std::string& log_getName() noexcept {
  */
 static void rollLevel(const int sig)
 {
-    LogLevel level = static_cast<LogLevel>(logThreshold);
-
-    if (level.includes(LogLevel::TRACE)) {
-        level = LogLevel::NOTE;
+    if (LogLevel::TRACE == logThreshold) {
+        logThreshold = LogLevel::NOTE;
     }
     else {
-        level.lower();
+        logThreshold.lower();
     }
-    logThreshold = level;
 }
 
 /**
@@ -215,8 +224,8 @@ void log_setLevel(const std::string& name)
         throw INVALID_ARGUMENT("Empty string");
 
     static const struct Entry {
-        std::string     id;
-        const LogLevel& level;
+        std::string              id;
+        const LogLevel::Priority priority;
     } entries[] = {
         {"TRACE", LogLevel::TRACE},
         {"DEBUG", LogLevel::DEBUG},
@@ -224,8 +233,7 @@ void log_setLevel(const std::string& name)
         {"NOTE",  LogLevel::NOTE },
         {"WARN",  LogLevel::WARN },
         {"ERROR", LogLevel::ERROR},
-        {"FATAL", LogLevel::FATAL},
-        {"",      LogLevel()}
+        {"FATAL", LogLevel::FATAL}
     };
 
     std::string lowerName = name;
@@ -235,7 +243,7 @@ void log_setLevel(const std::string& name)
     const struct Entry* entry;
     for (entry = entries; !entry->id.empty(); ++entry) {
         if (entry->id.find(lowerName) == 0) {
-            log_setLevel(entry->level);
+            log_setLevel(entry->priority);
             return;
         }
     }
@@ -255,8 +263,8 @@ LogLevel log_getLevel() noexcept {
  * Sets the logging level.
  * @param[in] level  The logging level
  */
-void log_setLevel(const LogLevel level) noexcept {
-    logThreshold.store(level);
+void log_setLevel(const LogLevel::Priority level) noexcept {
+    logThreshold = level;
 }
 
 std::string makeWhat(

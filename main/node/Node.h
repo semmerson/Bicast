@@ -1,5 +1,5 @@
 /**
- * A node in the Hycast network
+ * A node in the Bicast network
  *
  *        File: Node.h
  *  Created on: Jun 3, 2020
@@ -24,7 +24,7 @@
 #define MAIN_NODE_NODE_H_
 
 #include "Disposer.h"
-#include "HycastProto.h"
+#include "BicastProto.h"
 #include "mcast.h"
 #include "P2pMgr.h"
 #include "Repository.h"
@@ -32,10 +32,9 @@
 
 #include <memory>
 
-//class PubRepo;
-//class SubRepo;
+namespace bicast {
 
-namespace hycast {
+class Tracker;
 
 class PeerConnSrvr;
 using PeerConnSrvrPtr = std::shared_ptr<PeerConnSrvr>;
@@ -44,7 +43,7 @@ class Node;                            ///< Forward declaration
 using NodePtr = std::shared_ptr<Node>; ///< Smart pointer to an implementation
 
 /**
- * Interface for a Hycast node. Implementations manage incoming P2P requests. This interface is
+ * Interface for a Bicast node. Implementations manage incoming P2P requests. This interface is
  * implemented by both a publishing node and a subscribing node.
  */
 class Node
@@ -137,7 +136,7 @@ class PubNode;                               ///< Forward declaration
 using PubNodePtr = std::shared_ptr<PubNode>; ///< Smart pointer to an implementation
 
 /**
- * Interface for a Hycast publishing node. In addition to managing incoming P2P requests,
+ * Interface for a Bicast publishing node. In addition to managing incoming P2P requests,
  * implementations also multicast data-products and notify subscribing nodes.
  */
 class PubNode : virtual public Node
@@ -259,7 +258,7 @@ class SubNode;                               ///< Forward declaration
 using SubNodePtr = std::shared_ptr<SubNode>; ///< Smart pointer to an implementation
 
 /**
- * Interface for a subscribing Hycast node. Implementations manage incoming multicast transmissions
+ * Interface for a subscribing Bicast node. Implementations manage incoming multicast transmissions
  * and incoming and outgoing P2P transmissions.
  */
 class SubNode : virtual public Node
@@ -400,6 +399,37 @@ public:
     virtual DataSeg getDataSeg(const DataSegId segId) {
         return DataSeg{};
     }
+
+    /**
+     * Returns the counts of the types of protocol data units.
+     * @param[out] numMcastOrig  Number of original multicast PDUs
+     * @param[out] numP2pOrig    Number of original P2P PDUs
+     * @param[out] numMcastDup   Number of duplicate multicast PDUs
+     * @param[out] numP2pDup     Number of duplicate P2P PDUs
+     */
+    virtual void getPduCounts(
+            long& numMcastOrig,
+            long& numP2pOrig,
+            long& numMcastDup,
+            long& numP2pDup) const noexcept =0;
+
+    /**
+     * Returns the total number of products.
+     * @return The total number of products
+     */
+    virtual long getTotalProds() const noexcept =0;
+
+    /**
+     * Returns the sum of the size of all products in bytes.
+     * @return The sum of the size of all products in bytes
+     */
+    virtual long long getTotalBytes() const noexcept =0;
+
+    /**
+     * Returns the sum of the latencies of all products in seconds.
+     * @return The sum of the latencies of all products in seconds
+     */
+    virtual double getTotalLatency() const noexcept =0;
 };
 
 } // namespace

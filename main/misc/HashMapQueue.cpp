@@ -24,7 +24,7 @@
 #include "error.h"
 #include "HashMapQueue.h"
 
-namespace hycast {
+namespace bicast {
 
 #if 0
 /// Pushes a key/value pair onto the back of the queue

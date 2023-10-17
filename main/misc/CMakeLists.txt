@@ -1,8 +1,8 @@
 # Add the library
 add_library(misc OBJECT
-        logging.cpp	   logging.h
+        logging.cpp        logging.h
         CommonTypes.cpp    CommonTypes.h
-        error.cpp	   error.h
+        error.cpp          error.h
                            Shield.h
 #                          DelayQueue.h
                            FixedDelayQueue.h
@@ -12,6 +12,6 @@ add_library(misc OBJECT
                            HashSetQueue.h
                            HashMapQueue.h
                            Parser.h
-        Preferences.cpp    Preferences.h
-	                   Stopwatch.h
+#       Preferences.cpp    Preferences.h
+                           Stopwatch.h
 )

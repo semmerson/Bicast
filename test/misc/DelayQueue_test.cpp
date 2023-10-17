@@ -27,6 +27,8 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `DelayQueue`
 class DelayQueueTest : public ::testing::Test
 {
@@ -65,14 +67,14 @@ protected:
 // Tests default construction
 TEST_F(DelayQueueTest, DefaultConstruction)
 {
-    hycast::DelayQueue<int> dq{};
+    DelayQueue<int> dq{};
     EXPECT_TRUE(dq.empty());
 }
 
 // Tests immediate reveal
 TEST_F(DelayQueueTest, ImmediateReveal)
 {
-    hycast::DelayQueue<int> dq{};
+    DelayQueue<int> dq{};
     const int value = 1;
     dq.push(value, 0);
     EXPECT_FALSE(dq.empty());
@@ -83,7 +85,7 @@ TEST_F(DelayQueueTest, ImmediateReveal)
 // Tests delayed reveal
 TEST_F(DelayQueueTest, DelayedReveal)
 {
-    hycast::DelayQueue<int, std::chrono::milliseconds> dq{};
+    DelayQueue<int, std::chrono::milliseconds> dq{};
     const int value = 1;
     dq.push(value, 100);
     EXPECT_FALSE(dq.empty());

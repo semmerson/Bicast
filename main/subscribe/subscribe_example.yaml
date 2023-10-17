@@ -8,7 +8,7 @@ peer2Peer:                   # Peer-to-peer component
   server:                    # Local P2P server
     p2pAddr: 192.168.0.1     # Internet address/interface of server. Must not be wildcard. Default
                              # is interface used to connect to publisher.
-    maxPending: 8            # Maximum number of pending Hycast connections
+    maxPending: 8            # Maximum number of pending connections
   timeout: 15000             # Timeout, in ms, for connecting to remote P2P servers
   maxPeers: 8                # Maximum number of connected peers
   trackerSize: 1000          # Maximum size of list of potential P2P servers

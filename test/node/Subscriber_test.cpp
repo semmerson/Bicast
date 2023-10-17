@@ -29,26 +29,28 @@
 
 namespace {
 
+using namespace bicast;
+
 /// The fixture for testing class `Receiver`
 class ReceiverTest : public ::testing::Test
 {
 protected:
-    hycast::SockAddr      grpSockAddr;
-    hycast::SockAddr      sndrInetAddr;
-    hycast::SockAddr      sndrSockAddr;
-    hycast::SockAddr      rcvrSockAddr;
+    SockAddr      grpSockAddr;
+    SockAddr      sndrInetAddr;
+    SockAddr      sndrSockAddr;
+    SockAddr      rcvrSockAddr;
     int                   listenSize;
-    hycast::PortPool      portPool;
+    PortPool      portPool;
     int                   maxPeers;
-    hycast::SubRepo       repo;
-    hycast::ProdIndex     prodIndex;
+    SubRepo       repo;
+    ProdIndex     prodIndex;
     char                  memData[1000];
-    const hycast::SegSize segSize;
-    hycast::ProdSize      prodSize;
-    hycast::ProdInfo      prodInfo;
-    hycast::SegId         segId;
-    hycast::SegInfo       segInfo;
-    hycast::MemSeg        memSeg;
+    const SegSize segSize;
+    ProdSize      prodSize;
+    ProdInfo      prodInfo;
+    SegId         segId;
+    SegInfo       segInfo;
+    MemSeg        memSeg;
 
     ReceiverTest()
         : grpSockAddr("232.1.1.1:3880")
@@ -94,15 +96,15 @@ protected:
 // Tests construction
 TEST_F(ReceiverTest, Construction)
 {
-    hycast::Subscriber receiver(sndrSockAddr, listenSize, portPool, maxPeers,
+    Subscriber receiver(sndrSockAddr, listenSize, portPool, maxPeers,
             grpSockAddr, sndrInetAddr, repo);
 }
 
 }  // namespace
 
 int main(int argc, char **argv) {
-  hycast::log_setName(::basename(argv[0]));
-  hycast::log_setLevel(hycast::LOG_LEVEL_DEBUG);
+  log_setName(::basename(argv[0]));
+  log_setLevel(LOG_LEVEL_DEBUG);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

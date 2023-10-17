@@ -25,7 +25,7 @@
 
 #include <pthread.h>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * RAII class that disables thread cancellation on construction and returns it

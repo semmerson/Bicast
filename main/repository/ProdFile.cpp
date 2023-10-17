@@ -25,6 +25,7 @@
 #include "ProdFile.h"
 
 #include "error.h"
+#include "logging.h"
 #include "FileUtil.h"
 #include "Shield.h"
 
@@ -37,7 +38,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Base product-file implementation. Good for the source of data-products.

@@ -4,9 +4,9 @@
  * @author Steven R. Emmerson
  */
 
-#define _XOPEN_SOURCE 600
-#define _BSD_SOURCE // For `struct ip_mreq_source`
-#define __USE_MISC // For `struct ip_mreq_source`
+#define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE // For `struct ip_mreq_source`
+#define __USE_MISC      // For `struct ip_mreq_source`
 
 #include "SsmTest.h"
 

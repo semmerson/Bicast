@@ -18,10 +18,10 @@
 
 namespace {
 
-using namespace hycast;
+using namespace bicast;
 
 /// The fixture for testing class `NoticeQueue`
-class NoticeQueueTest : public ::testing::Test, public hycast::P2pMgr
+class NoticeQueueTest : public ::testing::Test, public P2pMgr
 {
 protected:
     // You can remove any or all of the following functions if its body
@@ -55,10 +55,10 @@ protected:
     // Objects declared here can be used by all tests in the test case for Error.
     void offline(Peer peer) override {
     }
-    void reassigned(const hycast::ProdId  notice,
+    void reassigned(const ProdId  notice,
                     const SockAddr           rmtAddr) override {
     }
-    void reassigned(const hycast::DataSegId& notice,
+    void reassigned(const DataSegId& notice,
                     const SockAddr           rmtAddr) override {
     }
 };
@@ -66,7 +66,7 @@ protected:
 // Tests default construction
 TEST_F(NoticeQueueTest, DefaultConstruction)
 {
-    hycast::NoticeQueue noticeQ{*this};
+    NoticeQueue noticeQ{*this};
 }
 
 }  // namespace

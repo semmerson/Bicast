@@ -30,7 +30,7 @@
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 class LastProd;
 using LastProdPtr = std::shared_ptr<LastProd>; ///< Smart pointer to an instance

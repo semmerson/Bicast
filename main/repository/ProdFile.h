@@ -23,11 +23,11 @@
 #ifndef MAIN_REPOSITORY_PRODFILE_H_
 #define MAIN_REPOSITORY_PRODFILE_H_
 
-#include "HycastProto.h"
+#include "BicastProto.h"
 
 #include <memory>
 
-namespace hycast {
+namespace bicast {
 
 /**
  * Abstract product-file.
