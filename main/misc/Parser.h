@@ -70,7 +70,7 @@ public:
             }
         }
 
-        return child;
+        return static_cast<bool>(child);
     }
 
     /**
@@ -113,7 +113,7 @@ public:
             }
         }
 
-        return child;
+        return static_cast<bool>(child);
     }
 
     /**
