@@ -11,14 +11,14 @@ target_link_libraries(noexcept_test gtest pthread)
 add_test(noexcept_test noexcept_test)
 
 add_executable(Pimpl_test Pimpl_test.cpp)
-target_link_libraries(Pimpl_test gtest)
+target_link_libraries(Pimpl_test gtest pthread)
 add_test(Pimpl_test Pimpl_test)
 
 add_executable(pimpl_test pimpl_test.cpp)
 add_test(pimpl_test pimpl_test)
 
 add_executable(arg_passing_test arg_passing_test.cpp)
-target_link_libraries(arg_passing_test gtest)
+target_link_libraries(arg_passing_test gtest pthread)
 add_test(arg_passing_test arg_passing_test)
 
 add_executable(thread_test thread_test.cpp)
@@ -26,19 +26,19 @@ target_link_libraries(thread_test gtest pthread)
 add_test(thread_test thread_test)
 
 add_executable(unordered_map_test unordered_map_test.cpp)
-target_link_libraries(unordered_map_test gtest)
+target_link_libraries(unordered_map_test gtest pthread)
 add_test(unordered_map_test unordered_map_test)
 
 add_executable(error_test error_test.cpp)
-target_link_libraries(error_test bicast gtest)
+target_link_libraries(error_test bicast gtest pthread)
 add_test(error_test error_test)
 
 #add_executable(MapQ_test MapQ_test.cpp)
-#target_link_libraries(MapQ_test bicast gtest)
+#target_link_libraries(MapQ_test bicast gtest pthread)
 #add_test(MapQ_test MapQ_test)
 
 #add_executable(DelayQueue_test DelayQueue_test.cpp)
-#target_link_libraries(DelayQueue_test bicast gtest)
+#target_link_libraries(DelayQueue_test bicast gtest pthread)
 #add_test(DelayQueue_test DelayQueue_test)
 
 add_executable(HashSetQueue_test HashSetQueue_test.cpp)
