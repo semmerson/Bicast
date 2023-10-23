@@ -6,17 +6,15 @@
  *
  *    Copyright 2022 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #include "config.h"
@@ -43,8 +41,8 @@ using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connec
 class RpcImpl final : public Rpc
 {
     /**
-     * Receives a request for a datum from the remote peer. Passes the request
-     * to the associated local peer.
+     * Receives a request for a datum from the remote peer. Passes the request to the associated
+     * local peer.
      *
      * @tparam    ID       Identifier of requested data
      * @param[in] xprt     Transport
@@ -118,20 +116,6 @@ class RpcImpl final : public Rpc
     }
 
     /**
-     * Sends a PDU with no payload.
-     *
-     * @param[in] xprt     Transport to use
-     * @param[in] pduId    PDU ID
-     * @retval    true     Success
-     * @retval    false    Lost connection
-     */
-    inline bool send(
-            Xprt            xprt,
-            const PduId     pduId) {
-        return pduId.write(xprt) && xprt.flush();
-    }
-
-    /**
      * Sends a transportable object as a PDU.
      *
      * @param[in] xprt     Transport to use
@@ -144,28 +128,22 @@ class RpcImpl final : public Rpc
             Xprt&           xprt,
             const PduId::Id id,
             const XprtAble& obj) {
+        LOG_ASSERT(id != 0);
         //LOG_TRACE("Sending: xprt=" + xprt.to_string());
-        //LOG_TRACE("Writing ID");
-        if (!xprt.write(id))
-            return false;
-        //LOG_TRACE("Writing object");
-        if (!obj.write(xprt))
-            return false;
-        //LOG_TRACE("Flushing");
-        if (!xprt.flush())
-            return false;
-        //LOG_TRACE("Sent");
-        return true;
+        return xprt.write(static_cast<PduId::Type>(id)) && // This cast is necessary, unfortunately
+                obj.write(xprt) &&
+                xprt.flush();
     }
 
     /**
      * Dispatches incoming RPC messages by reading the payload and calling a peer.
-     * @param[in] pduId  Protocol data unit identifier
-     * @param[in] xprt   Transport
-     * @param[in] peer   Associated peer
-     * @retval    true   Success
-     * @retval    false  Connection lost
-     * @threadsafety     Safe
+     * @param[in] pduId          Protocol data unit identifier
+     * @param[in] xprt           Transport
+     * @param[in] peer           Associated peer
+     * @retval    true           Success
+     * @retval    false          Connection lost
+     * @throw     RUNTIME_ERROR  Unknown PDU ID
+     * @threadsafety             Safe
      */
     bool dispatch(
             const PduId pduId,
@@ -239,8 +217,7 @@ class RpcImpl final : public Rpc
             }
 
             default:
-                LOG_WARN("RPC " + xprt.to_string() + " unknown PDU ID: " + std::to_string(pduId));
-                connected = true;
+                throw RUNTIME_ERROR("Unknown PDU ID: " + std::to_string(pduId));
         }
 
         return connected;
@@ -267,7 +244,10 @@ public:
             Xprt& xprt,
             Peer& peer) override {
         PduId pduId{};
-        return pduId.read(xprt) && dispatch(pduId, xprt, peer);
+        if (!pduId.read(xprt))
+            return false;
+        //LOG_NOTE("Received PDU ID " + std::to_string(pduId));
+        return dispatch(pduId, xprt, peer);
     }
 
     // Notices:
@@ -275,7 +255,7 @@ public:
     bool notify(
             Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) override {
-        LOG_DEBUG("RPC " + xprt.to_string() + " sending P2P-server notice " + srvrInfo.to_string());
+        LOG_TRACE("RPC " + xprt.to_string() + " sending P2P-server notice " + srvrInfo.to_string());
         const auto success = send(xprt, PduId::SRVR_INFO_NOTICE, srvrInfo);
         return success;
     }
@@ -283,7 +263,7 @@ public:
     bool notify(
             Xprt&         xprt,
             const ProdId& prodId) override {
-        //LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
+        //LOG_NOTE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
         const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
         return success;
     }
