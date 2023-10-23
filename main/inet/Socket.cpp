@@ -7,17 +7,15 @@
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 #include "config.h"
 
@@ -148,17 +146,21 @@ protected:
     static inline size_t padLen(
             const unsigned nbytes,
             const size_t   align) {
+#if 1
+        return true; // I don't think padding is strictly necessary. SRE 2023-10-23
+#else
         return (align - (nbytes % align)) % align;
         /*
          * Alternative?
          * See <https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding>.
          *
-         * Works for unsigned and two's-complement `nbytes` but not one's-complement nor
+         * Works for unsigned and two's-complement `nbytes` but neighter one's-complement nor
          * sign-magnitude
          *
          * padding = (align - (nbytes & (align - 1))) & (align - 1)
          *         = -nbytes & (align - 1)
          */
+#endif
     }
 
     /**
@@ -179,7 +181,7 @@ protected:
     }
 
     /**
-     * Aligns the next read.
+     * Reads zero or more bytes in order to align the next read.
      * @param[in] align    Number of bytes to align to
      * @retval    true     Success
      * @retval    false    Lost connection
@@ -407,10 +409,10 @@ public:
      * Writes bytes.
      *
      * @param[in] data          Bytes to write.
-     * @param[in] nbytes        Number of bytes to write.
-     * @retval     true         Success
-     * @retval     false        Lost connection
-     * @throw      SystemError  I/O failure
+     * @param[in] nbytes        Number of bytes to write
+     * @retval    true          Success
+     * @retval    false         Lost connection
+     * @throw     SystemError   I/O failure
      */
     bool write(const void*  data,
                const size_t nbytes) {
@@ -515,7 +517,7 @@ public:
 };
 
 const uint64_t Socket::Impl::writePad = 0;  ///< Write alignment buffer
-uint64_t Socket::Impl::readPad;  ///< Read alignment buffer
+uint64_t       Socket::Impl::readPad;       ///< Read alignment buffer
 
 Socket::Socket(Impl* impl)
     : pImpl(impl)
@@ -662,7 +664,8 @@ protected:
     Impl();
 
     /**
-     * Writes to the socket. No host-to-network translation is performed.
+     * Writes to the socket. No host-to-network translation is performed. Blocks until all bytes are
+     * written
      *
      * @param[in] data         Bytes to write
      * @param[in] nbytes       Number of bytes to write
@@ -682,8 +685,10 @@ protected:
 
         while (nbytes) {
             /*
-             * poll(2) is used because SIGPIPE was always delivered by the
-             * development system even if it was explicitly ignored.
+             * poll(2) is used because
+             *   - SIGPIPE was always delivered by the development system even
+             *     if it was explicitly ignored; and
+             *   - The socket might be non-blocking
              */
             if (::poll(&pollfd, 1, -1) == -1)
                 throw SYSTEM_ERROR("poll() failure for socket " + to_string());
@@ -696,11 +701,9 @@ protected:
                 //LOG_DEBUG("nwritten=%zd", nwritten);
 
                 if (nwritten == -1) {
-                    if (errno == ECONNRESET || errno == EPIPE) {
+                    if (errno == ECONNRESET || errno == EPIPE)
                         return false;
-                    }
-                    throw SYSTEM_ERROR("write() failure to socket " +
-                            to_string());
+                    throw SYSTEM_ERROR("write() failure to socket " + to_string());
                 }
                 if (nwritten == 0)
                     return false;
@@ -717,7 +720,8 @@ protected:
     }
 
     /**
-     * Reads from the socket. No network-to-host translation is performed.
+     * Reads from the socket. No network-to-host translation is performed. Blocks until all bytes
+     * are read.
      *
      * @param[out] data         Destination buffer
      * @param[in]  nbytes       Number of bytes to read
@@ -744,7 +748,9 @@ protected:
 
         while (nleft) {
             /*
-             * poll(2) is used to learn if this end has closed the socket.
+             * poll(2) is used because
+             *   - This end might have closed the socket; and
+             *   - The socket might be non-blocking
              */
             //LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
             if (::poll(&pollfd, 1, -1) == -1)
