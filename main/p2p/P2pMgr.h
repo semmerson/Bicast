@@ -49,15 +49,6 @@ using BaseP2pMgrPtr = std::shared_ptr<BaseP2pMgr>; ///< Smart pointer to an impl
 class BaseP2pMgr : virtual public Peer::BaseMgr
 {
 public:
-    /**
-     * Relationship to the data-products:
-     */
-    enum class Type : char {
-        UNSET,
-        PUBLISHER,  // Publisher's P2P manager
-        SUBSCRIBER  // Subscriber's P2P manager
-    };
-
     /// Peer-to-peer runtime parameters
     struct RunPar {
         /// Runtime parameters for the P2P server
