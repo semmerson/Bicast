@@ -108,7 +108,7 @@ static int timeStamp(FILE* stream)
 static void procStamp(FILE* stream)
 {
     char               progField[80];
-#if 1
+#if 0
     // Without thread ID
     ::snprintf(progField, sizeof(progField), "%s:%d", progName.c_str(), getpid());
     ::fprintf(stream, "%-20s", progField);
