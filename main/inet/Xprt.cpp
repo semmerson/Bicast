@@ -1,6 +1,5 @@
 /**
- * This file defines a socket-based transport mechanism that is independent of
- * the socket's underlying protocol (TCP, UDP, etc.).
+ * This file defines a protocol-independent, socket-based, transport. Type-translation is handled.
  *
  *  @file:  Xprt.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
@@ -23,6 +22,7 @@
 
 #include "CommonTypes.h"
 #include "error.h"
+#include "logging.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -185,6 +185,7 @@ public:
     bool write(UINT value) {
         //LOG_DEBUG("Writing %zu-byte value to %s", sizeof(value), to_string().data());
         value = hton(value);
+        //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte unsigned integer");
         return sock.write(value);
     }
     /**
@@ -437,27 +438,35 @@ bool Xprt::write(const bool         value) const {
     return pImpl->write(value);
 }
 bool Xprt::write(const uint8_t      value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte unsigned integer");
     return pImpl->write(value);
 }
 bool Xprt::write(const int8_t       value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte signed integer");
     return pImpl->write<uint8_t>(*reinterpret_cast<const uint8_t*>(&value));
 }
 bool Xprt::write(const uint16_t     value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte unsigned integer");
     return pImpl->write<uint16_t>(value);
 }
 bool Xprt::write(const int16_t      value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte signed integer");
     return pImpl->write<uint16_t>(*reinterpret_cast<const uint16_t*>(&value));
 }
 bool Xprt::write(const uint32_t     value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte unsigned integer");
     return pImpl->write<uint32_t>(value);
 }
 bool Xprt::write(const int32_t      value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte signed integer");
     return pImpl->write<uint32_t>(*reinterpret_cast<const uint32_t*>(&value));
 }
 bool Xprt::write(const uint64_t     value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte unsigned integer");
     return pImpl->write<uint64_t>(value);
 }
 bool Xprt::write(const int64_t      value) const {
+    //LOG_NOTE("Writing " +  std::to_string(sizeof(value)) + "-byte signed integer");
     return pImpl->write<uint64_t>(*reinterpret_cast<const uint64_t*>(&value));
 }
 template<typename UINT>
