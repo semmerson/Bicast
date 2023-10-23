@@ -90,7 +90,7 @@ protected:
 
             if (srvrSock) {
                 for (;;) {
-                    bool value;
+                    uint8_t value;
 
                     if (!srvrSock.read(value))
                         break;
@@ -111,6 +111,16 @@ protected:
         lstnSock = TcpSrvrSock(srvrAddr);
         setState(LISTENING);
         srvrThread = std::thread(&SocketTest::runServer, this, std::ref(lstnSock), std::ref(srvrSock));
+    }
+
+    template<typename VALUE>
+    void scalarXchg(
+            Socket& clntSock,
+            VALUE&  writeValue) {
+        VALUE readValue = ~writeValue;
+        clntSock.write(writeValue);
+        clntSock.read(readValue);
+        EXPECT_EQ(writeValue, readValue);
     }
 };
 
@@ -231,15 +241,22 @@ TEST_F(SocketTest, ScalarExchange)
     TcpSock     srvrSock;
 
     startServer(lstnSock, srvrSock);
-
     TcpClntSock clntSock(srvrAddr);
-    int         writeInt = 0xff00;
-    int         readInt = ~writeInt;
 
-    clntSock.write(&writeInt, sizeof(writeInt));
-    clntSock.read(&readInt, sizeof(readInt));
+    bool     boolean = true;
+    scalarXchg<bool>(clntSock, boolean);
 
-    EXPECT_EQ(writeInt, readInt);
+    uint8_t     uint8 = 0xff;
+    scalarXchg<uint8_t>(clntSock, uint8);
+
+    uint16_t     uint16 = 0xffff;
+    scalarXchg<uint16_t>(clntSock, uint16);
+
+    uint32_t     uint32 = 0xffffffff;
+    scalarXchg<uint32_t>(clntSock, uint32);
+
+    uint64_t     uint64 = 0xffffffffffffffff;
+    scalarXchg<uint64_t>(clntSock, uint64);
 
     ::pthread_cancel(srvrThread.native_handle());
     srvrThread.join();
