@@ -147,7 +147,7 @@ protected:
             const unsigned nbytes,
             const size_t   align) {
 #if 1
-        return true; // I don't think padding is strictly necessary. SRE 2023-10-23
+        return 0; // I don't think padding is strictly necessary. SRE 2023-10-23
 #else
         return (align - (nbytes % align)) % align;
         /*
