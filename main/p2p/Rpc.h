@@ -82,10 +82,11 @@ public:
 
     /**
      * Receives and dispatches the next, incoming RPC message. Called by a peer connection.
-     * @param[in] xprt   Transport from which the RPC message will be read
-     * @param[in] peer   Associated peer
-     * @retval    true   Success
-     * @retval    false  Connection lost
+     * @param[in] xprt           Transport from which the RPC message will be read
+     * @param[in] peer           Associated peer
+     * @retval    true           Success
+     * @retval    false          Connection lost
+     * @throw     RUNTIME_ERROR  Unknown PDU ID
      */
     virtual bool recv(
             Xprt& xprt,

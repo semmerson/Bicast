@@ -26,6 +26,7 @@
 #include "error.h"
 #include "XprtAble.h"
 
+#include <cstdint>
 #include <unordered_set>
 
 namespace bicast {
@@ -37,11 +38,13 @@ constexpr uint8_t PROTOCOL_VERSION = 1; ///< Protocol version
 /// Protocol data unit (PDU) identifiers
 class PduId : public XprtAble
 {
-    uint16_t value;
+public:
+    using Type = uint16_t; ///< Underlying type of protocol data unit identifier
+
+private:
+    Type value;
 
 public:
-    using Type = decltype(value); ///< Underlying type of protocol data unit identifier
-
     /// Types of protocol data units
     enum Id : Type {
         UNSET,                ///< Not set
