@@ -16,8 +16,9 @@ multicast:                   # Multicast component
                              # determined by operating system based on multicast group address
 peer2Peer:                   # Peer-to-peer component
   server:                    # Local P2P server
-    p2pAddr: localhost       # Internet address/interface of server. Must not be wildcard. Default
-                             # is IP address of interface used for multicasting.
+    p2pAddr: localhost       # Socket address of P2P server. Must not be wildcard. Default IP
+                             # address is that of interface used for multicasting. Default port
+                             # number is 0.
     maxPending: 8            # Maximum number of pending connections
   maxPeers: 8                # Maximum number of connected subscriber-peers
   evalTime: 300              # Peer-evaluation duration in seconds

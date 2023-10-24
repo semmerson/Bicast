@@ -177,9 +177,10 @@ static void usage()
 "                      poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
 "    -n <maxPeers>     Maximum number of connected peers. Default is " <<
                        defRunPar.p2p.maxPeers << ".\n"
-"    -p <p2pAddr>      Internet address for local P2P server (not the publisher's\n"
-"                      server). Must not be wildcard. Default is IP address of\n"
-"                      interface used for multicasting.\n"
+"    -p <p2pAddr>      Socket address for local P2P server (not the publisher's\n"
+"                      server). IP address must not be wildcard. Default IP\n"
+"                      address is that of interface used for multicasting.\n"
+"                      Default port number is 0.\n"
 "    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << defRunPar.p2p.srvr.acceptQSize <<
                        ".\n"
@@ -237,7 +238,7 @@ static void setFromConfig(const String& pathname)
             if (node2) {
                 auto node3 = node2["p2pAddr"];
                 if (node3)
-                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
+                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>());
                 Parser::tryDecode<decltype(runPar.p2p.srvr.acceptQSize)>(node2, "maxPending",
                         runPar.p2p.srvr.acceptQSize);
             }
@@ -410,7 +411,7 @@ static void getCmdPars(
             break;
         }
         case 'p': {
-            runPar.p2p.srvr.addr = SockAddr(optarg, 0);
+            runPar.p2p.srvr.addr = SockAddr(optarg);
             break;
         }
         case 'Q': {
@@ -486,7 +487,7 @@ static void setSigHandling()
      * System calls interrupted by a termination signal are restarted because termination is more
      * cleanly handled by this application.
      *
-     * Bullshit! The system calls *should* be interrupted! Such calls should be restarted only for
+     * Bullshit! The system calls *should* be interrupted! Such calls should only be restarted for
      * innocuous signals like ones that print metrics or reset logging.
     sigact.sa_flags = SA_RESTART;
      */
