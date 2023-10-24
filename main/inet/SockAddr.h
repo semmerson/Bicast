@@ -43,7 +43,8 @@ class SockAddr : public XprtAble
 
 public:
     /**
-     * Default constructs.
+     * Default constructs. The resulting instance will test false.
+     * @see operator bool()
      */
     SockAddr() noexcept;
 
