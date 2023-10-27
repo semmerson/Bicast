@@ -49,35 +49,49 @@ public:
     SockAddr() noexcept;
 
     /**
-     * Constructs from an Internet address.
+     * Constructs from an Internet address and an optional port number.
      *
      * @param[in] inetAddr  Internet address
-     * @param[in] port      Port number in host byte-order
+     * @param[in] port      Optional port number in host byte-order
+     * @param[in] port      Optional port number in host byte-order. `0` obtains a system-chosen
+     *                      port number.
      */
     explicit SockAddr(const InetAddr& inetAddr,
              in_port_t                port = 0);
 
+    /**
+     * Constructs from an IPv4 address and an optional port number.
+     * @param[in] addr  IPv4 address
+     * @param[in] port  Optional port number in host byte-order. `0` obtains a system-chosen port
+     *                  number.
+     */
     explicit SockAddr(
             const in_addr_t addr,
             in_port_t       port = 0);
 
+    /**
+     * Constructs from an IPv4 address and an optional port number.
+     * @param[in] addr  IPv4 address
+     * @param[in] port  Optional port number in host byte-order.  `0` obtains a system-chosen port
+     *                  number.
+     */
     explicit SockAddr(
             const struct in_addr& addr,
             in_port_t             port = 0);
 
     /**
-     * Constructs an IPv4 socket address.
+     * Constructs from an IPv4 socket address structure.
      *
      * @param[in] sockaddr  IPv4 socket address
      */
     explicit SockAddr(const struct sockaddr_in& sockaddr);
 
     /**
-     * Constructs from an IPv6 socket address. `0` obtains a system-chosen port
-     * number.
+     * Constructs from an IPv6 socket address structure and an optional port number.
      *
      * @param[in] addr  IPv6 address
-     * @param[in] port  Optional port number in host byte-order
+     * @param[in] port  Optional port number in host byte-order. `0` obtains a system-chosen port
+     *                  number.
      */
     explicit SockAddr(
             const struct in6_addr& addr,
@@ -107,16 +121,16 @@ public:
     explicit SockAddr(const struct sockaddr_storage& storage);
 
     /**
-     * Constructs from a socket specification.
+     * Constructs from a socket string-specification.
      *
      * @param[in] spec  Socket specification. E.g.,
      *                    - host.name:38800
      *                    - 192.168.0.1:2400
      *                    - [fe80::20c:29ff:fe6b:3bda]:34084
-     *                  The port number specification is optional. If it's not specified, then the
-     *                  optional argument is used.
-     * @param[in] port  Optional port number in host byte-order. `0` obtains a system-
-     *                  chosen port number, eventually.
+     *                  The colon and port number specification is optional. If it's not specified,
+     *                  then the optional argument is used.
+     * @param[in] port  Optional port number in host byte-order. `0` obtains a system-chosen port
+     *                  number.
      */
     explicit SockAddr(
             const std::string& spec,
