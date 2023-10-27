@@ -461,7 +461,7 @@ public:
         , senderThread()
     {
         DataSeg::setMaxSegSize(maxSegSize);
-        LOG_NOTE("Will multicast to group " + mcastAddr.to_string() + " on interface " +
+        LOG_NOTE("Will multicast to group " + mcastAddr.to_string() + " from interface " +
                 mcastIfaceAddr.to_string());
     }
 
