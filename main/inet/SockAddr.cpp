@@ -31,6 +31,7 @@
 #include <climits>
 #include <fcntl.h>
 #include <functional>
+#include <inttypes.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <poll.h>
@@ -287,31 +288,11 @@ SockAddr::SockAddr(const struct sockaddr& sockaddr)
     : SockAddr(*reinterpret_cast<const struct sockaddr_storage*>(&sockaddr))
 {}
 
-SockAddr::SockAddr(
-        const std::string& addr,
-        const in_port_t    port)
-    : SockAddr()
-{
-    const char*     cstr{addr.data()};
-    struct in_addr  inaddr;
-    struct in6_addr in6addr;
-
-    if (inet_pton(AF_INET, cstr, &inaddr) == 1) {
-        pImpl.reset(new Impl(InetAddr(inaddr), port));
-    }
-    else if (inet_pton(AF_INET6, cstr, &in6addr) == 1) {
-        pImpl.reset(new Impl(InetAddr(in6addr), port));
-    }
-    else {
-        pImpl.reset(new Impl(InetAddr(addr), port));
-    }
-}
-
 /**
  * Splits a socket specification into Internet and port number specifications
  * @param[in]  spec        Socket specification with optional port number
- * @param[out] inet        Internet specification
- * @param[out] port        Port number specification. Will be "0" if not specified.
+ * @param[out] inet        Internet specification with no brackets
+ * @param[out] port        Port number specification. Empty if not specified.
  * @throw InvalidArgument  Not a socket specification
  */
 static void splitSpec(
@@ -319,46 +300,62 @@ static void splitSpec(
         String&       inet,
         String&       port)
 {
+    bool success = false;
     auto colonPos = spec.rfind(':');
 
     if (colonPos == spec.npos) {
-        port = "0";
+        port.clear();
         inet = spec;
+        success = true;
     }
-    else {
-        port = spec.substr(colonPos+1);
-        if (colonPos >= 2 && spec[colonPos-1] == ']') {
-            // IPv6 address
-            inet = spec.substr(1, colonPos-2);
+    else if (colonPos) {
+        if (spec[colonPos-1] == ']') {
+            if (spec[0] == '[') {
+                inet = spec.substr(1, colonPos-2);
+                port = spec.substr(colonPos+1);
+                success = true;
+            }
         }
-        else if (colonPos >= 1) {
-            // IPv4 address
+        else if (spec.find(':') == colonPos){
             inet = spec.substr(0, colonPos);
+            port = spec.substr(colonPos+1);
+            success = true;
         }
         else {
-            throw INVALID_ARGUMENT("Not a socket specification: \"" + spec + "\"");
+            inet = spec;
+            port.clear();
+            success = true;
         }
     }
+
+    if (!success)
+        throw INVALID_ARGUMENT("Invalid socket specification: \"" + spec + "\"");
 }
 
-SockAddr::SockAddr(const std::string& spec)
+static in_port_t decodePort(const String& portSpec)
+{
+    unsigned long long port;
+    static const in_port_t MAX_PORT = ~0;
+
+    if (::sscanf(portSpec.data(), "%llu" , &port) != 1 || port > MAX_PORT)
+        throw INVALID_ARGUMENT("Invalid port specification: \"" + portSpec + "\"");
+
+    return port;
+}
+
+SockAddr::SockAddr(
+        const std::string& addr,
+        in_port_t          port)
     : SockAddr()
 {
-    // std::regex in gcc 4.8 doesn't work; hence, the following
+    String inetSpec;
+    String portSpec;
 
-    String inetSpec = "", portSpec = "";
+    splitSpec(addr, inetSpec, portSpec);
+    if (portSpec.size())
+        port = decodePort(portSpec);
 
-    splitSpec(spec, inetSpec, portSpec);
-
-    InetAddr      inet{inetSpec};
-    unsigned long port;
-
-    if (::sscanf(portSpec.data(), "%lu", &port) != 1)
-        throw INVALID_ARGUMENT("Invalid port specification: \"" + portSpec + "\"");
-    if (port > USHRT_MAX)
-        throw INVALID_ARGUMENT("Port number is too large: " + std::to_string(port));
-
-    pImpl.reset(new Impl(inet, static_cast<in_port_t>(port)));
+    pImpl.reset(new Impl(InetAddr(inetSpec), port));
 }
 
 SockAddr SockAddr::clone(const in_port_t port) const

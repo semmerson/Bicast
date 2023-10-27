@@ -147,6 +147,39 @@ TEST_F(SockAddrTest, NameConstruction) {
     EXPECT_TRUE((sockAddr < sockAddrName_2) != (sockAddrName_2 < sockAddr));
 }
 
+// Tests construction given a default port number
+TEST_F(SockAddrTest, DefaultPortNumber) {
+    auto sockAddr = SockAddr{IPV4_HOST1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(IPV4_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(0, sockAddr.getPort());
+
+    sockAddr = SockAddr{IPV4_HOST1, 1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(IPV4_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(1, sockAddr.getPort());
+
+    sockAddr = SockAddr{IPV6_HOST1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(IPV6_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(0, sockAddr.getPort());
+
+    sockAddr = SockAddr{IPV6_HOST1, 1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(IPV6_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(1, sockAddr.getPort());
+
+    sockAddr = SockAddr{NAME_HOST1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(NAME_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(0, sockAddr.getPort());
+
+    sockAddr = SockAddr{NAME_HOST1, 1};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_STREQ(NAME_HOST1, sockAddr.getInetAddr().to_string().data());
+    EXPECT_EQ(1, sockAddr.getPort());
+}
+
 // Tests hashing
 TEST_F(SockAddrTest, Hash) {
     const auto   myHash = std::hash<SockAddr>{};

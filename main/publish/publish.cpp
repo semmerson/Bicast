@@ -334,134 +334,139 @@ static void getCmdPars(
         const int    argc,
         char* const* argv)
 {
-    runPar = defRunPar;
+    try {
+        runPar = defRunPar;
 
-    opterr = 0;    // 0 => getopt() won't write to `stderr`
-    int c;
-    while ((c = ::getopt(argc, argv, ":c:d:e:f:hk:l:m:o:P:p:Q:q:r:s:t:")) != -1) {
-        switch (c) {
-        case 'h': {
-            usage();
-            exit(0);
-        }
-
-        case 'c': {
-            try {
-                setFromConfig(optarg);
+        opterr = 0;    // 0 => getopt() won't write to `stderr`
+        int c;
+        while ((c = ::getopt(argc, argv, ":c:d:e:f:hk:l:m:o:P:p:Q:q:r:s:t:")) != -1) {
+            switch (c) {
+            case 'h': {
+                usage();
+                exit(0);
             }
-            catch (const std::exception& ex) {
-                std::throw_with_nested(INVALID_ARGUMENT(
-                        String("Couldn't initialize using configuration-file \"") + optarg + "\""));
+
+            case 'c': {
+                try {
+                    setFromConfig(optarg);
+                }
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(INVALID_ARGUMENT(
+                            String("Couldn't initialize using configuration-file \"") + optarg + "\""));
+                }
+                break;
             }
-            break;
-        }
-        case 'd': {
-            int maxSegSize;
-            if (::sscanf(optarg, "%d", &maxSegSize) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            runPar.maxSegSize = maxSegSize;
-            break;
-        }
-        case 'e': {
-            int evalTime;
-            if (::sscanf(optarg, "%d", &evalTime) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            runPar.p2p.evalTime = evalTime;
-            break;
-        }
-        case 'f': {
-            runPar.feedName = String(optarg);
-            break;
-        }
-        case 'k': {
-            int keepTime;
-            if (::sscanf(optarg, "%" SCNd32, &keepTime) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            runPar.repo.keepTime = keepTime;
-            break;
-        }
-        case 'l': {
-            log_setLevel(optarg);
-            runPar.logLevel = log_getLevel();
-            break;
-        }
-        case 'm': {
-            runPar.mcast.dstAddr = SockAddr(optarg);
-            break;
-        }
-        case 'n': {
-            int maxPeers;
-            if (::sscanf(optarg, "%d", &maxPeers) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            runPar.p2p.maxPeers = maxPeers;
-            break;
-        }
-        case 'o': {
-            if (::sscanf(optarg, "%ld", &runPar.repo.maxOpenFiles) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            break;
-        }
-        case 'P': {
-            runPar.srvr.addr = SockAddr(optarg);
-            break;
-        }
-        case 'p': {
-            runPar.p2p.srvr.addr = SockAddr(optarg);
-            break;
-        }
-        case 'Q': {
-            if (::sscanf(optarg, "%d", &runPar.srvr.listenSize) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            break;
-        }
-        case 'q': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.acceptQSize) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            break;
-        }
-        case 'r': {
-            runPar.pubRoot = String(optarg);
-            break;
-        }
-        case 's': {
-            runPar.mcast.srcAddr = InetAddr(optarg);
-            break;
-        }
-        case 't': {
-            int trackerCap;
-            if (::sscanf(optarg, "%d", &trackerCap) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            runPar.trackerCap = trackerCap;
-            break;
-        }
-        case ':': { // Missing option argument. Due to leading ":" in opt-string
-            throw INVALID_ARGUMENT(String("Option \"-") + static_cast<char>(optopt) +
-                    "\" is missing an argument");
-        }
-        default : { // c == '?'
-            throw INVALID_ARGUMENT(String("Unknown \"-") + static_cast<char>(optopt) + "\" option");
-        }
-        } // `switch` statement
-    } // While getopt() loop
+            case 'd': {
+                int maxSegSize;
+                if (::sscanf(optarg, "%d", &maxSegSize) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.maxSegSize = maxSegSize;
+                break;
+            }
+            case 'e': {
+                int evalTime;
+                if (::sscanf(optarg, "%d", &evalTime) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.p2p.evalTime = evalTime;
+                break;
+            }
+            case 'f': {
+                runPar.feedName = String(optarg);
+                break;
+            }
+            case 'k': {
+                int keepTime;
+                if (::sscanf(optarg, "%" SCNd32, &keepTime) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.repo.keepTime = keepTime;
+                break;
+            }
+            case 'l': {
+                log_setLevel(optarg);
+                runPar.logLevel = log_getLevel();
+                break;
+            }
+            case 'm': {
+                runPar.mcast.dstAddr = SockAddr(optarg);
+                break;
+            }
+            case 'n': {
+                int maxPeers;
+                if (::sscanf(optarg, "%d", &maxPeers) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.p2p.maxPeers = maxPeers;
+                break;
+            }
+            case 'o': {
+                if (::sscanf(optarg, "%ld", &runPar.repo.maxOpenFiles) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                break;
+            }
+            case 'P': {
+                runPar.srvr.addr = SockAddr(optarg);
+                break;
+            }
+            case 'p': {
+                runPar.p2p.srvr.addr = SockAddr(optarg);
+                break;
+            }
+            case 'Q': {
+                if (::sscanf(optarg, "%d", &runPar.srvr.listenSize) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                break;
+            }
+            case 'q': {
+                if (::sscanf(optarg, "%d", &runPar.p2p.srvr.acceptQSize) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                break;
+            }
+            case 'r': {
+                runPar.pubRoot = String(optarg);
+                break;
+            }
+            case 's': {
+                runPar.mcast.srcAddr = InetAddr(optarg);
+                break;
+            }
+            case 't': {
+                int trackerCap;
+                if (::sscanf(optarg, "%d", &trackerCap) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.trackerCap = trackerCap;
+                break;
+            }
+            case ':': { // Missing option argument. Due to leading ":" in opt-string
+                throw INVALID_ARGUMENT(String("Option \"-") + static_cast<char>(optopt) +
+                        "\" is missing an argument");
+            }
+            default : { // c == '?'
+                throw INVALID_ARGUMENT(String("Unknown \"-") + static_cast<char>(optopt) + "\" option");
+            }
+            } // `switch` statement
+        } // While getopt() loop
 
-    if (optind != argc)
-        throw LOGIC_ERROR("Too many operands specified");
+        if (optind != argc)
+            throw LOGIC_ERROR("Too many operands specified");
 
-    if (!runPar.mcast.srcAddr)
-        runPar.mcast.srcAddr = UdpSock(runPar.mcast.dstAddr).getLclAddr().getInetAddr();
+        if (!runPar.mcast.srcAddr)
+            runPar.mcast.srcAddr = UdpSock(runPar.mcast.dstAddr).getLclAddr().getInetAddr();
 
-    if (!runPar.p2p.srvr.addr)
-        runPar.p2p.srvr.addr = SockAddr(runPar.mcast.srcAddr, 0);
+        if (!runPar.p2p.srvr.addr)
+            runPar.p2p.srvr.addr = SockAddr(runPar.mcast.srcAddr);
 
-    vetRunPar();
+        vetRunPar();
+    }
+    catch (const std::exception& ex) {
+        std::throw_with_nested(RUNTIME_ERROR("Error processing command arguments"));
+    }
 }
 
 /**

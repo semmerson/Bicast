@@ -54,14 +54,16 @@ public:
      * @param[in] inetAddr  Internet address
      * @param[in] port      Port number in host byte-order
      */
-    SockAddr(const InetAddr& inetAddr,
-             const in_port_t port);
+    explicit SockAddr(const InetAddr& inetAddr,
+             in_port_t                port = 0);
 
-    SockAddr(const in_addr_t addr,
-             const in_port_t port);
+    explicit SockAddr(
+            const in_addr_t addr,
+            in_port_t       port = 0);
 
-    SockAddr(const struct in_addr& addr,
-             const in_port_t       port);
+    explicit SockAddr(
+            const struct in_addr& addr,
+            in_port_t             port = 0);
 
     /**
      * Constructs an IPv4 socket address.
@@ -75,10 +77,11 @@ public:
      * number.
      *
      * @param[in] addr  IPv6 address
-     * @param[in] port  Port number in host byte-order
+     * @param[in] port  Optional port number in host byte-order
      */
-    SockAddr(const struct in6_addr& addr,
-             const in_port_t        port);
+    explicit SockAddr(
+            const struct in6_addr& addr,
+            in_port_t              port = 0);
 
     /**
      * Constructs from an IPv6 socket address.
@@ -104,25 +107,20 @@ public:
     explicit SockAddr(const struct sockaddr_storage& storage);
 
     /**
-     * Constructs from a host specification and port number.
-     *
-     * @param[in] name  Host specification
-     * @param[in] port  Port number in host byte-order. `0` obtains a system-
-     *                  chosen port number, eventually.
-     */
-    SockAddr(const std::string& name,
-             const in_port_t    port);
-
-    /**
-     * Constructs from a string specification.
+     * Constructs from a socket specification.
      *
      * @param[in] spec  Socket specification. E.g.,
      *                    - host.name:38800
      *                    - 192.168.0.1:2400
      *                    - [fe80::20c:29ff:fe6b:3bda]:34084
-     *                  If the port number isn't specified, then the default is 0.
+     *                  The port number specification is optional. If it's not specified, then the
+     *                  optional argument is used.
+     * @param[in] port  Optional port number in host byte-order. `0` obtains a system-
+     *                  chosen port number, eventually.
      */
-    explicit SockAddr(const std::string& spec);
+    explicit SockAddr(
+            const std::string& spec,
+            in_port_t          port = 0);
 
     /**
      * Destroys.

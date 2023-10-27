@@ -209,11 +209,8 @@ static void setFromConfig(const String& pathname)
         Parser::tryDecode<decltype(runPar.subRoot)>(node0, "subRoot", runPar.subRoot);
 
         node1 = node0["pubAddr"];
-        if (node1) {
-            runPar.pubAddr = SockAddr(node1.as<String>());
-            if (runPar.pubAddr.getPort() == 0)
-                runPar.pubAddr = runPar.pubAddr.clone(DEF_PORT);
-        }
+        if (node1)
+            runPar.pubAddr = SockAddr(node1.as<String>(), DEF_PORT);
 
         Parser::tryDecode<decltype(runPar.retryInterval)>(node0, "retryInterval",
                 runPar.retryInterval);
@@ -224,7 +221,7 @@ static void setFromConfig(const String& pathname)
             if (node2) {
                 auto node3 = node2["p2pAddr"];
                 if (node3)
-                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>(), 0);
+                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>());
                 Parser::tryDecode<decltype(runPar.p2p.srvr.maxPendConn)>(node2, "maxPending",
                         runPar.p2p.srvr.maxPendConn);
             }
@@ -371,7 +368,7 @@ static void getCmdPars(
             break;
         }
         case 'p': {
-            runPar.p2p.srvr.addr = SockAddr(optarg, 0);
+            runPar.p2p.srvr.addr = SockAddr(optarg);
             break;
         }
         case 'q': {
@@ -418,9 +415,7 @@ static void getCmdPars(
     if (!runPar.pubAddr) {
         if (argv[optind] == nullptr)
             throw INVALID_ARGUMENT("Publisher's socket address wasn't specified");
-        runPar.pubAddr = SockAddr(argv[optind++]);
-        if (runPar.pubAddr.getPort() == 0)
-            runPar.pubAddr = runPar.pubAddr.clone(DEF_PORT);
+        runPar.pubAddr = SockAddr(argv[optind++], DEF_PORT);
     }
 
     if (optind != argc)
@@ -431,7 +426,7 @@ static void getCmdPars(
      * interface used to connect to the publisher's server.
      */
     if (!runPar.p2p.srvr.addr)
-        runPar.p2p.srvr.addr = SockAddr(UdpSock(runPar.pubAddr).getLclAddr().getInetAddr(), 0);
+        runPar.p2p.srvr.addr = SockAddr(UdpSock(runPar.pubAddr).getLclAddr().getInetAddr());
 
     vetRunPars();
 }
@@ -492,8 +487,7 @@ static void subscribe(
         // The following doesn't work if the outgoing multicast interface is localhost
         //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
         // The following works in that context
-        runPar.mcastIface =
-                UdpSock(SockAddr(subInfo.mcast.srcAddr, 0)).getLclAddr().getInetAddr();
+        runPar.mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
         //LOG_DEBUG("Set interface for multicast reception to " +
                 //runPar.mcastIface.to_string());
     }
