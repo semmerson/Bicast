@@ -58,8 +58,8 @@ struct RunPar {
     String    pubRoot;    ///< Pathname of the publisher's root directory
     /// Runtime parameters for a publisher's server (not its P2P server)
     struct Srvr {
-        SockAddr      addr;               ///< Socket address of publisher's server (not P2P server)
-        int           listenSize;         ///< Size of `listen()` queue
+        SockAddr addr;       ///< Socket address of publisher's server (not P2P server)
+        int      listenSize; ///< Size of `listen()` queue
         /**
          * Constructs.
          * @param addr        Socket address of publisher's server (not P2P server)
@@ -70,10 +70,10 @@ struct RunPar {
             : addr(addr)
             , listenSize{listenSize}
         {}
-    }                     srvr;           ///< Publisher's server
-    McastPub::RunPar      mcast;          ///< Multicast component
-    PubP2pMgr::RunPar     p2p;            ///< Peer-to-peer component
-    PubNode::RunPar::Repo repo;           ///< Runtime parameters for the publisher's repository
+    }                     srvr;  ///< Publisher's server (not P2P server)
+    McastPub::RunPar      mcast; ///< Multicast component
+    PubP2pMgr::RunPar     p2p;   ///< Peer-to-peer component
+    PubNode::RunPar::Repo repo;  ///< Runtime parameters for the publisher's repository
 
     /**
      * Default constructs.
@@ -93,10 +93,10 @@ struct RunPar {
 
 /// Helper class for counting and throttling the number of threads handling subscriptions.
 class Counter {
-    mutable Mutex mutex;          ///< Count mutex
-    mutable Cond  cond;           ///< Count condition variable
-    int           max;            ///< Maximum count allowed
-    int           count;          ///< Current count
+    mutable Mutex mutex; ///< Count mutex
+    mutable Cond  cond;  ///< Count condition variable
+    int           max;   ///< Maximum count allowed
+    int           count; ///< Current count
 public:
     Counter()
         : mutex()
