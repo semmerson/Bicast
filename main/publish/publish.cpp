@@ -37,17 +37,19 @@ using namespace bicast;
 using String = std::string;
 
 /// Default maximum number of active peers
-static constexpr int  DEF_MAX_PEERS     = 8;
+static constexpr int  DEF_MAX_PEERS          = 8;
 /// Size of queue for publisher's server
-static constexpr int  DEF_BACKLOG_SIZE  = 256;
+static constexpr int  DEF_BACKLOG_SIZE       = 256;
 /// Default multicast group Internet address
-static constexpr char DEF_MCAST_ADDR[]  = "232.1.1.1";
+static constexpr char DEF_MCAST_ADDR[]       = "232.1.1.1";
 /// Default port for publisher's server & multicast group
-static constexpr int  DEF_PORT          = 38800;
+static constexpr int  DEF_PORT               = 38800;
 /// Default tracker size
-static constexpr int  DEF_TRACKER_CAP   = 1000;
+static constexpr int  DEF_TRACKER_CAP        = 1000;
 /// Default peer evaluation duration
-static constexpr int  DEF_EVAL_DURATION = 300;
+static constexpr int  DEF_EVAL_DURATION      = 300;
+/// Default time between heartbeat packets in seconds
+static constexpr int  DEF_HEARTBEAT_INTERVAL = 30;
 
 /// Command-line/configuration-file parameters of this program
 struct RunPar {
@@ -86,7 +88,7 @@ struct RunPar {
         , pubRoot(".")
         , srvr(SockAddr("0.0.0.0", DEF_PORT), DEF_BACKLOG_SIZE)
         , mcast(SockAddr(DEF_MCAST_ADDR, DEF_PORT), InetAddr())
-        , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_EVAL_DURATION)
+        , p2p(SockAddr(), DEF_MAX_PEERS, DEF_MAX_PEERS, DEF_EVAL_DURATION, DEF_HEARTBEAT_INTERVAL)
         , repo(::sysconf(_SC_OPEN_MAX)/2, 3600)
     {}
 };
@@ -173,6 +175,8 @@ static void usage()
 "                      be wildcard. Default is determined by operating system\n"
 "                      based on destination address of multicast group.\n"
 "  Peer-to-Peer:\n"
+"    -b <interval>     Time between heartbeat packets in seconds. <0 => no\n"
+"                      heartbeat. Default is " << defRunPar.p2p.heartbeatInterval << ".\n"
 "    -e <evalTime>     Peer evaluation duration, in seconds, before replacing\n"
 "                      poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
 "    -n <maxPeers>     Maximum number of connected peers. Default is " <<
@@ -247,6 +251,8 @@ static void setFromConfig(const String& pathname)
                     runPar.p2p.maxPeers);
             Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "evalTime",
                     runPar.p2p.evalTime);
+            Parser::tryDecode<decltype(runPar.p2p.heartbeatInterval)>(node1, "heartbeatInterval",
+                    runPar.p2p.heartbeatInterval);
         }
 
         node1 = node0["repository"];
@@ -274,6 +280,9 @@ static void vetRunPar()
 
     if (runPar.p2p.evalTime <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
+
+    if (runPar.p2p.heartbeatInterval == 0)
+        throw INVALID_ARGUMENT("Heartbeat interval cannot be zero");
 
     if (runPar.trackerCap <= 0)
         throw INVALID_ARGUMENT("Tracker size is not positive");
@@ -341,6 +350,14 @@ static void getCmdPars(
         int c;
         while ((c = ::getopt(argc, argv, ":c:d:e:f:hk:l:m:o:P:p:Q:q:r:s:t:")) != -1) {
             switch (c) {
+            case 'b': {
+                int interval;
+                if (::sscanf(optarg, "%d", &interval) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                runPar.p2p.heartbeatInterval = interval;
+                break;
+            }
             case 'h': {
                 usage();
                 exit(0);
