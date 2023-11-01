@@ -225,24 +225,12 @@ SockAddr::SockAddr(
     : pImpl{new Impl(inetAddr, port)}
 {}
 
-/**
- * Constructs from an IPv4 socket address.
- *
- * @param[in] addr  IPv4 address
- * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
- */
 SockAddr::SockAddr(
         const in_addr_t addr,
         const in_port_t port)
      : SockAddr(InetAddr(addr), port)
 {}
 
-/**
- * Constructs from an IPv4 socket address.
- *
- * @param[in] addr  IPv4 address
- * @param[in] port  Port number in host byte-order. `0` obtains a system-chosen port number.
- */
 SockAddr::SockAddr(
         const struct in_addr& addr,
         const in_port_t       port)

@@ -52,7 +52,6 @@ public:
      * Constructs from an Internet address and an optional port number.
      *
      * @param[in] inetAddr  Internet address
-     * @param[in] port      Optional port number in host byte-order
      * @param[in] port      Optional port number in host byte-order. `0` obtains a system-chosen
      *                      port number.
      */
