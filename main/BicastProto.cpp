@@ -44,11 +44,11 @@ PduId::PduId(Xprt& xprt) {
 }
 
 bool PduId::write(Xprt& xprt) const {
-    return xprt.write(value);
+    return xprt.write(static_cast<const Type&>(value)); // The cast is necessary, unfortunately
 }
 
 bool PduId::read(Xprt& xprt) {
-    if (!xprt.read(value))
+    if (!xprt.read(static_cast<Type&>(value)))
         return false;
     if (value > MAX_PDU_ID)
         throw INVALID_ARGUMENT("value=" + to_string());
