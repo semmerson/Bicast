@@ -213,12 +213,12 @@ public:
      * @retval true     Success but no guarantee that data was written
      * @retval false    Connection lost
      */
-    bool flush();
+    bool flush() const;
 
     /**
      * Prepares the socket for further input.
      */
-    void clear();
+    void clear() const;
 
     /**
      * Reads bytes.

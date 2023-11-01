@@ -613,11 +613,11 @@ bool Socket::write(const uint64_t value) const {
     return pImpl->write<uint64_t>(value);
 }
 
-bool Socket::flush() {
+bool Socket::flush() const {
     return pImpl->flush();
 }
 
-void Socket::clear() {
+void Socket::clear() const {
     return pImpl->clear();
 }
 
@@ -753,7 +753,7 @@ protected:
              *   - The socket might be non-blocking
              */
             //LOG_DEBUG("Polling socket %s", std::to_string(sd).data());
-            if (::poll(&pollfd, 1, -1) == -1)
+            if (::poll(&pollfd, 1, -1) == -1) // -1 => indefinite timeout
                 throw SYSTEM_ERROR("poll() failure on socket " + to_string());
             if (pollfd.revents & POLLHUP) {
                 LOG_TRACE("EOF on socket " + std::to_string(sd));
