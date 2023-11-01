@@ -65,9 +65,11 @@ public:
                 : addr(addr)
                 , acceptQSize(listenSize)
             {}
-        }         srvr;           ///< P2P server
-        int       maxPeers;       ///< Maximum number of connected peers
-        int       evalTime;       ///< Time interval for evaluating peer performance in seconds
+        }         srvr;              ///< P2P server
+        int       maxPeers;          ///< Maximum number of connected peers
+        int       evalTime;          ///< Time interval for evaluating peer performance in seconds
+        int       heartbeatInterval; ///< Time between heartbeat packets in seconds. -1 => no
+                                     ///< heartbeat.
         /**
          * Constructs.
          * @param[in] addr         Address for local P2P server. Port number may be 0.
@@ -78,10 +80,12 @@ public:
         RunPar( const SockAddr addr,
                 const int      listenSize,
                 const int      maxPeers,
-                const int      evalTime)
+                const int      evalTime,
+                const int      heartbeatInterval = 30)
             : srvr(addr, listenSize)
             , maxPeers(maxPeers)
             , evalTime(evalTime)
+            , heartbeatInterval(heartbeatInterval)
         {}
     };
 
