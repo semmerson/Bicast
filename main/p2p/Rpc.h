@@ -154,7 +154,7 @@ public:
      * @retval    false      Lost connection
      */
     virtual bool request(
-            Xprt&           xprt,
+            Xprt&            xprt,
             const DataSegId& dataSegId) =0;
 
     /**
@@ -191,6 +191,14 @@ public:
     virtual bool send(
             Xprt&          xprt,
             const DataSeg& dataSeg) =0;
+
+    /**
+     * Sends a heartbeat PDU.
+     * @param[in] xprt   Transport on which to send the heartbeat
+     * @retval    true   Success
+     * @retval    false  Lost connection
+     */
+    virtual bool sendHeartbeat(Xprt& xprt) =0;
 };
 
 } // namespace

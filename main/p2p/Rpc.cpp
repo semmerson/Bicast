@@ -126,11 +126,10 @@ class RpcImpl final : public Rpc
      */
     inline bool send(
             Xprt&           xprt,
-            const PduId::Id id,
+            const PduId&    pduId,
             const XprtAble& obj) {
-        LOG_ASSERT(id != 0);
         //LOG_TRACE("Sending: xprt=" + xprt.to_string());
-        return xprt.write(static_cast<PduId::Type>(id)) && // This cast is necessary, unfortunately
+        return pduId.write(xprt) &&
                 obj.write(xprt) &&
                 xprt.flush();
     }
@@ -216,6 +215,13 @@ class RpcImpl final : public Rpc
                 break;
             }
 
+            // Heartbeat:
+
+            case PduId::HEARTBEAT: {
+                connected = true;
+                break;
+            }
+
             default:
                 throw RUNTIME_ERROR("Unknown PDU ID: " + std::to_string(pduId));
         }
@@ -256,7 +262,8 @@ public:
             Xprt&              xprt,
             const P2pSrvrInfo& srvrInfo) override {
         LOG_TRACE("RPC " + xprt.to_string() + " sending P2P-server notice " + srvrInfo.to_string());
-        const auto success = send(xprt, PduId::SRVR_INFO_NOTICE, srvrInfo);
+        static PduId pduId(PduId::SRVR_INFO_NOTICE);
+        const auto success = send(xprt, pduId, srvrInfo);
         return success;
     }
 
@@ -264,14 +271,16 @@ public:
             Xprt&         xprt,
             const ProdId& prodId) override {
         //LOG_NOTE("RPC " + xprt.to_string() + " sending product-ID notice " + prodId.to_string());
-        const auto success = send(xprt, PduId::PROD_INFO_NOTICE, prodId);
+        static PduId pduId(PduId::PROD_INFO_NOTICE);
+        const auto success = send(xprt, pduId, prodId);
         return success;
     }
     bool notify(
             Xprt&            xprt,
             const DataSegId& dataSegId) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending segment-ID notice " + dataSegId.to_string());
-        const auto success = send(xprt, PduId::DATA_SEG_NOTICE, dataSegId);
+        static PduId pduId(PduId::DATA_SEG_NOTICE);
+        const auto success = send(xprt, pduId, dataSegId);
         return success;
     }
 
@@ -281,14 +290,16 @@ public:
             Xprt&         xprt,
             const ProdId& prodId) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending product-ID request " + prodId.to_string());
-        const auto success = send(xprt, PduId::PROD_INFO_REQUEST, prodId);
+        static PduId pduId(PduId::PROD_INFO_REQUEST);
+        const auto success = send(xprt, pduId, prodId);
         return success;
     }
     bool request(
             Xprt&            xprt,
             const DataSegId& dataSegId) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending segment request " +  dataSegId.to_string());
-        const auto success = send(xprt, PduId::DATA_SEG_REQUEST, dataSegId);
+        static PduId pduId(PduId::DATA_SEG_REQUEST);
+        const auto success = send(xprt, pduId, dataSegId);
         return success;
     }
 
@@ -297,7 +308,8 @@ public:
             const ProdIdSet& prodIds) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending product-IDs request " +
                 //prodIds.to_string());
-        const auto success = send(xprt, PduId::PREVIOUSLY_RECEIVED, prodIds);
+        static PduId pduId(PduId::PREVIOUSLY_RECEIVED);
+        const auto success = send(xprt, pduId, prodIds);
         return success;
     }
 
@@ -307,7 +319,8 @@ public:
             Xprt&           xprt,
             const ProdInfo& prodInfo) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending product-info " + prodInfo.to_string());
-        const auto success = send(xprt, PduId::PROD_INFO, prodInfo);
+        static PduId pduId(PduId::PROD_INFO);
+        const auto success = send(xprt, pduId, prodInfo);
         return success;
     }
 
@@ -315,8 +328,14 @@ public:
             Xprt&          xprt,
             const DataSeg& dataSeg) override {
         //LOG_TRACE("RPC " + xprt.to_string() + " sending segment " +  dataSeg.to_string());
-        const auto success = send(xprt, PduId::DATA_SEG, dataSeg);
+        static PduId pduId(PduId::DATA_SEG);
+        const auto success = send(xprt, pduId, dataSeg);
         return success;
+    }
+
+    bool sendHeartbeat(Xprt& xprt) override {
+        static PduId heartbeat(PduId::HEARTBEAT);
+        return heartbeat.write(xprt) && xprt.flush();
     }
 };
 
