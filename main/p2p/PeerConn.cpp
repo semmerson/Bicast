@@ -64,7 +64,7 @@ class PeerConnImpl : public PeerConn
     Thread             requestReader; ///< For receiving requests
     Thread             noticeReader;  ///< For receiving notices
     Thread             dataReader;    ///< For receiving data
-    RpcPtr             rpcPtr;           ///< Remote procedure call object
+    RpcPtr             rpcPtr;        ///< Remote procedure call object
 
     static void asyncConnectXprt(
             const SockAddr& srvrAddr,
@@ -406,6 +406,10 @@ public:
 
     bool send(const DataSeg& dataSeg) override {
         return rpcPtr->send(dataXprt, dataSeg);
+    }
+
+    bool sendHeartbeat() override {
+        return rpcPtr->sendHeartbeat(noticeXprt);
     }
 };
 

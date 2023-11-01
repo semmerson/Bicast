@@ -222,6 +222,13 @@ public:
      * @retval    false      Lost connection
      */
     virtual bool send(const DataSeg& dataSeg) =0;
+
+    /**
+     * Sends a heartbeat to the remote peer.
+     * @retval    true       Success
+     * @retval    false      Lost connection
+     */
+    virtual bool sendHeartbeat() =0;
 };
 
 class PeerConnSrvr;                                    ///< Forward declaration
