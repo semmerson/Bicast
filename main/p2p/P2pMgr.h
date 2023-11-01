@@ -51,8 +51,18 @@ class BaseP2pMgr : virtual public Peer::BaseMgr
 public:
     /// Peer-to-peer runtime parameters
     struct RunPar {
+        /// Default maximum number of connected peers
+        static constexpr int DEF_MAX_PEERS          = 8;
+        /// Default amount of time for evaluating peers
+        static constexpr int DEF_EVAL_TIME          = 300;
+        /// Default time interval between heartbeat packets
+        static constexpr int DEF_HEARTBEAT_INTERVAL = 30;
+
         /// Runtime parameters for the P2P server
         struct Srvr {
+            /// Default size of the server's input queue
+            static constexpr int DEF_LISTEN_SIZE = DEF_MAX_PEERS;
+
             SockAddr addr;        ///< Socket address
             int      acceptQSize; ///< Size of `listen()` queue
             /**
@@ -65,27 +75,34 @@ public:
                 : addr(addr)
                 , acceptQSize(listenSize)
             {}
+            /// Default constructs.
+            Srvr()
+                : Srvr(SockAddr(), DEF_LISTEN_SIZE)
+            {}
         }         srvr;              ///< P2P server
-        int       maxPeers;          ///< Maximum number of connected peers
-        int       evalTime;          ///< Time interval for evaluating peer performance in seconds
-        int       heartbeatInterval; ///< Time between heartbeat packets in seconds. -1 => no
-                                     ///< heartbeat.
+
+        int maxPeers;          ///< Maximum number of connected peers
+        int evalTime;          ///< Time interval for evaluating peer performance in seconds
+        int heartbeatInterval; ///< Time between heartbeat packets in seconds. <0 => no heartbeat.
         /**
          * Constructs.
-         * @param[in] addr         Address for local P2P server. Port number may be 0.
-         * @param[in] listenSize   Size of listen() queue
-         * @param[in] maxPeers     Maximum number of neighboring peers to have
-         * @param[in] evalTime     Time interval for evaluating peer performance in seconds
+         * @param[in] srvr               Runtime parameters for the P2P server
+         * @param[in] maxPeers           Maximum number of neighboring peers to have
+         * @param[in] evalTime           Time interval for evaluating peer performance in seconds
+         * @param[in] heartbeatInterval  Time interval between heartbeat packets in seconds
          */
-        RunPar( const SockAddr addr,
-                const int      listenSize,
+        RunPar( const Srvr&    srvr,
                 const int      maxPeers,
                 const int      evalTime,
-                const int      heartbeatInterval = 30)
-            : srvr(addr, listenSize)
+                const int      heartbeatInterval)
+            : srvr(srvr)
             , maxPeers(maxPeers)
             , evalTime(evalTime)
             , heartbeatInterval(heartbeatInterval)
+        {}
+        /// Default constructs.
+        RunPar()
+            : RunPar(Srvr{}, DEF_MAX_PEERS, DEF_EVAL_TIME, DEF_HEARTBEAT_INTERVAL)
         {}
     };
 

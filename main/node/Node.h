@@ -144,40 +144,38 @@ class PubNode : virtual public Node
 public:
     /// Runtime parameters for a publishing node
     struct RunPar {
-        SegSize           maxSegSize; ///< Maximum size of a data-segment
-        McastPub::RunPar  mcast;      ///< Multicast component
-        PubP2pMgr::RunPar p2p;        ///< Peer-to-peer component
-        /// Class for holding runtime parameters for the publisher's repository
-        struct Repo {
-            long    maxOpenFiles;     ///< Maximum number of open repository files
-            int32_t keepTime;         ///< Length of time to keep data-products in seconds
-            /**
-             * Constructs.
-             * @param[in] maxOpenFiles  Maximum number of open files
-             * @param[in] keepTime      Duration to keep data products
-             */
-            Repo(
-                    const long    maxOpenFiles,
-                    const int32_t keepTime)
-                : maxOpenFiles(maxOpenFiles)
-                , keepTime(keepTime)
-            {}
-        }                 repo;       ///< Runtime parameters for the publisher's repository
+        /// Default size of a canonical data-segment in bytes
+        static constexpr int DEF_MAX_SEGSIZE = 20000;
+
+        String             pubRoot;    ///< Root directory for this node
+        SegSize            maxSegSize; ///< Maximum size of a data-segment
+        McastPub::RunPar   mcast;      ///< Runtime parameters for the multicast component
+        PubP2pMgr::RunPar  p2p;        ///< Runtime parameters for the peer-to-peer component
+        Repository::RunPar repo;       ///< Runtime parameters for the repository component
+
          /**
           * Constructs.
+          * @param[in] pubRoot     Root directory of this node
           * @param[in] maxSegSize  Maximum number of bytes in a data-segment
-          * @param[in] mcast       Multicast component
-          * @param[in] p2p         P2P component
-          * @param[in] repo        Repository component
+          * @param[in] mcast       Runtime parameters for the multicast component
+          * @param[in] p2p         Runtime parameters for the P2P component
+          * @param[in] repo        Runtime parameters for the Repository component
           */
-        RunPar( const SegSize            maxSegSize,
-                const McastPub::RunPar&  mcast,
-                const PubP2pMgr::RunPar& p2p,
-                const Repo&              repo)
-            : maxSegSize(maxSegSize)
+        RunPar( const String&             pubRoot,
+                const SegSize             maxSegSize,
+                const McastPub::RunPar&   mcast,
+                const PubP2pMgr::RunPar&  p2p,
+                const Repository::RunPar& repo)
+            : pubRoot("./pubRoot")
+            , maxSegSize(maxSegSize)
             , mcast(mcast)
             , p2p(p2p)
             , repo(repo)
+        {}
+        /// Default constructs
+        RunPar()
+            : RunPar("./pubRoot", DEF_MAX_SEGSIZE, McastPub::RunPar(), PubP2pMgr::RunPar(),
+                    Repository::RunPar())
         {}
     };
 
@@ -229,13 +227,28 @@ public:
      * @return                  A new instance
      */
     static PubNodePtr create(
-            Tracker&                  tracker,
-            const SegSize             maxSegSize,
-            const McastPub::RunPar&   mcastRunPar,
-            const PubP2pMgr::RunPar&  p2pRunPar,
-            const String&             pubRoot,
-            const RunPar::Repo&       repoRunPar,
-            const String&             feedName);
+            Tracker&                   tracker,
+            const SegSize              maxSegSize,
+            const McastPub::RunPar&    mcastRunPar,
+            const PubP2pMgr::RunPar&   p2pRunPar,
+            const String&              pubRoot,
+            const Repository::RunPar&  repoRunPar,
+            const String&              feedName);
+
+    /**
+     * Returns a new instance.
+     * @param[in] feedName      Name of the data-product feed
+     * @param[in] tracker       Tracks P2P-servers
+     * @param[in] runPar        Runtime parameters for this node
+     * @return                  A new instance
+     */
+    static PubNodePtr create(
+            const String&          feedName,
+            Tracker&               tracker,
+            const PubNode::RunPar& runPar) {
+        return create(tracker, runPar.maxSegSize, runPar.mcast, runPar.p2p, runPar.pubRoot,
+                runPar.repo, feedName);
+    }
 
     /**
      * Destroys.

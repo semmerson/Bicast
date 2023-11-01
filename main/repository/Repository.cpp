@@ -704,8 +704,6 @@ public:
 
 /******************************************************************************/
 
-Repository::Repository() noexcept =default;
-
 Repository::Repository(Impl* impl) noexcept
     : pImpl(impl) {
 }

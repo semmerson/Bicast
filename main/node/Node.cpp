@@ -534,7 +534,7 @@ PubNodePtr PubNode::create(
         const McastPub::RunPar&   mcastRunPar,
         const PubP2pMgr::RunPar&  p2pRunPar,
         const String&             pubRoot,
-        const RunPar::Repo&       repoRunPar,
+        const Repository::RunPar& repoRunPar,
         const String&             feedName) {
     return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime,
             mcastRunPar.dstAddr, mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, pubRoot,

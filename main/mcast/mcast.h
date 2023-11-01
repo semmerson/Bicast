@@ -44,7 +44,7 @@ public:
         SockAddr  dstAddr;        ///< Socket address of multicast group
         InetAddr  srcAddr;        ///< Internet address of multicast interface
         /**
-         * Constructs.
+         * Constructs from destination and source addresses.
          * @param[in] dstAddr  Socket address of the multicast group
          * @param[in] srcAddr  IP address of the source of the multicast
          */
@@ -52,6 +52,10 @@ public:
                 const InetAddr srcAddr)
             : dstAddr(dstAddr)
             , srcAddr(srcAddr)
+        {}
+         /// Default constructs.
+        RunPar()
+            : RunPar(SockAddr("232.1.1.1:38800"), InetAddr())
         {}
     };
 

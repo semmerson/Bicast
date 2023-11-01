@@ -165,7 +165,7 @@ protected:
     /// Smart pointer to the implementation
     std::shared_ptr<Impl> pImpl;
 
-    Repository() noexcept;
+    Repository() noexcept =default;
 
     /**
      * Constructs.
@@ -174,6 +174,32 @@ protected:
     Repository(Impl* impl) noexcept;
 
 public:
+    /// Class for holding runtime parameters for the publisher's repository
+    struct RunPar {
+        /// Default amount of time to keep products
+        static constexpr int32_t DEF_KEEP_TIME      = 3600;
+        /// Default maximum number of product-files to have open
+        static constexpr long    DEF_MAX_OPEN_FILES = _SC_OPEN_MAX/2;
+
+        int32_t keepTime;         ///< Length of time to keep data-products in seconds
+        long    maxOpenFiles;     ///< Maximum number of open repository files
+
+        /**
+         * Constructs.
+         * @param[in] maxOpenFiles  Maximum number of open files
+         * @param[in] keepTime      Duration to keep data products
+         */
+        RunPar(   const int32_t keepTime,
+                const long    maxOpenFiles)
+            : keepTime(keepTime)
+            , maxOpenFiles(maxOpenFiles)
+        {}
+        /// Default constructs.
+        RunPar()
+            : RunPar(DEF_KEEP_TIME, DEF_MAX_OPEN_FILES)
+        {}
+    }                 repo;       ///< Runtime parameters for the publisher's repository
+
     virtual ~Repository() =default;
 
     /**
