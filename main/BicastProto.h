@@ -47,18 +47,19 @@ private:
 public:
     /// Types of protocol data units
     enum Id : Type {
-        UNSET,                ///< Not set
-        SRVR_INFO,            ///< Information on a P2P-server
-        TRACKER,              ///< Information on P2P-servers
-        SRVR_INFO_NOTICE,     ///< Information on the remote peer's P2P-server
-        PROD_INFO_NOTICE,     ///< Notice about available information on a data product
-        DATA_SEG_NOTICE,      ///< Notice about an available data segment
-        PREVIOUSLY_RECEIVED,  ///< Prevously-received products
-        PROD_INFO_REQUEST,    ///< Request for product information
-        DATA_SEG_REQUEST,     ///< Request for a data segment
-        PROD_INFO,            ///< Product information
-        DATA_SEG,             ///< Data segment
-        MAX_PDU_ID = DATA_SEG ///< Maximum PDU type
+        UNSET,                 ///< Not set
+        SRVR_INFO,             ///< Information on a P2P-server
+        TRACKER,               ///< Information on P2P-servers
+        SRVR_INFO_NOTICE,      ///< Information on the remote peer's P2P-server
+        PROD_INFO_NOTICE,      ///< Notice about available information on a data product
+        DATA_SEG_NOTICE,       ///< Notice about an available data segment
+        PREVIOUSLY_RECEIVED,   ///< Prevously-received products
+        PROD_INFO_REQUEST,     ///< Request for product information
+        DATA_SEG_REQUEST,      ///< Request for a data segment
+        PROD_INFO,             ///< Product information
+        DATA_SEG,              ///< Data segment
+        HEARTBEAT,             ///< Heartbeat packet used by class Xprt
+        MAX_PDU_ID = HEARTBEAT ///< Maximum PDU type
     };
 
     /**
