@@ -45,7 +45,8 @@ public:
         P2P_SRVR_INFO,  ///< Information on a P2P server
         P2P_SRVR_INFOS, ///< Information on P2P servers
         PROD_ID,        ///< Product ID
-        DATA_SEG_ID     ///< Data segment ID
+        DATA_SEG_ID,    ///< Data segment ID
+        HEARTBEAT       ///< Connection heartbeat
     } id; ///< Identifier of the type of notice
     union {
         P2pSrvrInfo srvrInfo;  ///< Information on a P2P server
@@ -53,6 +54,16 @@ public:
         ProdId      prodId;    ///< Product ID
         DataSegId   dataSegId; ///< Data segment ID
     };
+
+private:
+    Notice(const Id id);
+
+public:
+    /**
+     * Creates a heartbeat notice.
+     * @return A heartbeat notice
+     */
+    static Notice createHeartbeat() noexcept;
 
     /// Default constructs
     Notice() noexcept;

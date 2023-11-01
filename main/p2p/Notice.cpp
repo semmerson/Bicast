@@ -32,6 +32,10 @@ Notice::Notice() noexcept
     : id(Id::UNSET)
 {}
 
+Notice::Notice(const Id id)
+    : id(id)
+{}
+
 Notice::Notice(const P2pSrvrInfo& srvrInfo) noexcept
     : id(Id::P2P_SRVR_INFO)
     , srvrInfo(srvrInfo)
@@ -56,21 +60,26 @@ Notice::Notice(const Notice& that) noexcept
 {
     id = that.id;
     switch (id) {
-    case Id::P2P_SRVR_INFO:  new (&srvrInfo)  auto(that.srvrInfo);  break;
-    case Id::P2P_SRVR_INFOS: new (&tracker)   auto(that.tracker);   break;
-    case Id::PROD_ID:        new (&prodId)    auto(that.prodId);    break;
-    case Id::DATA_SEG_ID:    new (&dataSegId) auto(that.dataSegId); break;
-    default:                                                        break;
+        case Id::P2P_SRVR_INFO:  new (&srvrInfo)  auto(that.srvrInfo);  break;
+        case Id::P2P_SRVR_INFOS: new (&tracker)   auto(that.tracker);   break;
+        case Id::PROD_ID:        new (&prodId)    auto(that.prodId);    break;
+        case Id::DATA_SEG_ID:    new (&dataSegId) auto(that.dataSegId); break;
+        default:                                                        break;
     }
+}
+
+Notice Notice::createHeartbeat() noexcept
+{
+    return Notice(Id::HEARTBEAT);
 }
 
 Notice::~Notice() noexcept {
     switch (id) {
-    case Id::P2P_SRVR_INFO:  srvrInfo.~P2pSrvrInfo(); break;
-    case Id::P2P_SRVR_INFOS: tracker.~Tracker();      break;
-    case Id::PROD_ID:        prodId.~ProdId();        break;
-    case Id::DATA_SEG_ID:    dataSegId.~DataSegId();  break;
-    default:                                          break;
+        case Id::P2P_SRVR_INFO:  srvrInfo.~P2pSrvrInfo(); break;
+        case Id::P2P_SRVR_INFOS: tracker.~Tracker();      break;
+        case Id::PROD_ID:        prodId.~ProdId();        break;
+        case Id::DATA_SEG_ID:    dataSegId.~DataSegId();  break;
+        default:                                          break;
     }
 }
 
@@ -79,11 +88,11 @@ Notice& Notice::operator=(const Notice& rhs) noexcept {
     this->~Notice();
     id = rhs.id;
     switch (id) {
-    case Id::P2P_SRVR_INFO:  new (&srvrInfo)  auto(rhs.srvrInfo);  break;
-    case Id::P2P_SRVR_INFOS: new (&tracker)   auto(rhs.tracker);   break;
-    case Id::PROD_ID:        new (&prodId)    auto(rhs.prodId);    break;
-    case Id::DATA_SEG_ID:    new (&dataSegId) auto(rhs.dataSegId); break;
-    default:                                                       break;
+        case Id::P2P_SRVR_INFO:  new (&srvrInfo)  auto(rhs.srvrInfo);  break;
+        case Id::P2P_SRVR_INFOS: new (&tracker)   auto(rhs.tracker);   break;
+        case Id::PROD_ID:        new (&prodId)    auto(rhs.prodId);    break;
+        case Id::DATA_SEG_ID:    new (&dataSegId) auto(rhs.dataSegId); break;
+        default:                                                       break;
     }
     return *this;
 }
@@ -106,29 +115,31 @@ Notice::operator bool() const noexcept {
 
 String Notice::to_string() const {
     switch (id) {
-    case Id::P2P_SRVR_INFO:  return srvrInfo.to_string();
-    case Id::P2P_SRVR_INFOS: return tracker.to_string();
-    case Id::PROD_ID:        return prodId.to_string();
-    case Id::DATA_SEG_ID:    return dataSegId.to_string();
-    default:                 return "<unset>";
+        case Id::P2P_SRVR_INFO:  return srvrInfo.to_string();
+        case Id::P2P_SRVR_INFOS: return tracker.to_string();
+        case Id::PROD_ID:        return prodId.to_string();
+        case Id::DATA_SEG_ID:    return dataSegId.to_string();
+        case Id::HEARTBEAT:      return "<heartbeat>";
+        default:                 return "<unset>";
     }
 }
 
 size_t Notice::hash() const noexcept {
     switch (id) {
-    case Id::PROD_ID:     return prodId.hash();
-    case Id::DATA_SEG_ID: return dataSegId.hash();
-    default:              return 0;
+        case Id::PROD_ID:     return prodId.hash();
+        case Id::DATA_SEG_ID: return dataSegId.hash();
+        default:              return 0;
     }
 }
 
 bool Notice::operator==(const Notice& rhs) const noexcept {
     if (id != rhs.id)     return false;
     switch (id) {
-    case Id::UNSET:       return true;
-    case Id::PROD_ID:     return prodId == rhs.prodId;
-    case Id::DATA_SEG_ID: return dataSegId == rhs.dataSegId;
-    default:              return false;
+        case Id::UNSET:       return true;
+        case Id::PROD_ID:     return prodId == rhs.prodId;
+        case Id::DATA_SEG_ID: return dataSegId == rhs.dataSegId;
+        case Id::HEARTBEAT:   return true;
+        default:              return false;
     }
 }
 
