@@ -20,6 +20,7 @@
  */
 #include "config.h"
 
+#include "BicastProto.h"
 #include "CommonTypes.h"
 #include "error.h"
 #include "logging.h"
@@ -28,6 +29,7 @@
 #include <cstdint>
 #include <Socket.h>
 #include <string>
+#include <thread>
 #include <Xprt.h>
 
 namespace bicast {
@@ -35,7 +37,7 @@ namespace bicast {
 /// An implementation of a transport
 class Xprt::Impl
 {
-    Socket sock;
+    const Socket              sock;              ///< Underlying socket
 
     inline bool hton(const bool value) {
         return value;
@@ -94,7 +96,7 @@ public:
      * Constructs from a socket.
      * @param[in] sock  The socket
      */
-    Impl(Socket sock)
+    Impl(const Socket sock)
         : sock(sock)
     {}
 
@@ -222,50 +224,6 @@ public:
         return write(secs) && write<uint32_t>(*reinterpret_cast<uint32_t*>(&usecs));
     }
 
-#if 0
-    inline bool operator<<(const uint32_t value) {
-        return sock.write(hton(value));
-    }
-
-    bool operator<<(const int32_t value) {
-        // Using a pointer is necessary to ensure the bit-pattern is unchanged
-        return  *this << *reinterpret_cast<uint32_t*>(&value);
-    }
-
-    inline bool operator>>(uint32_t& value) {
-        if (!sock.read(value))
-            return false;
-        value = ntoh(value);
-        return true;
-    }
-
-    bool operator>>(int32_t& value) {
-        // Using a pointer is necessary to ensure the bit-pattern is unchanged
-        return *this >> *reinterpret_cast<uint32_t*>(&value);
-    }
-
-    inline bool operator<<(const uint64_t value) {
-        return sock.write(hton(value));
-    }
-
-    bool operator<<(const int64_t value) {
-        // Using a pointer is necessary to ensure the bit-pattern is unchanged
-        return  *this << *reinterpret_cast<uint64_t*>(&value);
-    }
-
-    inline bool operator>>(uint64_t& value) {
-        if (!sock.read(value))
-            return false;
-        value = ntoh(value);
-        return true;
-    }
-
-    bool operator>>(int64_t& value) {
-        // Using a pointer is necessary to ensure the bit-pattern is unchanged
-        return *this >> *reinterpret_cast<uint64_t*>(&value);
-    }
-#endif
-
     /**
      * Flushes the underlying socket.
      * @retval    true     Success
@@ -373,7 +331,8 @@ public:
     }
 
     /**
-     * Clears the underlying socket for the next read. Does nothing for TCP. Deletes the datagram for UDP.
+     * Clears the underlying socket for the next read. Does nothing for TCP. Deletes the datagram
+     * for UDP.
      */
     void clear() {
         sock.clear();
@@ -389,17 +348,9 @@ public:
 
 /******************************************************************************/
 
-Xprt::Xprt(Socket sock)
+Xprt::Xprt(const Socket sock)
     : pImpl(new Impl(sock))
 {}
-
-/*
-Xprt::Xprt(const Xprt& xprt);
-
-Xprt::Xprt& operator=(const Xprt& rhs);
-
-Xprt::~Xprt() noexcept;
-*/
 
 Socket Xprt::getSocket() const {
     return pImpl->getSocket();

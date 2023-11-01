@@ -34,8 +34,6 @@ namespace bicast {
 class Xprt
 {
 public:
-    using PduId    = uint32_t; ///< Type of product data unit identifier
-
     class Impl; // Implementation
 
 private:
@@ -45,33 +43,11 @@ public:
     Xprt() =default;
 
     /**
-     * Constructs.
+     * Constructs from an underlying socket.
      *
-     * @param[in] sock      Socket
+     * @param[in] sock  Socket
      */
-    Xprt(Socket sock);
-
-#if 0
-    /**
-     * Copy constructs.
-     *
-     * @param[in] xprt  Other instance
-     */
-    Xprt(const Xprt& xprt);
-
-    /**
-     * Destroys.
-     */
-    ~Xprt() noexcept;
-
-    /**
-     * Copy Assigns.
-     *
-     * @param[in] rhs  Other instance
-     * @return         Reference to this instance
-     */
-    Xprt& operator=(const Xprt& rhs);
-#endif
+    Xprt(const Socket sock);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
