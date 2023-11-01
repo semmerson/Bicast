@@ -51,18 +51,22 @@ protected:
     mutable Mutex      stateMutex;    ///< Protects state changes
 
 private:
-    using NoticeQ = std::queue<Notice>;
+    using NoticeQ    = std::queue<Notice>;
+    using AtomicTime = std::atomic<SysTimePoint>;
 
-    mutable Mutex      noticeMutex;   ///< For accessing notice queue
-    mutable Cond       noticeCond;    ///< For accessing notice queue
-    Thread             noticeThread;  ///< For sending notices
-    bool               stopNotices;   ///< Stop the notice writer?
-    Thread             connThread;    ///< Thread for running the peer-connection
-    std::once_flag     backlogFlag;   ///< Ensures that a backlog is sent only once
-    BaseMgr&           basePeerMgr;   ///< Associated peer manager
-    NoticeQ            noticeQ;       ///< Notice queue
-    ThreadEx           threadEx;      ///< Internal thread exception
-    SockAddr           lclSockAddr;   ///< Local (notice) socket address
+    mutable Mutex      noticeMutex;       ///< For accessing notice queue
+    mutable Cond       noticeCond;        ///< For accessing notice queue
+    Thread             noticeThread;      ///< For sending notices
+    bool               stopNotices;       ///< Stop the notice writer?
+    Thread             connThread;        ///< Thread for running the peer-connection
+    std::once_flag     backlogFlag;       ///< Ensures that a backlog is sent only once
+    BaseMgr&           basePeerMgr;       ///< Associated peer manager
+    NoticeQ            noticeQ;           ///< Notice queue
+    ThreadEx           threadEx;          ///< Internal thread exception
+    SockAddr           lclSockAddr;       ///< Local (notice) socket address
+    const SysDuration  heartbeatInterval; ///< Time between heartbeats
+    AtomicTime         lastSendTime;      ///< Time of last sending
+    Thread             heartbeatThread;   ///< Thread on which heartbeats are sent
 
     /**
      * Exchanges information on the local and remote P2P servers.
@@ -76,6 +80,62 @@ private:
                 ? peerConnPtr->send(lclSrvrInfo) && peerConnPtr->recv(rmtSrvrInfo)
                 // And server-side peers receive then send
                 : peerConnPtr->recv(rmtSrvrInfo) && peerConnPtr->send(lclSrvrInfo);
+    }
+
+    /**
+     * Adds a heartbeat notice to the notice queue.
+     * @retval    true     Success
+     * @retval    false    Connection lost
+     */
+    bool addHeartbeat() {
+        threadEx.throwIfSet();
+
+        if (connected) {
+            LOG_ASSERT(!noticeMutex.try_lock());
+
+            //LOG_TRACE("Peer %s is adding heartbeat", to_string().data());
+            auto heartbeat = Notice::createHeartbeat();
+            noticeQ.push(heartbeat);
+            noticeCond.notify_all();
+        }
+
+        return connected;
+    }
+
+    /**
+     * Runs the heartbeat thread. Adds a heartbeat notice to the queue if nothing has been sent in
+     * duration `heartbeatInterval`. The heartbeat PDU has no payload.
+     */
+    void runHeartbeat() {
+        try {
+            lastSendTime = SysClock::now();
+            for (;;) {
+                SysTimePoint nextHeartbeat = lastSendTime.load() + heartbeatInterval;
+
+                std::this_thread::sleep_until(nextHeartbeat);
+
+                if (SysClock::now() >= lastSendTime.load() + heartbeatInterval) {
+                    Guard guard{noticeMutex}; // Might throw std::system_error if already locked
+                    if (noticeQ.empty() && !addHeartbeat()) // addHeartbeat() can throw something
+                        break;
+                    lastSendTime = SysClock::now();
+                }
+            }
+        }
+        catch (const std::exception& ex) {
+            log_error(ex);
+            setException();
+        }
+    }
+
+    /**
+     * Stops and joins the heartbeat thread. Idempotent.
+     */
+    void stopHeartbeat() {
+        if (heartbeatThread.joinable()) {
+            ::pthread_cancel(heartbeatThread.native_handle());
+            heartbeatThread.join();
+        }
     }
 
     /**
@@ -163,23 +223,34 @@ protected:
                     noticeQ.pop();
                 }
 
-                if (notice.id == Notice::Id::DATA_SEG_ID) {
-                    //LOG_TRACE("Notifying about data-segment " + notice.dataSegId.to_string());
-                    connected = peerConnPtr->notify(notice.dataSegId);
-                    //LOG_TRACE("Notified");
-                }
-                else if (notice.id == Notice::Id::PROD_ID) {
-                    //LOG_TRACE("Notifying about product " + notice.prodId.to_string());
-                    connected = peerConnPtr->notify(notice.prodId);
-                    //LOG_TRACE("Notified");
-                }
-                else if (notice.id == Notice::Id::P2P_SRVR_INFO) {
-                    //LOG_TRACE("Notifying about P2P server " + notice.srvrInfo.to_string());
-                    connected = peerConnPtr->notify(notice.srvrInfo);
-                    //LOG_TRACE("Notified");
-                }
-                else {
-                    throw LOGIC_ERROR("Notice ID is unknown: " + std::to_string((int)notice.id));
+                switch (notice.id) {
+                    case Notice::Id::DATA_SEG_ID: {
+                        //LOG_TRACE("Notifying about data-segment " + notice.dataSegId.to_string());
+                        connected = peerConnPtr->notify(notice.dataSegId);
+                        //LOG_TRACE("Notified");
+                        break;
+                    }
+                    case Notice::Id::PROD_ID: {
+                        //LOG_TRACE("Notifying about product " + notice.prodId.to_string());
+                        connected = peerConnPtr->notify(notice.prodId);
+                        //LOG_TRACE("Notified");
+                        break;
+                    }
+                    case Notice::Id::P2P_SRVR_INFO: {
+                        //LOG_TRACE("Notifying about P2P server " + notice.srvrInfo.to_string());
+                        connected = peerConnPtr->notify(notice.srvrInfo);
+                        //LOG_TRACE("Notified");
+                        break;
+                    }
+                    case Notice::Id::HEARTBEAT: {
+                        connected = peerConnPtr->sendHeartbeat();
+                        break;
+                    }
+                    default: {
+                        throw LOGIC_ERROR("Notice ID is unknown: " +
+                                std::to_string((int)notice.id));
+                    }
+                    resetHeartbeat();
                 }
             }
 
@@ -214,7 +285,7 @@ protected:
     }
 
     /**
-     * Executes the connection.
+     * Executes the peer-connection.
      */
     void runConn() {
         try {
@@ -253,7 +324,14 @@ protected:
         LOG_ASSERT(!stateMutex.try_lock());
         startNoticeWriter();
         try {
-            startConn();
+            heartbeatThread = Thread(&BasePeerImpl::runHeartbeat, this);
+            try {
+                startConn();
+            }
+            catch (const std::exception& ex) {
+                stopHeartbeat();
+                throw;
+            } // Notice writer thread started
         }
         catch (const std::exception& ex) {
             stopNoticeWriter();
@@ -273,15 +351,16 @@ protected:
     void stopImpl() {
         LOG_ASSERT(!stateMutex.try_lock());
         stopConn();         // Idempotent
+        stopHeartbeat();    // Idempotent
         stopNoticeWriter(); // Idempotent
         state = State::STOPPED;
     }
 
     /**
-     * Adds a notice to be sent.
+     * Adds a notice to be sent iff the remote peer isn't the publisher.
      * @param[in] notice   The notice to be sent
      * @retval    true     Success
-     * @retval    false    Lost connection
+     * @retval    false    Connection lost
      */
     bool addNotice(const Notice& notice) {
         threadEx.throwIfSet();
@@ -297,18 +376,27 @@ protected:
         return connected;
     }
 
+    /**
+     * Resets the heartbeat timer.
+     */
+    inline void resetHeartbeat() {
+        lastSendTime = SysClock::now();
+    }
+
 public:
     /**
      * Constructs.
      *
-     * @param[in] baseMgr   Base peer manager
-     * @param[in] conn      Connection with remote peer
-     * @throw SystemError   System failure
-     * @throw RuntimeError  Couldn't exchange server information with remote peer
+     * @param[in] baseMgr            Base peer manager
+     * @param[in] conn               Connection with remote peer
+     * @param[in] heartbeatInterval  Time between sending heartbeats to the remote peer
+     * @throw SystemError            System failure
+     * @throw RuntimeError           Couldn't exchange server information with remote peer
      */
     BasePeerImpl(
             BaseMgr&     baseMgr,
-            PeerConnPtr  conn)
+            PeerConnPtr  conn,
+            const SysDuration heartbeatInterval = std::chrono::seconds(30))
         : state(State::INIT)
         , stateMutex()
         , noticeMutex()
@@ -326,6 +414,9 @@ public:
         , rmtSockAddr(conn->getRmtAddr())
         , connected{true}
         , rmtSrvrInfo()
+        , heartbeatInterval(heartbeatInterval)
+        , lastSendTime(SysClock::now())
+        , heartbeatThread()
     {
         LOG_DEBUG("Constructing peer " + to_string());
 
@@ -560,7 +651,10 @@ public:
         if (prodInfo) {
             LOG_DEBUG("Peer " + to_string() + " sending product-info " + prodInfo.to_string());
             connected = peerConnPtr->send(prodInfo);
-            if (!connected) {
+            if (connected) {
+                resetHeartbeat();
+            }
+            else {
                 LOG_INFO("Peer " + to_string() + " is disconnected");
                 ::sem_post(&stopSem);
             }
@@ -577,7 +671,10 @@ public:
         auto dataSeg = basePeerMgr.getDatum(dataSegId, rmtSockAddr);
         if (dataSeg) {
             LOG_DEBUG("Peer " + to_string() + " sending data-segment " + dataSegId.to_string());
-            if (!(connected = peerConnPtr->send(dataSeg))) {
+            if (connected = peerConnPtr->send(dataSeg)) {
+                resetHeartbeat();
+            }
+            else {
                 LOG_INFO("Peer " + to_string() + " is disconnected");
                 ::sem_post(&stopSem);
             }
@@ -896,15 +993,20 @@ class SubPeerImpl final : public BasePeerImpl
      */
     void requestBacklog() {
         const auto prodIds = subMgr.getProdIds(); // All complete products
-        if (prodIds.size())
+        if (prodIds.size()) {
             /**
              * Informing the remote peer of data this instance doesn't know about is impossible;
              * therefore, the remote peer is informed of data that this instance has, which will
              * cause the remote peer to notify this instance of data that it has but that this
              * instance doesn't.
              */
-            if (!(connected = peerConnPtr->request(prodIds)))
+            if (connected = peerConnPtr->request(prodIds)) {
+                resetHeartbeat();
+            }
+            else {
                 ::sem_post(&stopSem);
+            }
+        }
     }
 
     /**
@@ -980,9 +1082,10 @@ public:
             Guard guard{stateMutex}; // To keep `requested` consistent
             requested.push(Request{prodId});
         }
-        if ((connected = peerConnPtr->request(prodId))) {
+        if (connected = peerConnPtr->request(prodId)) {
             //LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
                     //prodId.to_string().data());
+            resetHeartbeat();
         }
         else {
             ::sem_post(&stopSem);
@@ -994,9 +1097,10 @@ public:
             Guard guard{stateMutex}; // To keep `requested` consistent
             requested.push(Request{segId});
         }
-        if ((connected = peerConnPtr->request(segId))) {
+        if (connected = peerConnPtr->request(segId)) {
             //LOG_TRACE("Peer %s requested information on data-segment %s", to_string().data(),
                     //segId.to_string().data());
+            resetHeartbeat();
         }
         else {
             ::sem_post(&stopSem);
