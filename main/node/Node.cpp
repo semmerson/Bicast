@@ -422,22 +422,23 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] tracker         Tracks P2P-servers
-     * @param[in] p2pAddr         Socket address of local P2P server. It shall specify a specific
-     *                            interface and not the wildcard. The port number may be 0, in which
-     *                            case the operating system will choose the port.
-     * @param[in] maxPeers        Maximum number of P2P peers. It shall not be 0.
-     * @param[in] evalTime        Evaluation interval for poorest-performing peer in seconds
-     * @param[in] mcastAddr       Socket address of multicast group
-     * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] maxPendConn     Maximum number of pending connections
-     * @param[in] pubRoot         Pathname of the root directory of the publisher
-     * @param[in] maxSegSize      Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles    Maximum number of open, data-products files
-     * @param[in] keepTime        Number of seconds to keep data-products before deleting them
-     * @param[in] feedName        Name of the data-product feed
-     * @throw InvalidArgument     Invalid maximum number of peers
-     * @throw InvalidArgument     `maxPendConn` is zero
+     * @param[in] tracker            Tracks P2P-servers
+     * @param[in] p2pAddr            Socket address of local P2P server. It shall specify a specific
+     *                               interface and not the wildcard. The port number may be 0, in
+     *                               which case the operating system will choose the port.
+     * @param[in] maxPeers           Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] mcastAddr          Socket address of multicast group
+     * @param[in] mcastIfaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] maxPendConn        Maximum number of pending connections
+     * @param[in] pubRoot            Pathname of the root directory of the publisher
+     * @param[in] maxSegSize         Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles       Maximum number of open, data-products files
+     * @param[in] keepTime           Number of seconds to keep data-products before deleting them
+     * @param[in] feedName           Name of the data-product feed
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
+     * @throw InvalidArgument        Invalid maximum number of peers
+     * @throw InvalidArgument        `maxPendConn` is zero
      */
     PubNodeImpl(
             Tracker&           tracker,
@@ -451,9 +452,11 @@ public:
             const SegSize      maxSegSize,
             const long         maxOpenFiles,
             const int          keepTime,
-            const String&      feedName)
+            const String&      feedName,
+            const SysDuration  heartbeatInterval)
         : Node()
-        , NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime))
+        , NodeImpl(PubP2pMgr::create(tracker, *this, p2pAddr, maxPeers, maxPendConn, evalTime,
+                heartbeatInterval))
         , mcastPub(McastPub::create(mcastAddr, mcastIfaceAddr))
         , lastTransmission(LastProd::create(FileUtil::pathname(pubRoot, "lastTransmittedTime")))
         , repo(FileUtil::pathname(pubRoot, "products"), maxOpenFiles, lastTransmission->recall(), keepTime)
@@ -523,9 +526,10 @@ PubNodePtr PubNode::create(
         const SegSize      maxSegSize,
         const long         maxOpenFiles,
         const int          keepTime,
-        const String&      feedName) {
+        const String&      feedName,
+        const SysDuration  heartbeatInterval) {
     return PubNodePtr{new PubNodeImpl(tracker, p2pAddr, maxPeers, evalTime, mcastAddr, ifaceAddr,
-            maxPendConn, pubRoot, maxSegSize, maxOpenFiles, keepTime, feedName)};
+            maxPendConn, pubRoot, maxSegSize, maxOpenFiles, keepTime, feedName, heartbeatInterval)};
 }
 
 PubNodePtr PubNode::create(
@@ -538,7 +542,8 @@ PubNodePtr PubNode::create(
         const String&             feedName) {
     return create(tracker, p2pRunPar.srvr.addr, p2pRunPar.maxPeers, p2pRunPar.evalTime,
             mcastRunPar.dstAddr, mcastRunPar.srcAddr, p2pRunPar.srvr.acceptQSize, pubRoot,
-            maxSegSize, repoRunPar.maxOpenFiles, repoRunPar.keepTime, feedName);
+            maxSegSize, repoRunPar.maxOpenFiles, repoRunPar.keepTime, feedName,
+            p2pRunPar.heartbeatInterval);
 }
 
 /**************************************************************************************************/
@@ -701,18 +706,19 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] subInfo       Subscription information
-     * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] peerConnSrvr  Peer-connection server
-     * @param[in] timeout;      Timeout, in ms, for connecting to remote P2P server
-     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] subRoot       Pathname of root directory of the subscriber
-     * @param[in] maxOpenFiles  Maximum number of product-files with open file descriptors
-     * @param[in] dispoFact     Factory for creating the SubNode's Disposer
-     * @param[in] client        Pointer to the SubNode's client
-     * @throw     LogicError    IP address families of multicast group address and multicast
-     *                          interface don't match
+     * @param[in] subInfo            Subscription information
+     * @param[in] mcastIface         IP address of interface to receive multicast on
+     * @param[in] peerConnSrvr       Peer-connection server
+     * @param[in] timeout;           Timeout, in ms, for connecting to remote P2P server
+     * @param[in] maxPeers           Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] subRoot            Pathname of root directory of the subscriber
+     * @param[in] maxOpenFiles       Maximum number of product-files with open file descriptors
+     * @param[in] dispoFact          Factory for creating the SubNode's Disposer
+     * @param[in] client             Pointer to the SubNode's client
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
+     * @throw     LogicError         IP address families of multicast group address and multicast
+     *                               interface don't match
      */
     SubNodeImpl(
             SubInfo&                subInfo,
@@ -724,9 +730,10 @@ public:
             const String&           subRoot,
             const long              maxOpenFiles,
             Disposer::Factory&      dispoFact,
-            Client* const           client)
+            Client* const           client,
+            const SysDuration       heartbeatInterval)
         : NodeImpl(SubP2pMgr::create(subInfo.tracker, *this, peerConnSrvr, timeout, maxPeers,
-                evalTime))
+                evalTime, heartbeatInterval))
         , disposeThread()
         , mcastThread()
         , lastReceived(LastProd::create(FileUtil::pathname(subRoot, "lastReceivedTime")))
@@ -920,9 +927,10 @@ SubNodePtr SubNode::create(
         const String&         subRoot,
         const long            maxOpenFiles,
         Disposer::Factory&    dispoFact,
-        Client* const         client) {
+        Client* const         client,
+        const SysDuration     heartbeatInterval) {
     return SubNodePtr{new SubNodeImpl(subInfo, mcastIface, peerConnSrvr, timeout, maxPeers,
-            evalTime, subRoot, maxOpenFiles, dispoFact, client)};
+            evalTime, subRoot, maxOpenFiles, dispoFact, client, heartbeatInterval)};
 }
 
 } // namespace

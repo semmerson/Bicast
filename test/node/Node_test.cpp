@@ -158,7 +158,7 @@ TEST_F(NodeTest, Construction)
     LOG_NOTE("Creating publishing node");
     Tracker tracker{};
     auto pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
-            pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName);
+            pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName, SysDuration(std::chrono::seconds(30)));
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
@@ -172,8 +172,9 @@ TEST_F(NodeTest, Construction)
     Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
         return Disposer{};
     };
+    // NB: Invalid dispose-file
     subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRoot,
-            maxOpenFiles, factory, this); // NB: Invalid dispose-file
+            maxOpenFiles, factory, this, SysDuration(std::chrono::seconds(30)));
 
     const auto subP2pSrvrAddr = subNodePtr->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
@@ -213,7 +214,8 @@ TEST_F(NodeTest, Sending)
         // Create the publishing node
         Tracker tracker{};
         auto    pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
-                ifaceAddr, 1, pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName);
+                ifaceAddr, 1, pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName,
+                SysDuration(std::chrono::seconds(30)));
         const auto pubP2pSrvrInfo = pubNode->getP2pSrvrInfo();
         const auto pubP2pSrvrAddr = pubP2pSrvrInfo.srvrAddr;
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
@@ -243,7 +245,7 @@ TEST_F(NodeTest, Sending)
         subInfo.tracker.insert(pubP2pSrvrInfo);
         auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
         subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60,
-                subRoot, maxOpenFiles, dispoFact, this);
+                subRoot, maxOpenFiles, dispoFact, this, SysDuration(std::chrono::seconds(30)));
         Thread subThread(&NodeTest::runNode, this, subNodePtr);
 
         // Wait for subscriber to connect to publisher

@@ -5,6 +5,7 @@ add_subdirectory(repository)
 add_subdirectory(mcast)
 add_subdirectory(disposer)
 add_subdirectory(node)
+add_subdirectory(publish)
 
 #find_program (BASH_PROGRAM bash)
 #if (BASH_PROGRAM)

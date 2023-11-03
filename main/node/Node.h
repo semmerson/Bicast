@@ -183,23 +183,24 @@ public:
      * Returns a new instance. The instance is immediately ready to accept connections from remote
      * peers and query the repository for products to send.
      *
-     * @param[in] tracker         Tracks P2P-servers
-     * @param[in] p2pAddr         Socket address for local P2P server. It shall specify a specific
-     *                            interface and not the wildcard. The port number may be 0, in which
-     *                            case the operating system will choose the port.
-     * @param[in] maxPeers        Maximum number of P2P peers. It shall not be 0.
-     * @param[in] evalTime        Evaluation interval for poorest-performing peer in seconds
-     * @param[in] mcastAddr       Socket address of multicast group
-     * @param[in] mcastIfaceAddr  IP address of interface to use. If wildcard, then O/S chooses.
-     * @param[in] maxPendConn     Maximum number of pending connections. 0 obtains the system
-     *                            default.
-     * @param[in] pubRoot         Pathname of the root directory of the publisher
-     * @param[in] maxSegSize      Maximum size of a data-segment in bytes
-     * @param[in] maxOpenFiles    Maximum number of files the repository should have open
-     * @param[in] feedName        Name of the data-product feed
-     * @param[in] keepTime        Maximum time, in seconds, to keep data-product files
-     * @throw InvalidArgument     `listenSize` is zero
-     * @return                    New instance
+     * @param[in] tracker            Tracks P2P-servers
+     * @param[in] p2pAddr            Socket address for local P2P server. It shall specify a
+     *                               specific interface and not the wildcard. The port number may be
+     *                               0, in which case the operating system will choose the port.
+     * @param[in] maxPeers           Maximum number of P2P peers. It shall not be 0.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] mcastAddr          Socket address of multicast group
+     * @param[in] mcastIfaceAddr     IP address of interface to use. If wildcard, then O/S chooses.
+     * @param[in] maxPendConn        Maximum number of pending connections. 0 obtains the system
+     *                               default.
+     * @param[in] pubRoot            Pathname of the root directory of the publisher
+     * @param[in] maxSegSize         Maximum size of a data-segment in bytes
+     * @param[in] maxOpenFiles       Maximum number of files the repository should have open
+     * @param[in] feedName           Name of the data-product feed
+     * @param[in] keepTime           Maximum time, in seconds, to keep data-product files
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets
+     * @throw InvalidArgument        `listenSize` is zero
+     * @return                       New instance
      */
     static PubNodePtr create(
             Tracker&           tracker,
@@ -213,7 +214,8 @@ public:
             const SegSize      maxSegSize,
             const long         maxOpenFiles,
             const int          keepTime,
-            const String&      feedName);
+            const String&      feedName,
+            const SysDuration  heartbeatInterval);
 
     /**
      * Returns a new instance.
@@ -323,18 +325,19 @@ public:
     /**
      * Returns a new instance.
      *
-     * @param[in] subInfo       Subscription information
-     * @param[in] mcastIface    IP address of interface to receive multicast on
-     * @param[in] peerConnSrvr  Peer-connection server
-     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P server
-     * @param[in] maxPeers      Maximum number of peers. Must not be zero. Might be adjusted.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @param[in] subRoot       Pathname of root directory of subscriber
-     * @param[in] maxOpenFiles  Maximum number of open files in repository
-     * @param[in] dispoFact     Factory for creating the SubNode's Disposer
-     * @param[in] client        Pointer to SubNode's client or `nullptr`
-     * @throw     LogicError    IP address families of multicast group address and multicast
-     *                          interface don't match
+     * @param[in] subInfo            Subscription information
+     * @param[in] mcastIface         IP address of interface to receive multicast on
+     * @param[in] peerConnSrvr       Peer-connection server
+     * @param[in] timeout            Timeout, in ms, for connecting to remote P2P server
+     * @param[in] maxPeers           Maximum number of peers. Must not be zero. Might be adjusted.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] subRoot            Pathname of root directory of subscriber
+     * @param[in] maxOpenFiles       Maximum number of open files in repository
+     * @param[in] dispoFact          Factory for creating the SubNode's Disposer
+     * @param[in] client             Pointer to SubNode's client or `nullptr`
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
+     * @throw     LogicError         IP address families of multicast group address and multicast
+     *                               interface don't match
      * @see getNextProd()
      */
     static SubNodePtr create(
@@ -347,7 +350,8 @@ public:
             const String&         subRoot,
             const long            maxOpenFiles,
             Disposer::Factory&    dispoFact,
-            Client* const         client);
+            Client* const         client,
+            const SysDuration     heartbeatInterval);
 
     /**
      * Destroys.

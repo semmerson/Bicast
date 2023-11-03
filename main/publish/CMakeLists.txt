@@ -1,4 +1,4 @@
-add_executable(publish publish.cpp)
+add_executable(publish publish.cpp RunPar.cpp)
 
 target_link_libraries(publish bicast)
 

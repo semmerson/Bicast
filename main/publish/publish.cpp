@@ -163,7 +163,8 @@ static void usage()
 "                      based on destination address of multicast group.\n"
 "  Peer-to-Peer:\n"
 "    -b <interval>     Time between heartbeat packets in seconds. <0 => no\n"
-"                      heartbeat. Default is " << runPar.node.p2p.heartbeatInterval << ".\n"
+"                      heartbeat. Default is " <<
+                       runPar.node.p2p.heartbeatInterval.count()*sysClockRatio << ".\n"
 "    -e <evalTime>     Peer evaluation duration, in seconds, before replacing\n"
 "                      poorest performer. Default is " << runPar.node.p2p.evalTime << ".\n"
 "    -n <maxPeers>     Maximum number of connected peers. Default is " <<
@@ -239,8 +240,10 @@ static void setFromConfig(const String& pathname)
                     runPar.node.p2p.maxPeers);
             Parser::tryDecode<decltype(runPar.node.p2p.evalTime)>(node1, "evalTime",
                     runPar.node.p2p.evalTime);
-            Parser::tryDecode<decltype(runPar.node.p2p.heartbeatInterval)>(node1, "heartbeatInterval",
-                    runPar.node.p2p.heartbeatInterval);
+            int heartbeatInterval;
+            Parser::tryDecode<decltype(heartbeatInterval)>(node1, "heartbeatInterval",
+                    heartbeatInterval);
+            runPar.node.p2p.heartbeatInterval = std::chrono::seconds(heartbeatInterval);
         }
 
         node1 = node0["repository"];
@@ -269,7 +272,7 @@ static void vetRunPar()
     if (runPar.node.p2p.evalTime <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-time is not positive");
 
-    if (runPar.node.p2p.heartbeatInterval == 0)
+    if (runPar.node.p2p.heartbeatInterval == SysDuration(0))
         throw INVALID_ARGUMENT("Heartbeat interval cannot be zero");
 
     if (runPar.trackerCap <= 0)
@@ -341,7 +344,7 @@ static void getCmdPars(
                 if (::sscanf(optarg, "%d", &interval) != 1)
                     throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
                             "\" option argument");
-                runPar.node.p2p.heartbeatInterval = interval;
+                runPar.node.p2p.heartbeatInterval = std::chrono::seconds(interval);
                 break;
             }
             case 'h': {

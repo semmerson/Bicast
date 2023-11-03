@@ -76,31 +76,35 @@ struct RunPar {
                 : addr(addr)
                 , maxPendConn(maxPendConn)
             {}
-        }   srvr;        ///< P2P server runtime parameters
-        int timeout;     ///< Timeout in ms for connecting to remote P2P server
-        int trackerSize; ///< Capacity of tracker object
-        int maxPeers;    ///< Maximum number of peers to have
-        int evalTime;    ///< Time interval for evaluating peer performance in seconds
+        }           srvr;              ///< P2P server runtime parameters
+        int         timeout;           ///< Timeout in ms for connecting to remote P2P server
+        int         trackerSize;       ///< Capacity of tracker object
+        int         maxPeers;          ///< Maximum number of peers to have
+        int         evalTime;          ///< Time interval for evaluating peer performance in seconds
+        SysDuration heartbeatInterval; ///< Time interval between heartbeat packets. <0 => none.
         /**
          * Constructs.
-         * @param[in] addr         Socket address for the local P2P server
-         * @param[in] acceptQSize  Size of the `listen()` queue
-         * @param[in] timeout      Timeout in ms for connecting to remote P2P server
-         * @param[in] trackerSize  Capacity of the tracker object
-         * @param[in] maxPeers     Maximum number of neighboring peers
-         * @param[in] evalTime     Duration over which to evaluate the peers
+         * @param[in] addr               Socket address for the local P2P server
+         * @param[in] acceptQSize        Size of the `listen()` queue
+         * @param[in] timeout            Timeout in ms for connecting to remote P2P server
+         * @param[in] trackerSize        Capacity of the tracker object
+         * @param[in] maxPeers           Maximum number of neighboring peers
+         * @param[in] evalTime           Duration over which to evaluate the peers
+         * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
          */
         P2pArgs(const SockAddr& addr,
-                const int       acceptQSize,
-                const int       timeout,
-                const int       trackerSize,
-                const int       maxPeers,
-                const int       evalTime)
+                const int         acceptQSize,
+                const int         timeout,
+                const int         trackerSize,
+                const int         maxPeers,
+                const int         evalTime,
+                const SysDuration heartbeatInterval)
             : srvr(addr, DEF_MAX_PEERS)
             , timeout(timeout)
             , trackerSize(trackerSize)
             , maxPeers(maxPeers)
             , evalTime(evalTime)
+            , heartbeatInterval(heartbeatInterval)
         {}
     }         p2p; ///< P2P runtime parameters
     /// Runtime parameters for the repository
@@ -128,7 +132,7 @@ struct RunPar {
         , mcastIface("0.0.0.0") // Might get changed to match address family of multicast group
         , retryInterval(60)
         , p2p(SockAddr(), DEF_MAX_PEERS, DEF_TIMEOUT, DEF_TRACKER_SIZE, DEF_MAX_PEERS,
-                DEF_EVAL_DURATION)
+                DEF_EVAL_DURATION, SysDuration(std::chrono::seconds(30)))
         , repo(::sysconf(_SC_OPEN_MAX)/2)
         , dispositionFile()
         , lastProcDir("lastProc")
@@ -162,6 +166,9 @@ static void usage()
 "    -r <subRoot>        Pathname of subscriber's root-directory. Default is \"" <<
                          defRunPar.subRoot << "\".\n"
 "  Peer-to-Peer:\n"
+"    -b <interval>       Time between heartbeat packets in seconds. <0 => no\n"
+"                        heartbeat. Default is " <<
+                         runPar.p2p.heartbeatInterval.count()*sysClockRatio << ".\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
 "                        poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
 "    -p <p2pAddr>        Internet address for local P2P server Must not be\n"
@@ -596,7 +603,7 @@ static void trySession()
     //LOG_DEBUG("Creating subscribing node");
     auto    subNode = SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
             runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.subRoot, runPar.repo.maxOpenFiles,
-            factory, nullptr);
+            factory, nullptr, runPar.p2p.heartbeatInterval);
 
     try {
         subNode->run();

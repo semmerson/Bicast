@@ -272,7 +272,8 @@ TEST_F(P2pMgrTest, SingleSubscriber)
     Tracker    tracker{};
 
     LOG_NOTE("Creating publishing P2P manager");
-    auto       pubP2pMgr = PubP2pMgr::create(tracker, *this, pubP2pSrvrAddr, 8, 8, 60);
+    auto       pubP2pMgr = PubP2pMgr::create(tracker, *this, pubP2pSrvrAddr, 8, 8, 60,
+            SysDuration(std::chrono::seconds(30)));
     Thread     pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
     try {
@@ -282,7 +283,8 @@ TEST_F(P2pMgrTest, SingleSubscriber)
         EXPECT_NO_THROW(tracker.insert(srvrInfo));
 
         LOG_NOTE("Creating subscribing P2P manager");
-        auto       subP2pMgr = SubP2pMgr::create(tracker, *this, subP2pSrvrAddr, 5, -1, 8, 60);
+        auto       subP2pMgr = SubP2pMgr::create(tracker, *this, subP2pSrvrAddr, 5, -1, 8, 60,
+                SysDuration(std::chrono::seconds(30)));
         LOG_NOTE("Starting subscribing P2P manager");
         Thread     subThread(&P2pMgrTest::runP2pMgr, this, subP2pMgr);
 
@@ -334,13 +336,15 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     Tracker     tracker1{};
 
     //LOG_DEBUG("Creating publishing P2P manager");
-    auto    pubP2pMgr = PubP2pMgr::create(tracker1, *this, pubP2pSrvrAddr, 2, 1, 60);
+    auto    pubP2pMgr = PubP2pMgr::create(tracker1, *this, pubP2pSrvrAddr, 2, 1, 60,
+            SysDuration(std::chrono::seconds(30)));
     Thread  pubThread(&P2pMgrTest::runP2pMgr, this, pubP2pMgr);
 
     tracker1.insert(pubP2pMgr->getSrvrInfo());
 
     //LOG_DEBUG("Creating first subscribing P2P manager");
-    auto    subP2pMgr1 = SubP2pMgr::create(tracker1, *this, subP2pSrvrAddr, 5, -1, 2, 60);
+    auto    subP2pMgr1 = SubP2pMgr::create(tracker1, *this, subP2pSrvrAddr, 5, -1, 2, 60,
+            SysDuration(std::chrono::seconds(30)));
     Thread  subThread1(&P2pMgrTest::runP2pMgr, this, subP2pMgr1);
 
     /*
@@ -354,7 +358,8 @@ TEST_F(P2pMgrTest, TwoDaisyChained)
     tracker2.insert(subP2pMgr1->getSrvrInfo());
 
     //LOG_DEBUG("Creating second subscribing P2P manager");
-    auto    subP2pMgr2 = SubP2pMgr::create(tracker2, *this, subP2pSrvrAddr, 5, -1, 1, 60);
+    auto    subP2pMgr2 = SubP2pMgr::create(tracker2, *this, subP2pSrvrAddr, 5, -1, 1, 60,
+            SysDuration(std::chrono::seconds(30)));
     Thread  subThread2(&P2pMgrTest::runP2pMgr, this, subP2pMgr2);
 
     //LOG_DEBUG("Waiting for second subscriber to connect");

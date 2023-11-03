@@ -22,7 +22,7 @@ peer2Peer:                   # Peer-to-peer component
     maxPending: 8            # Maximum number of pending connections
   maxPeers: 8                # Maximum number of connected subscriber-peers
   evalTime: 300              # Peer-evaluation duration in seconds
-  heartbeatInterval: 30      # Time between heartbeat packets in seconds. -1 => no heartbeat
+  heartbeatInterval: 30      # Time between heartbeat packets in seconds. <0 => no heartbeat
 repository:                  # Data product repository
   maxOpenFiles: 10           # Maximum number of open file descriptors
   keepTime: 3600             # How long to keep data-products in seconds

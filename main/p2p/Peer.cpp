@@ -324,7 +324,8 @@ protected:
         LOG_ASSERT(!stateMutex.try_lock());
         startNoticeWriter();
         try {
-            heartbeatThread = Thread(&BasePeerImpl::runHeartbeat, this);
+            if (heartbeatInterval > SysDuration(0))
+                heartbeatThread = Thread(&BasePeerImpl::runHeartbeat, this);
             try {
                 startConn();
             }
@@ -389,14 +390,15 @@ public:
      *
      * @param[in] baseMgr            Base peer manager
      * @param[in] conn               Connection with remote peer
-     * @param[in] heartbeatInterval  Time between sending heartbeats to the remote peer
+     * @param[in] heartbeatInterval  Time between sending heartbeats to the remote peer. <0 => no
+     *                               heartbeat.
      * @throw SystemError            System failure
      * @throw RuntimeError           Couldn't exchange server information with remote peer
      */
     BasePeerImpl(
             BaseMgr&     baseMgr,
             PeerConnPtr  conn,
-            const SysDuration heartbeatInterval = std::chrono::seconds(30))
+            const SysDuration heartbeatInterval)
         : state(State::INIT)
         , stateMutex()
         , noticeMutex()
@@ -699,15 +701,17 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] pubMgr           Publisher's Peer manager
-     * @param[in] conn             Connection with remote peer
-     * @throw     RuntimeError     Lost connection
-     * @throw     InvalidArgument  Remote peer says it's a publisher but it can't be
+     * @param[in] pubMgr             Publisher's Peer manager
+     * @param[in] conn               Connection with remote peer
+     * @throw     RuntimeError       Lost connection
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets
+     * @throw     InvalidArgument    Remote peer says it's a publisher but it can't be
      */
     PubPeerImpl(
-            PubMgr&     pubMgr,
-            PeerConnPtr conn)
-        : BasePeerImpl(pubMgr, conn)
+            PubMgr&           pubMgr,
+            PeerConnPtr       conn,
+            const SysDuration heartbeatInterval)
+        : BasePeerImpl(pubMgr, conn, heartbeatInterval)
     {
         if (isRmtPub())
             throw INVALID_ARGUMENT("Remote peer " + rmtSrvrInfo.srvrAddr.to_string() +
@@ -747,9 +751,10 @@ public:
 };
 
 PeerPtr Peer::create(
-        PubMgr& pubPeerMgr,
-        PeerConnPtr conn) {
-    return PeerPtr(new PubPeerImpl(pubPeerMgr, conn));
+        PubMgr&           pubPeerMgr,
+        PeerConnPtr       conn,
+        const SysDuration heartbeatInterval) {
+    return PeerPtr(new PubPeerImpl(pubPeerMgr, conn, heartbeatInterval));
 }
 
 /**************************************************************************************************/
@@ -1058,16 +1063,18 @@ public:
     /**
      * Constructs -- both client-side and server-side.
      *
-     * @param[in] subMgr        Subscriber's peer manager
-     * @param[in] conn          Pointer to peer-connection
-     * @throw     LogicError    Destination port number is zero
-     * @throw     SystemError   Couldn't connect. Bad failure.
-     * @throw     RuntimeError  Couldn't connect. Might be temporary.
+     * @param[in] subMgr             Subscriber's peer manager
+     * @param[in] conn               Pointer to peer-connection
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets
+     * @throw     LogicError         Destination port number is zero
+     * @throw     SystemError        Couldn't connect. Bad failure.
+     * @throw     RuntimeError       Couldn't connect. Might be temporary.
      */
     SubPeerImpl(
-            SubMgr&      subMgr,
-            PeerConnPtr  conn)
-        : BasePeerImpl(subMgr, conn)
+            SubMgr&           subMgr,
+            PeerConnPtr       conn,
+            const SysDuration heartbeatInterval)
+        : BasePeerImpl(subMgr, conn, heartbeatInterval)
         , subMgr(subMgr)
         , requested()
     {}
@@ -1200,10 +1207,11 @@ public:
 };
 
 PeerPtr Peer::create(
-        SubMgr&      subMgr,
-        PeerConnPtr& conn) {
+        SubMgr&           subMgr,
+        PeerConnPtr&      conn,
+        const SysDuration heartbeatInterval) {
     try {
-        return PeerPtr(new SubPeerImpl{subMgr, conn});
+        return PeerPtr(new SubPeerImpl{subMgr, conn, heartbeatInterval});
     }
     catch (const std::exception& ex) {
         LOG_WARN(ex, "Couldn't create peer for %s", conn->getRmtAddr().to_string().data());
@@ -1212,10 +1220,11 @@ PeerPtr Peer::create(
 }
 
 PeerPtr Peer::create(
-        SubMgr&         subMgr,
-        const SockAddr& srvrAddr) {
+        SubMgr&           subMgr,
+        const SockAddr&   srvrAddr,
+        const SysDuration heartbeatInterval) {
     auto conn = PeerConn::create(srvrAddr);
-    return Peer::create(subMgr, conn);
+    return Peer::create(subMgr, conn, heartbeatInterval);
 }
 
 /******************************************************************************/
@@ -1226,20 +1235,26 @@ template<typename PEER_MGR>
 class P2pSrvrImpl : public P2pSrvr<PEER_MGR>
 {
     PeerConnSrvrPtr peerConnSrvr;
+    SysDuration     heartbeatInterval; ///< Time interval between heartbeat packets
 
 public:
     /// Constructs
     P2pSrvrImpl(
-            const SockAddr srvrAddr,
-            const unsigned maxPendConn)
+            const SockAddr    srvrAddr,
+            const unsigned    maxPendConn,
+            const SysDuration heartbeatInterval)
         : peerConnSrvr(PeerConnSrvr::create(srvrAddr, maxPendConn))
+        , heartbeatInterval(heartbeatInterval)
     {
         LOG_NOTE("Created P2P server " + to_string());
     }
 
     /// Constructs
-    P2pSrvrImpl(PeerConnSrvrPtr peerConnSrvr)
+    P2pSrvrImpl(
+            PeerConnSrvrPtr   peerConnSrvr,
+            const SysDuration heartbeatInterval)
         : peerConnSrvr(peerConnSrvr)
+        , heartbeatInterval(heartbeatInterval)
     {}
 
     SockAddr getSrvrAddr() const override {
@@ -1259,7 +1274,7 @@ public:
     PeerPtr accept(PEER_MGR& peerMgr) override {
         auto peerConn = peerConnSrvr->accept();
         return peerConn
-                ? Peer::create(peerMgr, peerConn)
+                ? Peer::create(peerMgr, peerConn, heartbeatInterval)
                 : PeerPtr{};
     }
 
@@ -1277,21 +1292,25 @@ using SubP2pSrvrImpl = P2pSrvrImpl<Peer::SubMgr>; ///< Implementation of subscri
 
 template<>
 PubP2pSrvrPtr PubP2pSrvr::create(
-        const SockAddr  srvrAddr,
-        const unsigned  maxPendConn) {
-    return PubP2pSrvrPtr{new PubP2pSrvrImpl(srvrAddr, maxPendConn)};
-}
-
-template<>
-SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
-    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};
+        const SockAddr    srvrAddr,
+        const unsigned    maxPendConn,
+        const SysDuration heartbeatInterval) {
+    return PubP2pSrvrPtr{new PubP2pSrvrImpl(srvrAddr, maxPendConn, heartbeatInterval)};
 }
 
 template<>
 SubP2pSrvrPtr SubP2pSrvr::create(
-        const SockAddr srvrAddr,
-        const unsigned maxPendConn) {
-    return SubP2pSrvrPtr{new SubP2pSrvrImpl(srvrAddr, maxPendConn)};
+        const PeerConnSrvrPtr peerConnSrvr,
+        const SysDuration heartbeatInterval) {
+    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr, heartbeatInterval)};
+}
+
+template<>
+SubP2pSrvrPtr SubP2pSrvr::create(
+        const SockAddr    srvrAddr,
+        const unsigned    maxPendConn,
+        const SysDuration heartbeatInterval) {
+    return SubP2pSrvrPtr{new SubP2pSrvrImpl(srvrAddr, maxPendConn, heartbeatInterval)};
 }
 
 } // namespace

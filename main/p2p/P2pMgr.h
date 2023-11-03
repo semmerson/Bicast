@@ -79,11 +79,10 @@ public:
             Srvr()
                 : Srvr(SockAddr(), DEF_LISTEN_SIZE)
             {}
-        }         srvr;              ///< P2P server
-
-        int maxPeers;          ///< Maximum number of connected peers
-        int evalTime;          ///< Time interval for evaluating peer performance in seconds
-        int heartbeatInterval; ///< Time between heartbeat packets in seconds. <0 => no heartbeat.
+        }           srvr;              ///< P2P server
+        int         maxPeers;          ///< Maximum number of connected peers
+        int         evalTime;          ///< Time interval for evaluating peer performance in seconds
+        SysDuration heartbeatInterval; ///< Time between heartbeat packets. <0 => no heartbeat.
         /**
          * Constructs.
          * @param[in] srvr               Runtime parameters for the P2P server
@@ -98,7 +97,7 @@ public:
             : srvr(srvr)
             , maxPeers(maxPeers)
             , evalTime(evalTime)
-            , heartbeatInterval(heartbeatInterval)
+            , heartbeatInterval(std::chrono::seconds(heartbeatInterval))
         {}
         /// Default constructs.
         RunPar()
@@ -225,25 +224,28 @@ public:
      * Creates a publishing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] tracker       Tracks P2P-servers
-     * @param[in] pubNode       Bicast publishing node
-     * @param[in] p2pSrvrAddr   P2P server's socket address. It shall specify a specific interface
-     *                          and not the wildcard. The port number may be 0, in which case the
-     *                          operating system will choose the port.
-     * @param[in] maxPeers      Maximum number of subscribing peers
-     * @param[in] maxPendConn   Maximum number of pending connections. 0 obtains the system default.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @throw InvalidArgument   `listenSize` is zero
-     * @return                  Publisher's P2P manager
+     * @param[in] tracker            Tracks P2P-servers
+     * @param[in] pubNode            Bicast publishing node
+     * @param[in] p2pSrvrAddr        P2P server's socket address. It shall specify a specific
+     *                               interface and not the wildcard. The port number may be 0, in
+     *                               which case the operating system will choose the port.
+     * @param[in] maxPeers           Maximum number of subscribing peers
+     * @param[in] maxPendConn        Maximum number of pending connections. 0 obtains the system
+     *                               default.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets
+     * @throw InvalidArgument        `listenSize` is zero
+     * @return                       Publisher's P2P manager
      * @see `run()`
      */
     static PubP2pMgrPtr create(
-            Tracker&       tracker,
-            PubNode&       pubNode,
-            const SockAddr p2pSrvrAddr,
-            const int      maxPeers,
-            const int      maxPendConn,
-            const int      evalTime);
+            Tracker&          tracker,
+            PubNode&          pubNode,
+            const SockAddr    p2pSrvrAddr,
+            const int         maxPeers,
+            const int         maxPendConn,
+            const int         evalTime,
+            const SysDuration heartbeatInterval);
 
     /**
      * Destroys.
@@ -264,17 +266,18 @@ public:
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] tracker      Pool of addresses of P2P servers
-     * @param[in] subNode      Subscriber's node
-     * @param[in] p2pSrvrAddr  Socket address for subscriber's P2P server. IP address *must not* be
-     *                         wildcard. If the port number is zero, then the O/S will choose an
-     *                         ephemeral port number.
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @param[in] timeout      Timeout, in ms, for connecting to remote P2P servers. -1 => default
-     *                         timeout; 0 => immediate return.
-     * @param[in] maxPeers     Maximum number of peers. Might be adjusted upwards.
-     * @param[in] evalTime     Evaluation interval for poorest-performing peer in seconds
-     * @return                 Subscribing P2P manager
+     * @param[in] tracker            Pool of addresses of P2P servers
+     * @param[in] subNode            Subscriber's node
+     * @param[in] p2pSrvrAddr        Socket address for subscriber's P2P server. IP address *must
+     *                               not* be wildcard. If the port number is zero, then the O/S will
+     *                               choose an ephemeral port number.
+     * @param[in] maxPendConn        Maximum number of pending connections
+     * @param[in] timeout            Timeout, in ms, for connecting to remote P2P servers. -1 =>
+     *                               default timeout; 0 => immediate return.
+     * @param[in] maxPeers           Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
+     * @return                       Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static SubP2pMgrPtr create(
@@ -284,29 +287,32 @@ public:
             const int         maxPendConn,
             const int         timeout,
             const int         maxPeers,
-            const int         evalTime);
+            const int         evalTime,
+            const SysDuration heartbeatInterval);
 
     /**
      * Creates a subscribing P2P manager. Creates a P2P server listening on a socket but doesn't do
      * anything with it until `run()` is called.
      *
-     * @param[in] tracker       Pool of addresses of P2P servers
-     * @param[in] subNode       Subscriber's node
-     * @param[in] peerConnSrvr  Peer-connection server
-     * @param[in] timeout       Timeout, in ms, for connecting to remote P2P servers. -1 => default
-     *                          timeout; 0 => immediate return.
-     * @param[in] maxPeers      Maximum number of peers. Might be adjusted upwards.
-     * @param[in] evalTime      Evaluation interval for poorest-performing peer in seconds
-     * @return                  Subscribing P2P manager
+     * @param[in] tracker            Pool of addresses of P2P servers
+     * @param[in] subNode            Subscriber's node
+     * @param[in] peerConnSrvr       Peer-connection server
+     * @param[in] timeout            Timeout, in ms, for connecting to remote P2P servers. -1 =>
+     *                               default timeout; 0 => immediate return.
+     * @param[in] maxPeers           Maximum number of peers. Might be adjusted upwards.
+     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
+     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
+     * @return                       Subscribing P2P manager
      * @see `getPeerSrvrAddr()`
      */
     static SubP2pMgrPtr create(
-            Tracker         tracker,
-            SubNode&        subNode,
-            PeerConnSrvrPtr peerConnSrvr,
-            const int       timeout,
-            const int       maxPeers,
-            const int       evalTime);
+            Tracker           tracker,
+            SubNode&          subNode,
+            PeerConnSrvrPtr   peerConnSrvr,
+            const int         timeout,
+            const int         maxPeers,
+            const int         evalTime,
+            const SysDuration heartbeatInterval);
 
     /**
      * Destroys.
