@@ -1,7 +1,7 @@
 # This is an example configuration-file for publishing data-products. The syntax is standard
 # YAML. The command "publish -h" will also print descripions of the variables in this file.
 
-pubRoot: .                   # Pathname of publisher's root-directory
+rootDir: ./pubRoot           # Pathname of publisher's root-directory
 name: NOAAPort NWSTG         # Name of feed
 logLevel: DEBUG              # Logging level
 maxSegSize: 1444             # Maximum size of data-segment in bytes
