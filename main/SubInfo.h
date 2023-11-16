@@ -38,11 +38,12 @@ struct SubInfo : public XprtAble {
     struct Mcast {
         SockAddr dstAddr;  ///< Multicast destination address
         InetAddr srcAddr;  ///< Multicast source address
-    }         mcast;       ///< Multicast parameters
-    Tracker   tracker;     ///< Information on potential P2P-servers
-    uint32_t  keepTime;    ///< Duration to keep data-products in seconds
+    }            mcast;    ///< Multicast parameters
+    Tracker      tracker;  ///< Information on potential P2P-servers
+    SysDuration  keepTime; ///< Duration to keep data-products
+
      /**
-      * Constructs.
+      * Constructs from a tracker.
       * @param[in] tracker  Pool of potential P2P servers
       */
     SubInfo(Tracker tracker)
@@ -51,21 +52,35 @@ struct SubInfo : public XprtAble {
         , maxSegSize(1444)
         , mcast()
         , tracker(tracker)
-        , keepTime(3600)
+        , keepTime(std::chrono::hours(1))
     {}
+
     /**
-     * Constructs.
+     * Constructs from the size of the tracker.
      * @param[in] trackerSize  Maximum capacity of the subscriber's P2P server tracker
      */
     SubInfo(const unsigned trackerSize)
         : SubInfo(Tracker{trackerSize})
     {}
+
     /**
      * Default constructs.
      */
     SubInfo()
         : SubInfo(100)
     {}
+
+    /**
+     * Returns a string representation.
+     * @return A string representation
+     */
+    String to_string() const {
+        return "{vers=" + std::to_string(version) + ", feed=" + feedName + ", segSize=" +
+                std::to_string(maxSegSize) + ", mcast={dst=" + mcast.dstAddr.to_string() +
+                ", src=" + mcast.srcAddr.to_string() + "}, trackerSize=" +
+                std::to_string(tracker.size()) + ", keepTime=" + std::to_string(keepTime) + "}";
+    }
+
     /**
      * Writes itself to a transport.
      * @param[in] xprt  The transport
