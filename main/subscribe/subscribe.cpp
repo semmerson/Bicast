@@ -26,8 +26,9 @@
 #include "FileUtil.h"
 #include "Node.h"
 #include "P2pSrvrInfo.h"
-#include "Parser.h"
 #include "PeerConn.h"
+#include "Parser.h"
+#include "RunPar.h"
 #include "Shield.h"
 #include "Thread.h"
 #include "ThreadException.h"
@@ -37,111 +38,14 @@
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 
-/// Default maximum number of active peers
-static constexpr int DEF_MAX_PEERS    = 8;
 /// Default port for multicast group
 static constexpr int DEF_PORT         = 38800;
-/// Default tracker size
-static constexpr int DEF_TRACKER_SIZE = 1000;
-/// Default timeout in ms for connecting to remote P2P server
-static constexpr int DEF_TIMEOUT      = 15000;
-/// Default peer evaluation duration
-static constexpr int DEF_EVAL_DURATION = 300;
 
 using namespace bicast;
 
 using String = std::string; ///< String type
 
-/// Runtime parameters of this program
-struct RunPar {
-    LogLevel  logLevel;      ///< Logging level
-    String    subRoot;       ///< Pathname of subscriber's root-directory
-    SockAddr  pubAddr;       ///< Address of publisher
-    InetAddr  mcastIface;    ///< Address of interface for multicast reception. May be wildcard.
-    unsigned  retryInterval; ///< Number of seconds to wait between attempts to contact publisher
-    /// Runtime parameters for a subscriber's P2P manager
-    struct P2pArgs {
-        /// Runtime parameters for the P2P server
-        struct SrvrArgs {
-            SockAddr addr;        ///< P2P server's address. Must not be wildcard.
-            int      maxPendConn; ///< Maximum number of pending P2P connections
-            /**
-             * Constructs.
-             * @param[in] addr         Socket address for the local P2P server
-             * @param[in] maxPendConn  Maximum number of pending connections
-             */
-            SrvrArgs(
-                    const SockAddr& addr,
-                    const int       maxPendConn)
-                : addr(addr)
-                , maxPendConn(maxPendConn)
-            {}
-        }           srvr;              ///< P2P server runtime parameters
-        int         timeout;           ///< Timeout in ms for connecting to remote P2P server
-        int         trackerSize;       ///< Capacity of tracker object
-        int         maxPeers;          ///< Maximum number of peers to have
-        int         evalTime;          ///< Time interval for evaluating peer performance in seconds
-        SysDuration heartbeatInterval; ///< Time interval between heartbeat packets. <0 => none.
-        /**
-         * Constructs.
-         * @param[in] addr               Socket address for the local P2P server
-         * @param[in] acceptQSize        Size of the `listen()` queue
-         * @param[in] timeout            Timeout in ms for connecting to remote P2P server
-         * @param[in] trackerSize        Capacity of the tracker object
-         * @param[in] maxPeers           Maximum number of neighboring peers
-         * @param[in] evalTime           Duration over which to evaluate the peers
-         * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
-         */
-        P2pArgs(const SockAddr& addr,
-                const int         acceptQSize,
-                const int         timeout,
-                const int         trackerSize,
-                const int         maxPeers,
-                const int         evalTime,
-                const SysDuration heartbeatInterval)
-            : srvr(addr, DEF_MAX_PEERS)
-            , timeout(timeout)
-            , trackerSize(trackerSize)
-            , maxPeers(maxPeers)
-            , evalTime(evalTime)
-            , heartbeatInterval(heartbeatInterval)
-        {}
-    }         p2p; ///< P2P runtime parameters
-    /// Runtime parameters for the repository
-    struct RepoArgs {
-        int      maxOpenFiles; ///< Maximum number of open files
-        /**
-         * Constructs.
-         * @param[in] maxOpenFiles  Maximum number of open file descriptors
-         */
-        RepoArgs(const unsigned maxOpenFiles)
-            : maxOpenFiles(maxOpenFiles)
-        {}
-    }      repo;            ///< Runtime parameters for the repository
-    String dispositionFile; ///< Pathname of YAML file indicating how products should be processed
-    String lastProcDir;     ///< Pathname of directory containing information on last, successfully-
-                            ///< processed data-product
-
-    /**
-     * Default constructs.
-     */
-    RunPar()
-        : logLevel(LogLevel::NOTE)
-        , subRoot(".")
-        , pubAddr()
-        , mcastIface("0.0.0.0") // Might get changed to match address family of multicast group
-        , retryInterval(60)
-        , p2p(SockAddr(), DEF_MAX_PEERS, DEF_TIMEOUT, DEF_TRACKER_SIZE, DEF_MAX_PEERS,
-                DEF_EVAL_DURATION, SysDuration(std::chrono::seconds(30)))
-        , repo(::sysconf(_SC_OPEN_MAX)/2)
-        , dispositionFile()
-        , lastProcDir("lastProc")
-    {}
-};
-
 static ThreadEx            threadEx;    ///< Exception thrown by a thread
-static RunPar              runPar;      ///< Runtime parameters:
-static const RunPar        defRunPar;   ///< Default runtime parameters
 static Tracker             subTracker;  ///< Subscriber's tracker of P2P servers
 static std::atomic_bool    done;        ///< Is this program done?
 
@@ -158,39 +62,31 @@ static void usage()
 "    -h                  Print this help message on standard error, then exit.\n"
 "    -i <retryInterval>  Seconds to wait after a receiving session terminates\n"
 "                        due to a non-fatal error before retrying. Default is " <<
-                         defRunPar.retryInterval << ".\n"
+                         std::to_string(RunPar::retryInterval) << ".\n"
 "    -l <logLevel>       Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                        \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                        insensitive and takes effect immediately. Default is\n"
-"                        \"" << defRunPar.logLevel << "\".\n"
+"                        \"" << RunPar::logLevel << "\".\n"
 "    -r <subRoot>        Pathname of subscriber's root-directory. Default is \"" <<
-                         defRunPar.subRoot << "\".\n"
+                         RunPar::subRoot << "\".\n"
 "  Peer-to-Peer:\n"
-"    -b <interval>       Time between heartbeat packets in seconds. <0 => no\n"
-"                        heartbeat. Default is " <<
-                         runPar.p2p.heartbeatInterval.count()*sysClockRatio << ".\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
-"                        poorest performer. Default is " << defRunPar.p2p.evalTime << ".\n"
+"                        poorest performer. Default is " << RunPar::peerEvalInterval << ".\n"
 "    -p <p2pAddr>        Internet address for local P2P server Must not be\n"
 "                        wildcard. Default is IP address of interface used to\n"
 "                        connect to publisher.\n"
-"    -n <maxPeers>       Maximum number of connected peers. Default is " << defRunPar.p2p.maxPeers
+"    -n <maxPeers>       Maximum number of connected peers. Default is " << RunPar::maxNumPeers
                          << ".\n"
-"    -T <timeout>        Timeout, in ms, for connecting to remote P2P server.\n"
-"                        Default is " << defRunPar.p2p.timeout << ".\n"
 "    -q <maxPending>     Maximum number of pending connections to P2P server.\n"
-"                        Default is " << defRunPar.p2p.srvr.maxPendConn << ".\n"
+"                        Default is " << RunPar::p2pSrvrQSize << ".\n"
 "    -t <trackerSize>    Maximum number of P2P servers to track. Default is " <<
-                         defRunPar.p2p.trackerSize << ".\n"
+                         RunPar::trackerCap << ".\n"
 "  Repository:\n"
 "    -o <maxOpenFiles>   Maximum number of open repository files. Default is " <<
-                         defRunPar.repo.maxOpenFiles << ".\n"
+                         RunPar::maxOpenProds << ".\n"
 "  Product Disposition:\n"
 "    -d <disposeConfig>  Pathname of configuration-file specifying disposition of\n"
 "                        products. The default is no local processing.\n"
-"    -L <lastProcDir>    Pathname of directory containing information on the\n"
-"                        last, successfully-processed data-product. Default is\n"
-"                        \"" << runPar.lastProcDir << "\".\n"
 "Operands:\n"
 "    <pubAddr>[:<port>]  Socket address of publisher's server. Default port\n"
 "                        number is " << DEF_PORT << ".\n"
@@ -213,14 +109,15 @@ static void setFromConfig(const String& pathname)
         if (node1)
             log_setLevel(node1.as<String>());
 
-        Parser::tryDecode<decltype(runPar.subRoot)>(node0, "subRoot", runPar.subRoot);
+        Parser::tryDecode<decltype(RunPar::subRoot)>(node0, "rootDir", RunPar::subRoot);
 
         node1 = node0["pubAddr"];
         if (node1)
-            runPar.pubAddr = SockAddr(node1.as<String>(), DEF_PORT);
+            RunPar::pubSrvrAddr = SockAddr(node1.as<String>(), DEF_PORT);
 
-        Parser::tryDecode<decltype(runPar.retryInterval)>(node0, "retryInterval",
-                runPar.retryInterval);
+        int seconds;
+        Parser::tryDecode<decltype(seconds)>(node0, "retryInterval", seconds);
+        RunPar::retryInterval = std::chrono::seconds(seconds);
 
         node1 = node0["peer2Peer"];
         if (node1) {
@@ -228,30 +125,28 @@ static void setFromConfig(const String& pathname)
             if (node2) {
                 auto node3 = node2["p2pAddr"];
                 if (node3)
-                    runPar.p2p.srvr.addr = SockAddr(node3.as<String>());
-                Parser::tryDecode<decltype(runPar.p2p.srvr.maxPendConn)>(node2, "maxPending",
-                        runPar.p2p.srvr.maxPendConn);
+                    RunPar::p2pSrvrAddr = SockAddr(node3.as<String>());
+                Parser::tryDecode<decltype(RunPar::p2pSrvrQSize)>(node2, "maxPending",
+                        RunPar::p2pSrvrQSize);
             }
 
-            Parser::tryDecode<decltype(runPar.p2p.timeout)>(node1, "timeout", runPar.p2p.timeout);
-            Parser::tryDecode<decltype(runPar.p2p.maxPeers)>(node1, "maxPeers",
-                    runPar.p2p.maxPeers);
-            Parser::tryDecode<decltype(runPar.p2p.trackerSize)>(node1, "trackerSize",
-                    runPar.p2p.trackerSize);
-            Parser::tryDecode<decltype(runPar.p2p.evalTime)>(node1, "evalTime",
-                    runPar.p2p.evalTime);
+            Parser::tryDecode<decltype(RunPar::maxNumPeers)>(node1, "maxPeers",
+                    RunPar::maxNumPeers);
+            Parser::tryDecode<decltype(RunPar::trackerCap)>(node1, "trackerSize",
+                    RunPar::trackerCap);
+            int seconds;
+            Parser::tryDecode<decltype(seconds)>(node1, "evalTime", seconds);
+            RunPar::peerEvalInterval = std::chrono::seconds(seconds);
         }
 
         node1 = node0["repository"];
         if (node1) {
-            Parser::tryDecode<decltype(runPar.repo.maxOpenFiles)>(node1, "maxOpenFiles",
-                    runPar.repo.maxOpenFiles);
+            Parser::tryDecode<decltype(RunPar::maxOpenProds)>(node1, "maxOpenFiles",
+                    RunPar::maxOpenProds);
         }
 
-        Parser::tryDecode<decltype(runPar.dispositionFile)>(node0, "disposeConfig",
-                runPar.dispositionFile);
-        Parser::tryDecode<decltype(runPar.lastProcDir)>(node0, "lastProcDir",
-                runPar.lastProcDir);
+        Parser::tryDecode<decltype(RunPar::disposeConfig)>(node0, "disposeConfig",
+                RunPar::disposeConfig);
     } // YAML file loaded
     catch (const std::exception& ex) {
         std::throw_with_nested(RUNTIME_ERROR("Couldn't parse YAML file \"" + pathname + "\""));
@@ -265,164 +160,94 @@ static void setFromConfig(const String& pathname)
  */
 static void vetRunPars()
 {
-    if (!runPar.pubAddr)
+    if (!RunPar::pubSrvrAddr)
         throw INVALID_ARGUMENT("Publisher's socket address wasn't specified");
 
-    if (!runPar.p2p.srvr.addr)
+    if (!RunPar::p2pSrvrAddr)
         throw INVALID_ARGUMENT("IP address for local P2P server wasn't specified");
-    if (runPar.p2p.srvr.maxPendConn <= 0)
+    if (RunPar::p2pSrvrQSize <= 0)
         throw INVALID_ARGUMENT("Size of local P2P server's listen() queue is not positive");
-    if (runPar.p2p.timeout < -1)
-        throw INVALID_ARGUMENT("P2p connection timeout is less than -1");
-    if (runPar.p2p.maxPeers <= 0)
+    if (RunPar::maxNumPeers <= 0)
         throw INVALID_ARGUMENT("Maximum number of peers is not positive");
-    if (runPar.p2p.trackerSize <= 0)
+    if (RunPar::trackerCap <= 0)
         throw INVALID_ARGUMENT("Tracker size is not positive");
-    if (runPar.p2p.evalTime <= 0)
+    if (RunPar::peerEvalInterval.count() <= 0)
         throw INVALID_ARGUMENT("Peer performance evaluation-duration is not positive");
 
-    if (runPar.subRoot.empty())
-        throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
-    if (runPar.repo.maxOpenFiles <= 0)
+    if (RunPar::subRoot.empty())
+        throw INVALID_ARGUMENT("Name of subscriber's root-directory is the empty string");
+    if (RunPar::maxOpenProds <= 0)
         throw INVALID_ARGUMENT("Maximum number of open repository files is not positive");
-    if (runPar.repo.maxOpenFiles > ::sysconf(_SC_OPEN_MAX))
+    if (RunPar::maxOpenProds > ::sysconf(_SC_OPEN_MAX))
         throw INVALID_ARGUMENT("Maximum number of open repository files is "
                 "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
 
-    if (runPar.dispositionFile.size() && !FileUtil::exists(runPar.dispositionFile))
+    if (RunPar::disposeConfig.size() && !FileUtil::exists(RunPar::disposeConfig))
         throw INVALID_ARGUMENT("Configuration-file for disposition of products, \"" +
-                runPar.dispositionFile + "\", doesn't exist");
+                RunPar::disposeConfig + "\", doesn't exist");
 }
 
 /**
- * Sets runtime parameters from the command-line.
+ * Sets runtime parameters.
  *
  * @throw std::invalid_argument  Invalid option, option argument, or variable value
  */
-static void getCmdPars(
+static void setRunPars(
         const int    argc, ///< Number of command-line arguments
         char* const* argv) ///< Command-line arguments
 {
-    runPar = defRunPar;
+    RunPar::init(argc, argv);
+
+    // Set subscriber-specific runtime parameters
+    RunPar::subRoot = String("./subRoot");         ///< Pathname of this program's root directory
+    RunPar::disposeConfig = String("");            ///< Pathname of the product-disposition file
+    RunPar::p2pTimeout = std::chrono::seconds(30); ///< Timeout for connecting to remote P2P servers
+    /// Time to wait before re-connecting to the publisher
+    RunPar::retryInterval = std::chrono::minutes(1);
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
     int c;
-    while ((c = ::getopt(argc, argv, ":c:d:e:hi:l:n:o:p:q:r:T:t:")) != -1) {
+    while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING ":c:d:i:r:")) != -1) {
         switch (c) {
-        case 'h': {
-            usage();
-            exit(0);
-        }
+            // Common options:
+            RUNPAR_COMMON_OPTIONS_CASES(usage)
 
-        case 'c': {
-            try {
-                setFromConfig(optarg);
+            // Subscriber-specific options:
+            case 'c': {
+                try {
+                    RunPar::setFromYaml(optarg); // Sets common runtime parameters
+                    setFromConfig(optarg);       // Sets program-specific runtime parameters
+                }
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(INVALID_ARGUMENT(
+                            String("Couldn't initialize using configuration-file \"") + optarg +
+                            "\""));
+                }
+                break;
             }
-            catch (const std::exception& ex) {
-                std::throw_with_nested(INVALID_ARGUMENT(
-                        String("Couldn't initialize using configuration-file \"") + optarg + "\""));
+            case 'd': {
+                RunPar::disposeConfig = String(optarg);
+                break;
             }
-            break;
-        }
-        case 'd': {
-            runPar.dispositionFile = String(optarg);
-            break;
-        }
-        case 'e': {
-            int evalTime;
-            if (::sscanf(optarg, "%d", &evalTime) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (evalTime <= 0)
-                throw INVALID_ARGUMENT("Peer performance duration is not positive");
-            runPar.p2p.evalTime = evalTime;
-            break;
-        }
-        case 'i': {
-            if (::sscanf(optarg, "%u", &runPar.retryInterval) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            break;
-        }
-        case 'L': {
-            runPar.lastProcDir = String(optarg);
-            break;
-        }
-        case 'l': {
-            log_setLevel(optarg);
-            runPar.logLevel = log_getLevel();
-            break;
-        }
-        case 'n': {
-            int maxPeers;
-            if (::sscanf(optarg, "%d", &maxPeers) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (maxPeers <= 0)
-                throw INVALID_ARGUMENT("Maximum number of peers is not positive");
-            runPar.p2p.maxPeers = maxPeers;
-            break;
-        }
-        case 'o': {
-            if (::sscanf(optarg, "%ld", &runPar.repo.maxOpenFiles) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (runPar.repo.maxOpenFiles <= 0)
-                throw INVALID_ARGUMENT("Maximum number of open repository files is not positive");
-            if (runPar.repo.maxOpenFiles > sysconf(_SC_OPEN_MAX))
-                throw INVALID_ARGUMENT("Maximum number of open repository files is "
-                        "greater than system maximum, " + std::to_string(sysconf(_SC_OPEN_MAX)));
-            break;
-        }
-        case 'p': {
-            runPar.p2p.srvr.addr = SockAddr(optarg);
-            break;
-        }
-        case 'q': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.srvr.maxPendConn) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (runPar.p2p.srvr.maxPendConn <= 0)
-                throw INVALID_ARGUMENT("Size of P2P server's listen() queue is not positive");
-            break;
-        }
-        case 'r': {
-            runPar.subRoot = String(optarg);
-            if (runPar.subRoot.empty())
-                throw INVALID_ARGUMENT("Name of repository's root-directory is the empty string");
-            break;
-        }
-        case 'T': {
-            if (::sscanf(optarg, "%d", &runPar.p2p.timeout) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (runPar.p2p.timeout < -1)
-                throw INVALID_ARGUMENT("P2P server connection-time is less than -1");
-            break;
-        }
-        case 't': {
-            int trackerSize;
-            if (::sscanf(optarg, "%d", &trackerSize) != 1)
-                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                        "\" option argument");
-            if (trackerSize <= 0)
-                throw INVALID_ARGUMENT("Tracker size is not positive");
-            runPar.p2p.trackerSize = trackerSize;
-            break;
-        }
-        case ':': { // Missing option argument. Due to leading ":" in opt-string
-            throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(optopt) + "\" option");
-        }
-        default : { // c == '?'
-            throw INVALID_ARGUMENT(String("Unknown \"-") + static_cast<char>(optopt) + "\" option");
-        }
+            case 'i': {
+                int seconds;
+                if (::sscanf(optarg, "%d", &seconds) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                RunPar::retryInterval = std::chrono::seconds(60);
+                break;
+            }
+            case 'r': {
+                RunPar::subRoot = String(optarg);
+                break;
+            }
         } // `switch` statement
     } // While getopt() loop
 
-    if (!runPar.pubAddr) {
+    if (!RunPar::pubSrvrAddr) {
         if (argv[optind] == nullptr)
             throw INVALID_ARGUMENT("Publisher's socket address wasn't specified");
-        runPar.pubAddr = SockAddr(argv[optind++], DEF_PORT);
+        RunPar::pubSrvrAddr = SockAddr(argv[optind++], DEF_PORT);
     }
 
     if (optind != argc)
@@ -432,8 +257,8 @@ static void getCmdPars(
      * If the Internet address for the P2P server wasn't specified, then it's determined from the
      * interface used to connect to the publisher's server.
      */
-    if (!runPar.p2p.srvr.addr)
-        runPar.p2p.srvr.addr = SockAddr(UdpSock(runPar.pubAddr).getLclAddr().getInetAddr());
+    if (!RunPar::p2pSrvrAddr)
+        RunPar::p2pSrvrAddr = SockAddr(UdpSock(RunPar::pubSrvrAddr).getLclAddr().getInetAddr());
 
     vetRunPars();
 }
@@ -461,43 +286,39 @@ static void subscribe(
 {
     // Keep consonant with `publish.cpp:servSubscriber()`
 
-    Xprt xprt{TcpClntSock(runPar.pubAddr)}; // RAII object
+    Xprt xprt{TcpClntSock(RunPar::pubSrvrAddr)}; // RAII object
 
     LOG_INFO("Created publisher-transport " + xprt.to_string());
 
-    P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (runPar.p2p.maxPeers+1)/2};
+    P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (RunPar::maxNumPeers+1)/2};
 
     // Ensure that tracker to be sent contains local P2P server information
     if (!subP2pSrvrInfo.write(xprt))
         throw RUNTIME_ERROR("Couldn't send P2P server information " + subP2pSrvrInfo.to_string() +
-                " to publisher " + runPar.pubAddr.to_string());
+                " to publisher " + RunPar::pubSrvrAddr.to_string());
 
     if (!subTracker.write(xprt))
         throw RUNTIME_ERROR("Couldn't send tracker " + subTracker.to_string() + " to publisher " +
-                runPar.pubAddr.to_string());
+                RunPar::pubSrvrAddr.to_string());
     LOG_DEBUG("Sent tracker " + subTracker.to_string() + " to publisher " +
-            runPar.pubAddr.to_string());
+            RunPar::pubSrvrAddr.to_string());
 
     if (!subInfo.read(xprt))
         throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
-                runPar.pubAddr.to_string());
-    LOG_INFO("Received subscription information from publisher " + runPar.pubAddr.to_string() +
-            ": tracker size=" + std::to_string(subInfo.tracker.size()));
+                RunPar::pubSrvrAddr.to_string());
+    LOG_NOTE("Received subscription information " + subInfo.to_string());
 
     subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
     subTracker = subInfo.tracker;              // Update official tracker
     DataSeg::setMaxSegSize(subInfo.maxSegSize);
-    LOG_NOTE("Maximum data-segment size is " + std::to_string(subInfo.maxSegSize) + " bytes");
 
-    // Address family of receiving interface should match that of multicast group
-    if (runPar.mcastIface.isAny()) {
-        // The following doesn't work if the outgoing multicast interface is localhost
-        //runPar.mcastIface = subInfo.mcast.dstAddr.getInetAddr().getWildcard();
-        // The following works in that context
-        runPar.mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
-        //LOG_DEBUG("Set interface for multicast reception to " +
-                //runPar.mcastIface.to_string());
-    }
+    /**
+     * The interface that's used to receive the multicast is the same interface that would be used
+     * to send to the multicast source.
+     */
+    RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
+    //LOG_DEBUG("Set interface for multicast reception to " +
+            //runPar.mcastIface.to_string());
 }
 
 /**
@@ -587,23 +408,39 @@ static void printMetrics(SubNodePtr subNode)
 static void trySession()
 {
     // Create peer-connection server
-    auto peerConnSrvr = PeerConnSrvr::create(runPar.p2p.srvr.addr, runPar.p2p.srvr.maxPendConn);
+    auto peerConnSrvr = PeerConnSrvr::create();
 
     // Use the address of the peer-connection server because port number might have been 0
     SubInfo subInfo; // Subscription information
     subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
 
+    RunPar::feedName     = subInfo.feedName;
+    RunPar::maxSegSize   = subInfo.maxSegSize;
+    RunPar::mcastDstAddr = subInfo.mcast.dstAddr;
+    RunPar::mcastSrcAddr = subInfo.mcast.srcAddr;
+    RunPar::prodKeepTime = subInfo.keepTime;
+    RunPar::maxSegSize   = subInfo.maxSegSize;
+
+    subTracker.insert(subInfo.tracker);        // Update tracker
+    DataSeg::setMaxSegSize(RunPar::maxSegSize);
+
+    /**
+     * The interface that's used to receive the multicast is the same interface that would be used
+     * to send to the multicast source.
+     */
+    RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
+    //LOG_DEBUG("Set interface for multicast reception to " +
+            //runPar.mcastIface.to_string());
+
     // Create disposer factory-method
     Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
-        return runPar.dispositionFile.size()
-            ? Disposer::createFromYaml(runPar.dispositionFile, lastProcessed)
+        return RunPar::disposeConfig.size()
+            ? Disposer::createFromYaml(RunPar::disposeConfig, lastProcessed)
             : Disposer{}; // No local processing <=> invalid instance
     };
 
     //LOG_DEBUG("Creating subscribing node");
-    auto    subNode = SubNode::create(subInfo, runPar.mcastIface, peerConnSrvr, runPar.p2p.timeout,
-            runPar.p2p.maxPeers, runPar.p2p.evalTime, runPar.subRoot, runPar.repo.maxOpenFiles,
-            factory, nullptr, runPar.p2p.heartbeatInterval);
+    auto    subNode = SubNode::create(subInfo, peerConnSrvr, factory, nullptr);
 
     try {
         subNode->run();
@@ -634,15 +471,16 @@ int main(
 {
     int status = 0;
 
-    subTracker = Tracker(runPar.p2p.trackerSize);
-    done = false;
-    log_setName(::basename(argv[0]));
     std::set_terminate(&terminate); // NB: Bicast version
-    setSigHand(); // Catches termination signals
-    LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
 
     try {
-        getCmdPars(argc, argv);
+        log_setName(::basename(argv[0]));
+        LOG_NOTE("Starting up: " + getCmdLine(argc, argv));
+
+        setRunPars(argc, argv);
+        subTracker = Tracker(RunPar::trackerCap);
+        done = false;
+        setSigHand(); // Catches termination signals
 
         while (!done) {
             try {
@@ -652,8 +490,9 @@ int main(
                 LOG_WARN(ex);
             }
             if (!done) {
-                LOG_INFO("Sleeping " + std::to_string(runPar.retryInterval) + " seconds");
-                ::sleep(runPar.retryInterval);
+                LOG_INFO("Sleeping " + std::to_string(RunPar::retryInterval));
+                ::sleep(std::chrono::duration_cast<std::chrono::seconds>(
+                        RunPar::retryInterval).count());
             }
         }
     }

@@ -244,17 +244,10 @@ class PeerConnSrvr
 public:
     /**
      * Returns a new instance.
-     * @param[in] srvrAddr     Socket address for the server. Must not be the wildcard (i.e.,
-     *                         specify any interface). A port number of 0 obtains a system chosen
-     *                         one.
-     * @param[in] maxPendConn  Maximum number of pending connections
-     * @return                 New instance
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Maximum number of pending connections is zero
      */
-    static PeerConnSrvrPtr create(
-            const SockAddr& srvrAddr,
-            const int       maxPendConn = 8);
+    static PeerConnSrvrPtr create();
 
     /// Destroys.
     virtual ~PeerConnSrvr() {};

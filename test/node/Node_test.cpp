@@ -27,6 +27,7 @@
 #include "BicastProto.h"
 #include "Node.h"
 #include "P2pSrvrInfo.h"
+#include "RunPar.h"
 #include "SubInfo.h"
 #include "ThreadException.h"
 #include "Tracker.h"
@@ -97,6 +98,15 @@ protected:
         , feedName("Node_test_feed")
         , subNodePtr()
     {
+        RunPar::maxSegSize = SEG_SIZE;
+        RunPar::pubSrvrAddr = SockAddr(ifaceAddr, 38800);
+        RunPar::prodKeepTime = std::chrono::hours(1);
+        RunPar::peerEvalInterval = std::chrono::minutes(1);
+        RunPar::maxNumPeers = 8;
+        RunPar::mcastIface = ifaceAddr;
+        RunPar::mcastDstAddr = mcastAddr;
+        RunPar::mcastSrcAddr = ifaceAddr;
+
         subInfo.mcast.dstAddr = mcastAddr;
         subInfo.mcast.srcAddr = ifaceAddr;
         subInfo.maxSegSize = SEG_SIZE;
@@ -157,8 +167,9 @@ TEST_F(NodeTest, Construction)
 {
     LOG_NOTE("Creating publishing node");
     Tracker tracker{};
-    auto pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr, ifaceAddr, 1,
-            pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName, SysDuration(std::chrono::seconds(30)));
+    RunPar::pubSrvrQSize = 1;
+    RunPar::p2pSrvrAddr = pubP2pAddr;
+    auto pubNode = PubNode::create(tracker);
 
     const auto pubP2pSrvrAddr = pubNode->getP2pSrvrAddr();
     const auto pubInetAddr = pubP2pSrvrAddr.getInetAddr();
@@ -167,14 +178,14 @@ TEST_F(NodeTest, Construction)
     EXPECT_NE(0, pubPort);
 
     LOG_NOTE("Creating subscribing node");
+    RunPar::p2pSrvrAddr = subP2pAddr;
     subInfo.tracker.insert(pubNode->getP2pSrvrInfo());
-    auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
+    auto peerConnSrvr = PeerConnSrvr::create();
     Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
         return Disposer{};
     };
     // NB: Invalid dispose-file
-    subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60, subRoot,
-            maxOpenFiles, factory, this, SysDuration(std::chrono::seconds(30)));
+    subNodePtr = SubNode::create(subInfo, peerConnSrvr, factory, this);
 
     const auto subP2pSrvrAddr = subNodePtr->getP2pSrvrAddr();
     const auto subInetAddr = subP2pSrvrAddr.getInetAddr();
@@ -212,10 +223,9 @@ TEST_F(NodeTest, Sending)
         EXPECT_EQ(0, ::close(fd));
 
         // Create the publishing node
-        Tracker tracker{};
-        auto    pubNode = PubNode::create(tracker, pubP2pAddr, maxPeers, 60, mcastAddr,
-                ifaceAddr, 1, pubRoot, SEG_SIZE, maxOpenFiles, 3600, feedName,
-                SysDuration(std::chrono::seconds(30)));
+        RunPar::p2pSrvrAddr = pubP2pAddr;
+        Tracker    tracker{};
+        auto       pubNode = PubNode::create(tracker);
         const auto pubP2pSrvrInfo = pubNode->getP2pSrvrInfo();
         const auto pubP2pSrvrAddr = pubP2pSrvrInfo.srvrAddr;
         Thread     pubThread(&NodeTest::runNode, this, pubNode);
@@ -242,10 +252,10 @@ TEST_F(NodeTest, Sending)
         };
 
         // Create the subscribing node
+        RunPar::p2pSrvrAddr = subP2pAddr;
         subInfo.tracker.insert(pubP2pSrvrInfo);
-        auto peerConnSrvr = PeerConnSrvr::create(subP2pAddr, 5);
-        subNodePtr = SubNode::create(subInfo, ifaceAddr, peerConnSrvr, -1, maxPeers, 60,
-                subRoot, maxOpenFiles, dispoFact, this, SysDuration(std::chrono::seconds(30)));
+        auto peerConnSrvr = PeerConnSrvr::create();
+        subNodePtr = SubNode::create(subInfo, peerConnSrvr, dispoFact, this);
         Thread subThread(&NodeTest::runNode, this, subNodePtr);
 
         // Wait for subscriber to connect to publisher
@@ -325,6 +335,7 @@ static void myTerminate()
 }
 
 int main(int argc, char **argv) {
+  RunPar::init(argc, argv);
   log_setName(::basename(argv[0]));
   log_setLevel(LogLevel::NOTE);
 

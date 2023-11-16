@@ -43,17 +43,15 @@ class Bookkeeper
 public:
     /**
      * Constructs.
-     * @param[in] maxPeers  Maximum number of P2P neighbors
      * @return              Pointer to a new instance for a publisher
      */
-    static BookkeeperPtr createPub(const int maxPeers = 8);
+    static BookkeeperPtr createPub();
 
     /**
      * Constructs.
-     * @param[in] maxPeers  Maximum number of P2P neighbors
      * @return              Pointer to a new instance for a subscriber
      */
-    static BookkeeperPtr createSub(const int maxPeers = 8);
+    static BookkeeperPtr createSub();
 
     virtual ~Bookkeeper() noexcept {}
 

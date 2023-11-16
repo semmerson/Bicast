@@ -26,6 +26,7 @@
 #include "Bookkeeper.h"
 #include "Node.h"
 #include "P2pSrvrInfo.h"
+#include "RunPar.h"
 #include "ThreadException.h"
 
 #include <condition_variable>
@@ -155,7 +156,7 @@ protected:
     BookkeeperPtr        bookkeeper;        ///< Records peer performance
     Thread               acceptThread;      ///< Creates server-side peers
     Thread               improveThread;     ///< Improves the set of active peers
-    std::chrono::seconds evalTime;          ///< Evaluation interval for poorest-performing peer
+    SysDuration          evalTime;          ///< Evaluation interval for poorest-performing peer
     P2pSrvrInfo          srvrInfo;          ///< Information on the local P2P-server
 
     /**
@@ -510,7 +511,6 @@ public:
      * @param[in]     node               Associated Bicast node
      * @param[in]     maxPeers           Maximum number of peers
      * @param[in]     maxSrvrPeers       Maximum number of server-side-constructed peers
-     * @param[in]     evalTime           Peer evaluation time in seconds
      * @throw InvalidArgument            Invalid maximum number of peers
      * @throw InvalidArgument            Invalid maximum number of server-side peers
      * @throw InvalidArgument            Maximum number of peers < maximum number of server-side peers
@@ -519,8 +519,7 @@ public:
             Tracker&          tracker,
             Node&             node,
             const int         maxPeers,
-            const int         maxSrvrPeers,
-            const int         evalTime)
+            const int         maxSrvrPeers)
         : state(State::INIT)
         , stateMutex()
         , node(node)
@@ -536,7 +535,7 @@ public:
         , bookkeeper()
         , acceptThread()
         , improveThread()
-        , evalTime(evalTime)
+        , evalTime(RunPar::peerEvalInterval)
         , srvrInfo()
     {
         if (maxPeers <= 0)
@@ -690,20 +689,16 @@ public:
      * @param[in] tracker       Tracks P2P-servers
      * @param[in] pubNode       Publisher's node
      * @param[in] p2pSrvr       P2P-server
-     * @param[in] maxPeers      Maximum number of peers
-     * @param[in] evalTime      Evaluation time for poorest-performing peer in seconds
      * @throw InvalidArgument   Invalid maximum number of peers
      */
     PubP2pMgrImpl(Tracker&            tracker,
                   PubNode&            pubNode,
-                  const PubP2pSrvrPtr p2pSrvr,
-                  const int           maxPeers,
-                  const int           evalTime)
-        : BaseP2pMgrImpl(tracker, pubNode, maxPeers, maxPeers, evalTime)
+                  const PubP2pSrvrPtr p2pSrvr)
+        : BaseP2pMgrImpl(tracker, pubNode, RunPar::maxNumPeers, RunPar::maxNumPeers)
         , p2pSrvr(p2pSrvr)
     {
-        bookkeeper = Bookkeeper::createPub(maxPeers);
-        srvrInfo = P2pSrvrInfo{p2pSrvr->getSrvrAddr(), maxPeers, 0}; // Tier 0
+        bookkeeper = Bookkeeper::createPub();
+        srvrInfo = P2pSrvrInfo{p2pSrvr->getSrvrAddr(), RunPar::maxNumPeers, 0}; // Tier 0
     }
 
     /**
@@ -786,14 +781,9 @@ public:
 
 PubP2pMgrPtr PubP2pMgr::create(
         Tracker&          tracker,
-        PubNode&          pubNode,
-        const SockAddr    p2pSrvrAddr,
-        const int         maxPeers,
-        const int         maxPendConn,
-        const int         evalTime,
-        const SysDuration heartbeatInterval) {
-    auto p2pSrvr = PubP2pSrvr::create(p2pSrvrAddr, maxPendConn, heartbeatInterval);
-    return PubP2pMgrPtr{new PubP2pMgrImpl(tracker, pubNode, p2pSrvr, maxPeers, evalTime)};
+        PubNode&          pubNode) {
+    auto p2pSrvr = PubP2pSrvr::create();
+    return PubP2pMgrPtr{new PubP2pMgrImpl(tracker, pubNode, p2pSrvr)};
 }
 
 /**************************************************************************************************/
@@ -804,10 +794,8 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
     SubNode&      subNode;           ///< Subscriber's node
     const int     maxClntPeers;      ///< Maximum number of client-side peers
     int           numClntPeers;      ///< Number of client-side peers
-    int           timeout;           ///< Timeout, in ms, for connecting to remote P2P-server
     SubP2pSrvrPtr p2pSrvr;           ///< Subscriber's P2P-server
     Thread        connectThread;     ///< Thread for creating client-side peers
-    SysDuration   heartbeatInterval; ///< Time interval between heartbeat packets. <0 => none.
 
     /**
      * Creates a client-side peer. Exchanges information on P2P servers. Decides if the remote site
@@ -819,7 +807,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
      */
     PeerPtr createPeer(const SockAddr& rmtSrvrAddr) {
         bool success = false;
-        auto peer = Peer::create(*this, rmtSrvrAddr, heartbeatInterval);
+        auto peer = Peer::create(*this, rmtSrvrAddr);
 
         if (peer) {
             auto rmtSrvrInfo = peer->getRmtSrvrInfo();
@@ -899,7 +887,7 @@ class SubP2pMgrImpl final :  public BaseP2pMgrImpl, public SubP2pMgr
                         tracker.disconnected(rmtSrvrAddr, true); // Makes it available after a delay
                     }
                     else {
-                        LOG_NOTE("Connected to %s", rmtSrvrAddr.to_string().data());
+                        LOG_NOTE("Connected to peer %s", rmtSrvrAddr.to_string().data());
 
                         //LOG_TRACE("Adding peer to peer-set");
                         if (!add(peer)) { // Updates the tier number if appropriate
@@ -1101,31 +1089,20 @@ public:
      * @param[in] subNode            Subscriber's node
      * @param[in] tracker            Pool of addresses of P2P-servers
      * @param[in] peerConnSrvr       Peer-connection server
-     * @param[in] timeout            Timeout, in ms, for connecting to remote P2P-servers. -1 =>
-     *                               default timeout; 0 => immediate return.
-     * @param[in] maxPeers           Maximum number of peers. Might be adjusted upwards.
-     * @param[in] evalTime           Evaluation interval for poorest-performing peer in seconds
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets. <0 => no heartbeat
      * @see `getPeerSrvrAddr()`
      */
     SubP2pMgrImpl(
             Tracker           tracker,
             SubNode&          subNode,
-            PeerConnSrvrPtr   peerConnSrvr,
-            const int         timeout,
-            const int         maxPeers,
-            const int         evalTime,
-            const SysDuration heartbeatInterval)
-        : BaseP2pMgrImpl(tracker, subNode, ((maxPeers+1)/2)*2, (maxPeers+1)/2, evalTime)
+            PeerConnSrvrPtr   peerConnSrvr)
+        : BaseP2pMgrImpl(tracker, subNode, ((RunPar::maxNumPeers+1)/2)*2, (RunPar::maxNumPeers+1)/2)
         , subNode(subNode)
         , maxClntPeers(maxSrvrPeers)
         , numClntPeers(0)
-        , timeout(timeout)
-        , p2pSrvr(SubP2pSrvr::create(peerConnSrvr, heartbeatInterval))
+        , p2pSrvr(SubP2pSrvr::create(peerConnSrvr))
         , connectThread()
-        , heartbeatInterval(heartbeatInterval)
     {
-        bookkeeper = Bookkeeper::createSub(maxPeers);
+        bookkeeper = Bookkeeper::createSub();
         srvrInfo = P2pSrvrInfo{p2pSrvr->getSrvrAddr(), maxSrvrPeers};
     }
 
@@ -1251,26 +1228,15 @@ public:
 SubP2pMgrPtr SubP2pMgr::create(
         Tracker               tracker,
         SubNode&              subNode,
-        const PeerConnSrvrPtr peerConnSrvr,
-        const int             timeout,
-        const int             maxPeers,
-        const int             evalTime,
-        const SysDuration heartbeatInterval) {
-    return SubP2pMgrPtr{new SubP2pMgrImpl{tracker, subNode, peerConnSrvr, timeout, maxPeers,
-            evalTime, heartbeatInterval}};
+        const PeerConnSrvrPtr peerConnSrvr) {
+    return SubP2pMgrPtr{new SubP2pMgrImpl{tracker, subNode, peerConnSrvr}};
 }
 
 SubP2pMgrPtr SubP2pMgr::create(
         Tracker           tracker,
-        SubNode&          subNode,
-        const SockAddr    p2pSrvrAddr,
-        const int         maxPendConn,
-        const int         timeout,
-        const int         maxPeers,
-        const int         evalTime,
-        const SysDuration heartbeatInterval) {
-    auto peerConnSrvr = PeerConnSrvr::create(p2pSrvrAddr, maxPendConn);
-    return create(tracker, subNode, peerConnSrvr, timeout, maxPeers, evalTime, heartbeatInterval);
+        SubNode&          subNode) {
+    auto peerConnSrvr = PeerConnSrvr::create();
+    return create(tracker, subNode, peerConnSrvr);
 }
 
 } // namespace

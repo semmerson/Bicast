@@ -6,6 +6,7 @@ add_library(bicast
         $<TARGET_OBJECTS:repository>
         $<TARGET_OBJECTS:disposer>
         $<TARGET_OBJECTS:node>
+        $<TARGET_OBJECTS:runpar>
         $<TARGET_OBJECTS:main>
 )
 #       $<TARGET_OBJECTS:protocol>

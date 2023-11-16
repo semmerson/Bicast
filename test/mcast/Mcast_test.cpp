@@ -23,6 +23,8 @@
 #include "mcast.h"
 #include "Node.h"
 #include "P2pSrvrInfo.h"
+#include "RunPar.h"
+#include "Socket.h"
 
 #include <cstring>
 #include <gtest/gtest.h>
@@ -79,6 +81,9 @@ protected:
         ::memset(memData, 0xbd, sizeof(memData));
 
         dataSeg = DataSeg(segId, prodSize, memData);
+        RunPar::mcastDstAddr = ssmAddr;
+        RunPar::mcastSrcAddr = srcAddr;
+        RunPar::mcastIface = UdpSock(SockAddr(srcAddr, 38800)).getLclAddr().getInetAddr();
     }
 
     virtual ~McastTest()
@@ -201,16 +206,16 @@ public:
 // Tests construction
 TEST_F(McastTest, Construction)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
-    auto pub = McastPub::create(ssmAddr, srcAddr);
+    auto sub = McastSub::create(ssmAddr, srcAddr, this);
+    auto pub = McastPub::create();
 }
 
 // Tests multicasting product information
 TEST_F(McastTest, McastProdInfo)
 {
-    auto   sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
+    auto   sub = McastSub::create(ssmAddr, srcAddr, this);
     Thread thread{&McastSub::run, sub.get()};
-    auto pub = McastPub::create(ssmAddr, srcAddr);
+    auto pub = McastPub::create();
     pub->multicast(prodInfo);
     waitForState(PROD_INFO_RCVD);
     ::pthread_cancel(thread.native_handle());
@@ -220,9 +225,9 @@ TEST_F(McastTest, McastProdInfo)
 // Tests multicasting a data segment
 TEST_F(McastTest, McastDataSeg)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
+    auto sub = McastSub::create(ssmAddr, srcAddr, this);
     Thread thread{&McastSub::run, sub.get()};
-    auto pub = McastPub::create(ssmAddr, srcAddr);
+    auto pub = McastPub::create();
     pub->multicast(dataSeg);
     waitForState(DATA_SEG_RCVD);
     ::pthread_cancel(thread.native_handle());
@@ -232,9 +237,9 @@ TEST_F(McastTest, McastDataSeg)
 // Tests multicasting a product
 TEST_F(McastTest, McastProduct)
 {
-    auto sub = McastSub::create(ssmAddr, srcAddr, subIface, this);
+    auto sub = McastSub::create(ssmAddr, srcAddr, this);
     Thread thread{&McastSub::run, sub.get()};
-    auto pub = McastPub::create(ssmAddr, srcAddr);
+    auto pub = McastPub::create();
     pub->multicast(prodInfo);
     pub->multicast(dataSeg);
     waitForState(PROD_INFO_RCVD | DATA_SEG_RCVD);
@@ -245,6 +250,7 @@ TEST_F(McastTest, McastProduct)
 }  // namespace
 
 int main(int argc, char **argv) {
+  RunPar::init(argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   log_setLevel(LogLevel::DEBUG);
   return RUN_ALL_TESTS();

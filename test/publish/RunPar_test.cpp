@@ -64,7 +64,7 @@ protected:
 // Tests construction
 TEST_F(RunParTest, Construction)
 {
-    char* argv[] = {__FILE__, NULL};
+    const char* argv[] = {__FILE__, NULL};
     RunPar::init(1, argv);
     EXPECT_STREQ(::basename(__FILE__), RunPar::progName.data());
 }

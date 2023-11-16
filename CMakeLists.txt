@@ -43,7 +43,7 @@ configure_file(config.h.in config.h)
 include_directories(${CMAKE_BINARY_DIR}) # necessary
 
 include_directories(main main/misc main/inet main/mcast main/p2p main/repository main/node
-        main/disposer main/publish)
+        main/disposer main/publish main/RunPar)
 include_directories(SYSTEM /usr/local/include)
 
 # Add the main subdirectory

@@ -174,32 +174,6 @@ protected:
     Repository(Impl* impl) noexcept;
 
 public:
-    /// Class for holding runtime parameters for the publisher's repository
-    struct RunPar {
-        /// Default amount of time to keep products
-        static constexpr int32_t DEF_KEEP_TIME      = 3600;
-        /// Default maximum number of product-files to have open
-        static constexpr long    DEF_MAX_OPEN_FILES = _SC_OPEN_MAX/2;
-
-        int32_t keepTime;         ///< Length of time to keep data-products in seconds
-        long    maxOpenFiles;     ///< Maximum number of open repository files
-
-        /**
-         * Constructs.
-         * @param[in] maxOpenFiles  Maximum number of open files
-         * @param[in] keepTime      Duration to keep data products
-         */
-        RunPar(   const int32_t keepTime,
-                const long    maxOpenFiles)
-            : keepTime(keepTime)
-            , maxOpenFiles(maxOpenFiles)
-        {}
-        /// Default constructs.
-        RunPar()
-            : RunPar(DEF_KEEP_TIME, DEF_MAX_OPEN_FILES)
-        {}
-    }                 repo;       ///< Runtime parameters for the publisher's repository
-
     virtual ~Repository() =default;
 
     /**
@@ -313,14 +287,10 @@ public:
      * directories are being watched.
      *
      * @param[in] rootDir       Pathname of the root-directory of the repository
-     * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
      * @param[in] lastProcTime  Modification-time of the last, successfully-processed product-file
-     * @param[in] keepTime      Duration to keep products before deleting them in seconds
      */
     PubRepo(const String&      rootDir,
-            const long         maxOpenFiles,
-            const SysTimePoint lastProcTime = SysTimePoint::min(),
-            const int          keepTime = 3600);
+            const SysTimePoint lastProcTime = SysTimePoint::min());
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).
@@ -365,17 +335,13 @@ public:
      * Constructs.
      *
      * @param[in] rootPathname  Pathname of the root directory of the repository
-     * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
      * @param[in] lastReceived  Saves information on the last received data-product
      * @param[in] queueProds    Queue complete data-products for return by getNextProd()?
-     * @param[in] keepTime      Duration, in seconds, to keep products before deleting them
      * @see getNextProd()
      */
     SubRepo(const std::string& rootPathname,
-            const size_t       maxOpenFiles,
             const LastProdPtr& lastReceived,
-            const bool         queueProds,
-            const int          keepTime = 3600);
+            const bool         queueProds);
 
     /**
      * Indicates if this instance is valid (i.e., wasn't default constructed).

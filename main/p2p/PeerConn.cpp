@@ -27,6 +27,7 @@
 #include "Peer.h"
 #include "PeerConn.h"
 #include "Rpc.h"
+#include "RunPar.h"
 #include "ThreadException.h"
 #include "Tracker.h"
 #include "Xprt.h"
@@ -553,30 +554,25 @@ public:
     /**
      * Constructs from the local address for the RPC-server.
      *
-     * @param[in] srvrAddr     Socket address for the server. Must not be wildcard. A port number of
-     *                         zero obtains a system chosen one.
-     * @param[in] maxPendConn  Maximum number of pending connections
      * @throw InvalidArgument  Server's IP address is wildcard
      * @throw InvalidArgument  Backlog argument is zero
      */
-    PeerConnSrvrImpl(
-            const SockAddr&   srvrAddr,
-            const int         maxPendConn)
+    PeerConnSrvrImpl()
         : mutex()
         , cond()
         , peerConnFactory()
         , srvrSock()
         , acceptQ()
-        , maxPendConn(maxPendConn)
+        , maxPendConn(RunPar::p2pSrvrQSize)
         , acceptThread()
     {
-        if (srvrAddr.getInetAddr().isAny())
+        if (RunPar::p2pSrvrAddr.getInetAddr().isAny())
             throw INVALID_ARGUMENT("Server's IP address is wildcard");
         if (maxPendConn == 0)
             throw INVALID_ARGUMENT("Size of accept-queue is zero");
 
         // Because 3 unicast connections per peer-connection
-        srvrSock = TcpSrvrSock(srvrAddr, 3*maxPendConn);
+        srvrSock = TcpSrvrSock(RunPar::p2pSrvrAddr, 3*maxPendConn);
         LOG_DEBUG("Created P2P server " + srvrSock.to_string());
 
         /*
@@ -640,10 +636,8 @@ public:
     }
 };
 
-PeerConnSrvrPtr PeerConnSrvr::create(
-        const SockAddr& srvrAddr,
-        const int       maxPendConn) {
-    return PeerConnSrvrPtr{new PeerConnSrvrImpl{srvrAddr, maxPendConn}};
+PeerConnSrvrPtr PeerConnSrvr::create() {
+    return PeerConnSrvrPtr{new PeerConnSrvrImpl{}};
 }
 
 } // namespace

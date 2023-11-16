@@ -23,6 +23,7 @@
 
 #include "logging.h"
 #include "Node.h"
+#include "RunPar.h"
 #include "Socket.h"
 #include "Xprt.h"
 
@@ -62,14 +63,13 @@ class McastPubImpl final : public McastImpl, public McastPub
 public:
     /**
      * Constructs.
-     * @param[in] mcastAddr  Socket address of the multicast group
-     * @param[in] ifaceAddr  IP address of the interface to use
      */
-    McastPubImpl(
-            const SockAddr mcastAddr,
-            const InetAddr ifaceAddr)
-        : McastImpl{UdpSock{mcastAddr, ifaceAddr}}
-    {}
+    McastPubImpl()
+        : McastImpl{UdpSock{RunPar::mcastDstAddr, RunPar::mcastSrcAddr}}
+    {
+        LOG_NOTE("Will multicast to group " + RunPar::mcastDstAddr.to_string() + " from interface " +
+                RunPar::mcastSrcAddr.to_string());
+    }
 
     void multicast(const ProdInfo prodInfo) override {
         cast<ProdInfo>(prodInfo);
@@ -84,10 +84,8 @@ public:
     }
 };
 
-McastPub::Pimpl McastPub::create(
-        const SockAddr mcastAddr,
-        const InetAddr ifaceAddr) {
-    return Pimpl(new McastPubImpl(mcastAddr, ifaceAddr));
+McastPub::Pimpl McastPub::create() {
+    return Pimpl(new McastPubImpl());
 }
 
 /**************************************************************************************************/
@@ -113,7 +111,6 @@ public:
      *
      * @param[in] ssmAddr          Address of source-specific multicast group
      * @param[in] srcAddr          IP address of publisher
-     * @param[in] ifaceAddr        IP address of interface to use. If wildcard, then O/S chooses.
      * @param[in] node             Subscribing node to call
      * @throw     InvalidArgument  Multicast group IP address isn't source-specific
      * @throw     LogicError       IP address families don't match
@@ -121,11 +118,13 @@ public:
     McastSubImpl(
             const SockAddr& ssmAddr,
             const InetAddr& srcAddr,
-            const InetAddr& ifaceAddr,
             SubNode*        node)
-        : McastImpl{UdpSock{ssmAddr, srcAddr, ifaceAddr}}
+        : McastImpl{UdpSock{ssmAddr, srcAddr, RunPar::mcastIface}}
         , node(node)
-    {}
+    {
+        LOG_INFO("Will receive multicast group " + ssmAddr.to_string() + " from " +
+                srcAddr.to_string() + " on interface " + RunPar::mcastIface.to_string());
+    }
 
     ~McastSubImpl() {
         halt();
@@ -165,9 +164,8 @@ public:
 McastSub::Pimpl McastSub::create(
         const SockAddr& mcastAddr,
         const InetAddr& srcAddr,
-        const InetAddr& iface,
         SubNode*        node) {
-    return Pimpl(new McastSubImpl(mcastAddr, srcAddr, iface, node));
+    return Pimpl(new McastSubImpl(mcastAddr, srcAddr, node));
 }
 
 } // namespace

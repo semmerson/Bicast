@@ -39,37 +39,13 @@ public:
     /// Smart pointer to the implementation
     using Pimpl = std::shared_ptr<McastPub>;
 
-    /// Runtime parameters
-    struct RunPar {
-        SockAddr  dstAddr;        ///< Socket address of multicast group
-        InetAddr  srcAddr;        ///< Internet address of multicast interface
-        /**
-         * Constructs from destination and source addresses.
-         * @param[in] dstAddr  Socket address of the multicast group
-         * @param[in] srcAddr  IP address of the source of the multicast
-         */
-        RunPar( const SockAddr dstAddr,
-                const InetAddr srcAddr)
-            : dstAddr(dstAddr)
-            , srcAddr(srcAddr)
-        {}
-         /// Default constructs.
-        RunPar()
-            : RunPar(SockAddr("232.1.1.1:38800"), InetAddr())
-        {}
-    };
-
     /**
      * Returns a new instance.
      *
-     * @param[in] mcastAddr    Address of multicast group
-     * @param[in] ifaceAddr    IP address of interface to use. If wildcard, then O/S chooses.
      * @return                 New instance
      * @throw InvalidArgument  Multicast group IP address isn't source-specific
      */
-    static Pimpl create(
-            const SockAddr mcastAddr,
-            const InetAddr ifaceAddr);
+    static Pimpl create();
 
     virtual ~McastPub() noexcept {}
 
@@ -102,7 +78,6 @@ public:
      *
      * @param[in] mcastAddr        Socket address of multicast group
      * @param[in] srcAddr          Internet address of publisher
-     * @param[in] iface            Internet address of interface to use
      * @param[in] node             Subscribing node to call
      * @return                     New instance
      * @throw     InvalidArgument  Multicast group IP address isn't source-specific
@@ -111,7 +86,6 @@ public:
     static Pimpl create(
             const SockAddr& mcastAddr,
             const InetAddr& srcAddr,
-            const InetAddr& iface,
             SubNode*        node);
 
     /**

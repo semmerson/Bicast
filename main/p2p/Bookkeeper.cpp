@@ -26,6 +26,7 @@
 #include "BicastProto.h"
 #include "logging.h"
 #include "Notice.h"
+#include "RunPar.h"
 #include "Trigger.h"
 
 #include <climits>
@@ -88,11 +89,10 @@ class PubBookkeeper final : public BookkeeperImpl
 public:
     /**
      * Constructs.
-     * @param[in] maxPeers  Maximum number of peers
      */
-    PubBookkeeper(const int maxPeers)
+    PubBookkeeper()
         : BookkeeperImpl()
-        , numRequests(maxPeers)
+        , numRequests(RunPar::maxNumPeers)
     {}
 
     bool add(
@@ -194,8 +194,8 @@ public:
     }
 };
 
-BookkeeperPtr Bookkeeper::createPub(const int maxPeers) {
-    return BookkeeperPtr{new PubBookkeeper(maxPeers)};
+BookkeeperPtr Bookkeeper::createPub() {
+    return BookkeeperPtr{new PubBookkeeper()};
 }
 
 /******************************************************************************/
@@ -390,13 +390,12 @@ public:
     /**
      * Constructs.
      *
-     * @param[in] maxPeers        Maximum number of peers
      * @throws std::system_error  Out of memory
      * @cancellationpoint         No
      */
-    SubBookkeeper(const int maxPeers)
+    SubBookkeeper()
         : BookkeeperImpl()
-        , peerToInfo(maxPeers)
+        , peerToInfo(RunPar::maxNumPeers)
         , noticeToPeers()
     {}
 
@@ -528,8 +527,8 @@ public:
     }
 };
 
-BookkeeperPtr Bookkeeper::createSub(const int maxPeers) {
-    return BookkeeperPtr{new SubBookkeeper(maxPeers)};
+BookkeeperPtr Bookkeeper::createSub() {
+    return BookkeeperPtr{new SubBookkeeper()};
 }
 
 } // namespace

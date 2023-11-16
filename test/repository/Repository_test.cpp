@@ -25,6 +25,7 @@
 #include "FileUtil.h"
 #include "BicastProto.h"
 #include "Repository.h"
+#include "RunPar.h"
 
 #include <chrono>
 #include <fcntl.h>
@@ -65,11 +66,13 @@ protected:
         , prodInfo(prodId, prodName, prodSize)
         , segId(prodId, 0)
         , dataSeg(segId, prodSize, memData)
-        , lastReceived{LastProd::create()}
+        , lastReceived{LastProd::create()} // Dummy lastProd object
     {
         DataSeg::setMaxSegSize(sizeof(memData));
         FileUtil::rmDirTree(testDir);
         FileUtil::ensureDir(FileUtil::dirname(filePath));
+
+        RunPar::prodKeepTime = std::chrono::seconds(5);
     }
 
     ~RepositoryTest() {
@@ -93,16 +96,16 @@ public:
 TEST_F(RepositoryTest, Construction)
 {
     //LOG_DEBUG("Creating publishing repository");
-    PubRepo pubRepo{repoDir, 5, SysTimePoint::min()};
+    PubRepo pubRepo{repoDir};
     //LOG_DEBUG("Creating subscribing repository");
-    SubRepo subRepo{repoDir, 5, lastReceived, true};
+    SubRepo subRepo{repoDir, lastReceived, true};
 }
 #endif
 
 // Tests saving just product-information
 TEST_F(RepositoryTest, SaveProdInfo)
 {
-    SubRepo repo(repoDir, 5, lastReceived, true);
+    SubRepo repo(repoDir, lastReceived, true);
     ASSERT_FALSE(repo.getProdInfo(prodId));
     ASSERT_TRUE(repo.save(prodInfo));
     auto actual = repo.getProdInfo(prodId);
@@ -114,7 +117,7 @@ TEST_F(RepositoryTest, SaveProdInfo)
 // Tests saving product-information and then the data
 TEST_F(RepositoryTest, SaveInfoThenData)
 {
-    SubRepo repo(repoDir, 5, lastReceived, true);
+    SubRepo repo(repoDir, lastReceived, true);
 
     ASSERT_TRUE(repo.save(prodInfo));
     ASSERT_TRUE(repo.save(dataSeg));
@@ -131,7 +134,7 @@ TEST_F(RepositoryTest, SaveInfoThenData)
 // Tests saving product-data and then product-information
 TEST_F(RepositoryTest, SaveDataThenInfo)
 {
-    SubRepo repo(repoDir, 5, lastReceived, true);
+    SubRepo repo(repoDir, lastReceived, true);
 
     ASSERT_TRUE(repo.save(dataSeg));
     ASSERT_TRUE(repo.save(prodInfo));
@@ -155,7 +158,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
     ASSERT_EQ(0, ::close(fd));
 
     // Create the publisher's repository and tell it about the file
-    PubRepo repo(repoDir, 5, SysTimePoint::min());
+    PubRepo repo(repoDir);
     const auto repoProdPath = repoDir + '/' + prodName;
     FileUtil::ensureParent(repoProdPath);
     FileUtil::hardLink(filePath, repoProdPath);
@@ -179,7 +182,7 @@ TEST_F(RepositoryTest, CreatProdForSending)
 // Tests subtracting product IDs from what the repository has.
 TEST_F(RepositoryTest, Subtract)
 {
-    SubRepo  repo(repoDir, 5, lastReceived, true);
+    SubRepo  repo(repoDir, lastReceived, true);
     ProdIdSet other{0};
     ProdIdSet prodIds{};
 
@@ -204,7 +207,7 @@ TEST_F(RepositoryTest, Subtract)
 // Tests getting the set of complete product identifiers
 TEST_F(RepositoryTest, getProdIds)
 {
-    SubRepo repo(repoDir, 5, lastReceived, true);
+    SubRepo repo(repoDir, lastReceived, true);
 
     auto prodIds = repo.getProdIds(); // empty
     EXPECT_EQ(0, prodIds.size());
@@ -218,7 +221,7 @@ TEST_F(RepositoryTest, getProdIds)
 
 TEST_F(RepositoryTest, Performance)
 {
-    SubRepo repo(repoDir, 5, lastReceived, true);
+    SubRepo repo(repoDir, lastReceived, true);
 
     const auto     numProds = 10000;
     const ProdSize prodSize = 10*segSize;
@@ -252,6 +255,7 @@ TEST_F(RepositoryTest, Performance)
 }  // namespace
 
 int main(int argc, char **argv) {
+  RunPar::init(argc, argv);
   log_setName(::basename(argv[0]));
   log_setLevel(LogLevel::NOTE);
   set_terminate(&bicast::terminate);

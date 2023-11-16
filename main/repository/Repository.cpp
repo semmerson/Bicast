@@ -30,6 +30,7 @@
 #include "HashSetQueue.h"
 #include "LastProd.h"
 #include "logging.h"
+#include "RunPar.h"
 #include "Shield.h"
 #include "Thread.h"
 #include "ThreadException.h"
@@ -68,7 +69,7 @@ class Repository::Impl
      */
     void deleteProds() {
         try {
-            //LOG_DEBUG("Starting deleter of products that are too old");
+            LOG_DEBUG("Starting deleter of products that are too old");
             /**
              * The following code deletes products on-time regardless of their arrival rate.
              */
@@ -488,26 +489,22 @@ public:
      *
      * @param[in] prodPath         Pathname of root of directory hierarchy for complete product-
      *                             files
-     * @param[in] maxOpenProds     Maximum number of products with open file descriptors
-     * @param[in] keepTime         Number of seconds to keep products before deleting them
      * @param[in] lastProcTime     Modification-time of the last, successfully-process data-product
      * @throw     InvalidArgument  `maxOpenProds <= 0`
      * @throw     InvalidArgument  `keepTime <= 0`
      * @throw     SystemError      Couldn't open repository directory
      */
     Impl(   const String&      prodPath,
-            const size_t       maxOpenProds,
-            const int          keepTime,
             const SysTimePoint lastProcTime)
         : mutex()
         , stop(false)
         , procQueueCond()
         , deleteQueueCond()
-        , keepTime(duration_cast<SysDuration>(seconds(keepTime)))
+        , keepTime(RunPar::prodKeepTime)
         , prodEntries(1000)
         , deleteQueue()
         , openProds()
-        , maxOpenProds{maxOpenProds}
+        , maxOpenProds{RunPar::maxOpenProds}
         , prodDir(FileUtil::ensureTrailingSep(FileUtil::makeAbsolute(prodPath)))
         , prodDirLen{prodDir.size()}
         , prodDirFd(::open(FileUtil::ensureDir(prodDir).data(), O_DIRECTORY | O_RDONLY))
@@ -515,16 +512,18 @@ public:
         , procQueue()
         , lastProcessed(lastProcTime)
         , done(false)
-        , deleteThread(&Impl::deleteProds, this)
+        , deleteThread()
     {
         if (maxOpenProds <= 0)
             throw INVALID_ARGUMENT("maxOpenProds=" + std::to_string(maxOpenProds));
 
-        if (keepTime <= 0)
+        if (keepTime.count() <= 0)
             throw INVALID_ARGUMENT("keepTime=" + std::to_string(keepTime));
 
         if (prodDirFd == -1)
             throw SYSTEM_ERROR("Couldn't open repository directory, \"" + prodDir + "\"");
+
+        deleteThread = Thread(&Impl::deleteProds, this);
     }
 
     virtual ~Impl() {
@@ -768,6 +767,18 @@ class PubRepo::Impl final : public Repository::Impl, public Watcher::Client
         }
     }
 
+    void stopWatcher() {
+        const auto nativeHandle = watchThread.native_handle();
+        const auto threadId = std::to_string(nativeHandle);
+        //LOG_DEBUG("Cancelling watch thread " + threadId);
+        const auto status = ::pthread_cancel(nativeHandle);
+        if (status)
+            LOG_SYSERR("pthread_cancel() failure: %s", ::strerror(errno));
+        //LOG_DEBUG("Joining watch thread " + threadId);
+        watchThread.join();
+        //LOG_DEBUG("Joined watch thread " + threadId);
+    }
+
     static bool tryHardLink(
             const std::string& extantPath,
             const std::string& linkPath) {
@@ -816,17 +827,13 @@ public:
      * Constructs. Upon return, the repository has been completely scanned and all relevant
      * directories are being watched.
      * @param[in] prodPath      Pathname of the root-directory of the product-file hierarchy
-     * @param[in] maxOpenFiles  Maximum number of files to have open simultaneously
-     * @param[in] keepTime      Number of seconds to keep products before deleting them
      * @param[in] lastProcTime  Modification-time of the last, successfully-processed product-file
      */
     Impl(   const String&      prodPath,
-            const long         maxOpenFiles,
-            const int          keepTime,
             const SysTimePoint lastProcTime)
-        : Repository::Impl{prodPath, static_cast<size_t>(maxOpenFiles), keepTime, lastProcTime}
+        : Repository::Impl{prodPath, lastProcTime}
         , watcher(prodDir, *this)
-        , watchThread(&Impl::runWatcher, this)
+        , watchThread()
     {
         /**
          * Ideally, the following sequence would occur:
@@ -842,19 +849,19 @@ public:
          * might be acted upon by both threads. Duplicate detection, however, will ensure that such
          * files are added to the database only once.
          */
-        scanRepo(prodDir);
+        watchThread = Thread(&Impl::runWatcher, this);
+        try {
+            scanRepo(prodDir);
+        }
+        catch (const std::exception& ex) {
+            if (watchThread.joinable())
+                stopWatcher();
+        }
     }
 
     ~Impl() {
-        const auto nativeHandle = watchThread.native_handle();
-        const auto threadId = std::to_string(nativeHandle);
-        //LOG_DEBUG("Cancelling watch thread " + threadId);
-        const auto status = ::pthread_cancel(nativeHandle);
-        if (status)
-            LOG_SYSERR("pthread_cancel() failure: %s", ::strerror(errno));
-        //LOG_DEBUG("Joining watch thread " + threadId);
-        watchThread.join();
-        //LOG_DEBUG("Joined watch thread " + threadId);
+        if (watchThread.joinable())
+            stopWatcher();
     }
 
     /**
@@ -916,10 +923,8 @@ PubRepo::PubRepo()
 
 PubRepo::PubRepo(
         const String&      rootPathname,
-        const long         maxOpenFiles,
-        const SysTimePoint lastProcTime,
-        const int          keepTime)
-    : Repository(new PubRepo::Impl{rootPathname, maxOpenFiles, keepTime, lastProcTime})
+        const SysTimePoint lastProcTime)
+    : Repository(new PubRepo::Impl{rootPathname, lastProcTime})
 {}
 
 void PubRepo::link(
@@ -1040,14 +1045,11 @@ class SubRepo::Impl final : public Repository::Impl
 
 public:
     Impl(   const std::string& rootDir,
-            const size_t       maxOpenFiles,
-            const int          keepTime,
             const LastProdPtr& lastReceived,
             const bool         queueProds)
-        : Repository::Impl{FileUtil::pathname(rootDir, COMPLETE_DIR_NAME), maxOpenFiles, keepTime,
-                lastReceived->recall()}
-        , incompleteDir(FileUtil::pathname(FileUtil::ensureTrailingSep(
-                FileUtil::makeAbsolute(rootDir)), INCOMPLETE_DIR_NAME))
+        : Repository::Impl{FileUtil::pathname(rootDir, COMPLETE_DIR_NAME), lastReceived->recall()}
+        , incompleteDir(FileUtil::ensureTrailingSep(FileUtil::pathname(rootDir,
+                INCOMPLETE_DIR_NAME)))
         , lastReceived(lastReceived)
         , queueProds(queueProds)
         , totalProds(0)
@@ -1210,11 +1212,9 @@ SubRepo::SubRepo()
 
 SubRepo::SubRepo(
         const std::string& rootPathname,
-        const size_t       maxOpenFiles,
         const LastProdPtr& lastReceived,
-        const bool         queueProds,
-        const int          keepTime)
-    : Repository(new Impl{rootPathname, maxOpenFiles, keepTime, lastReceived, queueProds})
+        const bool         queueProds)
+    : Repository(new Impl{rootPathname, lastReceived, queueProds})
 {}
 
 bool SubRepo::save(const ProdInfo prodInfo) const {

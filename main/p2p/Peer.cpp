@@ -26,6 +26,7 @@
 #include "error.h"
 #include "logging.h"
 #include "Notice.h"
+#include "RunPar.h"
 #include "ThreadException.h"
 
 #include <atomic>
@@ -64,9 +65,10 @@ private:
     NoticeQ            noticeQ;           ///< Notice queue
     ThreadEx           threadEx;          ///< Internal thread exception
     SockAddr           lclSockAddr;       ///< Local (notice) socket address
-    const SysDuration  heartbeatInterval; ///< Time between heartbeats
+    const SysDuration  heartbeatInterval; ///< Time between heartbeats. <0 => no heartbeat.
     AtomicTime         lastSendTime;      ///< Time of last sending
     Thread             heartbeatThread;   ///< Thread on which heartbeats are sent
+    SegSize            maxSegSize;        ///< Size of a canonical data-segment
 
     /**
      * Exchanges information on the local and remote P2P servers.
@@ -139,8 +141,8 @@ private:
     }
 
     /**
-     * Handles the backlog of products missing from the remote peer. Meant to be the start-routine
-     * of a separate thread. Calls `setException()` on error.
+     * Runs a thread to handle the backlog of products missing from the remote peer. Calls
+     * `setException()` on error.
      *
      * @param[in] prodIds  Identifiers of complete products that the remote per has
      * @see notify()
@@ -150,24 +152,22 @@ private:
         try {
             // Products that the remote peer doesn't have
             const ProdIdSet missing = basePeerMgr.subtract(prodIds);
-            const auto      maxSegSize = DataSeg::getMaxSegSize();
 
             /*
-             * The regular P2P mechanism is used to notify the remote peer of products that it's
-             * missing
+             * The regular P2P mechanism is used to notify the remote peer of missing products.
              */
-            for (auto iter =  missing.begin(), end = missing.end(); iter != end; ++iter) {
+            for (auto iter = missing.begin(), end = missing.end(); iter != end; ++iter) {
                 const ProdId prodId = *iter;
-            //for (const auto prodId : missing) {
-                notify(prodId); // Hidden by Peer::notify()? Can't be; that function's pure virtual
+
+                notify(prodId);
 
                 /*
-                 * Making requests of the peer manager will count against this peer iff the peer
-                 * manager is the publisher's. This might cause this peer to be judged the worst
-                 * peer and, consequently, disconnected. If the local peer manager is a subscriber,
-                 * however, then this won't have that effect. This is a good thing because it's
-                 * better for the network if any backlogs are obtained from subscribers rather than
-                 * from the publisher, IMO.
+                 * If and only if this peer belongs to the publisher, then requesting data segments
+                 * from the peer manager will count against this peer. This might cause this peer to
+                 * be judged the worst peer and, consequently, disconnected. If this peer belongs to
+                 * a subscriber, however, then this won't have that effect. This is a good thing
+                 * because it's better for the network if any backlogs are obtained from subscribers
+                 * rather than from the publisher, IMO.
                  */
                 const auto prodInfo = basePeerMgr.getDatum(prodId, rmtSockAddr);
                 if (prodInfo) {
@@ -324,7 +324,7 @@ protected:
         LOG_ASSERT(!stateMutex.try_lock());
         startNoticeWriter();
         try {
-            if (heartbeatInterval > SysDuration(0))
+            if (heartbeatInterval.count() > 0)
                 heartbeatThread = Thread(&BasePeerImpl::runHeartbeat, this);
             try {
                 startConn();
@@ -390,15 +390,12 @@ public:
      *
      * @param[in] baseMgr            Base peer manager
      * @param[in] conn               Connection with remote peer
-     * @param[in] heartbeatInterval  Time between sending heartbeats to the remote peer. <0 => no
-     *                               heartbeat.
      * @throw SystemError            System failure
      * @throw RuntimeError           Couldn't exchange server information with remote peer
      */
     BasePeerImpl(
             BaseMgr&     baseMgr,
-            PeerConnPtr  conn,
-            const SysDuration heartbeatInterval)
+            PeerConnPtr  conn)
         : state(State::INIT)
         , stateMutex()
         , noticeMutex()
@@ -416,9 +413,10 @@ public:
         , rmtSockAddr(conn->getRmtAddr())
         , connected{true}
         , rmtSrvrInfo()
-        , heartbeatInterval(heartbeatInterval)
+        , heartbeatInterval(bicast::RunPar::heartbeatInterval)
         , lastSendTime(SysClock::now())
         , heartbeatThread()
+        , maxSegSize(RunPar::maxSegSize)
     {
         LOG_DEBUG("Constructing peer " + to_string());
 
@@ -704,14 +702,12 @@ public:
      * @param[in] pubMgr             Publisher's Peer manager
      * @param[in] conn               Connection with remote peer
      * @throw     RuntimeError       Lost connection
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @throw     InvalidArgument    Remote peer says it's a publisher but it can't be
      */
     PubPeerImpl(
-            PubMgr&           pubMgr,
-            PeerConnPtr       conn,
-            const SysDuration heartbeatInterval)
-        : BasePeerImpl(pubMgr, conn, heartbeatInterval)
+            PubMgr&     pubMgr,
+            PeerConnPtr conn)
+        : BasePeerImpl(pubMgr, conn)
     {
         if (isRmtPub())
             throw INVALID_ARGUMENT("Remote peer " + rmtSrvrInfo.srvrAddr.to_string() +
@@ -751,10 +747,9 @@ public:
 };
 
 PeerPtr Peer::create(
-        PubMgr&           pubPeerMgr,
-        PeerConnPtr       conn,
-        const SysDuration heartbeatInterval) {
-    return PeerPtr(new PubPeerImpl(pubPeerMgr, conn, heartbeatInterval));
+        PubMgr&     pubPeerMgr,
+        PeerConnPtr conn) {
+    return PeerPtr(new PubPeerImpl(pubPeerMgr, conn));
 }
 
 /**************************************************************************************************/
@@ -1065,16 +1060,14 @@ public:
      *
      * @param[in] subMgr             Subscriber's peer manager
      * @param[in] conn               Pointer to peer-connection
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @throw     LogicError         Destination port number is zero
      * @throw     SystemError        Couldn't connect. Bad failure.
      * @throw     RuntimeError       Couldn't connect. Might be temporary.
      */
     SubPeerImpl(
             SubMgr&           subMgr,
-            PeerConnPtr       conn,
-            const SysDuration heartbeatInterval)
-        : BasePeerImpl(subMgr, conn, heartbeatInterval)
+            PeerConnPtr       conn)
+        : BasePeerImpl(subMgr, conn)
         , subMgr(subMgr)
         , requested()
     {}
@@ -1208,10 +1201,9 @@ public:
 
 PeerPtr Peer::create(
         SubMgr&           subMgr,
-        PeerConnPtr&      conn,
-        const SysDuration heartbeatInterval) {
+        PeerConnPtr&      conn) {
     try {
-        return PeerPtr(new SubPeerImpl{subMgr, conn, heartbeatInterval});
+        return PeerPtr(new SubPeerImpl{subMgr, conn});
     }
     catch (const std::exception& ex) {
         LOG_WARN(ex, "Couldn't create peer for %s", conn->getRmtAddr().to_string().data());
@@ -1221,10 +1213,9 @@ PeerPtr Peer::create(
 
 PeerPtr Peer::create(
         SubMgr&           subMgr,
-        const SockAddr&   srvrAddr,
-        const SysDuration heartbeatInterval) {
+        const SockAddr&   srvrAddr) {
     auto conn = PeerConn::create(srvrAddr);
-    return Peer::create(subMgr, conn, heartbeatInterval);
+    return Peer::create(subMgr, conn);
 }
 
 /******************************************************************************/
@@ -1235,26 +1226,18 @@ template<typename PEER_MGR>
 class P2pSrvrImpl : public P2pSrvr<PEER_MGR>
 {
     PeerConnSrvrPtr peerConnSrvr;
-    SysDuration     heartbeatInterval; ///< Time interval between heartbeat packets
 
 public:
-    /// Constructs
-    P2pSrvrImpl(
-            const SockAddr    srvrAddr,
-            const unsigned    maxPendConn,
-            const SysDuration heartbeatInterval)
-        : peerConnSrvr(PeerConnSrvr::create(srvrAddr, maxPendConn))
-        , heartbeatInterval(heartbeatInterval)
+    /// Constructs from a peer-connection server.
+    P2pSrvrImpl(PeerConnSrvrPtr peerConnSrvr)
+        : peerConnSrvr(peerConnSrvr)
     {
         LOG_NOTE("Created P2P server " + to_string());
     }
 
-    /// Constructs
-    P2pSrvrImpl(
-            PeerConnSrvrPtr   peerConnSrvr,
-            const SysDuration heartbeatInterval)
-        : peerConnSrvr(peerConnSrvr)
-        , heartbeatInterval(heartbeatInterval)
+    /// Default constructs.
+    P2pSrvrImpl()
+        : P2pSrvrImpl(PeerConnSrvr::create())
     {}
 
     SockAddr getSrvrAddr() const override {
@@ -1274,7 +1257,7 @@ public:
     PeerPtr accept(PEER_MGR& peerMgr) override {
         auto peerConn = peerConnSrvr->accept();
         return peerConn
-                ? Peer::create(peerMgr, peerConn, heartbeatInterval)
+                ? Peer::create(peerMgr, peerConn)
                 : PeerPtr{};
     }
 
@@ -1291,26 +1274,13 @@ using PubP2pSrvrImpl = P2pSrvrImpl<Peer::PubMgr>; ///< Implementation of publish
 using SubP2pSrvrImpl = P2pSrvrImpl<Peer::SubMgr>; ///< Implementation of subscriber's P2P-server
 
 template<>
-PubP2pSrvrPtr PubP2pSrvr::create(
-        const SockAddr    srvrAddr,
-        const unsigned    maxPendConn,
-        const SysDuration heartbeatInterval) {
-    return PubP2pSrvrPtr{new PubP2pSrvrImpl(srvrAddr, maxPendConn, heartbeatInterval)};
+PubP2pSrvrPtr PubP2pSrvr::create() {
+    return PubP2pSrvrPtr{new PubP2pSrvrImpl()};
 }
 
 template<>
-SubP2pSrvrPtr SubP2pSrvr::create(
-        const PeerConnSrvrPtr peerConnSrvr,
-        const SysDuration heartbeatInterval) {
-    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr, heartbeatInterval)};
-}
-
-template<>
-SubP2pSrvrPtr SubP2pSrvr::create(
-        const SockAddr    srvrAddr,
-        const unsigned    maxPendConn,
-        const SysDuration heartbeatInterval) {
-    return SubP2pSrvrPtr{new SubP2pSrvrImpl(srvrAddr, maxPendConn, heartbeatInterval)};
+SubP2pSrvrPtr SubP2pSrvr::create(const PeerConnSrvrPtr peerConnSrvr) {
+    return SubP2pSrvrPtr{new SubP2pSrvrImpl(peerConnSrvr)};
 }
 
 } // namespace

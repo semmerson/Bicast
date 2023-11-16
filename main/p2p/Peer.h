@@ -195,13 +195,11 @@ public:
      *
      * @param[in] pubPeerMgr         Associated publisher's peer manager
      * @param[in] conn               Connection with remote peer
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @see       run()
      */
     static PeerPtr create(
-            PubMgr&           pubPeerMgr,
-            PeerConnPtr       conn,
-            const SysDuration heartbeatInterval);
+            PubMgr&     pubPeerMgr,
+            PeerConnPtr conn);
 
     /**
      * Returns a subscriber's server-side implementation. The resulting peer is fully connected and
@@ -209,13 +207,11 @@ public:
      *
      * @param[in] subPeerMgr         Associated subscriber's peer manager
      * @param[in] conn               Connection with remote peer
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @see       run()
      */
     static PeerPtr create(
-            SubMgr&           subPeerMgr,
-            PeerConnPtr&      conn,
-            const SysDuration heartbeatInterval);
+            SubMgr&      subPeerMgr,
+            PeerConnPtr& conn);
 
     /**
      * Returns a subscriber's client-side implementation. The resulting peer is fully connected and
@@ -223,7 +219,6 @@ public:
      *
      * @param[in] subPeerMgr         Associated subscriber's peer manager
      * @param[in] srvrAddr           Address of remote P2P-server
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @throw     LogicError         Destination port number is zero
      * @throw     SystemError        Couldn't connect. Bad failure.
      * @throw     RuntimeError       Couldn't connect. Might be temporary.
@@ -231,8 +226,7 @@ public:
      */
     static PeerPtr create(
             SubMgr&           subPeerMgr,
-            const SockAddr&   srvrAddr,
-            const SysDuration heartbeatInterval);
+            const SockAddr&   srvrAddr);
 
     virtual ~Peer() noexcept =default;
 
@@ -377,7 +371,7 @@ public:
      * @throw     LogicError  `start()` not yet called
      * @see       `start()`
      */
-    virtual void notify(const ProdId    prodId) =0;
+    virtual void notify(const ProdId prodId) =0;
     /**
      * Notifies the remote peer about an available data segment.
      * @param[in] dataSegId  ID of the data segment
@@ -488,25 +482,15 @@ class P2pSrvr
 public:
     /**
      * Returns a smart pointer to a new instance.
-     * @param[in] srvrAddr           Socket address for the server to use. Must not be the wildcard.
-     *                               A port number of 0 obtains a system chosen one.
-     * @param[in] maxPendConn        Maximum number of pending connections
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      * @throw InvalidArgument  Maximum number of pending connections size is zero
      */
-    static P2pSrvrPtr<P2P_MGR> create(
-            const SockAddr    srvrAddr,
-            const unsigned    maxPendConn,
-            const SysDuration heartbeatInterval);
+    static P2pSrvrPtr<P2P_MGR> create();
 
     /**
      * Returns a smart pointer to an instance.
      * @param[in] peerConnSrvr       Peer-connection server
-     * @param[in] heartbeatInterval  Time interval between heartbeat packets
      */
-    static P2pSrvrPtr<P2P_MGR> create(
-            const PeerConnSrvrPtr peerConnSrvr,
-            const SysDuration     heartbeatInterval);
+    static P2pSrvrPtr<P2P_MGR> create(const PeerConnSrvrPtr peerConnSrvr);
 
     virtual ~P2pSrvr() {};
 
