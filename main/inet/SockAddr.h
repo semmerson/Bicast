@@ -127,7 +127,7 @@ public:
      *                    - 192.168.0.1:2400
      *                    - [fe80::20c:29ff:fe6b:3bda]:34084
      *                  The colon and port number specification is optional. If it's not specified,
-     *                  then the optional argument is used.
+     *                  then the optional port-number argument is used.
      * @param[in] port  Optional port number in host byte-order. `0` obtains a system-chosen port
      *                  number.
      */
