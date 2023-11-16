@@ -2,9 +2,9 @@ set -e
 
 # Set base variables
 progName=`basename $0`
-numSubs=4
-blockSize=10000
-numBlocks=100
+numSubs=5
+segSize=50000
+numSegs=20
 numFiles=10
 #interface=192.168.58.141
 interface=127.0.0.1
@@ -32,12 +32,12 @@ trap "trap '' TERM; kill 0; exit" INT
 
 # Start the publisher
 echo "$progName: Starting publisher"
-../main/publish/publish -d 50000 -l NOTE -s $interface -r $pubRepo &
+../main/publish/publish -d $segSize -l INFO -s $interface -r $pubRepo &
 sleep 1 # Give the publisher time
 pubPid=$!
 
 # Start the subscribers
-logLevel=INFO
+logLevel=NOTE
 iSub=0; while test $((iSub++)) -lt $numSubs; do
     echo "$progName: Starting subscriber $iSub"
     ../main/subscribe/subscribe -l $logLevel -r ${subRepos[$iSub]} $interface &
@@ -53,7 +53,7 @@ inotifywait -mq -e moved_to ${subProds[*]} | ( \
     iFile=0; while test $((iFile++)) -lt $numFiles; do
         pubFile=$pubProds/$iFile
 #       echo "$progName: Creating file $pubFile"
-        dd ibs=$blockSize count=$numBlocks </dev/urandom >$pubFile 2>/dev/null
+        dd ibs=$segSize count=$numSegs </dev/urandom >$pubFile 2>/dev/null
         iSub=0; while test $((iSub++)) -lt $numSubs; do
 #           sleep 1
             read line
@@ -66,6 +66,7 @@ inotifywait -mq -e moved_to ${subProds[*]} | ( \
 )
 
 # Verify distribution of the files
+echo "$progName: Verifying distribution"
 iFile=0; while test $((iFile++)) -lt $numFiles; do
     iSub=0; while test $((iSub++)) -lt $numSubs; do
         # Compare file with original
