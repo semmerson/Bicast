@@ -353,7 +353,7 @@ public:
         struct tm tmStruct;
         ::gmtime_r(&secs, &tmStruct);
         char      iso8601[28]; // "YYYY-MM-DDThh:mm:ss.uuuuuuZ"
-        auto nbytes = ::strftime(iso8601, sizeof(iso8601), "%FT%T", &tmStruct);
+        auto nbytes = ::strftime(iso8601, sizeof(iso8601), "%Y%m%dT%H%M%S", &tmStruct);
         long usecs = std::chrono::duration_cast<std::chrono::microseconds>(
                 creationTime - SysClock::from_time_t(secs)).count();
         ::snprintf(iso8601+nbytes, sizeof(iso8601)-nbytes, ".%06ldZ", usecs);
