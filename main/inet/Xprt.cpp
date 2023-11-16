@@ -225,6 +225,21 @@ public:
     }
 
     /**
+     * Writes a system time-duration.
+     * @param[in] duration  The system time-duration to be written
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
+    bool write(const SysDuration& duration) {
+        union {
+            int64_t  int64;
+            uint64_t uint64;
+        } count;
+        count.int64 = duration.count();
+        return write(count.uint64);
+    }
+
+    /**
      * Flushes the underlying socket.
      * @retval    true     Success
      * @retval    false    Lost connection
@@ -331,6 +346,23 @@ public:
     }
 
     /**
+     * Reads a system time-duration.
+     * @param[in] duration  The system time-duration to be set
+     * @retval    true      Success. `time` is set.
+     * @retval    false     Lost connection
+     */
+    bool read(SysDuration& duration) {
+        union {
+            int64_t int64;
+            uint64_t uint64;
+        } count;
+        if (!read(count.uint64))
+            return false;
+        duration = SysDuration(count.int64);
+        return true;
+    }
+
+    /**
      * Clears the underlying socket for the next read. Does nothing for TCP. Deletes the datagram
      * for UDP.
      */
@@ -431,6 +463,9 @@ template bool Xprt::write<uint64_t>(const std::string& string) const;
 bool Xprt::write(const SysTimePoint& time) const {
     return pImpl->write(time);
 }
+bool Xprt::write(const SysDuration& duration) const {
+    return pImpl->write(duration);
+}
 
 bool Xprt::flush() const {
     return pImpl->flush();
@@ -468,6 +503,9 @@ template bool Xprt::read<uint32_t>(std::string& string) const;
 template bool Xprt::read<uint64_t>(std::string& string) const;
 bool Xprt::read(SysTimePoint& time) const {
     return pImpl->read(time);
+}
+bool Xprt::read(SysDuration& duration) const {
+    return pImpl->read(duration);
 }
 
 void Xprt::clear() const {

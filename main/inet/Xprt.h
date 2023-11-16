@@ -182,6 +182,14 @@ public:
      */
     bool write(const SysTimePoint& time) const;
 
+    /**
+     * Writes a system time-duration.
+     * @param[in] duration  The system time-duration to be written
+     * @retval    true      Success
+     * @retval    false     Lost connection
+     */
+    bool write(const SysDuration& duration) const;
+
     /// Flushes the output if possible.
     bool flush() const;
 
@@ -251,6 +259,14 @@ public:
      * @retval    false    Lost connection
      */
     bool read(SysTimePoint& time) const;
+
+    /**
+     * Reads a system time-duration.
+     * @param[in] duration  The system time-duration to be set
+     * @retval    true      Success. `time` is set.
+     * @retval    false     Lost connection
+     */
+    bool read(SysDuration& duration) const;
 
     /**
      * Prepares the transport for further input in case the underlying socket
