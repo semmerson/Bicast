@@ -47,10 +47,10 @@ public:
 
     /**
      * Returns a new instance.
-     * @param[in] pathTemplate  Template for pathname of files to hold information
-     * @throw SystemError       Couldn't create a necessary directory
+     * @param[in] path     Pathname of file to contain the time
+     * @throw SystemError  Couldn't create a necessary directory
      */
-    static LastProdPtr create(const String& pathTemplate);
+    static LastProdPtr create(const String& path);
 
     /// Destroys.
     virtual ~LastProd() =default;
