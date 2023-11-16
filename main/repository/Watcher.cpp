@@ -110,7 +110,7 @@ class Watcher::Impl final
         pollfd.fd = fd;
         pollfd.events = POLLIN;
 
-        if (::poll(&pollfd, 1, -1) == -1) // Blocks
+        if (::poll(&pollfd, 1, -1) == -1) // Blocks indefinitely
             throw SYSTEM_ERROR("poll() failure on file descriptor %d", fd);
         if (pollfd.revents & POLLHUP)
             return false; // EOF
@@ -133,23 +133,23 @@ class Watcher::Impl final
      * @throw SystemError   Couldn't read inotify(7) file-descriptor
      */
     bool readEvents() {
-        // if (hasInput(fd))
-        {
-            ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
+        if (!hasInput(fd))
+            return false;
 
-            if (nbytes == -1)
-                throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
+        ssize_t nbytes = ::read(fd, buf, sizeof(buf)); // Won't block
 
-            if (nbytes == 0) {
-                LOG_TRACE("EOF on inotify(7) file descriptor");
-                return false; // EOF
-            }
+        if (nbytes == -1)
+            throw SYSTEM_ERROR("Couldn't read inotify(7) file descriptor");
 
-            nextEvent = buf;
-            endEvent = buf + nbytes;
-
-            return true;
+        if (nbytes == 0) {
+            LOG_TRACE("EOF on inotify(7) file descriptor");
+            return false; // EOF
         }
+
+        nextEvent = buf;
+        endEvent = buf + nbytes;
+
+        return true;
     }
 
     /**
