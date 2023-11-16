@@ -122,9 +122,9 @@ LastProdPtr LastProd::create()
     return LastProdPtr(new DummyLastProd());
 }
 
-LastProdPtr LastProd::create(const String& pathTemplate)
+LastProdPtr LastProd::create(const String& path)
 {
-    return LastProdPtr(new LastProdImpl(pathTemplate));
+    return LastProdPtr(new LastProdImpl(path));
 }
 
 } // namespace
