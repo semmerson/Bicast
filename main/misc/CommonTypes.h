@@ -102,6 +102,9 @@ namespace std {
     using namespace bicast;
 
     string to_string(const SysTimePoint& timePoint);
+    string to_string(const SysDuration& duration);
+    ostream& operator<<(ostream& ostream, const SysTimePoint&);
+    ostream& operator<<(ostream& ostream, const SysDuration&);
 }
 
 #endif /* MAIN_MISC_COMMONTYPES_H_ */

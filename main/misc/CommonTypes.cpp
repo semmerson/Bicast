@@ -44,4 +44,19 @@ string to_string(const SysTimePoint& timePoint) {
     return iso8601;
 }
 
+/// Returns the string representation of a system time-duration
+string to_string(const SysDuration& duration) {
+    return std::to_string(duration.count()*sysClockRatio) + " s";
+}
+
+/// Encodes a system time-point to an output stream.
+ostream& operator<<(ostream& ostream, const SysTimePoint& time) {
+    return ostream << to_string(time);
+}
+
+/// Encodes a system duration to an output stream.
+ostream& operator<<(ostream& ostream, const SysDuration& dur) {
+    return ostream << to_string(dur);
+}
+
 } // namespace
