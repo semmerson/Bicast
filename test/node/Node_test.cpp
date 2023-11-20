@@ -60,19 +60,12 @@ protected:
     char                      prodData[PROD_SIZE];
     bool                      prodRcvd;
     const String              testRoot;
-    const String              pubRoot;
-    const String              subRoot;
-    const long                maxOpenFiles;
     const SockAddr            mcastAddr;
     const InetAddr            ifaceAddr;
     const SockAddr            pubP2pAddr;
     const SockAddr            subP2pAddr;
-    const int                 listenSize;
-    const unsigned            maxPeers;
-    int                       numPeers;
     ThreadEx                  threadEx;
     SubInfo                   subInfo;
-    String                    feedName;
     SubNodePtr                subNodePtr;
 
     NodeTest()
@@ -82,20 +75,13 @@ protected:
         , prodData{}
         , prodRcvd(false)
         , testRoot("/tmp/Node_test")
-        , pubRoot(testRoot + "/pub")
-        , subRoot(testRoot + "/sub")
-        , maxOpenFiles(25)
         , mcastAddr("232.1.1.1:3880")
         //, ifaceAddr{"192.168.58.139"} // Causes PDU reception via P2P only
         , ifaceAddr{"127.0.0.1"}        // Causes PDU reception via P2P & multicast
         , pubP2pAddr{ifaceAddr, 0}
         , subP2pAddr{ifaceAddr, 0}
-        , listenSize{0}
-        , maxPeers{3}
-        , numPeers{0}
         , threadEx()
         , subInfo()
-        , feedName("Node_test_feed")
         , subNodePtr()
     {
         RunPar::maxSegSize = SEG_SIZE;
