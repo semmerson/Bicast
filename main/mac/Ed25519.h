@@ -18,7 +18,6 @@
  */
 class Ed25519 final
 {
-protected:
     EVP_PKEY*   pKey;   ///< Public/private key-pair
     EVP_MD_CTX* mdCtx;  ///< Message digest context
     std::string pubKey; ///< Public key
@@ -27,19 +26,21 @@ public:
     using Signature = char[64]; ///< Ed25519 signature
 
     /**
-     * Default constructs. This constructor is appropriate for digital signers.
+     * Default constructs. A public/private key pair is internally generated. The public key is
+     * returned by `getPubKey()`. This constructor is appropriate for digital signers.
      *
      * @throw std::runtime_error  Failure
+     * @see getPubKey()
      */
     Ed25519();
 
     /**
-     * Constructs from a public-key returned by `getPubKey()`. This constructor
-     * is appropriate for verifiers.
+     * Constructs from a public-key in the form returned by `getPubKey()`. This constructor is
+     * appropriate for verifiers.
      *
      * @param[in] pubKey          Public-key
      * @throw std::runtime_error  Failure
-     * @see getPubKey();
+     * @see getPubKey()
      */
     Ed25519(const std::string& pubKey);
 
@@ -72,8 +73,8 @@ public:
     Ed25519& operator=(const Ed25519&& rhs) =delete;
 
     /**
-     * Returns a printable version of the public key in a form suitable for
-     * construction by `Ed25519(std::string&)`.
+     * Returns a printable version of the public key in a form suitable for construction by
+     * `Ed25519(std::string&)`.
      *
      * @return                    Public key
      * @throw std::runtime_error  Failure
