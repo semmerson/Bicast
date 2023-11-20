@@ -106,6 +106,8 @@ protected:
         RunPar::mcastIface = ifaceAddr;
         RunPar::mcastDstAddr = mcastAddr;
         RunPar::mcastSrcAddr = ifaceAddr;
+        RunPar::pubRoot = FileUtil::pathname(testRoot, "pubRoot");
+        RunPar::subRoot = FileUtil::pathname(testRoot, "subRoot");
 
         subInfo.mcast.dstAddr = mcastAddr;
         subInfo.mcast.srcAddr = ifaceAddr;
