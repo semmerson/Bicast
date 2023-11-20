@@ -294,29 +294,33 @@ void FileUtil::rmDirTree(const String& dirPath)
 
     if (dir) {
         try {
-            struct dirent  entry;
-            struct dirent* result;
-            int            status;
+            for (;;) {
+                errno = 0; // readdir() returns nullptr & doesn't change errno upon end-of-directory
+                const auto entry = readdir(dir);
 
-            while ((status = ::readdir_r(dir, &entry, &result)) == 0 && result != nullptr) {
-                const char* name = entry.d_name;
+                if (entry == nullptr) {
+                    if (errno)
+                        throw SYSTEM_ERROR("Couldn't read directory \"" + dirPath + "\"");
+                    break;
+                }
 
-                if (::strcmp(".", name) && ::strcmp("..", name)) {
-                    const String  subName = dirPath + "/" + name;
-                    struct ::stat statBuf;
+                const String name(entry->d_name);
 
-                    getStat(subName, statBuf, false); // Don't follow symbolic links
+                if (name == "." || name == "..")
+                    continue;
 
-                    if (S_ISDIR(statBuf.st_mode)) {
-                        rmDirTree(subName);
-                    }
-                    else if (::unlink(subName.data())) {
-                        throw SYSTEM_ERROR("Couldn't delete file \"" + subName + "\"");
-                    }
+                const String  subName = dirPath + "/" + name;
+                struct ::stat statBuf;
+
+                getStat(subName, statBuf, false); // Don't follow symbolic links
+
+                if (S_ISDIR(statBuf.st_mode)) {
+                    rmDirTree(subName);
+                }
+                else if (::unlink(subName.data())) {
+                    throw SYSTEM_ERROR("Couldn't delete file \"" + subName + "\"");
                 }
             }
-            if (status && status != ENOENT)
-                throw SYSTEM_ERROR("Couldn't read directory \"" + dirPath + "\"");
 
             ::closedir(dir);
             dir = nullptr;
@@ -330,7 +334,7 @@ void FileUtil::rmDirTree(const String& dirPath)
             }
         } // `dir` is set
         catch (...) {
-            if (dir != nullptr)
+            if (dir)
                 ::closedir(dir);
             throw;
         }

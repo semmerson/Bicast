@@ -337,18 +337,24 @@ protected:
         try {
             maybeWatch(absPathParent);
 
-            struct dirent  entry;
-            struct dirent* result;
-            int            status;
-            size_t         numAdded = 0;
+            size_t numAdded = 0;
 
-            while ((status = ::readdir_r(dir, &entry, &result)) == 0 && result != nullptr) {
-                const String childFileName(entry.d_name);
+            for (;;) {
+                errno = 0; // readdir() returns nullptr & doesn't change errno upon end-of-directory
+                const auto entry = readdir(dir);
+
+                if (entry == nullptr) {
+                    if (errno)
+                        throw SYSTEM_ERROR("Couldn't read directory \"" + absPathParent + "\"");
+                    break;
+                }
+
+                const String childFileName(entry->d_name);
 
                 if (childFileName == "." || childFileName == "..")
                     continue;
 
-                const String absPathChild = FileUtil::pathname(absPathParent, childFileName);
+                const auto absPathChild = FileUtil::pathname(absPathParent, childFileName);
                 ensurePrivate(absPathChild);
 
                 struct ::stat statBuf;
@@ -363,12 +369,10 @@ protected:
                         ++numAdded;
                 }
             }
-            if (status && status != ENOENT)
-                throw SYSTEM_ERROR("Couldn't read directory \"" + absPathParent + "\"");
-
-            ::closedir(dir);
 
             LOG_DEBUG("Files added=" + std::to_string(numAdded));
+
+            ::closedir(dir);
         } // `dir` is initialized
         catch (...) {
             ::closedir(dir);
