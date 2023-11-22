@@ -62,13 +62,14 @@ static void usage()
 "    -h                  Print this help message on standard error, then exit.\n"
 "    -i <retryInterval>  Seconds to wait after a receiving session terminates\n"
 "                        due to a non-fatal error before retrying. Default is " <<
-                         std::to_string(RunPar::retryInterval) << ".\n"
+                         std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                                 RunPar::retryInterval).count()) << ".\n"
 "    -l <logLevel>       Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                        \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                        insensitive and takes effect immediately. Default is\n"
 "                        \"" << RunPar::logLevel << "\".\n"
-"    -r <subRoot>        Pathname of subscriber's root-directory. Default is \"" <<
-                         RunPar::subRoot << "\".\n"
+"    -r <subRoot>        Pathname of subscriber's root-directory. Default is\n"
+"                        \"" << RunPar::subRoot << "\".\n"
 "  Peer-to-Peer:\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
 "                        poorest performer. Default is " << RunPar::peerEvalInterval << ".\n"
