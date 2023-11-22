@@ -100,8 +100,8 @@ static void usage()
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
 "                      \"" << RunPar::logLevel << "\".\n"
-"    -r <pubRoot>      Pathname of publisher's root-directory. Default is \"" <<
-                       RunPar::pubRoot << "\".\n"
+"    -r <pubRoot>      Pathname of publisher's root-directory. Default is\n"
+"                      \"" << RunPar::pubRoot << "\".\n"
 "    -t <trackerCap>   Maximum number of P2P servers to track. Default is " <<
                        RunPar::trackerCap << ".\n"
 "  Publisher's Server:\n"
@@ -132,8 +132,9 @@ static void usage()
 "    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << RunPar::p2pSrvrQSize << ".\n"
 "  Repository:\n"
-"    -k <keepTime>     How long to keep data-products. Default is\n" <<
-"                      " << std::to_string(RunPar::prodKeepTime) << ".\n"
+"    -k <keepTime>     Number of seconds to keep data-products. Default is\n" <<
+"                      " << std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+                       RunPar::prodKeepTime).count()) << ".\n"
 "    -o <maxOpenFiles> Maximum number of open repository files. Default is " <<
                        RunPar::maxOpenProds << ".\n"
 "\n"
