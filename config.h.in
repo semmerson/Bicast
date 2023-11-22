@@ -1,5 +1,5 @@
 /**
- *  @file:  config-cmake.h
+ *  @file:  config.h.in
  * @author: Steven R. Emmerson
  *
  *    Copyright 2021 University Corporation for Atmospheric Research
