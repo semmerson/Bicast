@@ -777,7 +777,7 @@ class PubRepo::Impl final : public Repository::Impl, public Watcher::Client
         //LOG_DEBUG("Cancelling watch thread " + threadId);
         const auto status = ::pthread_cancel(nativeHandle);
         if (status)
-            LOG_SYSERR("pthread_cancel() failure: %s", ::strerror(errno));
+            LOG_ERROR("pthread_cancel() failure: %s", ::strerror(status));
         //LOG_DEBUG("Joining watch thread " + threadId);
         watchThread.join();
         //LOG_DEBUG("Joined watch thread " + threadId);
