@@ -49,7 +49,7 @@ private:
         LOG_DEBUG("Cancelling thread " + std::to_string(threadHandle));
         const auto status = ::pthread_cancel(threadHandle);
         if (status)
-            LOG_SYSERR("Couldn't cancel thread " + std::to_string(threadHandle) + ": " +
+            LOG_ERROR("Couldn't cancel thread " + std::to_string(threadHandle) + ": " +
                     ::strerror(status));
     }
 
