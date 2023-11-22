@@ -41,7 +41,7 @@ using namespace bicast;
 
 /// Runtime parameters common to both publisher and subscriber:
 SysDuration heartbeatInterval; ///< Time interval between heartbeat packets. <0 => no heartbeat
-String     logLevel;           ///< Initial logging level
+String      logLevel;          ///< Initial logging level
 int         maxNumPeers;       ///< Maximum number of neighboring peers
 unsigned    maxOpenProds;      ///< Maximum number of product-files to keep open
 SockAddr    p2pSrvrAddr;       ///< Address of the P2P server
@@ -77,7 +77,7 @@ void init(
     logLevel = "NOTE";
     log_setLevel(logLevel);
     maxNumPeers = 8;
-    maxOpenProds = _SC_OPEN_MAX/2;
+    maxOpenProds = ::sysconf(_SC_OPEN_MAX)/2;
     p2pSrvrAddr = SockAddr();
     p2pSrvrQSize = 8;
     peerEvalInterval = SysDuration(std::chrono::minutes(5));
