@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Set the project name and version
-PROJECT(Bicast VERSION 0.0 DESCRIPTION "Combined multicast/P2P protocol & data-distribution system")
+PROJECT(bicast VERSION 0.0 DESCRIPTION "Combined multicast/P2P protocol & file-distribution system")
 
 ## Include gRPC in the build
 #option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
@@ -92,15 +92,20 @@ include(InstallRequiredSystemLibraries)
 
 set(CPACK_PACKAGE_CONTACT "Steven Emmerson <emmerson@ucar.edu>")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
-set(CPACK_PACKAGING_INSTALL_PREFIX "/${PROJECT_NAME}-${PROJECT_VERSION}/")
+#set(CPACK_PACKAGING_INSTALL_PREFIX "/${PROJECT_NAME}-${PROJECT_VERSION}")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
 set(CPACK_PACKAGE_VENDOR "University Corporation for Atmospheric Research")
 
-SET(CPACK_DEBIAN_PACKAGE_DEPENDS "yaml-cpp-dev openssl11-dev")
+#SET(CPACK_DEBIAN_PACKAGE_DEPENDS "yaml-cpp openssl11")
 SET(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CMAKE_HOST_SYSTEM_PROCESSOR}")
 
 SET(CPACK_RPM_PACKAGE_LICENSE "Apache 2.0")
-SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp-devel openssl11-devel")
+#SET(CPACK_RPM_PACKAGE_REQUIRES "yaml-cpp openssl11")
 SET(CPACK_RPM_PACKAGE_PROVIDES "publish(1), subscribe(1)")
 
 set(CPACK_GENERATOR DEB STGZ RPM) # RPM needs yum(1)-compatible UPC software repository
 include(CPack)
+
+# Configure deployment and testing
+configure_file(deploy.sh deploy)
+configure_file(uni15-test.sh uni15-test)
