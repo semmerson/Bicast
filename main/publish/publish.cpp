@@ -87,6 +87,7 @@ static void usage()
     std::cerr <<
 "Usage:\n"
 "    " << log_getName() << " -h\n"
+"    " << log_getName() << " -i [options]\n"
 "    " << log_getName() << " [options]\n"
 "Options:\n"
 "  General:\n"
@@ -96,6 +97,8 @@ static void usage()
                        RunPar::maxSegSize << ".\n"
 "    -f <name>         Name of data-product feed. Default is \"" << RunPar::feedName << "\".\n"
 "    -h                Print this help message on standard error, then exit.\n"
+"    -i                Initialize only and then terminate. Default is to\n"
+"                      initialize and then execute.\n"
 "    -l <logLevel>     Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
@@ -248,7 +251,7 @@ static void setRunPars(
     try {
         opterr = 0;    // 0 => getopt() won't write to `stderr`
         int c;
-        while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:k:m:P:Q:r:s:")) != -1)
+        while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:ik:m:P:Q:r:s:")) != -1)
         {
             switch (c) {
                 // Common options:
@@ -277,6 +280,10 @@ static void setRunPars(
                 }
                 case 'f': {
                     RunPar::feedName = String(optarg);
+                    break;
+                }
+                case 'i': {
+                    RunPar::initializeOnly = true;
                     break;
                 }
                 case 'k': {
@@ -474,33 +481,39 @@ int main(const int    argc,
         setRunPars(argc, argv);
         initDerived();
 
-        if (::sem_init(&stopSem, 0, 0) == -1)
-                throw SYSTEM_ERROR("Couldn't initialize semaphore");
-
-        setSigHandling(); // Catches termination signals
-
         tracker = Tracker(RunPar::trackerCap); // Create the tracker
 
-        //LOG_DEBUG("Starting server thread");
-        auto serverThread = Thread(&runServer);
+        Thread serverThread;
+        if (!RunPar::initializeOnly) {
+            //LOG_DEBUG("Starting server thread");
+            serverThread = Thread(&runServer);
+        }
 
         pubNode = PubNode::create(tracker);
-        //LOG_DEBUG("Starting node thread");
-        auto nodeThread = Thread(&runNode);
 
-        //LOG_DEBUG("Waiting on semaphore");
-        ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
-        ::sem_destroy(&stopSem);
+        if (!RunPar::initializeOnly) {
+            if (::sem_init(&stopSem, 0, 0) == -1)
+                    throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
-        //LOG_DEBUG("Canceling server thread");
-        ::pthread_cancel(serverThread.native_handle());
-        //LOG_DEBUG("Halting node");
-        pubNode->halt(); // Idempotent
+            setSigHandling(); // Catches termination signals
 
-        //LOG_DEBUG("Joining server thread");
-        serverThread.join();
-        //LOG_DEBUG("Joining node thread");
-        nodeThread.join();
+            //LOG_DEBUG("Starting node thread");
+            auto nodeThread = Thread(&runNode);
+
+            //LOG_DEBUG("Waiting on semaphore");
+            ::sem_wait(&stopSem); // Returns if failure on a thread or termination signal
+            ::sem_destroy(&stopSem);
+
+            //LOG_DEBUG("Canceling server thread");
+            ::pthread_cancel(serverThread.native_handle());
+            //LOG_DEBUG("Halting node");
+            pubNode->halt(); // Idempotent
+
+            //LOG_DEBUG("Joining server thread");
+            serverThread.join();
+            //LOG_DEBUG("Joining node thread");
+            nodeThread.join();
+        }
 
         //LOG_DEBUG("Throwing exception if set");
         threadEx.throwIfSet(); // Throws if failure on a thread

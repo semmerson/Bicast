@@ -32,6 +32,7 @@ namespace bicast {
 namespace RunPar {
 
 /// Command-line parameters common to both publisher and subscriber:
+extern bool        initializeOnly;    ///< Initialize only: do not execute
 extern SysDuration heartbeatInterval; ///< Time interval between heartbeat packets. <0 => no heartbeat
 extern String      logLevel;          ///< Logging level
 extern int         maxNumPeers;       ///< Maximum number of neighboring peers

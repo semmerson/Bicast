@@ -40,6 +40,7 @@ namespace RunPar {
 using namespace bicast;
 
 /// Runtime parameters common to both publisher and subscriber:
+bool        initializeOnly;    ///< Initialize only: do not execute
 SysDuration heartbeatInterval; ///< Time interval between heartbeat packets. <0 => no heartbeat
 String      logLevel;          ///< Initial logging level
 int         maxNumPeers;       ///< Maximum number of neighboring peers
@@ -71,6 +72,7 @@ void init(
         const int          argc,
         const char* const* argv)
 {
+    initializeOnly = false;
     pubRoot = String("./pubRoot");
     subRoot = String("./subRoot");
     heartbeatInterval = SysDuration(std::chrono::seconds(30));
