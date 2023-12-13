@@ -469,22 +469,6 @@ private:
 
 public:
     /**
-     * Sets the maximum size of a data-segment.
-     *
-     * @param[in] maxSegSize       Maximum data-segment size in bytes
-     * @return                     Previous value
-     * @throw     InvalidArgument  Argument is not positive
-     */
-    static SegSize setMaxSegSize(const SegSize maxSegSize) noexcept;
-
-    /**
-     * Gets the maximum size of a data-segment.
-     *
-     * @return  Maximum size of a data-segment in bytes
-     */
-    static SegSize getMaxSegSize() noexcept;
-
-    /**
      * Returns the size of a given data-segment.
      *
      * @param[in] prodSize  Size of the data-product in bytes

@@ -185,15 +185,20 @@ class RpcImpl final : public Rpc
                 connected = processNotice<P2pSrvrInfo>(xprt, peer, "P2P-server");
                 break;
             }
-            case PduId::PREVIOUSLY_RECEIVED: {
-                ProdIdSet prodIds{0};
-                auto connected = prodIds.read(xprt);
-                if (connected)
-                    peer.recvHaveProds(prodIds);
+            case PduId::HEARTBEAT: {
+                connected = true;
                 break;
             }
 
             // Requests:
+
+            case PduId::PREVIOUSLY_RECEIVED: {
+                ProdIdSet prodIds{0};
+                connected = prodIds.read(xprt);
+                if (connected)
+                    peer.recvHaveProds(prodIds);
+                break;
+            }
 
             case PduId::DATA_SEG_REQUEST: {
                 connected = processRequest<DataSegId>(xprt, peer, "data-segment");
@@ -212,13 +217,6 @@ class RpcImpl final : public Rpc
             }
             case PduId::PROD_INFO: {
                 connected = processData<ProdInfo>(xprt, peer, "product information");
-                break;
-            }
-
-            // Heartbeat:
-
-            case PduId::HEARTBEAT: {
-                connected = true;
                 break;
             }
 

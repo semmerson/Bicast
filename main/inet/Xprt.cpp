@@ -37,7 +37,7 @@ namespace bicast {
 /// An implementation of a transport
 class Xprt::Impl
 {
-    const Socket              sock;              ///< Underlying socket
+    const Socket  sock;  ///< Underlying socket
 
     inline bool hton(const bool value) {
         return value;

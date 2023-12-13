@@ -355,7 +355,7 @@ protected:
                     continue;
 
                 const auto absPathChild = FileUtil::pathname(absPathParent, childFileName);
-                ensurePrivate(absPathChild);
+                //ensurePrivate(absPathChild);
 
                 struct ::stat statBuf;
                 FileUtil::getStat(prodDirFd, absPathChild, statBuf, true); // Follow symlinks

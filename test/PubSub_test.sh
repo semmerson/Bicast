@@ -48,7 +48,7 @@ done
 
 # Create and distribute the files
 echo "$progName: Creating files"
-inotifywait -mq -e moved_to ${subProds[*]} | ( \
+inotifywait -mq -e moved_to ${subProds[*]} | (
     sleep 1 # Give inotifywait(1) time
     iFile=0; while test $((iFile++)) -lt $numFiles; do
         pubFile=$pubProds/$iFile

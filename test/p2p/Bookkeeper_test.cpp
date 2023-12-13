@@ -3,6 +3,7 @@
 #include "Bookkeeper.h"
 #include "logging.h"
 #include "P2pMgr.h"
+#include "RunPar.h"
 
 #include <condition_variable>
 #include <gtest/gtest.h>
@@ -30,7 +31,7 @@ protected:
         , rmtAddr1("localhost:38801")
         , rmtAddr2("localhost:38802")
     {
-        DataSeg::setMaxSegSize(maxSegSize);
+        RunPar::maxSegSize = maxSegSize;
     }
 
     ~BookkeeperTest() {

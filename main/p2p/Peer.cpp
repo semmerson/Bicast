@@ -126,7 +126,7 @@ private:
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            setException();
+            exceptionThrown();
         }
     }
 
@@ -153,6 +153,9 @@ private:
             // Products that the remote peer doesn't have
             const ProdIdSet missing = basePeerMgr.subtract(prodIds);
 
+            LOG_INFO(rmtSockAddr.to_string() + " is missing " + std::to_string(missing.size()) +
+                    " products");
+
             /*
              * The regular P2P mechanism is used to notify the remote peer of missing products.
              */
@@ -172,14 +175,14 @@ private:
                 const auto prodInfo = basePeerMgr.getDatum(prodId, rmtSockAddr);
                 if (prodInfo) {
                     const auto prodSize = prodInfo.getSize();
-                    for (SegSize offset = 0; offset < prodSize; offset += maxSegSize)
+                    for (ProdSize offset = 0; offset < prodSize; offset += maxSegSize)
                         notify(DataSegId(prodId, offset));
                 }
             }
         }
         catch (const std::exception& ex) {
             log_error(ex);
-            setException();
+            exceptionThrown();
         }
     }
 
@@ -189,17 +192,22 @@ protected:
     SockAddr           rmtSockAddr; ///< Remote socket address
     std::atomic<bool>  connected;   ///< Connected to remote peer?
     P2pSrvrInfo        rmtSrvrInfo; ///< Information on the remote peer's P2P-server
+    std::atomic<bool>  logged;      ///< Lost connection has been logged?
 
-    /// Sets the disconnected flag
-    void setDisconnected() noexcept
-    {
-        connected = false;
+    /// Handles the connection being lost
+    void connectionLost() {
+        bool expected = false;
+        if (logged.compare_exchange_strong(expected, true)) {
+            connected = false;
+            LOG_INFO("Peer " + to_string() + " lost its connection");
+        }
         ::sem_post(&stopSem);
     }
 
-    /// Sets the exception thrown on an internal thread to the current exception.
-    void setException()
+    /// Handles an internal thread throwing the current exception.
+    void exceptionThrown()
     {
+        LOG_INFO("Peer " + to_string() + " threw an exception");
         threadEx.set();
         ::sem_post(&stopSem);
     }
@@ -254,10 +262,10 @@ protected:
                 }
             }
 
-            setDisconnected();
+            connectionLost();
         }
         catch (const std::exception& ex) {
-            setException();
+            exceptionThrown();
         }
         LOG_TRACE("Terminating");
     }
@@ -290,10 +298,10 @@ protected:
     void runConn() {
         try {
             peerConnPtr->run(*this);
-            setDisconnected();
+            connectionLost();
         }
         catch (const std::exception& ex) {
-            setException();
+            exceptionThrown();
         }
     }
 
@@ -413,6 +421,7 @@ public:
         , rmtSockAddr(conn->getRmtAddr())
         , connected{true}
         , rmtSrvrInfo()
+        , logged{false}
         , heartbeatInterval(bicast::RunPar::heartbeatInterval)
         , lastSendTime(SysClock::now())
         , heartbeatThread()
@@ -574,7 +583,7 @@ public:
     }
 
     void halt() override {
-        LOG_TRACE("Called");
+        LOG_INFO("Peer " + to_string() + " is being halted");
         ::sem_post(&stopSem);
     }
 
@@ -655,8 +664,7 @@ public:
                 resetHeartbeat();
             }
             else {
-                LOG_INFO("Peer " + to_string() + " is disconnected");
-                ::sem_post(&stopSem);
+                connectionLost();
             }
         }
     }
@@ -675,8 +683,7 @@ public:
                 resetHeartbeat();
             }
             else {
-                LOG_INFO("Peer " + to_string() + " is disconnected");
-                ::sem_post(&stopSem);
+                connectionLost();
             }
         }
     }
@@ -989,23 +996,23 @@ class SubPeerImpl final : public BasePeerImpl
     RequestQ       requested;   ///< Requests sent to remote peer
 
     /**
-     * Requests the backlog of data that this instance missed from the remote peer.
+     * Requests the backlog of data that this instance has missed from the remote peer.
      */
     void requestBacklog() {
         const auto prodIds = subMgr.getProdIds(); // All complete products
-        if (prodIds.size()) {
-            /**
-             * Informing the remote peer of data this instance doesn't know about is impossible;
-             * therefore, the remote peer is informed of data that this instance has, which will
-             * cause the remote peer to notify this instance of data that it has but that this
-             * instance doesn't.
-             */
-            if (connected = peerConnPtr->request(prodIds)) {
-                resetHeartbeat();
-            }
-            else {
-                ::sem_post(&stopSem);
-            }
+        /**
+         * Informing the remote peer of data this instance doesn't know about is impossible;
+         * therefore, the remote peer is informed of data that this instance has, which will
+         * cause the remote peer to notify this instance of data that the remote peer has but that
+         * this instance doesn't.
+         */
+        if ((connected = peerConnPtr->request(prodIds))) {
+            resetHeartbeat();
+            LOG_INFO("Peer " + to_string() + " sent " + std::to_string(prodIds.size()) +
+                    " IDs of existing products");
+        }
+        else {
+            connectionLost();
         }
     }
 
@@ -1082,13 +1089,13 @@ public:
             Guard guard{stateMutex}; // To keep `requested` consistent
             requested.push(Request{prodId});
         }
-        if (connected = peerConnPtr->request(prodId)) {
+        if ((connected = peerConnPtr->request(prodId))) {
             //LOG_TRACE("Peer %s requested information on product %s", to_string().data(),
                     //prodId.to_string().data());
             resetHeartbeat();
         }
         else {
-            ::sem_post(&stopSem);
+            connectionLost();
         }
     }
     void request(const DataSegId& segId) override {
@@ -1097,13 +1104,13 @@ public:
             Guard guard{stateMutex}; // To keep `requested` consistent
             requested.push(Request{segId});
         }
-        if (connected = peerConnPtr->request(segId)) {
+        if ((connected = peerConnPtr->request(segId))) {
             //LOG_TRACE("Peer %s requested information on data-segment %s", to_string().data(),
                     //segId.to_string().data());
             resetHeartbeat();
         }
         else {
-            ::sem_post(&stopSem);
+            connectionLost();
         }
     }
 

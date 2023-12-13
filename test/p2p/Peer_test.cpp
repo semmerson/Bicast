@@ -25,17 +25,19 @@ protected:
         INIT = 0,
         LISTENING             =    0x1,
         SRVR_INFO_RCVD        =    0x2,
-        SRVR_INFO_NOTICE_RCVD =    0x8,
-        PROD_NOTICE_RCVD      =   0x10,
-        SEG_NOTICE_RCVD       =   0x20,
-        PROD_REQUEST_RCVD     =   0x40,
-        SEG_REQUEST_RCVD      =   0x80,
-        PROD_INFO_RCVD        =  0x100,
-        DATA_SEG_RCVD         =  0x200,
-        PROD_INFO_MISSED      =  0x400,
-        DATA_SEG_MISSED       =  0x800
+        SRVR_INFO_NOTICE_RCVD =    0x4,
+        PROD_IDS_REQUESTED    =    0x8,
+        EXTANT_PROD_IDS_RCVD  =   0x10,
+        PROD_NOTICE_RCVD      =   0x20,
+        SEG_NOTICE_RCVD       =   0x40,
+        PROD_REQUEST_RCVD     =   0x80,
+        SEG_REQUEST_RCVD      =  0x100,
+        PROD_INFO_RCVD        =  0x200,
+        DATA_SEG_RCVD         =  0x400,
+        PROD_INFO_MISSED      =  0x800,
+        DATA_SEG_MISSED       = 0x1000
     } State;
-    State             state;
+    mutable State     state;
     SockAddr          pubAddr;
     SockAddr          subAddr;
     Tracker           pubTracker;
@@ -43,8 +45,8 @@ protected:
     P2pSrvrInfo       pubSrvrInfo;
     P2pSrvrInfo       subSrvrInfo;
     Thread::id        subThreadId; // ID of thread on which subscribing peer is created
-    std::mutex        mutex;
-    Cond              cond;
+    mutable std::mutex mutex;
+    mutable Cond      cond;
     ProdId            prodIds[2];
     ProdId            prodId;
     ProdSize          prodSize;
@@ -97,7 +99,7 @@ protected:
         , numTrackerRcvd(0)
     {
         RunPar::p2pSrvrQSize = 8;
-        DataSeg::setMaxSegSize(sizeof(memData));
+        RunPar::maxSegSize = sizeof(memData);
         String prodNames[] = {"product1", "product2"};
 
         ::memset(memData, 0xbd, segSize);
@@ -122,7 +124,7 @@ public:
         cond.notify_one();
     }
 
-    void orState(const State state) {
+    void orState(const State state) const {
         std::lock_guard<decltype(mutex)> guard{mutex};
         this->state = static_cast<State>(this->state | state);
         cond.notify_all();
@@ -148,11 +150,13 @@ public:
     void run() {};
     void halt() {};
 
-    ProdIdSet subtract(ProdIdSet rhs) const override {
+    ProdIdSet getProdIds() const override {
+        orState(PROD_IDS_REQUESTED);
         return ProdIdSet{};
     }
 
-    ProdIdSet getProdIds() const override {
+    ProdIdSet subtract(ProdIdSet rhs) const override {
+        orState(EXTANT_PROD_IDS_RCVD);
         return ProdIdSet{};
     }
 
@@ -279,6 +283,7 @@ public:
 // Tests default construction
 TEST_F(PeerTest, DefaultConstruction)
 {
+    LOG_NOTE("DefaultConstruction:");
     PeerPtr peer{};
     EXPECT_FALSE(peer);
 }
@@ -286,6 +291,7 @@ TEST_F(PeerTest, DefaultConstruction)
 // Tests premature stopping
 TEST_F(PeerTest, PrematureStop)
 {
+    LOG_NOTE("PrematureStop:");
     // Create and execute publishing-peer on separate thread
     PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
@@ -346,6 +352,7 @@ TEST_F(PeerTest, PrematureDtor)
 // Tests data exchange
 TEST_F(PeerTest, DataExchange)
 {
+    LOG_NOTE("DataExchange:");
     // Create and execute a publishing-peer on a separate thread
     PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
@@ -381,6 +388,8 @@ TEST_F(PeerTest, DataExchange)
         auto done = static_cast<State>(
                 LISTENING |
                 SRVR_INFO_RCVD |
+                PROD_IDS_REQUESTED |
+                EXTANT_PROD_IDS_RCVD |
                 PROD_NOTICE_RCVD |
                 SEG_NOTICE_RCVD |
                 PROD_REQUEST_RCVD |
@@ -407,6 +416,7 @@ TEST_F(PeerTest, DataExchange)
 // Tests broken connection
 TEST_F(PeerTest, BrokenConnection)
 {
+    LOG_NOTE("BrokenConnection:");
     // Create and execute reception by publishing peer on separate thread
     PeerPtr pubPeer{};
     std::thread srvrThread(&PeerTest::startPubPeer, this, std::ref(pubPeer));
@@ -450,6 +460,7 @@ TEST_F(PeerTest, BrokenConnection)
 // Tests unsatisfied requests
 TEST_F(PeerTest, UnsatisfiedRequests)
 {
+    LOG_NOTE("UnsatisfiedRequests:");
     skipping = true;
 
     // Create and execute reception by publishing peer on separate thread
@@ -482,6 +493,8 @@ TEST_F(PeerTest, UnsatisfiedRequests)
             const auto done = static_cast<State>(
                 LISTENING |
                 SRVR_INFO_RCVD |
+                PROD_IDS_REQUESTED |
+                EXTANT_PROD_IDS_RCVD |
                 PROD_NOTICE_RCVD |
                 SEG_NOTICE_RCVD |
                 PROD_REQUEST_RCVD |
@@ -533,7 +546,7 @@ static void myTerminate()
 int main(int argc, char **argv) {
   RunPar::init(argc, argv);
   log_setName(::basename(argv[0]));
-  log_setLevel(LogLevel::INFO);
+  log_setLevel(LogLevel::NOTE);
 
   std::set_terminate(&myTerminate);
 

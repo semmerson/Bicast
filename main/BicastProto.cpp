@@ -23,6 +23,7 @@
 #include "BicastProto.h"
 
 #include "error.h"
+#include "logging.h"
 #include "Xprt.h"
 
 #include <chrono>
@@ -157,11 +158,13 @@ public:
      * @retval    false    Connection lost
      */
     bool write(Xprt& xprt) const {
-        if (!xprt.write(static_cast<uint32_t>(prodIds.size())))
+        uint32_t size = prodIds.size();
+        if (!xprt.write(size))
             return false;
-        for (auto iter = prodIds.begin(), end = prodIds.end(); iter != end; ++iter)
+        for (auto iter = prodIds.begin(), end = prodIds.end(); iter != end; ++iter, --size)
             if (!iter->write(xprt))
                 return false;
+        LOG_ASSERT(size == 0);
         return true;
     }
 
@@ -177,7 +180,7 @@ public:
             return false;
         prodIds.clear();
         prodIds.reserve(size);
-        for (uint32_t i; i < size; ++i) {
+        while (size--) {
             ProdId prodId;
             if (!prodId.read(xprt))
                 return false;

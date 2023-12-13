@@ -77,7 +77,7 @@ protected:
         , memData()
         , dataSeg()
     {
-        DataSeg::setMaxSegSize(sizeof(memData));
+        RunPar::maxSegSize = sizeof(memData);
         ::memset(memData, 0xbd, sizeof(memData));
 
         dataSeg = DataSeg(segId, prodSize, memData);

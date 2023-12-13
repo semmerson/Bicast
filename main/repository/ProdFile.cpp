@@ -27,6 +27,7 @@
 #include "error.h"
 #include "logging.h"
 #include "FileUtil.h"
+#include "RunPar.h"
 #include "Shield.h"
 
 #include <fcntl.h>
@@ -123,10 +124,10 @@ protected:
      */
     void vet(const ProdSize offset) const {
         // Following order works for zero segment-size
-        if ((offset >= prodSize) || (offset % DataSeg::getMaxSegSize()))
+        if ((offset >= prodSize) || (offset % RunPar::maxSegSize))
             throw INVALID_ARGUMENT("Invalid offset: {offset: " +
                     std::to_string(offset) + ", segSize: " +
-                    std::to_string(DataSeg::getMaxSegSize()) + ", prodSize: " +
+                    std::to_string(RunPar::maxSegSize) + ", prodSize: " +
                     std::to_string(prodSize) + "}");
     }
 

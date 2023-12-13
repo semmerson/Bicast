@@ -107,5 +107,5 @@ set(CPACK_GENERATOR DEB STGZ RPM) # RPM needs yum(1)-compatible UPC software rep
 include(CPack)
 
 # Configure deployment and testing
-configure_file(deploy.sh deploy)
-configure_file(uni15-test.sh uni15-test)
+configure_file(deploy.sh deploy @ONLY)
+configure_file(uni15-test.sh uni15-test @ONLY)

@@ -436,9 +436,7 @@ public:
         , repo(FileUtil::pathname(RunPar::pubRoot, "products"), lastTransmission->recall())
         , maxSegSize{RunPar::maxSegSize}
         , senderThread()
-    {
-        DataSeg::setMaxSegSize(maxSegSize);
-    }
+    {}
 
     ~PubNodeImpl() noexcept {
         //LOG_DEBUG("Publisher-node being destroyed");
@@ -676,7 +674,7 @@ public:
         , mcastSub{McastSub::create(subInfo.mcast.dstAddr, subInfo.mcast.srcAddr, this)}
         , client(client)
     {
-        DataSeg::setMaxSegSize(subInfo.maxSegSize);
+        RunPar::maxSegSize = subInfo.maxSegSize;
     }
 
     ~SubNodeImpl() noexcept {

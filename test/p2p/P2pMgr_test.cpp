@@ -96,7 +96,7 @@ protected:
         RunPar::maxSegSize = SEG_SIZE;
         RunPar::peerEvalInterval = std::chrono::minutes(1);
         RunPar::p2pSrvrQSize = 5;
-        DataSeg::setMaxSegSize(SEG_SIZE);
+        RunPar::maxSegSize = SEG_SIZE;
         int i = 0;
         for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {
             auto str = std::to_string(i++);

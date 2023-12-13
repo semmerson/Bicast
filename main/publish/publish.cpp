@@ -80,14 +80,15 @@ static PubNodePtr        pubNode;       ///< Data-product publishing node
 static SubInfo           subInfo;       ///< Subscription information passed to subscribers
 static Tracker           tracker;       ///< Tracks P2P servers. Shared with publisher's node.
 
-static constexpr int DEF_PORT = 38800;  ///< Default port number for many things
+/// Default port number for the publisher's server and the multicast group
+static constexpr int DEF_PORT = 38800;
 
 static void usage()
 {
     std::cerr <<
 "Usage:\n"
 "    " << log_getName() << " -h\n"
-"    " << log_getName() << " -i [options]\n"
+"    " << log_getName() << " -I [options]\n"
 "    " << log_getName() << " [options]\n"
 "Options:\n"
 "  General:\n"
@@ -97,7 +98,7 @@ static void usage()
                        RunPar::maxSegSize << ".\n"
 "    -f <name>         Name of data-product feed. Default is \"" << RunPar::feedName << "\".\n"
 "    -h                Print this help message on standard error, then exit.\n"
-"    -i                Initialize only and then terminate. Default is to\n"
+"    -I                Initialize only and then terminate. Default is to\n"
 "                      initialize and then execute.\n"
 "    -l <logLevel>     Logging level. <level> is \"FATAL\", \"ERROR\", \"WARN\",\n"
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
@@ -251,7 +252,7 @@ static void setRunPars(
     try {
         opterr = 0;    // 0 => getopt() won't write to `stderr`
         int c;
-        while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:ik:m:P:Q:r:s:")) != -1)
+        while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:Ik:m:P:Q:r:s:")) != -1)
         {
             switch (c) {
                 // Common options:
@@ -282,7 +283,7 @@ static void setRunPars(
                     RunPar::feedName = String(optarg);
                     break;
                 }
-                case 'i': {
+                case 'I': {
                     RunPar::initializeOnly = true;
                     break;
                 }
@@ -411,7 +412,7 @@ static void runSubRequest(Xprt xprt)
         if (!subTracker.read(xprt))
             throw RUNTIME_ERROR("Couldn't receive tracker from subscriber " +
                     xprt.getRmtAddr().to_string());
-        LOG_INFO("Received tracker " + subTracker.to_string() + " from subscriber" +
+        LOG_INFO("Received tracker " + subTracker.to_string() + " from subscriber " +
                 xprt.getRmtAddr().to_string());
 
         // Ensure that the publisher's tracker contains current information on the publisher's P2P
@@ -526,7 +527,7 @@ int main(const int    argc,
         status = 1;
     }
     catch (const std::exception& ex) {
-        LOG_FATAL(ex.what());
+        LOG_FATAL(ex);
         status = 2;
     }
     LOG_NOTE("Exiting with status %d", status);

@@ -94,11 +94,11 @@ protected:
         RunPar::mcastSrcAddr = ifaceAddr;
         RunPar::pubRoot = FileUtil::pathname(testRoot, "pubRoot");
         RunPar::subRoot = FileUtil::pathname(testRoot, "subRoot");
+        RunPar::maxSegSize = SEG_SIZE;
 
         subInfo.mcast.dstAddr = mcastAddr;
         subInfo.mcast.srcAddr = ifaceAddr;
-        subInfo.maxSegSize = SEG_SIZE;
-        DataSeg::setMaxSegSize(SEG_SIZE);
+        subInfo.maxSegSize = RunPar::maxSegSize;
         FileUtil::rmDirTree(testRoot);
         int i = 0;
         for (ProdSize offset = 0; offset < PROD_SIZE; offset += SEG_SIZE) {

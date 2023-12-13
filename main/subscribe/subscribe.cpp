@@ -3,7 +3,7 @@
  * Program to subscribe to data-products via Bicast.
  *
  * @section Legal
- * @copyright 2022 University Corporation for Atmospheric Research
+ * @copyright 2023 University Corporation for Atmospheric Research
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  * in compliance with the License. You may obtain a copy of the License at
@@ -73,7 +73,7 @@ static void usage()
 "  Peer-to-Peer:\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
 "                        poorest performer. Default is " << RunPar::peerEvalInterval << ".\n"
-"    -p <p2pAddr>        Internet address for local P2P server Must not be\n"
+"    -p <p2pAddr>        Internet address for local P2P server. Must not be\n"
 "                        wildcard. Default is IP address of interface used to\n"
 "                        connect to publisher.\n"
 "    -n <maxPeers>       Maximum number of connected peers. Default is " << RunPar::maxNumPeers
@@ -285,15 +285,15 @@ static void subscribe(
         SockAddr  p2pSrvrAddr,
         SubInfo&  subInfo)
 {
-    // Keep consonant with `publish.cpp:servSubscriber()`
+    // Keep consonant with `publish.cpp:runSubRequest()`
 
-    Xprt xprt{TcpClntSock(RunPar::pubSrvrAddr)}; // RAII object
+    Xprt xprt{TcpClntSock(RunPar::pubSrvrAddr)}; // RAII transport with publisher
 
     LOG_INFO("Created publisher-transport " + xprt.to_string());
 
     P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (RunPar::maxNumPeers+1)/2};
 
-    // Ensure that tracker to be sent contains local P2P server information
+    // Send local P2P server information to publisher
     if (!subP2pSrvrInfo.write(xprt))
         throw RUNTIME_ERROR("Couldn't send P2P server information " + subP2pSrvrInfo.to_string() +
                 " to publisher " + RunPar::pubSrvrAddr.to_string());
@@ -311,7 +311,7 @@ static void subscribe(
 
     subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
     subTracker = subInfo.tracker;              // Update official tracker
-    DataSeg::setMaxSegSize(subInfo.maxSegSize);
+    RunPar::maxSegSize = subInfo.maxSegSize;
 
     /**
      * The interface that's used to receive the multicast is the same interface that would be used
@@ -420,10 +420,8 @@ static void trySession()
     RunPar::mcastDstAddr = subInfo.mcast.dstAddr;
     RunPar::mcastSrcAddr = subInfo.mcast.srcAddr;
     RunPar::prodKeepTime = subInfo.keepTime;
-    RunPar::maxSegSize   = subInfo.maxSegSize;
 
     subTracker.insert(subInfo.tracker);        // Update tracker
-    DataSeg::setMaxSegSize(RunPar::maxSegSize);
 
     /**
      * The interface that's used to receive the multicast is the same interface that would be used
@@ -448,13 +446,13 @@ static void trySession()
         if (threadEx)
             LOG_DEBUG("Internal thread threw exception");
         threadEx.throwIfSet(); // Throws if failure on a thread
+
+        printMetrics(subNode);
     } // Disposer started
     catch (const std::exception& ex) {
         LOG_DEBUG(ex);
         throw;
     }
-
-    printMetrics(subNode);
 }
 
 /**

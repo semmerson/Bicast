@@ -1,8 +1,9 @@
 /**
  * @file PeerConn.cpp
- * The connection between two peers.
- * Interfaces between a Peer and the Rpc layer by hiding the number of socket connections and
- * threads from both.
+ * A thread-safe connection between two peers.
+ * Interfaces between a Peer and the Rpc layer. Abstracts the number of connections and threads from
+ * both. Uses mutexes to manage concurrent writes to a transport. Reads from a transport occur on a
+ * single thread, so concurrency management isn't necessary.
  *
  *  Created on: Apr 25, 2023
  *      Author: Steven R. Emmerson
@@ -47,6 +48,9 @@ using XprtArray = std::array<Xprt, 3>; ///< Type of transport array for a connec
  */
 class PeerConnImpl : public PeerConn
 {
+    Mutex              noticeMutex;   ///< Mutex for writing to the notice transport
+    Mutex              requestMutex;  ///< Mutex for writing to the request transport
+    Mutex              dataMutex;     ///< Mutex for writing to the data transport
     const bool         iAmClient;     ///< This instance initiated the connection?
     /*
      * If a single transport is used for asynchronous communication and reading and writing occur on
@@ -202,16 +206,18 @@ class PeerConnImpl : public PeerConn
     }
 
     /**
-     * Reads and processes RPC messages from the remote peer. Doesn't return until either the
-     * connection is lost or an exception is thrown. Meant to be the start routine of a separate
-     * thread.
+     * Runs a thread on which RPC messages are read from a transport with the remote peer and passed
+     * to the local peer for handling. Doesn't return until either the connection is lost or an
+     * exception is thrown.
      *
      * @param[in] xprt   Transport
      * @param[in] peer   Peer to call for incoming messages
+     * @param[in] name   Name of the connection
      */
     void runReader(
-            Xprt& xprt,
-            Peer& peer) {
+            Xprt&   xprt,
+            Peer&   peer,
+            String  name) {
         // TODO: Make the priority of this thread greater than the multicast sending thread
         try {
             LOG_TRACE("Executing reader");
@@ -219,10 +225,12 @@ class PeerConnImpl : public PeerConn
             while (rpcPtr->recv(xprt, peer))
                 ;
             // Connection lost
+            LOG_DEBUG(name + " connection " + to_string() + " was lost");
             ::sem_post(&stopSem);
         }
         catch (const std::exception& ex) {
             threadEx.set();
+            LOG_DEBUG(name + " connection " + to_string() + " threw an exception");
             ::sem_post(&stopSem);
         }
     }
@@ -231,13 +239,14 @@ class PeerConnImpl : public PeerConn
      * Starts the internal threads.
      */
     void startThreads(Peer& peer) {
-        noticeReader = Thread(&PeerConnImpl::runReader, this, std::ref(noticeXprt), std::ref(peer));
+        noticeReader = Thread(&PeerConnImpl::runReader, this, std::ref(noticeXprt), std::ref(peer),
+                String("Notice"));
         try {
             requestReader = Thread(&PeerConnImpl::runReader, this, std::ref(requestXprt),
-                    std::ref(peer));
+                    std::ref(peer), String("Request"));
             try {
                 dataReader = Thread(&PeerConnImpl::runReader, this, std::ref(dataXprt),
-                        std::ref(peer));
+                        std::ref(peer), String("Data"));
             }
             catch (const std::exception& ex) {
                 requestXprt.shutdown();
@@ -270,7 +279,10 @@ class PeerConnImpl : public PeerConn
      * Default constructs.
      */
     PeerConnImpl(const bool iAmClient)
-        : iAmClient(iAmClient)
+        : noticeMutex()
+        , requestMutex()
+        , dataMutex()
+        , iAmClient(iAmClient)
         , noticeXprt()
         , requestXprt()
         , dataXprt()
@@ -331,18 +343,8 @@ public:
         return "{lcl=" + lclSockAddr.to_string() + ", rmt=" + rmtSockAddr.to_string() + "}";
     }
 
-    bool send(const P2pSrvrInfo& srvrInfo) override {
-        LOG_DEBUG("Sending P2P server information " + srvrInfo.to_string());
-        return srvrInfo.write(noticeXprt);
-    }
-
-    bool send(const Tracker& tracker) override {
-        LOG_DEBUG("Sending tracker " + tracker.to_string());
-        return tracker.write(noticeXprt);
-    }
-
     bool recv(P2pSrvrInfo& srvrInfo) override {
-        if (srvrInfo.read(noticeXprt)) {
+        if (srvrInfo.read(noticeXprt)) { // NB: Bypasses RPC layer. See send(P2pSrvrInfo&)
             LOG_DEBUG("Received P2P server information " + srvrInfo.to_string());
             return true;
         }
@@ -350,7 +352,7 @@ public:
     }
 
     bool recv(Tracker& tracker) override {
-        if (tracker.read(noticeXprt)) {
+        if (tracker.read(noticeXprt)) { // NB: Bypasses RPC layer. See send(Tracker&)
             LOG_DEBUG("Received tracker " + tracker.to_string());
             return true;
         }
@@ -368,49 +370,75 @@ public:
     }
 
     void halt() override {
+        LOG_DEBUG("Connection " + to_string() + " is being halted");
         ::sem_post(&stopSem);
     }
 
-    // Notices:
+    // Writes to the notice transport:
+
+    bool send(const P2pSrvrInfo& srvrInfo) override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending P2P server information " + srvrInfo.to_string());
+        return srvrInfo.write(noticeXprt); // NB: Bypasses RPC layer. See recv(P2pSrvrInfo&)
+    }
+
+    bool send(const Tracker& tracker) override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending tracker " + tracker.to_string());
+        return tracker.write(noticeXprt); // NB: Bypasses RPC layer. See recv(Tracker&)
+    }
 
     bool notify(const P2pSrvrInfo& srvrInfo) override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending P2P server information " + srvrInfo.to_string());
         return rpcPtr->notify(noticeXprt, srvrInfo);
     }
 
     bool notify(const ProdId& prodId) override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending product ID " + prodId.to_string());
         return rpcPtr->notify(noticeXprt, prodId);
     }
 
     bool notify(const DataSegId& dataSegId) override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending data-segment ID " + dataSegId.to_string());
         return rpcPtr->notify(noticeXprt, dataSegId);
     }
 
-    // Requests:
+    bool sendHeartbeat() override {
+        Guard guard{noticeMutex};
+        LOG_DEBUG("Sending heartbeat");
+        return rpcPtr->sendHeartbeat(noticeXprt);
+    }
+
+    // Writes to the request transport:
+
+    bool request(const ProdIdSet& prodIds) override {
+        Guard guard{requestMutex};
+        return rpcPtr->request(requestXprt, prodIds);
+    }
 
     bool request(const ProdId& prodId) override {
+        Guard guard{requestMutex};
         return rpcPtr->request(requestXprt, prodId);
     }
 
     bool request(const DataSegId& dataSegId) override {
+        Guard guard{requestMutex};
         return rpcPtr->request(requestXprt, dataSegId);
     }
 
-    bool request(const ProdIdSet& prodIds) override {
-        return rpcPtr->request(requestXprt, prodIds);
-    }
-
-    // Data:
+    // Writes to the data transport:
 
     bool send(const ProdInfo& prodInfo) override {
+        Guard guard{dataMutex};
         return rpcPtr->send(dataXprt, prodInfo);
     }
 
     bool send(const DataSeg& dataSeg) override {
+        Guard guard{dataMutex};
         return rpcPtr->send(dataXprt, dataSeg);
-    }
-
-    bool sendHeartbeat() override {
-        return rpcPtr->sendHeartbeat(noticeXprt);
     }
 };
 

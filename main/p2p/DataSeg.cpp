@@ -4,25 +4,24 @@
  *  @file:  DataSeg.cpp
  * @author: Steven R. Emmerson <emmerson@ucar.edu>
  *
- *    Copyright 2021 University Corporation for Atmospheric Research
+ *    Copyright 2023 University Corporation for Atmospheric Research
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
  */
 
 #include "config.h"
 
 #include "BicastProto.h"
 #include "error.h"
+#include "RunPar.h"
 #include "Socket.h"
 #include "Xprt.h"
 
@@ -34,36 +33,12 @@ namespace bicast {
 /// An implementation of a data segment
 class DataSeg::Impl
 {
-    static std::atomic<SegSize> maxSegSize; ///< Maximum data-segment size in bytes
-
 public:
     DataSegId   segId;    ///< Data-segment identifier
     /// Product size in bytes (for when product notice is missed)
     ProdSize    prodSize;
     SegSize     bufSize;  ///< Size of buffer in bytes
     char*       buf;      ///< buffer for data
-
-    /**
-     * Sets the maximum size, in bytes, of a data segment. All segments except the last will be this
-     * size.
-     * @param[in] maxSegSize  Maximum size of a data segment
-     * @return                The previous maximum segment size
-     */
-    static SegSize setMaxSegSize(const SegSize maxSegSize) {
-        if (maxSegSize <= 0)
-            throw INVALID_ARGUMENT("Argument is not positive: " + std::to_string(maxSegSize));
-        SegSize prev = Impl::maxSegSize;
-        Impl::maxSegSize = maxSegSize;
-        return prev;
-    }
-
-    /**
-     * Returns the maximum size of a data segment.
-     * @return The maximum size of a data segment
-     */
-    static SegSize getMaxSegSize() {
-        return maxSegSize;
-    }
 
     /**
      * Returns the expected size of a data segment.
@@ -75,9 +50,9 @@ public:
             const ProdSize  prodSize,
             const SegOffset offset) noexcept {
         const auto nbytes = prodSize - offset;
-        return (nbytes <= maxSegSize)
+        return (nbytes <= RunPar::maxSegSize)
                 ? nbytes
-                : static_cast<SegSize>(maxSegSize);
+                : RunPar::maxSegSize;
     }
 
     /**
@@ -86,7 +61,7 @@ public:
      * @return              The number of data segments in the product
      */
     static ProdSize numSegs(const ProdSize prodSize) noexcept {
-        return (prodSize + (maxSegSize - 1)) / maxSegSize;
+        return (prodSize + (RunPar::maxSegSize - 1)) / RunPar::maxSegSize;
     }
 
     /**
@@ -95,7 +70,7 @@ public:
      * @return            The origin-0 index of the data segment
      */
     static ProdSize getSegIndex(const ProdSize offset) {
-        return offset/maxSegSize;
+        return offset/RunPar::maxSegSize;
     }
 
     Impl()
@@ -232,17 +207,7 @@ public:
     }
 };
 
-std::atomic<SegSize> DataSeg::Impl::maxSegSize; ///< Maximum data-segment size in bytes
-
 /******************************************************************************/
-
-SegSize DataSeg::setMaxSegSize(const SegSize maxSegSize) noexcept {
-    return Impl::setMaxSegSize(maxSegSize);
-}
-
-SegSize DataSeg::getMaxSegSize() noexcept {
-    return Impl::getMaxSegSize();
-}
 
 SegSize DataSeg::size(
         const ProdSize  prodSize,

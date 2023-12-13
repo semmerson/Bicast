@@ -68,7 +68,7 @@ protected:
         , dataSeg(segId, prodSize, memData)
         , lastReceived{LastProd::create()} // Dummy lastProd object
     {
-        DataSeg::setMaxSegSize(sizeof(memData));
+        RunPar::maxSegSize = sizeof(memData);
         FileUtil::rmDirTree(testDir);
         FileUtil::ensureDir(FileUtil::dirname(filePath));
 

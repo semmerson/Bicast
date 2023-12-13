@@ -26,6 +26,7 @@
 #include "error.h"
 #include "FileUtil.h"
 #include "BicastProto.h"
+#include "RunPar.h"
 
 #include <cassert>
 #include <fcntl.h>
@@ -67,7 +68,7 @@ protected:
         , memData{}
         , memSeg{segId, prodSize, memData}
     {
-        DataSeg::setMaxSegSize(segSize);
+        RunPar::maxSegSize = segSize;
         FileUtil::rmDirTree(rootPath);
         FileUtil::ensureDir(rootPath, 0777);
 
