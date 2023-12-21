@@ -51,6 +51,7 @@ SysDuration peerEvalInterval;  ///< Time interval for evaluating peer performanc
 String      progName;          ///< Program name
 SockAddr    pubSrvrAddr;       ///< Address of publisher's server (not its P2P server)
 int         trackerCap;        ///< Maximum number of potential P2P servers to track & exchange
+bool        natTraversal;      ///< Whether or not to attempt NAT traversal
 
 /// Publisher-specific runtime parameters:
 String      pubRoot;           ///< Pathname of the root-directory
@@ -67,6 +68,7 @@ InetAddr    mcastIface;        ///< Internet address of interface for receiving 
 String      disposeConfig;     ///< Pathname of configuration-file for disposition of products
 SysDuration p2pTimeout;        ///< Timeout for connecting to remote P2P servers
 SysDuration retryInterval;     ///< Time to wait before re-connecting to publisher
+in_port_t   natPort;           ///< Port number of NAT device for P2P server. 0 => not NATed
 
 void init(
         const int          argc,
@@ -86,6 +88,8 @@ void init(
     progName = FileUtil::filename(argv[0]);
     pubSrvrAddr = SockAddr();
     trackerCap = 1000;
+    natTraversal = false;
+    natPort = 0; // Subscriber's P2P server isn't NATed
 }
 
 void setFromYaml(const String& pathname)
@@ -108,6 +112,10 @@ void setFromYaml(const String& pathname)
                 if (node3)
                     p2pSrvrAddr = SockAddr(node3.as<String>());
                 Parser::tryDecode<decltype(p2pSrvrQSize)>(node2, "maxPending", p2pSrvrQSize);
+
+                node3 = node2["natPort"];
+                if (node3)
+                    natPort = SockAddr(node3.as<in_port_t>());
             }
 
             Parser::tryDecode<decltype(maxNumPeers)>(node1, "maxPeers", maxNumPeers);

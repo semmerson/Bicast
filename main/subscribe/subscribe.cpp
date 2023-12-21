@@ -73,9 +73,12 @@ static void usage()
 "  Peer-to-Peer:\n"
 "    -e <evalTime>       Peer evaluation duration, in seconds, before replacing\n"
 "                        poorest performer. Default is " << RunPar::peerEvalInterval << ".\n"
-"    -p <p2pAddr>        Internet address for local P2P server. Must not be\n"
-"                        wildcard. Default is IP address of interface used to\n"
-"                        connect to publisher.\n"
+"    -p <p2pAddr>        Socket address for local P2P server. IP address must not\n"
+"                        be wildcard. Acceptable forms are:\n"
+"                            <inetAddr>[:<port>]    Default port chosen by O/S\n"
+"                            [<inetAddr>]:<port>    Default IP address is that of\n"
+"                                                   interface used to connect to\n"
+"                                                   publisher\n"
 "    -n <maxPeers>       Maximum number of connected peers. Default is " << RunPar::maxNumPeers
                          << ".\n"
 "    -q <maxPending>     Maximum number of pending connections to P2P server.\n"
@@ -271,55 +274,98 @@ static void setException()
 }
 
 /**
+ * Traverses a NAT device if necessary. If the given socket address is local to an internal LAN,
+ * then the NAT-capable Internet Gateway Device (IGD) is discovered, an entry for the internal
+ * socket address is added to the IGD's NAT table, and the corresponding external socket address is
+ * returned.
+ * @param[in] srvrAddr  Possible internal (i.e, LAN) socket address
+ * @return              Corresponding external socket address. Will be the same as `srvrAddr` if
+ *                      that address isn't behind a NAT device.
+ */
+static SockAddr traverseIfNatted(const SockAddr& srvrAddr) {
+    throw LOGIC_ERROR("NAT traversal isn't supported yet");
+}
+
+/**
+ * Removes a NAT entry. Does nothing if the entry doesn't exist.
+ * @param[in] srvrAddr  Internal socket address of the entry
+ */
+static void removeNatEntry(const SockAddr& srvrAddr) {
+    throw LOGIC_ERROR("NAT traversal isn't supported yet");
+}
+
+/**
  * Subscribes to a feed.
  *   - Connects to the publisher's server; and
  *   - Obtains subscription information.
- * @param[in]  p2pSrvrAddr  Socket address of the local P2P server
- * @param[out] subInfo      Subscription information
- * @throw RuntimeError      Couldn't connect to publisher's server at this time
- * @throw RuntimeError      Couldn't send to publisher
- * @throw SystemError       System failure
+ * @param[in]  p2pSrvrAddr        Socket address of the local P2P server
+ * @param[out] subInfo            Subscription information
+ * @param[out] externP2pSrvrAddr  External address of the local P2P server. Will be the same as
+ *                                `p2pSrvrAddr` iff NAT-traversal isn't enabled or the server isn't
+ *                                behind a NAT device.
+ * @throw RuntimeError            Couldn't connect to publisher's server at this time
+ * @throw RuntimeError            Couldn't send to publisher
+ * @throw SystemError             System failure
  * @see publish.cpp:servSubscriber()
  */
 static void subscribe(
-        SockAddr  p2pSrvrAddr,
-        SubInfo&  subInfo)
+        const SockAddr  p2pSrvrAddr,
+        SubInfo&        subInfo,
+        SockAddr&       externP2pSrvrAddr)
 {
     // Keep consonant with `publish.cpp:runSubRequest()`
 
+    // Create a transport with the publisher
     Xprt xprt{TcpClntSock(RunPar::pubSrvrAddr)}; // RAII transport with publisher
-
     LOG_INFO("Created publisher-transport " + xprt.to_string());
 
-    P2pSrvrInfo subP2pSrvrInfo{p2pSrvrAddr, (RunPar::maxNumPeers+1)/2};
+    // Obtain the external socket address of the local P2P server
+    externP2pSrvrAddr = RunPar::natTraversal // Requires user permission
+            ? p2pSrvrAddr
+            : traverseIfNatted(p2pSrvrAddr);
 
-    // Send local P2P server information to publisher
-    if (!subP2pSrvrInfo.write(xprt))
-        throw RUNTIME_ERROR("Couldn't send P2P server information " + subP2pSrvrInfo.to_string() +
-                " to publisher " + RunPar::pubSrvrAddr.to_string());
+    try {
+        // Create information on the local P2P server
+        P2pSrvrInfo subP2pSrvrInfo{externP2pSrvrAddr, (RunPar::maxNumPeers+1)/2};
 
-    if (!subTracker.write(xprt))
-        throw RUNTIME_ERROR("Couldn't send tracker " + subTracker.to_string() + " to publisher " +
+        // Send information on the local P2P server to the publisher
+        if (!subP2pSrvrInfo.write(xprt))
+            throw RUNTIME_ERROR("Couldn't send P2P server information " + subP2pSrvrInfo.to_string()
+                    + " to publisher " + RunPar::pubSrvrAddr.to_string());
+
+        // Send local tracker information to the publisher
+        if (!subTracker.write(xprt))
+            throw RUNTIME_ERROR("Couldn't send tracker " + subTracker.to_string() + " to publisher "
+                    + RunPar::pubSrvrAddr.to_string());
+        LOG_DEBUG("Sent tracker " + subTracker.to_string() + " to publisher " +
                 RunPar::pubSrvrAddr.to_string());
-    LOG_DEBUG("Sent tracker " + subTracker.to_string() + " to publisher " +
-            RunPar::pubSrvrAddr.to_string());
 
-    if (!subInfo.read(xprt))
-        throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
-                RunPar::pubSrvrAddr.to_string());
-    LOG_NOTE("Received subscription information " + subInfo.to_string());
+        // Receive subscription information from the publisher
+        if (!subInfo.read(xprt))
+            throw RUNTIME_ERROR("Couldn't receive subscription information from publisher " +
+                    RunPar::pubSrvrAddr.to_string());
+        LOG_NOTE("Received subscription information " + subInfo.to_string());
 
-    subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
-    subTracker = subInfo.tracker;              // Update official tracker
-    RunPar::maxSegSize = subInfo.maxSegSize;
+        // Integrate the subscription information
+        subInfo.tracker.insert(subTracker);        // Good if `subTracker` has fewer entries
+        subTracker = subInfo.tracker;              // Update official tracker
+        RunPar::maxSegSize = subInfo.maxSegSize;
 
-    /**
-     * The interface that's used to receive the multicast is the same interface that would be used
-     * to send to the multicast source.
-     */
-    RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
-    //LOG_DEBUG("Set interface for multicast reception to " +
-            //runPar.mcastIface.to_string());
+        /*
+         * The interface that's used to receive the multicast is the same interface that would be
+         * used to send to the multicast source.
+         */
+        RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
+        //LOG_DEBUG("Set interface for multicast reception to " +
+                //runPar.mcastIface.to_string());
+    } // A NAT entry might exist
+    catch (const std::exception& ex) {
+        if (externP2pSrvrAddr != p2pSrvrAddr) {
+            // Remove the NAT entry for the P2P server
+            removeNatEntry(p2pSrvrAddr);
+        }
+        throw;
+    }
 }
 
 /**
@@ -408,49 +454,58 @@ static void printMetrics(SubNodePtr subNode)
  */
 static void trySession()
 {
-    // Create peer-connection server
+    // Create peer-connection server for the local P2P server
     auto peerConnSrvr = PeerConnSrvr::create();
 
     // Use the address of the peer-connection server because port number might have been 0
     SubInfo subInfo; // Subscription information
-    subscribe(peerConnSrvr->getSrvrAddr(), subInfo);
-
-    RunPar::feedName     = subInfo.feedName;
-    RunPar::maxSegSize   = subInfo.maxSegSize;
-    RunPar::mcastDstAddr = subInfo.mcast.dstAddr;
-    RunPar::mcastSrcAddr = subInfo.mcast.srcAddr;
-    RunPar::prodKeepTime = subInfo.keepTime;
-
-    subTracker.insert(subInfo.tracker);        // Update tracker
-
-    /**
-     * The interface that's used to receive the multicast is the same interface that would be used
-     * to send to the multicast source.
-     */
-    RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
-    //LOG_DEBUG("Set interface for multicast reception to " +
-            //runPar.mcastIface.to_string());
-
-    // Create disposer factory-method
-    Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
-        return RunPar::disposeConfig.size()
-            ? Disposer::createFromYaml(RunPar::disposeConfig, lastProcessed)
-            : Disposer{}; // No local processing <=> invalid instance
-    };
-
-    //LOG_DEBUG("Creating subscribing node");
-    auto    subNode = SubNode::create(subInfo, peerConnSrvr, factory, nullptr);
+    SockAddr p2pSrvrAddr = peerConnSrvr->getSrvrAddr();
+    SockAddr externP2pSrvrAddr{};
+    subscribe(p2pSrvrAddr, subInfo, externP2pSrvrAddr);
 
     try {
-        subNode->run();
-        if (threadEx)
-            LOG_DEBUG("Internal thread threw exception");
-        threadEx.throwIfSet(); // Throws if failure on a thread
+        RunPar::feedName     = subInfo.feedName;
+        RunPar::maxSegSize   = subInfo.maxSegSize;
+        RunPar::mcastDstAddr = subInfo.mcast.dstAddr;
+        RunPar::mcastSrcAddr = subInfo.mcast.srcAddr;
+        RunPar::prodKeepTime = subInfo.keepTime;
 
-        printMetrics(subNode);
-    } // Disposer started
+        subTracker.insert(subInfo.tracker);        // Update tracker
+
+        /**
+         * The interface that's used to receive the multicast is the same interface that would be
+         * used to send to the multicast source.
+         */
+        RunPar::mcastIface = UdpSock(SockAddr(subInfo.mcast.srcAddr)).getLclAddr().getInetAddr();
+        //LOG_DEBUG("Set interface for multicast reception to " +
+                //runPar.mcastIface.to_string());
+
+        // Create disposer factory-method
+        Disposer::Factory factory = [&] (const LastProdPtr& lastProcessed) {
+            return RunPar::disposeConfig.size()
+                ? Disposer::createFromYaml(RunPar::disposeConfig, lastProcessed)
+                : Disposer{}; // No local processing <=> invalid instance
+        };
+
+        //LOG_DEBUG("Creating subscribing node");
+        auto    subNode = SubNode::create(subInfo, peerConnSrvr, factory, nullptr);
+
+        try {
+            subNode->run();
+            if (threadEx)
+                LOG_DEBUG("Internal thread threw exception");
+            threadEx.throwIfSet(); // Throws if failure on a thread
+
+            printMetrics(subNode);
+        } // Disposer started
+        catch (const std::exception& ex) {
+            LOG_DEBUG(ex);
+            throw;
+        }
+    } // A NAT entry might have been made
     catch (const std::exception& ex) {
-        LOG_DEBUG(ex);
+        if (p2pSrvrAddr != externP2pSrvrAddr)
+            removeNatEntry(p2pSrvrAddr);
         throw;
     }
 }

@@ -110,14 +110,13 @@ protected:
             struct sockaddr_in rmtAddr;
             socklen_t          addrLen = sizeof(rmtAddr);
             set(ACCEPTING);
-            srvrSock = ::accept(lstnSock, reinterpret_cast<struct
-                    sockaddr*>(&rmtAddr), &addrLen);
+            srvrSock = ::accept(lstnSock, reinterpret_cast<struct sockaddr*>(&rmtAddr), &addrLen);
             if (srvrSock == -1)
                 throw SYSTEM_ERROR("accept() failure");
 
             try {
                 for (;;) {
-                    unsigned char byte;
+                    uint8_t byte;
 
                     set(SERVER_READING);
                     waitUntilSet(SERVER_READ);
@@ -137,6 +136,7 @@ protected:
             } // `srvrSock` allocated
             catch (const std::exception& ex) {
                 ::close(srvrSock);
+                srvrSock = -1;
                 LOG_ERROR(ex, "Servlet failure");
             }
             ::close(srvrSock);
@@ -153,17 +153,14 @@ protected:
 
             try {
                 const int enable = 1;
-                if (::setsockopt(lstnSock, SOL_SOCKET, SO_REUSEADDR, &enable,
-                        sizeof(enable)))
-                    throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on "
-                            "socket " + std::to_string(lstnSock) + ", address "
-                            + srvrAddr.to_string());
+                if (::setsockopt(lstnSock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
+                    throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " +
+                            std::to_string(lstnSock) + ", address " + srvrAddr.to_string());
 
                 srvrAddr.bind(lstnSock);
 
                 if (::listen(lstnSock, 0))
-                    throw SYSTEM_ERROR("listen() failure: {sock=" +
-                            std::to_string(lstnSock) + "}");
+                    throw SYSTEM_ERROR("listen() failure: {sock=" + std::to_string(lstnSock) + "}");
 
                 srvrThread = std::thread(&SocketTest::runServer, this);
             } // `lstnSock` allocated
@@ -459,6 +456,82 @@ TEST_F(SocketTest, VectorExchange)
 
     ::pthread_cancel(srvrThread.native_handle());
     srvrThread.join();
+}
+#endif
+
+#if 0
+// Tests attaching a server to a client-side socket.
+// NOT POSSIBLE. listen() and connect() can't be called on the same socket
+TEST_F(SocketTest, AttachServerToClientSocket)
+{
+    startServer();
+
+    try {
+        clntSock = srvrAddr.getInetAddr().socket(SOCK_STREAM);
+
+        try {
+            struct sockaddr_storage storage = {};
+            socklen_t               socklen = sizeof(storage);
+
+            if (::getsockname(clntSock, reinterpret_cast<struct sockaddr*>(&storage), &socklen))
+                throw SYSTEM_ERROR("getsockname() failure on client-side socket " +
+                        std::to_string(clntSock));
+
+            if (::bind(clntSock, reinterpret_cast<sockaddr*>(&storage), sizeof(storage)))
+                throw SYSTEM_ERROR("bind() failure on clien-side socket ");
+
+            if (::listen(clntSock, 0))
+                throw SYSTEM_ERROR("listen() failure on client-side socket");
+
+            if (::connect(clntSock, srvrAddr.get_sockaddr(storage), sizeof(storage)))
+                throw SYSTEM_ERROR("connect() failure on client-side socket");
+
+#if 0
+            uint8_t writeByte = 0xf0;
+            uint8_t readByte;
+
+            set(SERVER_READ);
+            ::write(clntSock, &writeByte, sizeof(writeByte));
+            set(SERVER_WRITE);
+            ::read(clntSock, &readByte, sizeof(readByte));
+            EXPECT_EQ(writeByte, readByte);
+
+            struct sockaddr_in rmtAddr;
+            socklen_t          addrLen = sizeof(rmtAddr);
+            int sd = ::accept(clntSock, reinterpret_cast<struct sockaddr*>(&rmtAddr), &addrLen);
+
+            if (sd == -1)
+                throw SYSTEM_ERROR("accept() failure on client-side socket");
+
+            try {
+
+            }
+            catch (const std::exception& ex) {
+                ::close(sd);
+                throw;
+            }
+#endif
+            ::close(clntSock);
+            clntSock = -1;
+        }
+        catch (const std::exception& ex) {
+            ::close(clntSock);
+            clntSock = -1;
+            throw;
+        }
+
+        ::pthread_cancel(srvrThread.native_handle());
+        ::close(lstnSock);
+        lstnSock = -1;
+        srvrThread.join();
+    }
+    catch (const std::exception& ex) {
+        ::pthread_cancel(srvrThread.native_handle());
+        ::close(lstnSock);
+        lstnSock = -1;
+        srvrThread.join();
+        throw;
+    }
 }
 #endif
 

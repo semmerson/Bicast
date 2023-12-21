@@ -1,13 +1,14 @@
 # This is an example configuration-file for subscribing to data-products. The syntax is standard
-# YAML. The command "subscribe -h" will also print descripions of the variables in this file.
+# YAML. The command "subscribe -h" will also print descriptions of the variables in this file.
 
 logLevel: NOTE               # Logging level
 pubAddr: foo.bar:38800       # Publisher's socket address
 retryInterval: 60            # Seconds to wait between retry attempts
 peer2Peer:                   # Peer-to-peer component
   server:                    # Local P2P server
-    p2pAddr: 192.168.0.1     # Internet address/interface of server. Must not be wildcard. Default
-                             # is interface used to connect to publisher.
+#   natTraversal: on         # Whether or not to attempt NAT traversal. Default is "off".
+#   natPort: 38801           # Port number of NAT device for P2P server. Default is 0, which means
+#                            # the server isn't NATed.
     maxPending: 8            # Maximum number of pending connections
   timeout: 15000             # Timeout, in ms, for connecting to remote P2P servers
   maxPeers: 8                # Maximum number of connected peers

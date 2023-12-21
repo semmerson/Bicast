@@ -12,6 +12,6 @@ add_library(bicast
 #       $<TARGET_OBJECTS:protocol>
 
 # Neither "-lyaml-cpp.so" nor "-lyaml-cpp.so.0" records the right YAML library
-target_link_libraries(bicast PUBLIC -lyaml-cpp ssl pthread)
+target_link_libraries(bicast PUBLIC yaml-cpp ssl miniupnpc pthread)
 
 install(TARGETS bicast DESTINATION lib)

@@ -139,6 +139,13 @@ public:
     virtual int getFamily() const =0;
 
     /**
+     * Indicates if this address is link-local (i.e., behind a NAT device on a LAN).
+     * @retval true   This address is link-local
+     * @retval false  This address is not link-local
+     */
+    virtual bool isLinkLocal() const =0;
+
+    /**
      * Returns the address type.
      * @return The address type
      */
@@ -382,6 +389,15 @@ public:
      */
     int getFamily() const noexcept override {
         return AF_INET;
+    }
+
+    bool isLinkLocal() const noexcept override {
+        union {
+            uint32_t value;
+            uint8_t  bytes[4];
+        } u;
+        u.value = ntohl(addr.s_addr);
+        return u.bytes[0] == 10 || (u.bytes[0] == 192 && u.bytes[1] == 168);
     }
 
     const void* getAddr(socklen_t* size) const override {
@@ -693,6 +709,10 @@ public:
         return AF_INET6;
     }
 
+    bool isLinkLocal() const noexcept override {
+        return (addr.s6_addr[0] == 0xfe) && ((addr.s6_addr[1] & 0xc0) == 0x80);
+    }
+
     const void* getAddr(socklen_t* size) const override {
         *size = sizeof(addr);
         return &addr;
@@ -940,6 +960,10 @@ public:
 #endif
     }
 
+    bool isLinkLocal() const override {
+        return getIpAddr().isLinkLocal();
+    }
+
     std::string to_string() const override {
         return std::string(name);
         //return getIpAddr().to_string();
@@ -1101,6 +1125,10 @@ InetAddr::operator bool() const noexcept {
  */
 int InetAddr::getFamily() const {
     return pImpl->getFamily();
+}
+
+bool InetAddr::isLinkLocal() const {
+    return pImpl->isLinkLocal();
 }
 
 InetAddr InetAddr::getWildcard(const int family) {

@@ -99,6 +99,49 @@ public:
     int getFamily() const;
 
     /**
+     * Indicates if this address is link-local (i.e., behind a NAT device on a LAN) and will not
+     * be routed.
+     * @retval true   This address is link-local
+     * @retval false  This address is not link-local
+     */
+    bool isLinkLocal() const;
+
+    /**
+     * Returns the index of the interface associated with this IP address.
+     *
+     * @return Interface index associated with this IP address
+     */
+    unsigned getIfaceIndex() const;
+
+    /**
+     * Indicates if this instance specifies any interface (e.g., `INADDR_ANY`).
+     *
+     * @retval true     Address does specify any interface
+     * @retval false    Address does not specify any interface
+     */
+    bool isAny() const;
+
+    /**
+     * Indicates if this instance is a multicast address.
+     *
+     * @retval true     Address is a multicast address
+     * @retval false    Address is not a multicast address
+     */
+    bool isMulticast() const;
+
+    /**
+     * Indicates if this instance is a valid, source-specific multicast address
+     * that is not reserved for allocation by IANA. I.e., this instance is in
+     * the range from 232.0.1.0 through 232.255.255.255 (for IPv4) or
+     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
+     * FF3X::FFFF:FFFF (for IPv6).
+     *
+     * @retval true     Address is valid and in appropriate range
+     * @retval false    Address is invalid or not in appropriate range
+     */
+    bool isSsm() const;
+
+    /**
      * Returns the wildcard address for an address family.
      *
      * @param[in] family       Internet address family: `AF_INET`, `AF_INET6`
@@ -182,41 +225,6 @@ public:
      * @cancellationpoint          Unknown due to non-standard function usage
      */
     const InetAddr& makeIface(int sd) const;
-
-    /**
-     * Returns the index of the interface associated with this IP address.
-     *
-     * @return Interface index associated with this IP address
-     */
-    unsigned getIfaceIndex() const;
-
-    /**
-     * Indicates if this instance specifies any interface (e.g., `INADDR_ANY`).
-     *
-     * @retval true     Address does specify any interface
-     * @retval false    Address does not specify any interface
-     */
-    bool isAny() const;
-
-    /**
-     * Indicates if this instance is a multicast address.
-     *
-     * @retval true     Address is a multicast address
-     * @retval false    Address is not a multicast address
-     */
-    bool isMulticast() const;
-
-    /**
-     * Indicates if this instance is a valid, source-specific multicast address
-     * that is not reserved for allocation by IANA. I.e., this instance is in
-     * the range from 232.0.1.0 through 232.255.255.255 (for IPv4) or
-     * FF3X::0000 through FF3X::4000:0000 or FF3X::8000:0000 through
-     * FF3X::FFFF:FFFF (for IPv6).
-     *
-     * @retval true     Address is valid and in appropriate range
-     * @retval false    Address is invalid or not in appropriate range
-     */
-    bool isSsm() const;
 
     /**
      * Writes to a transport.

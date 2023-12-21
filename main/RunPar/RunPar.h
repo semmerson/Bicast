@@ -43,6 +43,7 @@ extern SysDuration peerEvalInterval;  ///< Time interval for evaluating peer per
 extern String      progName;          ///< Program name
 extern SockAddr    pubSrvrAddr;       ///< Address of publisher's server (not its P2P server)
 extern int         trackerCap;        ///< Maximum number of potential P2P servers to track & exchange
+extern bool        natTraversal;      ///< Whether or not to attempt NAT traversal
 
 /// Publisher-specific command-line parameters:
 extern String      pubRoot;           ///< Pathname of the root-directory
@@ -59,6 +60,7 @@ extern InetAddr    mcastIface;        ///< Internet address of interface for rec
 extern String      disposeConfig;     ///< Pathname of configuration-file for disposition of products
 extern SysDuration p2pTimeout;        ///< Timeout for connecting to remote P2P servers
 extern SysDuration retryInterval;     ///< Time to wait before re-connecting to publisher
+extern in_port_t   natPort;           ///< Port number of NAT device for P2P server. 0 => not NATed
 
 /**
  * Initializes from the command-line. Must be called first.
@@ -82,7 +84,7 @@ void setFromYaml(const String& pathname);
  */
 void vet();
 
-#define RUNPAR_COMMON_OPTIONS_STRING ":b:e:hl:n:o:p:q:t:" // Must go first
+#define RUNPAR_COMMON_OPTIONS_STRING ":b:e:hl:Nn:o:p:q:t:" // Must go first
 #define RUNPAR_COMMON_OPTIONS_CASES(usage) \
             case 'h': { \
                 usage(); \
@@ -109,6 +111,9 @@ void vet();
                 log_setLevel(optarg); \
                 RunPar::logLevel = optarg; \
                 break; \
+            } \
+            case 'N': { \
+                RunPar::natTraversal = true; \
             } \
             case 'n': { \
                 int maxPeers; \

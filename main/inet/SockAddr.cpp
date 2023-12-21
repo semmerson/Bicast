@@ -336,6 +336,7 @@ SockAddr::SockAddr(
         in_port_t          port)
     : SockAddr()
 {
+#if 0
     String inetSpec;
     String portSpec;
 
@@ -344,6 +345,64 @@ SockAddr::SockAddr(
         port = decodePort(portSpec);
 
     pImpl.reset(new Impl(InetAddr(inetSpec), port));
+#else
+    char* inetSpec = nullptr;
+    char* portSpec = nullptr;
+    char* tail     = nullptr;
+
+    try {
+        // Bracketed IPv6 address
+        auto numAssign = ::sscanf(addr.data(), "\[%m[0-9A-Fa-f:]]:%m[0-9]%ms", &inetSpec, &portSpec,
+                &tail);
+
+        if (numAssign == 0 || tail) {
+            // Bracketless IPv6 address and no port number
+            numAssign = ::sscanf(addr.data(), "%m[0-9A-Fa-f:]%ms", &inetSpec, &tail);
+
+            if (numAssign == 0 || tail) {
+                // IPv4 address & port number
+                numAssign = ::sscanf(addr.data(), "%m[0-9.]:%m[0-9]%ms", &inetSpec, &portSpec,
+                        &tail);
+
+                if (numAssign == 0 || tail) {
+                    // IPv4 address and no port number
+                    numAssign = ::sscanf(addr.data(), "%m[0-9.]%ms", &inetSpec, &tail);
+
+                    if (numAssign == 0 || tail) {
+                        // Hostname address and port number
+                        numAssign = ::sscanf(addr.data(), "%m[A-Za-z0-9_.]:%m[0-9]%ms", &inetSpec,
+                                &portSpec, &tail);
+
+                        if (numAssign == 0 || tail) {
+                            // No address: just a port number
+                            if (::sscanf(addr.data(), ":%m[0-9]%ms", &portSpec, &tail) != 1)
+                                throw INVALID_ARGUMENT("Not a socket specification: \"" + addr +
+                                        "\"");
+                            pImpl.reset(new Impl(InetAddr(), decodePort(portSpec)));
+                            ::free(portSpec);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+
+        pImpl.reset(new Impl(InetAddr(inetSpec), (numAssign == 2) ? decodePort(portSpec) : port));
+
+        // NULL safe
+        ::free(inetSpec);
+        ::free(portSpec);
+        ::free(tail);
+    }
+    catch (const std::exception& ex) {
+        // NULL safe
+        ::free(inetSpec);
+        ::free(portSpec);
+        ::free(tail);
+        throw;
+    }
+#endif
 }
 
 SockAddr SockAddr::clone(const in_port_t port) const

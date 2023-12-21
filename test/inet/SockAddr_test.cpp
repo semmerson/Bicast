@@ -120,10 +120,25 @@ TEST_F(SockAddrTest, IPv4Construction) {
     SockAddr sockAddr{sockAddrInSpec_1};
 
     EXPECT_TRUE(sockAddr);
+    EXPECT_FALSE(sockAddr.getInetAddr().isLinkLocal()); // Should be in "InetAddr_test.cpp"
 
     const std::string actual(sockAddr.to_string());
     EXPECT_STREQ(sockAddrInSpec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn_2) != (sockAddrIn_2 < sockAddr));
+}
+
+/*
+ * Tests construction of link-local IPv4 socket addresses. This should be in "InetAddr_test.cpp" but
+ * that doesn't exist, so it's here.
+ */
+TEST_F(SockAddrTest, LinkLocalIPv4) {
+    SockAddr sockAddr1{"192.168.0.1:38800"};
+    EXPECT_TRUE(sockAddr1);
+    EXPECT_TRUE(sockAddr1.getInetAddr().isLinkLocal());
+
+    SockAddr sockAddr2{"10.0.0.1:38800"};
+    EXPECT_TRUE(sockAddr2);
+    EXPECT_TRUE(sockAddr2.getInetAddr().isLinkLocal());
 }
 
 // Tests construction of an IPv6 socket address
@@ -131,10 +146,21 @@ TEST_F(SockAddrTest, IPv6Construction) {
     SockAddr sockAddr{sockAddrIn6Spec_1};
 
     EXPECT_TRUE(sockAddr);
+    EXPECT_FALSE(sockAddr.getInetAddr().isLinkLocal()); // Should be in "InetAddr_test.cpp"
 
     const std::string actual(sockAddr.to_string());
     EXPECT_STREQ(sockAddrIn6Spec_1, actual.data());
     EXPECT_TRUE((sockAddr < sockAddrIn6_2) != (sockAddrIn6_2 < sockAddr));
+}
+
+/*
+ * Tests construction of a link-local IPv6 socket address. This should be in "InetAddr_test.cpp" but
+ * that doesn't exist, so it's here.
+ */
+TEST_F(SockAddrTest, LinkLocalIPv6) {
+    SockAddr sockAddr{"[fe80::200:5aee:feaa:20a2]:38800"};
+    EXPECT_TRUE(sockAddr);
+    EXPECT_TRUE(sockAddr.getInetAddr().isLinkLocal());
 }
 
 // Tests construction of a named socket address

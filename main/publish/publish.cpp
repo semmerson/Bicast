@@ -132,7 +132,7 @@ static void usage()
 "    -p <p2pAddr>      Socket address for local P2P server (not the publisher's\n"
 "                      server). IP address must not be wildcard. Default IP\n"
 "                      address is that of interface used for multicasting.\n"
-"                      Default port number is 0.\n"
+"                      Default port number is chosen by operating system.\n"
 "    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << RunPar::p2pSrvrQSize << ".\n"
 "  Repository:\n"
@@ -406,6 +406,8 @@ static void runSubRequest(Xprt xprt)
         if (!subP2pSrvrInfo.read(xprt))
             throw RUNTIME_ERROR("Couldn't receive information on P2P server from subscriber " +
                     xprt.getRmtAddr().to_string());
+        // Handle the subscriber being behind a NAT device. Safe for non-NATed subscribers.
+        subP2pSrvrInfo.srvrAddr = xprt.getRmtAddr().clone(subP2pSrvrInfo.srvrAddr.getPort());
         LOG_INFO("Received information on P2P server " + subP2pSrvrInfo.to_string() +
                 " from subscriber " + xprt.getRmtAddr().to_string());
 
