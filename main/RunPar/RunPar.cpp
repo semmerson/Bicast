@@ -137,6 +137,87 @@ void setFromYaml(const String& pathname)
     }
 }
 
+bool getOpt(
+        const char  c,
+        const char* optarg,
+        void      (*usage)())
+{
+    switch (c) {
+        case 'h': {
+            usage();
+            exit(0);
+        }
+
+        case 'b': {
+            int seconds;
+            if (::sscanf(optarg, "%d", &seconds) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            RunPar::heartbeatInterval = SysDuration(std::chrono::seconds(seconds));
+            break;
+        }
+        case 'e': {
+            int evalTime;
+            if (::sscanf(optarg, "%d", &evalTime) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            RunPar::peerEvalInterval = SysDuration(std::chrono::seconds(evalTime));
+            break;
+        }
+        case 'l': {
+            log_setLevel(optarg);
+            RunPar::logLevel = optarg;
+            break;
+        }
+        case 'N': {
+            RunPar::natTraversal = true;
+            break;
+        }
+        case 'n': {
+            int maxPeers;
+            if (::sscanf(optarg, "%d", &maxPeers) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            RunPar::maxNumPeers = maxPeers;
+            break;
+        }
+        case 'o': {
+            if (::sscanf(optarg, "%u", &RunPar::maxOpenProds) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            break;
+        }
+        case 'p': {
+            RunPar::p2pSrvrAddr = SockAddr(optarg);
+            break;
+        }
+        case 'q': {
+            int size;
+            if (::sscanf(optarg, "%d", &size) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            RunPar::p2pSrvrQSize = size;
+            break;
+        }
+        case 't': {
+            int trackerCap;
+            if (::sscanf(optarg, "%d", &trackerCap) != 1)
+                throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                        "\" option argument");
+            RunPar::trackerCap = trackerCap;
+            break;
+        }
+        case ':': {
+            throw INVALID_ARGUMENT(String("Option \"-") + static_cast<char>(optopt) +
+                    "\" is missing an argument");
+        }
+        default: {
+            return false;
+        }
+    }
+    return true;
+}
+
 void vet()
 {
     if (RunPar::heartbeatInterval.count() == 0)

@@ -100,6 +100,16 @@ public:
     SockAddr getLclAddr() const;
 
     /**
+     * Returns the external socket address (i.e., the socket address that a remote host would use
+     * to connect to a server with this instance's socket address if the server was on a LAN behind
+     * a NAT device). This address will be the same as `getLclAddr()` if no NATing is involved.
+     * @return  The external socket address
+     *
+     * @return External socket address
+     */
+    SockAddr getExtAddr() const;
+
+    /**
      * Returns the local port number in host byte-order.
      *
      * @return             Local port number in host byte-order

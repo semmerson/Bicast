@@ -79,7 +79,7 @@ class PeerConnImpl : public PeerConn
             const auto  srvrInetAddr = srvrAddr.getInetAddr();
             TcpClntSock sock{srvrInetAddr.getFamily()}; // Unbound & unconnected socket
 
-            sock.bind(SockAddr(srvrInetAddr.getWildcard(), 0));
+            //sock.bind(SockAddr(srvrInetAddr.getWildcard(), 0)); // Apparently, not necessary
             sock.makeNonBlocking();
             sock.connect(srvrAddr); // Immediately sets local socket address
 
@@ -635,6 +635,15 @@ public:
      */
     SockAddr getSrvrAddr() const override {
         return srvrSock.getLclAddr();
+    }
+
+    /**
+     * Returns the external socket address of the RPC-server.
+     *
+     * @return External socket address of RPC-server
+     */
+    SockAddr getExtSrvrAddr() const override {
+        return srvrSock.getExtAddr();
     }
 
     /**

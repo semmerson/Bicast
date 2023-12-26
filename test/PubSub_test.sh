@@ -6,8 +6,8 @@ numSubs=5
 segSize=50000
 numSegs=20
 numFiles=10
-#interface=192.168.58.141
-interface=127.0.0.1
+interface=192.168.0.27
+#interface=127.0.0.1
 
 # Set derived variables
 testDir=/tmp/$progName
@@ -32,7 +32,7 @@ trap "trap '' TERM; kill 0; exit" INT
 
 # Start the publisher
 echo "$progName: Starting publisher"
-../main/publish/publish -d $segSize -l INFO -s $interface -r $pubRepo &
+../main/publish/publish -N -d $segSize -l INFO -s $interface -r $pubRepo &
 sleep 1 # Give the publisher time
 pubPid=$!
 

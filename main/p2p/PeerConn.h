@@ -259,6 +259,13 @@ public:
     virtual SockAddr getSrvrAddr() const =0;
 
     /**
+     * Returns the external socket address of the peer-connection server (i.e., the address that a
+     * remote client would use in case the server is on a LAN behind a NAT device).
+     * @return External socket address of P2P-server
+     */
+    virtual SockAddr getExtSrvrAddr() const =0;
+
+    /**
      * Returns a new, server-side peer-connection. Blocks until one is ready or `halt()` is called.
      * @return A new, server-side peer-connection. Will test false if `halt()` has been called
      * @see halt()

@@ -397,7 +397,7 @@ public:
             uint8_t  bytes[4];
         } u;
         u.value = ntohl(addr.s_addr);
-        return u.bytes[0] == 10 || (u.bytes[0] == 192 && u.bytes[1] == 168);
+        return u.bytes[3] == 10 || (u.bytes[3] == 192 && u.bytes[2] == 168);
     }
 
     const void* getAddr(socklen_t* size) const override {

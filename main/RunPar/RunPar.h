@@ -79,12 +79,21 @@ void init(
 void setFromYaml(const String& pathname);
 
 /**
- * Vets the common runtime parameters.
- * @throw InvalidArgument  A runtime parameter is invalid
+ * Decode a common option.
+ * @param[in] c            Option character
+ * @param[in] optarg       Option argument. Ignored if appropriate.
+ * @param[in] usage        Prints usage message
+ * @retval    true         Success
+ * @retval    false        Unknown option
+ * @throw InvalidArgument  Invalid option argument
  */
-void vet();
+bool getOpt(
+        const char  c,
+        const char* optarg,
+        void      (*usage)());
 
 #define RUNPAR_COMMON_OPTIONS_STRING ":b:e:hl:Nn:o:p:q:t:" // Must go first
+#if 0
 #define RUNPAR_COMMON_OPTIONS_CASES(usage) \
             case 'h': { \
                 usage(); \
@@ -157,6 +166,13 @@ void vet();
                 throw INVALID_ARGUMENT(String("Unknown \"-") + static_cast<char>(optopt) + \
                         "\" option"); \
             }
+#endif
+
+/**
+ * Vets the common runtime parameters.
+ * @throw InvalidArgument  A runtime parameter is invalid
+ */
+void vet();
 
 } // `RunPar` namespace
 

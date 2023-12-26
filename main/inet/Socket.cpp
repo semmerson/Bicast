@@ -50,6 +50,21 @@
 
 namespace bicast {
 
+static int getProtocol(
+        int       protocol,
+        const int sockType)
+{
+    if (protocol == 0) {
+        switch (sockType) {
+        case SOCK_STREAM:    protocol = IPPROTO_TCP;  break;
+        case SOCK_DGRAM:     protocol = IPPROTO_UDP;  break;
+        case SOCK_SEQPACKET: protocol = IPPROTO_SCTP; break;
+        default: throw INVALID_ARGUMENT("Invalid socket type: " + std::to_string(sockType));
+        }
+    }
+    return protocol;
+}
+
 /**
  * Returns the Internet Gateway Device (IGD) for the LAN.
  * @param[in]  isIpv6   Use IPv6 protocols? 0 => no; 1 => yes.
@@ -91,15 +106,17 @@ static struct UPNPDev* getIgd(
  * Add a NAT entry. The NAT-capable Internet Gateway Device (IGD) is discovered, an entry for the
  * internal socket address is added to the IGD's NAT table, and the corresponding external socket
  * address is returned.
- * @param[in] srvrAddr  Link-local (i.e, NATed) socket address
- * @return              Corresponding external socket address
- * @throw RuntimeError  Couldn't discover UPnP devices
- * @throw RuntimeError  No UPnP devices
- * @throw RuntimeError  No UPnP Internet Gateway Device found
- * @throw RuntimeError  Couldn't get external IP address
- * @throw RuntimeError  Couldn't add port mapping
+ * @param[in]  srvrAddr     Link-local (i.e, NATed) socket address
+ * @param[out] extSockAddr  Corresponding external socket address
+ * @throw RuntimeError      Couldn't discover UPnP devices
+ * @throw RuntimeError      No UPnP devices
+ * @throw RuntimeError      No UPnP Internet Gateway Device found
+ * @throw RuntimeError      Couldn't get external IP address
+ * @throw RuntimeError      Couldn't add port mapping
  */
-static void addNatEntry(const SockAddr& srvrAddr)
+static void addNatEntry(
+        const SockAddr& srvrAddr,
+        SockAddr&       extSockAddr)
 {
     struct UPNPUrls urls;
     struct IGDdatas data;
@@ -107,11 +124,12 @@ static void addNatEntry(const SockAddr& srvrAddr)
 
     try {
         // Get the external IP address of the IGD
-        char externalIPAddress[INET6_ADDRSTRLEN]; // Sufficient for both IPv4 and IPv6 strings
-        if (::UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype,
-                externalIPAddress))
+        char extIpAddrStr[INET6_ADDRSTRLEN]; // Sufficient for both IPv4 and IPv6 strings
+        if (::UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, extIpAddrStr))
             throw RUNTIME_ERROR("Couldn't get external IP address");
-        LOG_DEBUG("externalIPAddress=" + String(externalIPAddress));
+        LOG_DEBUG("externalIPAddress=" + String(extIpAddrStr));
+
+        const InetAddr extIpAddr{extIpAddrStr};
 
         // Add port mapping
         const char* protocol = "TCP";
@@ -125,7 +143,9 @@ static void addNatEntry(const SockAddr& srvrAddr)
                 nullptr);
         if (status)
             throw RUNTIME_ERROR("Couldn't add port mapping: status=" + std::to_string(status));
-        LOG_DEBUG("Port mapping added successfully");
+
+        extSockAddr = SockAddr{extIpAddr, static_cast<in_port_t>(::atoi(externalPort))};
+        LOG_NOTE("NAT mapping added: " + extSockAddr.to_string() + " -> " + srvrAddr.to_string());
 
         // Cleanup
         ::FreeUPNPUrls(&urls);
@@ -158,19 +178,19 @@ static void removeNatEntry(const SockAddr& srvrAddr)
         const char* protocol = "TCP";
         const char* externalPort = std::to_string(srvrAddr.getPort()).data();
 
-        int status = ::UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype,
-                externalPort, protocol, nullptr);
+        int status = ::UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, externalPort,
+                protocol, nullptr);
         if (status) {
             if (status == 714) {
                 LOG_DEBUG("No such port mapping");
             }
             else {
-                throw RUNTIME_ERROR("Couldn't remove port mapping: status=" +
-                        std::to_string(status));
+                throw RUNTIME_ERROR("Couldn't remove port mapping for " + srvrAddr.to_string() +
+                        ": status=" + std::to_string(status));
             }
         }
         else {
-            LOG_DEBUG("Port mapping removed successfully");
+            LOG_NOTE("NAT mapping removed: " + srvrAddr.to_string());
         }
 
         // Cleanup
@@ -189,16 +209,20 @@ class Socket::Impl
 {
     Impl()
         : mutex()
+        , extSockAddr()
         , rmtSockAddr()
         , sd{-1}
         , domain{AF_UNSPEC}
+        , protocol(0)
         , shutdownCalled{false}
     {}
 
     /**
      * @param[in] sd  Socket descriptor
      */
-    void init(const int sd)
+    void init(
+            const int sd,
+            int       protocol)
     {
         //LOG_DEBUG("Initializing socket descriptor %d", sd);
         this->sd = sd;
@@ -208,16 +232,23 @@ class Socket::Impl
 
         if (::getpeername(sd, reinterpret_cast<struct sockaddr*>(&storage), &socklen) == 0)
             rmtSockAddr = SockAddr(storage);
+
+        int       sockType;
+        socklen_t size = sizeof(sockType);
+        if (::getsockopt(sd, SOL_SOCKET, SO_TYPE, &sockType, &size))
+            throw SYSTEM_ERROR("Couldn't get socket's type");
+
+        this->protocol = getProtocol(protocol, sockType);
     }
 
 protected:
-    using Mutex   = std::mutex;             ///< Type of mutex for maintaining consistency
-    using Guard   = std::lock_guard<Mutex>; ///< Type of lock guard
-
     mutable Mutex         mutex;           ///< Mutex for maintaining consistency
+    SockAddr              extSockAddr;     ///< External socket address iff behind a NAT
     SockAddr              rmtSockAddr;     ///< Socket address of remote endpoint
     int                   sd;              ///< Socket descriptor
     int                   domain;          ///< IP domain: AF_INET, AF_INET6
+    int                   protocol;        ///< IP protocol: IPPROTO_TCP, IPPROTO_UDP, or
+                                           ///< IPPROTO_SCTP
     bool                  shutdownCalled;  ///< `shutdown()` has been called?
     mutable unsigned      bytesWritten =0; ///< Number of bytes written
     mutable unsigned      bytesRead =0;    ///< Number of bytes read
@@ -227,13 +258,16 @@ protected:
     /**
      * Constructs a server-side socket. Closes the socket descriptor on destruction.
      *
-     * @param[in] sd  Socket descriptor
+     * @param[in] sd        Socket descriptor
+     * @param[in] protocol  Socket protocol: IPPROTO_TCP, IPPROTO_UDP, IPPROTO_SCTP, or 0 for the
+     *                      default based on the socket type
      */
-    Impl(const int sd)
+    Impl(   const int sd,
+            const int protocol)
         : Impl()
     {
         Shield shield{};
-        init(sd);
+        init(sd, protocol);
     }
 
     /**
@@ -247,7 +281,7 @@ protected:
      */
     Impl(   const int  family,
             const int  type,
-            const int  protocol)
+            int        protocol)
         : Impl()
     {
         sd = ::socket(family, type, protocol);
@@ -255,22 +289,23 @@ protected:
             throw SYSTEM_ERROR("Couldn't create socket {family=" + std::to_string(family) +
                     ", type=" + std::to_string(type) + ", proto=" + std::to_string(protocol) + "}");
         domain = family;
+        this->protocol = getProtocol(protocol, type);
     }
 
     /**
-     * Constructs.
+     * Constructs a server-side socket.
      *
-     * @param[in] inetAddr  IP address. May be wildcard.
+     * @param[in] inetAddr  IP address for the server. May be wildcard.
      * @param[in] type      Type of socket (e.g., SOCK_STREAM)
      * @param[in] protocol  Socket protocol (e.g., IPPROTO_TCP; 0 obtains default for type)
      */
     Impl(   const InetAddr inetAddr,
             const int      type,
-            const int      protocol) noexcept
+            int            protocol) noexcept
         : Impl()
     {
         Shield shield{};
-        init(inetAddr.socket(type, protocol));
+        init(inetAddr.socket(type, protocol), protocol);
         domain = inetAddr.getFamily();
     }
 
@@ -291,7 +326,7 @@ protected:
          * Alternative?
          * See <https://en.wikipedia.org/wiki/Data_structure_alignment#Computing_padding>.
          *
-         * Works for unsigned and two's-complement `nbytes` but neighter one's-complement nor
+         * Works for unsigned and two's-complement `nbytes` but neither one's-complement nor
          * sign-magnitude
          *
          * padding = (align - (nbytes & (align - 1))) & (align - 1)
@@ -373,12 +408,6 @@ protected:
 
 public:
     virtual ~Impl() noexcept {
-        if (RunPar::natTraversal) {
-            const auto lclAddr = getLclAddr();
-            if (lclAddr.getInetAddr().isLinkLocal())
-                removeNatEntry(lclAddr);
-        }
-
         //LOG_DEBUG("Closing socket descriptor %d", sd);
         ::close(sd);
     }
@@ -449,6 +478,14 @@ public:
     }
 
     /**
+     * Returns the external socket address of the local endpoint.
+     * @return The external socket address of the local endpoint
+     */
+    SockAddr getExtAddr() const {
+        return extSockAddr ? extSockAddr : getLclAddr();
+    }
+
+    /**
      * Returns the socket address of the remote endpoint.
      * @return The socket address of the remote endpoint
      */
@@ -479,8 +516,7 @@ public:
     virtual std::string to_string() const =0;
 
     /**
-     * Assigns this instance a local socket address. If the address is link-local and the user has
-     * enabled NAT traversal, then a port-forwarding entry is added to the Internet Gateway Device.
+     * Assigns this instance a local socket address.
      *
      * @param[in] lclAddr    Local socket address. Note that, for multicast reception, this will be
      *                       the socket address of the multicast group.
@@ -488,18 +524,8 @@ public:
      * @throw   SystemError  System failure
      */
     Impl& bind(const SockAddr lclAddr) {
-        sockaddr_storage storage;
-        lclAddr.get_sockaddr(storage);
-        //LOG_DEBUG("Binding socket %s to %s", std::to_string(sd).data(), lclAddr.to_string().data());
-#if 1
         lclAddr.bind(sd);
-#else
-        if (::bind(sd, reinterpret_cast<struct sockaddr*>(&storage), sizeof(storage)))
-            throw SYSTEM_ERROR("Couldn't bind socket " + std::to_string(sd) + " to " + to_string());
-#endif
-
-        if (RunPar::natTraversal && lclAddr.getInetAddr().isLinkLocal())
-            addNatEntry(lclAddr);
+        //LOG_DEBUG("Bound socket %s to %s", std::to_string(sd).data(), lclAddr.to_string().data());
 
         return *this;
     }
@@ -711,6 +737,10 @@ int Socket::getSockDesc() const {
 
 SockAddr Socket::getLclAddr() const {
     return pImpl->getLclAddr();
+}
+
+SockAddr Socket::getExtAddr() const {
+    return pImpl->getExtAddr();
 }
 
 in_port_t Socket::getLclPort() const {
@@ -951,7 +981,7 @@ public:
      * @param[in] sd  The underlying socket descriptor
      */
     explicit Impl(const int sd)
-        : Socket::Impl(sd)
+        : Socket::Impl(sd, IPPROTO_TCP)
     {}
 
     /**
@@ -990,11 +1020,11 @@ public:
         }
     }
 
-    bool flush() {
+    bool flush() override {
         return true;
     }
 
-    void clear() {
+    void clear() override {
     }
 };
 
@@ -1019,22 +1049,29 @@ class TcpSrvrSock::Impl final : public TcpSock::Impl
 
 public:
     /**
-     * Constructs. Calls listen() on the created socket.
+     * Constructs. Calls listen() on the created socket. If the address is link-local and the user
+     * has enabled NAT traversal, then a port-forwarding entry is added to the Internet Gateway
+     * Device.
      *
-     * @param[in] lclSockAddr        Server's local socket address. The IP address may be the
-     *                               wildcard, in which case the server will listen on all
-     *                               interfaces. The port number may be zero, in which case it will
-     *                               be chosen by the operating system.
-     * @param[in] queueSize          Size of listening queue
-     * @throws    std::system_error  Couldn't create socket
-     * @throws    std::system_error  Couldn't set SO_REUSEADDR on socket
-     * @throws    std::system_error  Couldn't bind socket to `sockAddr`
-     * @throws    std::system_error  Couldn't set SO_KEEPALIVE on socket
-     * @throws    std::system_error  Couldn't listen on socket
+     * @param[in] lclSockAddr   Server's local socket address. The IP address may be the wildcard,
+     *                          in which case the server will listen on all interfaces. The port
+     *                          number may be zero, in which case it will be chosen by the operating
+     *                          system.
+     * @param[in] queueSize     Size of listening queue
+     * @throws    SystemError   Couldn't create socket
+     * @throws    SystemError   Couldn't set SO_REUSEADDR on socket
+     * @throws    SystemError   Couldn't bind socket to `sockAddr`
+     * @throws    SystemError   Couldn't set SO_KEEPALIVE on socket
+     * @throws    RuntimeError  Couldn't discover UPnP devices
+     * @throws    RuntimeError  No UPnP devices
+     * @throws    RuntimeError  No UPnP Internet Gateway Device found
+     * @throws    RuntimeError  Couldn't get external IP address
+     * @throws    RuntimeError  Couldn't add port mapping
+     * @throws    SystemError   Couldn't listen on socket
      */
     Impl(   const SockAddr lclSockAddr,
             const int      queueSize)
-        : TcpSock::Impl{lclSockAddr.getInetAddr()}
+        : TcpSock::Impl{lclSockAddr.getInetAddr().getFamily(), true} // `true` is necessary dummy
         , queueSize(queueSize)
     {
         //LOG_DEBUG("Setting SO_REUSEADDR");
@@ -1042,9 +1079,19 @@ public:
         if (::setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)))
             throw SYSTEM_ERROR("Couldn't set SO_REUSEADDR on socket " + to_string());
 
-        //LOG_NOTE("Binding socket %s to address %s", std::to_string(sd).data(),
-                //lclSockAddr.to_string().data());
         lclSockAddr.bind(sd);
+        //LOG_NOTE("Bound socket %s to address %s", std::to_string(sd).data(),
+                //lclSockAddr.to_string().data());
+
+        /*
+         * TODO:
+         *     * Move I/O functions from Socket to derived classes
+         *     * Remove I/O functions from TcpSock
+         *     * Have TcpSrvrSock::Impl inherit from Socket::Impl, not TcpSock::Impl
+         */
+
+        if (RunPar::natTraversal && lclSockAddr.getInetAddr().isLinkLocal())
+            addNatEntry(lclSockAddr, extSockAddr);
 
         //LOG_DEBUG("Setting SO_KEEPALIVE");
         if (::setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)))
@@ -1053,6 +1100,19 @@ public:
         if (::listen(sd, queueSize))
             throw SYSTEM_ERROR("listen() failure on socket " + to_string() + ", queueSize=" +
                     std::to_string(queueSize));
+    }
+
+    ~Impl() {
+        try {
+            if (RunPar::natTraversal) {
+                const auto lclAddr = getLclAddr();
+                if (extSockAddr)
+                    removeNatEntry(lclAddr);
+            }
+        }
+        catch (const std::exception& ex) {
+            LOG_ERROR(ex);
+        }
     }
 
     std::string to_string() const override
@@ -1388,7 +1448,7 @@ public:
                 + ", proto=UDP, rmt=" + getRmtAddr().to_string() + "}";
     }
 
-    bool flush() {
+    bool flush() override {
         const auto nbytes = ::write(sd, buf, bytesWritten);
 
         if (nbytes == -1)
@@ -1401,7 +1461,7 @@ public:
         return true;
     }
 
-    void clear() {
+    void clear() override {
         bufLen = bytesRead = bytesWritten = 0;
     }
 };

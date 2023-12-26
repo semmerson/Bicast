@@ -104,6 +104,9 @@ static void usage()
 "                      \"NOTE\", \"INFO\", \"DEBUG\", or \"TRACE\". Comparison is case-\n"
 "                      insensitive and takes effect immediately. Default is\n" <<
 "                      \"" << RunPar::logLevel << "\".\n"
+"    -N                Enable NAT-traversal for publisher's server and P2P server\n"
+"                      if behind an Internet Gateway Device (IGD). Default is to\n"
+"                      disable NAT-traversal.\n"
 "    -r <pubRoot>      Pathname of publisher's root-directory. Default is\n"
 "                      \"" << RunPar::pubRoot << "\".\n"
 "    -t <trackerCap>   Maximum number of P2P servers to track. Default is " <<
@@ -249,94 +252,94 @@ static void setRunPars(
     RunPar::pubSrvrQSize = 256;
     RunPar::pubSrvrAddr  = SockAddr("0.0.0.0", DEF_PORT);
 
-    try {
-        opterr = 0;    // 0 => getopt() won't write to `stderr`
-        int c;
-        while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:Ik:m:P:Q:r:s:")) != -1)
-        {
-            switch (c) {
-                // Common options:
-                RUNPAR_COMMON_OPTIONS_CASES(usage)
+    opterr = 0;    // 0 => getopt() won't write to `stderr`
+    int c;
+    while ((c = ::getopt(argc, argv, RUNPAR_COMMON_OPTIONS_STRING "c:d:f:Ik:m:P:Q:r:s:")) != -1)
+    {
+        switch (c) {
+            // Common options:
+            //RUNPAR_COMMON_OPTIONS_CASES(usage)
 
-                // Publisher-specific options:
-                case 'c': {
-                    try {
-                        RunPar::setFromYaml(optarg); // Sets common runtime parameters
-                        setFromYaml(optarg);         // Sets program-specific runtime parameters
-                    }
-                    catch (const std::exception& ex) {
-                        std::throw_with_nested(INVALID_ARGUMENT(
-                                String("Couldn't initialize using configuration-file \"") + optarg +
-                                "\""));
-                    }
-                    break;
+            // Publisher-specific options:
+            case 'c': {
+                try {
+                    RunPar::setFromYaml(optarg); // Sets common runtime parameters
+                    setFromYaml(optarg);         // Sets program-specific runtime parameters
                 }
-                case 'd': {
-                    int maxSegSize;
-                    if (::sscanf(optarg, "%d", &maxSegSize) != 1)
-                        throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                                "\" option argument");
-                    RunPar::maxSegSize = maxSegSize;
-                    break;
+                catch (const std::exception& ex) {
+                    std::throw_with_nested(INVALID_ARGUMENT(
+                            String("Couldn't initialize using configuration-file \"") + optarg +
+                            "\""));
                 }
-                case 'f': {
-                    RunPar::feedName = String(optarg);
-                    break;
-                }
-                case 'I': {
-                    RunPar::initializeOnly = true;
-                    break;
-                }
-                case 'k': {
-                    int keepTime;
-                    if (::sscanf(optarg, "%d", &keepTime) != 1)
-                        throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                                "\" option argument");
-                    RunPar::prodKeepTime = std::chrono::seconds(keepTime);
-                    break;
-                }
-                case 'm': {
-                    RunPar::mcastDstAddr = SockAddr(optarg);
-                    break;
-                }
-                case 'P': {
-                    RunPar::pubSrvrAddr = SockAddr(optarg, DEF_PORT);
-                    break;
-                }
-                case 'Q': {
-                    int size;
-                    if (::sscanf(optarg, "%d", &size) != 1)
-                        throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
-                                "\" option argument");
-                    RunPar::pubSrvrQSize = size;
-                    break;
-                }
-                case 'r': {
-                    RunPar::pubRoot = String(optarg);
-                    break;
-                }
-                case 's': {
-                    RunPar::mcastSrcAddr = InetAddr(optarg);
-                    break;
-                }
-            } // `switch` statement
-        } // While getopt() loop
+                break;
+            }
+            case 'd': {
+                int maxSegSize;
+                if (::sscanf(optarg, "%d", &maxSegSize) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                RunPar::maxSegSize = maxSegSize;
+                break;
+            }
+            case 'f': {
+                RunPar::feedName = String(optarg);
+                break;
+            }
+            case 'I': {
+                RunPar::initializeOnly = true;
+                break;
+            }
+            case 'k': {
+                int keepTime;
+                if (::sscanf(optarg, "%d", &keepTime) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                RunPar::prodKeepTime = std::chrono::seconds(keepTime);
+                break;
+            }
+            case 'm': {
+                RunPar::mcastDstAddr = SockAddr(optarg);
+                break;
+            }
+            case 'P': {
+                RunPar::pubSrvrAddr = SockAddr(optarg, DEF_PORT);
+                break;
+            }
+            case 'Q': {
+                int size;
+                if (::sscanf(optarg, "%d", &size) != 1)
+                    throw INVALID_ARGUMENT(String("Invalid \"-") + static_cast<char>(c) +
+                            "\" option argument");
+                RunPar::pubSrvrQSize = size;
+                break;
+            }
+            case 'r': {
+                RunPar::pubRoot = String(optarg);
+                break;
+            }
+            case 's': {
+                RunPar::mcastSrcAddr = InetAddr(optarg);
+                break;
+            }
+            default: {
+                if (!RunPar::getOpt(c, optarg, usage))
+                    throw INVALID_ARGUMENT(String("Unknown option: \"-") + static_cast<char>(optopt)
+                    + "\""); \
+            }
+        } // `switch` statement
+    } // While getopt() loop
 
-        if (optind != argc)
-            throw LOGIC_ERROR("Too many operands specified");
+    if (optind != argc)
+        throw LOGIC_ERROR("Too many operands specified");
 
-        if (!RunPar::mcastSrcAddr)
-            RunPar::mcastSrcAddr = UdpSock(RunPar::mcastDstAddr).getLclAddr().getInetAddr();
+    if (!RunPar::mcastSrcAddr)
+        RunPar::mcastSrcAddr = UdpSock(RunPar::mcastDstAddr).getLclAddr().getInetAddr();
 
-        if (!RunPar::p2pSrvrAddr)
-            RunPar::p2pSrvrAddr = SockAddr(RunPar::mcastSrcAddr);
+    if (!RunPar::p2pSrvrAddr)
+        RunPar::p2pSrvrAddr = SockAddr(RunPar::mcastSrcAddr);
 
-        RunPar::vet(); // Vets common runtime parameters
-        vetRunPars(); // Vets publisher-specific runtime parameters
-    }
-    catch (const std::exception& ex) {
-        std::throw_with_nested(RUNTIME_ERROR("Error processing runtime parameters"));
-    }
+    RunPar::vet(); // Vets common runtime parameters
+    vetRunPars(); // Vets publisher-specific runtime parameters
 }
 
 /**
@@ -406,8 +409,6 @@ static void runSubRequest(Xprt xprt)
         if (!subP2pSrvrInfo.read(xprt))
             throw RUNTIME_ERROR("Couldn't receive information on P2P server from subscriber " +
                     xprt.getRmtAddr().to_string());
-        // Handle the subscriber being behind a NAT device. Safe for non-NATed subscribers.
-        subP2pSrvrInfo.srvrAddr = xprt.getRmtAddr().clone(subP2pSrvrInfo.srvrAddr.getPort());
         LOG_INFO("Received information on P2P server " + subP2pSrvrInfo.to_string() +
                 " from subscriber " + xprt.getRmtAddr().to_string());
 
