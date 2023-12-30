@@ -32,6 +32,8 @@
 #include <fcntl.h>
 #include <functional>
 #include <inttypes.h>
+#include <miniupnpc/miniupnpc.h>
+#include <miniupnpc/upnpcommands.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <poll.h>
@@ -41,7 +43,127 @@
 
 namespace bicast {
 
-/// Implementation of a socket
+/**
+ * Returns the NAT device for the LAN.
+ * @param[in]  isIpv6   Use IPv6 protocols? 0 => no; 1 => yes.
+ * @param[out] urls     NAT URL. Caller should free with ::FreeUPNPUrls(urls).
+ * @param[out] data     NAT data
+ * @return              UPNP device list. Caller should free with ::freeUPNPDevlist().
+ * @throw RuntimeError  Couldn't discover UPnP devices
+ * @throw RuntimeError  No UPnP devices
+ * @throw RuntimeError  No NAT device found
+ */
+static struct UPNPDev* getNat(
+        int              isIpv6,
+        struct UPNPUrls* urls,
+        struct IGDdatas* data)
+{
+    int status = 0;
+
+    // Discover UPnP devices
+    struct UPNPDev* devList = ::upnpDiscover(2000, nullptr, nullptr, 0, isIpv6, 0, &status);
+    if (status)
+        throw RUNTIME_ERROR("Couldn't discover UPnP devices: status=" + std::to_string(status));
+    if (devList == nullptr)
+        throw RUNTIME_ERROR("No UPnP devices found");
+
+    try {
+        // Get the first Internet Gateway Device's URLs and description data
+        if (::UPNP_GetValidIGD(devList, urls, data, nullptr, 0) != 1)
+            throw RUNTIME_ERROR("No NAT device found");
+    } // `devList` allocated
+    catch (const std::exception& ex) {
+        ::freeUPNPDevlist(devList);
+        throw;
+    }
+
+    return devList;
+}
+
+void SockAddr::addNatEntry(
+        const SockAddr& srvrAddr,
+        SockAddr&       extSockAddr)
+{
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    struct UPNPDev* devList = getNat(srvrAddr.getInetAddr().getFamily() == AF_INET6, &urls,
+            &data);
+
+    try {
+        // Get the external IP address of the IGD
+        char extIpAddrStr[INET6_ADDRSTRLEN]; // Sufficient for both IPv4 and IPv6 strings
+        if (::UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, extIpAddrStr))
+            throw RUNTIME_ERROR("Couldn't get external IP address");
+        LOG_DEBUG("externalIPAddress=" + String(extIpAddrStr));
+
+        const InetAddr extIpAddr{extIpAddrStr};
+
+        // Add port mapping
+        const char* protocol = "TCP";
+        const char* internalClient = srvrAddr.getInetAddr().to_string().data();
+        const char* internalPort = std::to_string(srvrAddr.getPort()).data();
+        const char* externalPort = internalPort;
+        const char* description = "Bicast";
+
+        int status = ::UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
+                externalPort, internalPort, internalClient, description, protocol, nullptr,
+                nullptr);
+        if (status)
+            throw RUNTIME_ERROR("Couldn't add port mapping: status=" + std::to_string(status));
+
+        extSockAddr = SockAddr{extIpAddr, static_cast<in_port_t>(::atoi(externalPort))};
+        LOG_NOTE("NAT mapping added: " + extSockAddr.to_string() + " -> " +
+                srvrAddr.to_string());
+
+        // Cleanup
+        ::FreeUPNPUrls(&urls);
+        ::freeUPNPDevlist(devList);
+    } // `devList` and `urls` allocated
+    catch (const std::exception& ex) {
+        ::FreeUPNPUrls(&urls);
+        ::freeUPNPDevlist(devList);
+        throw;
+    }
+}
+
+void SockAddr::removeNatEntry(const SockAddr& srvrAddr)
+{
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    struct UPNPDev* devList = getNat(srvrAddr.getInetAddr().getFamily() == AF_INET6, &urls, &data);
+
+    try {
+        // Remove port mapping
+        const char* protocol = "TCP";
+        const char* externalPort = std::to_string(srvrAddr.getPort()).data();
+
+        int status = ::UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, externalPort,
+                protocol, nullptr);
+        if (status) {
+            if (status == 714) {
+                LOG_DEBUG("No such port mapping");
+            }
+            else {
+                throw RUNTIME_ERROR("Couldn't remove port mapping for " + srvrAddr.to_string() +
+                        ": status=" + std::to_string(status));
+            }
+        }
+        else {
+            LOG_NOTE("NAT mapping removed: " + srvrAddr.to_string());
+        }
+
+        // Cleanup
+        ::FreeUPNPUrls(&urls);
+        ::freeUPNPDevlist(devList);
+    } // `devList` allocated
+    catch (const std::exception& ex) {
+        ::FreeUPNPUrls(&urls);
+        ::freeUPNPDevlist(devList);
+        throw;
+    }
+}
+
+/// Implementation of a socket address
 class SockAddr::Impl
 {
 protected:

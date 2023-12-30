@@ -49,13 +49,6 @@ public:
             const SysDuration& delay = std::chrono::minutes(5));
 
     /**
-     * Destroys.
-     */
-    ~Tracker() {
-        pImpl.reset();
-    }
-
-    /**
      * Returns the string representation of this instance.
      * @return The string representation of this instance
      */
@@ -123,6 +116,7 @@ public:
      * Causes `getNextAddr()` to always return a socket address that tests false. Idempotent.
      */
     void halt() const;
+
     /**
      * Writes itself to a transport.
      * @param[in] xprt     The transport

@@ -30,6 +30,8 @@
 
 #include <queue>
 #include <set>
+#include <sstream>
+#include <thread>
 #include <unordered_map>
 
 namespace bicast {
@@ -147,20 +149,23 @@ class Tracker::Impl final : public XprtAble
     }
 
     /**
-     * Moves P2P-servers from the delay queue to the server queue. Implemented as a start routine
-     * for a thread that expects `halt()` to be called.
+     * Executes a thread that moves P2P-servers from the delay queue to the server queue. Expects
+     * `halt()` to be called.
      * @see peerDisconnected()
      * @see halt()
      */
     void runDelayQueue() {
+        LOG_DEBUG("Delay-thread Started");
         try {
             auto pred = [&] {return delayQueue.top().revealTime <= SysClock::now() || done;};
             Lock lock{mutex};
 
             for (;;) {
                 // Wait until the delay-queue is not empty
+                LOG_TRACE("Entry \"done\" is " + std::to_string(done));
                 if (delayQueue.empty()) {
                     delayCond.wait(lock, [&]{return !delayQueue.empty() || done;});
+                    LOG_TRACE("Exit \"done\" is " + std::to_string(done));
                     if (done)
                         break;
                 }
@@ -282,15 +287,20 @@ public:
         , delay(delay)
         , delayCond()
         , threadEx()
-        , delayThread(&Impl::runDelayQueue, this)
+        , delayThread()
     {
         if (capacity == 0)
             throw INVALID_ARGUMENT("Capacity is zero");
+
+        delayThread = Thread(&Impl::runDelayQueue, this);
     }
 
     ~Impl() noexcept {
         halt();
+        std::ostringstream buf;
+        buf << delayThread.get_id();
         delayThread.join();
+        LOG_DEBUG("Joined delay-thread " + buf.str());
     }
 
     /**
@@ -432,8 +442,9 @@ public:
     void halt() {
         Guard guard{mutex};
         done = true;
-        queueCond.notify_all();
         delayCond.notify_all();
+        LOG_DEBUG("Notified delay-queue condition-variable");
+        queueCond.notify_all();
     }
     /**
      * Writes itself to a transport.

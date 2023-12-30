@@ -43,6 +43,33 @@ class SockAddr : public XprtAble
 
 public:
     /**
+     * Add a NAT entry. The NAT-capable Internet Gateway Device (IGD) is discovered, an entry for the
+     * internal socket address is added to the IGD's NAT table, and the corresponding external socket
+     * address is returned.
+     * @param[in]  srvrAddr     Link-local (i.e, NATed) socket address
+     * @param[out] extSockAddr  Corresponding external socket address
+     * @throw RuntimeError      Couldn't discover UPnP devices
+     * @throw RuntimeError      No UPnP devices
+     * @throw RuntimeError      No UPnP Internet Gateway Device found
+     * @throw RuntimeError      Couldn't get external IP address
+     * @throw RuntimeError      Couldn't add port mapping
+     */
+    static void addNatEntry(
+            const SockAddr& srvrAddr,
+            SockAddr&       extSockAddr);
+
+    /**
+     * Removes a NAT entry. Does nothing if the entry doesn't exist.
+     * @param[in] srvrAddr  Internal socket address of the entry
+     * @throw RuntimeError  Couldn't discover UPnP devices
+     * @throw RuntimeError  No UPnP devices
+     * @throw RuntimeError  No UPnP Internet Gateway Device found
+     * @throw RuntimeError  Couldn't get external IP address
+     * @throw RuntimeError  Couldn't remove port mapping
+     */
+    static void removeNatEntry(const SockAddr& srvrAddr);
+
+    /**
      * Default constructs. The resulting instance will test false.
      * @see operator bool()
      */

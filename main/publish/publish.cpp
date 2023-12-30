@@ -133,9 +133,8 @@ static void usage()
 "    -n <maxPeers>     Maximum number of connected peers. Default is " << RunPar::maxNumPeers <<
                        ".\n"
 "    -p <p2pAddr>      Socket address for local P2P server (not the publisher's\n"
-"                      server). IP address must not be wildcard. Default IP\n"
-"                      address is that of interface used for multicasting.\n"
-"                      Default port number is chosen by operating system.\n"
+"                      server). IP address must not be wildcard. Default is \n" <<
+"                      \"" << RunPar::p2pSrvrAddr.to_string() << "\".\n"
 "    -q <maxPending>   Maximum number of pending connections to P2P server (not\n"
 "                      the publisher's server). Default is " << RunPar::p2pSrvrQSize << ".\n"
 "  Repository:\n"
@@ -247,9 +246,10 @@ static void setRunPars(
     RunPar::feedName     = String("<feedName>");
     RunPar::maxSegSize   = 20000;
     RunPar::mcastDstAddr = SockAddr("232.1.1.1", DEF_PORT);
-    RunPar::mcastSrcAddr = InetAddr();
+    RunPar::mcastSrcAddr = UdpSock(RunPar::mcastDstAddr).getLclAddr().getInetAddr();
     RunPar::prodKeepTime = std::chrono::hours(1);
     RunPar::pubSrvrQSize = 256;
+    RunPar::p2pSrvrAddr  = SockAddr(RunPar::mcastSrcAddr, 0);
     RunPar::pubSrvrAddr  = SockAddr("0.0.0.0", DEF_PORT);
 
     opterr = 0;    // 0 => getopt() won't write to `stderr`
@@ -332,11 +332,15 @@ static void setRunPars(
     if (optind != argc)
         throw LOGIC_ERROR("Too many operands specified");
 
-    if (!RunPar::mcastSrcAddr)
-        RunPar::mcastSrcAddr = UdpSock(RunPar::mcastDstAddr).getLclAddr().getInetAddr();
+    if (RunPar::natTraversal) {
+        SockAddr extPubSrvrAddr{};
+        if (RunPar::pubSrvrAddr.getInetAddr().isLinkLocal())
+            SockAddr::addNatEntry(RunPar::pubSrvrAddr, extPubSrvrAddr);
 
-    if (!RunPar::p2pSrvrAddr)
-        RunPar::p2pSrvrAddr = SockAddr(RunPar::mcastSrcAddr);
+        SockAddr extP2pSrvrAddr{};
+        if (RunPar::p2pSrvrAddr.getInetAddr().isLinkLocal())
+            SockAddr::addNatEntry(RunPar::p2pSrvrAddr, extP2pSrvrAddr);
+    }
 
     RunPar::vet(); // Vets common runtime parameters
     vetRunPars(); // Vets publisher-specific runtime parameters
@@ -418,7 +422,7 @@ static void runSubRequest(Xprt xprt)
         LOG_INFO("Received tracker " + subTracker.to_string() + " from subscriber " +
                 xprt.getRmtAddr().to_string());
 
-        // Ensure that the publisher's tracker contains current information on the publisher's P2P
+        // Ensure that the subscription tracker contains current information on the publisher's P2P
         // server
         subInfo.tracker.insert(pubNode->getP2pSrvrInfo());
 
@@ -427,8 +431,9 @@ static void runSubRequest(Xprt xprt)
                     xprt.getRmtAddr().to_string());
         LOG_INFO("Sent subscription information to subscriber " + xprt.getRmtAddr().to_string());
 
+        // Merge information from the subscriber's tracker into the subscription tracker
         subInfo.tracker.insert(subTracker);
-        subInfo.tracker.insert(subP2pSrvrInfo);
+        subInfo.tracker.insert(subP2pSrvrInfo); // And add the subscriber's P2P server now
 
         --numSubThreads;
     }
@@ -438,15 +443,16 @@ static void runSubRequest(Xprt xprt)
     }
     catch (...) {
         --numSubThreads;
-        throw;
+        throw; // Thread cancellation must be re-thrown
     }
 }
 
-/// Serves subscribers.
+/// Runs the thread that serves subscribers.
 static void runServer()
 {
+    LOG_NOTE("Server thread started");
+
     try {
-        //LOG_DEBUG("Creating listening server");
         auto srvrSock = TcpSrvrSock(RunPar::pubSrvrAddr, RunPar::pubSrvrQSize);
         LOG_NOTE("Created publisher's server " + srvrSock.to_string());
 
@@ -485,17 +491,12 @@ int main(const int    argc,
         setRunPars(argc, argv);
         initDerived();
 
-        tracker = Tracker(RunPar::trackerCap); // Create the tracker
-
-        Thread serverThread;
-        if (!RunPar::initializeOnly) {
-            //LOG_DEBUG("Starting server thread");
-            serverThread = Thread(&runServer);
-        }
-
+        tracker = Tracker(RunPar::trackerCap);
         pubNode = PubNode::create(tracker);
 
         if (!RunPar::initializeOnly) {
+            Thread serverThread{&runServer};
+
             if (::sem_init(&stopSem, 0, 0) == -1)
                     throw SYSTEM_ERROR("Couldn't initialize semaphore");
 
